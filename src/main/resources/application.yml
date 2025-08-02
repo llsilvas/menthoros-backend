@@ -1,0 +1,45 @@
+# Porta HTTP padrão
+server:
+  port: ${SERVER_PORT:8099}
+spring:
+  application:
+    name: menthoros-services
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        options:
+          model: gpt-4o
+
+  # Configurações JPA comuns
+  data:
+    jpa:
+      repositories:
+        bootstrap-mode: deferred
+
+  jpa:
+    properties:
+      hibernate:
+        format_sql: true    # formata SQL no console
+    open-in-view: false    # evita manutenção de sessão aberta
+    hibernate:
+      ddl-auto: update
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/menthoros
+    username: postgres
+    password: ${POSTGRES_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    # migrações Flyway local
+#    url: jdbc:postgresql://localhost:5432/menthoros
+#    username: postgres
+#    password: postgres
+#    driver-class-name: org.postgresql.Driver
+#    locations: classpath:db/migration
+#    baseline-on-migrate: true
+    enabled: false
+
+logging:
+  level:
+    root: info
