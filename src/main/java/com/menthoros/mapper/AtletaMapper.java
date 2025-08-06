@@ -1,6 +1,7 @@
 package com.menthoros.mapper;
 
-import com.menthoros.dto.AtletaDto;
+import com.menthoros.dto.input.AtletaInputDto;
+import com.menthoros.dto.output.AtletaOutputDto;
 import com.menthoros.entity.Atleta;
 import org.mapstruct.Mapper;
 import org.mapstruct.ReportingPolicy;
@@ -10,7 +11,8 @@ import org.mapstruct.ReportingPolicy;
 )
 public interface AtletaMapper {
 
-    Atleta toEntity(AtletaDto atletaDto);
+    Atleta toEntity(AtletaInputDto atletaInputDto);
 
-    AtletaDto toDto(Atleta atleta);
+    AtletaOutputDto toOutputDto(Atleta atleta);
+
 }

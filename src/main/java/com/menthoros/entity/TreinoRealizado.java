@@ -1,9 +1,13 @@
 package com.menthoros.entity;
 
-import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.FonteDados;
+import com.menthoros.enums.StatusTreino;
 import jakarta.persistence.*;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -13,8 +17,7 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder(toBuilder = true)
-public class TreinoRealizado {
+public class TreinoRealizado extends TreinoBase{
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -25,23 +28,12 @@ public class TreinoRealizado {
     @JoinColumn(name = "atleta_id", nullable = false)
     private Atleta atleta;
 
-    @Column(name = "cadencia_media")
-    private Integer cadenciaMedia;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "treino_planejado_id")
+    private TreinoPlanejado treinoPlanejado;
 
-    @Column(name = "data_treino", nullable = false)
-    private LocalDate data;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "dia_semana", nullable = false)
-    private DiaSemana diaSemana;
-
-    @Column(name = "tipo_treino")
-    private String tipoTreino;
-
-    @Column(name = "duracao_min")
-    private Integer duracaoMin;
-
-    private Double distanciaKm;
+    @Column(name = "data_treino")
+    private LocalDate dataTreino; // Opcional, mas útil
 
     @Column(name = "fc_media")
     private Integer fcMedia;
@@ -55,6 +47,9 @@ public class TreinoRealizado {
     @Column(name = "potencia_media")
     private Integer potenciaMedia;
 
+    @Column(name = "cadencia_media")
+    private Integer cadenciaMedia;
+
     @Column(name = "comentario")
     private String comentario;
 
@@ -62,8 +57,22 @@ public class TreinoRealizado {
     @Column(name = "fonte_dados")
     private FonteDados fonteDados;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    private PlanoTreino planoTreino;
+    @Enumerated(EnumType.STRING)
+    private StatusTreino status;
 
+    @Column(name = "percepcao_esforco")
+    private Integer percepcaoEsforco; // Ex: escala de 1 a 10
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    private PlanoSemanal planoSemanal;
+
+    @Column(name = "external_id")
+    private String externalId;
+
+    @Column(name = "tempo_execucao_segundos")
+    private Integer tempoExecucaoSegundos;
+
+    @Column(name = "elevacao_total")
+    private Integer elevacaoTotalMetros;
 
 }

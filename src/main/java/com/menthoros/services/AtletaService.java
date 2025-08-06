@@ -1,15 +1,18 @@
 package com.menthoros.services;
 
-import com.menthoros.dto.AtletaDto;
+import com.menthoros.dto.input.AtletaInputDto;
+import com.menthoros.dto.output.AtletaOutputDto;
 import com.menthoros.entity.Atleta;
 
+import java.util.List;
 import java.util.UUID;
 
 public interface AtletaService {
 
-    Atleta createAtleta(AtletaDto atleta);
-    Atleta updateAtleta(UUID id, AtletaDto atleta);
+    Atleta createAtleta(AtletaInputDto atletaInputDto);
+    Atleta updateAtleta(UUID id, AtletaInputDto atletaInputDto);
     void deleteAtleta(UUID id);
-    AtletaDto getAtletaById(UUID id);
+    AtletaOutputDto getAtletaById(UUID id);
+    void atualizarEmbedding(UUID atletaId, List<Float> vetor);
 
 }

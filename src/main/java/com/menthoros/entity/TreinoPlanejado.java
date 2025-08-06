@@ -1,9 +1,13 @@
 package com.menthoros.entity;
 
-import com.menthoros.enums.DiaTreinoEnum;
+import com.menthoros.enums.StatusTreino;
 import jakarta.persistence.*;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 @Entity
@@ -12,8 +16,7 @@ import java.util.UUID;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder(toBuilder = true)
-public class TreinoPlanejado {
+public class TreinoPlanejado extends TreinoBase{
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -22,29 +25,30 @@ public class TreinoPlanejado {
             nullable = false)
     private UUID id;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "dia_semana", nullable = false)
-    private DiaTreinoEnum diaSemana;
+    @Column(name = "observacao")
+    private String observacao;
 
-    @Column(name = "tipo_treino", nullable = false)
-    private String tipoTreino;
+    @Column(name = "data_treino")
+    private LocalDate dataTreino;
 
-    @Column(nullable = false)
-    private String descricao;
+    @Column(name = "percepcao_esforco_esperada")
+    private Integer percepcaoEsforcoEsperada; // escala de 1 a 10
 
-    @Column(name = "fc_alvo")
-    private String fcAlvo;
-
-    @Column(name = "duracao_min", nullable = false)
-    private Integer duracaoMin;
-
-    @Column(nullable = false)
-    private Double distancia;
-
-    @Column(name = "ritmo_alvo")
-    private String ritmoAlvo;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "plano_semanal_id")
+    private PlanoSemanal planoSemanal;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "plano_treino_id", nullable = false)
-    private PlanoTreino planoTreino;
+    @JoinColumn(name = "atleta_id", nullable = false)
+    private Atleta atleta;
+
+    @Column
+    private StatusTreino statusTreino;
+
+    @PrePersist
+    private void prePersist(){
+        if(this.atleta == null && this.planoSemanal != null){
+            this.atleta = this.planoSemanal.getAtleta();
+        }
+    }
 }

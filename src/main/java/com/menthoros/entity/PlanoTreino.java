@@ -28,6 +28,10 @@ public class PlanoTreino {
     @JoinColumn(name = "atleta_id", nullable = false)
     private Atleta atleta;
 
+    @OneToOne(optional = false, fetch = FetchType.LAZY)
+    @JoinColumn(name = "prova_id", nullable = false)
+    private Prova prova;
+
     @Column(nullable = false)
     private String nome;
 
@@ -37,9 +41,6 @@ public class PlanoTreino {
     @Column(name = "data_inicio", nullable = false)
     private LocalDate dataInicio;
 
-    @Column(name = "data_prova", nullable = false)
-    private LocalDate dataProva;
-
     @Column(nullable = false)
     private String objetivo;
 
@@ -48,12 +49,13 @@ public class PlanoTreino {
     private PlanoStatus status;
 
     @OneToMany(mappedBy = "planoTreino", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<TreinoPlanejado> treinosPlanejados;
-
-    @OneToMany(mappedBy = "planoTreino", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<TreinoRealizado> treinosRealizados;
+    private List<PlanoSemanal> planoSemanalList;
 
     @OneToOne(cascade = CascadeType.ALL)
     @JoinColumn(name = "contexto_id", referencedColumnName = "id")
     private PlanoMetaDados planoMetaDados;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "prova_alvo_id")
+    private Prova provaAlvo; // opcional: referência à prova alvo cadastrada
 }

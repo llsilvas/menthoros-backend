@@ -1,14 +1,44 @@
 package com.menthoros.mapper;
 
-import com.menthoros.dto.TreinoRealizadoDto;
+import com.menthoros.dto.input.TreinoPlanejadoInputDto;
+import com.menthoros.dto.input.TreinoRealizadoInputDto;
+import com.menthoros.dto.output.TreinoPlanejadoOutputDto;
+import com.menthoros.dto.output.TreinoRealizadoOutputDto;
+import com.menthoros.entity.TreinoPlanejado;
 import com.menthoros.entity.TreinoRealizado;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
+import org.mapstruct.Named;
 import org.mapstruct.ReportingPolicy;
 
+import java.util.List;
+
 @Mapper(
+        componentModel = "spring",
         unmappedSourcePolicy = ReportingPolicy.IGNORE
 )
 public interface TreinoMapper {
-    TreinoRealizado toEntity(TreinoRealizadoDto treinoRealizadoDto);
-    TreinoRealizadoDto toDto(TreinoRealizado treino);
+
+    @Mapping(target = "planoSemanal.id", source = "planoSemanalId")
+    TreinoPlanejado toEntity(TreinoPlanejadoInputDto dto);
+
+    @Mapping(source = "planoSemanal.id", target = "planoSemanalId")
+    TreinoPlanejadoOutputDto toOutputDto(TreinoPlanejado treinoPlanejado);
+
+    // Adicionado para conversão direta de DTO de saída para entidade
+    TreinoPlanejado toEntity(TreinoPlanejadoOutputDto dto);
+
+    @Named("treinoPlanejadoListToOutputDtoList")
+    List<TreinoPlanejadoOutputDto> toOutputDtoListTreinoPlanejado(List<TreinoPlanejado> treinosPlanejados);
+
+    @Mapping(target = "atleta.id", source = "atletaId")
+    @Mapping(target = "planoSemanal.id", source = "planoSemanalId")
+    @Mapping(target = "treinoPlanejado.id", source = "treinoPlanejadoId")
+    TreinoRealizado toEntity(TreinoRealizadoInputDto dto);
+
+    TreinoRealizadoOutputDto toOutputDto(TreinoRealizado treinoRealizado);
+
+    @Named("treinoRealizadoListToOutputDtoList")
+    List<TreinoRealizadoOutputDto> toOutputDtoListTreinoRealizado(List<TreinoRealizado> treinosRealizados);
+
 }

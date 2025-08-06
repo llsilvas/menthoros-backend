@@ -1,6 +1,7 @@
 package com.menthoros.controller;
 
-import com.menthoros.dto.AtletaDto;
+import com.menthoros.dto.input.AtletaInputDto;
+import com.menthoros.dto.output.AtletaOutputDto;
 import com.menthoros.entity.Atleta;
 import com.menthoros.mapper.AtletaMapper;
 import com.menthoros.services.AtletaService;
@@ -26,8 +27,8 @@ public class AtletaController {
     }
 
     @PostMapping
-    public ResponseEntity<AtletaDto> cadastraAtleta(@Valid @RequestBody AtletaDto atletaDto){
-        Atleta atleta = atletaService.createAtleta(atletaDto);
-        return ResponseEntity.status(HttpStatus.CREATED).body(atletaMapper.toDto(atleta));
+    public ResponseEntity<AtletaOutputDto> cadastraAtleta(@Valid @RequestBody AtletaInputDto atletaInputDto){
+        Atleta atleta = atletaService.createAtleta(atletaInputDto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(atletaMapper.toOutputDto(atleta));
     }
 }

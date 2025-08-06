@@ -1,5 +1,7 @@
 package com.menthoros.entity;
 
+import com.menthoros.enums.StatusProva;
+import com.menthoros.enums.TipoProva;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -21,13 +23,24 @@ public class Prova {
     private UUID id;
 
     @Column(nullable = false)
-    private String nome;
+    private String nomeProva;
 
     @Column(nullable = false)
-    private LocalDate data;
+    private LocalDate dataProva;
 
     @Column(nullable = false)
-    private String distancia;
+    private String distanciaKm;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_prova", nullable = false)
+    private TipoProva tipoProva;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status_prova", nullable = false)
+    private StatusProva statusProva;
+
+    @Column(name = "prova_alvo")
+    private boolean provaAlvo;
 
     @Column(name = "objetivo")
     private String objetivo; // Ex: "Concluir abaixo de 1h50"

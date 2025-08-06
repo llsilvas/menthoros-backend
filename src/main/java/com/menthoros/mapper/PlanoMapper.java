@@ -1,16 +1,21 @@
 package com.menthoros.mapper;
 
-import com.menthoros.dto.PlanoTreinoDto;
+import com.menthoros.dto.input.PlanoTreinoInputDto;
+import com.menthoros.dto.output.PlanoTreinoOutputDto;
 import com.menthoros.entity.PlanoTreino;
 import org.mapstruct.Mapper;
+import org.mapstruct.Mapping;
 import org.mapstruct.ReportingPolicy;
 
 @Mapper(
-        unmappedSourcePolicy = ReportingPolicy.IGNORE
+        unmappedSourcePolicy = ReportingPolicy.IGNORE,
+        uses = {TreinoMapper.class}
 )
 public interface PlanoMapper {
 
-    PlanoTreino toEntity(PlanoTreinoDto dto);
+    @Mapping(target = "atleta.id", source = "atletaId")
+    PlanoTreino toEntity(PlanoTreinoInputDto dto);
 
-    PlanoTreinoDto toDto(PlanoTreino planoTreino);
+    @Mapping(source = "prova.dataProva", target = "dataProva")
+    PlanoTreinoOutputDto toOutputDto(PlanoTreino planoTreino);
 }

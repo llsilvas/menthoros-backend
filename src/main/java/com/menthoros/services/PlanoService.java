@@ -1,9 +1,10 @@
 package com.menthoros.services;
 
-import com.menthoros.dto.PlanoDto;
+
+import com.menthoros.entity.PlanoSemanal;
 
 import java.util.UUID;
 
 public interface PlanoService {
-    PlanoDto gerarPlanoTreino(UUID atletaId);
+    PlanoSemanal gerarPlanoTreino(UUID atletaId);
 }

@@ -1,6 +1,7 @@
 package com.menthoros.controller;
 
-import com.menthoros.dto.TreinoRealizadoDto;
+import com.menthoros.dto.input.TreinoRealizadoInputDto;
+import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.TreinoRealizado;
 import com.menthoros.mapper.TreinoMapper;
 import com.menthoros.services.TreinoService;
@@ -26,10 +27,10 @@ public class TreinoRealizadoController {
     }
 
     @PostMapping
-    public ResponseEntity<TreinoRealizadoDto> createTreinos(@Valid @RequestBody TreinoRealizadoDto treinoRealizadoDto) {
+    public ResponseEntity<TreinoRealizadoOutputDto> createTreinos(@Valid @RequestBody TreinoRealizadoInputDto treinoRealizadoInputDto) {
 
-        TreinoRealizado treinoRealizado = treinoService.createTreino(treinoRealizadoDto);
-        return ResponseEntity.status(HttpStatus.CREATED).body(treinoMapper.toDto(treinoRealizado));
+        TreinoRealizado treinoRealizado = treinoService.addTreino(treinoRealizadoInputDto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(treinoMapper.toOutputDto(treinoRealizado));
 
     }
 }

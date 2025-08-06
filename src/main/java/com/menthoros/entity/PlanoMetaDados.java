@@ -1,9 +1,8 @@
 package com.menthoros.entity;
 
+import com.menthoros.enums.DiaSemana;
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -20,10 +19,14 @@ public class PlanoMetaDados {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(length = 36,
-            updatable = false,
-            nullable = false)
     private UUID id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "atleta_id", nullable = false)
+    private Atleta atleta;
+
+    @Column(name = "data_criacao", nullable = false)
+    private LocalDateTime dataCriacao;
 
     @Column(name = "volume_semanal_anterior")
     private Double volumeSemanalAnterior;
@@ -31,15 +34,24 @@ public class PlanoMetaDados {
     @Column(name = "tsb_inicial")
     private Integer tsbInicial;
 
-    @Column(name = "dia_preferido_longo")
-    private String diaPreferidoLongo;
-
-    @Column(name = "fonte_dados")
-    private String fonteDados;
-
-    @Column(name = "data_criacao", nullable = false)
-    private LocalDateTime dataCriacao;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "dia_preferido_longo", nullable = false)
+    private DiaSemana diaPreferidoLongo;
 
     @OneToOne(mappedBy = "planoMetaDados", fetch = FetchType.LAZY)
-    private PlanoTreino planoTreino;
+    private PlanoSemanal planoSemanal;
+
+    @Column
+    private double atl = 0.0;
+
+    @Column
+    private double ctl = 0.0;
+
+    @Column
+    private double tsb = 0.0;
+
+//    @JdbcTypeCode(SqlTypes.VECTOR) // Hibernate 6.x
+//    @Column(name = "embedding", columnDefinition = "vector(1536)", nullable = true)
+//    private float[] embedding;
+
 }
