@@ -26,7 +26,7 @@ public class Atleta {
     @Column(nullable = false)
     private int idade;
 
-    @Column(nullable = false, length = 255)
+    @Column(nullable = false)
     private String objetivo;
 
     @ElementCollection(fetch = FetchType.EAGER)

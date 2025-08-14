@@ -1,6 +1,7 @@
 package com.menthoros.repository;
 
 import com.menthoros.entity.PlanoSemanal;
+import com.menthoros.enums.PlanoStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -21,4 +22,10 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
     """)
     Optional<PlanoSemanal> findByAtletaIdAndSemana(@Param("atletaId") UUID atletaId,
                                                    @Param("data") LocalDate data);
+
+    Optional<PlanoSemanal> findTopByAtletaIdOrderBySemanaInicioDesc(UUID atletaId);
+
+    Optional<PlanoSemanal> findByAtletaIdAndSemanaInicioBetween(UUID atletaId, LocalDate with, LocalDate with1);
+
+    boolean existsByAtletaIdAndSemanaInicioLessThanEqualAndSemanaFimGreaterThanEqualAndStatusNot(UUID atletaId, LocalDate hoje, LocalDate hoje1, PlanoStatus status);
 }

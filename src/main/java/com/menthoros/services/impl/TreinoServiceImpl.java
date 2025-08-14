@@ -7,6 +7,7 @@ import com.menthoros.entity.Atleta;
 import com.menthoros.entity.PlanoSemanal;
 import com.menthoros.entity.TreinoPlanejado;
 import com.menthoros.entity.TreinoRealizado;
+import com.menthoros.enums.PlanoStatus;
 import com.menthoros.enums.StatusTreino;
 import com.menthoros.mapper.PlanoSemanalMapper;
 import com.menthoros.mapper.TreinoMapper;
@@ -32,8 +33,9 @@ public class TreinoServiceImpl implements TreinoService {
     private final PlanoSemanalMapper planoSemanalMapper;
     private final PlanoMetadadosRepository planoMetaDadosRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
+    private final TsbServiceImpl tsbService;
 
-    public TreinoServiceImpl(TreinoMapper treinoMapper, TreinoRealizadoRepository treinoRealizadoRepository, AtletaRepository atletaRepository, PlanoSemanalRepository planoSemanalRepository, PlanoSemanalMapper planoSemanalMapper, PlanoMetadadosRepository planoMetaDadosRepository, TreinoPlanejadoRepository treinoPlanejadoRepository) {
+    public TreinoServiceImpl(TreinoMapper treinoMapper, TreinoRealizadoRepository treinoRealizadoRepository, AtletaRepository atletaRepository, PlanoSemanalRepository planoSemanalRepository, PlanoSemanalMapper planoSemanalMapper, PlanoMetadadosRepository planoMetaDadosRepository, TreinoPlanejadoRepository treinoPlanejadoRepository, TsbServiceImpl tsbService) {
         this.treinoMapper = treinoMapper;
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.atletaRepository = atletaRepository;
@@ -41,6 +43,7 @@ public class TreinoServiceImpl implements TreinoService {
         this.planoSemanalMapper = planoSemanalMapper;
         this.planoMetaDadosRepository = planoMetaDadosRepository;
         this.treinoPlanejadoRepository = treinoPlanejadoRepository;
+        this.tsbService = tsbService;
     }
 
     @Transactional
@@ -75,7 +78,6 @@ public class TreinoServiceImpl implements TreinoService {
         realizado.setStatus(StatusTreino.REALIZADO);
         realizado.setFonteDados(treinoRealizadoInputDto.fonteDados());
         realizado.setExternalId(treinoRealizadoInputDto.externalId());
-        realizado.setTempoExecucaoSegundos(treinoRealizadoInputDto.tempoExecucaoSegundos());
         realizado.setElevacaoTotalMetros(treinoRealizadoInputDto.elevacaoTotalMetros());
 
         // 5) Conciliação automática se não veio planejado
@@ -127,11 +129,36 @@ public class TreinoServiceImpl implements TreinoService {
             double volume = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(semanal.getId());
             Hibernate.initialize(semanal);
             semanal.setVolumeRealizadoKm(volume);
+            atualizarStatusDoPlano(semanal);
             planoSemanalRepository.save(semanal);
         }
 
+        tsbService.atualizarTsb(atleta.getId(), semanal.getId());
+
         return salvo;
     }
+
+    private void atualizarStatusDoPlano(PlanoSemanal plano) {
+        List<TreinoPlanejado> treinos = plano.getTreinosPlanejados();
+
+        long total = treinos.size();
+        long realizados = treinos.stream()
+                .filter(t -> t.getStatusTreino() == StatusTreino.REALIZADO)
+                .count();
+
+        if (realizados == 0) {
+            plano.setStatus(PlanoStatus.PLANEJADO);
+        } else if (realizados == total) {
+            plano.setStatus(PlanoStatus.CONCLUIDO);
+        } else if (realizados == 1) {
+            plano.setStatus(PlanoStatus.INICIADO);
+        } else {
+            plano.setStatus(PlanoStatus.EM_ANDAMENTO);
+        }
+
+        planoSemanalRepository.save(plano);
+    }
+
 
     private Optional<TreinoRealizado> buscarTreinoDuplicado(TreinoRealizadoInputDto treinoRealizadoInputDto) {
         if (treinoRealizadoInputDto.fonteDados() != null && treinoRealizadoInputDto.externalId() != null) {

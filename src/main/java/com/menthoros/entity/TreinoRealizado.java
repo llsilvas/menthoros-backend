@@ -69,9 +69,6 @@ public class TreinoRealizado extends TreinoBase{
     @Column(name = "external_id")
     private String externalId;
 
-    @Column(name = "tempo_execucao_segundos")
-    private Integer tempoExecucaoSegundos;
-
     @Column(name = "elevacao_total")
     private Integer elevacaoTotalMetros;
 

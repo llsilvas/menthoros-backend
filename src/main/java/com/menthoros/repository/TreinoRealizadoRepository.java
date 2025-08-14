@@ -24,5 +24,5 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     double sumDistanciaByPlanoSemanalId(@Param("planoSemanalId") UUID planoSemanalId);
 
 
-
+    List<TreinoRealizado> findByAtletaIdOrderByDataTreinoDesc(UUID atletaId);
 }

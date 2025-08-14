@@ -3,6 +3,8 @@ package com.menthoros.services.impl;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.entity.PlanoSemanal;
+import com.menthoros.entity.TreinoRealizado;
+import com.menthoros.enums.PlanoStatus;
 import com.menthoros.mapper.AtletaMapper;
 import com.menthoros.mapper.PlanoMapper;
 import com.menthoros.mapper.PlanoSemanalMapper;
@@ -10,18 +12,21 @@ import com.menthoros.mapper.TreinoMapper;
 import com.menthoros.repository.AtletaRepository;
 import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.repository.PlanoSemanalRepository;
+import com.menthoros.repository.TreinoRealizadoRepository;
 import com.menthoros.services.EmbeddingService;
 import com.menthoros.services.IaService;
 import com.menthoros.services.PlanoService;
 import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
+@RequiredArgsConstructor
 @Service
 public class PlanoServiceImpl implements PlanoService {
 
@@ -35,67 +40,62 @@ public class PlanoServiceImpl implements PlanoService {
 
     private final EmbeddingService embeddingService;
     private final PlanoSemanalRepository planoSemanalRepository;
-
-    public PlanoServiceImpl(IaService iaService, AtletaRepository atletaRepository, AtletaMapper atletaMapper, TreinoMapper treinoMapper, PlanoMapper planoMapper, PlanoMetadadosRepository planoMetadadosRepository, PlanoSemanalMapper planoSemanalMapper, EmbeddingService embeddingService, PlanoSemanalRepository planoSemanalRepository) {
-        this.iaService = iaService;
-        this.atletaRepository = atletaRepository;
-        this.atletaMapper = atletaMapper;
-        this.treinoMapper = treinoMapper;
-        this.planoMapper = planoMapper;
-        this.planoMetadadosRepository = planoMetadadosRepository;
-        this.planoSemanalMapper = planoSemanalMapper;
-        this.embeddingService = embeddingService;
-        this.planoSemanalRepository = planoSemanalRepository;
-    }
+    private final TreinoRealizadoRepository treinoRealizadoRepository;
 
     @Transactional
     public PlanoSemanal gerarPlanoTreino(UUID atletaId) {
         var atleta = atletaRepository.findById(atletaId)
-                .orElseThrow(() -> new RuntimeException("Atleta não encontrado com o id: " + atletaId));
+                .orElseThrow(() -> new RuntimeException("Atleta não encontrado"));
 
-        // Buscar treinos anteriores
-        List<TreinoRealizadoOutputDto> ultimosTreinos = Optional.ofNullable(atleta.getTreinosRealizados())
-                .orElse(List.of())
-                .stream()
-                .filter(treinoRealizado -> {
-                    LocalDate dataTreino = treinoRealizado.getDataTreino();
+        // Verifica existência de plano atual
+        var hoje = LocalDate.now();
+        boolean planoAtualExiste = planoSemanalRepository
+                .existsByAtletaIdAndSemanaInicioLessThanEqualAndSemanaFimGreaterThanEqualAndStatusNot(atletaId, hoje, hoje, PlanoStatus.CONCLUIDO);
 
-                    return dataTreino != null
-                            && !dataTreino.isAfter(LocalDate.now())
-                            && !dataTreino.isBefore(LocalDate.now().minusDays(7));
+        if (planoAtualExiste) {
+            throw new IllegalStateException("Já existe um plano em andamento para esta semana.");
+        }
 
-                })
+        // Define nova data de início
+        LocalDate dataInicio;
+        var ultimoPlano = planoSemanalRepository
+                .findTopByAtletaIdOrderBySemanaInicioDesc(atletaId);
+
+        dataInicio = ultimoPlano.map(p -> p.getSemanaInicio().plusWeeks(1))
+                .orElse(hoje.with(DayOfWeek.MONDAY));
+
+        // Treinos realizados (últimos 7 dias ou todos)
+        List<TreinoRealizado> realizados = treinoRealizadoRepository
+                .findByAtletaIdOrderByDataTreinoDesc(atletaId);
+
+        List<TreinoRealizadoOutputDto> ultimosTreinos = realizados.stream()
+                .limit(7)
                 .map(treinoMapper::toOutputDto)
                 .toList();
 
-//        String contexto = atletaOutputDto.diaPreferidoLongo() + " " + atletaOutputDto.diaPreferidoLongo() + " " + atletaOutputDto.objetivo();
-
-//        List<Float> vetor = embeddingService.gerarEmbedding(contexto).stream().toArray();
-
+        // MetaDados
         var meta = PlanoMetaDados.builder()
                 .atleta(atleta)
                 .diaPreferidoLongo(atleta.getDiaPreferidoLongo())
                 .dataCriacao(LocalDateTime.now())
-//                .embedding(vetor.stream())
                 .build();
 
         PlanoMetaDados metaDados = planoMetadadosRepository.save(meta);
 
+        // IA
         var jsonPlano = iaService.gerarPlano(atletaMapper.toOutputDto(atleta), ultimosTreinos);
+        PlanoSemanal plano = planoSemanalMapper.toEntity(jsonPlano);
 
-        PlanoSemanal entity = planoSemanalMapper.toEntity(jsonPlano);
+        planoSemanalMapper.linkPlanoSemanal(plano);
+        plano.setAtleta(atleta);
+        plano.setPlanoMetaDados(metaDados);
+        plano.setSemanaInicio(dataInicio);
+        plano.setSemanaFim(dataInicio.plusDays(6));
 
-        planoSemanalMapper.linkPlanoSemanal(entity);
+        metaDados.setPlanoSemanal(plano);
 
-        entity.setAtleta(atleta);
-        entity.setPlanoMetaDados(metaDados);
-
-        metaDados.setPlanoSemanal(entity);
-
-        PlanoSemanal planoSemanal = planoSemanalRepository.save(entity);
-
-        return planoSemanal;
-
+        return planoSemanalRepository.save(plano);
     }
+
 }
 

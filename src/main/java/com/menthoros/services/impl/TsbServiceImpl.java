@@ -19,9 +19,11 @@ public class TsbServiceImpl {
     private final PlanoMetadadosRepository planoMetaDadosRepository;
 
     @Transactional
-    public void atualizarTsb(UUID atletaId) {
+    public void atualizarTsb(UUID atletaId, UUID planoSemanalId) {
         // 1 - Obter histórico de treinos ordenado por data
         List<TreinoRealizado> treinos = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoAsc(atletaId);
+
+        double volume = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(planoSemanalId);
 
         double atl = 0.0;
         double ctl = 0.0;
@@ -43,6 +45,7 @@ public class TsbServiceImpl {
         metaDados.setAtl(round(atl));
         metaDados.setCtl(round(ctl));
         metaDados.setTsb(round(tsb));
+        metaDados.setVolumeSemanalAnterior(round(volume));
 
         planoMetaDadosRepository.save(metaDados);
     }
