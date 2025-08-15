@@ -1,6 +1,7 @@
 package com.menthoros.entity;
 
 import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.NivelExperiencia;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -26,8 +27,18 @@ public class Atleta {
     @Column(nullable = false)
     private int idade;
 
+    @Column(name = "peso_kg")
+    private double pesoKg;
+
+    @Column(name = "altura_cm")
+    private double alturaCm;
+
     @Column(nullable = false)
     private String objetivo;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "nivel_experiencia", nullable = false)
+    private NivelExperiencia nivelExperiencia;
 
     @ElementCollection(fetch = FetchType.EAGER)
     @Enumerated(EnumType.STRING)
@@ -38,6 +49,12 @@ public class Atleta {
     @Enumerated(EnumType.STRING)
     @Column(name = "dia_preferido_longo")
     private DiaSemana diaPreferidoLongo;
+
+    @Column(name = "tem_lesao")
+    private Boolean temLesao;
+
+    @Column(name = "descricao_lesao")
+    private String descricaoLesao;
 
     // Histórico de treinos realizados
     @OneToMany(mappedBy = "atleta", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)

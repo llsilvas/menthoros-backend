@@ -10,6 +10,6 @@ public record ProvaOutputDto(
         UUID id,
         String nome,
         LocalDate data,
-        String distancia,
+        Double distancia,
         String objetivo
 ) {}

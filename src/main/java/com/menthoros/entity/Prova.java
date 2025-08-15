@@ -29,7 +29,7 @@ public class Prova {
     private LocalDate dataProva;
 
     @Column(nullable = false)
-    private String distanciaKm;
+    private Double distanciaKm;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "tipo_prova", nullable = false)
