@@ -3,17 +3,17 @@ package com.menthoros.services.impl;
 import com.menthoros.dto.input.TreinoRealizadoInputDto;
 import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
-import com.menthoros.entity.Atleta;
-import com.menthoros.entity.PlanoSemanal;
-import com.menthoros.entity.TreinoPlanejado;
-import com.menthoros.entity.TreinoRealizado;
+import com.menthoros.entity.*;
 import com.menthoros.enums.PlanoStatus;
 import com.menthoros.enums.StatusTreino;
+import com.menthoros.exception.DomainNotFoundException;
+import com.menthoros.exception.DomainRuleViolationException;
 import com.menthoros.mapper.PlanoSemanalMapper;
 import com.menthoros.mapper.TreinoMapper;
 import com.menthoros.repository.*;
 import com.menthoros.services.TreinoService;
 import jakarta.transaction.Transactional;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
@@ -24,6 +24,7 @@ import java.util.UUID;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class TreinoServiceImpl implements TreinoService {
 
     private final TreinoMapper treinoMapper;
@@ -35,42 +36,80 @@ public class TreinoServiceImpl implements TreinoService {
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final TsbServiceImpl tsbService;
 
-    public TreinoServiceImpl(TreinoMapper treinoMapper, TreinoRealizadoRepository treinoRealizadoRepository, AtletaRepository atletaRepository, PlanoSemanalRepository planoSemanalRepository, PlanoSemanalMapper planoSemanalMapper, PlanoMetadadosRepository planoMetaDadosRepository, TreinoPlanejadoRepository treinoPlanejadoRepository, TsbServiceImpl tsbService) {
-        this.treinoMapper = treinoMapper;
-        this.treinoRealizadoRepository = treinoRealizadoRepository;
-        this.atletaRepository = atletaRepository;
-        this.planoSemanalRepository = planoSemanalRepository;
-        this.planoSemanalMapper = planoSemanalMapper;
-        this.planoMetaDadosRepository = planoMetaDadosRepository;
-        this.treinoPlanejadoRepository = treinoPlanejadoRepository;
-        this.tsbService = tsbService;
-    }
-
     @Transactional
     @Override
-    public TreinoRealizado addTreino(TreinoRealizadoInputDto treinoRealizadoInputDto) {
-
-        // 1) Deduplicação por fonteDados + externalId
-        Optional<TreinoRealizado> existente = buscarTreinoDuplicado(treinoRealizadoInputDto);
-
-        if (existente.isPresent()) {
-            log.warn("Treino já registrado: fonte={}, externalId={}", treinoRealizadoInputDto.fonteDados(), treinoRealizadoInputDto.externalId());
-            return existente.get(); // ou lance uma exceção se preferir forçar unicidade
+    public TreinoRealizado addTreino(TreinoRealizadoInputDto input) {
+        // 1) Duplicidade
+        Optional<TreinoRealizado> duplicado = buscarTreinoDuplicado(input);
+        if (duplicado.isPresent()) {
+            log.warn("Treino já registrado: fonte={}, externalId={}", input.fonteDados(), input.externalId());
+            return duplicado.get(); //
         }
 
-        Atleta atleta = atletaRepository.findById(treinoRealizadoInputDto.atletaId())
-                    .orElseThrow(() -> new IllegalArgumentException("Atleta não encontrado"));
+        // 2) Carrega atleta
+        Atleta atleta = atletaRepository.findById(input.atletaId())
+                .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
-        // 3) Planejado (se veio id)
-        TreinoPlanejado planejado = null;
-        if (treinoRealizadoInputDto.treinoPlanejadoId() != null) {
-            planejado = treinoPlanejadoRepository.findById(treinoRealizadoInputDto.treinoPlanejadoId())
-                    .orElseThrow(() -> new IllegalArgumentException("Treino planejado não encontrado"));
-            if (!planejado.getAtleta().getId().equals(atleta.getId())) {
-                throw new IllegalStateException("Treino planejado não pertence ao atleta.");
-            }
+        // 3) Resolve planejado (id explícito OU conciliação automática)
+        TreinoPlanejado planejado = resolveTreinoPlanejado(input, atleta).orElse(null);
+
+        // 4) Monta realizado
+        TreinoRealizado realizado = montarTreinoRealizado(input, atleta, planejado);
+
+        // 5) Resolve vínculo de plano semanal
+        PlanoSemanal semanal = resolverPlanoSemanal(planejado, input, atleta).orElse(null);
+        if (semanal != null) {
+            realizado.setPlanoSemanal(semanal);
         }
 
+        // 6) Persiste realizado
+        TreinoRealizado salvo = treinoRealizadoRepository.save(realizado);
+
+        // 7) Pós-processamentos isolados
+        finalizarTreinoPlanejadoSeAplicavel(planejado);
+        atualizarPlanoSemanalSeAplicavel(semanal);
+        atualizarTsbSeNecessario(atleta);
+        atualizarMetadadosSeAplicavel(semanal);
+
+        return salvo;
+    }
+
+    private void atualizarMetadadosSeAplicavel(PlanoSemanal semanal) {
+        if (semanal == null) return;
+        atualizarMetadados(semanal.getId());
+    }
+
+    private void finalizarTreinoPlanejadoSeAplicavel(TreinoPlanejado planejado) {
+        if (planejado == null) return;
+        planejado.setStatusTreino(StatusTreino.REALIZADO);
+        treinoPlanejadoRepository.save(planejado);
+    }
+
+    private void atualizarPlanoSemanalSeAplicavel(PlanoSemanal semanal) {
+        if (semanal == null) return;
+        double volume = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(semanal.getId());
+        Hibernate.initialize(semanal);
+        semanal.setVolumeRealizadoKm(volume);
+        atualizarStatusDoPlano(semanal);
+    }
+
+    private void atualizarTsbSeNecessario(Atleta atleta) {
+        List<TreinoRealizado> treinos = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoAsc(atleta.getId());
+        if (treinos.size() > 7) {
+            tsbService.atualizarTsb(atleta.getId());
+        }
+    }
+
+    private void validarCompatibilidadeDeTipo(TreinoRealizadoInputDto input, TreinoPlanejado planejado) {
+        if (planejado == null) return;
+        if (!planejado.getTipoTreino().equals(input.tipoTreino())) {
+            log.warn("Tipo do treino realizado ({}) difere do planejado ({}) para treinoPlanejadoId={}",
+                    input.tipoTreino(), planejado.getTipoTreino(), planejado.getId());
+            throw new DomainRuleViolationException("Tipo de treino incompatível com o planejado"); // evita salvar estado inválido
+        }
+    }
+
+    private TreinoRealizado montarTreinoRealizado(TreinoRealizadoInputDto treinoRealizadoInputDto, Atleta atleta, TreinoPlanejado planejado) {
         // 4) Monta entidade realizado
         TreinoRealizado realizado = treinoMapper.toEntity(treinoRealizadoInputDto);
         realizado.setAtleta(atleta);
@@ -79,63 +118,38 @@ public class TreinoServiceImpl implements TreinoService {
         realizado.setFonteDados(treinoRealizadoInputDto.fonteDados());
         realizado.setExternalId(treinoRealizadoInputDto.externalId());
         realizado.setElevacaoTotalMetros(treinoRealizadoInputDto.elevacaoTotalMetros());
+        return realizado;
+    }
 
-        // 5) Conciliação automática se não veio planejado
-        if (planejado == null && treinoRealizadoInputDto.dataTreino() != null) {
-            planejado = treinoPlanejadoRepository
-                    .matchByAtletaAndDateAndType(
-                            atleta.getId(),
-                            treinoRealizadoInputDto.dataTreino(),
-                            treinoRealizadoInputDto.tipoTreino()
-                    )
-                    .orElse(null);
-            if (planejado != null) {
-                realizado.setTreinoPlanejado(planejado);
-            }
-
-            if (planejado != null && !planejado.getTipoTreino().equals(treinoRealizadoInputDto.tipoTreino())) {
-                log.warn("Tipo do treino realizado ({}) difere do planejado ({}) para treinoPlanejadoId={}",
-                        treinoRealizadoInputDto.tipoTreino(), planejado.getTipoTreino(), planejado.getId());
-
-                // Você pode lançar exceção ou apenas registrar e seguir
-                 throw new IllegalStateException("Tipo de treino incompatível com o planejado");
-            }
-        }
-
-        // 6) Vincula PlanoSemanal
-        PlanoSemanal semanal = null;
+    private Optional<PlanoSemanal> resolverPlanoSemanal(TreinoPlanejado planejado, TreinoRealizadoInputDto input, Atleta atleta) {
         if (planejado != null && planejado.getPlanoSemanal() != null) {
-            semanal = planejado.getPlanoSemanal();
-        } else if (treinoRealizadoInputDto.dataTreino() != null) {
-            semanal = planoSemanalRepository
-                    .findPlanoSemanalByAtletaIdAndTreinosPlanejadosDataTreino(atleta.getId(), treinoRealizadoInputDto.dataTreino())
-                    .orElse(null);
+            return Optional.of(planejado.getPlanoSemanal());
         }
-        if (semanal != null) {
-            realizado.setPlanoSemanal(semanal);
+        if (input.dataTreino() == null) {
+            return Optional.empty();
         }
+        return planoSemanalRepository
+                .findPlanoSemanalByAtletaIdAndTreinosPlanejadosDataTreino(atleta.getId(), input.dataTreino());
+    }
 
-        // 7) Persiste realizado
-        TreinoRealizado salvo = treinoRealizadoRepository.save(realizado);
-
-        // 8) Marca planejado como concluído (se houver)
-        if (planejado != null) {
-            planejado.setStatusTreino(StatusTreino.REALIZADO); // ou CONCLUIDO, conforme seu enum
-            treinoPlanejadoRepository.save(planejado);
+    private Optional<TreinoPlanejado> resolveTreinoPlanejado(TreinoRealizadoInputDto input, Atleta atleta) {
+        if (input.treinoPlanejadoId() != null) {
+            TreinoPlanejado p = treinoPlanejadoRepository.findById(input.treinoPlanejadoId())
+                    .orElseThrow(() -> new DomainNotFoundException("Treino planejado não encontrado"));
+            if (!p.getAtleta().getId().equals(atleta.getId())) {
+                throw new DomainRuleViolationException("Treino planejado não pertence ao atleta.");
+            }
+            validarCompatibilidadeDeTipo(input, p);
+            return Optional.of(p);
         }
-
-        // 9) Atualiza volume da semana (somatório dos realizados)
-        if (semanal != null) {
-            double volume = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(semanal.getId());
-            Hibernate.initialize(semanal);
-            semanal.setVolumeRealizadoKm(volume);
-            atualizarStatusDoPlano(semanal);
-            planoSemanalRepository.save(semanal);
+        // Conciliação automática
+        if (input.dataTreino() == null) {
+            return Optional.empty();
         }
-
-        tsbService.atualizarTsb(atleta.getId(), semanal.getId());
-
-        return salvo;
+        Optional<TreinoPlanejado> match = treinoPlanejadoRepository
+                .matchByAtletaAndDateAndType(atleta.getId(), input.dataTreino(), input.tipoTreino());
+        match.ifPresent(p -> validarCompatibilidadeDeTipo(input, p));
+        return match;
     }
 
     private void atualizarStatusDoPlano(PlanoSemanal plano) {
@@ -155,8 +169,18 @@ public class TreinoServiceImpl implements TreinoService {
         } else {
             plano.setStatus(PlanoStatus.EM_ANDAMENTO);
         }
-
         planoSemanalRepository.save(plano);
+    }
+
+    private void atualizarMetadados(UUID planoSemanalId){
+
+        Optional<PlanoMetaDados> planoMetaDados = planoMetaDadosRepository.findByPlanoSemanalId(planoSemanalId);
+        double distancia = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(planoSemanalId);
+
+        planoMetaDados.ifPresent(planoMetaDado -> {
+            planoMetaDado.setVolumeSemanalAnterior(distancia);
+            planoMetaDadosRepository.save(planoMetaDado);
+        });
     }
 
 
