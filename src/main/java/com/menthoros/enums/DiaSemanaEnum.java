@@ -1,11 +1,12 @@
 package com.menthoros.enums;
 
-public enum DiaSemana {
+public enum DiaSemanaEnum {
+
+    DOMINGO,
     SEGUNDA,
     TERCA,
     QUARTA,
     QUINTA,
     SEXTA,
-    SABADO,
-    DOMINGO
+    SABADO
 }

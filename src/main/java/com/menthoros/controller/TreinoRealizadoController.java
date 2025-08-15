@@ -12,10 +12,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import javax.validation.Valid;
+import jakarta.validation.Valid;
 
 @RestController
-@RequestMapping("/api/treinos")
+@RequestMapping("/treinos")
 public class TreinoRealizadoController {
 
     private final TreinoService treinoService;
@@ -27,10 +27,8 @@ public class TreinoRealizadoController {
     }
 
     @PostMapping
-    public ResponseEntity<TreinoRealizadoOutputDto> createTreinos(@Valid @RequestBody TreinoRealizadoInputDto treinoRealizadoInputDto) {
-
+    public ResponseEntity<TreinoRealizadoOutputDto> criarTreino(@Valid @RequestBody TreinoRealizadoInputDto treinoRealizadoInputDto) {
         TreinoRealizado treinoRealizado = treinoService.addTreino(treinoRealizadoInputDto);
         return ResponseEntity.status(HttpStatus.CREATED).body(treinoMapper.toOutputDto(treinoRealizado));
-
     }
 }

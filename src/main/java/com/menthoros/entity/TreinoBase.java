@@ -1,6 +1,6 @@
 package com.menthoros.entity;
 
-import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.DiaSemanaEnum;
 import jakarta.persistence.Column;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -15,7 +15,7 @@ public abstract class TreinoBase {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "dia_semana", nullable = false)
-    protected DiaSemana diaSemana;
+    protected DiaSemanaEnum diaSemana;
 
     @Column(name = "tipo_treino", nullable = false)
     protected String tipoTreino;

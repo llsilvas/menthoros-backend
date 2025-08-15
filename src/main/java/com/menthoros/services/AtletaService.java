@@ -10,9 +10,10 @@ import java.util.UUID;
 public interface AtletaService {
 
     Atleta createAtleta(AtletaInputDto atletaInputDto);
-    Atleta updateAtleta(UUID id, AtletaInputDto atletaInputDto);
+    AtletaOutputDto updateAtleta(UUID id, AtletaInputDto atletaInputDto);
     void deleteAtleta(UUID id);
     AtletaOutputDto getAtletaById(UUID id);
     void atualizarEmbedding(UUID atletaId, List<Float> vetor);
 
+    List<AtletaOutputDto> getAllAtletas();
 }

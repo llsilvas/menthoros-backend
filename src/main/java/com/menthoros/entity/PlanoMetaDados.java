@@ -1,6 +1,6 @@
 package com.menthoros.entity;
 
-import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.DiaSemanaEnum;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -36,7 +36,7 @@ public class PlanoMetaDados {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "dia_preferido_longo", nullable = false)
-    private DiaSemana diaPreferidoLongo;
+    private DiaSemanaEnum diaPreferidoLongo;
 
     @OneToOne(mappedBy = "planoMetaDados", fetch = FetchType.LAZY)
     private PlanoSemanal planoSemanal;

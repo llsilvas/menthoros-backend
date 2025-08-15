@@ -5,5 +5,5 @@ public enum PlanoStatus {
     PLANEJADO,
     INICIADO,
     EM_ANDAMENTO,
-    CONCLUIDO
+    ATIVO, CONCLUIDO
 }

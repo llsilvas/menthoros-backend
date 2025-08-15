@@ -1,5 +1,6 @@
 package com.menthoros.entity;
 
+import com.menthoros.enums.DiaSemanaEnum;
 import com.menthoros.enums.StatusTreino;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -7,7 +8,10 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -45,10 +49,19 @@ public class TreinoPlanejado extends TreinoBase{
     @Column
     private StatusTreino statusTreino;
 
+    @OneToMany(mappedBy = "treinoPlanejado", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("ordem ASC")
+    private List<EtapaTreino> etapas;
+
+
     @PrePersist
     private void prePersist(){
         if(this.atleta == null && this.planoSemanal != null){
             this.atleta = this.planoSemanal.getAtleta();
         }
+    }
+
+    public LocalDate getDataTreino(LocalDate semanaInicio, DiaSemanaEnum diaSemana) {
+        return semanaInicio.with(TemporalAdjusters.nextOrSame(DayOfWeek.valueOf(diaSemana.name())));
     }
 }

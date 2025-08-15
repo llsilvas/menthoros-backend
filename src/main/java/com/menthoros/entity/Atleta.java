@@ -1,6 +1,7 @@
 package com.menthoros.entity;
 
-import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.AtletaStatus;
+import com.menthoros.enums.DiaSemanaEnum;
 import com.menthoros.enums.NivelExperiencia;
 import jakarta.persistence.*;
 import lombok.*;
@@ -40,21 +41,25 @@ public class Atleta {
     @Column(name = "nivel_experiencia", nullable = false)
     private NivelExperiencia nivelExperiencia;
 
-    @ElementCollection(fetch = FetchType.EAGER)
+    @ElementCollection(fetch = FetchType.LAZY)
     @Enumerated(EnumType.STRING)
     @CollectionTable(name = "tb_dias_disponiveis", joinColumns = @JoinColumn(name = "atleta_id"))
     @Column(name = "dia")
-    private List<DiaSemana> diasDisponiveis;
+    private List<DiaSemanaEnum> diasDisponiveis;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "dia_preferido_longo")
-    private DiaSemana diaPreferidoLongo;
+    private DiaSemanaEnum diaPreferidoLongo;
 
     @Column(name = "tem_lesao")
     private Boolean temLesao;
 
     @Column(name = "descricao_lesao")
     private String descricaoLesao;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "ativo")
+    private AtletaStatus ativo;
 
     // Histórico de treinos realizados
     @OneToMany(mappedBy = "atleta", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)

@@ -1,6 +1,6 @@
 package com.menthoros.dto.input;
 
-import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.DiaSemanaEnum;
 import com.menthoros.enums.FonteDados;
 import com.menthoros.enums.StatusTreino;
 
@@ -13,7 +13,7 @@ public record TreinoRealizadoInputDto(
         UUID treinoPlanejadoId,
         Integer cadenciaMedia,
         LocalDate dataTreino,
-        DiaSemana diaSemana,
+        DiaSemanaEnum diaSemana,
         String tipoTreino,
         Integer duracaoMin,
         Double distanciaKm,

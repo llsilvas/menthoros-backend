@@ -68,7 +68,7 @@ public class TreinoServiceImpl implements TreinoService {
         // 7) Pós-processamentos isolados
         finalizarTreinoPlanejadoSeAplicavel(planejado);
         atualizarPlanoSemanalSeAplicavel(semanal);
-        atualizarTsbSeNecessario(atleta);
+//        atualizarTsbSeNecessario(atleta);
         atualizarMetadadosSeAplicavel(semanal);
 
         return salvo;

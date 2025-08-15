@@ -5,12 +5,14 @@ import com.menthoros.entity.TreinoRealizado;
 import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.repository.TreinoRealizadoRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TsbServiceImpl {
@@ -19,11 +21,10 @@ public class TsbServiceImpl {
     private final PlanoMetadadosRepository planoMetaDadosRepository;
 
     @Transactional
-    public void atualizarTsb(UUID atletaId, UUID planoSemanalId) {
+    public void atualizarTsb(UUID atletaId) {
         // 1 - Obter histórico de treinos ordenado por data
-        List<TreinoRealizado> treinos = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoAsc(atletaId);
 
-        double volume = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(planoSemanalId);
+        List<TreinoRealizado> treinos = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoAsc(atletaId);
 
         double atl = 0.0;
         double ctl = 0.0;
@@ -45,7 +46,6 @@ public class TsbServiceImpl {
         metaDados.setAtl(round(atl));
         metaDados.setCtl(round(ctl));
         metaDados.setTsb(round(tsb));
-        metaDados.setVolumeSemanalAnterior(round(volume));
 
         planoMetaDadosRepository.save(metaDados);
     }

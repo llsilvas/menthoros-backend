@@ -1,8 +1,7 @@
 package com.menthoros.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.menthoros.entity.Prova;
-import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.DiaSemanaEnum;
 import com.menthoros.enums.NivelExperiencia;
 
 import java.util.List;
@@ -17,8 +16,8 @@ public record AtletaOutputDto(UUID id,
                               double alturaCm,
                               String objetivo,
                               NivelExperiencia nivelExperiencia,
-                              Set<DiaSemana> diasDisponiveis,
-                              DiaSemana diaPreferidoLongo,
+                              Set<DiaSemanaEnum> diasDisponiveis,
+                              DiaSemanaEnum diaPreferidoLongo,
                               boolean temLesao,
                               String descricaoLesao,
                               List<ProvaOutputDto> provas) {

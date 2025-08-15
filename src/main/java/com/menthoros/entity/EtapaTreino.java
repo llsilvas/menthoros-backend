@@ -1,0 +1,47 @@
+package com.menthoros.entity;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.util.UUID;
+
+@Entity
+@Table(name = "tb_etapa_treino")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class EtapaTreino {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(length = 36, updatable = false, nullable = false)
+    private UUID id;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "treino_planejado_id", nullable = false)
+    private TreinoPlanejado treinoPlanejado;
+
+    @Column(name = "ordem", nullable = false)
+    private Integer ordem;
+
+    @Column(name = "tipo_etapa", nullable = false)
+    private String tipoEtapa;
+
+    @Column(name = "descricao_etapa", length = 500)
+    private String descricaoEtapa;
+
+    @Column(name = "duracao_min")
+    private Integer duracaoMin;
+
+    @Column(name = "distancia_km")
+    private Double distanciaKm;
+
+    @Column(name = "fc_alvo_etapa")
+    private String fcAlvoEtapa;
+
+    @Column(name = "repeticoes")
+    private Integer repeticoes; // Se a etapa deve ser repetida (ex: 3x)
+
+}
