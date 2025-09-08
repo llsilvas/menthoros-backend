@@ -1,0 +1,143 @@
+version: '3.8'
+
+services:
+  # Serviço base da aplicação
+  app-base: &app-base
+    environment: &app-env
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/menthoros
+      - SPRING_DATASOURCE_USERNAME=menthoros
+      - SPRING_DATASOURCE_PASSWORD=menthoros123
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_AI_OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - menthoros-network
+
+  # Desenvolvimento
+  app-dev:
+    <<: *app-base
+    profiles: ["dev"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: menthoros-app-dev
+    ports:
+      - "8099:8099"
+      - "5005:5005"   # Debug
+      - "35729:35729" # LiveReload
+    environment:
+      <<: *app-env
+      - SPRING_PROFILES_ACTIVE=dev
+      - SPRING_JPA_SHOW_SQL=true
+      - SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL=true
+    volumes:
+      - ./src:/app/src:ro
+      - maven_cache:/root/.m2
+
+  # Staging
+  app-staging:
+    <<: *app-base
+    profiles: ["staging"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.staging
+    container_name: menthoros-app-staging
+    ports:
+      - "8099:8099"
+    environment:
+      <<: *app-env
+      - SPRING_PROFILES_ACTIVE=staging
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+      - JAVA_OPTS=-XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0
+
+  # Produção
+  app-prod:
+    <<: *app-base
+    profiles: ["prod"]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prod
+    container_name: menthoros-app-prod
+    ports:
+      - "8099:8099"
+    environment:
+      <<: *app-env
+      - SPRING_PROFILES_ACTIVE=prod
+      - SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+      - SPRING_JPA_SHOW_SQL=false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8099/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Database
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: menthoros-postgres
+    environment:
+      POSTGRES_DB: menthoros
+      POSTGRES_USER: menthoros
+      POSTGRES_PASSWORD: menthoros123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/main/resources/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U menthoros -d menthoros"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - menthoros-network
+
+  # Redis
+  redis:
+    image: redis:7.2-alpine
+    container_name: menthoros-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - menthoros-network
+
+  # Nginx (apenas para produção)
+  nginx:
+    image: nginx:alpine
+    container_name: menthoros-nginx
+    profiles: ["prod"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app-prod
+    restart: unless-stopped
+    networks:
+      - menthoros-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  maven_cache:
+
+networks:
+  menthoros-network:
+    driver: bridge

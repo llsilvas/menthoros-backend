@@ -1,0 +1,26 @@
+# Dockerfile para desenvolvimento
+FROM maven:3.9.5-eclipse-temurin-21
+
+WORKDIR /app
+
+# Ferramentas de desenvolvimento
+RUN apt-get update && apt-get install -y \
+    wget curl vim && \
+    rm -rf /var/lib/apt/lists/*
+
+# Cache de dependências
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# Configurações para desenvolvimento
+ENV SPRING_PROFILES_ACTIVE=dev
+ENV SPRING_DEVTOOLS_RESTART_ENABLED=true
+ENV SPRING_DEVTOOLS_LIVERELOAD_ENABLED=true
+
+# Portas: app, debug, livereload
+EXPOSE 8099 5005 35729
+
+# Hot reload com debug
+CMD ["mvn", "spring-boot:run", \
+     "-Dspring-boot.run.profiles=dev", \
+     "-Dspring-boot.run.jvmArguments=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"]

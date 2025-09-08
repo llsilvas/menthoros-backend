@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  # Banco de dados PostgreSQL com extensão pgvector
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: menthoros-postgres
+    environment:
+      POSTGRES_DB: menthoros
+      POSTGRES_USER: menthoros
+      POSTGRES_PASSWORD: menthoros123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./src/main/resources/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U menthoros -d menthoros"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - menthoros-network
+
+  # Redis para cache (opcional, mas recomendado para produção)
+  redis:
+    image: redis:7.2-alpine
+    container_name: menthoros-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - menthoros-network
+
+  # Aplicação Spring Boot
+  menthoros-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: menthoros-app
+    environment:
+      # Database
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/menthoros
+      SPRING_DATASOURCE_USERNAME: menthoros
+      SPRING_DATASOURCE_PASSWORD: menthoros123
+      
+      # JPA/Hibernate
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_JPA_SHOW_SQL: false
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: false
+      
+      # Flyway
+      SPRING_FLYWAY_ENABLED: true
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: true
+      
+      # Cache (Redis)
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_CACHE_TYPE: redis
+      
+      # AI Service
+      SPRING_AI_OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SPRING_AI_OPENAI_CHAT_MODEL: gpt-4o-mini
+      SPRING_AI_OPENAI_EMBEDDING_MODEL: text-embedding-3-small
+      
+      # Profile
+      SPRING_PROFILES_ACTIVE: docker
+      
+      # JVM Settings
+      JAVA_OPTS: >-
+        -XX:+UseContainerSupport
+        -XX:MaxRAMPercentage=75.0
+        -XX:+UseG1GC
+        -XX:+UseStringDeduplication
+        -Djava.security.egd=file:/dev/./urandom
+        -Dserver.port=8099
+    ports:
+      - "8099:8099"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8099/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - menthoros-network
+
+  # Nginx para load balancing (opcional para produção)
+  nginx:
+    image: nginx:alpine
+    container_name: menthoros-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - menthoros-app
+    restart: unless-stopped
+    networks:
+      - menthoros-network
+    profiles:
+      - production
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  menthoros-network:
+    driver: bridge

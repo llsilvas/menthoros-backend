@@ -1,0 +1,64 @@
+version: '3.8'
+
+# Override para desenvolvimento - usar com: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  menthoros-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: development
+    environment:
+      # Debug mode
+      SPRING_PROFILES_ACTIVE: dev,docker
+      SPRING_JPA_SHOW_SQL: true
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: true
+      LOGGING_LEVEL_COM_MENTHOROS: DEBUG
+      LOGGING_LEVEL_SQL: DEBUG
+      
+      # Hot reload
+      SPRING_DEVTOOLS_RESTART_ENABLED: true
+      SPRING_DEVTOOLS_LIVERELOAD_ENABLED: true
+      
+      # JVM Debug
+      JAVA_OPTS: >-
+        -XX:+UseContainerSupport
+        -XX:MaxRAMPercentage=50.0
+        -Djava.security.egd=file:/dev/./urandom
+        -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005
+    ports:
+      - "8080:8080"
+      - "5005:5005"  # Debug port
+      - "35729:35729" # LiveReload port
+    volumes:
+      # Mount source code para hot reload
+      - ./src:/app/src:ro
+      - ./pom.xml:/app/pom.xml:ro
+    restart: "no" # Não reiniciar automaticamente em dev
+
+  postgres:
+    environment:
+      # Configurações mais permissivas para desenvolvimento
+      POSTGRES_DB: menthoros_dev
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev123
+    ports:
+      - "5433:5432" # Porta diferente para não conflitar
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./src/main/resources/db/dev-data.sql:/docker-entrypoint-initdb.d/dev-data.sql
+
+  # Adminer para gerenciar banco de dados
+  adminer:
+    image: adminer
+    container_name: menthoros-adminer
+    restart: always
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgres
+    networks:
+      - menthoros-network
+
+volumes:
+  postgres_dev_data:

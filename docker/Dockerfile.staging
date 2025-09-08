@@ -1,0 +1,41 @@
+# Dockerfile para staging (híbrido)
+FROM maven:3.9.5-eclipse-temurin-21 AS builder
+
+WORKDIR /app
+
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+COPY src ./src
+RUN mvn clean package -DskipTests -B
+
+RUN java -Djarmode=tools -jar target/*.jar extract --layers --launcher
+
+# Runtime com ferramentas de debug (mas otimizado)
+FROM eclipse-temurin:21-jre-jammy
+
+RUN apt-get update && apt-get install -y \
+    wget curl && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd -g 1001 spring && \
+    useradd -u 1001 -g spring spring
+
+WORKDIR /app
+
+COPY --from=builder app/dependencies/ ./
+COPY --from=builder app/spring-boot-loader/ ./
+COPY --from=builder app/snapshot-dependencies/ ./
+COPY --from=builder app/application/ ./
+
+RUN chown -R spring:spring /app
+USER spring:spring
+
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0"
+ENV SPRING_PROFILES_ACTIVE=staging
+
+EXPOSE 8099
+
+HEALTHCHECK --interval=45s --timeout=5s --start-period=90s --retries=3 \
+    CMD curl -f http://localhost:8099/actuator/health || exit 1
+
+CMD ["sh", "-c", "java $JAVA_OPTS org.springframework.boot.loader.launch.JarLauncher"]
