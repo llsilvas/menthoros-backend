@@ -9,6 +9,7 @@ public class ChatClientConfig {
 
     @Bean
     public ChatClient chatClient(ChatClient.Builder builder) {
+        // entity() já usa structured output automaticamente
         return builder.build();
     }
 }

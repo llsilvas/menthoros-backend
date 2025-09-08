@@ -1,7 +1,7 @@
 package com.menthoros.entity;
 
-import com.menthoros.enums.DiaSemanaEnum;
-import com.menthoros.enums.StatusTreino;
+import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.TreinoExecucaoStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -46,8 +46,9 @@ public class TreinoPlanejado extends TreinoBase{
     @JoinColumn(name = "atleta_id", nullable = false)
     private Atleta atleta;
 
-    @Column
-    private StatusTreino statusTreino;
+    @Column(name = "status_treino")
+    @Enumerated(EnumType.STRING)
+    private TreinoExecucaoStatus statusTreino;
 
     @OneToMany(mappedBy = "treinoPlanejado", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @OrderBy("ordem ASC")
@@ -61,7 +62,7 @@ public class TreinoPlanejado extends TreinoBase{
         }
     }
 
-    public LocalDate getDataTreino(LocalDate semanaInicio, DiaSemanaEnum diaSemana) {
+    public LocalDate getDataTreino(LocalDate semanaInicio, DiaSemana diaSemana) {
         return semanaInicio.with(TemporalAdjusters.nextOrSame(DayOfWeek.valueOf(diaSemana.name())));
     }
 }

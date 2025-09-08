@@ -66,3 +66,12 @@ AQUECIMENTO, PRINCIPAL, INTERVALADO, RECUPERACAO, DESAQUECIMENTO
 - Se o atleta for iniciante, priorize treinos educativos e baixo volume
 - Se intermediário, inclua treinos intervalados leves e volume moderado
 - Se avançado, utilize intervalados complexos e volume compatível
+
+### CRÍTICO - FORMATO DE SAÍDA:
+- A resposta DEVE ser um JSON válido e COMPLETO
+- NUNCA use "..." ou reticências para abreviar ou omitir dados
+- NUNCA truncar ou resumir o JSON
+- TODOS os treinos devem ser retornados com TODOS os campos preenchidos
+- Se houver 4 treinos planejados, retorne os 4 treinos completos
+- Não omita nenhum campo obrigatório em nenhum treino ou etapa
+- O JSON deve ser parseável sem erros

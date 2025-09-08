@@ -71,9 +71,9 @@ public class PlanoTreinoPromptBuilder {
 
         return provas.stream()
                 .map(p -> String.format("- %s em %s (%.1f km)",
-                        p.nome(),
-                        p.data().toString(),
-                        p.distancia())).collect(Collectors.joining("\n"));
+                        p.nomeProva(),
+                        p.dataProva().toString(),
+                        p.distanciaKm().doubleValue())).collect(Collectors.joining("\n"));
 
     }
 

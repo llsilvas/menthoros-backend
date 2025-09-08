@@ -1,6 +1,5 @@
 # Dockerfile para desenvolvimento
-FROM maven:3.9.5-eclipse-temurin-21
-
+FROM maven:3.9.5-eclipse-temurin-21 AS builder
 WORKDIR /app
 
 # Ferramentas de desenvolvimento
@@ -8,14 +7,27 @@ RUN apt-get update && apt-get install -y \
     wget curl vim && \
     rm -rf /var/lib/apt/lists/*
 
-# Cache de dependências
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
+# Script para copiar arquivos de forma inteligente
+RUN echo '#!/bin/bash\n\
+if [ -d "maven" ]; then\n\
+  echo "Usando assembly JKube..."\n\
+  cp -r maven/* ./\n\
+else\n\
+  echo "Usando arquivos diretos..."\n\
+  # Arquivos já copiados pelo COPY abaixo\n\
+fi' > /copy-files.sh && chmod +x /copy-files.sh
+
+# Copiar todos os arquivos disponíveis
+COPY . ./
+
+# Executar script de cópia inteligente
+RUN /copy-files.sh
 
 # Configurações para desenvolvimento
 ENV SPRING_PROFILES_ACTIVE=dev
 ENV SPRING_DEVTOOLS_RESTART_ENABLED=true
 ENV SPRING_DEVTOOLS_LIVERELOAD_ENABLED=true
+ENV OPENAI_API_KEY=${OPENAI_API_KEY}
 
 # Portas: app, debug, livereload
 EXPOSE 8099 5005 35729

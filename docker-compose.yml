@@ -1,24 +1,29 @@
-version: '3.8'
-
 services:
   # Banco de dados PostgreSQL com extensão pgvector
   postgres:
-    image: pgvector/pgvector:pg16
-    container_name: menthoros-postgres
+    image: pgvector/pgvector:pg17
+    container_name: menthoros-db
     environment:
-      POSTGRES_DB: menthoros
+      POSTGRES_DB: menthoros-db
       POSTGRES_USER: menthoros
       POSTGRES_PASSWORD: menthoros123
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./src/main/resources/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - pg_data:/var/lib/postgresql/data
+      - ./src/main/resources/db/init/menthoros_schema.sql:/docker-entrypoint-initdb.d/init.sql
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=2GB
+      -c maintenance_work_mem=256MB
+      -c max_parallel_workers_per_gather=4
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U menthoros -d menthoros"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U menthoros -d menthoros-db"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - menthoros-network
 
@@ -43,13 +48,14 @@ services:
   menthoros-app:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: docker/Dockerfile.dev
     container_name: menthoros-app
     environment:
       # Database
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/menthoros
-      SPRING_DATASOURCE_USERNAME: menthoros
-      SPRING_DATASOURCE_PASSWORD: menthoros123
+      DB_HOST: postgres
+      DB_NAME: menthoros-db
+      DB_USER: menthoros
+      DB_PASSWORD: menthoros123
       
       # JPA/Hibernate
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
@@ -71,7 +77,7 @@ services:
       SPRING_AI_OPENAI_EMBEDDING_MODEL: text-embedding-3-small
       
       # Profile
-      SPRING_PROFILES_ACTIVE: docker
+      SPRING_PROFILES_ACTIVE: docker,dev
       
       # JVM Settings
       JAVA_OPTS: >-
@@ -117,7 +123,7 @@ services:
       - production
 
 volumes:
-  postgres_data:
+  pg_data:
     driver: local
   redis_data:
     driver: local

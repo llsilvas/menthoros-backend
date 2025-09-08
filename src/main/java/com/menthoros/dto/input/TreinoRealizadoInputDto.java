@@ -1,8 +1,9 @@
 package com.menthoros.dto.input;
 
-import com.menthoros.enums.DiaSemanaEnum;
+import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.FonteDados;
-import com.menthoros.enums.StatusTreino;
+import com.menthoros.enums.TipoTreino;
+import com.menthoros.enums.TreinoExecucaoStatus;
 
 import java.time.LocalDate;
 import java.util.UUID;
@@ -13,8 +14,8 @@ public record TreinoRealizadoInputDto(
         UUID treinoPlanejadoId,
         Integer cadenciaMedia,
         LocalDate dataTreino,
-        DiaSemanaEnum diaSemana,
-        String tipoTreino,
+        DiaSemana diaSemana,
+        TipoTreino tipoTreino,
         Integer duracaoMin,
         Double distanciaKm,
         Integer fcMedia,
@@ -23,7 +24,7 @@ public record TreinoRealizadoInputDto(
         Integer potenciaMedia,
         String comentario,
         FonteDados fonteDados,
-        StatusTreino status,
+        TreinoExecucaoStatus status,
         Integer percepcaoEsforco,
         String externalId,
         Integer tempoExecucaoSegundos,

@@ -1,7 +1,7 @@
 package com.menthoros.entity;
 
 import com.menthoros.enums.FonteDados;
-import com.menthoros.enums.StatusTreino;
+import com.menthoros.enums.TreinoExecucaoStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -58,7 +58,7 @@ public class TreinoRealizado extends TreinoBase{
     private FonteDados fonteDados;
 
     @Enumerated(EnumType.STRING)
-    private StatusTreino status;
+    private TreinoExecucaoStatus status;
 
     @Column(name = "percepcao_esforco")
     private Integer percepcaoEsforco; // Ex: escala de 1 a 10

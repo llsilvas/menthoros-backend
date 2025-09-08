@@ -1,9 +1,10 @@
 package com.menthoros.dto.input;
 
-import com.menthoros.enums.DiaSemanaEnum;
+import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.NivelExperiencia;
 import jakarta.validation.constraints.*;
 
+import java.math.BigDecimal;
 import java.util.Set;
 
 public record AtletaInputDto(
@@ -17,12 +18,12 @@ public record AtletaInputDto(
         
         @Positive(message = "Peso deve ser positivo")
         @DecimalMax(value = "300.0", message = "Peso máximo é 300kg")
-        double pesoKg,
-        
+        BigDecimal pesoKg,
+
         @Positive(message = "Altura deve ser positiva")
         @DecimalMin(value = "100.0", message = "Altura mínima é 100cm")
         @DecimalMax(value = "250.0", message = "Altura máxima é 250cm")
-        double alturaCm,
+        BigDecimal alturaCm,
         
         @NotBlank(message = "Objetivo é obrigatório")
         @Size(max = 500, message = "Objetivo deve ter no máximo 500 caracteres")
@@ -32,9 +33,9 @@ public record AtletaInputDto(
         NivelExperiencia nivelExperiencia,
         
         @NotEmpty(message = "Pelo menos um dia disponível deve ser informado")
-        Set<DiaSemanaEnum> diasDisponiveis,
+        Set<DiaSemana> diasDisponiveis,
         
-        DiaSemanaEnum diaPreferidoLongo,
+        DiaSemana diaPreferidoLongo,
         
         boolean temLesao,
         

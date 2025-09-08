@@ -1,10 +1,11 @@
 package com.menthoros.services.impl;
 
 import com.menthoros.dto.input.DadosPlanoDto;
+import com.menthoros.dto.llm.PlanoSemanalLlmDto;
 import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.*;
-import com.menthoros.enums.DiaSemanaEnum;
+import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.PlanoStatus;
 import com.menthoros.exception.LLMException;
 import com.menthoros.exception.ResourceNotFoundException;
@@ -57,16 +58,27 @@ public class PlanoServiceImpl implements PlanoService {
 
         Hibernate.initialize(dadosPlano.atleta().getProvas()); // evita LazyInitializationException
 
-        PlanoSemanalOutputDto planoDto = gerarPlanoSemanal(dadosPlano);
+        PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano);
 
         return persistirPlanoCompleto(planoDto, dadosPlano);
     }
 
-    private PlanoSemanal persistirPlanoCompleto(PlanoSemanalOutputDto planoDto, DadosPlanoDto dadosPlano) {
+    private PlanoSemanal persistirPlanoCompleto(PlanoSemanalLlmDto planoDto, DadosPlanoDto dadosPlano) {
+
+        Atleta atleta = atletaRepository.findById(dadosPlano.atleta().getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + dadosPlano.atleta().getId()));
+
+        PlanoMetaDados metaDados;
+
+        if(dadosPlano.metaDados().getId() != null){
+            metaDados = planoMetadadosRepository.save(dadosPlano.metaDados());
+        }else {
+            metaDados = dadosPlano.metaDados();
+        }
 
         PlanoSemanal plano = planoSemanalMapper.toEntity(planoDto);
-        plano.setAtleta(dadosPlano.atleta());
-        plano.setPlanoMetaDados(dadosPlano.metaDados());
+        plano.setAtleta(atleta);
+        plano.setPlanoMetaDados(metaDados);
         plano.setSemanaInicio(dadosPlano.dataInicio());
         plano.setSemanaFim(dadosPlano.dataInicio().plusDays(6));
 
@@ -79,7 +91,7 @@ public class PlanoServiceImpl implements PlanoService {
 
         plano.setTreinosPlanejados(treinosPlanejados);
 
-        dadosPlano.metaDados().setPlanoSemanal(plano);
+        metaDados.setPlanoSemanal(plano);
 
         return planoSemanalRepository.save(plano);
     }
@@ -108,6 +120,8 @@ public class PlanoServiceImpl implements PlanoService {
                 .map(treinoMapper::toOutputDto)
                 .toList();
 
+        //TODO: atualizar regra de data inicio
+
         LocalDate dataInicio = planoSemanalRepository
                 .findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)
                 .map(p -> p.getSemanaInicio().plusWeeks(1))
@@ -133,11 +147,11 @@ public class PlanoServiceImpl implements PlanoService {
                 });
     }
 
-    private PlanoSemanalOutputDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto) {
+    private PlanoSemanalLlmDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto) {
         try {
             log.info("Iniciando geração de plano para atleta: {}", dadosPlanoDto.atleta().getId());
 
-            PlanoSemanalOutputDto planoDto = iaService.gerarPlano(
+            PlanoSemanalLlmDto planoDto = iaService.gerarPlanoSemanal(
                     atletaMapper.toOutputDto(dadosPlanoDto.atleta()),
                     dadosPlanoDto.ultimosTreinos(),
                     dadosPlanoDto.planoAnterior());
@@ -156,7 +170,7 @@ public class PlanoServiceImpl implements PlanoService {
         return null;
     }
 
-    private void validaPlanoGerado(PlanoSemanalOutputDto planoDto) {
+    private void validaPlanoGerado(PlanoSemanalLlmDto planoDto) {
 
         if (planoDto == null) {
             throw new IllegalStateException("IA retornou plano nulo");
@@ -168,7 +182,7 @@ public class PlanoServiceImpl implements PlanoService {
 
     }
 
-    private LocalDate calcularDataTreino(LocalDate semanaInicio, DiaSemanaEnum diaSemana) {
+    private LocalDate calcularDataTreino(LocalDate semanaInicio, DiaSemana diaSemana) {
         DayOfWeek dayOfWeek = Utils.converterParaDayOfWeek(diaSemana);
 
         return semanaInicio.with(TemporalAdjusters.nextOrSame(dayOfWeek));

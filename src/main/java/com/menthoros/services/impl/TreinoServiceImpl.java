@@ -1,11 +1,12 @@
 package com.menthoros.services.impl;
 
 import com.menthoros.dto.input.TreinoRealizadoInputDto;
+import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
 import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.*;
 import com.menthoros.enums.PlanoStatus;
-import com.menthoros.enums.StatusTreino;
+import com.menthoros.enums.TreinoExecucaoStatus;
 import com.menthoros.exception.DomainNotFoundException;
 import com.menthoros.exception.DomainRuleViolationException;
 import com.menthoros.mapper.PlanoSemanalMapper;
@@ -13,6 +14,8 @@ import com.menthoros.mapper.TreinoMapper;
 import com.menthoros.repository.*;
 import com.menthoros.services.TreinoService;
 import jakarta.transaction.Transactional;
+
+import java.math.BigDecimal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
@@ -38,26 +41,26 @@ public class TreinoServiceImpl implements TreinoService {
 
     @Transactional
     @Override
-    public TreinoRealizado addTreino(TreinoRealizadoInputDto input) {
+    public TreinoRealizado addTreino(UUID treinoPlanejadoId, TreinoRealizadoInputDto treinoRealizado) {
         // 1) Duplicidade
-        Optional<TreinoRealizado> duplicado = buscarTreinoDuplicado(input);
+        Optional<TreinoRealizado> duplicado = buscarTreinoDuplicado(treinoRealizado);
         if (duplicado.isPresent()) {
-            log.warn("Treino já registrado: fonte={}, externalId={}", input.fonteDados(), input.externalId());
+            log.warn("Treino já registrado: fonte={}, externalId={}", treinoRealizado.fonteDados(), treinoRealizado.externalId());
             return duplicado.get(); //
         }
 
         // 2) Carrega atleta
-        Atleta atleta = atletaRepository.findById(input.atletaId())
+        Atleta atleta = atletaRepository.findById(treinoRealizado.atletaId())
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
         // 3) Resolve planejado (id explícito OU conciliação automática)
-        TreinoPlanejado planejado = resolveTreinoPlanejado(input, atleta).orElse(null);
+        TreinoPlanejado planejado = resolveTreinoPlanejado(treinoPlanejadoId, treinoRealizado).orElse(null);
 
         // 4) Monta realizado
-        TreinoRealizado realizado = montarTreinoRealizado(input, atleta, planejado);
+        TreinoRealizado realizado = montarTreinoRealizado(treinoRealizado, atleta, planejado);
 
         // 5) Resolve vínculo de plano semanal
-        PlanoSemanal semanal = resolverPlanoSemanal(planejado, input, atleta).orElse(null);
+        PlanoSemanal semanal = resolverPlanoSemanal(planejado, treinoRealizado, atleta).orElse(null);
         if (semanal != null) {
             realizado.setPlanoSemanal(semanal);
         }
@@ -81,7 +84,7 @@ public class TreinoServiceImpl implements TreinoService {
 
     private void finalizarTreinoPlanejadoSeAplicavel(TreinoPlanejado planejado) {
         if (planejado == null) return;
-        planejado.setStatusTreino(StatusTreino.REALIZADO);
+        planejado.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
         treinoPlanejadoRepository.save(planejado);
     }
 
@@ -89,7 +92,7 @@ public class TreinoServiceImpl implements TreinoService {
         if (semanal == null) return;
         double volume = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(semanal.getId());
         Hibernate.initialize(semanal);
-        semanal.setVolumeRealizadoKm(volume);
+        semanal.setVolumeRealizadoKm(BigDecimal.valueOf(volume));
         atualizarStatusDoPlano(semanal);
     }
 
@@ -114,7 +117,7 @@ public class TreinoServiceImpl implements TreinoService {
         TreinoRealizado realizado = treinoMapper.toEntity(treinoRealizadoInputDto);
         realizado.setAtleta(atleta);
         realizado.setTreinoPlanejado(planejado);
-        realizado.setStatus(StatusTreino.REALIZADO);
+        realizado.setStatus(TreinoExecucaoStatus.REALIZADO);
         realizado.setFonteDados(treinoRealizadoInputDto.fonteDados());
         realizado.setExternalId(treinoRealizadoInputDto.externalId());
         realizado.setElevacaoTotalMetros(treinoRealizadoInputDto.elevacaoTotalMetros());
@@ -132,24 +135,25 @@ public class TreinoServiceImpl implements TreinoService {
                 .findPlanoSemanalByAtletaIdAndTreinosPlanejadosDataTreino(atleta.getId(), input.dataTreino());
     }
 
-    private Optional<TreinoPlanejado> resolveTreinoPlanejado(TreinoRealizadoInputDto input, Atleta atleta) {
-        if (input.treinoPlanejadoId() != null) {
-            TreinoPlanejado p = treinoPlanejadoRepository.findById(input.treinoPlanejadoId())
+    private Optional<TreinoPlanejado> resolveTreinoPlanejado(UUID treinoPlanejadoId, TreinoRealizadoInputDto treinoRealizadoInputDto) {
+        if (treinoPlanejadoId != null) {
+            TreinoPlanejado planejado = treinoPlanejadoRepository.findById(treinoPlanejadoId)
                     .orElseThrow(() -> new DomainNotFoundException("Treino planejado não encontrado"));
-            if (!p.getAtleta().getId().equals(atleta.getId())) {
+            if (!planejado.getAtleta().getId().equals(treinoRealizadoInputDto.atletaId())) {
                 throw new DomainRuleViolationException("Treino planejado não pertence ao atleta.");
             }
-            validarCompatibilidadeDeTipo(input, p);
-            return Optional.of(p);
+//            validarCompatibilidadeDeTipo(input, p);
+            return Optional.of(planejado);
         }
         // Conciliação automática
-        if (input.dataTreino() == null) {
-            return Optional.empty();
-        }
-        Optional<TreinoPlanejado> match = treinoPlanejadoRepository
-                .matchByAtletaAndDateAndType(atleta.getId(), input.dataTreino(), input.tipoTreino());
-        match.ifPresent(p -> validarCompatibilidadeDeTipo(input, p));
-        return match;
+//        if (input.dataTreino() == null) {
+//            return Optional.empty();
+//        }
+//        Optional<TreinoPlanejado> match = treinoPlanejadoRepository
+//                .matchByAtletaAndDateAndType(atleta.getId(), input.dataTreino(), input.tipoTreino());
+//        match.ifPresent(p -> validarCompatibilidadeDeTipo(input, p));
+//        return match;
+        return Optional.empty();
     }
 
     private void atualizarStatusDoPlano(PlanoSemanal plano) {
@@ -157,7 +161,7 @@ public class TreinoServiceImpl implements TreinoService {
 
         long total = treinos.size();
         long realizados = treinos.stream()
-                .filter(t -> t.getStatusTreino() == StatusTreino.REALIZADO)
+                .filter(t -> t.getStatusTreino() == TreinoExecucaoStatus.REALIZADO)
                 .count();
 
         if (realizados == 0) {
@@ -178,7 +182,7 @@ public class TreinoServiceImpl implements TreinoService {
         double distancia = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(planoSemanalId);
 
         planoMetaDados.ifPresent(planoMetaDado -> {
-            planoMetaDado.setVolumeSemanalAnterior(distancia);
+            planoMetaDado.setVolumeSemanalAnterior(BigDecimal.valueOf(distancia));
             planoMetaDadosRepository.save(planoMetaDado);
         });
     }
@@ -208,10 +212,11 @@ public class TreinoServiceImpl implements TreinoService {
     }
 
     @Override
-    public void gravarTreino(PlanoSemanalOutputDto planoSemanalOutputDto) {
-        Atleta atleta = atletaRepository.findById(planoSemanalOutputDto.atletaId()).orElseThrow();
+    public void gravarTreino(UUID atletaId, TreinoPlanejadoLlmDto planoSemanalOutputDto) {
+        Atleta atleta = atletaRepository.findById(atletaId).orElseThrow();
 
         PlanoSemanal planoSemanal = planoSemanalMapper.toEntity(planoSemanalOutputDto);
+        planoSemanal.setAtleta(atleta);
 
         planoSemanalRepository.save(planoSemanal);
     }

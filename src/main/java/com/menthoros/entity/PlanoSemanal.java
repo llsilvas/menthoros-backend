@@ -4,6 +4,7 @@ import com.menthoros.enums.PlanoStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -39,20 +40,20 @@ public class PlanoSemanal {
     @Column(name = "semana_fim", nullable = false)
     private LocalDate semanaFim;
 
-    @Column(name = "volume_planejado_km", nullable = false)
-    private double volumePlanejadoKm;
+    @Column(name = "volume_planejado_km", nullable = false, precision = 10, scale = 3)
+    private BigDecimal volumePlanejadoKm;
 
-    @Column(name = "volume_realizado_km")
-    private Double volumeRealizadoKm; // pode começar como null e ser preenchido depois
+    @Column(name = "volume_realizado_km", precision = 10, scale = 3)
+    private BigDecimal volumeRealizadoKm; // pode começar como null e ser preenchido depois
 
-    @Column(name = "volume_alvo_km")
-    private Double volumeAlvoKm;
+    @Column(name = "volume_alvo_km", precision = 10, scale = 3)
+    private BigDecimal volumeAlvoKm;
 
-    @Column(name = "tsb_inicio")
-    private Double tsbInicio;
+    @Column(name = "tsb_inicio", precision = 10, scale = 3)
+    private BigDecimal tsbInicio;
 
-    @Column(name = "tsb_fim")
-    private Double tsbFim;
+    @Column(name = "tsb_fim", precision = 10, scale = 3)
+    private BigDecimal tsbFim;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)

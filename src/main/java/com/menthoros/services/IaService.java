@@ -1,5 +1,6 @@
 package com.menthoros.services;
 
+import com.menthoros.dto.llm.PlanoSemanalLlmDto;
 import com.menthoros.dto.output.AtletaOutputDto;
 import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.dto.output.PlanoTreinoOutputDto;
@@ -10,7 +11,7 @@ import java.util.Map;
 
 public interface IaService {
 
-   PlanoSemanalOutputDto gerarPlano(AtletaOutputDto atletaOutputDto, List<TreinoRealizadoOutputDto> treinoRealizadoOutputDtoList, PlanoSemanalOutputDto planoSemanalOutputDto);
+    PlanoSemanalLlmDto gerarPlanoSemanal(AtletaOutputDto atletaOutputDto, List<TreinoRealizadoOutputDto> treinoRealizadoOutputDtoList, PlanoSemanalOutputDto planoSemanalOutputDto);
 
     Map<Long, PlanoTreinoOutputDto> gerarPlanosEmLote(Map<AtletaOutputDto, List<TreinoRealizadoOutputDto>> atletaDtoListMap);
 }

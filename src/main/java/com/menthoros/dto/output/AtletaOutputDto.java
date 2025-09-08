@@ -1,9 +1,10 @@
 package com.menthoros.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.menthoros.enums.DiaSemanaEnum;
+import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.NivelExperiencia;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -12,12 +13,12 @@ import java.util.UUID;
 public record AtletaOutputDto(UUID id,
                               String nome,
                               int idade,
-                              double pesoKg,
-                              double alturaCm,
+                              BigDecimal pesoKg,
+                              BigDecimal alturaCm,
                               String objetivo,
                               NivelExperiencia nivelExperiencia,
-                              Set<DiaSemanaEnum> diasDisponiveis,
-                              DiaSemanaEnum diaPreferidoLongo,
+                              Set<DiaSemana> diasDisponiveis,
+                              DiaSemana diaPreferidoLongo,
                               boolean temLesao,
                               String descricaoLesao,
                               List<ProvaOutputDto> provas) {

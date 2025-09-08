@@ -2,8 +2,11 @@ package com.menthoros.services.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.menthoros.dto.llm.PlanoSemanalLlmDto;
+import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
 import com.menthoros.dto.output.*;
 import com.menthoros.enums.TipoEtapa;
+import com.menthoros.enums.TipoTreino;
 import com.menthoros.exception.LLMException;
 import com.menthoros.services.IaService;
 import com.menthoros.services.prompt.PlanoTreinoPromptBuilder;
@@ -12,13 +15,13 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.retry.annotation.Backoff;
-import org.springframework.retry.annotation.Retryable;
+
+import java.math.BigDecimal;
+
 import org.springframework.stereotype.Component;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -28,7 +31,7 @@ import java.util.regex.Pattern;
 @Slf4j
 @Component
 @ConditionalOnProperty(value = "app.ia.service.strategy", havingValue = "enhanced", matchIfMissing = true)
-public class SpringAiEnhancedIaServiceImpl implements IaService {
+public class SpringAiEnhancedIaServiceImpl_old implements IaService {
 
     private final ChatClient chatClient;
     private final PlanoTreinoPromptBuilder promptBuilder;
@@ -46,9 +49,9 @@ public class SpringAiEnhancedIaServiceImpl implements IaService {
     @Value("${app.llm.timeout:30000}")
     private int timeoutMs;
 
-    public SpringAiEnhancedIaServiceImpl(ChatClient chatClient, 
-                                        PlanoTreinoPromptBuilder promptBuilder,
-                                        ObjectMapper objectMapper) {
+    public SpringAiEnhancedIaServiceImpl_old(ChatClient chatClient,
+                                             PlanoTreinoPromptBuilder promptBuilder,
+                                             ObjectMapper objectMapper) {
         this.chatClient = chatClient;
         this.promptBuilder = promptBuilder;
         this.objectMapper = objectMapper;
@@ -56,9 +59,9 @@ public class SpringAiEnhancedIaServiceImpl implements IaService {
 
     @Override
     @Cacheable(value = "ia-responses", key = "#atletaOutputDto.id + '_' + #treinoRealizadoOutputDtoList.size()")
-    public PlanoSemanalOutputDto gerarPlano(AtletaOutputDto atletaOutputDto, 
-                                           List<TreinoRealizadoOutputDto> treinoRealizadoOutputDtoList, 
-                                           PlanoSemanalOutputDto planoSemanalOutputDto) {
+    public PlanoSemanalLlmDto gerarPlanoSemanal(AtletaOutputDto atletaOutputDto,
+                                         List<TreinoRealizadoOutputDto> treinoRealizadoOutputDtoList,
+                                         PlanoSemanalOutputDto planoSemanalOutputDto) {
         
         log.info("Iniciando geração de plano para atleta: {} (ID: {})", 
                 atletaOutputDto.nome(), atletaOutputDto.id());
@@ -100,7 +103,7 @@ public class SpringAiEnhancedIaServiceImpl implements IaService {
             
             // 7. Validar e processar resposta
             log.info("Resposta bruta da IA para atleta {}: {}", atletaOutputDto.nome(), response);
-            PlanoSemanalOutputDto plano = parseAndValidateResponse(response);
+            PlanoSemanalLlmDto plano = parseAndValidateResponse(response);
             
             log.info("Plano gerado com sucesso para atleta {} - {} treinos", 
                     atletaOutputDto.nome(), plano.treinosPlanejados().size());
@@ -175,8 +178,8 @@ public class SpringAiEnhancedIaServiceImpl implements IaService {
                 atleta.id(),
                 sanitizeString(atleta.nome()),
                 Math.max(10, Math.min(100, atleta.idade())),
-                Math.max(30.0, Math.min(300.0, atleta.pesoKg())),
-                Math.max(100.0, Math.min(250.0, atleta.alturaCm())),
+                BigDecimal.valueOf(Math.max(30.0, Math.min(300.0, atleta.pesoKg().doubleValue()))),
+                BigDecimal.valueOf(Math.max(100.0, Math.min(250.0, atleta.alturaCm().doubleValue()))),
                 sanitizeString(atleta.objetivo()),
                 atleta.nivelExperiencia(),
                 atleta.diasDisponiveis(),
@@ -206,10 +209,10 @@ public class SpringAiEnhancedIaServiceImpl implements IaService {
         return text.substring(0, maxLength) + "...";
     }
     
-    private PlanoSemanalOutputDto parseAndValidateResponse(String content) {
+    private PlanoSemanalLlmDto parseAndValidateResponse(String content) {
         try {
             String cleanContent = cleanLLMResponse(content);
-            PlanoSemanalOutputDto plano = objectMapper.readValue(cleanContent, PlanoSemanalOutputDto.class);
+            PlanoSemanalLlmDto plano = objectMapper.readValue(cleanContent, PlanoSemanalLlmDto.class);
             
             // Validação estrutural - se não tem treinos, vai para fallback
             if (plano.treinosPlanejados() == null || plano.treinosPlanejados().isEmpty()) {
@@ -320,7 +323,7 @@ public class SpringAiEnhancedIaServiceImpl implements IaService {
         }
     }
     
-    private void validatePlanSafety(PlanoSemanalOutputDto plano) {
+    private void validatePlanSafety(PlanoSemanalLlmDto plano) {
         // Validar volumes seguros (volumePlanejadoKm é double primitivo, não pode ser null)
         if (plano.volumePlanejadoKm() > 200.0) {
             log.warn("Volume semanal muito alto detectado: {} km", plano.volumePlanejadoKm());
@@ -329,9 +332,9 @@ public class SpringAiEnhancedIaServiceImpl implements IaService {
         // Validar distribuição de treinos
         if (plano.treinosPlanejados() != null) {
             long treinosIntensos = plano.treinosPlanejados().stream()
-                    .filter(t -> t.tipoTreino() != null && 
-                               (t.tipoTreino().toString().contains("INTERVALADO") || 
-                                t.tipoTreino().toString().contains("LONGO")))
+                    .filter(t -> t.tipoTreino() != null &&
+                               (t.tipoTreino() == TipoTreino.INTERVALADO ||
+                                t.tipoTreino() == TipoTreino.LONGO))
                     .count();
                     
             if (treinosIntensos > 3) {
@@ -340,21 +343,21 @@ public class SpringAiEnhancedIaServiceImpl implements IaService {
         }
     }
     
-    private PlanoSemanalOutputDto generateFallbackPlan(AtletaOutputDto atleta, List<TreinoRealizadoOutputDto> treinos) {
+    private PlanoSemanalLlmDto generateFallbackPlan(AtletaOutputDto atleta, List<TreinoRealizadoOutputDto> treinos) {
         log.info("Gerando plano de fallback para atleta {}", atleta.nome());
         
         Double volumeConservador = determineConservativeVolume(atleta);
         
         // Agora PlanoSemanalOutputDto tem @Builder
-        return PlanoSemanalOutputDto.builder()
-                .atletaId(atleta.id())
-                .semanaInicio(LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)))
-                .semanaFim(LocalDate.now().with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY)))
+        return PlanoSemanalLlmDto.builder()
+//                .atletaId(atleta.id())
+//                .semanaInicio(LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)))
+//                .semanaFim(LocalDate.now().with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY)))
                 .volumePlanejadoKm(volumeConservador)
                 .volumeRealizadoKm(0.0)
                 .volumeAlvoKm(volumeConservador)
                 .status(com.menthoros.enums.PlanoStatus.ATIVO)
-                .observacoes("Plano de fallback gerado automaticamente devido à indisponibilidade do serviço de IA")
+//                .observacoes("Plano de fallback gerado automaticamente devido à indisponibilidade do serviço de IA")
                 .objetivoSemanal("Manter atividade física com volume conservador")
                 .treinosPlanejados(generateBasicTrainingPlan(atleta))
                 .build();
@@ -373,10 +376,10 @@ public class SpringAiEnhancedIaServiceImpl implements IaService {
         return text.length() / 4; // Aproximação: ~4 chars por token
     }
     
-    private List<TreinoPlanejadoOutputDto> generateBasicTrainingPlan(AtletaOutputDto atleta) {
+    private List<TreinoPlanejadoLlmDto> generateBasicTrainingPlan(AtletaOutputDto atleta) {
         log.info("Gerando plano básico de fallback para atleta {}", atleta.nome());
         
-        List<TreinoPlanejadoOutputDto> treinos = new ArrayList<>();
+        List<TreinoPlanejadoLlmDto> treinos = new ArrayList<>();
         
         // Treino básico de acordo com o nível
         int numeroTreinos = switch (atleta.nivelExperiencia()) {
@@ -388,18 +391,19 @@ public class SpringAiEnhancedIaServiceImpl implements IaService {
         
         // Gerar treinos básicos de fallback
         for (int i = 0; i < numeroTreinos; i++) {
-            TreinoPlanejadoOutputDto treino = new TreinoPlanejadoOutputDto(
+            TreinoPlanejadoLlmDto treino = new TreinoPlanejadoLlmDto(
+//                    UUID.randomUUID(),
                     getDiaSemanaByIndex(i),
                     getTipoTreinoByIndex(i, atleta.nivelExperiencia()),
                     "Treino básico de " + getTipoTreinoByIndex(i, atleta.nivelExperiencia()).name().toLowerCase(),
                     "Treino básico gerado automaticamente",
                     null, // fcAlvo
-                    null, // dataTreino - será definido no service
+//                    null, // dataTreino - será definido no service
                     null, // percepcaoEsforcoEsperada
                     getDuracaoByNivel(atleta.nivelExperiencia(), i),
                     getDistanciaByNivel(atleta.nivelExperiencia(), i),
                     null, // ritmoAlvo
-                    null, // planoSemanalId - será definido no service
+//                    null, // planoSemanalId - será definido no service
                     generateBasicEtapas(atleta.nivelExperiencia(), i)
             );
             treinos.add(treino);
@@ -409,8 +413,8 @@ public class SpringAiEnhancedIaServiceImpl implements IaService {
         return treinos;
     }
     
-    private com.menthoros.enums.DiaSemanaEnum getDiaSemanaByIndex(int index) {
-        com.menthoros.enums.DiaSemanaEnum[] dias = com.menthoros.enums.DiaSemanaEnum.values();
+    private com.menthoros.enums.DiaSemana getDiaSemanaByIndex(int index) {
+        com.menthoros.enums.DiaSemana[] dias = com.menthoros.enums.DiaSemana.values();
         return dias[index % dias.length];
     }
     

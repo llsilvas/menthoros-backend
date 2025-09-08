@@ -3,6 +3,7 @@ package com.menthoros.entity;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @Entity
@@ -35,8 +36,8 @@ public class EtapaTreino {
     @Column(name = "duracao_min")
     private Integer duracaoMin;
 
-    @Column(name = "distancia_km")
-    private Double distanciaKm;
+    @Column(name = "distancia_km", precision = 10, scale = 3)
+    private BigDecimal distanciaKm;
 
     @Column(name = "fc_alvo_etapa")
     private String fcAlvoEtapa;

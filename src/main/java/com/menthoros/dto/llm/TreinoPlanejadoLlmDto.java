@@ -1,28 +1,22 @@
-package com.menthoros.dto.output;
+package com.menthoros.dto.llm;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.menthoros.dto.output.EtapaTreinoDto;
 import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.TipoTreino;
-import com.menthoros.enums.TreinoExecucaoStatus;
 
-import java.time.LocalDate;
 import java.util.List;
-import java.util.UUID;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record TreinoPlanejadoOutputDto(
-        UUID id,
+public record TreinoPlanejadoLlmDto(
         DiaSemana diaSemana,
         TipoTreino tipoTreino,
         String descricao,
         String observacao,
         String fcAlvo,
-        LocalDate dataTreino,
         Integer percepcaoEsforcoEsperada,
         Integer duracaoMin,
         Double distanciaKm,
         String ritmoAlvo,
-        UUID planoSemanalId,
-        List<EtapaTreinoDto> etapas,
-        TreinoExecucaoStatus statusTreino
+        List<EtapaTreinoDto> etapas
 ) {}

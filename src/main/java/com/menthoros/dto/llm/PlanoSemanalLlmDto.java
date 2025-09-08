@@ -1,4 +1,4 @@
-package com.menthoros.dto.output;
+package com.menthoros.dto.llm;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.menthoros.enums.PlanoStatus;
@@ -9,16 +9,16 @@ import java.util.List;
 
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public record PlanoSemanalOutputDto(
-        LocalDate semanaInicio,
-        LocalDate semanaFim,
+public record PlanoSemanalLlmDto(
+//        LocalDate semanaInicio,
+//        LocalDate semanaFim,
         double volumePlanejadoKm,
         double volumeRealizadoKm,
         double volumeAlvoKm,
         Double tsbInicio,
         Double tsbFim,
         PlanoStatus status,
-        String observacoes,
+//        String observacoes,
         String objetivoSemanal,
-        List<TreinoPlanejadoOutputDto> treinosPlanejados
+        List<TreinoPlanejadoLlmDto> treinosPlanejados
 ) {}

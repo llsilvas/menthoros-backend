@@ -36,6 +36,7 @@ public class AtletaServiceImpl implements AtletaService {
     @CacheEvict(value = "atletas-list", allEntries = true)
     public Atleta createAtleta(AtletaInputDto atletaInputDto) {
         Atleta entity = atletaMapper.toEntity(atletaInputDto);
+        entity.setAtivo(AtletaStatus.ATIVO);
         return atletaRepository.save(entity);
     }
 

@@ -1,11 +1,12 @@
 package com.menthoros.entity;
 
 import com.menthoros.enums.AtletaStatus;
-import com.menthoros.enums.DiaSemanaEnum;
+import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.NivelExperiencia;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,11 +29,11 @@ public class Atleta {
     @Column(nullable = false)
     private int idade;
 
-    @Column(name = "peso_kg")
-    private double pesoKg;
+    @Column(name = "peso_kg", precision = 5, scale = 2)
+    private BigDecimal pesoKg;
 
-    @Column(name = "altura_cm")
-    private double alturaCm;
+    @Column(name = "altura_cm", precision = 5, scale = 2)
+    private BigDecimal alturaCm;
 
     @Column(nullable = false)
     private String objetivo;
@@ -45,11 +46,11 @@ public class Atleta {
     @Enumerated(EnumType.STRING)
     @CollectionTable(name = "tb_dias_disponiveis", joinColumns = @JoinColumn(name = "atleta_id"))
     @Column(name = "dia")
-    private List<DiaSemanaEnum> diasDisponiveis;
+    private List<DiaSemana> diasDisponiveis;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "dia_preferido_longo")
-    private DiaSemanaEnum diaPreferidoLongo;
+    private DiaSemana diaPreferidoLongo;
 
     @Column(name = "tem_lesao")
     private Boolean temLesao;

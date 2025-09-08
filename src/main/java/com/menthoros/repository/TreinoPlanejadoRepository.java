@@ -1,6 +1,7 @@
 package com.menthoros.repository;
 
 import com.menthoros.entity.TreinoPlanejado;
+import com.menthoros.enums.TipoTreino;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,9 +17,9 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
        select tp from TreinoPlanejado tp
        where tp.atleta.id = :atletaId
          and tp.dataTreino = :data
-         and (:tipoTreino is null or lower(tp.tipoTreino) = lower(:tipoTreino))
+         and (:tipoTreino is null or tp.tipoTreino = :tipoTreino)
        """)
     Optional<TreinoPlanejado> matchByAtletaAndDateAndType(@Param("atletaId") UUID atletaId,
                                                           @Param("data") LocalDate data,
-                                                          @Param("tipoTreino") String tipoTreino);
+                                                          @Param("tipoTreino") TipoTreino tipoTreino);
 }

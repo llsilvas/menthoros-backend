@@ -1,13 +1,13 @@
 package com.menthoros.dto.input;
 
-import com.menthoros.enums.DiaSemanaEnum;
+import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.TipoTreino;
 
 import java.time.LocalDate;
 import java.util.UUID;
 
 public record TreinoPlanejadoInputDto(
-        DiaSemanaEnum diaSemana,
+        DiaSemana diaSemana,
         TipoTreino tipoTreino,
         String descricao,
         String observacao,

@@ -1,12 +1,15 @@
 package com.menthoros.entity;
 
-import com.menthoros.enums.DiaSemanaEnum;
+import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.TipoTreino;
 import jakarta.persistence.Column;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.MappedSuperclass;
 import lombok.Getter;
 import lombok.Setter;
+
+import java.math.BigDecimal;
 
 @MappedSuperclass
 @Getter
@@ -15,10 +18,11 @@ public abstract class TreinoBase {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "dia_semana", nullable = false)
-    protected DiaSemanaEnum diaSemana;
+    protected DiaSemana diaSemana;
 
+    @Enumerated(EnumType.STRING)
     @Column(name = "tipo_treino", nullable = false)
-    protected String tipoTreino;
+    protected TipoTreino tipoTreino;
 
     @Column(name = "descricao", nullable = true, length = 1000)
     protected String descricao;
@@ -29,8 +33,8 @@ public abstract class TreinoBase {
     @Column(name = "duracao_min")
     protected Integer duracaoMin;
 
-    @Column(name = "distancia_km")
-    protected Double distanciaKm;
+    @Column(name = "distancia_km", precision = 10, scale = 3)
+    protected BigDecimal distanciaKm;
 
     @Column(name = "ritmo_alvo")
     protected String ritmoAlvo;

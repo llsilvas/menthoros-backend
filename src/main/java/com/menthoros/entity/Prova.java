@@ -1,10 +1,11 @@
 package com.menthoros.entity;
 
-import com.menthoros.enums.StatusProva;
+import com.menthoros.enums.ProvaStatus;
 import com.menthoros.enums.TipoProva;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -28,8 +29,8 @@ public class Prova {
     @Column(nullable = false)
     private LocalDate dataProva;
 
-    @Column(nullable = false)
-    private Double distanciaKm;
+    @Column(name = "distancia_km", nullable = false, precision = 10, scale = 3)
+    private BigDecimal distanciaKm;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "tipo_prova", nullable = false)
@@ -37,7 +38,7 @@ public class Prova {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status_prova", nullable = false)
-    private StatusProva statusProva;
+    private ProvaStatus statusProva;
 
     @Column(name = "prova_alvo")
     private boolean provaAlvo;

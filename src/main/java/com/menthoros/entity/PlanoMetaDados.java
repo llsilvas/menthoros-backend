@@ -1,9 +1,10 @@
 package com.menthoros.entity;
 
-import com.menthoros.enums.DiaSemanaEnum;
+import com.menthoros.enums.DiaSemana;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -28,27 +29,27 @@ public class PlanoMetaDados {
     @Column(name = "data_criacao", nullable = false)
     private LocalDateTime dataCriacao;
 
-    @Column(name = "volume_semanal_anterior")
-    private Double volumeSemanalAnterior;
+    @Column(name = "volume_semanal_anterior", precision = 10, scale = 3)
+    private BigDecimal volumeSemanalAnterior;
 
     @Column(name = "tsb_inicial")
     private Integer tsbInicial;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "dia_preferido_longo", nullable = false)
-    private DiaSemanaEnum diaPreferidoLongo;
+    private DiaSemana diaPreferidoLongo;
 
     @OneToOne(mappedBy = "planoMetaDados", fetch = FetchType.LAZY)
     private PlanoSemanal planoSemanal;
 
-    @Column
-    private double atl = 0.0;
+    @Column(precision = 10, scale = 3)
+    private BigDecimal atl = BigDecimal.ZERO;
 
-    @Column
-    private double ctl = 0.0;
+    @Column(precision = 10, scale = 3)
+    private BigDecimal ctl = BigDecimal.ZERO;
 
-    @Column
-    private double tsb = 0.0;
+    @Column(precision = 10, scale = 3)
+    private BigDecimal tsb = BigDecimal.ZERO;
 
 //    @JdbcTypeCode(SqlTypes.VECTOR) // Hibernate 6.x
 //    @Column(name = "embedding", columnDefinition = "vector(1536)", nullable = true)

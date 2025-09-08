@@ -2,10 +2,12 @@ package com.menthoros.services.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.menthoros.dto.llm.PlanoSemanalLlmDto;
 import com.menthoros.dto.output.AtletaOutputDto;
 import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.dto.output.PlanoTreinoOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
+import com.menthoros.enums.TipoTreino;
 import com.menthoros.exception.LLMException;
 import com.menthoros.services.IaService;
 import com.menthoros.services.prompt.PlanoTreinoPromptBuilder;
@@ -13,6 +15,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Value;
+
+import java.math.BigDecimal;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
@@ -52,9 +56,9 @@ public class SpringAiFixedIaServiceImpl implements IaService {
     @Override
     @Retryable(value = {Exception.class}, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
     @Cacheable(value = "ia-responses", key = "#atletaOutputDto.id + '_' + #treinoRealizadoOutputDtoList.size()")
-    public PlanoSemanalOutputDto gerarPlano(AtletaOutputDto atletaOutputDto, 
-                                           List<TreinoRealizadoOutputDto> treinoRealizadoOutputDtoList, 
-                                           PlanoSemanalOutputDto planoSemanalOutputDto) {
+    public PlanoSemanalLlmDto gerarPlanoSemanal(AtletaOutputDto atletaOutputDto,
+                                                List<TreinoRealizadoOutputDto> treinoRealizadoOutputDtoList,
+                                                PlanoSemanalOutputDto planoSemanalOutputDto) {
         
         log.info("Iniciando geração de plano para atleta: {} (ID: {})", 
                 atletaOutputDto.nome(), atletaOutputDto.id());
@@ -84,7 +88,7 @@ public class SpringAiFixedIaServiceImpl implements IaService {
                     .content();
             
             // 6. Validar e processar resposta
-            PlanoSemanalOutputDto plano = parseAndValidateResponse(response);
+            PlanoSemanalLlmDto plano = parseAndValidateResponse(response);
             
             log.info("Plano gerado com sucesso para atleta {} - {} treinos", 
                     atletaOutputDto.nome(), plano.treinosPlanejados().size());
@@ -175,8 +179,8 @@ public class SpringAiFixedIaServiceImpl implements IaService {
                 atleta.id(),
                 sanitizeString(atleta.nome()),
                 Math.max(10, Math.min(100, atleta.idade())),
-                Math.max(30.0, Math.min(300.0, atleta.pesoKg())),
-                Math.max(100.0, Math.min(250.0, atleta.alturaCm())),
+                BigDecimal.valueOf(Math.max(30.0, Math.min(300.0, atleta.pesoKg().doubleValue()))),
+                BigDecimal.valueOf(Math.max(100.0, Math.min(250.0, atleta.alturaCm().doubleValue()))),
                 sanitizeString(atleta.objetivo()),
                 atleta.nivelExperiencia(),
                 atleta.diasDisponiveis(),
@@ -203,10 +207,10 @@ public class SpringAiFixedIaServiceImpl implements IaService {
         return text.substring(0, maxLength) + "...";
     }
     
-    private PlanoSemanalOutputDto parseAndValidateResponse(String content) {
+    private PlanoSemanalLlmDto parseAndValidateResponse(String content) {
         try {
             String cleanContent = cleanLLMResponse(content);
-            PlanoSemanalOutputDto plano = objectMapper.readValue(cleanContent, PlanoSemanalOutputDto.class);
+            PlanoSemanalLlmDto plano = objectMapper.readValue(cleanContent, PlanoSemanalLlmDto.class);
             
             // Validação estrutural
             if (plano.treinosPlanejados() == null || plano.treinosPlanejados().isEmpty()) {
@@ -315,7 +319,7 @@ public class SpringAiFixedIaServiceImpl implements IaService {
         }
     }
     
-    private void validatePlanSafety(PlanoSemanalOutputDto plano) {
+    private void validatePlanSafety(PlanoSemanalLlmDto plano) {
         // Validar volumes seguros (volumePlanejadoKm é double primitivo, não pode ser null)
         if (plano.volumePlanejadoKm() > 200.0) {
             log.warn("Volume semanal muito alto detectado: {} km", plano.volumePlanejadoKm());
@@ -324,9 +328,9 @@ public class SpringAiFixedIaServiceImpl implements IaService {
         // Validar distribuição de treinos
         if (plano.treinosPlanejados() != null) {
             long treinosIntensos = plano.treinosPlanejados().stream()
-                    .filter(t -> t.tipoTreino() != null && 
-                               (t.tipoTreino().toString().contains("INTERVALADO") || 
-                                t.tipoTreino().toString().contains("LONGO")))
+                    .filter(t -> t.tipoTreino() != null &&
+                               (t.tipoTreino() == TipoTreino.INTERVALADO ||
+                                t.tipoTreino() == TipoTreino.LONGO))
                     .count();
                     
             if (treinosIntensos > 3) {
@@ -335,21 +339,21 @@ public class SpringAiFixedIaServiceImpl implements IaService {
         }
     }
     
-    private PlanoSemanalOutputDto generateFallbackPlan(AtletaOutputDto atleta, List<TreinoRealizadoOutputDto> treinos) {
+    private PlanoSemanalLlmDto generateFallbackPlan(AtletaOutputDto atleta, List<TreinoRealizadoOutputDto> treinos) {
         log.info("Gerando plano de fallback para atleta {}", atleta.nome());
         
         Double volumeConservador = determineConservativeVolume(atleta);
         
         // Agora PlanoSemanalOutputDto tem @Builder
-        return PlanoSemanalOutputDto.builder()
-                .atletaId(atleta.id())
-                .semanaInicio(java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)))
-                .semanaFim(java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY)))
+        return PlanoSemanalLlmDto.builder()
+//                .atletaId(atleta.id())
+//                .semanaInicio(java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)))
+//                .semanaFim(java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY)))
                 .volumePlanejadoKm(volumeConservador)
                 .volumeRealizadoKm(0.0)
                 .volumeAlvoKm(volumeConservador)
                 .status(com.menthoros.enums.PlanoStatus.ATIVO)
-                .observacoes("Plano de fallback gerado automaticamente devido à indisponibilidade do serviço de IA")
+//                .observacoes("Plano de fallback gerado automaticamente devido à indisponibilidade do serviço de IA")
                 .objetivoSemanal("Manter atividade física com volume conservador")
                 .treinosPlanejados(new java.util.ArrayList<>()) // Lista vazia por enquanto
                 .build();

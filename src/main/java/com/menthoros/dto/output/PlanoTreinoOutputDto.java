@@ -17,5 +17,5 @@ public record PlanoTreinoOutputDto(
         LocalDate dataProva,
         String objetivo,
         PlanoStatus status,
-        List<PlanoSemanal> planoSemanalList
+        List<PlanoSemanalOutputDto> planoSemanalList
 ) {}

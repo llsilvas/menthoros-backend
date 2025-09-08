@@ -7,12 +7,11 @@ import com.menthoros.mapper.TreinoMapper;
 import com.menthoros.services.TreinoService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
+
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/treinos")
@@ -26,9 +25,9 @@ public class TreinoRealizadoController {
         this.treinoMapper = treinoMapper;
     }
 
-    @PostMapping
-    public ResponseEntity<TreinoRealizadoOutputDto> criarTreino(@Valid @RequestBody TreinoRealizadoInputDto treinoRealizadoInputDto) {
-        TreinoRealizado treinoRealizado = treinoService.addTreino(treinoRealizadoInputDto);
+    @PostMapping("{treinoPlanejadoId}/marcar-realizado")
+    public ResponseEntity<TreinoRealizadoOutputDto> criarTreino(@PathVariable("treinoPlanejadoId") UUID treinoPlanejadoId, @Valid @RequestBody TreinoRealizadoInputDto treinoRealizadoInputDto) {
+        TreinoRealizado treinoRealizado = treinoService.addTreino(treinoPlanejadoId, treinoRealizadoInputDto);
         return ResponseEntity.status(HttpStatus.CREATED).body(treinoMapper.toOutputDto(treinoRealizado));
     }
 }

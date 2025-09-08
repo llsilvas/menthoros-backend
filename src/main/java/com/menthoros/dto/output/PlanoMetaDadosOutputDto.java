@@ -1,7 +1,7 @@
 package com.menthoros.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.menthoros.enums.DiaSemanaEnum;
+import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.FonteDados;
 
 import java.time.LocalDateTime;
@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 public record PlanoMetaDadosOutputDto(
         Double volumeSemanalAnterior,
         Integer tsbInicial,
-        DiaSemanaEnum diaPreferidoLongo,
+        DiaSemana diaPreferidoLongo,
         FonteDados fonteDados,
         LocalDateTime dataCriacao
 ) {}

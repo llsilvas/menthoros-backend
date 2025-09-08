@@ -2,6 +2,7 @@ package com.menthoros.mapper;
 
 import com.menthoros.dto.input.TreinoPlanejadoInputDto;
 import com.menthoros.dto.input.TreinoRealizadoInputDto;
+import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
 import com.menthoros.dto.output.TreinoPlanejadoOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.TreinoPlanejado;
@@ -19,11 +20,14 @@ public interface TreinoMapper {
     @Mapping(target = "planoSemanal.id", source = "planoSemanalId")
     TreinoPlanejado toEntity(TreinoPlanejadoInputDto dto);
 
-    @Mapping(source = "planoSemanal.id", target = "planoSemanalId")
+//    @Mapping(source = "planoSemanal.id", target = "planoSemanalId")
     TreinoPlanejadoOutputDto toOutputDto(TreinoPlanejado treinoPlanejado);
 
     // Adicionado para conversão direta de DTO de saída para entidade
-    TreinoPlanejado toEntity(TreinoPlanejadoOutputDto dto);
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "planoSemanal", ignore = true)
+    @Mapping(target = "atleta", ignore = true)
+    TreinoPlanejado toEntity(TreinoPlanejadoLlmDto dto);
 
     @Named("treinoPlanejadoListToOutputDtoList")
     List<TreinoPlanejadoOutputDto> toOutputDtoListTreinoPlanejado(List<TreinoPlanejado> treinosPlanejados);

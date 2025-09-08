@@ -4,13 +4,11 @@ import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 @JsonFormat(shape = JsonFormat.Shape.OBJECT)
-public enum TipoEtapa {
-
-    AQUECIMENTO("AQUECIMENTO", "Aquecimento", "Preparação corporal inicial", "#4CAF50", 1),
-    PRINCIPAL("PRINCIPAL", "Principal", "Etapa principal do treino", "#F44336", 2),
-    INTERVALADO("INTERVALADO", "Intervalado", "Série de intervalos", "#FF9800", 3),
-    RECUPERACAO("RECUPERACAO", "Recuperação", "Pausa ativa ou passiva", "#2196F3", 4),
-    DESAQUECIMENTO("DESAQUECIMENTO", "Desaquecimento", "Finalização e relaxamento", "#9C27B0", 5);
+public enum TreinoPlanejamentoStatus {
+    
+    RASCUNHO("RASCUNHO", "Rascunho", "Treino em elaboração", "#9E9E9E", false),
+    REVISADO("REVISADO", "Revisado", "Treino revisado e aprovado", "#FF9800", false),
+    ENVIADO("ENVIADO", "Enviado", "Treino enviado ao atleta", "#4CAF50", true);
 
     @JsonProperty("value")
     private final String value;
@@ -24,15 +22,15 @@ public enum TipoEtapa {
     @JsonProperty("color")
     private final String color;
     
-    @JsonProperty("order")
-    private final int order;
+    @JsonProperty("active")
+    private final boolean active;
 
-    TipoEtapa(String value, String label, String description, String color, int order) {
+    TreinoPlanejamentoStatus(String value, String label, String description, String color, boolean active) {
         this.value = value;
         this.label = label;
         this.description = description;
         this.color = color;
-        this.order = order;
+        this.active = active;
     }
 
     public String getValue() {
@@ -51,7 +49,7 @@ public enum TipoEtapa {
         return color;
     }
 
-    public int getOrder() {
-        return order;
+    public boolean isActive() {
+        return active;
     }
 }

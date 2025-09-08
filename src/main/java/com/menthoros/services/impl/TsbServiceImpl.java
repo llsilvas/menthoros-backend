@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
@@ -43,9 +44,9 @@ public class TsbServiceImpl {
         PlanoMetaDados metaDados = planoMetaDadosRepository.findByAtletaId(atletaId)
                 .orElseThrow(() -> new IllegalArgumentException("MetaDados não encontrado para atleta: " + atletaId));
 
-        metaDados.setAtl(round(atl));
-        metaDados.setCtl(round(ctl));
-        metaDados.setTsb(round(tsb));
+        metaDados.setAtl(BigDecimal.valueOf(round(atl)));
+        metaDados.setCtl(BigDecimal.valueOf(round(ctl)));
+        metaDados.setTsb(BigDecimal.valueOf(round(tsb)));
 
         planoMetaDadosRepository.save(metaDados);
     }
