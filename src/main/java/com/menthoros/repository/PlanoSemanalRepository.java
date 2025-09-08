@@ -16,10 +16,10 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
     Optional<PlanoSemanal> findPlanoSemanalByAtletaIdAndTreinosPlanejadosDataTreino(UUID id, LocalDate localDate);
 
     @Query("""
-      select ps from PlanoSemanal ps
-      where ps.atleta.id = :atletaId
-        and :data between ps.semanaInicio and ps.semanaFim
-    """)
+              select ps from PlanoSemanal ps
+              where ps.atleta.id = :atletaId
+                and :data between ps.semanaInicio and ps.semanaFim
+            """)
     Optional<PlanoSemanal> findByAtletaIdAndSemana(@Param("atletaId") UUID atletaId,
                                                    @Param("data") LocalDate data);
 
@@ -32,4 +32,10 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
     Optional<PlanoSemanal> findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
             UUID atletaId, LocalDate semanaInicio, PlanoStatus status);
 
+    @Query("""
+                select ps from PlanoSemanal ps
+                    where ps.atleta.id = :atletaId
+                        and ps.status != 'CONCLUIDO'
+            """)
+    Optional<PlanoSemanal> findByAtletaId(UUID atletaId);
 }

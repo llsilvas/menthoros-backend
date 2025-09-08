@@ -6,7 +6,10 @@ import com.menthoros.entity.PlanoSemanal;
 import com.menthoros.mapper.PlanoSemanalMapper;
 import com.menthoros.services.impl.PlanoServiceImpl;
 import com.menthoros.services.IaService;
+import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
+import org.hibernate.Hibernate;
+import org.springframework.data.repository.query.Param;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,7 +22,6 @@ public class PlanoTreinoController {
 
     private final PlanoServiceImpl planoServiceImpl;
     private final PlanoSemanalMapper planoSemanalMapper;
-    private final IaService iaService;
 
     @PostMapping("/atletas/{atletaId}/gerar")
     public ResponseEntity<PlanoSemanalOutputDto> gerarPlanoTreino(@PathVariable UUID atletaId) throws JsonProcessingException {
@@ -37,16 +39,16 @@ public class PlanoTreinoController {
         return ResponseEntity.ok(planoSemanalOutputDto);
     }
 
-    // Endpoint para capturar typos comuns
-    @PostMapping("/atletas/{atletaId}/gerar-enhaced")
-    public ResponseEntity<String> gerarPlanoTreinoTypo(@PathVariable UUID atletaId) {
-        return ResponseEntity.badRequest()
-                .body("URL incorreta. Use: /planos/atletas/" + atletaId + "/gerar-enhanced (com 'n')");
-    }
-
     @DeleteMapping("/{planoSemanalId}")
     public ResponseEntity<Void> deletePlanoSemanal(@PathVariable UUID planoSemanalId) {
         planoServiceImpl.deletePlanoSemanal(planoSemanalId);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<PlanoSemanalOutputDto> buscarPlanoSemanal(@Parameter(description = "ID do atleta") @PathVariable UUID id) {
+        PlanoSemanalOutputDto planoSemanalOutputDto = planoServiceImpl.buscarPlanoPorAtleta(id);
+
+        return ResponseEntity.ok(planoSemanalOutputDto);
     }
 }
