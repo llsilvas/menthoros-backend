@@ -6,10 +6,7 @@ import com.menthoros.dto.output.TreinoPlanejadoOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.TreinoPlanejado;
 import com.menthoros.entity.TreinoRealizado;
-import org.mapstruct.Mapper;
-import org.mapstruct.Mapping;
-import org.mapstruct.Named;
-import org.mapstruct.ReportingPolicy;
+import org.mapstruct.*;
 
 import java.util.List;
 
@@ -40,5 +37,13 @@ public interface TreinoMapper {
 
     @Named("treinoRealizadoListToOutputDtoList")
     List<TreinoRealizadoOutputDto> toOutputDtoListTreinoRealizado(List<TreinoRealizado> treinosRealizados);
+
+    @AfterMapping
+    default void linkEtapas(@MappingTarget TreinoPlanejado treinoPlanejado){
+        if(treinoPlanejado.getEtapas() != null){
+            treinoPlanejado.getEtapas().forEach(etapa ->
+                    etapa.setTreinoPlanejado(treinoPlanejado));
+        }
+    }
 
 }

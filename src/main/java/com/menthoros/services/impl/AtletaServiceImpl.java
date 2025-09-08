@@ -69,9 +69,12 @@ public class AtletaServiceImpl implements AtletaService {
 
     @Override
     @Cacheable(value = "atletas", key = "#id")
+    @Transactional(readOnly = true)
     public AtletaOutputDto getAtletaById(UUID id) {
         Atleta atleta = atletaRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + id));
+        Hibernate.initialize(atleta.getProvas());
+        Hibernate.initialize(atleta.getDiasDisponiveis());
         return atletaMapper.toOutputDto(atleta);
     }
 
