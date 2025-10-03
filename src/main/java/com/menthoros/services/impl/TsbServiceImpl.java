@@ -44,9 +44,9 @@ public class TsbServiceImpl {
         PlanoMetaDados metaDados = planoMetaDadosRepository.findByAtletaId(atletaId)
                 .orElseThrow(() -> new IllegalArgumentException("MetaDados não encontrado para atleta: " + atletaId));
 
-        metaDados.setAtl(BigDecimal.valueOf(round(atl)));
-        metaDados.setCtl(BigDecimal.valueOf(round(ctl)));
-        metaDados.setTsb(BigDecimal.valueOf(round(tsb)));
+        metaDados.setAtlAtual(round(atl));
+        metaDados.setCtlAtual(round(ctl));
+        metaDados.setTsbAtual(round(tsb));
 
         planoMetaDadosRepository.save(metaDados);
     }

@@ -91,7 +91,7 @@ public class PlanoServiceImpl implements PlanoService {
 
         plano.setTreinosPlanejados(treinosPlanejados);
 
-        metaDados.setPlanoSemanal(plano);
+        metaDados.setPlanoSemanalAtual(plano);
 
         return planoSemanalRepository.save(plano);
     }
