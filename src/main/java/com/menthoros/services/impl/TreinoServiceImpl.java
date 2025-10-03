@@ -80,7 +80,7 @@ public class TreinoServiceImpl implements TreinoService {
 
     private void atualizarMetadadosSeAplicavel(PlanoSemanal semanal) {
         if (semanal == null) return;
-        atualizarMetadados(semanal.getId());
+//        atualizarMetadados(semanal.getId());
     }
 
     private void finalizarTreinoPlanejadoSeAplicavel(TreinoPlanejado planejado) {
@@ -177,16 +177,16 @@ public class TreinoServiceImpl implements TreinoService {
         planoSemanalRepository.save(plano);
     }
 
-    private void atualizarMetadados(UUID planoSemanalId){
-
-        Optional<PlanoMetaDados> planoMetaDados = planoMetaDadosRepository.findByPlanoSemanalId(planoSemanalId);
-        double distancia = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(planoSemanalId);
-
-        planoMetaDados.ifPresent(planoMetaDado -> {
-            planoMetaDado.setVolumeSemanalAnterior(BigDecimal.valueOf(distancia));
-            planoMetaDadosRepository.save(planoMetaDado);
-        });
-    }
+//    private void atualizarMetadados(UUID planoSemanalId){
+//
+//        Optional<PlanoMetaDados> planoMetaDados = planoMetaDadosRepository.findByPlanoSemanalId(planoSemanalId);
+//        double distancia = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(planoSemanalId);
+//
+//        planoMetaDados.ifPresent(planoMetaDado -> {
+//            planoMetaDado.setVolumeSemanalMedio(BigDecimal.valueOf(distancia));
+//            planoMetaDadosRepository.save(planoMetaDado);
+//        });
+//    }
 
 
     private Optional<TreinoRealizado> buscarTreinoDuplicado(TreinoRealizadoInputDto treinoRealizadoInputDto) {

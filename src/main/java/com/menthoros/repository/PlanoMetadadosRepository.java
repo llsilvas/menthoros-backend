@@ -12,7 +12,7 @@ import java.util.UUID;
 public interface PlanoMetadadosRepository extends JpaRepository<PlanoMetaDados, UUID> {
     Optional<PlanoMetaDados> findByAtletaId(UUID atletaId);
 
-    Optional<PlanoMetaDados> findByPlanoSemanalId(UUID planoSemanalId);
+//    Optional<PlanoMetaDados> findByPlanoSemanalId(UUID planoSemanalId);
     
     @Query("""
     SELECT pm FROM PlanoMetaDados pm 
