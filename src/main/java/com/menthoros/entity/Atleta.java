@@ -86,33 +86,73 @@ public class Atleta {
     @Column(name = "dia_preferido_longo")
     private DiaSemana diaPreferidoLongo;
 
-    @Column(name = "tem_lesao")
-    private Boolean temLesao;
+    @Column(name = "distancia_maxima_longo")
+    private Integer distanciaMaximaLongo; // km no longão
 
-    @Column(name = "descricao_lesao")
+    @Column(name = "volume_semanal_max")
+    private Integer volumeSemanalMax; // km/semana máximo confortável
+
+    @Column(name = "tem_lesao")
+    private Boolean temLesao = false;
+
+    @Column(name = "descricao_lesao", length = 1000)
     private String descricaoLesao;
+
+    @Column(name = "data_ultima_lesao")
+    private LocalDate dataUltimaLesao;
+
+    @Column(name = "historico_lesoes", columnDefinition = "TEXT")
+    private String historicoLesoes;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "ativo")
     private AtletaStatus ativo;
 
-    // Histórico de treinos realizados
-    @OneToMany(mappedBy = "atleta", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    // Métricas atuais (OneToOne)
+    @OneToOne(mappedBy = "atleta", fetch = FetchType.LAZY,
+            cascade = CascadeType.ALL, orphanRemoval = true)
+    private PlanoMetaDados planoMetaDados;
+
+    // Histórico de métricas diárias
+    @OneToMany(mappedBy = "atleta", fetch = FetchType.LAZY,
+            cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<MetricasDiarias> metricasDiarias;
+
+    // Treinos realizados
+    @OneToMany(mappedBy = "atleta", fetch = FetchType.LAZY,
+            cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TreinoRealizado> treinosRealizados;
 
-    // Histórico de treinos planejados
-    @OneToMany(mappedBy = "atleta", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    // Treinos planejados
+    @OneToMany(mappedBy = "atleta", fetch = FetchType.LAZY,
+            cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TreinoPlanejado> treinosPlanejados;
 
     // Planos semanais
-    @OneToMany(mappedBy = "atleta", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    @OneToMany(mappedBy = "atleta", fetch = FetchType.LAZY,
+            cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PlanoSemanal> planosSemanais;
 
-    // Provas associadas ao atleta
-    @OneToMany(mappedBy = "atleta", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    // Provas
+    @OneToMany(mappedBy = "atleta", fetch = FetchType.LAZY,
+            cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Prova> provas;
 
-    @OneToMany(mappedBy = "atleta", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<PlanoMetaDados> planosMetaDados;
+    public Integer getFcMaximaCalculada() {
+        return fcMaxima != null ? fcMaxima : 220 - idade;
+    }
+
+    public Integer getFcLimiarCalculada() {
+        return fcLimiar != null ? fcLimiar : (int) (0.85 * getFcMaximaCalculada());
+    }
+
+    public boolean precisaAtualizarTestes(){
+        if(dataUltimoTesteFc == null || dataUltimoTestePace == null){
+            return true;
+        }
+
+        LocalDate tresMesesAtras = LocalDate.now().minusMonths(3);
+        return dataUltimoTesteFc.isBefore(tresMesesAtras) || dataUltimoTestePace.isBefore(tresMesesAtras);
+    }
 
 }
