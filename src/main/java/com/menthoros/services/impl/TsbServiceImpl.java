@@ -2,6 +2,7 @@ package com.menthoros.services.impl;
 
 import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.entity.TreinoRealizado;
+import com.menthoros.repository.AtletaRepository;
 import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.repository.TreinoRealizadoRepository;
 import lombok.RequiredArgsConstructor;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,9 +22,17 @@ public class TsbServiceImpl {
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final PlanoMetadadosRepository planoMetaDadosRepository;
+    private final AtletaRepository atletaRepository;
+
+    private static final int CTL_TIME_CONSTANT = 42;
+    private static final int ATL_TIME_CONSTANT = 7;
+
 
     @Transactional
-    public void atualizarTsb(UUID atletaId) {
+    public void atualizarTsbDia(UUID atletaId, LocalDate date) {
+        log.info("Atualizando TSB para atleta {} no dia {}", atletaId, date);
+
+
         // 1 - Obter histórico de treinos ordenado por data
 
         List<TreinoRealizado> treinos = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoAsc(atletaId);

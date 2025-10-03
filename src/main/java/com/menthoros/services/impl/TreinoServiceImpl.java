@@ -21,6 +21,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -99,7 +100,7 @@ public class TreinoServiceImpl implements TreinoService {
     private void atualizarTsbSeNecessario(Atleta atleta) {
         List<TreinoRealizado> treinos = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoAsc(atleta.getId());
         if (treinos.size() > 7) {
-            tsbService.atualizarTsb(atleta.getId());
+            tsbService.atualizarTsbDia(atleta.getId(), LocalDate.now());
         }
     }
 
