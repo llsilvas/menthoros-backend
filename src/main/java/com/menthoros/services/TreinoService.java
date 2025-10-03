@@ -3,9 +3,9 @@ package com.menthoros.services;
 
 import com.menthoros.dto.input.TreinoRealizadoInputDto;
 import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
-import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.TreinoRealizado;
+import jakarta.validation.Valid;
 
 import java.util.UUID;
 
@@ -20,4 +20,6 @@ public interface TreinoService {
     TreinoRealizadoOutputDto getTreinoById(UUID id);
 
     void gravarTreino(UUID atletaId, TreinoPlanejadoLlmDto planoSemanalOutputDto);
+
+    TreinoRealizadoOutputDto lancarTreino(UUID atletaId, @Valid TreinoRealizadoInputDto treinoRealizadoInputDto);
 }
