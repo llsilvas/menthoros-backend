@@ -1,6 +1,5 @@
 package com.menthoros.entity;
 
-import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.FonteDados;
 import com.menthoros.enums.StatusSincronizacao;
 import com.menthoros.enums.TreinoExecucaoStatus;
@@ -10,10 +9,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.UUID;
 

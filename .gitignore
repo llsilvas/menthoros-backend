@@ -33,6 +33,9 @@ build/
 .vscode/
 
 .env
+.env-dev
+.env.*
+*.env
 
 /relatorios/
 /.claude/
