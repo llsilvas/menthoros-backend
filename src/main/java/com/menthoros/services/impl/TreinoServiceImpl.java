@@ -121,7 +121,6 @@ public class TreinoServiceImpl implements TreinoService {
         realizado.setStatus(TreinoExecucaoStatus.REALIZADO);
         realizado.setFonteDados(treinoRealizadoInputDto.fonteDados());
         realizado.setExternalId(treinoRealizadoInputDto.externalId());
-        realizado.setElevacaoTotalMetros(treinoRealizadoInputDto.elevacaoTotalMetros());
         return realizado;
     }
 
