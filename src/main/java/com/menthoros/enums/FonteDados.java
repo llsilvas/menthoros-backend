@@ -5,10 +5,14 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 @JsonFormat(shape = JsonFormat.Shape.OBJECT)
 public enum FonteDados {
-    
-    GARMIN("GARMIN", "Garmin Connect", "Sincronização via Garmin", "#007ACC"),
-    STRAVA("STRAVA", "Strava", "Sincronização via Strava", "#FC4C02"),
-    MANUAL("MANUAL", "Manual", "Inserção manual de dados", "#9E9E9E");
+
+    MANUAL("MANUAL", "Manual", "Criado manualmente no sistema", "#9E9E9E"),
+    IA_GERADO("IA_GERADO", "IA Gerado", "Gerado pela IA do sistema", "#9C27B0"),
+    GARMIN("GARMIN", "Garmin Connect", "Importado do Garmin", "#007ACC"),
+    STRAVA("STRAVA", "Strava", "Importado do Strava", "#FC4C02"),
+    TRAINING_PEAKS("TRAINING_PEAKS", "TrainingPeaks", "Importado do TrainingPeaks (futuro)", "#F57C00"),
+    POLAR("POLAR", "Polar Flow", "Importado do Polar Flow (futuro)", "#E30613"),
+    WAHOO("WAHOO", "Wahoo Fitness", "Importado do Wahoo Fitness (futuro)", "#0066CC");
 
     @JsonProperty("value")
     private final String value;

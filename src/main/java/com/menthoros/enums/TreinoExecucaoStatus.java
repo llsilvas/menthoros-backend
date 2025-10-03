@@ -5,21 +5,23 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 @JsonFormat(shape = JsonFormat.Shape.OBJECT)
 public enum TreinoExecucaoStatus {
-    
+
     REALIZADO("REALIZADO", "Realizado", "Treino executado conforme planejado", "#4CAF50"),
     PERDIDO("PERDIDO", "Perdido", "Treino não foi realizado", "#F44336"),
     PARCIAL("PARCIAL", "Parcial", "Treino realizado parcialmente", "#FF9800"),
-    LIVRE("LIVRE", "Livre", "Treino livre sem estrutura definida", "#2196F3");
+    LIVRE("LIVRE", "Livre", "Treino livre sem estrutura definida", "#2196F3"),
+    PENDENTE("PENDENTE", "Pendente", "Treino planejado, mas não realizado", "#FFEB3B"),
+    CONCLUIDO("CONCLUIDO", "Concluído", "Treino concluído", "#8BC34A");
 
     @JsonProperty("value")
     private final String value;
-    
+
     @JsonProperty("label")
     private final String label;
-    
+
     @JsonProperty("description")
     private final String description;
-    
+
     @JsonProperty("color")
     private final String color;
 
