@@ -38,8 +38,10 @@ public class AtletaController {
     @ApiResponses(value = {
         @ApiResponse(responseCode = "201", description = "Atleta criado com sucesso",
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = AtletaOutputDto.class))),
-        @ApiResponse(responseCode = "400", description = "Dados inválidos"),
-        @ApiResponse(responseCode = "409", description = "Atleta já existe")
+        @ApiResponse(responseCode = "400", description = "Dados inválidos fornecidos",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "409", description = "Atleta já existe no sistema",
+                content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<AtletaOutputDto> cadastraAtleta(
             @Valid @RequestBody @Parameter(description = "Dados do atleta a ser criado") AtletaInputDto atletaInputDto){
@@ -50,9 +52,12 @@ public class AtletaController {
     @PutMapping("/{id}")
     @Operation(summary = "Atualizar atleta", description = "Atualiza os dados de um atleta existente")
     @ApiResponses(value = {
-        @ApiResponse(responseCode = "200", description = "Atleta atualizado com sucesso"),
-        @ApiResponse(responseCode = "404", description = "Atleta não encontrado"),
-        @ApiResponse(responseCode = "400", description = "Dados inválidos")
+        @ApiResponse(responseCode = "200", description = "Atleta atualizado com sucesso",
+                content = @Content(mediaType = "application/json", schema = @Schema(implementation = AtletaOutputDto.class))),
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "400", description = "Dados inválidos fornecidos",
+                content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<AtletaOutputDto> atualizarAtleta(
             @Parameter(description = "ID do atleta") @PathVariable UUID id,
@@ -65,7 +70,8 @@ public class AtletaController {
     @Operation(summary = "Deletar atleta", description = "Remove um atleta do sistema (soft delete)")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "204", description = "Atleta removido com sucesso"),
-        @ApiResponse(responseCode = "404", description = "Atleta não encontrado")
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<Void> deletarAtleta(
             @Parameter(description = "ID do atleta") @PathVariable UUID id){
@@ -75,17 +81,20 @@ public class AtletaController {
 
     @GetMapping
     @Operation(summary = "Listar atletas", description = "Retorna a lista de todos os atletas ativos")
-    @ApiResponse(responseCode = "200", description = "Lista de atletas retornada com sucesso")
+    @ApiResponse(responseCode = "200", description = "Lista de atletas retornada com sucesso",
+            content = @Content(mediaType = "application/json", schema = @Schema(implementation = AtletaOutputDto.class)))
     public ResponseEntity<List<AtletaOutputDto>> listarAtletas(){
         List<AtletaOutputDto> allAtletas = atletaService.getAllAtletas();
         return ResponseEntity.ok(allAtletas);
     }
-    
+
     @GetMapping("/{id}")
     @Operation(summary = "Buscar atleta por ID", description = "Retorna os dados de um atleta específico")
     @ApiResponses(value = {
-        @ApiResponse(responseCode = "200", description = "Atleta encontrado"),
-        @ApiResponse(responseCode = "404", description = "Atleta não encontrado")
+        @ApiResponse(responseCode = "200", description = "Atleta encontrado com sucesso",
+                content = @Content(mediaType = "application/json", schema = @Schema(implementation = AtletaOutputDto.class))),
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<AtletaOutputDto> buscarAtletaPorId(
             @Parameter(description = "ID do atleta") @PathVariable UUID id){
