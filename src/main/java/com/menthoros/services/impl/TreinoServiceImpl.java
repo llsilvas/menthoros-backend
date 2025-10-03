@@ -2,9 +2,9 @@ package com.menthoros.services.impl;
 
 import com.menthoros.dto.input.TreinoRealizadoInputDto;
 import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
-import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.*;
+import com.menthoros.enums.FonteDados;
 import com.menthoros.enums.PlanoStatus;
 import com.menthoros.enums.TreinoExecucaoStatus;
 import com.menthoros.exception.DomainNotFoundException;
@@ -219,6 +219,25 @@ public class TreinoServiceImpl implements TreinoService {
         planoSemanal.setAtleta(atleta);
 
         planoSemanalRepository.save(planoSemanal);
+    }
+
+    @Override
+    @Transactional
+    public TreinoRealizadoOutputDto lancarTreino(UUID atletaId, TreinoRealizadoInputDto treinoRealizadoInputDto) {
+        log.debug("Criando treino realizado: {}", treinoRealizadoInputDto);
+
+        Atleta atleta = atletaRepository.findById(atletaId)
+                .orElseThrow(() -> new RuntimeException("Atleta não encontrado"));
+
+        TreinoRealizado treinoRealizado = treinoMapper.toEntity(treinoRealizadoInputDto);
+
+        treinoRealizado.setFonteDados(FonteDados.MANUAL);
+        treinoRealizado.setStatus(TreinoExecucaoStatus.REALIZADO);
+        treinoRealizado.setAtleta(atleta);
+
+        TreinoRealizado treinoSalvo = treinoRealizadoRepository.save(treinoRealizado);
+        log.info("Treino salvo com sucesso. ID: {}", treinoSalvo.getId());
+        return treinoMapper.toOutputDto(treinoSalvo);
     }
 
     private List<Float> gerarEmbedding(Atleta atleta) {
