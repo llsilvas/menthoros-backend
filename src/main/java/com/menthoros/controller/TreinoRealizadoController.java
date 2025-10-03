@@ -51,4 +51,23 @@ public class TreinoRealizadoController {
         TreinoRealizado treinoRealizado = treinoService.addTreino(treinoPlanejadoId, treinoRealizadoInputDto);
         return ResponseEntity.status(HttpStatus.CREATED).body(treinoMapper.toOutputDto(treinoRealizado));
     }
+
+    @Operation(summary = "Lançar treinos manualmente para o atleta",
+               description = "Lança um treino manualmente para o atleta, registrando os dados da execução")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Treino lançado com sucesso",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = TreinoRealizadoOutputDto.class))),
+            @ApiResponse(responseCode = "400", description = "Dados inválidos fornecidos",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                    content = @Content(mediaType = "application/json"))
+    })
+    @PostMapping("{atletaId}/lancar-treino")
+    public ResponseEntity<TreinoRealizadoOutputDto> lancarTreino(
+            @Parameter(description = "ID do atleta que está realizando o treino")
+            @PathVariable("atletaId") UUID atletaId,
+            @Valid @RequestBody TreinoRealizadoInputDto treinoRealizadoInputDto) {
+        TreinoRealizadoOutputDto treinoRealizadoOutputDto = treinoService.lancarTreino(atletaId, treinoRealizadoInputDto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(treinoRealizadoOutputDto);
+    }
 }
