@@ -2,23 +2,46 @@ package com.menthoros.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.menthoros.enums.PlanoStatus;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
 import java.time.LocalDate;
 import java.util.List;
 
+@Schema(description = "Dados de saída de um plano semanal de treino")
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record PlanoSemanalOutputDto(
+        @Schema(description = "Data de início da semana", example = "2024-01-15")
         LocalDate semanaInicio,
+
+        @Schema(description = "Data de fim da semana", example = "2024-01-21")
         LocalDate semanaFim,
+
+        @Schema(description = "Volume planejado em quilômetros", example = "50.0")
         double volumePlanejadoKm,
+
+        @Schema(description = "Volume realizado em quilômetros", example = "48.5")
         double volumeRealizadoKm,
+
+        @Schema(description = "Volume alvo em quilômetros", example = "52.0")
         double volumeAlvoKm,
+
+        @Schema(description = "Training Stress Balance (TSB) no início da semana", example = "10.5")
         Double tsbInicio,
+
+        @Schema(description = "Training Stress Balance (TSB) no fim da semana", example = "8.2")
         Double tsbFim,
+
+        @Schema(description = "Status do plano semanal", example = "EM_PROGRESSO")
         PlanoStatus status,
+
+        @Schema(description = "Observações sobre a semana", example = "Semana de regeneração")
         String observacoes,
+
+        @Schema(description = "Objetivo da semana", example = "Aumentar volume de base aeróbica")
         String objetivoSemanal,
+
+        @Schema(description = "Lista de treinos planejados da semana")
         List<TreinoPlanejadoOutputDto> treinosPlanejados
 ) {}
