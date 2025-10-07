@@ -9,14 +9,15 @@ import java.util.List;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record TreinoPlanejadoLlmDto(
-        DiaSemana diaSemana,
-        TipoTreino tipoTreino,
-        String descricao,
-        String observacao,
+        String diaSemana,
+        String tipoTreino,
         String fcAlvo,
+        Integer tssPlanejado,
+        Double intensidadePlanejada,
         Integer percepcaoEsforcoEsperada,
+        String justificativaIa,
         Integer duracaoMin,
         Double distanciaKm,
         String ritmoAlvo,
-        List<EtapaTreinoDto> etapas
+        List<EtapaTreinoLlmDto> etapas
 ) {}

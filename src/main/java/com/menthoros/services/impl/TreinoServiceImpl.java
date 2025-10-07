@@ -16,6 +16,7 @@ import com.menthoros.services.TreinoService;
 import jakarta.transaction.Transactional;
 
 import java.math.BigDecimal;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
@@ -36,9 +37,9 @@ public class TreinoServiceImpl implements TreinoService {
     private final AtletaRepository atletaRepository;
     private final PlanoSemanalRepository planoSemanalRepository;
     private final PlanoSemanalMapper planoSemanalMapper;
-    private final PlanoMetadadosRepository planoMetaDadosRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final TsbServiceImpl tsbService;
+    private final PlanoMetadadosRepository planoMetaDadosRepository;
 
     @Transactional
     @Override
@@ -72,15 +73,31 @@ public class TreinoServiceImpl implements TreinoService {
         // 7) Pós-processamentos isolados
         finalizarTreinoPlanejadoSeAplicavel(planejado);
         atualizarPlanoSemanalSeAplicavel(semanal);
-//        atualizarTsbSeNecessario(atleta);
+        atualizarTsb(atleta);
         atualizarMetadadosSeAplicavel(semanal);
+        atualizarVolumeDiario(atleta, treinoRealizado);
 
         return salvo;
     }
 
+    private void atualizarVolumeDiario(Atleta atleta, TreinoRealizadoInputDto treinoRealizado) {
+        LocalDate hoje = LocalDate.now();
+        var metricasDiarias = atleta.getMetricasDiarias();
+
+        metricasDiarias.stream()
+                .filter(md -> md.getData() == hoje)
+                .findFirst()
+                .ifPresent(md -> {
+                    md.setVolumeKm(BigDecimal.valueOf(treinoRealizado.distanciaKm()));
+                    md.setTreinosRealizados(md.getTreinosRealizados() + 1);
+                });
+
+
+    }
+
     private void atualizarMetadadosSeAplicavel(PlanoSemanal semanal) {
         if (semanal == null) return;
-//        atualizarMetadados(semanal.getId());
+        atualizarMetadados(semanal.getId(), semanal.getAtleta().getId());
     }
 
     private void finalizarTreinoPlanejadoSeAplicavel(TreinoPlanejado planejado) {
@@ -97,11 +114,10 @@ public class TreinoServiceImpl implements TreinoService {
         atualizarStatusDoPlano(semanal);
     }
 
-    private void atualizarTsbSeNecessario(Atleta atleta) {
-        List<TreinoRealizado> treinos = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoAsc(atleta.getId());
-        if (treinos.size() > 7) {
-            tsbService.atualizarTsbDia(atleta.getId(), LocalDate.now());
-        }
+    private void atualizarTsb(Atleta atleta) {
+
+        tsbService.atualizarTsbDia(atleta.getId(), LocalDate.now());
+
     }
 
     private void validarCompatibilidadeDeTipo(TreinoRealizadoInputDto input, TreinoPlanejado planejado) {
@@ -176,16 +192,16 @@ public class TreinoServiceImpl implements TreinoService {
         planoSemanalRepository.save(plano);
     }
 
-//    private void atualizarMetadados(UUID planoSemanalId){
-//
-//        Optional<PlanoMetaDados> planoMetaDados = planoMetaDadosRepository.findByPlanoSemanalId(planoSemanalId);
-//        double distancia = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(planoSemanalId);
-//
-//        planoMetaDados.ifPresent(planoMetaDado -> {
-//            planoMetaDado.setVolumeSemanalMedio(BigDecimal.valueOf(distancia));
-//            planoMetaDadosRepository.save(planoMetaDado);
-//        });
-//    }
+    private void atualizarMetadados(UUID planoSemanalId, UUID atletaId) {
+
+        Optional<PlanoMetaDados> planoMetaDados = planoMetaDadosRepository.findByAtletaId(atletaId);
+        double distancia = treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(planoSemanalId);
+
+        planoMetaDados.ifPresent(planoMetaDado -> {
+            planoMetaDado.setVolumeSemanalMedio(BigDecimal.valueOf(distancia));
+            planoMetaDadosRepository.save(planoMetaDado);
+        });
+    }
 
 
     private Optional<TreinoRealizado> buscarTreinoDuplicado(TreinoRealizadoInputDto treinoRealizadoInputDto) {

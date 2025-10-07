@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.menthoros.dto.llm.PlanoSemanalLlmDto;
 import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
 import com.menthoros.dto.output.*;
+import com.menthoros.entity.Atleta;
+import com.menthoros.entity.PlanoMetaDados;
+import com.menthoros.entity.Prova;
 import com.menthoros.enums.TipoEtapa;
 import com.menthoros.enums.TipoTreino;
 import com.menthoros.exception.LLMException;
@@ -122,6 +125,11 @@ public class SpringAiEnhancedIaServiceImpl_old implements IaService {
             log.info("Ativando fallback automaticamente para garantir resposta válida");
             return generateFallbackPlan(atletaOutputDto, treinoRealizadoOutputDtoList);
         }
+    }
+
+    @Override
+    public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova) {
+        return null;
     }
 
     @Override
@@ -333,8 +341,8 @@ public class SpringAiEnhancedIaServiceImpl_old implements IaService {
         if (plano.treinosPlanejados() != null) {
             long treinosIntensos = plano.treinosPlanejados().stream()
                     .filter(t -> t.tipoTreino() != null &&
-                               (t.tipoTreino() == TipoTreino.INTERVALADO ||
-                                t.tipoTreino() == TipoTreino.LONGO))
+                               (t.tipoTreino() == TipoTreino.INTERVALADO.getValue() ||
+                                t.tipoTreino() == TipoTreino.LONGO.getValue()))
                     .count();
                     
             if (treinosIntensos > 3) {
@@ -354,9 +362,9 @@ public class SpringAiEnhancedIaServiceImpl_old implements IaService {
 //                .semanaInicio(LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)))
 //                .semanaFim(LocalDate.now().with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY)))
                 .volumePlanejadoKm(volumeConservador)
-                .volumeRealizadoKm(0.0)
+//                .volumeRealizadoKm(0.0)
                 .volumeAlvoKm(volumeConservador)
-                .status(com.menthoros.enums.PlanoStatus.ATIVO)
+                .status(com.menthoros.enums.PlanoStatus.ATIVO.getValue())
 //                .observacoes("Plano de fallback gerado automaticamente devido à indisponibilidade do serviço de IA")
                 .objetivoSemanal("Manter atividade física com volume conservador")
                 .treinosPlanejados(generateBasicTrainingPlan(atleta))
@@ -391,22 +399,22 @@ public class SpringAiEnhancedIaServiceImpl_old implements IaService {
         
         // Gerar treinos básicos de fallback
         for (int i = 0; i < numeroTreinos; i++) {
-            TreinoPlanejadoLlmDto treino = new TreinoPlanejadoLlmDto(
-//                    UUID.randomUUID(),
-                    getDiaSemanaByIndex(i),
-                    getTipoTreinoByIndex(i, atleta.nivelExperiencia()),
-                    "Treino básico de " + getTipoTreinoByIndex(i, atleta.nivelExperiencia()).name().toLowerCase(),
-                    "Treino básico gerado automaticamente",
-                    null, // fcAlvo
-//                    null, // dataTreino - será definido no service
-                    null, // percepcaoEsforcoEsperada
-                    getDuracaoByNivel(atleta.nivelExperiencia(), i),
-                    getDistanciaByNivel(atleta.nivelExperiencia(), i),
-                    null, // ritmoAlvo
-//                    null, // planoSemanalId - será definido no service
-                    generateBasicEtapas(atleta.nivelExperiencia(), i)
-            );
-            treinos.add(treino);
+//            TreinoPlanejadoLlmDto treino = new TreinoPlanejadoLlmDto(
+////                    UUID.randomUUID(),
+//                    getDiaSemanaByIndex(i),
+//                    getTipoTreinoByIndex(i, atleta.nivelExperiencia()),
+//                    "Treino básico de " + getTipoTreinoByIndex(i, atleta.nivelExperiencia()).name().toLowerCase(),
+//                    "Treino básico gerado automaticamente",
+//                    null, // fcAlvo
+////                    null, // dataTreino - será definido no service
+//                    null, // percepcaoEsforcoEsperada
+////                    getDuracaoByNivel(atleta.nivelExperiencia(), i),
+////                    getDistanciaByNivel(atleta.nivelExperiencia(), i),
+////                    null, // ritmoAlvo
+////                    null, // planoSemanalId - será definido no service
+////                    generateBasicEtapas(atleta.nivelExperiencia(), i)
+//            );
+//            treinos.add(treino);
         }
         
         log.info("Gerado plano básico com {} treinos para atleta {}", treinos.size(), atleta.nome());
@@ -481,38 +489,38 @@ public class SpringAiEnhancedIaServiceImpl_old implements IaService {
     private List<com.menthoros.dto.output.EtapaTreinoDto> generateBasicEtapas(com.menthoros.enums.NivelExperiencia nivel, int treinoIndex) {
         List<com.menthoros.dto.output.EtapaTreinoDto> etapas = new ArrayList<>();
         
-        // Etapa básica de aquecimento
-        etapas.add(new com.menthoros.dto.output.EtapaTreinoDto(
-                1, // ordem
-                TipoEtapa.AQUECIMENTO, // tipoEtapa
-                "Corrida leve para aquecimento", // descricaoEtapa
-                10, // duracaoMin
-                1.0, // distanciaKm
-                null, // fcAlvoEtapa
-                null // repeticoes
-        ));
-        
-        // Etapa principal
-        etapas.add(new com.menthoros.dto.output.EtapaTreinoDto(
-                2, // ordem
-                TipoEtapa.PRINCIPAL, // tipoEtapa
-                "Parte principal do treino", // descricaoEtapa
-                getDuracaoByNivel(nivel, treinoIndex) - 15, // duracaoMin
-                Math.max(1.0, getDistanciaByNivel(nivel, treinoIndex) - 2.0), // distanciaKm
-                null, // fcAlvoEtapa
-                null // repeticoes
-        ));
-        
-        // Volta à calma
-        etapas.add(new com.menthoros.dto.output.EtapaTreinoDto(
-                3, // ordem
-                TipoEtapa.DESAQUECIMENTO, // tipoEtapa
-                "Corrida muito leve para recuperação", // descricaoEtapa
-                5, // duracaoMin
-                1.0, // distanciaKm
-                null, // fcAlvoEtapa
-                null // repeticoes
-        ));
+//        // Etapa básica de aquecimento
+//        etapas.add(new com.menthoros.dto.output.EtapaTreinoDto(
+//                1, // ordem
+//                TipoEtapa.AQUECIMENTO, // tipoEtapa
+////                "Corrida leve para aquecimento", // descricaoEtapa
+//                10, // duracaoMin
+//                1.0, // distanciaKm
+//                null, // fcAlvoEtapa
+//                null // repeticoes
+//        ));
+//
+//        // Etapa principal
+//        etapas.add(new com.menthoros.dto.output.EtapaTreinoDto(
+//                2, // ordem
+//                TipoEtapa.PRINCIPAL, // tipoEtapa
+////                "Parte principal do treino", // descricaoEtapa
+//                getDuracaoByNivel(nivel, treinoIndex) - 15, // duracaoMin
+//                Math.max(1.0, getDistanciaByNivel(nivel, treinoIndex) - 2.0), // distanciaKm
+//                null, // fcAlvoEtapa
+//                null // repeticoes
+//        ));
+//
+//        // Volta à calma
+//        etapas.add(new com.menthoros.dto.output.EtapaTreinoDto(
+//                3, // ordem
+//                TipoEtapa.DESAQUECIMENTO, // tipoEtapa
+////                "Corrida muito leve para recuperação", // descricaoEtapa
+//                5, // duracaoMin
+//                1.0, // distanciaKm
+//                null, // fcAlvoEtapa
+//                null // repeticoes
+//        ));
         
         return etapas;
     }

@@ -59,7 +59,7 @@ spring:
         options:
           model: gpt-4o
           temperature: 0.2
-          max-tokens: 16384
+          max-tokens: 12000
           top-p: 0.9
           frequency-penalty: 0.1
           presence-penalty: 0.0

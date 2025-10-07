@@ -10,15 +10,11 @@ import java.util.List;
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record PlanoSemanalLlmDto(
-//        LocalDate semanaInicio,
-//        LocalDate semanaFim,
         double volumePlanejadoKm,
-        double volumeRealizadoKm,
         double volumeAlvoKm,
         Double tsbInicio,
         Double tsbFim,
-        PlanoStatus status,
-//        String observacoes,
+        String status,
         String objetivoSemanal,
         List<TreinoPlanejadoLlmDto> treinosPlanejados
 ) {}

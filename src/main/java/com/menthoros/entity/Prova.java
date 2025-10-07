@@ -41,6 +41,13 @@ public class Prova {
     @Column(name = "distancia_km", precision = 6, scale = 2)
     private BigDecimal distanciaKm; // Para distâncias customizadas
 
+    @Column(name = "prova_alvo")
+    private boolean provaAlvo;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status_prova", nullable = false)
+    private ProvaStatus statusProva = ProvaStatus.PLANEJADA;
+
     // ===== OBJETIVOS =====
 
     @Column(name = "tempo_objetivo")
@@ -88,17 +95,27 @@ public class Prova {
     private Atleta atleta;
 
     /**
+     * Verifica se é a prova alvo principal
+     */
+    public boolean isProvaAlvo() {
+        return provaAlvo;
+    }
+
+    /**
      * Calcula dias faltando para a prova
      */
-    public Integer diasFaltando() {
-        if (foiRealizada) return 0;
-        return (int) LocalDate.now().until(dataProva).getDays();
+    public int diasFaltando() {
+        if (foiRealizada != null && foiRealizada) return 0;
+        LocalDate hoje = LocalDate.now();
+        if (dataProva.isBefore(hoje)) return 0;
+        return (int) java.time.temporal.ChronoUnit.DAYS.between(hoje, dataProva);
     }
 
     /**
      * Verifica se está no período de taper (últimas 2 semanas)
      */
     public boolean estaNoPeriodoTaper() {
-        return diasFaltando() <= 14 && diasFaltando() > 0;
+        int dias = diasFaltando();
+        return dias <= 14 && dias > 0;
     }
 }

@@ -33,6 +33,7 @@ public class TreinoRealizado extends TreinoBase{
     @Column(name = "data_treino")
     private LocalDate dataTreino; // Opcional, mas útil
 
+
     @Column(name = "tss_calculado")
     private Integer tssCalculado; // TSS real calculado
 
@@ -107,12 +108,12 @@ public class TreinoRealizado extends TreinoBase{
      */
     public Integer getDiferencaTss() {
         if (treinoPlanejado == null ||
-                treinoPlanejado.getTssPlaneado() == null ||
+                treinoPlanejado.getTssPlanejado() == null ||
                 tssCalculado == null) {
             return null;
         }
 
-        return tssCalculado - treinoPlanejado.getTssPlaneado();
+        return tssCalculado - treinoPlanejado.getTssPlanejado();
     }
 
 }

@@ -22,7 +22,7 @@ public record EtapaTreinoDto(
         @Schema(description = "Distância da etapa em quilômetros", example = "2.0")
         Double distanciaKm,
 
-        @Schema(description = "Frequência cardíaca alvo da etapa", example = "130-140 bpm")
+        @Schema(description = "Frequência cardíaca alvo da etapa", example = "70-80% FCmáx")
         String fcAlvoEtapa,
 
         @Schema(description = "Número de repetições da etapa", example = "1")

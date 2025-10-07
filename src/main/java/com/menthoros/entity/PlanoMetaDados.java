@@ -1,7 +1,10 @@
 package com.menthoros.entity;
 
 import com.menthoros.converter.FloatListToVectorConverter;
+import com.menthoros.dto.AlertaMetricas;
 import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.FasePeriodizacao;
+import com.menthoros.enums.NivelAlerta;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -54,6 +57,9 @@ public class PlanoMetaDados {
     @Column(name = "volume_semanal_medio", precision = 10, scale = 2)
     private BigDecimal volumeSemanalMedio;
 
+    @Column(name = "volume_planejado", precision = 10, scale = 2)
+    private BigDecimal volumePlanejado;
+
     @Column(name = "tss_semanal_medio")
     private Integer tssSemanalMedio;
 
@@ -96,8 +102,21 @@ public class PlanoMetaDados {
     private PlanoSemanal planoSemanalAtual;
 
     @Column(name = "embedding", columnDefinition = "vector(1536)")
+    @org.hibernate.annotations.JdbcTypeCode(java.sql.Types.OTHER)
     @Convert(converter = FloatListToVectorConverter.class)
     private List<Float> embedding;
+
+    // ===== NOVOS CAMPOS - FASE 2 =====
+
+    @Column(name = "status_geral", length = 50)
+    private String statusGeral;
+
+    @Column(name = "recomendacao_treino", columnDefinition = "TEXT")
+    private String recomendacaoTreino;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fase_periodizacao", length = 30)
+    private FasePeriodizacao fasePeriodizacao;
 
     // ===== LIFECYCLE CALLBACKS =====
 
@@ -105,6 +124,8 @@ public class PlanoMetaDados {
     private void preUpdate() {
         this.dataUltimaAtualizacao = LocalDate.now();
         atualizarAlertas();
+        atualizarStatusGeral();
+        atualizarRecomendacao();
     }
 
     @PrePersist
@@ -155,6 +176,100 @@ public class PlanoMetaDados {
         return alertas.isEmpty() ? null : String.join(" ", alertas);
     }
 
+    /**
+     * Atualiza o status geral do atleta baseado nas métricas
+     * Chamado automaticamente no @PreUpdate
+     */
+    private void atualizarStatusGeral() {
+        if (tsbAtual == null && ctlAtual == null) {
+            this.statusGeral = "COLETANDO DADOS";
+            return;
+        }
+
+        // Prioridade 1: Alertas críticos combinados
+        if (Boolean.TRUE.equals(alertaSobrecarga) && Boolean.TRUE.equals(alertaRampAlto)) {
+            this.statusGeral = "FADIGA CRÍTICA + PROGRESSÃO RÁPIDA";
+        }
+        // Prioridade 2: Fadiga crítica
+        else if (tsbAtual != null && tsbAtual < -35) {
+            this.statusGeral = "FADIGA CRÍTICA";
+        }
+        // Prioridade 3: Ramp rate alto
+        else if (Boolean.TRUE.equals(alertaRampAlto)) {
+            this.statusGeral = "PROGRESSÃO MUITO RÁPIDA";
+        }
+        // Prioridade 4: Sobrecarga
+        else if (Boolean.TRUE.equals(alertaSobrecarga)) {
+            this.statusGeral = "FADIGA ALTA";
+        }
+        // Prioridade 5: Dias consecutivos
+        else if (diasConsecutivosTreino != null && diasConsecutivosTreino >= 6) {
+            this.statusGeral = "MUITOS DIAS CONSECUTIVOS";
+        }
+        // Prioridade 6: Forma ideal
+        else if (tsbAtual != null && tsbAtual >= 5 && tsbAtual <= 15) {
+            this.statusGeral = "FORMA IDEAL";
+        }
+        // Prioridade 7: Fadiga moderada
+        else if (tsbAtual != null && tsbAtual < -20) {
+            this.statusGeral = "FADIGA MODERADA";
+        }
+        // Prioridade 8: Recuperando
+        else if (tsbAtual != null && tsbAtual >= 0 && tsbAtual < 5) {
+            this.statusGeral = "RECUPERANDO";
+        }
+        // Prioridade 9: Muito descansado
+        else if (tsbAtual != null && tsbAtual > 20) {
+            this.statusGeral = "MUITO DESCANSADO";
+        }
+        // Default: Normal
+        else {
+            this.statusGeral = "NORMAL";
+        }
+    }
+
+    /**
+     * Atualiza a recomendação de treino baseada nos alertas ativos
+     * Chamado automaticamente no @PreUpdate
+     */
+    private void atualizarRecomendacao() {
+        StringBuilder rec = new StringBuilder();
+
+        // Recomendações críticas primeiro
+        if (tsbAtual != null && tsbAtual < -35) {
+            rec.append("🔴 CRÍTICO: Dia de descanso completo OBRIGATÓRIO ou apenas atividade regenerativa leve (30min). ");
+        } else if (Boolean.TRUE.equals(alertaSobrecarga)) {
+            rec.append("⚠️ Reduzir volume em 30-40%. Priorizar treinos regenerativos e descanso. ");
+        }
+
+        if (Boolean.TRUE.equals(alertaRampAlto)) {
+            rec.append("⚠️ Reduzir volume em 20-30% nas próximas 2 semanas. Não aumentar carga. ");
+        }
+
+        if (diasConsecutivosTreino != null && diasConsecutivosTreino >= 6) {
+            rec.append("⚠️ Incluir dia de descanso completo IMEDIATAMENTE. ");
+        } else if (Boolean.TRUE.equals(alertaDiasConsecutivos)) {
+            rec.append("Incluir dia de descanso ou treino regenerativo nos próximos 1-2 dias. ");
+        }
+
+        if (semanasProgressaoContinua != null && semanasProgressaoContinua >= 4) {
+            rec.append("Considerar semana regenerativa (reduzir volume em 40-50%) para assimilação. ");
+        }
+
+        // Recomendações positivas se não houver alertas
+        if (rec.length() == 0) {
+            if (tsbAtual != null && tsbAtual >= 5 && tsbAtual <= 15) {
+                rec.append("✅ Condições ideais para treinos intensos ou provas importantes. ");
+            } else if (tsbAtual != null && tsbAtual > 20) {
+                rec.append("Considerar aumentar volume ou incluir sessão de qualidade. ");
+            } else {
+                rec.append("Continuar treinamento normalmente, respeitando os princípios de progressão. ");
+            }
+        }
+
+        this.recomendacaoTreino = rec.length() > 0 ? rec.toString().trim() : null;
+    }
+
     @Transient
     public boolean estaEmFormaIdeal() {
         return tsbAtual != null && tsbAtual >= 5 && tsbAtual <= 10;
@@ -177,5 +292,100 @@ public class PlanoMetaDados {
         return "Muito descansado";
     }
 
+    /**
+     * Retorna lista de alertas ativos baseados nas métricas atuais
+     * Usado para estruturar alertas de forma consistente entre entidade e prompt
+     */
+    @Transient
+    public List<AlertaMetricas> getAlertasAtivos() {
+        List<AlertaMetricas> alertas = new ArrayList<>();
 
+        // Alerta TSB Crítico (< -35)
+        if (tsbAtual != null && tsbAtual < -35) {
+            alertas.add(new AlertaMetricas(
+                    NivelAlerta.CRITICO,
+                    "TSB_CRITICO",
+                    String.format("TSB crítico (%.1f). Risco de overtraining.", tsbAtual),
+                    "Dia de descanso completo OBRIGATÓRIO ou apenas atividade regenerativa leve (30min caminhada)."
+            ));
+        }
+        // Alerta TSB Baixo (< -30)
+        else if (alertaSobrecarga != null && alertaSobrecarga) {
+            alertas.add(new AlertaMetricas(
+                    NivelAlerta.ALTO,
+                    "TSB_BAIXO",
+                    String.format("TSB baixo (%.1f). Fadiga alta acumulada.", tsbAtual),
+                    "Reduzir volume em 30-40%. Priorizar treinos regenerativos e descanso."
+            ));
+        }
+        // Alerta TSB Moderado (< -20)
+        else if (tsbAtual != null && tsbAtual < -20) {
+            alertas.add(new AlertaMetricas(
+                    NivelAlerta.ATENCAO,
+                    "TSB_MODERADO",
+                    String.format("TSB moderado (%.1f). Fadiga moderada.", tsbAtual),
+                    "Monitorar sinais de fadiga. Considerar reduzir intensidade dos treinos."
+            ));
+        }
+
+        // Alerta Ramp Rate Alto (> 10)
+        if (alertaRampAlto != null && alertaRampAlto) {
+            alertas.add(new AlertaMetricas(
+                    NivelAlerta.CRITICO,
+                    "RAMP_RATE_ALTO",
+                    String.format("Progressão muito rápida (%.1f pts/sem). Risco de lesão!", rampRateAtual),
+                    "Reduzir volume em 20-30% nas próximas 2 semanas. Não aumentar carga."
+            ));
+        }
+        // Ramp Rate Moderado (> 8)
+        else if (rampRateAtual != null && rampRateAtual > 8) {
+            alertas.add(new AlertaMetricas(
+                    NivelAlerta.ALTO,
+                    "RAMP_RATE_MODERADO",
+                    String.format("Progressão rápida (%.1f pts/sem).", rampRateAtual),
+                    "Manter volume atual sem aumentar. Monitorar sinais de fadiga."
+            ));
+        }
+
+        // Alerta Dias Consecutivos (>= 6)
+        if (diasConsecutivosTreino != null && diasConsecutivosTreino >= 6) {
+            alertas.add(new AlertaMetricas(
+                    NivelAlerta.CRITICO,
+                    "DIAS_CONSECUTIVOS_CRITICO",
+                    String.format("%d dias consecutivos treinando. Risco de overtraining!", diasConsecutivosTreino),
+                    "Incluir dia de descanso completo IMEDIATAMENTE."
+            ));
+        }
+        // Dias Consecutivos Moderado (>= 5)
+        else if (alertaDiasConsecutivos != null && alertaDiasConsecutivos) {
+            alertas.add(new AlertaMetricas(
+                    NivelAlerta.ALTO,
+                    "DIAS_CONSECUTIVOS_ALTO",
+                    String.format("%d dias consecutivos treinando.", diasConsecutivosTreino),
+                    "Incluir dia de descanso ou treino regenerativo nos próximos 1-2 dias."
+            ));
+        }
+
+        // Alerta Semanas de Progressão Contínua (>= 4)
+        if (semanasProgressaoContinua != null && semanasProgressaoContinua >= 4) {
+            alertas.add(new AlertaMetricas(
+                    NivelAlerta.ATENCAO,
+                    "PROGRESSAO_CONTINUA",
+                    String.format("%d semanas de progressão contínua.", semanasProgressaoContinua),
+                    "Considerar semana regenerativa (reduzir volume em 40-50%) para assimilação."
+            ));
+        }
+
+        // Alerta Positivo - Forma Ideal
+        if (alertas.isEmpty() && estaEmFormaIdeal()) {
+            alertas.add(new AlertaMetricas(
+                    NivelAlerta.INFO,
+                    "FORMA_IDEAL",
+                    String.format("TSB em forma ideal (%.1f). Condições ótimas!", tsbAtual),
+                    "Janela ideal para treinos intensos ou provas importantes."
+            ));
+        }
+
+        return alertas;
+    }
 }

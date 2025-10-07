@@ -3,14 +3,18 @@ package com.menthoros.converter;
 import com.pgvector.PGvector;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
+import org.hibernate.engine.spi.SharedSessionContractImplementor;
 
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.List;
 
-@Converter
-public class FloatListToVectorConverter implements AttributeConverter<List<Float>, PGvector> {
+@Converter(autoApply = false)
+public class FloatListToVectorConverter implements AttributeConverter<List<Float>, Object> {
 
     @Override
-    public PGvector convertToDatabaseColumn(List<Float> attribute) {
+    public Object convertToDatabaseColumn(List<Float> attribute) {
         if (attribute == null || attribute.isEmpty()) {
             return null;
         }
@@ -22,14 +26,18 @@ public class FloatListToVectorConverter implements AttributeConverter<List<Float
     }
 
     @Override
-    public List<Float> convertToEntityAttribute(PGvector dbData) {
+    public List<Float> convertToEntityAttribute(Object dbData) {
         if (dbData == null) return null;
 
-        float[] array = dbData.toArray();
-        List<Float> floatList = new java.util.ArrayList<>();
-        for (float f : array) {
-            floatList.add(f);
+        if (dbData instanceof PGvector pgVector) {
+            float[] array = pgVector.toArray();
+            List<Float> floatList = new java.util.ArrayList<>();
+            for (float f : array) {
+                floatList.add(f);
+            }
+            return floatList;
         }
-        return floatList;
+
+        return null;
     }
 }

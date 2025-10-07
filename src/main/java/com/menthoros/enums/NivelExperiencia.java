@@ -8,7 +8,8 @@ public enum NivelExperiencia {
     
     INICIANTE("INICIANTE", "Iniciante", "Até 6 meses de experiência", 1),
     INTERMEDIARIO("INTERMEDIARIO", "Intermediário", "6 meses a 2 anos de experiência", 2),
-    AVANCADO("AVANCADO", "Avançado", "Mais de 2 anos de experiência", 3);
+    AVANCADO("AVANCADO", "Avançado", "Mais de 2 anos de experiência", 3),
+    ELITE("ELITE", "Elite", "Mais de 5 anos de experiência", 4);
 
     @JsonProperty("value")
     private final String value;

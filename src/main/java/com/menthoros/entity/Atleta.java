@@ -76,6 +76,36 @@ public class Atleta {
     @Column(name = "vo2max_estimado", precision = 5, scale = 2)
     private BigDecimal vo2maxEstimado;
 
+    // ===== CONSTANTES DE TEMPO ADAPTATIVAS PARA TSB =====
+
+    /**
+     * Constante de tempo para CTL (Chronic Training Load)
+     * <p>Define velocidade de adaptação ao treinamento crônico:</p>
+     * <ul>
+     *   <li>30 dias: Iniciante (adapta rápido)</li>
+     *   <li>35 dias: Intermediário</li>
+     *   <li>42 dias: Avançado (padrão clássico)</li>
+     *   <li>50 dias: Elite (adapta lento, mais estável)</li>
+     * </ul>
+     * <p>Valor padrão calculado por {@code NivelExperiencia} se não definido</p>
+     */
+    @Column(name = "ctl_time_constant")
+    private Integer ctlTimeConstant;
+
+    /**
+     * Constante de tempo para ATL (Acute Training Load)
+     * <p>Define velocidade de recuperação da fadiga aguda:</p>
+     * <ul>
+     *   <li>5 dias: Iniciante (recupera rápido, mas sobrecarrega fácil)</li>
+     *   <li>6 dias: Intermediário</li>
+     *   <li>7 dias: Avançado (padrão clássico)</li>
+     *   <li>8 dias: Elite (recupera mais lento, maior resiliência)</li>
+     * </ul>
+     * <p>Valor padrão calculado por {@code NivelExperiencia} se não definido</p>
+     */
+    @Column(name = "atl_time_constant")
+    private Integer atlTimeConstant;
+
     @ElementCollection(fetch = FetchType.LAZY)
     @Enumerated(EnumType.STRING)
     @CollectionTable(name = "tb_dias_disponiveis", joinColumns = @JoinColumn(name = "atleta_id"))

@@ -7,6 +7,9 @@ import com.menthoros.dto.output.AtletaOutputDto;
 import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.dto.output.PlanoTreinoOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
+import com.menthoros.entity.Atleta;
+import com.menthoros.entity.PlanoMetaDados;
+import com.menthoros.entity.Prova;
 import com.menthoros.enums.TipoTreino;
 import com.menthoros.exception.LLMException;
 import com.menthoros.services.IaService;
@@ -99,6 +102,11 @@ public class SpringAiFixedIaServiceImpl implements IaService {
             log.error("Erro na geração de plano para atleta {}: {}", atletaOutputDto.id(), e.getMessage(), e);
             return generateFallbackPlan(atletaOutputDto, treinoRealizadoOutputDtoList);
         }
+    }
+
+    @Override
+    public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova) {
+        return null;
     }
 
     @Override
@@ -329,8 +337,8 @@ public class SpringAiFixedIaServiceImpl implements IaService {
         if (plano.treinosPlanejados() != null) {
             long treinosIntensos = plano.treinosPlanejados().stream()
                     .filter(t -> t.tipoTreino() != null &&
-                               (t.tipoTreino() == TipoTreino.INTERVALADO ||
-                                t.tipoTreino() == TipoTreino.LONGO))
+                               (t.tipoTreino() == TipoTreino.INTERVALADO.getValue() ||
+                                t.tipoTreino() == TipoTreino.LONGO.getValue()))
                     .count();
                     
             if (treinosIntensos > 3) {
@@ -350,9 +358,9 @@ public class SpringAiFixedIaServiceImpl implements IaService {
 //                .semanaInicio(java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY)))
 //                .semanaFim(java.time.LocalDate.now().with(java.time.temporal.TemporalAdjusters.nextOrSame(java.time.DayOfWeek.SUNDAY)))
                 .volumePlanejadoKm(volumeConservador)
-                .volumeRealizadoKm(0.0)
+//                .volumeRealizadoKm(0.0)
                 .volumeAlvoKm(volumeConservador)
-                .status(com.menthoros.enums.PlanoStatus.ATIVO)
+                .status(com.menthoros.enums.PlanoStatus.ATIVO.getValue())
 //                .observacoes("Plano de fallback gerado automaticamente devido à indisponibilidade do serviço de IA")
                 .objetivoSemanal("Manter atividade física com volume conservador")
                 .treinosPlanejados(new java.util.ArrayList<>()) // Lista vazia por enquanto

@@ -35,7 +35,7 @@ public class TreinoPlanejado extends TreinoBase{
     private LocalDate dataTreino;
 
     @Column(name = "tss_planejado")
-    private Integer tssPlaneado; // TSS estimado para o treino
+    private Integer tssPlanejado; // TSS estimado para o treino
 
     @Column(name = "intensidade_planejada")
     private Double intensidadePlanejada; // IF estimado (0.5 - 1.5)
