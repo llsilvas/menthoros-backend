@@ -30,9 +30,18 @@ public class Atleta {
 
     @Column(name = "nome", nullable = false)
     private String nome;
+    
+    @Column(name = "sobrenome", nullable = false)
+    private String sobrenome;
 
-    @Column(nullable = false)
-    private int idade;
+    @Column(name = "data_nascimento", nullable = false)
+    private LocalDate dataNascimento;
+
+    @Column(name = "email", nullable = false, unique = true)
+    private String email;
+
+    @Column(name = "sexo", nullable = false)
+    private String sexo;
 
     @Column(name = "peso_kg", precision = 5, scale = 2)
     private BigDecimal pesoKg;
@@ -169,7 +178,12 @@ public class Atleta {
     private List<Prova> provas;
 
     public Integer getFcMaximaCalculada() {
+        Integer idade = getIdade();
         return fcMaxima != null ? fcMaxima : 220 - idade;
+    }
+    
+    public Integer getIdade(){
+        return LocalDate.now().getYear() - dataNascimento.getYear();
     }
 
     public Integer getFcLimiarCalculada() {
