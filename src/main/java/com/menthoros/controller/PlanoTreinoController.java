@@ -3,6 +3,7 @@ package com.menthoros.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.entity.PlanoSemanal;
+import com.menthoros.enums.ModoGeracaoPlano;
 import com.menthoros.mapper.PlanoSemanalMapper;
 import com.menthoros.services.impl.PlanoServiceImpl;
 import com.menthoros.services.IaService;
@@ -41,8 +42,8 @@ public class PlanoTreinoController {
     })
     @PostMapping("/atletas/{atletaId}/gerar")
     public ResponseEntity<PlanoSemanalOutputDto> gerarPlanoTreino(
-            @Parameter(description = "ID do atleta para o qual gerar o plano") @PathVariable UUID atletaId) throws JsonProcessingException {
-        PlanoSemanal planoSemanal = planoServiceImpl.gerarPlanoTreino(atletaId);
+            @Parameter(description = "ID do atleta para o qual gerar o plano") @PathVariable UUID atletaId, ModoGeracaoPlano modoGeracaoPlano) {
+        PlanoSemanal planoSemanal = planoServiceImpl.gerarPlanoTreino(atletaId, modoGeracaoPlano);
         PlanoSemanalOutputDto planoSemanalOutputDto = planoSemanalMapper.toOutputDto(planoSemanal);
 
         return ResponseEntity.ok(planoSemanalOutputDto);
@@ -59,8 +60,8 @@ public class PlanoTreinoController {
     })
     @PostMapping("/atletas/{atletaId}/gerar-enhanced")
     public ResponseEntity<PlanoSemanalOutputDto> gerarPlanoTreinoEnhanced(
-            @Parameter(description = "ID do atleta para o qual gerar o plano aprimorado") @PathVariable UUID atletaId) throws JsonProcessingException {
-        PlanoSemanal planoSemanal = planoServiceImpl.gerarPlanoTreino(atletaId);
+            @Parameter(description = "ID do atleta para o qual gerar o plano aprimorado") @PathVariable UUID atletaId, ModoGeracaoPlano modoGeracaoPlano) {
+        PlanoSemanal planoSemanal = planoServiceImpl.gerarPlanoTreino(atletaId, modoGeracaoPlano);
         PlanoSemanalOutputDto planoSemanalOutputDto = planoSemanalMapper.toOutputDto(planoSemanal);
 
         return ResponseEntity.ok(planoSemanalOutputDto);
