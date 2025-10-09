@@ -2,11 +2,14 @@ package com.menthoros.services.impl;
 
 import com.menthoros.dto.input.DadosPlanoDto;
 import com.menthoros.dto.llm.PlanoSemanalLlmDto;
+import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
 import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.*;
 import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.ModoGeracaoPlano;
 import com.menthoros.enums.PlanoStatus;
+import com.menthoros.exception.DomainRuleViolationException;
 import com.menthoros.exception.LLMException;
 import com.menthoros.exception.ResourceNotFoundException;
 import com.menthoros.mapper.AtletaMapper;
@@ -17,7 +20,10 @@ import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.repository.PlanoSemanalRepository;
 import com.menthoros.repository.TreinoRealizadoRepository;
 import com.menthoros.services.EmbeddingService;
+import com.menthoros.services.IaService;
 import com.menthoros.services.PlanoService;
+import com.menthoros.services.helper.RedistribuicaoTreinoHelper;
+import com.menthoros.services.helper.RegraGeracaoTreino;
 import com.menthoros.util.Utils;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +44,7 @@ import java.util.*;
 @Service
 public class PlanoServiceImpl implements PlanoService {
 
-    private final IaServiceImpl iaService;
+    private final IaService iaService;
     private final AtletaRepository atletaRepository;
     private final AtletaMapper atletaMapper;
     private final TreinoMapper treinoMapper;
@@ -48,28 +54,153 @@ public class PlanoServiceImpl implements PlanoService {
     private final EmbeddingService embeddingService;
     private final PlanoSemanalRepository planoSemanalRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
+    private final RedistribuicaoTreinoHelper redistribuicaoHelper;
+    private final RegraGeracaoTreino regraGeracaoTreino;
 
-    @Override
     @Transactional
-    public PlanoSemanal gerarPlanoTreino(UUID atletaId) {
+    @Override
+    public PlanoSemanal gerarPlanoTreino(UUID atletaId, ModoGeracaoPlano modoGeracao) {
 
         DadosPlanoDto dadosPlano = getPreparaDadosPlano(atletaId);
-
         Hibernate.initialize(dadosPlano.atleta().getProvas()); // evita LazyInitializationException
 
-        PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano);
+        try {
+            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano);
 
-        return persistirPlanoCompleto(planoDto, dadosPlano);
+            // Fail-fast: valida se o plano foi gerado antes de prosseguir
+            if (planoDto == null) {
+                throw new LLMException("Falha ao gerar plano: IA retornou resposta nula. Tente novamente.");
+            }
+
+            return persistirPlanoCompleto(planoDto, dadosPlano, modoGeracao);
+        } catch (LLMException | DomainRuleViolationException e) {
+            // Re-lança exceções de domínio sem modificar
+            log.error("Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
+            throw e;
+        } catch (IllegalArgumentException e) {
+            // Converte exceções de validação em exceções de domínio
+            log.error("Erro de validação ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
+            throw new LLMException("Erro ao gerar plano semanal: " + e.getMessage(), e);
+        } catch (Exception e) {
+            // Captura exceções inesperadas
+            log.error("Erro inesperado ao gerar plano para atleta {}", atletaId, e);
+            throw new LLMException("Erro inesperado ao gerar plano. Por favor, tente novamente.", e);
+        }
     }
 
-    private PlanoSemanal persistirPlanoCompleto(PlanoSemanalLlmDto planoDto, DadosPlanoDto dadosPlano) {
+    private PlanoSemanal persistirPlanoCompleto(PlanoSemanalLlmDto planoDto, DadosPlanoDto dadosPlano, ModoGeracaoPlano modoGeracao) {
 
-        Atleta atleta = atletaRepository.findById(dadosPlano.atleta().getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + dadosPlano.atleta().getId()));
+        List<TreinoPlanejadoLlmDto> treinos;
         LocalDate hoje = LocalDate.now();
-        PlanoMetaDados metaDados;
+        Atleta atleta = dadosPlano.atleta();
 
-        if(dadosPlano.metaDados().getId() != null){
+        // 1. Calcular datas do plano
+        LocalDate semanaInicio = calcularSemanaInicio(atleta.getId(), hoje, modoGeracao);
+        LocalDate semanaFim = semanaInicio.plusDays(6);
+
+        log.info("Plano: {} a {} (Modo: {})", semanaInicio, semanaFim, modoGeracao);
+
+        // 2. REDISTRIBUIR TREINOS DA LLM
+        if (ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracao)) {
+            treinos = redistribuicaoHelper.redistribuirTreinos(
+                    planoDto.treinosPlanejados(),
+                    atleta.getDiasDisponiveis(),
+                    hoje,
+                    semanaInicio,
+                    semanaFim,
+                    modoGeracao
+            );
+        } else {
+            treinos = planoDto.treinosPlanejados();
+        }
+
+        // 3. Validar se há treinos após redistribuição
+        if (treinos.isEmpty()) {
+            throw new DomainRuleViolationException(
+                    """
+                    Não foi possível gerar treinos para a semana selecionada.
+                        Motivos possíveis:
+                        - Geração no meio da semana sem dias disponíveis
+                        - Todos os treinos da LLM são incompatíveis (LONGO/INTERVALADO)
+                        Sugestão: Gere para a próxima semana.
+                    """
+            );
+        }
+
+        PlanoMetaDados metaDados = prepararMetadados(planoDto, dadosPlano);
+
+        PlanoSemanal plano = criarPlanoEntity(planoDto, atleta, semanaInicio, semanaFim, metaDados);
+
+        // 6. Converter DTOs redistribuídos em entidades
+        List<TreinoPlanejado> treinosPlanejados = treinos.stream()
+                .map(dto -> {
+                    TreinoPlanejado treino = treinoMapper.toEntity(dto);
+                    treino.setPlanoSemanal(plano);
+
+                    // Calcular data do treino
+                    DiaSemana diaSemana = DiaSemana.valueOf(dto.diaSemana());
+                    LocalDate dataTreino = calcularDataTreino(semanaInicio, diaSemana);
+                    treino.setDataTreino(dataTreino);
+
+                    return treino;
+                })
+                .toList();
+
+        var volumePlanejado = treinosPlanejados.stream()
+                .mapToDouble(this::distanciaTreinoPlanejado)
+                .sum();
+
+        plano.setVolumePlanejadoKm(BigDecimal.valueOf(volumePlanejado));
+        plano.setVolumeAlvoKm(BigDecimal.valueOf(volumePlanejado));
+        plano.setTreinosPlanejados(treinosPlanejados);
+
+        PlanoSemanal planoSalvo = planoSemanalRepository.save(plano);
+
+        metaDados.setPlanoSemanalAtual(planoSalvo);
+        planoMetadadosRepository.save(metaDados);
+
+        log.info("✅ Plano salvo - {} treinos redistribuídos, volume: {}km",
+                treinosPlanejados.size(), volumePlanejado);
+
+        return planoSalvo;
+    }
+
+    private LocalDate calcularSemanaInicio(UUID atletaId, LocalDate hoje, ModoGeracaoPlano modoGeracao) {
+        return planoSemanalRepository
+                .findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)
+                .map(p -> p.getSemanaInicio().plusWeeks(1))
+                .orElse(hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)));
+    }
+
+    private PlanoSemanal criarPlanoEntity(PlanoSemanalLlmDto planoDto, Atleta atleta, LocalDate semanaInicio, LocalDate semanaFim, PlanoMetaDados metaDados) {
+        // Busca o último plano para pegar a média histórica
+        PlanoSemanal ultimoPlano = planoSemanalRepository
+                .findTopByAtletaIdOrderBySemanaInicioDesc(atleta.getId())
+                .orElse(null);
+
+        PlanoSemanal plano = planoSemanalMapper.toEntity(planoDto);
+        plano.setAtleta(atleta);
+
+        plano.setSemanaInicio(semanaInicio);
+        plano.setSemanaFim(semanaFim);
+
+        if (ultimoPlano != null && ultimoPlano.getPlanoMetaDados() != null) {
+            var mediaSemanalHistorica = ultimoPlano.getPlanoMetaDados().getVolumeSemanalMedio();
+
+            var volumePlanejado = mediaSemanalHistorica.multiply(BigDecimal.valueOf(1.10));
+
+            metaDados.setVolumePlanejado(volumePlanejado);
+            metaDados.setVolumeSemanalMedio(mediaSemanalHistorica);
+
+        }
+
+        plano.setPlanoMetaDados(metaDados);
+        return plano;
+    }
+
+    private PlanoMetaDados prepararMetadados(PlanoSemanalLlmDto planoDto, DadosPlanoDto dadosPlano) {
+        PlanoMetaDados metaDados;
+        if (dadosPlano.metaDados().getId() != null) {
             metaDados = dadosPlano.metaDados();
 
             // Atualizar TSB projetado
@@ -84,75 +215,16 @@ public class PlanoServiceImpl implements PlanoService {
             atualizarProgressao(metaDados, planoDto.volumePlanejadoKm());
 
             metaDados = planoMetadadosRepository.save(metaDados);
-        }else {
+        } else {
             metaDados = dadosPlano.metaDados();
         }
-
-        // Calcula data de início do plano (sempre segunda-feira da semana)
-        LocalDate dataInicio = planoSemanalRepository
-                .findTopByAtletaIdOrderBySemanaInicioDesc(atleta.getId())
-                .map(p -> p.getSemanaInicio().plusWeeks(1))
-                .orElse(hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)));
-
-        LocalDate dataFim = dataInicio.plusDays(6); // Domingo
-
-        // Busca o último plano para pegar a média histórica
-        PlanoSemanal ultimoPlano = planoSemanalRepository
-                .findTopByAtletaIdOrderBySemanaInicioDesc(atleta.getId())
-                .orElse(null);
-
-        PlanoSemanal plano = planoSemanalMapper.toEntity(planoDto);
-        plano.setAtleta(atleta);
-
-        plano.setSemanaInicio(dataInicio);
-        plano.setSemanaFim(dataFim);
-
-        if(ultimoPlano != null && ultimoPlano.getPlanoMetaDados() != null){
-            var mediaSemanalHistorica = ultimoPlano.getPlanoMetaDados().getVolumeSemanalMedio();
-
-            var volumePlanejado = mediaSemanalHistorica.multiply(BigDecimal.valueOf(1.10));
-
-            metaDados.setVolumePlanejado(volumePlanejado);
-            metaDados.setVolumeSemanalMedio(mediaSemanalHistorica);
-
-        }
-
-        plano.setPlanoMetaDados(metaDados);
-
-        List<TreinoPlanejado> treinosPlanejados = planoDto.treinosPlanejados().stream()
-                .map(dto -> {
-                    LocalDate dataTreino = calcularDataTreino(plano.getSemanaInicio(), DiaSemana.valueOf(dto.diaSemana()));
-
-                    TreinoPlanejado treino = treinoMapper.toEntity(dto);
-                    treino.setPlanoSemanal(plano);
-                    treino.setDataTreino(dataTreino);
-                    return treino;
-                })
-                .filter(treino -> treino.getDataTreino().isAfter(hoje)) // PULA HOJE
-                .filter(treino -> !treino.getDataTreino().isAfter(dataFim)) // Só até domingo
-                .toList();
-
-        var volumePlanejado = treinosPlanejados.stream()
-                .mapToDouble(this::distanciaTreinoPlanejado)
-                .sum();
-
-        plano.setVolumePlanejadoKm(BigDecimal.valueOf(volumePlanejado));
-        plano.setVolumeAlvoKm(BigDecimal.valueOf(volumePlanejado));
-
-        plano.setTreinosPlanejados(treinosPlanejados);
-
-        PlanoSemanal planoSalvo = planoSemanalRepository.save(plano);
-
-        metaDados.setPlanoSemanalAtual(planoSalvo);
-        planoMetadadosRepository.save(metaDados);
-
-        return planoSalvo;
+        return metaDados;
     }
 
     private double distanciaTreinoPlanejado(TreinoPlanejado treinoPlanejado) {
-        if(treinoPlanejado.getDistanciaKm() != null) return treinoPlanejado.getDistanciaKm().doubleValue();
+        if (treinoPlanejado.getDistanciaKm() != null) return treinoPlanejado.getDistanciaKm().doubleValue();
 
-        if(treinoPlanejado.getEtapas() != null){
+        if (treinoPlanejado.getEtapas() != null) {
             return treinoPlanejado.getEtapas().stream()
                     .map(e -> e.getDistanciaKm() == null ? 0.0 : e.getDistanciaKm().doubleValue())
                     .mapToDouble(Double::doubleValue)
@@ -226,11 +298,10 @@ public class PlanoServiceImpl implements PlanoService {
             PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), null);
 
             validaPlanoGerado(planoDto);
-
-            log.info("Plano gerado com sucesso para o atleta: {}", dadosPlanoDto.atleta().getId());
             return planoDto;
         } catch (LLMException e) {
             log.error("Falha na IA ao gerar o plano para o atleta: {}", dadosPlanoDto.atleta().getId());
+            throw e;
 //        }catch (JsonProcessingException e){
 //            log.error("Erro de JSON ao processar o plano para o atleta: {}", atleta.getId(), e);
         } catch (Exception e) {
@@ -242,11 +313,11 @@ public class PlanoServiceImpl implements PlanoService {
     private void validaPlanoGerado(PlanoSemanalLlmDto planoDto) {
 
         if (planoDto == null) {
-            throw new IllegalStateException("IA retornou plano nulo");
+            throw new LLMException("IA retornou plano nulo");
         }
 
         if (planoDto.treinosPlanejados() == null || planoDto.treinosPlanejados().isEmpty()) {
-            throw new IllegalStateException("IA retornou plano sem treinos");
+            throw new LLMException("IA retornou plano sem treinos");
         }
 
     }
