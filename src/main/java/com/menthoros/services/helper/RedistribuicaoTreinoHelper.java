@@ -47,7 +47,7 @@ public class RedistribuicaoTreinoHelper {
                 modoGeracao
         );
 
-        if(diasValidos.isEmpty()){
+        if (diasValidos.isEmpty()) {
             log.warn("Nenhum dia disponível para redistribuição de treinos na semana");
             return Collections.emptyList();
         }
@@ -120,7 +120,7 @@ public class RedistribuicaoTreinoHelper {
             LocalDate semanaFim,
             ModoGeracaoPlano modoGeracao
     ) {
-        if(modoGeracao == ModoGeracaoPlano.PROXIMA_SEMANA){
+        if (modoGeracao == ModoGeracaoPlano.PROXIMA_SEMANA) {
             return new ArrayList<>(diasOriginais);
         }
 
