@@ -17,6 +17,7 @@ import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.model.ModelOptionsUtils;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.ResponseFormat;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
@@ -26,6 +27,7 @@ import java.util.Map;
 
 @Slf4j
 @Service
+@Primary
 public class IaServiceImpl implements IaService {
 
     private final ChatClient chatClient;
