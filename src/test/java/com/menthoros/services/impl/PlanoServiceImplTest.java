@@ -75,6 +75,8 @@ class PlanoServiceImplTest {
     private RedistribuicaoTreinoHelper redistribuicaoHelper;
     @Mock
     private RegraGeracaoTreino regraGeracaoTreino;
+    @Mock
+    private com.menthoros.services.PlanoMetadadosService planoMetadadosService;
 
     @InjectMocks
     private PlanoServiceImpl planoService;
