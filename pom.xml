@@ -23,7 +23,7 @@
         <failsafe.plugin.version>3.5.2</failsafe.plugin.version>
         <git.commit.id.plugin.version>6.0.0</git.commit.id.plugin.version>
         <surefire.plugin.version>3.5.2</surefire.plugin.version>
-        <flyway.plugin.version>10.20.1</flyway.plugin.version>
+        <flyway-maven-plugin.version>11.7.2</flyway-maven-plugin.version>
         <docker.dockerfile.path>${project.basedir}/docker/Dockerfile.dev</docker.dockerfile.path>
         <build.helper.plugin.version>3.4.0</build.helper.plugin.version>
     </properties>
@@ -333,7 +333,18 @@
             <plugin>
                 <groupId>org.flywaydb</groupId>
                 <artifactId>flyway-maven-plugin</artifactId>
-                <version>${flyway.plugin.version}</version>
+                <version>${flyway-maven-plugin.version}</version>
+                <configuration>
+                    <url>jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}</url>
+                    <user>${DB_USER}</user>
+                    <password>${DB_PASSWORD}</password>
+                    <locations>
+                        <location>filesystem:src/main/resources/db/migration</location>
+                    </locations>
+                    <baselineOnMigrate>true</baselineOnMigrate>
+                    <validateOnMigrate>true</validateOnMigrate>
+                    <cleanDisabled>true</cleanDisabled>
+                </configuration>
             </plugin>
 
             <!-- Plugin para build e deploy em Kubernetes/OpenShift -->
