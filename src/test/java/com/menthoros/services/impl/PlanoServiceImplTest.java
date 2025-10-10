@@ -7,6 +7,7 @@ import com.menthoros.entity.Atleta;
 import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.entity.PlanoSemanal;
 import com.menthoros.entity.TreinoPlanejado;
+import com.menthoros.entity.TreinoRealizado;
 import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.ModoGeracaoPlano;
 import com.menthoros.enums.PlanoStatus;

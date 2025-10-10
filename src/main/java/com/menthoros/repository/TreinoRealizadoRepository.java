@@ -42,7 +42,7 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     @Query("SELECT MIN(t.dataTreino) FROM TreinoRealizado t WHERE t.atleta.id = :atletaId")
     LocalDate findDataPrimeiroTreino(@Param("atletaId") UUID atletaId);
 
-    List<TreinoPlanejado> findByAtletaIdAndDataTreinoBetween(UUID id, LocalDate semanaInicio, LocalDate semanaFim);
+    List<TreinoRealizado> findByAtletaIdAndDataTreinoBetween(UUID id, LocalDate semanaInicio, LocalDate semanaFim);
 
     Optional<PlanoMetaDados> findByPlanoSemanalId(UUID planoSemanalId);
 }
