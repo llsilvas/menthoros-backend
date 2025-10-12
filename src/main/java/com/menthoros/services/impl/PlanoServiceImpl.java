@@ -146,11 +146,14 @@ public class PlanoServiceImpl implements PlanoService {
         Atleta atleta = dadosPlano.atleta();
         LocalDate hoje = LocalDate.now();
 
+        log.info("Iniciando persistência de plano completo para atleta {}", atleta.getId());
+
         // 1. Calcular período do plano
         LocalDate semanaInicio = calcularSemanaInicio(atleta.getId(), hoje, modoGeracao);
         PeriodoPlano periodo = new PeriodoPlano(semanaInicio);
 
-        log.info("Plano: {} a {} (Modo: {})", periodo.inicio(), periodo.fim(), modoGeracao);
+        log.info("Período calculado: {} a {} (Modo: {}, {} treinos no plano LLM)",
+                periodo.inicio(), periodo.fim(), modoGeracao, planoDto.treinosPlanejados().size());
 
         // 2. Obter treinos (com ou sem redistribuição conforme o modo)
         List<TreinoPlanejadoLlmDto> treinos = obterTreinosParaPlano(
@@ -400,13 +403,8 @@ public class PlanoServiceImpl implements PlanoService {
         Atleta atleta = atletaRepository.findById(atletaId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
-        //        boolean planoAtualExiste = planoSemanalRepository
-        //                .existsByAtletaIdAndSemanaInicioLessThanEqualAndSemanaFimGreaterThanEqualAndStatusNot(
-        //                        atletaId, hoje, hoje, PlanoStatus.CONCLUIDO);
-        //
-        //        if (planoAtualExiste) {
-        //            throw new IllegalStateException("Já existe um plano em andamento para esta semana.");
-        //        }
+        // Validações de negócio do atleta
+        validarEstadoAtleta(atleta);
 
         PlanoMetaDados metaDados = planoMetadadosService.buscarOuCriarMetadados(atleta);
 
@@ -497,6 +495,15 @@ public class PlanoServiceImpl implements PlanoService {
             double volumeMedio = metaDados.getVolumeSemanalMedio().doubleValue();
             double rampRate = ((volumeNovo - volumeMedio) / volumeMedio) * 100;
             metaDados.setRampRateAtual(rampRate);
+
+            log.debug("Ramp Rate atualizado: {}% (volume novo: {}km, médio: {}km)",
+                    String.format("%.2f", rampRate), volumeNovo, volumeMedio);
+
+            if (rampRate > 10) {
+                log.warn("Atenção: Ramp Rate elevado ({}%) para atleta com metadados ID {}. " +
+                        "Recomenda-se não ultrapassar 10% de aumento semanal.",
+                        String.format("%.2f", rampRate), metaDados.getId());
+            }
         }
     }
 
@@ -504,9 +511,18 @@ public class PlanoServiceImpl implements PlanoService {
         if (metaDados.getVolumeSemanalMedio() != null) {
             if (volumeNovo > metaDados.getVolumeSemanalMedio().doubleValue()) {
                 Integer semanas = metaDados.getSemanasProgressaoContinua();
-                metaDados.setSemanasProgressaoContinua(semanas != null ? semanas + 1 : 1);
+                Integer novaContagem = semanas != null ? semanas + 1 : 1;
+                metaDados.setSemanasProgressaoContinua(novaContagem);
+
+                log.debug("Progressão contínua: {} semanas seguidas de aumento de volume", novaContagem);
+
+                if (novaContagem >= 3) {
+                    log.info("Atleta em progressão contínua há {} semanas. Considere semana de recuperação em breve.",
+                            novaContagem);
+                }
             } else {
                 metaDados.setSemanasProgressaoContinua(0);
+                log.debug("Progressão resetada - volume não aumentou em relação à média");
             }
         }
     }
@@ -514,6 +530,58 @@ public class PlanoServiceImpl implements PlanoService {
     private void validarParametrosEntrada(UUID atletaId, ModoGeracaoPlano modoGeracao) {
         Objects.requireNonNull(atletaId, "ID do atleta é obrigatório");
         Objects.requireNonNull(modoGeracao, "Modo de geração é obrigatório");
+    }
+
+    /**
+     * Valida o estado do atleta antes de gerar um plano de treino.
+     *
+     * <p>Verifica se o atleta está em condições de receber um plano, incluindo:
+     * <ul>
+     *   <li>Se o atleta está ativo no sistema</li>
+     *   <li>Se possui dias disponíveis para treinar</li>
+     *   <li>Se possui dados essenciais configurados</li>
+     * </ul>
+     *
+     * @param atleta o atleta a ser validado
+     * @throws DomainRuleViolationException se o atleta não atender aos requisitos
+     */
+    private void validarEstadoAtleta(Atleta atleta) {
+        // Valida se o atleta está ativo
+        if (atleta.getAtivo() == null || !atleta.getAtivo().isActive()) {
+            throw new DomainRuleViolationException(
+                    "Não é possível gerar plano para atleta inativo. Status: " +
+                    (atleta.getAtivo() != null ? atleta.getAtivo().getLabel() : "INDEFINIDO")
+            );
+        }
+
+        // Valida se o atleta possui dias disponíveis
+        if (atleta.getDiasDisponiveis() == null || atleta.getDiasDisponiveis().isEmpty()) {
+            throw new DomainRuleViolationException(
+                    "Não é possível gerar plano sem dias disponíveis. " +
+                    "Por favor, configure os dias disponíveis para treino no perfil do atleta."
+            );
+        }
+
+        // Valida se possui objetivo definido
+        if (atleta.getObjetivo() == null || atleta.getObjetivo().isBlank()) {
+            throw new DomainRuleViolationException(
+                    "Não é possível gerar plano sem objetivo definido. " +
+                    "Configure o objetivo no perfil do atleta."
+            );
+        }
+
+        // Valida se possui nível de experiência definido
+        if (atleta.getNivelExperiencia() == null) {
+            throw new DomainRuleViolationException(
+                    "Não é possível gerar plano sem nível de experiência definido. " +
+                    "Configure o nível no perfil do atleta."
+            );
+        }
+
+        log.debug("Atleta {} validado com sucesso: {} dias disponíveis, nível: {}",
+                atleta.getId(),
+                atleta.getDiasDisponiveis().size(),
+                atleta.getNivelExperiencia());
     }
 }
 
