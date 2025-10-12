@@ -1,0 +1,40 @@
+# ========================================
+# SPRING CORE CONFIGURATION
+# ========================================
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  jpa:
+    properties:
+      hibernate:
+        format_sql: false
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: false
+    open-in-view: false
+    hibernate:
+      ddl-auto: none
+
+  # ----------------------------------------
+  # FLYWAY CONFIGURATION
+  # ----------------------------------------
+  flyway:
+    enabled: true
+
+
+# ========================================
+# LOGGING CONFIGURATION
+# ========================================
+logging:
+  level:
+    root: info
+    # Desabilita logs SQL do Hibernate
+    org.hibernate.SQL: off
+    org.hibernate.type.descriptor.sql.BasicBinder: off
+    org.hibernate.orm.jdbc.bind: off
+    # Desabilita logs de transações
+    org.springframework.orm.jpa: warn
+    org.springframework.transaction: warn
+    # Desabilita logs do HikariCP (connection pool)
+    com.zaxxer.hikari: warn
