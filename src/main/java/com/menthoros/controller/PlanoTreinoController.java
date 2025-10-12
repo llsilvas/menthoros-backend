@@ -42,7 +42,8 @@ public class PlanoTreinoController {
     })
     @PostMapping("/atletas/{atletaId}/gerar")
     public ResponseEntity<PlanoSemanalOutputDto> gerarPlanoTreino(
-            @Parameter(description = "ID do atleta para o qual gerar o plano") @PathVariable UUID atletaId, ModoGeracaoPlano modoGeracaoPlano) {
+            @Parameter(description = "ID do atleta para o qual gerar o plano") @PathVariable UUID atletaId,
+            @Parameter(description = "Modo de geração do plano (SEMANA_ATUAL ou PROXIMA_SEMAMA)") @RequestParam(required = false, defaultValue = "PROXIMA_SEMANA") ModoGeracaoPlano modoGeracaoPlano) {
         PlanoSemanal planoSemanal = planoServiceImpl.gerarPlanoTreino(atletaId, modoGeracaoPlano);
         PlanoSemanalOutputDto planoSemanalOutputDto = planoSemanalMapper.toOutputDto(planoSemanal);
 
