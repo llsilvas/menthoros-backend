@@ -8,10 +8,7 @@ import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.entity.PlanoSemanal;
 import com.menthoros.entity.TreinoPlanejado;
 import com.menthoros.entity.TreinoRealizado;
-import com.menthoros.enums.DiaSemana;
-import com.menthoros.enums.ModoGeracaoPlano;
-import com.menthoros.enums.PlanoStatus;
-import com.menthoros.enums.TipoTreino;
+import com.menthoros.enums.*;
 import com.menthoros.exception.DomainRuleViolationException;
 import com.menthoros.exception.LLMException;
 import com.menthoros.mapper.AtletaMapper;
@@ -332,32 +329,92 @@ class PlanoServiceImplTest {
 
         Atleta atleta = criarAtletaMock(atletaId);
         atleta.setDiasDisponiveis(Collections.emptyList()); // Sem dias disponíveis
-        PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
-        PlanoSemanalLlmDto planoDto = criarPlanoSemanalLlmDto();
 
         when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
-        when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
-        when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
-        when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
-        when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
-                any(), any(), any())).thenReturn(Optional.empty());
 
-        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any())).thenReturn(planoDto);
-        when(redistribuicaoHelper.redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao)))
-                .thenReturn(Collections.emptyList()); // Resultado vazio devido à falta de dias
+        // When & Then
+        DomainRuleViolationException exception = assertThrows(DomainRuleViolationException.class, () ->
+                planoService.gerarPlanoTreino(atletaId, modoGeracao));
 
-        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
-            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+        // Verifica que a mensagem de erro é sobre dias disponíveis
+        assertTrue(exception.getMessage().contains("sem dias disponíveis"));
 
-            // When & Then
-            DomainRuleViolationException exception = assertThrows(DomainRuleViolationException.class, () ->
-                    planoService.gerarPlanoTreino(atletaId, modoGeracao));
+        // Verifica que a validação falhou antes de chamar serviços de IA ou redistribuição
+        verify(atletaRepository).findById(atletaId);
+        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any());
+        verify(redistribuicaoHelper, never()).redistribuirTreinos(any(), any(), any(), any(), any(), any());
+    }
 
-            assertTrue(exception.getMessage().contains("Não foi possível gerar treinos"));
+    @Test
+    @DisplayName("Deve lançar exceção quando atleta está inativo")
+    void deveLancarExcecaoQuandoAtletaEstaInativo() {
+        // Given
+        UUID atletaId = UUID.randomUUID();
+        ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
 
-            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any());
-            verify(redistribuicaoHelper).redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao));
-        }
+        Atleta atleta = criarAtletaMock(atletaId);
+        atleta.setAtivo(AtletaStatus.INATIVO); // Atleta inativo
+
+        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+
+        // When & Then
+        DomainRuleViolationException exception = assertThrows(DomainRuleViolationException.class, () ->
+                planoService.gerarPlanoTreino(atletaId, modoGeracao));
+
+        // Verifica que a mensagem de erro é sobre atleta inativo
+        assertTrue(exception.getMessage().contains("atleta inativo"));
+
+        // Verifica que a validação falhou antes de chamar serviços de IA
+        verify(atletaRepository).findById(atletaId);
+        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Deve lançar exceção quando atleta não tem objetivo definido")
+    void deveLancarExcecaoQuandoAtletaNaoTemObjetivo() {
+        // Given
+        UUID atletaId = UUID.randomUUID();
+        ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+
+        Atleta atleta = criarAtletaMock(atletaId);
+        atleta.setObjetivo(null); // Sem objetivo
+
+        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+
+        // When & Then
+        DomainRuleViolationException exception = assertThrows(DomainRuleViolationException.class, () ->
+                planoService.gerarPlanoTreino(atletaId, modoGeracao));
+
+        // Verifica que a mensagem de erro é sobre objetivo
+        assertTrue(exception.getMessage().contains("sem objetivo definido"));
+
+        // Verifica que a validação falhou antes de chamar serviços de IA
+        verify(atletaRepository).findById(atletaId);
+        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Deve lançar exceção quando atleta não tem nível de experiência definido")
+    void deveLancarExcecaoQuandoAtletaNaoTemNivelExperiencia() {
+        // Given
+        UUID atletaId = UUID.randomUUID();
+        ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+
+        Atleta atleta = criarAtletaMock(atletaId);
+        atleta.setNivelExperiencia(null); // Sem nível de experiência
+
+        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+
+        // When & Then
+        DomainRuleViolationException exception = assertThrows(DomainRuleViolationException.class, () ->
+                planoService.gerarPlanoTreino(atletaId, modoGeracao));
+
+        // Verifica que a mensagem de erro é sobre nível de experiência
+        assertTrue(exception.getMessage().contains("sem nível de experiência"));
+
+        // Verifica que a validação falhou antes de chamar serviços de IA
+        verify(atletaRepository).findById(atletaId);
+        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any());
     }
 
     // Helper methods to create mock objects
@@ -368,6 +425,9 @@ class PlanoServiceImplTest {
         atleta.setEmail("joao@teste.com");
         atleta.setDiasDisponiveis(List.of(DiaSemana.SEGUNDA, DiaSemana.QUARTA, DiaSemana.SEXTA));
         atleta.setProvas(new ArrayList<>());
+        atleta.setAtivo(AtletaStatus.ATIVO);
+        atleta.setObjetivo("Teste objetivo");
+        atleta.setNivelExperiencia(NivelExperiencia.INICIANTE);
         return atleta;
     }
 
