@@ -38,6 +38,7 @@ public class CacheConfig {
                 "atletas",           // Cache para atletas - TTL: 30min
                 "atletas-list",      // Cache para lista de atletas - TTL: 30min
                 "planos-semanais",   // Cache para planos semanais - TTL: 30min
+                "metadados-atleta",  // Cache para metadados de plano por atleta - TTL: 30min
                 "embeddings",        // Cache para embeddings - TTL: 2h
                 "ia-responses"       // Cache para respostas da IA - TTL: 1h
         ));

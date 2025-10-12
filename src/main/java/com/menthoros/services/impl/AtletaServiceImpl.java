@@ -44,7 +44,8 @@ public class AtletaServiceImpl implements AtletaService {
     @Override
     @Caching(evict = {
         @CacheEvict(value = "atletas", key = "#id"),
-        @CacheEvict(value = "atletas-list", allEntries = true)
+        @CacheEvict(value = "atletas-list", allEntries = true),
+        @CacheEvict(value = "metadados-atleta", key = "#id")
     })
     public AtletaOutputDto updateAtleta(UUID id, AtletaInputDto atletaInputDto) {
         Atleta atleta = atletaRepository.findById(id)
@@ -58,7 +59,8 @@ public class AtletaServiceImpl implements AtletaService {
     @Override
     @Caching(evict = {
         @CacheEvict(value = "atletas", key = "#id"),
-        @CacheEvict(value = "atletas-list", allEntries = true)
+        @CacheEvict(value = "atletas-list", allEntries = true),
+        @CacheEvict(value = "metadados-atleta", key = "#id")
     })
     public void deleteAtleta(UUID id) {
         Atleta atleta = atletaRepository.findById(id)
