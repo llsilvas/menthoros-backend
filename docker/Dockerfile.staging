@@ -33,9 +33,9 @@ USER spring:spring
 ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0"
 ENV SPRING_PROFILES_ACTIVE=staging
 
-EXPOSE 8099
+EXPOSE 8098
 
 HEALTHCHECK --interval=45s --timeout=5s --start-period=90s --retries=3 \
-    CMD curl -f http://localhost:8099/actuator/health || exit 1
+    CMD curl -f http://localhost:8098/actuator/health || exit 1
 
 CMD ["sh", "-c", "java $JAVA_OPTS org.springframework.boot.loader.launch.JarLauncher"]

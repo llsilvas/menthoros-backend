@@ -44,6 +44,54 @@ services:
     networks:
       - menthoros-network
 
+  # Keycloak para autenticação e autorização
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: menthoros-keycloak
+    command: start-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8443:8443"
+      - "9000:9000"
+    environment:
+      # Admin credentials
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin123}
+
+      # Hostname configuration
+      KC_HOSTNAME: ${KC_HOSTNAME:-localhost}
+      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT_HTTPS: false
+      KC_HTTP_ENABLED: true
+
+      # Database configuration (PostgreSQL)
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: menthoros
+      KC_DB_PASSWORD: menthoros123
+      KC_DB_SCHEMA: public
+
+      # Health and metrics
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+
+      # HTTP port
+      KC_HTTP_PORT: "8443"
+
+      # Logging
+      KC_LOG_LEVEL: ${KC_LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    restart: unless-stopped
+    networks:
+      - menthoros-network
+
   # Aplicação Spring Boot
   menthoros-app:
     build:
@@ -53,32 +101,42 @@ services:
     environment:
       # Database
       DB_HOST: postgres
-      DB_NAME: menthoros-db
+      DB_NAME: menthoros-multi
       DB_USER: menthoros
       DB_PASSWORD: menthoros123
-      
+
       # JPA/Hibernate
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
       SPRING_JPA_SHOW_SQL: false
       SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: false
-      
+
       # Flyway
       SPRING_FLYWAY_ENABLED: true
       SPRING_FLYWAY_BASELINE_ON_MIGRATE: true
-      
+
       # Cache (Redis)
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_CACHE_TYPE: redis
-      
+
+      # Keycloak OAuth2 Resource Server
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:8443/realms/menthoros-app
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8443/realms/menthoros-app/protocol/openid-connect/certs
+
+      # Keycloak Admin Client
+      KEYCLOAK_SERVER_URL: http://keycloak:8443
+      KEYCLOAK_REALM: menthoros-app
+      KEYCLOAK_ADMIN_USERNAME: ${KC_ADMIN_USER:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin123}
+
       # AI Service
       SPRING_AI_OPENAI_API_KEY: ${OPENAI_API_KEY}
       SPRING_AI_OPENAI_CHAT_MODEL: gpt-4o-mini
       SPRING_AI_OPENAI_EMBEDDING_MODEL: text-embedding-3-small
-      
+
       # Profile
       SPRING_PROFILES_ACTIVE: docker,dev
-      
+
       # JVM Settings
       JAVA_OPTS: >-
         -XX:+UseContainerSupport
@@ -86,16 +144,18 @@ services:
         -XX:+UseG1GC
         -XX:+UseStringDeduplication
         -Djava.security.egd=file:/dev/./urandom
-        -Dserver.port=8099
+        -Dserver.port=8098
     ports:
-      - "8099:8099"
+      - "8098:8098"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8099/actuator/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8098/actuator/health"]
       interval: 30s
       timeout: 10s
       retries: 3

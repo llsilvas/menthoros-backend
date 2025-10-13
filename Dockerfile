@@ -50,11 +50,11 @@ ENV JAVA_OPTS="-XX:+UseContainerSupport \
                -Djava.security.egd=file:/dev/./urandom"
 
 # Expor porta
-EXPOSE 8099
+EXPOSE 8098
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8099/actuator/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8098/actuator/health || exit 1
 
 # Usar dumb-init como PID 1
 ENTRYPOINT ["dumb-init", "--"]

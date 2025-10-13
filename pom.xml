@@ -26,6 +26,7 @@
         <flyway-maven-plugin.version>11.7.2</flyway-maven-plugin.version>
         <docker.dockerfile.path>${project.basedir}/docker/Dockerfile.dev</docker.dockerfile.path>
         <build.helper.plugin.version>3.4.0</build.helper.plugin.version>
+        <keycloak.version>25.0.3</keycloak.version>
     </properties>
     <dependencies>
         <dependency>
@@ -149,6 +150,28 @@
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
             <artifactId>caffeine</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- Security / OAuth / Keycloak -->
+        <!-- Keycloak Admin Client -->
+        <dependency>
+            <groupId>org.keycloak</groupId>
+            <artifactId>keycloak-admin-client</artifactId>
+            <version>${keycloak.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
     </dependencies>

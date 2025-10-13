@@ -2,7 +2,7 @@
 # SERVER CONFIGURATION
 # ========================================
 server:
-  port: ${SERVER_PORT:8099}
+  port: ${SERVER_PORT:8098}
 
 # ========================================
 # SPRING CORE CONFIGURATION
@@ -11,11 +11,23 @@ spring:
   application:
     name: menthoros-app
 
+  # ---------------------------------------
+  # Security
+  # ---------------------------------------
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8443/realms/menthoros-app}
+          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8443/realms/menthoros-app/protocol/openid-connect/certs}
+
+
   # ----------------------------------------
   # DATABASE CONFIGURATION
   # ----------------------------------------
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:menthoros-db}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:menthoros-multi}
     username: ${DB_USER:menthoros}
     password: ${DB_PASSWORD:menthoros123}
     driver-class-name: org.postgresql.Driver
@@ -32,11 +44,10 @@ spring:
     properties:
       hibernate:
         format_sql: true    # formata SQL no console
-        dialect: org.hibernate.dialect.PostgreSQLDialect
     show-sql: false
     open-in-view: false    # evita manutenção de sessão aberta
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate    # validate (não altera schema, apenas valida)
 
   # ----------------------------------------
   # FLYWAY CONFIGURATION
@@ -67,6 +78,19 @@ spring:
         options:
           model: text-embedding-3-small
           dimensions: 1536
+
+# ----------------------------------------
+# KeyCloak
+# ----------------------------------------
+
+keycloak:
+  realm: ${KEYCLOAK_REALM:menthoros-app}
+  auth-server-url: ${KEYCLOAK_URL:http://localhost:8443}
+  admin:
+    username: ${KEYCLOAK_ADMIN_USER:admin}
+    password: ${KEYCLOAK_ADMIN_PASSWORD:admin123}
+    client-id: ${KEYCLOAK_CLIENT_ID:menthoros-backend}
+    client-secret: ${KEYCLOAK_CLIENT_SECRET}
 
 # ========================================
 # API DOCUMENTATION CONFIGURATION
