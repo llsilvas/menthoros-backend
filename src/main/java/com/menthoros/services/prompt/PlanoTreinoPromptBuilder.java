@@ -178,9 +178,9 @@ public class PlanoTreinoPromptBuilder {
 
                         CÁLCULO DO NÚMERO DE TIROS:
                         1. Pegue a distância total do treino (ex: 10km)
-                        2. Reserve aquecimento (1.5-2km) e desaquecimento (1km)
+                        2. Reserve aquecimento (1.0-2km) e desaquecimento (1km)
                         3. Distância restante = distância disponível para intervalos
-                        4. Cada tiro = 0.8-1.2km, cada recuperação = 0.2-0.4km
+                        4. Cada tiro = 0.4-1.2km, cada recuperação = 0.2-0.4km
                         5. Calcule: quantos tiros cabem? Use TODOS os km disponíveis
 
                         EXEMPLO - Treino de 10km:
@@ -218,6 +218,30 @@ public class PlanoTreinoPromptBuilder {
                         ### MÉTRICAS DE CARGA
                         %s
 
+                        ### PADRÕES E DISPONIBILIDADE
+                        %s
+
+                        ### PARÂMETROS CALCULADOS PARA ESTA SEMANA
+
+                        **Carga de Trabalho:**
+                        - **TSS Alvo Semanal:** %d pontos
+                        - **TSS Médio Recente:** %d pontos/semana
+                        - **Ramp Rate Atual:** %.1f pts/semana
+                        - **Progressão:** %s
+
+                        **Distribuição de Dias:**
+                        - **Dias consecutivos atuais:** %d dias
+                        - **Máximo recomendado:** %d dias consecutivos
+                        - **Status:** %s
+
+                        **Periodização:**
+                        %s
+
+                        **ALERTAS IMPORTANTES:**
+                        %s
+
+                        ---
+
                         ### REGRAS DO PLANO
                         - 3–5 treinos na semana, com variação de estímulos.
                         - Distribua nos dias disponíveis; longo preferencialmente no dia preferido.
@@ -225,6 +249,38 @@ public class PlanoTreinoPromptBuilder {
                         - Nunca posicione regenerativo após intervalado ou longo.
                         - Progressão ≤ 10%%%% no volume semanal (salvo subexecução recente).
                         - intensidadePlanejada: 0.5–1.5; percepcaoEsforcoEsperada: 1–10.
+                        - **IMPORTANTE:** Respeite o TSS alvo semanal de %d pontos (distribuir entre os treinos).
+                        - **IMPORTANTE:** Não exceda %d dias consecutivos de treino sem descanso.
+
+                        ### APLICAÇÃO DAS ZONAS FISIOLÓGICAS (OBRIGATÓRIO)
+
+                        IMPORTANTE: Os dados fisiológicos acima incluem ZONAS CALCULADAS (Z1-Z5). Você DEVE usar essas zonas:
+
+                        **Zonas de Treino e Aplicação:**
+                        - **Z1 (Recuperação)**: Use para REGENERATIVO, FACIL e etapas de RECUPERACAO/DESAQUECIMENTO
+                          → fcAlvo e ritmoAlvo devem estar nos intervalos de Z1 fornecidos
+
+                        - **Z2 (Aeróbico)**: Use para treinos LONGO (etapa principal), CONTINUO leve e AQUECIMENTO
+                          → fcAlvo e ritmoAlvo devem estar nos intervalos de Z2 fornecidos
+
+                        - **Z3 (Tempo)**: Use para TEMPO_RUN e treinos CONTINUO moderados
+                          → fcAlvo e ritmoAlvo devem estar nos intervalos de Z3 fornecidos
+
+                        - **Z4 (Limiar)**: Use para FARTLEK (partes rápidas) e alguns INTERVALADO
+                          → fcAlvo e ritmoAlvo devem estar nos intervalos de Z4 fornecidos
+
+                        - **Z5 (VO2max)**: Use para INTERVALADO intenso, TIRO e etapas INTERVALADO em treinos de qualidade
+                          → fcAlvo e ritmoAlvo devem estar nos intervalos de Z5 fornecidos
+
+                        **Regras de Consistência:**
+                        1. SEMPRE copie os valores de FC e Pace das zonas fornecidas (não invente valores)
+                        2. fcAlvoEtapa DEVE mencionar a zona (ex: "85-92%%%% FCmáx (Z4)" ou apenas usar os valores de Z4)
+                        3. ritmoAlvo DEVE usar o formato fornecido nas zonas (ex: "5:15-5:45/km" baseado em Z3)
+                        4. Em etapas de um mesmo treino intervalado:
+                           - AQUECIMENTO/DESAQUECIMENTO: Z1 ou Z2
+                           - INTERVALADO (tiros): Z4 ou Z5
+                           - RECUPERACAO: Z1 ou Z2
+                        5. Justifique na descricaoEtapa qual zona está sendo usada (ex: "Tiro 1 em Z5", "Recuperação em Z2")
 
                         ### CAMPOS OBRIGATÓRIOS (POR TREINO)
                         - diaSemana (string), tipoTreino (string), fcAlvo (ex.: "70-80%%%% FCmáx"),
@@ -264,7 +320,21 @@ public class PlanoTreinoPromptBuilder {
                 provas,
                 dadosFisiologicos,
                 historicoTreinos,
-                metricas
+                metricas,
+                diasFormatados,
+                // PARÂMETROS CALCULADOS PARA ESTA SEMANA
+                tssAlvo,
+                tssMedio,
+                rampRate,
+                interpretarRampRate(rampRate),
+                diasConsecutivos,
+                maxDiasConsecutivos,
+                gerarStatusDiasConsecutivos(diasConsecutivos, maxDiasConsecutivos),
+                periodizacao,
+                alertas,
+                // Repetidos nas REGRAS DO PLANO
+                tssAlvo,
+                maxDiasConsecutivos
 
         );
     }
@@ -1225,5 +1295,28 @@ public class PlanoTreinoPromptBuilder {
             default:
                 return 5;
         }
+    }
+
+    /**
+     * Gera status descritivo sobre dias consecutivos de treino
+     */
+    private String gerarStatusDiasConsecutivos(Integer diasConsecutivos, int maxDiasConsecutivos) {
+        if (diasConsecutivos == null || diasConsecutivos == 0) {
+            return "✅ Descansado - Pronto para iniciar semana";
+        }
+
+        if (diasConsecutivos >= maxDiasConsecutivos + 1) {
+            return "🔴 CRÍTICO - Excedeu limite seguro! DESCANSO OBRIGATÓRIO";
+        } else if (diasConsecutivos == maxDiasConsecutivos) {
+            return "⚠️ NO LIMITE - Próximo treino DEVE ser descanso ou regenerativo";
+        } else if (diasConsecutivos >= maxDiasConsecutivos - 1) {
+            return "🟡 ATENÇÃO - Próximo do limite, planejar descanso";
+        } else if (diasConsecutivos >= 3) {
+            return "✅ DENTRO DO LIMITE - Monitorar sinais de fadiga";
+        } else if (diasConsecutivos >= 1) {
+            return "✅ SAUDÁVEL - Padrão seguro de treino";
+        }
+
+        return "✅ Normal";
     }
 }
