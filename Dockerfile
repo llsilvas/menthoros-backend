@@ -16,9 +16,10 @@ COPY src ./src
 RUN mvn clean package -DskipTests -B
 
 # Extrair layers do Spring Boot
-RUN java -Djarmode=tools -jar target/*.jar extract --layers --launcher
+RUN mkdir -p extracted && \
+    java -Djarmode=tools -jar target/*.jar extract --layers --destination extracted
 
-RUN ls -la /app
+RUN ls -la /app/extracted
 
 # Etapa de runtime com JRE otimizada
 FROM eclipse-temurin:21-jre-alpine
@@ -34,10 +35,10 @@ RUN addgroup -g 1001 -S spring && \
 COPY --from=builder /opt/opentelemetry-javaagent.jar /app/opentelemetry-javaagent.jar
 
 # Copiar layers em ordem de frequência de mudança (menos frequente primeiro)
-COPY --from=builder /app/dependencies/ ./
-COPY --from=builder /app/spring-boot-loader/ ./
-COPY --from=builder /app/snapshot-dependencies/ ./
-COPY --from=builder /app/application/ ./
+COPY --from=builder /app/extracted/dependencies/ ./
+COPY --from=builder /app/extracted/spring-boot-loader/ ./
+COPY --from=builder /app/extracted/snapshot-dependencies/ ./
+COPY --from=builder /app/extracted/application/ ./
 
 RUN chown -R spring:spring /app
 USER spring:spring
