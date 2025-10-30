@@ -2,7 +2,7 @@
 # SERVER CONFIGURATION
 # ========================================
 server:
-  port: ${SERVER_PORT:8099}
+  port: ${SERVER_PORT:8080}
 
 # ========================================
 # SPRING CORE CONFIGURATION
@@ -68,6 +68,14 @@ spring:
           model: text-embedding-3-small
           dimensions: 1536
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always
 # ========================================
 # API DOCUMENTATION CONFIGURATION
 # ========================================

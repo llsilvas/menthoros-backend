@@ -12,7 +12,6 @@ import lombok.Setter;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 
 @Entity
 @Table(name = "tb_treino_planejado",
@@ -27,13 +26,6 @@ import java.util.UUID;
 @AllArgsConstructor
 public class TreinoPlanejado extends TreinoBase{
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private UUID id;
-
-    @Column(name = "data_treino")
-    private LocalDate dataTreino;
-
     @Column(name = "tss_planejado")
     private Integer tssPlanejado; // TSS estimado para o treino
 
@@ -45,9 +37,6 @@ public class TreinoPlanejado extends TreinoBase{
 
     @Column(name = "justificativa_ia", columnDefinition = "TEXT")
     private String justificativaIa; // Por que a IA sugeriu este treino
-
-    @Column(name = "observacao", length = 1000)
-    private String observacao;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "plano_semanal_id")
@@ -102,16 +91,7 @@ public class TreinoPlanejado extends TreinoBase{
     @Column(name = "metadados_sincronizacao", columnDefinition = "TEXT")
     private String metadadosSincronizacao; // JSON com dados extras da sincronização
 
-// ===== AUDITORIA =====
 
-    @Column(name = "criado_em", nullable = false, updatable = false)
-    private LocalDateTime criadoEm;
-
-    @Column(name = "atualizado_em")
-    private LocalDateTime atualizadoEm;
-
-    @Column(name = "criado_por")
-    private String criadoPor; // "IA", "USUARIO", "GARMIN", "STRAVA"
 
     // ===== LIFECYCLE CALLBACKS =====
 
@@ -129,18 +109,18 @@ public class TreinoPlanejado extends TreinoBase{
         if (this.statusSincronizacao == null) {
             this.statusSincronizacao = StatusSincronizacao.NAO_SINCRONIZADO;
         }
-        if (this.criadoEm == null) {
-            this.criadoEm = LocalDateTime.now();
+        if (this.getCriadoEm() == null) {
+            this.setCriadoEm(LocalDateTime.now());
         }
         if (this.tentativasSincronizacao == null) {
             this.tentativasSincronizacao = 0;
         }
-        this.atualizadoEm = LocalDateTime.now();
+        this.setAtualizadoEm(LocalDateTime.now());
     }
 
     @PreUpdate
     private void preUpdate() {
-        this.atualizadoEm = LocalDateTime.now();
+        this.setAtualizadoEm(LocalDateTime.now());
     }
 
     // ===== MÉTODOS DE NEGÓCIO =====
@@ -158,7 +138,7 @@ public class TreinoPlanejado extends TreinoBase{
      */
     public boolean foiGeradoPorIa() {
         return fonteDados == FonteDados.IA_GERADO ||
-                (criadoPor != null && criadoPor.equals("IA"));
+                (getCriadoPor() != null && getCriadoPor().equals("IA"));
     }
 
     /**

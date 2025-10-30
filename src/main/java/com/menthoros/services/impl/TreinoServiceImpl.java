@@ -73,7 +73,7 @@ public class TreinoServiceImpl implements TreinoService {
         // 7) Pós-processamentos isolados
         finalizarTreinoPlanejadoSeAplicavel(planejado);
         atualizarPlanoSemanalSeAplicavel(semanal);
-        atualizarTsb(atleta);
+        atualizarTsb(atleta, treinoRealizado.dataTreino());
         atualizarMetadadosSeAplicavel(semanal);
         atualizarVolumeDiario(atleta, treinoRealizado);
 
@@ -81,18 +81,21 @@ public class TreinoServiceImpl implements TreinoService {
     }
 
     private void atualizarVolumeDiario(Atleta atleta, TreinoRealizadoInputDto treinoRealizado) {
-        LocalDate hoje = LocalDate.now();
+        LocalDate dataTreino = treinoRealizado.dataTreino() != null
+            ? treinoRealizado.dataTreino()
+            : LocalDate.now();
+
         var metricasDiarias = atleta.getMetricasDiarias();
 
         metricasDiarias.stream()
-                .filter(md -> md.getData() == hoje)
+                .filter(md -> md.getData() != null && md.getData().equals(dataTreino))
                 .findFirst()
                 .ifPresent(md -> {
-                    md.setVolumeKm(BigDecimal.valueOf(treinoRealizado.distanciaKm()));
+                    if (treinoRealizado.distanciaKm() != null) {
+                        md.setVolumeKm(BigDecimal.valueOf(treinoRealizado.distanciaKm()));
+                    }
                     md.setTreinosRealizados(md.getTreinosRealizados() + 1);
                 });
-
-
     }
 
     private void atualizarMetadadosSeAplicavel(PlanoSemanal semanal) {
@@ -114,10 +117,10 @@ public class TreinoServiceImpl implements TreinoService {
         atualizarStatusDoPlano(semanal);
     }
 
-    private void atualizarTsb(Atleta atleta) {
-
-        tsbService.atualizarTsbDia(atleta.getId(), LocalDate.now());
-
+    private void atualizarTsb(Atleta atleta, LocalDate dataTreino) {
+        LocalDate dataParaAtualizar = dataTreino != null ? dataTreino : LocalDate.now();
+        log.info("Atualizando TSB para atleta {} na data {}", atleta.getId(), dataParaAtualizar);
+        tsbService.atualizarTsbDia(atleta.getId(), dataParaAtualizar);
     }
 
     private void validarCompatibilidadeDeTipo(TreinoRealizadoInputDto input, TreinoPlanejado planejado) {
@@ -243,7 +246,7 @@ public class TreinoServiceImpl implements TreinoService {
         log.debug("Criando treino realizado: {}", treinoRealizadoInputDto);
 
         Atleta atleta = atletaRepository.findById(atletaId)
-                .orElseThrow(() -> new RuntimeException("Atleta não encontrado"));
+                .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
         TreinoRealizado treinoRealizado = treinoMapper.toEntity(treinoRealizadoInputDto);
 
@@ -253,6 +256,15 @@ public class TreinoServiceImpl implements TreinoService {
 
         TreinoRealizado treinoSalvo = treinoRealizadoRepository.save(treinoRealizado);
         log.info("Treino salvo com sucesso. ID: {}", treinoSalvo.getId());
+
+        // Atualizar TSB/CTL/ATL após salvar o treino
+        LocalDate dataTreino = treinoRealizadoInputDto.dataTreino() != null
+            ? treinoRealizadoInputDto.dataTreino()
+            : LocalDate.now();
+
+        log.info("Atualizando métricas TSB para atleta {} na data {}", atletaId, dataTreino);
+        tsbService.atualizarTsbDia(atletaId, dataTreino);
+
         return treinoMapper.toOutputDto(treinoSalvo);
     }
 

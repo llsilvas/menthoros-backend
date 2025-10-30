@@ -2,19 +2,30 @@ package com.menthoros.entity;
 
 import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.TipoTreino;
-import jakarta.persistence.Column;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
-import jakarta.persistence.MappedSuperclass;
+import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 @MappedSuperclass
 @Getter
 @Setter
 public abstract class TreinoBase {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(length = 36, updatable = false, nullable = false)
+    private UUID id;
+
+    @Column(name = "data_treino")
+    public LocalDate dataTreino;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "dia_semana", nullable = false)
@@ -24,14 +35,15 @@ public abstract class TreinoBase {
     @Column(name = "tipo_treino", nullable = false)
     protected TipoTreino tipoTreino;
 
-    @Column(name = "descricao", nullable = true, length = 1000)
+    @Column(name = "descricao", length = 1000)
     protected String descricao;
 
-    @Column(name = "fc_alvo")
-    protected String fcAlvo; // ex: "140-155"
+    @Column(name = "zona_alvo")
+    protected String zonaAlvo; // ex: "z2-z3"
 
-    @Column(name = "duracao_min")
-    protected Integer duracaoMin;
+    @JdbcTypeCode(SqlTypes.INTERVAL_SECOND)
+    @Column(name = "duracao_min", nullable = false)
+    private Duration duracaoMin;
 
     @Column(name = "distancia_km", precision = 10, scale = 3)
     protected BigDecimal distanciaKm;
@@ -63,5 +75,16 @@ public abstract class TreinoBase {
 
     @Column(name = "observacao", length = 1000)
     protected String observacao;
+
+    // ===== AUDITORIA =====
+
+    @Column(name = "criado_em", nullable = false, updatable = false)
+    private LocalDateTime criadoEm;
+
+    @Column(name = "atualizado_em")
+    private LocalDateTime atualizadoEm;
+
+    @Column(name = "criado_por")
+    private String criadoPor; // "IA", "USUARIO", "GARMIN", "STRAVA"
 
 }

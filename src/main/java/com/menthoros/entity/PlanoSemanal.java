@@ -30,7 +30,7 @@ public class PlanoSemanal {
     @JoinColumn(name = "plano_treino_id")
     private PlanoTreino planoTreino; // Opcional: plano de longo prazo (ex: para prova alvo)
 
-    @OneToOne(optional = false, fetch = FetchType.LAZY, cascade = CascadeType.PERSIST)
+    @ManyToOne(optional = false, fetch = FetchType.LAZY)
     @JoinColumn(name = "plano_metadados_id", nullable = false)
     private PlanoMetaDados planoMetaDados; // Preferências do atleta + snapshot da semana
 

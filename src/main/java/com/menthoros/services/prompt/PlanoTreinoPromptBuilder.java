@@ -104,9 +104,9 @@ public class PlanoTreinoPromptBuilder {
                         t.tipoTreino(),
                         t.distanciaKm(),
                         t.duracaoMin(),
-                        t.ritmoMedio() != null ? t.ritmoMedio() : "N/A",
+                        t.paceMedia() != null ? t.paceMedia() : "N/A",
                         t.fcMedia() != null ? t.fcMedia() : "N/A",
-                        t.comentario() != null ? t.comentario() : "Sem observações")
+                        t.observacao() != null ? t.observacao() : "Sem observações")
                 )
                 .collect(Collectors.joining("\n"));
     }
@@ -154,37 +154,51 @@ public class PlanoTreinoPromptBuilder {
                         - statusTreino: PENDENTE, REALIZADO, CANCELADO (se usado)
                         
                         
-                        ### 🚨 TREINOS INTERVALADOS - REGRA CRÍTICA (VALIDAÇÃO AUTOMÁTICA)
+                        ### ⛔ REGRA INQUEBRÁVEL - TREINOS INTERVALADOS (VALIDAÇÃO AUTOMÁTICA)
 
-                        IMPORTANTE: Para treinos tipo INTERVALADO ou TIRO, você DEVE listar INDIVIDUALMENTE cada tiro.
+                        IMPORTANTE: Para tipoTreino INTERVALADO ou TIRO, você DEVE expandir CADA tiro individualmente.
 
-                        ❌ ERRADO - 4 ETAPAS (SERÁ REJEITADO):
-                        1. Aquecimento
-                        2. Intervalos (5 vezes)
-                        3. Recuperação
-                        4. Desaquecimento
+                        PROIBIDO (Backend rejeitará):
+                        - Usar repeticoes maior que 1
+                        - Agrupar intervalos tipo 5x400m ou 4 repeticoes
+                        - Descrições no plural
+                        - Limitar arbitrariamente o número de tiros (calcule baseado na distância total)
 
-                        ✅ CORRETO - 12 ETAPAS (MÍNIMO PARA 5 TIROS):
-                        1. Aquecimento (10min)
-                        2. Tiro 1 (4min Z5)
-                        3. Recuperação 1 (2min Z2)
-                        4. Tiro 2 (4min Z5)
-                        5. Recuperação 2 (2min Z2)
-                        6. Tiro 3 (4min Z5)
-                        7. Recuperação 3 (2min Z2)
-                        8. Tiro 4 (4min Z5)
-                        9. Recuperação 4 (2min Z2)
-                        10. Tiro 5 (4min Z5)
-                        11. Recuperação 5 (2min Z2)
-                        12. Desaquecimento (5min)
+                        OBRIGATÓRIO:
+                        - repeticoes sempre igual a 1
+                        - Cada tiro = 1 etapa separada
+                        - Cada recuperação = 1 etapa separada
+                        - descricaoEtapa DEVE incluir a zona de treino. Exemplos corretos:
+                          • "Tiro 1 em ritmo Z5" ou "Tiro 1 em Z5"
+                          • "Tiro 2 em ritmo Z5" ou "Tiro 2 em Z5"
+                          • "Recuperação ativa 1 em Z2" ou "Recuperação 1 em Z2"
+                          • "Recuperação ativa 2 em Z2" ou "Recuperação 2 em Z2"
+                        - NUNCA use apenas "Tiro 1", "Recuperação 1" sem mencionar a zona
+                        - Usar TODA a distância planejada do treino
 
-                        CÁLCULO OBRIGATÓRIO:
-                        - 3 tiros = 8 etapas mínimo (1 + 3 + 3 + 1)
-                        - 4 tiros = 10 etapas mínimo (1 + 4 + 4 + 1)
-                        - 5 tiros = 12 etapas mínimo (1 + 5 + 5 + 1)
-                        - 6 tiros = 14 etapas mínimo (1 + 6 + 6 + 1)
+                        CÁLCULO DO NÚMERO DE TIROS:
+                        1. Pegue a distância total do treino (ex: 10km)
+                        2. Reserve aquecimento (1.5-2km) e desaquecimento (1km)
+                        3. Distância restante = distância disponível para intervalos
+                        4. Cada tiro = 0.8-1.2km, cada recuperação = 0.2-0.4km
+                        5. Calcule: quantos tiros cabem? Use TODOS os km disponíveis
 
-                        CADA etapa deve ter repeticoes=1. NUNCA agrupe intervalos.
+                        EXEMPLO - Treino de 10km:
+                        - Aquecimento: 2km
+                        - Desaquecimento: 1km
+                        - Sobram: 7km para intervalos
+                        - Se tiro=1km e recup=0.4km, então: 7 / 1.4 = 5 tiros (não 3!)
+                        - Resultado: 1 aquec + 5 tiros + 5 recup + 1 desaq = 12 etapas
+
+                        CONTAGEM MÍNIMA (NÃO É MÁXIMO):
+                        - 3 tiros = 8 etapas
+                        - 4 tiros = 10 etapas
+                        - 5 tiros = 12 etapas
+                        - 6 tiros = 14 etapas
+                        - 7 tiros = 16 etapas
+                        - 8 tiros = 18 etapas
+
+                        NUNCA limite a 3 tiros se a distância permitir mais. Use toda a quilometragem disponível.
 
                         ### PERFIL DO ATLETA
                         - Nome: %s
@@ -304,7 +318,7 @@ public class PlanoTreinoPromptBuilder {
         treinosRecentes.stream()
                 .limit(5)
                 .forEach(treino -> {
-                    sb.append(String.format("- %s: %s - %.1f km, %d min, TSS %d",
+                    sb.append(String.format("- %s: %s - %.1f km, %s min, TSS %d",
                             treino.getDataTreino(),
                             treino.getTipoTreino(),
                             treino.getDistanciaKm() != null ? treino.getDistanciaKm().doubleValue() : 0.0,

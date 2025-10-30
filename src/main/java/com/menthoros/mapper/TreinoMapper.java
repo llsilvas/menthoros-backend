@@ -9,6 +9,8 @@ import com.menthoros.entity.TreinoPlanejado;
 import com.menthoros.entity.TreinoRealizado;
 import org.mapstruct.*;
 
+import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.List;
 
 @Mapper(
@@ -17,16 +19,86 @@ import java.util.List;
 )
 public interface TreinoMapper {
 
+    // ===== Conversores de Duration <-> String (HH:MM:SS ou MM:SS) =====
+
+    @Named("stringToDuration")
+    default Duration stringToDuration(String time) {
+        if (time == null || time.isBlank()) {
+            return null;
+        }
+
+        String[] parts = time.split(":");
+
+        try {
+            if (parts.length == 3) {
+                // Formato HH:MM:SS
+                int hours = Integer.parseInt(parts[0]);
+                int minutes = Integer.parseInt(parts[1]);
+                int seconds = Integer.parseInt(parts[2]);
+                return Duration.ofHours(hours).plusMinutes(minutes).plusSeconds(seconds);
+            } else if (parts.length == 2) {
+                // Formato MM:SS
+                int minutes = Integer.parseInt(parts[0]);
+                int seconds = Integer.parseInt(parts[1]);
+                return Duration.ofMinutes(minutes).plusSeconds(seconds);
+            } else if (parts.length == 1) {
+                // Apenas minutos
+                int minutes = Integer.parseInt(parts[0]);
+                return Duration.ofMinutes(minutes);
+            }
+        } catch (NumberFormatException e) {
+            return null;
+        }
+
+        return null;
+    }
+
+    @Named("durationToString")
+    default String durationToString(Duration duration) {
+        if (duration == null) {
+            return null;
+        }
+
+        long totalSeconds = duration.getSeconds();
+        long hours = totalSeconds / 3600;
+        long minutes = (totalSeconds % 3600) / 60;
+        long seconds = totalSeconds % 60;
+
+        if (hours > 0) {
+            return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+        } else {
+            return String.format("%02d:%02d", minutes, seconds);
+        }
+    }
+
+    // ===== Conversores de BigDecimal <-> Double =====
+
+    @Named("doubleToBigDecimal")
+    default BigDecimal doubleToBigDecimal(Double value) {
+        return value != null ? BigDecimal.valueOf(value) : null;
+    }
+
+    @Named("bigDecimalToDouble")
+    default Double bigDecimalToDouble(BigDecimal value) {
+        return value != null ? value.doubleValue() : null;
+    }
+
     @Mapping(target = "planoSemanal.id", source = "planoSemanalId")
+    @Mapping(target = "atleta.id", source = "atletaId")
+    @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "stringToDuration")
+    @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "doubleToBigDecimal")
     TreinoPlanejado toEntity(TreinoPlanejadoInputDto dto);
 
-//    @Mapping(source = "planoSemanal.id", target = "planoSemanalId")
+    @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "durationToString")
+    @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     TreinoPlanejadoOutputDto toOutputDto(TreinoPlanejado treinoPlanejado);
 
     // Adicionado para conversão direta de DTO de saída para entidade
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "planoSemanal", ignore = true)
     @Mapping(target = "atleta", ignore = true)
+    @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "stringToDuration")
+    @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "doubleToBigDecimal")
     TreinoPlanejado toEntity(TreinoPlanejadoLlmDto dto);
 
     @Named("treinoPlanejadoListToOutputDtoList")
@@ -35,8 +107,14 @@ public interface TreinoMapper {
     @Mapping(target = "atleta.id", source = "atletaId")
     @Mapping(target = "planoSemanal.id", source = "planoSemanalId")
     @Mapping(target = "treinoPlanejado.id", source = "treinoPlanejadoId")
+    @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "stringToDuration")
+    @Mapping(target = "paceMedia", source = "ritmoMedio", qualifiedByName = "stringToDuration")
+    @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "doubleToBigDecimal")
     TreinoRealizado toEntity(TreinoRealizadoInputDto dto);
 
+    @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "durationToString")
+    @Mapping(target = "paceMedia", source = "paceMedia", qualifiedByName = "durationToString")
+    @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     TreinoRealizadoOutputDto toOutputDto(TreinoRealizado treinoRealizado);
 
     @Named("treinoRealizadoListToOutputDtoList")

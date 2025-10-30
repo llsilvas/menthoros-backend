@@ -98,8 +98,8 @@ public class PlanoMetaDados {
     @Column(name = "mensagem_alerta", columnDefinition = "TEXT")
     private String mensagemAlerta;
 
-    @OneToOne(mappedBy = "planoMetaDados", fetch = FetchType.LAZY)
-    private PlanoSemanal planoSemanalAtual;
+    @OneToMany(mappedBy = "planoMetaDados", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
+    private List<PlanoSemanal> planosSemanais;
 
     @Column(name = "embedding", columnDefinition = "vector(1536)")
     @org.hibernate.annotations.JdbcTypeCode(java.sql.Types.OTHER)
