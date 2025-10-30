@@ -20,6 +20,8 @@ import jakarta.validation.Valid;
 
 import java.util.UUID;
 
+import static org.springframework.http.ResponseEntity.*;
+
 @Tag(name = "Treinos Realizados", description = "Operações relacionadas ao registro de treinos realizados")
 @RestController
 @RequestMapping("/treinos")
@@ -49,7 +51,7 @@ public class TreinoRealizadoController {
             @PathVariable("treinoPlanejadoId") UUID treinoPlanejadoId,
             @Valid @RequestBody TreinoRealizadoInputDto treinoRealizadoInputDto) {
         TreinoRealizado treinoRealizado = treinoService.addTreino(treinoPlanejadoId, treinoRealizadoInputDto);
-        return ResponseEntity.status(HttpStatus.CREATED).body(treinoMapper.toOutputDto(treinoRealizado));
+        return status(HttpStatus.CREATED).body(treinoMapper.toOutputDto(treinoRealizado));
     }
 
     @Operation(summary = "Lançar treinos manualmente para o atleta",
@@ -68,6 +70,6 @@ public class TreinoRealizadoController {
             @PathVariable("atletaId") UUID atletaId,
             @Valid @RequestBody TreinoRealizadoInputDto treinoRealizadoInputDto) {
         TreinoRealizadoOutputDto treinoRealizadoOutputDto = treinoService.lancarTreino(atletaId, treinoRealizadoInputDto);
-        return ResponseEntity.status(HttpStatus.CREATED).body(treinoRealizadoOutputDto);
+        return status(HttpStatus.CREATED).body(treinoRealizadoOutputDto);
     }
 }
