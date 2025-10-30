@@ -16,9 +16,6 @@ public record TreinoRealizadoOutputDto(
         @Schema(description = "Identificador único do treino realizado", example = "123e4567-e89b-12d3-a456-426614174004")
         UUID id,
 
-        @Schema(description = "Cadência média em passos por minuto", example = "170")
-        Integer cadenciaMedia,
-
         @Schema(description = "Data do treino", example = "2024-01-15")
         LocalDate dataTreino,
 

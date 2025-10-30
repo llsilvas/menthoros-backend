@@ -95,15 +95,6 @@ public record TreinoRealizadoInputDto(
         @Schema(description = "Status de execução do treino", example = "CONCLUIDO")
         TreinoExecucaoStatus status,
 
-        @Schema(description = "Percepção de esforço (escala 1-10)", example = "8", minimum = "1", maximum = "10")
-        Integer percepcaoEsforco,
-
         @Schema(description = "ID externo do treino (referência em sistema de terceiros)", example = "garmin-12345678")
-        String externalId,
-
-        @Schema(description = "Tempo de execução em segundos", example = "3900")
-        Integer tempoExecucaoSegundos,
-
-        @Schema(description = "Elevação total em metros", example = "150")
-        Integer elevacaoTotalMetros
+        String externalId
 ) {}
