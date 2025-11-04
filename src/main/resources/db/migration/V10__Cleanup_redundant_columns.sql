@@ -12,35 +12,67 @@
 -- 1. TREINO_REALIZADO: Remove redundant columns
 -- ========================================
 
--- Migrate fc_max data to fc_maxima_treino
-UPDATE tb_treino_realizado
-SET fc_maxima_treino = COALESCE(fc_maxima_treino, fc_max)
-WHERE fc_max IS NOT NULL;
+-- Check if columns exist before migrating data
+DO $$
+BEGIN
+    -- Migrate fc_max data to fc_maxima_treino (if column exists)
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tb_treino_realizado' AND column_name = 'fc_max'
+    ) THEN
+        UPDATE tb_treino_realizado
+        SET fc_maxima_treino = COALESCE(fc_maxima_treino, fc_max)
+        WHERE fc_max IS NOT NULL;
 
--- Migrate comentario data to feedback_atleta
-UPDATE tb_treino_realizado
-SET feedback_atleta = COALESCE(feedback_atleta, comentario)
-WHERE comentario IS NOT NULL;
+        RAISE NOTICE 'Migrated fc_max to fc_maxima_treino';
+    END IF;
 
--- Migrate ritmo_medio (string "5:30") to pace_media (decimal 5.5)
-UPDATE tb_treino_realizado
-SET pace_media = COALESCE(
-    pace_media,
-    CASE
-        WHEN ritmo_medio ~ '^\d+:\d+$' THEN
-            CAST(SPLIT_PART(ritmo_medio, ':', 1) AS DECIMAL) +
-            (CAST(SPLIT_PART(ritmo_medio, ':', 2) AS DECIMAL) / 60.0)
-        ELSE NULL
-    END
-)
-WHERE ritmo_medio IS NOT NULL;
+    -- Migrate comentario data to feedback_atleta (if column exists)
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tb_treino_realizado' AND column_name = 'comentario'
+    ) THEN
+        UPDATE tb_treino_realizado
+        SET feedback_atleta = COALESCE(feedback_atleta, comentario)
+        WHERE comentario IS NOT NULL;
 
--- Migrate elevacao_total to elevacao_ganho_metros
-UPDATE tb_treino_realizado
-SET elevacao_ganho_metros = COALESCE(elevacao_ganho_metros, elevacao_total)
-WHERE elevacao_total IS NOT NULL;
+        RAISE NOTICE 'Migrated comentario to feedback_atleta';
+    END IF;
 
--- Now drop the redundant columns
+    -- Migrate ritmo_medio (string "5:30") to pace_media (decimal 5.5) (if column exists)
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tb_treino_realizado' AND column_name = 'ritmo_medio'
+    ) THEN
+        UPDATE tb_treino_realizado
+        SET pace_media = COALESCE(
+            pace_media,
+            CASE
+                WHEN ritmo_medio ~ '^\d+:\d+$' THEN
+                    CAST(SPLIT_PART(ritmo_medio, ':', 1) AS DECIMAL) +
+                    (CAST(SPLIT_PART(ritmo_medio, ':', 2) AS DECIMAL) / 60.0)
+                ELSE NULL
+            END
+        )
+        WHERE ritmo_medio IS NOT NULL;
+
+        RAISE NOTICE 'Migrated ritmo_medio to pace_media';
+    END IF;
+
+    -- Migrate elevacao_total to elevacao_ganho_metros (if column exists)
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'tb_treino_realizado' AND column_name = 'elevacao_total'
+    ) THEN
+        UPDATE tb_treino_realizado
+        SET elevacao_ganho_metros = COALESCE(elevacao_ganho_metros, elevacao_total)
+        WHERE elevacao_total IS NOT NULL;
+
+        RAISE NOTICE 'Migrated elevacao_total to elevacao_ganho_metros';
+    END IF;
+END$$;
+
+-- Now drop the redundant columns (only if they exist)
 ALTER TABLE tb_treino_realizado
 DROP COLUMN IF EXISTS fc_max,
 DROP COLUMN IF EXISTS comentario,
