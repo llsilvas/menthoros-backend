@@ -32,7 +32,6 @@ spring:
     properties:
       hibernate:
         format_sql: true    # formata SQL no console
-        dialect: org.hibernate.dialect.PostgreSQLDialect
     show-sql: false
     open-in-view: false    # evita manutenção de sessão aberta
     hibernate:
