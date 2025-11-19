@@ -103,5 +103,10 @@ public class AtletaServiceImpl implements AtletaService {
         }).toList();
     }
 
+    @Override
+    public void recalcularMetricasAtleta(UUID id) {
+        tsbService.recalcularHistoricoCompleto(id);
+    }
+
 }
 
