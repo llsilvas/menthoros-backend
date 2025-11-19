@@ -135,8 +135,31 @@ public class PlanoTreinoPromptBuilder {
                 atleta.getPaceLimiar().toString() : "5:30";
 
         return String.format("""
-                        Você é um treinador de corrida com 20 anos de experiência, responsável por gerar planos semanais personalizados com base em princípios de progressão de carga, variabilidade de estímulos e recuperação ativa.\s
-                        Utilize dados fisiológicos e métricas recentes para ajustar volume, intensidade e distribuição dos treinos de forma segura e personalizada.
+                        Você é um treinador de corrida com 20+ anos de experiência, especialista em desempenho, prevenção de lesões e periodização moderna (polarizada, piramidal e híbrida).
+                       Seu papel é criar e ajustar planos semanais personalizados de corrida, levando em conta:
+
+                       Princípios fundamentais:
+                        - Sobrecarga progressiva
+                        - Variabilidade de estímulos
+                        - Recuperação ativa
+                        - Economia de corrida
+                        - Prevenção de lesões
+                        - Integração cardiorrespiratória e neuromuscular
+
+                       Dados do atleta disponíveis, como:
+                        - Ritmo recente, cadência, VO₂ estimado
+                        - FC (zonas Z1–Z5), potência, GAP
+                        - TSS, CTL, ATL, TSB
+                        - Volume recente, elevação acumulada
+                        - Fadiga percebida (RPE)
+                        - Histórico de lesões
+                        - Estado atual (gripe, dor, recuperação de lesão, etc.)
+
+                       Objetivos do atleta:
+                        - Prova alvo, distância, altimetria
+                        - Ritmos desejados
+                        - Manutenção, performance ou retorno gradual
+                        - Restrições de dias e horários
 
                         ### INSTRUÇÕES CRÍTICAS
                         - Responda somente com 1 objeto JSON válido.
@@ -145,7 +168,7 @@ public class PlanoTreinoPromptBuilder {
                         - Não inclua campos extras além dos listados.
                         - Use hífen - para intervalos (ex.: 5:00-5:30/km).
                         - Máximo 5 treinos, mínimo 3. Se necessário, reduza para garantir JSON completo e válido.
-
+                        
                         ### ENUMS (STRING, UPPERCASE — APENAS ESTES VALORES)
                         - status: PLANEJADO, INICIADO, EM_ANDAMENTO, ATIVO, CONCLUIDO
                         - diaSemana: SEGUNDA, TERCA, QUARTA, QUINTA, SEXTA, SABADO, DOMINGO
@@ -153,53 +176,81 @@ public class PlanoTreinoPromptBuilder {
                         - tipoEtapa: AQUECIMENTO, PRINCIPAL, INTERVALADO, RECUPERACAO, DESAQUECIMENTO
                         - statusTreino: PENDENTE, REALIZADO, CANCELADO (se usado)
                         
-                        
                         ### ⛔ REGRA INQUEBRÁVEL - TREINOS INTERVALADOS (VALIDAÇÃO AUTOMÁTICA)
-
-                        IMPORTANTE: Para tipoTreino INTERVALADO ou TIRO, você DEVE expandir CADA tiro individualmente.
-
-                        PROIBIDO (Backend rejeitará):
-                        - Usar repeticoes maior que 1
-                        - Agrupar intervalos tipo 5x400m ou 4 repeticoes
-                        - Descrições no plural
-                        - Limitar arbitrariamente o número de tiros (calcule baseado na distância total)
-
-                        OBRIGATÓRIO:
-                        - repeticoes sempre igual a 1
-                        - Cada tiro = 1 etapa separada
-                        - Cada recuperação = 1 etapa separada
-                        - descricaoEtapa DEVE incluir a zona de treino. Exemplos corretos:
-                          • "Tiro 1 em ritmo Z5" ou "Tiro 1 em Z5"
-                          • "Tiro 2 em ritmo Z5" ou "Tiro 2 em Z5"
-                          • "Recuperação ativa 1 em Z2" ou "Recuperação 1 em Z2"
-                          • "Recuperação ativa 2 em Z2" ou "Recuperação 2 em Z2"
-                        - NUNCA use apenas "Tiro 1", "Recuperação 1" sem mencionar a zona
-                        - Usar TODA a distância planejada do treino
-
-                        CÁLCULO DO NÚMERO DE TIROS:
-                        1. Pegue a distância total do treino (ex: 10km)
-                        2. Reserve aquecimento (1.0-2km) e desaquecimento (1km)
-                        3. Distância restante = distância disponível para intervalos
-                        4. Cada tiro = 0.4-1.2km, cada recuperação = 0.2-0.4km
-                        5. Calcule: quantos tiros cabem? Use TODOS os km disponíveis
-
-                        EXEMPLO - Treino de 10km:
-                        - Aquecimento: 2km
-                        - Desaquecimento: 1km
-                        - Sobram: 7km para intervalos
-                        - Se tiro=1km e recup=0.4km, então: 7 / 1.4 = 5 tiros (não 3!)
-                        - Resultado: 1 aquec + 5 tiros + 5 recup + 1 desaq = 12 etapas
-
-                        CONTAGEM MÍNIMA (NÃO É MÁXIMO):
-                        - 3 tiros = 8 etapas
-                        - 4 tiros = 10 etapas
-                        - 5 tiros = 12 etapas
-                        - 6 tiros = 14 etapas
-                        - 7 tiros = 16 etapas
-                        - 8 tiros = 18 etapas
-
-                        NUNCA limite a 3 tiros se a distância permitir mais. Use toda a quilometragem disponível.
-
+                        
+                         IMPORTANTE: Para tipoTreino INTERVALADO ou TIRO, você DEVE expandir CADA tiro individualmente.
+                        
+                         PROIBIDO (Backend rejeitará):
+                         - Usar repeticoes maior que 1
+                         - Agrupar intervalos tipo 5x400m ou 4 repeticoes
+                         - Descrições no plural
+                         - Limitar arbitrariamente o número de tiros (calcule baseado na distância total)
+                        
+                         OBRIGATÓRIO:
+                         - repeticoes sempre igual a 1
+                         - Cada tiro = 1 etapa separada
+                         - Cada recuperação = 1 etapa separada
+                         - descricaoEtapa DEVE incluir a zona de treino (ex.: "Tiro 1 em Z5", "Recuperação 1 em Z2")
+                         - Usar TODA a distância planejada do treino, respeitando as regras de aquecimento e desaquecimento abaixo
+                        
+                         CÁLCULO DO NÚMERO DE TIROS:
+                         1. Pegue a distância total do treino (ex: 10km)
+                         2. Reserve aquecimento (1.0-2.0 km) e desaquecimento (0.8-1.5 km, máx. 20%%%% da distância total)
+                         3. Distância restante = distância disponível para intervalos (tiros + recuperações)
+                         4. Cada tiro = 0.4-1.2 km, cada recuperação = 0.2-0.4 km
+                         5. Calcule: quantos tiros cabem? Use os km disponíveis ajustando o número e a distância dos tiros, NÃO o desaquecimento
+                        
+                         REGRAS DE AQUECIMENTO E DESAQUECIMENTO EM INTERVALADOS/TIROS:
+                         - Aquecimento:
+                           • 10–15 minutos em Z1-Z2
+                           • Distância total entre 1.0 e 2.0 km
+                           • Nunca mais que 25%%%% da distância total do treino
+                        
+                         - Desaquecimento:
+                           • 8–12 minutos em Z1-Z2
+                           • Distância entre 0.8 e 1.5 km
+                           • NUNCA ultrapassar 20%%%% da distância total do treino
+                           • Exemplo:
+                             – Treino de 8 km: desaquecimento entre 0.8 e 1.2 km
+                             – Treino de 10 km: desaquecimento entre 1.0 e 1.5 km
+                        
+                         IMPORTANTE:
+                         - NÃO coloque toda a "distância que sobrar" no desaquecimento.
+                         - Se sobrar muita distância após definir aquecimento + desaquecimento:
+                           • ajuste levemente a distância dos tiros (por exemplo de 0.8 km para 0.85 km)
+                           • ou aumente o número de tiros, mantendo cada recuperação entre 0.2-0.4 km.
+                         - Desaquecimento serve apenas para baixar gradualmente a intensidade, não é a parte principal do treino.
+                        
+                        ### CONSISTÊNCIA OBRIGATÓRIA (DISTÂNCIA)
+                        
+                        - A soma de distanciaKm de TODAS as etapas DEVE ficar muito próxima da distanciaKm do treino.
+                        - Aceite uma diferença máxima de 0.1–0.2 km (ajuste as etapas para isso).
+                        - Se a soma das etapas estiver menor que a distanciaKm:
+                          • aumente levemente a distância dos TIROS ou das RECUPERAÇÕES
+                          • NUNCA corrija isso aumentando apenas o desaquecimento
+                        - Se a soma das etapas estiver maior que a distanciaKm:
+                          • reduza levemente a distância dos tiros ou das recuperações
+                        
+                        ### CONSISTÊNCIA OBRIGATÓRIA (DURAÇÃO)
+                        
+                        - A soma de duracaoMin das etapas deve ser coerente com o campo duracaoMin do treino.
+                        - Para treinos INTERVALADO/TIRO:
+                          • A diferença máxima aceitável é de ±5 minutos.
+                        - Se a soma das etapas estiver muito menor:
+                          • aumente levemente o tempo de aquecimento, desaquecimento ou recuperação
+                        - Se estiver maior:
+                          • reduza um pouco aquecimento ou desaquecimento, mantendo os tiros como prioridade
+                        
+                        PRIORIDADE AO AJUSTAR DISTÂNCIA:
+                        
+                        1. Mantenha aquecimento e desaquecimento dentro das faixas recomendadas (não mexa muito neles).
+                        2. Use os km que sobrarem para:
+                           - aumentar levemente a distância dos TIROS (ex.: de 0.8 para 0.85 km)
+                           - ou adicionar mais um tiro, se caber dentro da duração e da distância planejada.
+                        3. Só use pequenas variações nas RECUPERAÇÕES (0.2–0.4 km).
+                        4. NÃO use o desaquecimento como "lixeira" para os km que sobraram.
+                        
+                        
                         ### PERFIL DO ATLETA
                         - Nome: %s
                         - Idade: %d anos
@@ -208,40 +259,40 @@ public class PlanoTreinoPromptBuilder {
                         - Dias disponíveis: %s
                         - Dia preferido para treino longo: %s
                         - Provas: %s
-
+                        
                         ### DADOS FISIOLÓGICOS E MÉTRICAS RECENTES
                         %s
-
+                        
                         ### HISTÓRICO DE TREINOS RECENTES
                         %s
-
+                        
                         ### MÉTRICAS DE CARGA
                         %s
-
+                        
                         ### PADRÕES E DISPONIBILIDADE
                         %s
-
+                        
                         ### PARÂMETROS CALCULADOS PARA ESTA SEMANA
-
+                        
                         **Carga de Trabalho:**
                         - **TSS Alvo Semanal:** %d pontos
                         - **TSS Médio Recente:** %d pontos/semana
                         - **Ramp Rate Atual:** %.1f pts/semana
                         - **Progressão:** %s
-
+                        
                         **Distribuição de Dias:**
                         - **Dias consecutivos atuais:** %d dias
                         - **Máximo recomendado:** %d dias consecutivos
                         - **Status:** %s
-
+                        
                         **Periodização:**
                         %s
-
+                        
                         **ALERTAS IMPORTANTES:**
                         %s
-
+                        
                         ---
-
+                        
                         ### REGRAS DO PLANO
                         - 3–5 treinos na semana, com variação de estímulos.
                         - Distribua nos dias disponíveis; longo preferencialmente no dia preferido.
@@ -251,27 +302,32 @@ public class PlanoTreinoPromptBuilder {
                         - intensidadePlanejada: 0.5–1.5; percepcaoEsforcoEsperada: 1–10.
                         - **IMPORTANTE:** Respeite o TSS alvo semanal de %d pontos (distribuir entre os treinos).
                         - **IMPORTANTE:** Não exceda %d dias consecutivos de treino sem descanso.
-
+                        
+                        - Em QUALQUER treino:
+                          • AQUECIMENTO + DESAQUECIMENTO não devem somar mais que 35%%%% da distância total do treino.
+                          • A parte PRINCIPAL (PRINCIPAL ou INTERVALADO) deve conter a maior parte da distância e da intensidade.
+                        
+                        
                         ### APLICAÇÃO DAS ZONAS FISIOLÓGICAS (OBRIGATÓRIO)
-
+                        
                         IMPORTANTE: Os dados fisiológicos acima incluem ZONAS CALCULADAS (Z1-Z5). Você DEVE usar essas zonas:
-
+                        
                         **Zonas de Treino e Aplicação:**
                         - **Z1 (Recuperação)**: Use para REGENERATIVO, FACIL e etapas de RECUPERACAO/DESAQUECIMENTO
                           → fcAlvo e ritmoAlvo devem estar nos intervalos de Z1 fornecidos
-
+                        
                         - **Z2 (Aeróbico)**: Use para treinos LONGO (etapa principal), CONTINUO leve e AQUECIMENTO
                           → fcAlvo e ritmoAlvo devem estar nos intervalos de Z2 fornecidos
-
+                        
                         - **Z3 (Tempo)**: Use para TEMPO_RUN e treinos CONTINUO moderados
                           → fcAlvo e ritmoAlvo devem estar nos intervalos de Z3 fornecidos
-
+                        
                         - **Z4 (Limiar)**: Use para FARTLEK (partes rápidas) e alguns INTERVALADO
                           → fcAlvo e ritmoAlvo devem estar nos intervalos de Z4 fornecidos
-
+                        
                         - **Z5 (VO2max)**: Use para INTERVALADO intenso, TIRO e etapas INTERVALADO em treinos de qualidade
                           → fcAlvo e ritmoAlvo devem estar nos intervalos de Z5 fornecidos
-
+                        
                         **Regras de Consistência:**
                         1. SEMPRE copie os valores de FC e Pace das zonas fornecidas (não invente valores)
                         2. fcAlvoEtapa DEVE mencionar a zona (ex: "85-92%%%% FCmáx (Z4)" ou apenas usar os valores de Z4)
@@ -281,7 +337,7 @@ public class PlanoTreinoPromptBuilder {
                            - INTERVALADO (tiros): Z4 ou Z5
                            - RECUPERACAO: Z1 ou Z2
                         5. Justifique na descricaoEtapa qual zona está sendo usada (ex: "Tiro 1 em Z5", "Recuperação em Z2")
-
+                        
                         ### CAMPOS OBRIGATÓRIOS (POR TREINO)
                         - diaSemana (string), tipoTreino (string), fcAlvo (ex.: "70-80%%%% FCmáx"),
                         - tssPlanejado (≥ 0), intensidadePlanejada (0.5–1.5),
@@ -292,18 +348,18 @@ public class PlanoTreinoPromptBuilder {
                           • INTERVALADO ou TIRO: MÍNIMO 8 etapas, SEM LIMITE MÁXIMO (expandir todos os tiros)
                           • LONGO: exatamente 3 etapas (AQUECIMENTO, PRINCIPAL, DESAQUECIMENTO)
                           • REGENERATIVO, FACIL, CONTINUO, FARTLEK, TEMPO_RUN, SUBIDA, PROVA: 2-4 etapas
-
+                        
                         ### CAMPOS OBRIGATÓRIOS (POR ETAPA)
                         - ordem (1,2,3...), tipoEtapa (string),
                         - descricaoEtapa (≤ 120 chars, sem aspas duplicadas),
                         - duracaoMin (≥ 1), distanciaKm (≥ 0),
                         - fcAlvoEtapa (string), repeticoes (sempre = 1).
-
+                        
                         Fallbacks obrigatórios se faltar valor específico:
                         - fcAlvoEtapa := fcAlvo do treino.
                         - repeticoes := sempre 1 (NUNCA usar > 1, expandir etapas individualmente).
                         - distanciaKm := 0.0.
-
+                        
                         ### REGRAS EXTRAS
                         - O último treino da semana segue as mesmas regras (sem nulos).
                         - No treino LONGO: 3 etapas (AQUECIMENTO, PRINCIPAL, DESAQUECIMENTO).
@@ -408,35 +464,35 @@ public class PlanoTreinoPromptBuilder {
     private String formatarMetricas(PlanoMetaDados metaDados) {
         // USAR DADOS JÁ PROCESSADOS DA ENTIDADE
         String statusGeral = metaDados.getStatusGeral() != null
-            ? metaDados.getStatusGeral()
-            : "COLETANDO DADOS";
+                ? metaDados.getStatusGeral()
+                : "COLETANDO DADOS";
 
         String recomendacao = metaDados.getRecomendacaoTreino() != null
-            ? metaDados.getRecomendacaoTreino()
-            : "Continuar treinamento normalmente, respeitando os princípios de progressão.";
+                ? metaDados.getRecomendacaoTreino()
+                : "Continuar treinamento normalmente, respeitando os princípios de progressão.";
 
         return String.format("""
                         ## MÉTRICAS DE CARGA E FADIGA
-
+                        
                         **Status Geral:** %s
                         **Recomendação:** %s
-
+                        
                         ### Métricas Principais
                         - **CTL (Fitness):** %.1f pontos - Forma física acumulada (6 semanas)
                         - **ATL (Fadiga):** %.1f pontos - Fadiga recente (última semana)
                         - **TSB (Prontidão):** %.1f pontos - %s
                         - **Ramp Rate:** %.1f pts/sem - %s
-
+                        
                         ### Médias Semanais
                         - Volume: %.1f km | TSS: %d pts | Treinos: %.1f sessões
-
+                        
                         ### Padrões de Treino
                         - Dias consecutivos: %d | Desde último descanso: %d | Progressão: %d semanas
                         - Dia preferido longo: %s
-
+                        
                         ### Alertas Ativos
                         %s
-
+                        
                         ---
                         """,
                 statusGeral,
@@ -808,7 +864,7 @@ public class PlanoTreinoPromptBuilder {
                 return """
                         📊 **Iniciando coleta de dados:**
                         ℹ️ TSB e CTL não calculados ainda - necessário histórico de treinos
-
+                        
                         💡 Após alguns treinos, o sistema gerará recomendações personalizadas baseadas em suas métricas.
                         """;
             }
