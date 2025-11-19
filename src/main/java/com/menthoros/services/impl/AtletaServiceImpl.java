@@ -10,6 +10,7 @@ import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.services.AtletaService;
 import com.menthoros.exception.ResourceNotFoundException;
 import com.menthoros.services.EmbeddingService;
+import com.menthoros.services.TsbService;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
@@ -31,6 +32,7 @@ public class AtletaServiceImpl implements AtletaService {
     private final JdbcTemplate jdbcTemplate;
     private final AtletaMapper atletaMapper;
     private final PlanoMetadadosRepository planoMetaDadosRepository;
+    private final TsbService tsbService;
 
     @Override
     @CacheEvict(value = "atletas-list", allEntries = true)
