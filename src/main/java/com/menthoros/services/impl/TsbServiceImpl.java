@@ -8,6 +8,7 @@ import com.menthoros.repository.AtletaRepository;
 import com.menthoros.repository.MetricasDiariasRepository;
 import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.repository.TreinoRealizadoRepository;
+import com.menthoros.services.TsbService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,7 +22,7 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class TsbServiceImpl {
+public class TsbServiceImpl implements TsbService {
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final PlanoMetadadosRepository planoMetaDadosRepository;
