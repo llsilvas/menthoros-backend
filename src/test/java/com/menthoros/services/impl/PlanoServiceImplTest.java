@@ -442,13 +442,13 @@ class PlanoServiceImplTest {
     private PlanoSemanalLlmDto criarPlanoSemanalLlmDto() {
         List<TreinoPlanejadoLlmDto> treinos = List.of(
                 new TreinoPlanejadoLlmDto("SEGUNDA", "CONTINUO", "140-160% FCmáx", 100, 1.0, 7,
-                        "Treino contínuo", 60, 10.0, "5:00-5:30/km", null),
+                        "Treino contínuo", "60", 10.0, "5:00-5:30/km", null),
                 new TreinoPlanejadoLlmDto("TERCA", "INTERVALADO", "170-180% FCmáx", 120, 1.2, 8,
-                        "Treino intervalado", 45, 12.0, "4:30-5:00/km", null),
+                        "Treino intervalado", "45", 12.0, "4:30-5:00/km", null),
                 new TreinoPlanejadoLlmDto("QUINTA", "CONTINUO", "170-180% FCmáx", 120, 1.2, 8,
-                        "Treino intervalado", 45, 12.0, "4:30-5:00/km", null),
+                        "Treino intervalado", "45", 12.0, "4:30-5:00/km", null),
                 new TreinoPlanejadoLlmDto("SABADO", "LONGO", "170-180% FCmáx", 120, 1.2, 8,
-                        "Treino intervalado", 45, 18.0, "4:30-5:00/km", null)
+                        "Treino intervalado", "45", 18.0, "4:30-5:00/km", null)
         );
 
         return new PlanoSemanalLlmDto(
@@ -457,27 +457,25 @@ class PlanoServiceImplTest {
     }
 
     private List<TreinoPlanejadoLlmDto> criarTreinosCompletos() {
-        List<TreinoPlanejadoLlmDto> treinos = List.of(
+        return List.of(
                 new TreinoPlanejadoLlmDto("SEGUNDA", "CONTINUO", "140-160% FCmáx", 100, 1.0, 7,
-                        "Treino contínuo", 60, 10.0, "5:00-5:30/km", null),
+                        "Treino contínuo", "60", 10.0, "5:00-5:30/km", null),
                 new TreinoPlanejadoLlmDto("TERCA", "INTERVALADO", "170-180% FCmáx", 120, 1.2, 8,
-                        "Treino intervalado", 45, 12.0, "4:30-5:00/km", null),
+                        "Treino intervalado", "45", 12.0, "4:30-5:00/km", null),
                 new TreinoPlanejadoLlmDto("QUINTA", "CONTINUO", "170-180% FCmáx", 120, 1.2, 8,
-                        "Treino intervalado", 45, 12.0, "4:30-5:00/km", null),
+                        "Treino intervalado", "45", 12.0, "4:30-5:00/km", null),
                 new TreinoPlanejadoLlmDto("SABADO", "LONGO", "170-180% FCmáx", 120, 1.2, 8,
-                        "Treino intervalado", 45, 18.0, "4:30-5:00/km", null)
+                        "Treino intervalado", "45", 18.0, "4:30-5:00/km", null)
         );
-
-        return treinos;
     }
 
 
     private List<TreinoPlanejadoLlmDto> criarTreinosRedistribuidosMock() {
         return List.of(
                 new TreinoPlanejadoLlmDto("SEGUNDA", "CONTINUO", "140-160% FCmáx", 100, 1.0, 7,
-                        "Treino contínuo", 60, 10.0, "5:00-5:30/km", null),
+                        "Treino contínuo", "60", 10.0, "5:00-5:30/km", null),
                 new TreinoPlanejadoLlmDto("QUARTA", "INTERVALADO", "170-180% FCmáx", 120, 1.2, 8,
-                        "Treino intervalado", 45, 12.0, "4:30-5:00/km", null)
+                        "Treino intervalado", "45", 12.0, "4:30-5:00/km", null)
         );
     }
 

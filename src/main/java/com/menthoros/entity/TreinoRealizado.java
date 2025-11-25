@@ -7,9 +7,11 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
-import java.time.LocalDate;
-import java.util.UUID;
+import java.time.Duration;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "tb_treino_realizado",
@@ -24,33 +26,30 @@ import java.util.UUID;
 @AllArgsConstructor
 public class TreinoRealizado extends TreinoBase{
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(length = 36, updatable = false, nullable = false)
-    private UUID id;
-
-
-    @Column(name = "data_treino")
-    private LocalDate dataTreino; // Opcional, mas útil
-
-
     @Column(name = "tss_calculado")
     private Integer tssCalculado; // TSS real calculado
 
     @Column(name = "metodo_calculo_tss")
     private String metodoCalculoTss; // "FC", "PACE", "RPE"
 
-    @Column(name = "fc_media")
+    @Column(name = "fc_media", nullable = false)
     private Integer fcMedia;
 
-    @Column(name = "fc_maxima_treino")
-    private Integer fcMaximaTreino;
+    @Column(name = "fc_maxima_treino", nullable = false)
+    private Integer fcMax;
 
-    @Column(name = "pace_media")
-    private Double paceMedia; // min/km
+    @JdbcTypeCode(SqlTypes.INTERVAL_SECOND)
+    @Column(name = "pace_media", nullable = false)
+    private Duration paceMedia; // min/km
 
     @Column(name = "velocidade_media")
     private Double velocidadeMedia; // km/h
+
+    @Column(name = "cadencia_media")
+    private Integer cadenciaMedia; // passos por minuto
+
+    @Column(name = "potencia_media")
+    private Integer potenciaMedia; // watts
 
     @Column(name = "percepcao_esforco")
     private Integer percepcaoEsforco; // RPE 1-10
@@ -116,4 +115,18 @@ public class TreinoRealizado extends TreinoBase{
         return tssCalculado - treinoPlanejado.getTssPlanejado();
     }
 
+    @PrePersist
+    private void prePersist() {
+        if(this.getCriadoEm() == null) {
+            this.setCriadoEm(LocalDateTime.now());
+        }
+        this.setAtualizadoEm(LocalDateTime.now());
+    }
+
+    @PreUpdate
+    private void preUpdate() {
+        this.setAtualizadoEm(LocalDateTime.now());
+    }
+
 }
+

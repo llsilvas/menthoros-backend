@@ -2,7 +2,7 @@
 # SERVER CONFIGURATION
 # ========================================
 server:
-  port: ${SERVER_PORT:8098}
+  port: ${SERVER_PORT:8080}
 
 # ========================================
 # SPRING CORE CONFIGURATION
@@ -57,8 +57,9 @@ spring:
     locations: classpath:db/migration
     baseline-on-migrate: true
     validate-on-migrate: true
-    out-of-order: false
+    out-of-order: true
     clean-disabled: true
+
 
   # ----------------------------------------
   # AI/OPENAI CONFIGURATION
@@ -79,19 +80,14 @@ spring:
           model: text-embedding-3-small
           dimensions: 1536
 
-# ----------------------------------------
-# KeyCloak
-# ----------------------------------------
-
-keycloak:
-  realm: ${KEYCLOAK_REALM:menthoros-app}
-  auth-server-url: ${KEYCLOAK_URL:http://localhost:8443}
-  admin:
-    username: ${KEYCLOAK_ADMIN_USER:admin}
-    password: ${KEYCLOAK_ADMIN_PASSWORD:admin123}
-    client-id: ${KEYCLOAK_CLIENT_ID:menthoros-backend}
-    client-secret: ${KEYCLOAK_CLIENT_SECRET}
-
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: always
 # ========================================
 # API DOCUMENTATION CONFIGURATION
 # ========================================

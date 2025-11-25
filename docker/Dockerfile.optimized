@@ -42,7 +42,7 @@ ENV JAVA_OPTS="-XX:+UseContainerSupport \
                -XX:+UseStringDeduplication \
                -Djava.security.egd=file:/dev/./urandom"
 
-EXPOSE 8098
+EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8098/actuator/health || exit 1

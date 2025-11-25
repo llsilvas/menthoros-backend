@@ -16,7 +16,7 @@ public record TreinoPlanejadoLlmDto(
         Double intensidadePlanejada,
         Integer percepcaoEsforcoEsperada,
         String justificativaIa,
-        Integer duracaoMin,
+        String duracaoMin,
         Double distanciaKm,
         String ritmoAlvo,
         List<EtapaTreinoLlmDto> etapas

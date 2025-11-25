@@ -326,7 +326,8 @@ public class PlanoServiceImpl implements PlanoService {
     private PlanoSemanal salvarPlanoCompleto(PlanoSemanal plano, PlanoMetaDados metaDados) {
         PlanoSemanal planoSalvo = planoSemanalRepository.save(plano);
 
-        metaDados.setPlanoSemanalAtual(planoSalvo);
+        // O relacionamento Many-to-One é gerenciado automaticamente pelo JPA
+        // Não é necessário adicionar manualmente à lista de planosSemanais do PlanoMetaDados
         planoMetadadosRepository.save(metaDados);
 
         log.info("✅ Plano salvo - {} treinos, volume: {}km",
@@ -470,14 +471,8 @@ public class PlanoServiceImpl implements PlanoService {
         PlanoSemanal plano = planoSemanalRepository.findById(planoSemanalId)
                 .orElseThrow(() -> new ResourceNotFoundException("Plano não encontrado: " + planoSemanalId));
 
-        // Limpa a referência bidirecional em PlanoMetaDados antes de deletar
-        PlanoMetaDados metaDados = plano.getPlanoMetaDados();
-        if (metaDados != null && metaDados.getPlanoSemanalAtual() != null
-                && metaDados.getPlanoSemanalAtual().getId().equals(planoSemanalId)) {
-            metaDados.setPlanoSemanalAtual(null);
-            planoMetadadosRepository.save(metaDados);
-        }
-
+        // Com o relacionamento Many-to-One, a cascade é gerenciada automaticamente
+        // Não é necessário limpar manualmente a lista de planosSemanais
         planoSemanalRepository.delete(plano);
     }
 

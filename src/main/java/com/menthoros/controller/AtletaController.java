@@ -101,4 +101,16 @@ public class AtletaController {
         AtletaOutputDto atleta = atletaService.getAtletaById(id);
         return ResponseEntity.ok(atleta);
     }
+    
+    @GetMapping("/{id}/recalcular-metricas")
+    @Operation(summary = "Recalcular métricas do atleta", description = "Recalcula as métricas de um atleta específico")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "204", description = "Métricas recalculadas com sucesso"),
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                content = @Content(mediaType = "application/json"))
+    })
+    public ResponseEntity<Void> recalcularMetricasAtleta(@Parameter(description = "ID do atleta") @PathVariable UUID id){
+        atletaService.recalcularMetricasAtleta(id);
+        return ResponseEntity.noContent().build();
+    }
 }

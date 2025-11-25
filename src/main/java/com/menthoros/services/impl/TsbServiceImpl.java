@@ -8,6 +8,7 @@ import com.menthoros.repository.AtletaRepository;
 import com.menthoros.repository.MetricasDiariasRepository;
 import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.repository.TreinoRealizadoRepository;
+import com.menthoros.services.TsbService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,7 +22,7 @@ import java.util.UUID;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class TsbServiceImpl {
+public class TsbServiceImpl implements TsbService {
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final PlanoMetadadosRepository planoMetaDadosRepository;
@@ -266,7 +267,9 @@ public class TsbServiceImpl {
                 : (int) (fcRepouso + (fcMax - fcRepouso) * 0.85); // Estimativa 85%
 
         double fcMedia = treino.getFcMedia();
-        double duracaoHoras = treino.getDuracaoMin() / 60.0;
+        double duracaoHoras = treino.getDuracaoMin() != null
+            ? treino.getDuracaoMin().toMinutes() / 60.0
+            : 0.0;
 
         // Calcular HR Reserve %
         double hrReserve = fcMax - fcRepouso;
@@ -298,9 +301,20 @@ public class TsbServiceImpl {
             return calcularTssRpe(treino);
         }
 
-        double paceMedia = treino.getPaceMedia(); // min/km
+        // Converter Duration (pace) para minutos decimais (5:30 → 5.5)
+        double paceMedia = treino.getPaceMedia() != null
+            ? treino.getPaceMedia().toMillis() / 60000.0 // millis → minutos
+            : 0.0;
+
+        if (paceMedia == 0) {
+            log.warn("Treino {} sem pace válido", treino.getId());
+            return calcularTssRpe(treino);
+        }
+
         double paceLimiar = atleta.getPaceLimiar().doubleValue(); // min/km
-        double duracaoHoras = treino.getDuracaoMin() / 60.0;
+        double duracaoHoras = treino.getDuracaoMin() != null
+            ? treino.getDuracaoMin().toMinutes() / 60.0
+            : 0.0;
 
         // IF = pace_limiar / pace_media (quanto menor o pace, maior o IF)
         double intensityFactor = paceLimiar / paceMedia;
@@ -392,7 +406,9 @@ public class TsbServiceImpl {
             return 0;
         }
 
-        double duracaoHoras = treino.getDuracaoMin() / 60.0;
+        double duracaoHoras = treino.getDuracaoMin() != null
+            ? treino.getDuracaoMin().toMinutes() / 60.0
+            : 0.0;
         double rpe = treino.getPercepcaoEsforco(); // Escala 1-10
 
         // Converter RPE para IF aproximado

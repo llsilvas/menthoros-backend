@@ -32,10 +32,15 @@ public class PlanoTreinoPromptBuilder {
     private final String promptTemplate;
     private final ProvaRepository provaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
+    private final PromptTemplateLoader templateLoader;
 
-    public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource, ProvaRepository provaRepository, TreinoRealizadoRepository treinoRealizadoRepository) {
+    public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource,
+                                   ProvaRepository provaRepository,
+                                   TreinoRealizadoRepository treinoRealizadoRepository,
+                                   PromptTemplateLoader templateLoader) {
         this.provaRepository = provaRepository;
         this.treinoRealizadoRepository = treinoRealizadoRepository;
+        this.templateLoader = templateLoader;
         try {
             this.promptTemplate = new String(promptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -104,9 +109,9 @@ public class PlanoTreinoPromptBuilder {
                         t.tipoTreino(),
                         t.distanciaKm(),
                         t.duracaoMin(),
-                        t.ritmoMedio() != null ? t.ritmoMedio() : "N/A",
+                        t.paceMedia() != null ? t.paceMedia() : "N/A",
                         t.fcMedia() != null ? t.fcMedia() : "N/A",
-                        t.comentario() != null ? t.comentario() : "Sem observações")
+                        t.observacao() != null ? t.observacao() : "Sem observações")
                 )
                 .collect(Collectors.joining("\n"));
     }
@@ -134,124 +139,34 @@ public class PlanoTreinoPromptBuilder {
         String paceLimiar = atleta.getPaceLimiar() != null ?
                 atleta.getPaceLimiar().toString() : "5:30";
 
-        return String.format("""
-                        Você é um treinador de corrida com 20 anos de experiência, responsável por gerar planos semanais personalizados com base em princípios de progressão de carga, variabilidade de estímulos e recuperação ativa.\s
-                        Utilize dados fisiológicos e métricas recentes para ajustar volume, intensidade e distribuição dos treinos de forma segura e personalizada.
-
-                        ### INSTRUÇÕES CRÍTICAS
-                        - Responda somente com 1 objeto JSON válido.
-                        - Não inclua texto antes ou depois.
-                        - Não use reticências, campos vazios ("") ou null.
-                        - Não inclua campos extras além dos listados.
-                        - Use hífen - para intervalos (ex.: 5:00-5:30/km).
-                        - Máximo 5 treinos, mínimo 3. Se necessário, reduza para garantir JSON completo e válido.
-
-                        ### ENUMS (STRING, UPPERCASE — APENAS ESTES VALORES)
-                        - status: PLANEJADO, INICIADO, EM_ANDAMENTO, ATIVO, CONCLUIDO
-                        - diaSemana: SEGUNDA, TERCA, QUARTA, QUINTA, SEXTA, SABADO, DOMINGO
-                        - tipoTreino: REGENERATIVO, FACIL, INTERVALADO, CONTINUO, LONGO, TIRO, FARTLEK, TEMPO_RUN, SUBIDA, PROVA
-                        - tipoEtapa: AQUECIMENTO, PRINCIPAL, INTERVALADO, RECUPERACAO, DESAQUECIMENTO
-                        - statusTreino: PENDENTE, REALIZADO, CANCELADO (se usado)
-                        
-                        
-                        ### 🚨 TREINOS INTERVALADOS - REGRA CRÍTICA (VALIDAÇÃO AUTOMÁTICA)
-
-                        IMPORTANTE: Para treinos tipo INTERVALADO ou TIRO, você DEVE listar INDIVIDUALMENTE cada tiro.
-
-                        ❌ ERRADO - 4 ETAPAS (SERÁ REJEITADO):
-                        1. Aquecimento
-                        2. Intervalos (5 vezes)
-                        3. Recuperação
-                        4. Desaquecimento
-
-                        ✅ CORRETO - 12 ETAPAS (MÍNIMO PARA 5 TIROS):
-                        1. Aquecimento (10min)
-                        2. Tiro 1 (4min Z5)
-                        3. Recuperação 1 (2min Z2)
-                        4. Tiro 2 (4min Z5)
-                        5. Recuperação 2 (2min Z2)
-                        6. Tiro 3 (4min Z5)
-                        7. Recuperação 3 (2min Z2)
-                        8. Tiro 4 (4min Z5)
-                        9. Recuperação 4 (2min Z2)
-                        10. Tiro 5 (4min Z5)
-                        11. Recuperação 5 (2min Z2)
-                        12. Desaquecimento (5min)
-
-                        CÁLCULO OBRIGATÓRIO:
-                        - 3 tiros = 8 etapas mínimo (1 + 3 + 3 + 1)
-                        - 4 tiros = 10 etapas mínimo (1 + 4 + 4 + 1)
-                        - 5 tiros = 12 etapas mínimo (1 + 5 + 5 + 1)
-                        - 6 tiros = 14 etapas mínimo (1 + 6 + 6 + 1)
-
-                        CADA etapa deve ter repeticoes=1. NUNCA agrupe intervalos.
-
-                        ### PERFIL DO ATLETA
-                        - Nome: %s
-                        - Idade: %d anos
-                        - Objetivo: %s
-                        - Nível: %s
-                        - Dias disponíveis: %s
-                        - Dia preferido para treino longo: %s
-                        - Provas: %s
-
-                        ### DADOS FISIOLÓGICOS E MÉTRICAS RECENTES
-                        %s
-
-                        ### HISTÓRICO DE TREINOS RECENTES
-                        %s
-
-                        ### MÉTRICAS DE CARGA
-                        %s
-
-                        ### REGRAS DO PLANO
-                        - 3–5 treinos na semana, com variação de estímulos.
-                        - Distribua nos dias disponíveis; longo preferencialmente no dia preferido.
-                        - Se houver 4 ou mais treinos, segunda-feira deve ser regenerativo.
-                        - Nunca posicione regenerativo após intervalado ou longo.
-                        - Progressão ≤ 10%%%% no volume semanal (salvo subexecução recente).
-                        - intensidadePlanejada: 0.5–1.5; percepcaoEsforcoEsperada: 1–10.
-
-                        ### CAMPOS OBRIGATÓRIOS (POR TREINO)
-                        - diaSemana (string), tipoTreino (string), fcAlvo (ex.: "70-80%%%% FCmáx"),
-                        - tssPlanejado (≥ 0), intensidadePlanejada (0.5–1.5),
-                        - percepcaoEsforcoEsperada (1–10), justificativaIa (≤ 200 chars),
-                        - duracaoMin (≥ 1), distanciaKm (≥ 0),
-                        - ritmoAlvo (padrão m:ss-m:ss/km, ex.: 5:00-5:30/km),
-                        - etapas (array, nunca vazio):
-                          • INTERVALADO ou TIRO: MÍNIMO 8 etapas, SEM LIMITE MÁXIMO (expandir todos os tiros)
-                          • LONGO: exatamente 3 etapas (AQUECIMENTO, PRINCIPAL, DESAQUECIMENTO)
-                          • REGENERATIVO, FACIL, CONTINUO, FARTLEK, TEMPO_RUN, SUBIDA, PROVA: 2-4 etapas
-
-                        ### CAMPOS OBRIGATÓRIOS (POR ETAPA)
-                        - ordem (1,2,3...), tipoEtapa (string),
-                        - descricaoEtapa (≤ 120 chars, sem aspas duplicadas),
-                        - duracaoMin (≥ 1), distanciaKm (≥ 0),
-                        - fcAlvoEtapa (string), repeticoes (sempre = 1).
-
-                        Fallbacks obrigatórios se faltar valor específico:
-                        - fcAlvoEtapa := fcAlvo do treino.
-                        - repeticoes := sempre 1 (NUNCA usar > 1, expandir etapas individualmente).
-                        - distanciaKm := 0.0.
-
-                        ### REGRAS EXTRAS
-                        - O último treino da semana segue as mesmas regras (sem nulos).
-                        - No treino LONGO: 3 etapas (AQUECIMENTO, PRINCIPAL, DESAQUECIMENTO).
-                        - Não repita texto na justificativaIa (evite redundância).
-                        - Não use travessão/en-dash; apenas hífen -.
-                        """,
+        // Carregar e formatar o template externalizado
+        return templateLoader.loadAndFormat(
+                "plano-treino-enhanced.txt",
                 // Parâmetros do String.format (na ordem correta dos placeholders)
-                atleta.getNome(),
-                atleta.getIdade(),
-                atleta.getObjetivo() != null ? atleta.getObjetivo() : "Melhorar condicionamento",
-                atleta.getNivelExperiencia() != null ? atleta.getNivelExperiencia().toString() : "INTERMEDIARIO",
-                formatarDias(atleta.getDiasDisponiveis()),
-                diaPreferidoLongo,
-                provas,
-                dadosFisiologicos,
-                historicoTreinos,
-                metricas
-
+                atleta.getNome(),                                                                              // %1$s
+                atleta.getIdade(),                                                                             // %2$d
+                atleta.getObjetivo() != null ? atleta.getObjetivo() : "Melhorar condicionamento",             // %3$s
+                atleta.getNivelExperiencia() != null ? atleta.getNivelExperiencia().toString() : "INTERMEDIARIO", // %4$s
+                formatarDias(atleta.getDiasDisponiveis()),                                                     // %5$s
+                diaPreferidoLongo,                                                                             // %6$s
+                provas,                                                                                        // %7$s
+                dadosFisiologicos,                                                                             // %8$s
+                historicoTreinos,                                                                              // %9$s
+                metricas,                                                                                      // %10$s
+                diasFormatados,                                                                                // %11$s
+                // PARÂMETROS CALCULADOS PARA ESTA SEMANA
+                tssAlvo,                                                                                       // %12$d
+                tssMedio,                                                                                      // %13$d
+                rampRate,                                                                                      // %14$.1f
+                interpretarRampRate(rampRate),                                                                 // %15$s
+                diasConsecutivos,                                                                              // %16$d
+                maxDiasConsecutivos,                                                                           // %17$d
+                gerarStatusDiasConsecutivos(diasConsecutivos, maxDiasConsecutivos),                           // %18$s
+                periodizacao,                                                                                  // %19$s
+                alertas,                                                                                       // %20$s
+                // Repetidos nas REGRAS DO PLANO
+                tssAlvo,                                                                                       // %21$d
+                maxDiasConsecutivos                                                                            // %22$d
         );
     }
 
@@ -304,7 +219,7 @@ public class PlanoTreinoPromptBuilder {
         treinosRecentes.stream()
                 .limit(5)
                 .forEach(treino -> {
-                    sb.append(String.format("- %s: %s - %.1f km, %d min, TSS %d",
+                    sb.append(String.format("- %s: %s - %.1f km, %s min, TSS %d",
                             treino.getDataTreino(),
                             treino.getTipoTreino(),
                             treino.getDistanciaKm() != null ? treino.getDistanciaKm().doubleValue() : 0.0,
@@ -324,35 +239,35 @@ public class PlanoTreinoPromptBuilder {
     private String formatarMetricas(PlanoMetaDados metaDados) {
         // USAR DADOS JÁ PROCESSADOS DA ENTIDADE
         String statusGeral = metaDados.getStatusGeral() != null
-            ? metaDados.getStatusGeral()
-            : "COLETANDO DADOS";
+                ? metaDados.getStatusGeral()
+                : "COLETANDO DADOS";
 
         String recomendacao = metaDados.getRecomendacaoTreino() != null
-            ? metaDados.getRecomendacaoTreino()
-            : "Continuar treinamento normalmente, respeitando os princípios de progressão.";
+                ? metaDados.getRecomendacaoTreino()
+                : "Continuar treinamento normalmente, respeitando os princípios de progressão.";
 
         return String.format("""
                         ## MÉTRICAS DE CARGA E FADIGA
-
+                        
                         **Status Geral:** %s
                         **Recomendação:** %s
-
+                        
                         ### Métricas Principais
                         - **CTL (Fitness):** %.1f pontos - Forma física acumulada (6 semanas)
                         - **ATL (Fadiga):** %.1f pontos - Fadiga recente (última semana)
                         - **TSB (Prontidão):** %.1f pontos - %s
                         - **Ramp Rate:** %.1f pts/sem - %s
-
+                        
                         ### Médias Semanais
                         - Volume: %.1f km | TSS: %d pts | Treinos: %.1f sessões
-
+                        
                         ### Padrões de Treino
                         - Dias consecutivos: %d | Desde último descanso: %d | Progressão: %d semanas
                         - Dia preferido longo: %s
-
+                        
                         ### Alertas Ativos
                         %s
-
+                        
                         ---
                         """,
                 statusGeral,
@@ -724,7 +639,7 @@ public class PlanoTreinoPromptBuilder {
                 return """
                         📊 **Iniciando coleta de dados:**
                         ℹ️ TSB e CTL não calculados ainda - necessário histórico de treinos
-
+                        
                         💡 Após alguns treinos, o sistema gerará recomendações personalizadas baseadas em suas métricas.
                         """;
             }
@@ -1211,5 +1126,28 @@ public class PlanoTreinoPromptBuilder {
             default:
                 return 5;
         }
+    }
+
+    /**
+     * Gera status descritivo sobre dias consecutivos de treino
+     */
+    private String gerarStatusDiasConsecutivos(Integer diasConsecutivos, int maxDiasConsecutivos) {
+        if (diasConsecutivos == null || diasConsecutivos == 0) {
+            return "✅ Descansado - Pronto para iniciar semana";
+        }
+
+        if (diasConsecutivos >= maxDiasConsecutivos + 1) {
+            return "🔴 CRÍTICO - Excedeu limite seguro! DESCANSO OBRIGATÓRIO";
+        } else if (diasConsecutivos == maxDiasConsecutivos) {
+            return "⚠️ NO LIMITE - Próximo treino DEVE ser descanso ou regenerativo";
+        } else if (diasConsecutivos >= maxDiasConsecutivos - 1) {
+            return "🟡 ATENÇÃO - Próximo do limite, planejar descanso";
+        } else if (diasConsecutivos >= 3) {
+            return "✅ DENTRO DO LIMITE - Monitorar sinais de fadiga";
+        } else if (diasConsecutivos >= 1) {
+            return "✅ SAUDÁVEL - Padrão seguro de treino";
+        }
+
+        return "✅ Normal";
     }
 }

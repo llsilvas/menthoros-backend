@@ -206,7 +206,7 @@ class RedistribuicaoTreinoHelperTest {
     private TreinoPlanejadoLlmDto criarTreinoMock(String dia, String tipo) {
         return new TreinoPlanejadoLlmDto(
                 dia, tipo, "140-160% FCmáx", 100, 1.0, 7,
-                "Treino mock", 60, 10.0, "5:00-5:30/km", null
+                "Treino mock", "60", 10.0, "5:00-5:30/km", null
         );
     }
 }

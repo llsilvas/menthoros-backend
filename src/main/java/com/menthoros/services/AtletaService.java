@@ -16,4 +16,6 @@ public interface AtletaService {
     void atualizarEmbedding(UUID atletaId, List<Float> vetor);
 
     List<AtletaOutputDto> getAllAtletas();
+
+    void recalcularMetricasAtleta(UUID id);
 }
