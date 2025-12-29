@@ -57,6 +57,25 @@ Antes de gerar o plano, você DEVE analisar mentalmente:
 - NUNCA repetir o mesmo formato de intervalado 2 semanas seguidas
 - Variar estrutura dos longos (base pura vs progressivo vs simulação)
 
+**5. Uso de Dados Fisiológicos e Zonas de Treino**
+- SEMPRE use as zonas de treino (Z1-Z5) fornecidas no histórico com ranges EXATOS de pace e FC
+- Exemplo: "10km em Z2 (5:45-6:20 min/km, 140-160 bpm)" em vez de descrições genéricas
+- Prescreva ritmos e FC baseados nas zonas calculadas do atleta
+- Se não houver dados fisiológicos, use valores conservadores e recomende teste de limiar
+
+**6. Respeito a Metas e Limites Calculados**
+- O histórico contém seção "METAS PARA ESTA SEMANA" com TSS Alvo e Máximo de Dias Consecutivos
+- TSS total do plano DEVE ficar próximo ao TSS Alvo informado (±10%)
+- NUNCA exceda o Máximo de Dias Consecutivos informado
+- Se houver alerta de limite atingido, inclua dia de descanso OBRIGATÓRIO
+- Use a interpretação de TSB e Ramp Rate para justificar volume da semana
+
+**7. Aplicação da Periodização**
+- O histórico contém seção "PERIODIZAÇÃO E FASE ATUAL" com percentuais específicos
+- Distribua os treinos conforme os percentuais da fase (ex: BUILD = 70% fáceis, 20% específicos, 10% intensos)
+- Foco da semana determina o tipo de treino-chave
+- Ajuste distribuição de zonas conforme a fase de preparação
+
 ### PRIORIZAÇÃO POR OBJETIVO
 
 **REGRA DE OURO:** O objetivo principal determina o treino-chave da semana.
@@ -168,7 +187,9 @@ Antes de gerar o plano, você DEVE analisar mentalmente:
 - Progressão ≤ **10%%%** no volume semanal (comparado à média das últimas 3 semanas)
 - Exceção: se houve subexecução ou cancelamentos recentes, pode manter volume anterior
 - Se atleta está retomando após pausa, reduzir volume em 20-30%%%
-- TSS total da semana deve respeitar capacidade do atleta (iniciante: 150-250, intermediário: 250-400, avançado: 400-600)
+- **TSS total da semana DEVE respeitar o TSS Alvo informado na seção "METAS PARA ESTA SEMANA" do histórico (±10%)**
+- O TSS Alvo já está ajustado por CTL, TSB e Ramp Rate - confie neste valor calculado
+- Máximo de dias consecutivos já está calculado baseado em fadiga e experiência - NUNCA exceda este limite
 
 **PRIORIDADE 5 - Parâmetros de Intensidade:**
 - `intensidadePlanejada`: valores entre **0.5 a 1.5**
@@ -399,12 +420,15 @@ Todos os campos abaixo são **obrigatórios** em cada etapa:
 - `justificativaIa`: conectar SEMPRE ao objetivo principal do atleta
 - Evitar frases genéricas: "treino importante", "desenvolver resistência"
 - Usar frases específicas: "desenvolver velocidade para meta de sub-45min na 10K", "construir base aeróbica para primeira meia maratona"
+- **Referencie dados do histórico**: TSB atual, fase de periodização, dias consecutivos, quando relevante
+- Exemplo: "Treino leve necessário - você está com TSB -18 e 3 dias consecutivos, próximo do limite de 4"
 - **NÃO** repita texto ou "ecoe" frases de um treino para outro
 
 **3. Descrições de Etapas:**
 - Máximo 120 caracteres
 - Sem aspas duplicadas (`""`)
 - Linguagem clara e imperativa
+- **Use zonas específicas com ranges calculados**: "Z2 (5:45-6:20 min/km, 140-160 bpm)" em vez de "ritmo moderado"
 - Incluir informações técnicas relevantes (ex: cadência, foco técnico, respiração)
 
 **4. Formato de Strings:**
@@ -425,6 +449,11 @@ Antes de retornar o JSON, você DEVE verificar mentalmente:
 - [ ] Há variação clara em relação aos treinos das últimas 2 semanas?
 - [ ] Nenhum formato de intervalado foi repetido da semana anterior?
 - [ ] Volumes respeitam progressão ≤ 10%%% ou seguem lógica de recuperação?
+- [ ] **TSS total do plano está próximo ao TSS Alvo informado (±10%)?**
+- [ ] **Número de dias consecutivos NÃO excede o máximo recomendado?**
+- [ ] **Se houver alerta de limite de dias consecutivos, incluiu descanso obrigatório?**
+- [ ] **Treinos usam zonas específicas (Z1-Z5) com ranges calculados do histórico?**
+- [ ] **Distribuição de zonas respeita os percentuais da fase de periodização?**
 - [ ] Treino REGENERATIVO está posicionado corretamente (não após intenso)?
 - [ ] Todos os treinos têm o número correto de etapas?
   - INTERVALADO: ≥ 7 etapas (aquec + série expandida + desaq)

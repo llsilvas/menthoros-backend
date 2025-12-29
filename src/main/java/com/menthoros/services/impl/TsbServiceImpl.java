@@ -665,5 +665,196 @@ public class TsbServiceImpl implements TsbService {
         double scale = Math.pow(10, places);
         return Math.round(value * scale) / scale;
     }
+
+    /**
+     * Calcula métricas semanais médias baseadas no histórico de treinos realizados.
+     *
+     * <p>Este método agrega dados das últimas N semanas para fornecer uma visão
+     * estatística do padrão de treino do atleta, usada para:
+     * <ul>
+     *   <li>Calcular progressão de carga (Ramp Rate)</li>
+     *   <li>Determinar TSS Alvo para próxima semana</li>
+     *   <li>Identificar variações no volume de treino</li>
+     * </ul>
+     *
+     * <p><b>Dados calculados:</b>
+     * <ul>
+     *   <li>Volume semanal médio (km)</li>
+     *   <li>TSS semanal médio (pontos)</li>
+     *   <li>Frequência média de treinos por semana</li>
+     * </ul>
+     *
+     * @param atletaId ID do atleta
+     * @param numSemanas Número de semanas para calcular médias (recomendado: 4-6)
+     * @return {@link com.menthoros.dto.output.MetricasSemanaisMedias} com médias calculadas
+     * @throws IllegalArgumentException se atletaId for nulo ou atleta não existir
+     */
+    @Override
+    public com.menthoros.dto.output.MetricasSemanaisMedias calcularMetricasSemanais(UUID atletaId, int numSemanas) {
+        validarAtletaExiste(atletaId);
+
+        if (numSemanas < 1) {
+            log.warn("numSemanas inválido ({}), usando padrão de 4 semanas", numSemanas);
+            numSemanas = 4;
+        }
+
+        log.debug("Calculando métricas semanais médias para atleta {} (últimas {} semanas)",
+            atletaId, numSemanas);
+
+        // Buscar métricas diárias das últimas N semanas
+        LocalDate dataLimite = LocalDate.now().minusWeeks(numSemanas);
+        List<MetricasDiarias> metricas = metricasDiariasRepository
+            .findByAtletaIdAndDataGreaterThanEqualOrderByDataAsc(atletaId, dataLimite);
+
+        if (metricas.isEmpty()) {
+            log.warn("Nenhuma métrica encontrada para atleta {} nas últimas {} semanas",
+                atletaId, numSemanas);
+            return new com.menthoros.dto.output.MetricasSemanaisMedias(
+                BigDecimal.ZERO,
+                0,
+                0.0
+            );
+        }
+
+        // Agrupar métricas por semana
+        java.util.Map<Integer, List<MetricasDiarias>> metricasPorSemana = metricas.stream()
+            .collect(java.util.stream.Collectors.groupingBy(
+                m -> m.getData().get(java.time.temporal.ChronoField.ALIGNED_WEEK_OF_YEAR)
+            ));
+
+        // Calcular totais por semana
+        List<BigDecimal> volumesPorSemana = new java.util.ArrayList<>();
+        List<Integer> tssPorSemana = new java.util.ArrayList<>();
+        List<Integer> treinosPorSemana = new java.util.ArrayList<>();
+
+        for (List<MetricasDiarias> metricasSemana : metricasPorSemana.values()) {
+            // Volume total da semana
+            BigDecimal volumeSemanal = metricasSemana.stream()
+                .map(m -> m.getVolumeKm() != null ? m.getVolumeKm() : BigDecimal.ZERO)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            volumesPorSemana.add(volumeSemanal);
+
+            // TSS total da semana
+            Integer tssSemanal = metricasSemana.stream()
+                .mapToInt(m -> m.getTss() != null ? m.getTss() : 0)
+                .sum();
+            tssPorSemana.add(tssSemanal);
+
+            // Treinos realizados na semana (dias com treinosRealizados > 0)
+            Integer treinosSemana = (int) metricasSemana.stream()
+                .filter(m -> m.getTreinosRealizados() != null && m.getTreinosRealizados() > 0)
+                .count();
+            treinosPorSemana.add(treinosSemana);
+        }
+
+        // Calcular médias
+        int semanas = volumesPorSemana.size();
+
+        BigDecimal volumeMedio = volumesPorSemana.stream()
+            .reduce(BigDecimal.ZERO, BigDecimal::add)
+            .divide(BigDecimal.valueOf(semanas), 2, java.math.RoundingMode.HALF_UP);
+
+        Integer tssMedio = tssPorSemana.stream()
+            .mapToInt(Integer::intValue)
+            .sum() / semanas;
+
+        Double treinosPorSemanaMedio = treinosPorSemana.stream()
+            .mapToDouble(Integer::doubleValue)
+            .average()
+            .orElse(0.0);
+
+        log.info("Métricas semanais calculadas - Volume: {}km/semana, TSS: {}/semana, Treinos: {}/semana",
+            volumeMedio, tssMedio, String.format("%.1f", treinosPorSemanaMedio));
+
+        return new com.menthoros.dto.output.MetricasSemanaisMedias(
+            volumeMedio,
+            tssMedio,
+            Math.round(treinosPorSemanaMedio * 10.0) / 10.0 // Arredondar para 1 casa decimal
+        );
+    }
+
+    /**
+     * Calcula padrões de treino baseados em dias consecutivos e recuperação.
+     *
+     * <p>Este método analisa o histórico recente de treinos para identificar:
+     * <ul>
+     *   <li><b>Dias consecutivos treinando:</b> Sequência contínua de dias com treino até hoje</li>
+     *   <li><b>Dias desde último descanso:</b> Dias passados desde o último dia SEM treino</li>
+     * </ul>
+     *
+     * <p><b>Fundamento Fisiológico:</b>
+     * <ul>
+     *   <li>Treinar mais de 5-6 dias consecutivos aumenta risco de overtraining</li>
+     *   <li>Dias de descanso permitem adaptação e regeneração muscular</li>
+     *   <li>Atletas iniciantes necessitam mais descanso (máx 4-5 dias consecutivos)</li>
+     *   <li>Atletas avançados podem treinar 6-7 dias se volume/intensidade forem controlados</li>
+     * </ul>
+     *
+     * <p><b>Uso prático:</b>
+     * Este método é essencial para o {@link com.menthoros.services.PlanoService} decidir se deve
+     * incluir dia de descanso obrigatório no plano semanal.
+     *
+     * @param atletaId ID do atleta
+     * @return {@link com.menthoros.dto.output.PadroesTreino} com padrões identificados
+     * @throws IllegalArgumentException se atletaId for nulo ou atleta não existir
+     */
+    @Override
+    public com.menthoros.dto.output.PadroesTreino calcularPadroesTreino(UUID atletaId) {
+        validarAtletaExiste(atletaId);
+
+        log.debug("Calculando padrões de treino para atleta {}", atletaId);
+
+        // Buscar últimos 14 dias de métricas
+        LocalDate dataLimite = LocalDate.now().minusDays(14);
+        List<MetricasDiarias> metricas = metricasDiariasRepository
+            .findByAtletaIdAndDataGreaterThanEqualOrderByDataAsc(atletaId, dataLimite);
+
+        if (metricas.isEmpty()) {
+            log.warn("Nenhuma métrica encontrada para atleta {} nos últimos 14 dias", atletaId);
+            return new com.menthoros.dto.output.PadroesTreino(0, 0);
+        }
+
+        // Ordenar do mais recente para o mais antigo
+        List<MetricasDiarias> metricasDesc = new java.util.ArrayList<>(metricas);
+        metricasDesc.sort((m1, m2) -> m2.getData().compareTo(m1.getData()));
+
+        // Calcular dias consecutivos (sequência de hoje para trás)
+        int diasConsecutivos = 0;
+        LocalDate dataEsperada = LocalDate.now();
+
+        for (MetricasDiarias metrica : metricasDesc) {
+            // Se a data não é a esperada, quebra a sequência
+            if (!metrica.getData().equals(dataEsperada)) {
+                break;
+            }
+
+            // Se houve treino neste dia, incrementa
+            if (metrica.getTreinosRealizados() != null && metrica.getTreinosRealizados() > 0) {
+                diasConsecutivos++;
+                dataEsperada = dataEsperada.minusDays(1);
+            } else {
+                // Encontrou dia sem treino, para a contagem
+                break;
+            }
+        }
+
+        // Calcular dias desde último descanso
+        int diasDesdeDescanso = 0;
+        for (MetricasDiarias metrica : metricasDesc) {
+            // Se encontrou dia sem treino, para
+            if (metrica.getTreinosRealizados() == null || metrica.getTreinosRealizados() == 0) {
+                break;
+            }
+            diasDesdeDescanso++;
+        }
+
+        log.info("Padrões de treino calculados - Dias consecutivos: {}, Dias desde descanso: {}",
+            diasConsecutivos, diasDesdeDescanso);
+
+        return new com.menthoros.dto.output.PadroesTreino(
+            diasConsecutivos,
+            diasDesdeDescanso
+        );
+    }
 }
 

@@ -25,5 +25,7 @@ public interface MetricasDiariasRepository extends JpaRepository<MetricasDiarias
 
     List<MetricasDiarias> findByAtletaIdOrderByDataAsc(UUID atletaId);
 
+    List<MetricasDiarias> findByAtletaIdAndDataGreaterThanEqualOrderByDataAsc(UUID atletaId, LocalDate dataLimite);
+
     void deleteByAtletaId(UUID atletaId);
 }

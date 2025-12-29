@@ -20,10 +20,7 @@ import com.menthoros.repository.AtletaRepository;
 import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.repository.PlanoSemanalRepository;
 import com.menthoros.repository.TreinoRealizadoRepository;
-import com.menthoros.services.EmbeddingService;
-import com.menthoros.services.IaService;
-import com.menthoros.services.PlanoMetadadosService;
-import com.menthoros.services.PlanoService;
+import com.menthoros.services.*;
 import com.menthoros.services.helper.RedistribuicaoTreinoHelper;
 import com.menthoros.services.helper.RegraGeracaoTreino;
 import com.menthoros.util.Utils;
@@ -58,6 +55,7 @@ public class PlanoServiceImpl implements PlanoService {
     private final PlanoSemanalMapper planoSemanalMapper;
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final PlanoMetadadosService planoMetadadosService;
+    private final TsbService tsbService;
 
     private final EmbeddingService embeddingService;
     private final PlanoSemanalRepository planoSemanalRepository;
@@ -363,26 +361,71 @@ public class PlanoServiceImpl implements PlanoService {
         return plano;
     }
 
+    /**
+     * Prepara e atualiza metadados do plano baseado em treinos realizados e plano gerado.
+     *
+     * <p>Este método orquestra a atualização de todas as métricas do atleta:
+     * <ul>
+     *   <li>Métricas de carga (CTL, ATL, TSB) - calculadas pelo {@link TsbService}</li>
+     *   <li>Métricas semanais médias (volume, TSS, frequência)</li>
+     *   <li>Padrões de treino (dias consecutivos, desde último descanso)</li>
+     *   <li>Progressão de volume</li>
+     * </ul>
+     *
+     * <p><b>IMPORTANTE:</b> As métricas CTL/ATL/TSB são calculadas baseadas em treinos
+     * REALIZADOS (não planejados), garantindo precisão e consistência.
+     *
+     * @param planoDto Plano gerado pela IA (contém volume planejado)
+     * @param dadosPlano Dados do plano incluindo metadados anteriores
+     * @return Metadados atualizados e persistidos
+     */
     private PlanoMetaDados prepararMetadados(PlanoSemanalLlmDto planoDto, DadosPlanoDto dadosPlano) {
-        PlanoMetaDados metaDados;
-        if (dadosPlano.metaDados().getId() != null) {
-            metaDados = dadosPlano.metaDados();
+        PlanoMetaDados metaDados = dadosPlano.metaDados();
 
-            // Atualizar TSB projetado
-            if (planoDto.tsbFim() != null) {
-                metaDados.setTsbAtual(planoDto.tsbFim());
-            }
-
-            // Calcular e atualizar Ramp Rate
-            atualizarRampRate(metaDados, planoDto.volumePlanejadoKm());
-
-            // Atualizar contadores de progressão
-            atualizarProgressao(metaDados, planoDto.volumePlanejadoKm());
-
-            metaDados = planoMetadadosRepository.save(metaDados);
-        } else {
-            metaDados = dadosPlano.metaDados();
+        if (metaDados.getId() == null) {
+            log.debug("Metadados sem ID - retornando sem atualizar");
+            return metaDados;
         }
+
+        Atleta atleta = dadosPlano.atleta();
+        UUID atletaId = atleta.getId();
+
+        log.debug("Atualizando metadados para atleta {} com volume planejado: {}km",
+            atletaId, planoDto.volumePlanejadoKm());
+
+        // 1. Calcular métricas semanais médias baseadas em treinos realizados
+        com.menthoros.dto.output.MetricasSemanaisMedias metricas =
+            tsbService.calcularMetricasSemanais(atletaId, 6);
+
+        metaDados.setVolumeSemanalMedio(metricas.volumeMedio());
+        metaDados.setTssSemanalMedio(metricas.tssMedio());
+        metaDados.setTreinosPorSemanaMedio(metricas.treinosPorSemanaMedio());
+
+        log.debug("Métricas semanais atualizadas - Volume: {}km, TSS: {}, Frequência: {} treinos/semana",
+            metricas.volumeMedio(), metricas.tssMedio(), metricas.treinosPorSemanaMedio());
+
+        // 2. Calcular padrões de treino (dias consecutivos e desde último descanso)
+        com.menthoros.dto.output.PadroesTreino padroes =
+            tsbService.calcularPadroesTreino(atletaId);
+
+        metaDados.setDiasConsecutivosTreino(padroes.diasConsecutivos());
+        metaDados.setDiasDesdeUltimoDescanso(padroes.diasDesdeDescanso());
+
+        log.debug("Padrões de treino atualizados - Dias consecutivos: {}, Desde descanso: {}",
+            padroes.diasConsecutivos(), padroes.diasDesdeDescanso());
+
+        // 3. Atualizar volume planejado desta semana
+        metaDados.setVolumePlanejado(BigDecimal.valueOf(planoDto.volumePlanejadoKm()));
+
+        // 4. Atualizar progressão de volume
+        atualizarProgressao(metaDados, planoDto.volumePlanejadoKm());
+
+        // 5. Persistir metadados atualizados
+        // Nota: @PreUpdate na entidade irá atualizar automaticamente alertas, status e recomendação
+        metaDados = planoMetadadosRepository.save(metaDados);
+
+        log.info("Metadados atualizados com sucesso para atleta {}", atletaId);
+
         return metaDados;
     }
 
@@ -485,25 +528,16 @@ public class PlanoServiceImpl implements PlanoService {
         return planoSemanalMapper.toOutputDto(planoSemanal);
     }
 
-    private void atualizarRampRate(PlanoMetaDados metaDados, double volumeNovo) {
-        if (metaDados.getVolumeSemanalMedio() != null &&
-                metaDados.getVolumeSemanalMedio().doubleValue() > 0) {
-
-            double volumeMedio = metaDados.getVolumeSemanalMedio().doubleValue();
-            double rampRate = ((volumeNovo - volumeMedio) / volumeMedio) * 100;
-            metaDados.setRampRateAtual(rampRate);
-
-            log.debug("Ramp Rate atualizado: {}% (volume novo: {}km, médio: {}km)",
-                    String.format("%.2f", rampRate), volumeNovo, volumeMedio);
-
-            if (rampRate > 10) {
-                log.warn("Atenção: Ramp Rate elevado ({}%) para atleta com metadados ID {}. " +
-                        "Recomenda-se não ultrapassar 10% de aumento semanal.",
-                        String.format("%.2f", rampRate), metaDados.getId());
-            }
-        }
-    }
-
+    /**
+     * Atualiza contador de semanas de progressão contínua.
+     *
+     * <p>Incrementa o contador quando o volume planejado excede a média semanal,
+     * resetando quando há redução de volume. Importante para identificar
+     * necessidade de semana de recuperação (após 3-4 semanas consecutivas de aumento).
+     *
+     * @param metaDados Metadados a serem atualizados
+     * @param volumeNovo Volume do novo plano (km)
+     */
     private void atualizarProgressao(PlanoMetaDados metaDados, double volumeNovo) {
         if (metaDados.getVolumeSemanalMedio() != null) {
             if (volumeNovo > metaDados.getVolumeSemanalMedio().doubleValue()) {

@@ -1930,8 +1930,17 @@ public class PlanoTreinoPromptBuilder {
 
         // 3. Compilar todo o contexto em um histórico completo
         StringBuilder historicoCompleto = new StringBuilder();
+
+        // ETAPA 1: Adicionar dados fisiológicos e zonas de treino detalhadas
+        historicoCompleto.append("## DADOS FISIOLÓGICOS E ZONAS DE TREINO\n\n");
+        historicoCompleto.append(formatarDadosFisiologicos(atleta)).append("\n\n");
+
         historicoCompleto.append(formatarHistoricoTreinos(atleta)).append("\n\n");
         historicoCompleto.append(formatarMetricas(metaDados)).append("\n\n");
+
+        // ETAPA 2: Adicionar análise de disponibilidade e padrões de treino
+        historicoCompleto.append(formatarDias(atleta, metaDados, inicioSemana)).append("\n\n");
+
         historicoCompleto.append(analiseEstimulos).append("\n\n");
         historicoCompleto.append("## VOLUME MÉDIO DAS ÚLTIMAS 3 SEMANAS\n");
         historicoCompleto.append(String.format("- **Volume Médio:** %.1f km\n", volumeUltimas3Semanas.get("volumeMedioKm")));
@@ -1939,7 +1948,36 @@ public class PlanoTreinoPromptBuilder {
         historicoCompleto.append(String.format("- **Semana Mais Recente:** %.1f km\n\n", volumeUltimas3Semanas.get("volumeSemanaMaisRecente")));
         historicoCompleto.append(matrizVariabilidade).append("\n");
         historicoCompleto.append(alertasVariabilidade).append("\n");
-        historicoCompleto.append(instrucoesRecuperacao);
+        historicoCompleto.append(instrucoesRecuperacao).append("\n\n");
+
+        // ETAPA 3: Adicionar periodização estruturada
+        historicoCompleto.append("## PERIODIZAÇÃO E FASE ATUAL\n\n");
+        historicoCompleto.append(formatarPeriodizacaoProva(provaAlvo)).append("\n");
+
+        // ETAPA 4: Adicionar TSS alvo e máximo dias consecutivos calculados
+        int tssAlvo = calcularTssAlvo(metaDados);
+        int maxDiasConsecutivos = calcularMaxDiasConsecutivos(metaDados, atleta);
+
+        historicoCompleto.append("## METAS PARA ESTA SEMANA\n\n");
+        historicoCompleto.append(String.format("- **TSS Alvo Semanal:** %d pontos\n", tssAlvo));
+        historicoCompleto.append(String.format("  - Baseado em CTL atual: %.1f\n", metaDados.getCtlAtual() != null ? metaDados.getCtlAtual() : 0.0));
+        historicoCompleto.append(String.format("  - Ajustado por TSB: %.1f (%s)\n",
+            metaDados.getTsbAtual() != null ? metaDados.getTsbAtual() : 0.0,
+            metaDados.getInterpretacaoTsb() != null ? metaDados.getInterpretacaoTsb() : "Normal"));
+        historicoCompleto.append(String.format("  - Ramp Rate atual: %.1f pts/sem (%s)\n\n",
+            metaDados.getRampRateAtual() != null ? metaDados.getRampRateAtual() : 0.0,
+            interpretarRampRate(metaDados.getRampRateAtual())));
+
+        historicoCompleto.append(String.format("- **Máximo de Dias Consecutivos Recomendado:** %d dias\n", maxDiasConsecutivos));
+        historicoCompleto.append(String.format("  - Atual: %d dias consecutivos\n",
+            metaDados.getDiasConsecutivosTreino() != null ? metaDados.getDiasConsecutivosTreino() : 0));
+        historicoCompleto.append(String.format("  - Baseado em TSB, experiência e histórico\n"));
+
+        if (metaDados.getDiasConsecutivosTreino() != null &&
+            metaDados.getDiasConsecutivosTreino() >= maxDiasConsecutivos) {
+            historicoCompleto.append("  - ⚠️ **ALERTA:** Atleta no limite ou acima. Incluir descanso obrigatório!\n");
+        }
+        historicoCompleto.append("\n");
 
         // 4. Fallbacks para dados nulos
         String diaPreferidoLongo = atleta.getDiaPreferidoLongo() != null ?
