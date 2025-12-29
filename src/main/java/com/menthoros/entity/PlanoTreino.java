@@ -51,7 +51,7 @@ public class PlanoTreino {
     @OneToMany(mappedBy = "planoTreino", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PlanoSemanal> planoSemanalList;
 
-    @OneToOne(cascade = CascadeType.ALL)
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
     @JoinColumn(name = "contexto_id", referencedColumnName = "id")
     private PlanoMetaDados planoMetaDados;
 

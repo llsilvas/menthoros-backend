@@ -1,5 +1,6 @@
 package com.menthoros.services.prompt;
 
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
@@ -10,6 +11,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UnknownFormatConversionException;
 
 /**
  * Gerenciador de templates de prompts para IA.
@@ -18,6 +20,7 @@ import java.util.Map;
  * @author Menthoros Team
  * @since 1.0
  */
+@Slf4j
 @Component
 public class PromptTemplateLoader {
 
@@ -87,19 +90,56 @@ public class PromptTemplateLoader {
      * @return Template formatado
      */
     public String loadAndFormat(String templateName, Object... args) {
-        String template = loadTemplate(templateName);
-
         try {
+            String template = loadTemplate(templateName);
+
+            // 🛡️ ESCAPE AUTOMÁTICO - Remove TODOS os % problemáticos
+            template = escapeTemplate(template);
+
+            log.debug("Template escapado com sucesso: {} argumentos", args.length);
+
             return String.format(template, args);
-        } catch (Exception e) {
-            String errorMsg = String.format(
-                "Erro ao formatar template '%s': %s. Verifique se o número de placeholders corresponde aos argumentos fornecidos.",
-                templateName,
-                e.getMessage()
+
+        } catch (UnknownFormatConversionException e) {
+            log.error("❌ Erro de conversão: {}", e.getConversion());
+            throw new RuntimeException(
+                    "Erro ao formatar template '" + templateName + "': Conversion = '" + e.getConversion() + "'", e
             );
-            logger.error(errorMsg, e);
-            throw new RuntimeException(errorMsg, e);
         }
+    }
+
+    /**
+     * Escapa todos os % no template exceto %s e %d
+     */
+    private String escapeTemplate(String template) {
+        StringBuilder result = new StringBuilder();
+        int length = template.length();
+
+        for (int i = 0; i < length; i++) {
+            char c = template.charAt(i);
+
+            if (c == '%') {
+                // Verificar próximo caractere
+                if (i + 1 < length) {
+                    char next = template.charAt(i + 1);
+
+                    // Se for %s, %d ou %%, manter
+                    if (next == 's' || next == 'd' || next == '%') {
+                        result.append(c);
+                    } else {
+                        // Escapar qualquer outro %
+                        result.append("%%");
+                    }
+                } else {
+                    // % no final do arquivo, escapar
+                    result.append("%%");
+                }
+            } else {
+                result.append(c);
+            }
+        }
+
+        return result.toString();
     }
 
     /**

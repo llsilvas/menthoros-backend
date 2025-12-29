@@ -92,96 +92,113 @@ public class IaServiceImpl implements IaService {
         var converter = new BeanOutputConverter<>(PlanoSemanalLlmDto.class);
         var schema = (Map<String, Object>) ModelOptionsUtils.jsonToMap(converter.getJsonSchema());
 
-        // ROOT
+        // ROOT properties
         Map<String, Object> planoProps = (Map<String, Object>) schema.get("properties");
         if (planoProps == null) return schema;
 
-        // volumes >= 0
-        for (String k : List.of("volumePlanejadoKm","volumeRealizadoKm","volumeAlvoKm")) {
-            Map<String, Object> p = (Map<String, Object>) planoProps.get(k);
-            if (p != null) p.put("minimum", 0);
+        // Volumes >= 0
+        for (String k : List.of("volumePlanejadoKm", "volumeRealizadoKm", "volumeAlvoKm")) {
+            putMin(planoProps, k, 0);
         }
 
-        // status como enum (string)
-        putEnum(planoProps, "status", List.of("PLANEJADO","INICIADO","EM_ANDAMENTO","ATIVO","CONCLUIDO"));
+        // Status enum
+        putEnum(planoProps, "status", List.of("PLANEJADO", "INICIADO", "EM_ANDAMENTO", "ATIVO", "CONCLUIDO"));
 
         // treinosPlanejados array 3..5
         Map<String, Object> treinos = (Map<String, Object>) planoProps.get("treinosPlanejados");
         if (treinos != null) {
             treinos.put("minItems", 3);
             treinos.put("maxItems", 5);
-        }
 
-        // TREINO (items)
-        Map<String, Object> treinoItems = treinos != null ? (Map<String, Object>) treinos.get("items") : null;
-        Map<String, Object> treinoProps = treinoItems != null ? (Map<String, Object>) treinoItems.get("properties") : null;
+            // TREINO items
+            Map<String, Object> treinoItems = (Map<String, Object>) treinos.get("items");
+            Map<String, Object> treinoProps = treinoItems != null
+                    ? (Map<String, Object>) treinoItems.get("properties")
+                    : null;
 
-        // NOTA: OpenAI strict:true não aceita anyOf/oneOf condicional complexo
-        // Solução: usar minItems conservador (3) + validação pós-geração rigorosa
-        // As instruções detalhadas no prompt guiam a IA para gerar corretamente
+            if (treinoProps != null) {
+                // Enums
+                putEnum(treinoProps, "diaSemana",
+                        List.of("DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"));
+                putEnum(treinoProps, "tipoTreino",
+                        List.of("REGENERATIVO", "INTERVALADO", "CONTINUO", "LONGO", "TIRO", "FARTLEK", "TEMPO_RUN"));
+                putEnum(treinoProps, "statusTreino",
+                        List.of("PENDENTE", "REALIZADO", "CANCELADO"));
 
+                // Limites numéricos
+                putMin(treinoProps, "intensidadePlanejada", 0.5);
+                putMax(treinoProps, "intensidadePlanejada", 1.5);
+                putMin(treinoProps, "percepcaoEsforcoEsperada", 1);
+                putMax(treinoProps, "percepcaoEsforcoEsperada", 10);
+                putMin(treinoProps, "duracaoMin", 1);
+                putMin(treinoProps, "distanciaKm", 0);
+                putMin(treinoProps, "tssPlanejado", 0);
 
-        if (treinoProps != null) {
-            // enums em treino
-            putEnum(treinoProps, "diaSemana",  List.of("DOMINGO","SEGUNDA","TERCA","QUARTA","QUINTA","SEXTA","SABADO"));
-            putEnum(treinoProps, "tipoTreino", List.of("REGENERATIVO","INTERVALADO","CONTINUO","LONGO","TIRO","FARTLEK","TEMPO_RUN"));
-            putEnum(treinoProps, "statusTreino", List.of("PENDENTE","REALIZADO","CANCELADO"));
-
-            // limites
-            putMin(treinoProps, "intensidadePlanejada", 0.5);
-            putMax(treinoProps, "intensidadePlanejada", 1.5);
-            putMin(treinoProps, "percepcaoEsforcoEsperada", 1);
-            putMax(treinoProps, "percepcaoEsforcoEsperada", 10);
-            putMin(treinoProps, "duracaoMin", 1);
-            putMin(treinoProps, "distanciaKm", 0);
-
-            // padrão do ritmo (1–2 dígitos nos minutos)
-            Map<String,Object> ritmo = (Map<String,Object>) treinoProps.get("ritmoAlvo");
-            if (ritmo != null) ritmo.put("pattern", "^[0-9]{1,2}:[0-5][0-9]-[0-9]{1,2}:[0-5][0-9]/km$");
-
-            // limitar justificativa
-            Map<String,Object> just = (Map<String,Object>) treinoProps.get("justificativaIa");
-            if (just != null) just.put("maxLength", 220);
-
-            // ETAPAS
-            Map<String,Object> etapas = (Map<String,Object>) treinoProps.get("etapas");
-            if (etapas != null) {
-                etapas.put("minItems", 3);
-                etapas.remove("maxItems");
-                Map<String,Object> etapaItems = (Map<String,Object>) etapas.get("items");
-                Map<String,Object> etapaProps = etapaItems != null ? (Map<String,Object>) etapaItems.get("properties") : null;
-
-                if (etapaProps != null) {
-                    // tipoEtapa enum
-                    putEnum(etapaProps, "tipoEtapa", List.of("AQUECIMENTO","PRINCIPAL","INTERVALADO","RECUPERACAO","DESAQUECIMENTO"));
-
-                    // limites/pattern
-                    putMin(etapaProps, "duracaoMin", 1);
-                    putMin(etapaProps, "distanciaKm", 0);
-
-                    // CRÍTICO: repeticoes SEMPRE = 1 (não permitir valores > 1)
-                    Map<String,Object> reps = (Map<String,Object>) etapaProps.get("repeticoes");
-                    if (reps != null) {
-                        reps.put("minimum", 1);
-                        reps.put("maximum", 1); // Força a IA expandir TODAS as etapas
-                        reps.put("const", 1); // Reforço adicional
-                    }
-
-                    Map<String,Object> desc = (Map<String,Object>) etapaProps.get("descricaoEtapa");
-                    if (desc != null) desc.put("maxLength", 120);
-
-                    Map<String,Object> fc = (Map<String,Object>) etapaProps.get("fcAlvoEtapa");
-                    if (fc != null) fc.put("pattern", "^[0-9]{1,3}-[0-9]{1,3}% FCmáx$");
+                // Pattern ritmo: "5:30-6:00/km"
+                Map<String, Object> ritmo = (Map<String, Object>) treinoProps.get("ritmoAlvo");
+                if (ritmo != null) {
+                    ritmo.put("pattern", "^[0-9]{1,2}:[0-5][0-9]-[0-9]{1,2}:[0-5][0-9]/km$");
                 }
 
-                // required da etapa = TODAS as chaves
-                if (etapaItems != null) enforceAllRequired(etapaItems);
+                // MaxLength justificativa
+                Map<String, Object> just = (Map<String, Object>) treinoProps.get("justificativaIa");
+                if (just != null) {
+                    just.put("maxLength", 200);
+                }
+
+                // ETAPAS
+                Map<String, Object> etapas = (Map<String, Object>) treinoProps.get("etapas");
+                if (etapas != null) {
+                    etapas.put("minItems", 2); // Mínimo 2 etapas (qualquer treino)
+                    // Sem maxItems - permitir expansão completa de intervalados
+
+                    Map<String, Object> etapaItems = (Map<String, Object>) etapas.get("items");
+                    Map<String, Object> etapaProps = etapaItems != null
+                            ? (Map<String, Object>) etapaItems.get("properties")
+                            : null;
+
+                    if (etapaProps != null) {
+                        // Enum tipoEtapa
+                        putEnum(etapaProps, "tipoEtapa",
+                                List.of("AQUECIMENTO", "PRINCIPAL", "INTERVALADO", "RECUPERACAO", "DESAQUECIMENTO"));
+
+                        // Limites
+                        putMin(etapaProps, "ordem", 1);
+                        putMin(etapaProps, "duracaoMin", 1);
+                        putMin(etapaProps, "distanciaKm", 0);
+
+                        // 🎯 CRÍTICO: repeticoes SEMPRE = 1
+                        Map<String, Object> reps = (Map<String, Object>) etapaProps.get("repeticoes");
+                        if (reps != null) {
+                            reps.put("const", 1); // Força valor constante = 1
+                            reps.put("default", 1);
+                        }
+
+                        // MaxLength descrição
+                        Map<String, Object> desc = (Map<String, Object>) etapaProps.get("descricaoEtapa");
+                        if (desc != null) {
+                            desc.put("maxLength", 120);
+                        }
+
+                        // Pattern FC: "60-70% FCmax"
+                        Map<String, Object> fc = (Map<String, Object>) etapaProps.get("fcAlvoEtapa");
+                        if (fc != null) {
+                            fc.put("pattern", "^[0-9]{1,3}-[0-9]{1,3}% FCmax$");
+                        }
+                    }
+
+                    // Tornar todos os campos da etapa obrigatórios
+                    if (etapaItems != null) {
+                        enforceAllRequired(etapaItems);
+                    }
+                }
+
+                // Tornar todos os campos do treino obrigatórios
+                enforceAllRequired(treinoItems);
             }
-            // required do treino = TODAS as chaves (inclui statusTreino se existir)
-            enforceAllRequired(treinoItems);
         }
 
-        // required do ROOT = TODAS as chaves (inclui tsbInicio e tsbFim)
+        // Tornar todos os campos do ROOT obrigatórios
         enforceAllRequired(schema);
 
         return schema;
@@ -196,7 +213,7 @@ public class IaServiceImpl implements IaService {
         try {
             PlanoSemanalLlmDto plano = chatClient.prompt()
                     .user(prompt)
-                    .options(defaultJsonSchemaOptions())
+//                    .options(defaultJsonSchemaOptions())
                     .call()
                     .entity(PlanoSemanalLlmDto.class);
 
@@ -215,7 +232,8 @@ public class IaServiceImpl implements IaService {
     public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova){
         LocalDate inicioSemana = LocalDate.now().plusWeeks(1).with(DayOfWeek.MONDAY);
 
-        String prompt = promptBuilder.buildEnhancedPrompt(atleta, metaDados, prova, inicioSemana);
+//        String prompt = promptBuilder.buildEnhancedPrompt(atleta, metaDados, prova, inicioSemana);
+        String prompt = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana);
 
         try {
             long startTime = System.currentTimeMillis(); // Captura o tempo de início

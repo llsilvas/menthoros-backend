@@ -324,11 +324,11 @@ public class PlanoServiceImpl implements PlanoService {
      * Persiste o plano completo e atualiza os metadados.
      */
     private PlanoSemanal salvarPlanoCompleto(PlanoSemanal plano, PlanoMetaDados metaDados) {
-        PlanoSemanal planoSalvo = planoSemanalRepository.save(plano);
-
-        // O relacionamento Many-to-One é gerenciado automaticamente pelo JPA
-        // Não é necessário adicionar manualmente à lista de planosSemanais do PlanoMetaDados
+        // Save PlanoMetaDados first to ensure it's persisted before PlanoSemanal references it
+        // This prevents: "persistent instance references an unsaved transient instance"
         planoMetadadosRepository.save(metaDados);
+
+        PlanoSemanal planoSalvo = planoSemanalRepository.save(plano);
 
         log.info("✅ Plano salvo - {} treinos, volume: {}km",
                 plano.getTreinosPlanejados().size(),
@@ -441,6 +441,7 @@ public class PlanoServiceImpl implements PlanoService {
             log.error("Falha na IA ao gerar o plano para o atleta: {}", dadosPlanoDto.atleta().getId());
             throw e;
         } catch (Exception e) {
+
             log.error("Erro inesperado ao gerar o plano para o atleta: {}", dadosPlanoDto.atleta().getId(), e);
             throw new LLMException("Erro inesperado ao gerar plano", e);
         }
@@ -471,8 +472,9 @@ public class PlanoServiceImpl implements PlanoService {
         PlanoSemanal plano = planoSemanalRepository.findById(planoSemanalId)
                 .orElseThrow(() -> new ResourceNotFoundException("Plano não encontrado: " + planoSemanalId));
 
-        // Com o relacionamento Many-to-One, a cascade é gerenciada automaticamente
-        // Não é necessário limpar manualmente a lista de planosSemanais
+        // Initialize lazy-loaded relationships to ensure proper cascade handling during deletion
+        Hibernate.initialize(plano.getTreinosPlanejados());
+
         planoSemanalRepository.delete(plano);
     }
 

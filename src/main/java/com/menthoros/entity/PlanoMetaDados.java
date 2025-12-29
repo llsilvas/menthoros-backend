@@ -98,7 +98,7 @@ public class PlanoMetaDados {
     @Column(name = "mensagem_alerta", columnDefinition = "TEXT")
     private String mensagemAlerta;
 
-    @OneToMany(mappedBy = "planoMetaDados", fetch = FetchType.LAZY, cascade = CascadeType.ALL)
+    @OneToMany(mappedBy = "planoMetaDados", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PlanoSemanal> planosSemanais;
 
     @Column(name = "embedding", columnDefinition = "vector(1536)")
