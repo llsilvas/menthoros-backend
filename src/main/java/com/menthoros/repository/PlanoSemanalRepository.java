@@ -29,6 +29,8 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
 
     boolean existsByAtletaIdAndSemanaInicioLessThanEqualAndSemanaFimGreaterThanEqualAndStatusNot(UUID atletaId, LocalDate hoje, LocalDate hoje1, PlanoStatus status);
 
+    Optional<PlanoSemanal> findByAtletaIdAndSemanaInicio(UUID atletaId, LocalDate semanaInicio);
+
     Optional<PlanoSemanal> findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
             UUID atletaId, LocalDate semanaInicio, PlanoStatus status);
 

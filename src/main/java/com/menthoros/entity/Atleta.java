@@ -186,6 +186,19 @@ public class Atleta {
         return fcMaxima != null ? fcMaxima : 220 - idade;
     }
 
+    public Integer getFcMaximaComFallback() {
+        if (this.getFcMaxima() != null && this.getFcMaxima() > 0) {
+            return this.getFcMaxima();
+        }
+        // Fallback: 220 - idade
+        if (this.getDataNascimento() != null) {
+            int idade = java.time.Period.between(this.getDataNascimento(), java.time.LocalDate.now()).getYears();
+            return 220 - idade;
+        }
+        // Último fallback: valor fixo seguro (exemplo: 190)
+        return 190;
+    }
+
     public Integer getIdade(){
         if (dataNascimento == null) {
             return null;

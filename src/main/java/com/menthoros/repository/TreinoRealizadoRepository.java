@@ -45,4 +45,8 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     List<TreinoRealizado> findByAtletaIdAndDataTreinoBetween(UUID id, LocalDate semanaInicio, LocalDate semanaFim);
 
     Optional<PlanoMetaDados> findByPlanoSemanalId(UUID planoSemanalId);
+
+    List<TreinoRealizado> findTreinoRealizadosByAtleta(Atleta atleta);
+
+    List<TreinoRealizado> findTreinoRealizadosByAtletaId(UUID atletaId);
 }

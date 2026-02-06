@@ -849,6 +849,8 @@ public class PlanoTreinoPromptBuilder {
     private String formatarDias(Atleta atleta, PlanoMetaDados metaDados, LocalDate inicioSemana) {
         StringBuilder sb = new StringBuilder();
 
+
+
         sb.append("## 📅 PADRÕES DE TREINO E DISPONIBILIDADE\n\n");
 
         // Dias disponíveis do atleta
@@ -1060,6 +1062,41 @@ public class PlanoTreinoPromptBuilder {
         }
     }
 
+    /**
+     * Determina o tipo de semana baseado nas métricas e recomendações
+     */
+    private String determinarTipoSemana(PlanoMetaDados metaDados, Atleta atleta, int tssAlvo) {
+        if (metaDados == null) {
+            return "DESENVOLVIMENTO";
+        }
+        
+        Double tsb = metaDados.getTsbAtual();
+        Integer semanasProgressao = metaDados.getSemanasProgressaoContinua();
+        
+        // Semana regenerativa
+        if ((semanasProgressao != null && semanasProgressao >= 4) || 
+            (tsb != null && tsb < -25)) {
+            return "REGENERATIVA (redução de carga)";
+        }
+        
+        // Semana de recuperação
+        if (tsb != null && tsb < -15) {
+            return "RECUPERAÇÃO (foco em treinos leves)";
+        }
+        
+        // Semana normal
+        if (tsb != null && tsb >= -5 && tsb <= 15) {
+            return "DESENVOLVIMENTO (progressão normal)";
+        }
+        
+        // Semana de pico (se bem recuperado)
+        if (tsb != null && tsb > 15) {
+            return "PICO (ótimo para treinos intensos)";
+        }
+        
+        return "DESENVOLVIMENTO";
+    }
+    
     /**
      * Gera alertas específicos sobre padrões de dias
      */
@@ -1913,77 +1950,397 @@ public class PlanoTreinoPromptBuilder {
     }
 
     /**
+     * Gera alertas obrigatórios consolidados para o topo do prompt
+     * Prioriza alertas críticos e importantes baseados no estado do atleta
+     */
+    private String gerarAlertasObrigatorios(Atleta atleta, PlanoMetaDados metaDados, LocalDate inicioSemana) {
+        List<String> alertas = new ArrayList<>();
+        
+        // Alertas críticos (segurança)
+        Double tsb = metaDados != null ? metaDados.getTsbAtual() : null;
+        Double rampRate = metaDados != null ? metaDados.getRampRateAtual() : null;
+        Integer diasConsecutivos = metaDados != null ? metaDados.getDiasConsecutivosTreino() : null;
+        Integer maxDiasConsecutivos = metaDados != null ? calcularMaxDiasConsecutivos(metaDados, atleta) : 5;
+        
+        StringBuilder sb = new StringBuilder();
+
+        // TSB crítico
+        if (tsb != null && tsb < -35) {
+            alertas.add("🔴 FADIGA CRÍTICA: TSB " + String.format("%.1f", tsb) + " → APENAS Z1-Z2, descanso obrigatório");
+        } else if (tsb != null && tsb < -25) {
+            alertas.add("🔴 FADIGA ALTA: TSB " + String.format("%.1f", tsb) + " → REDUZIR INTENSIDADE 40%, priorizar recuperação");
+        } else if (tsb != null && tsb < -15) {
+            alertas.add("🟡 FADIGA MODERADA: TSB " + String.format("%.1f", tsb) + " → Considerar treinos mais leves");
+        }
+        
+        // Ramp Rate crítico
+        if (rampRate != null && rampRate > 10) {
+            alertas.add("🔴 PROGRESSÃO PERIGOSA: Ramp Rate " + String.format("%.1f", rampRate) + " → REDUZIR VOLUME 20-30%");
+        } else if (rampRate != null && rampRate > 8) {
+            alertas.add("🟡 RAMP RATE ALTO: " + String.format("%.1f", rampRate) + " → Manter volume, não aumentar");
+        }
+        
+        // Dias consecutivos
+        if (diasConsecutivos != null && diasConsecutivos >= maxDiasConsecutivos + 1) {
+            alertas.add("🔴 EXCESSO DE DIAS CONSECUTIVOS: " + diasConsecutivos + " dias → DESCANSO OBRIGATÓRIO IMEDIATO");
+        } else if (diasConsecutivos != null && diasConsecutivos == maxDiasConsecutivos) {
+            alertas.add("🟡 NO LIMITE: " + diasConsecutivos + " dias consecutivos → Próximo treino DEVE ser descanso");
+        }
+        
+        // Lesões ativas
+        if (atleta.getTemLesao() != null && atleta.getTemLesao()) {
+            alertas.add("🔴 LESÃO ATIVA: " + (atleta.getDescricaoLesao() != null ? atleta.getDescricaoLesao() : "Lesão reportada") + 
+                       " → Máximo Z2, sem intervalados");
+        }
+        
+        // Análise de variabilidade - estímulos ausentes
+        LocalDate hoje = LocalDate.now();
+        LocalDate quatroSemanas = hoje.minusWeeks(4);
+        List<TreinoRealizado> treinos = treinoRealizadoRepository
+                .findByAtletaAndDataTreinoGreaterThanEqualOrderByDataTreinoDesc(atleta, quatroSemanas);
+        
+        Map<String, LocalDate> ultimaDataPorTipo = extrairUltimaDataPorTipo(treinos);
+        List<String> tiposAusentes = Arrays.asList("FARTLEK", "TEMPO_RUN", "INTERVALADO");
+        
+        for (String tipo : tiposAusentes) {
+            if (!ultimaDataPorTipo.containsKey(tipo)) {
+                alertas.add("🟡 " + tipo + ": NUNCA realizado → CONSIDERAR INCLUSÃO");
+            } else {
+                long diasDesde = ChronoUnit.DAYS.between(ultimaDataPorTipo.get(tipo), hoje);
+                if (diasDesde > 21) {
+                    alertas.add("🔴 " + tipo + ": ausente há " + diasDesde + " dias → REINTRODUZIR ESTA SEMANA");
+                }
+            }
+        }
+        
+        // RPE médio alto (últimos treinos)
+        List<TreinoRealizado> treinosComRpe = treinos.stream()
+                .filter(t -> t.getPercepcaoEsforco() != null)
+                .collect(java.util.stream.Collectors.toList());
+
+        double rpeMedia = treinosComRpe.stream()
+                .mapToInt(TreinoRealizado::getPercepcaoEsforco)
+                .average()
+                .orElse(0);
+
+        // Alerta crítico: >50% dos treinos com RPE ≥8
+        if (treinosComRpe.size() >= 3) {
+            long treinosRpeAlto = treinosComRpe.stream()
+                    .filter(t -> t.getPercepcaoEsforco() >= 8)
+                    .count();
+            double percentualRpeAlto = (double) treinosRpeAlto / treinosComRpe.size() * 100;
+
+            if (percentualRpeAlto > 50) {
+                alertas.add("🔴 FADIGA ALTA: " + String.format("%.0f", percentualRpeAlto) + "% dos treinos com RPE ≥8 → REDUZIR INTENSIDADE ESTA SEMANA");
+            } else if (rpeMedia >= 7.5) {
+                alertas.add("🟡 RPE MÉDIO ALTO: " + String.format("%.1f", rpeMedia) + "/10 → REDUZIR INTENSIDADE ESTA SEMANA");
+            }
+        } else if (rpeMedia >= 7.5 && treinosComRpe.size() > 0) {
+            alertas.add("🟡 RPE MÉDIO ALTO: " + String.format("%.1f", rpeMedia) + "/10 → REDUZIR INTENSIDADE ESTA SEMANA");
+        }
+        
+        // Semana regenerativa recomendada
+        Integer semanasProgressao = metaDados != null ? metaDados.getSemanasProgressaoContinua() : null;
+        if (semanasProgressao != null && semanasProgressao >= 4) {
+            alertas.add("🟡 " + semanasProgressao + " semanas de progressão → SEMANA REGENERATIVA RECOMENDADA");
+        }
+        
+        if (alertas.isEmpty()) {
+            return "✅ **NENHUM ALERTA CRÍTICO** - Atleta em condições normais de treino\n\n";
+        }
+
+        // Agora que a lista está populada, montar o output
+        sb.append("## ⛔ ALERTAS OBRIGATÓRIOS (PROCESSE PRIMEIRO)\n\n");
+        for (int i = 0; i < alertas.size(); i++) {
+            sb.append(String.format("%d. %s\n", i + 1, alertas.get(i)));
+        }
+        sb.append("\n**HIERARQUIA:** Alertas 🔴 têm prioridade sobre 🟡. Segurança primeiro!\n\n");
+
+        return sb.toString();
+    }
+
+    /**
+     * Gera seção de hierarquia de decisão para resolver conflitos
+     */
+    private String gerarHierarquiaDecisao(PlanoMetaDados metaDados, Atleta atleta) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("## 🎯 HIERARQUIA DE DECISÃO (resolver conflitos nesta ordem)\n\n");
+        
+        sb.append("**NÍVEL 1 - SEGURANÇA (sempre vence):**\n");
+        sb.append("- Se RPE médio > 7.5 → FORÇAR semana leve\n");
+        sb.append("- Se TSB < -25 → APENAS Z1-Z2, máximo 3 treinos\n");
+        sb.append("- Se lesão ativa → máximo Z2, sem intervalados\n");
+        sb.append("- Se dias consecutivos >= limite → DESCANSO OBRIGATÓRIO\n\n");
+        
+        sb.append("**NÍVEL 2 - RECUPERAÇÃO:**\n");
+        Double tsb = metaDados != null ? metaDados.getTsbAtual() : null;
+        if (tsb != null && tsb < -15) {
+            sb.append("- TSB " + String.format("%.1f", tsb) + " → REDUZIR volume 30-50%\n");
+        }
+        Integer semanas = metaDados != null ? metaDados.getSemanasProgressaoContinua() : null;
+        if (semanas != null && semanas >= 4) {
+            sb.append("- " + semanas + " semanas progressão → semana regenerativa (-40-50% volume)\n");
+        }
+        sb.append("- Se recomendação = regenerativa → REDUZIR volume 40-50%\n\n");
+        
+        sb.append("**NÍVEL 3 - VARIABILIDADE:**\n");
+        sb.append("- Incluir estímulos ausentes há >14 dias\n");
+        sb.append("- Alternar categorias de intervalado (não repetir 2 semanas seguidas)\n");
+        sb.append("- Se conflitar com N1/N2 → usar versão LEVE do estímulo\n\n");
+        
+        sb.append("**NÍVEL 4 - OBJETIVO:**\n");
+        sb.append("- Alinhar treino-chave com meta do atleta\n");
+        sb.append("- Respeitar fase de periodização (BASE/BUILD/ESPECÍFICO/TAPER)\n\n");
+        
+        return sb.toString();
+    }
+    
+    /**
+     * Gera seção de restrições e histórico de lesões
+     */
+    private String formatarRestricoesLesoes(Atleta atleta) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("## 🚨 RESTRIÇÕES E HISTÓRICO DE SAÚDE\n\n");
+        
+        if (atleta.getTemLesao() != null && atleta.getTemLesao()) {
+            sb.append("**LESÃO ATIVA:**\n");
+            if (atleta.getDescricaoLesao() != null) {
+                sb.append("- Descrição: ").append(atleta.getDescricaoLesao()).append("\n");
+            }
+            if (atleta.getDataUltimaLesao() != null) {
+                long diasDesdeLesao = ChronoUnit.DAYS.between(atleta.getDataUltimaLesao(), LocalDate.now());
+                sb.append("- Dias desde lesão: ").append(diasDesdeLesao).append(" dias\n");
+            }
+            sb.append("- **REGRAS:** Máximo Z2, sem intervalados, sem longos >60min\n\n");
+        }
+        
+        if (atleta.getHistoricoLesoes() != null && !atleta.getHistoricoLesoes().trim().isEmpty()) {
+            sb.append("**HISTÓRICO DE LESÕES:**\n");
+            sb.append(atleta.getHistoricoLesoes()).append("\n\n");
+            
+            // Adicionar regras preventivas baseadas no histórico
+            String historicoLower = atleta.getHistoricoLesoes().toLowerCase();
+            if (historicoLower.contains("canelite") || historicoLower.contains("shin splint")) {
+                sb.append("- ⚠️ Histórico de canelite → evitar superfícies duras, limitar volume subitamente\n");
+            }
+            if (historicoLower.contains("fascite") || historicoLower.contains("plantar")) {
+                sb.append("- ⚠️ Histórico de fascite plantar → aquecimento estendido, evitar sprints\n");
+            }
+            if (historicoLower.contains("tendinite") || historicoLower.contains("tendão")) {
+                sb.append("- ⚠️ Histórico de tendinite → progressão muito gradual, fortalecimento complementar\n");
+            }
+            sb.append("\n");
+        }
+        
+        if ((atleta.getTemLesao() == null || !atleta.getTemLesao()) &&
+            (atleta.getHistoricoLesoes() == null || atleta.getHistoricoLesoes().trim().isEmpty())) {
+            sb.append("✅ Nenhuma lesão ativa ou histórico de lesões reportado\n\n");
+        }
+        
+        return sb.toString();
+    }
+    
+    /**
+     * Valida e adiciona fallbacks para dados fisiológicos inválidos/zerados
+     */
+    private String validarEFallbacksDadosFisiologicos(Atleta atleta) {
+        StringBuilder fallbacks = new StringBuilder();
+        boolean temProblema = false;
+        
+        // Validar pace limiar
+        if (atleta.getPaceLimiar() == null || atleta.getPaceLimiar().compareTo(BigDecimal.ZERO) == 0) {
+            temProblema = true;
+            fallbacks.append("⚠️ **Pace Limiar inválido/zerado** → Usar estimativa por nível\n");
+            String paceEstimado = estimarPacePorNivel(atleta);
+            fallbacks.append("  - Pace estimado: ").append(paceEstimado).append(" min/km\n");
+            fallbacks.append("  - **USAR APENAS FC para prescrição, não pace\n");
+        }
+        
+        // Validar zonas de pace (verificar se estão zeradas no formatarDadosFisiologicos)
+        if (atleta.getPaceLimiar() == null || atleta.getPaceLimiar().compareTo(BigDecimal.ZERO) == 0) {
+            temProblema = true;
+            fallbacks.append("⚠️ **Zonas de pace inutilizáveis** → Usar apenas FC (Z1-Z5 por percentual FCmax)\n");
+        }
+        
+        // Validar FC limiar
+        if (atleta.getFcLimiarCalculada() == null || atleta.getFcLimiarCalculada() <= 0) {
+            temProblema = true;
+            Integer fcMax = atleta.getFcMaximaCalculada();
+            if (fcMax != null && fcMax > 0) {
+                int fcLimiarEstimada = (int) Math.round(fcMax * 0.85);
+                fallbacks.append("⚠️ **FC Limiar não disponível** → Usar estimativa: ").append(fcLimiarEstimada).append(" bpm (85% FCmax)\n");
+            } else {
+                fallbacks.append("⚠️ **FC Limiar e FC Max não disponíveis** → Usar valores conservadores\n");
+                fallbacks.append("  - Estimar FC Limiar: ~150-160 bpm\n");
+            }
+        }
+        
+        if (temProblema) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("## ⚠️ FALLBACKS PARA DADOS INCOMPLETOS\n\n");
+            sb.append(fallbacks);
+            sb.append("\n**Ao prescrever treinos:**\n");
+            sb.append("- Se pace inválido: usar formato \"Z2 (140-160 bpm)\" em vez de incluir pace\n");
+            sb.append("- Se FC disponível: priorizar FC sobre pace estimado\n");
+            sb.append("- Adicionar na justificativa: \"Zonas estimadas - recomenda-se teste de limiar\"\n\n");
+            return sb.toString();
+        }
+        
+        return "";
+    }
+    
+    /**
+     * Estima pace limiar baseado no nível de experiência
+     */
+    private String estimarPacePorNivel(Atleta atleta) {
+        if (atleta.getNivelExperiencia() == null) {
+            return "5:30-6:00";
+        }
+        
+        return switch (atleta.getNivelExperiencia()) {
+            case INICIANTE -> "6:30-7:00";
+            case INTERMEDIARIO -> "5:30-6:00";
+            case AVANCADO -> "4:30-5:00";
+            case ELITE -> "3:30-4:30";
+        };
+    }
+    
+    /**
+     * Garante que TSS alvo está alinhado com recomendações de regeneração
+     */
+    private int calcularTssAlvoAjustado(PlanoMetaDados metaDados, Atleta atleta) {
+        int tssAlvoBase = calcularTssAlvo(metaDados);
+        
+        // Verificar se há recomendação de semana regenerativa
+        Integer semanasProgressao = metaDados != null ? metaDados.getSemanasProgressaoContinua() : null;
+        Double tsb = metaDados != null ? metaDados.getTsbAtual() : null;
+        
+        // Se 4+ semanas de progressão OU TSB muito negativo → reduzir
+        if ((semanasProgressao != null && semanasProgressao >= 4) || (tsb != null && tsb < -25)) {
+            return (int) Math.round(tssAlvoBase * 0.55); // Redução de 45%
+        } else if (tsb != null && tsb < -15) {
+            return (int) Math.round(tssAlvoBase * 0.75); // Redução de 25%
+        }
+        
+        return tssAlvoBase;
+    }
+    
+    /**
      * Constrói o prompt otimizado usando o novo template plano-treino-otimizado-claude.txt
      * Orquestra todos os métodos de análise pré-planejamento para criar um contexto completo
      */
     public String buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo, LocalDate inicioSemana) {
 
-        // 1. Dados básicos do atlevar provas = formatarProvas(atleta, provaAlvo);
-
-        // 2. Análises de pré-planejamento - NOVOS MÉTODOS
+        // 1. Dados básicos do atleta
+        var provas = formatarProvas(atleta, provaAlvo);
+        
+        // 2. ALERTAS OBRIGATÓRIOS NO TOPO (prioridade máxima)
+        String alertasObrigatorios = gerarAlertasObrigatorios(atleta, metaDados, inicioSemana);
+        
+        // 3. HIERARQUIA DE DECISÃO (para resolver conflitos)
+        String hierarquiaDecisao = gerarHierarquiaDecisao(metaDados, atleta);
+        
+        // 4. RESTRIÇÕES E LESÕES
+        String restricoesLesoes = formatarRestricoesLesoes(atleta);
+        
+        // 5. VALIDAÇÃO E FALLBACKS DE DADOS
+        String fallbacksDados = validarEFallbacksDadosFisiologicos(atleta);
+        
+        // 6. Análises de pré-planejamento
         var analiseEstimulos = analisarEstimulosRecentes(atleta, inicioSemana);
         var volumeUltimas3Semanas = calcularVolumeMedioUltimasTresSemanas(atleta);
         var matrizVariabilidade = identificarMatrizVariabilidade(atleta, inicioSemana);
         var alertasVariabilidade = gerarAlertasVariabilidade(atleta, inicioSemana);
         var instrucoesRecuperacao = detalharRecuperacao(atleta, metaDados, inicioSemana);
-        var provas = formatarProvas(atleta, provaAlvo);
 
-        // 3. Compilar todo o contexto em um histórico completo
+        // 7. Compilar contexto histórico consolidado (sem repetição)
         StringBuilder historicoCompleto = new StringBuilder();
 
-        // ETAPA 1: Adicionar dados fisiológicos e zonas de treino detalhadas
-        historicoCompleto.append("## DADOS FISIOLÓGICOS E ZONAS DE TREINO\n\n");
+        // ETAPA 1: Dados fisiológicos e zonas (com fallbacks se necessário)
+        historicoCompleto.append("## 📊 DADOS FISIOLÓGICOS E ZONAS DE TREINO\n\n");
         historicoCompleto.append(formatarDadosFisiologicos(atleta)).append("\n\n");
+        if (!fallbacksDados.isEmpty()) {
+            historicoCompleto.append(fallbacksDados);
+        }
 
-        historicoCompleto.append(formatarHistoricoTreinos(atleta)).append("\n\n");
+        // ETAPA 2: Métricas de carga e fadiga (consolidadas)
         historicoCompleto.append(formatarMetricas(metaDados)).append("\n\n");
 
-        // ETAPA 2: Adicionar análise de disponibilidade e padrões de treino
+        // ETAPA 3: Histórico recente de treinos
+        historicoCompleto.append(formatarHistoricoTreinos(atleta)).append("\n\n");
+
+        // ETAPA 4: Disponibilidade e padrões de treino
         historicoCompleto.append(formatarDias(atleta, metaDados, inicioSemana)).append("\n\n");
 
+        // ETAPA 5: Análise de estímulos recentes
         historicoCompleto.append(analiseEstimulos).append("\n\n");
-        historicoCompleto.append("## VOLUME MÉDIO DAS ÚLTIMAS 3 SEMANAS\n");
+        
+        // ETAPA 6: Volume das últimas 3 semanas (consolidado)
+        historicoCompleto.append("## 📈 VOLUME MÉDIO DAS ÚLTIMAS 3 SEMANAS\n");
         historicoCompleto.append(String.format("- **Volume Médio:** %.1f km\n", volumeUltimas3Semanas.get("volumeMedioKm")));
         historicoCompleto.append(String.format("- **Tendência:** %s\n", volumeUltimas3Semanas.get("tendencia")));
-        historicoCompleto.append(String.format("- **Semana Mais Recente:** %.1f km\n\n", volumeUltimas3Semanas.get("volumeSemanaMaisRecente")));
+        historicoCompleto.append(String.format("- **Semana Mais Recente:** %.1f km\n", volumeUltimas3Semanas.get("volumeSemanaMaisRecente")));
+        historicoCompleto.append(String.format("- **Semana Anterior:** %.1f km\n", volumeUltimas3Semanas.get("volumeSemanaAnterior")));
+        historicoCompleto.append(String.format("- **2 Semanas Atrás:** %.1f km\n\n", volumeUltimas3Semanas.get("volumeDuasSemanas")));
+        
+        // ETAPA 7: Matriz de variabilidade
         historicoCompleto.append(matrizVariabilidade).append("\n");
         historicoCompleto.append(alertasVariabilidade).append("\n");
+        
+        // ETAPA 8: Instruções de recuperação
         historicoCompleto.append(instrucoesRecuperacao).append("\n\n");
 
-        // ETAPA 3: Adicionar periodização estruturada
-        historicoCompleto.append("## PERIODIZAÇÃO E FASE ATUAL\n\n");
-        historicoCompleto.append(formatarPeriodizacaoProva(provaAlvo)).append("\n");
+        // ETAPA 9: Periodização estruturada
+        historicoCompleto.append("## 📅 PERIODIZAÇÃO E FASE ATUAL\n\n");
+        historicoCompleto.append(formatarPeriodizacaoProva(provaAlvo)).append("\n\n");
 
-        // ETAPA 4: Adicionar TSS alvo e máximo dias consecutivos calculados
-        int tssAlvo = calcularTssAlvo(metaDados);
+        // ETAPA 10: METAS CALCULADAS PARA ESTA SEMANA (ajustadas e consistentes)
+        int tssAlvo = calcularTssAlvoAjustado(metaDados, atleta);
         int maxDiasConsecutivos = calcularMaxDiasConsecutivos(metaDados, atleta);
-
-        historicoCompleto.append("## METAS PARA ESTA SEMANA\n\n");
-        historicoCompleto.append(String.format("- **TSS Alvo Semanal:** %d pontos\n", tssAlvo));
-        historicoCompleto.append(String.format("  - Baseado em CTL atual: %.1f\n", metaDados.getCtlAtual() != null ? metaDados.getCtlAtual() : 0.0));
+        
+        // Determinar tipo de semana baseado nas recomendações
+        String tipoSemana = determinarTipoSemana(metaDados, atleta, tssAlvo);
+        
+        historicoCompleto.append("## 🎯 METAS PARA ESTA SEMANA\n\n");
+        historicoCompleto.append(String.format("**Tipo de Semana:** %s\n\n", tipoSemana));
+        historicoCompleto.append(String.format("- **TSS Alvo Semanal:** %d pontos", tssAlvo));
+        
+        // Explicar se houve ajuste por regeneração
+        Double tsb = metaDados != null ? metaDados.getTsbAtual() : null;
+        int tssAlvoBase = calcularTssAlvo(metaDados);
+        if (tssAlvo < tssAlvoBase) {
+            int reducaoPercentual = (int) Math.round((1.0 - (double) tssAlvo / tssAlvoBase) * 100);
+            historicoCompleto.append(String.format(" (reduzido %d%% por semana regenerativa)", reducaoPercentual));
+        }
+        historicoCompleto.append("\n");
+        
+        historicoCompleto.append(String.format("  - Baseado em CTL atual: %.1f\n", metaDados != null && metaDados.getCtlAtual() != null ? metaDados.getCtlAtual() : 0.0));
         historicoCompleto.append(String.format("  - Ajustado por TSB: %.1f (%s)\n",
-            metaDados.getTsbAtual() != null ? metaDados.getTsbAtual() : 0.0,
-            metaDados.getInterpretacaoTsb() != null ? metaDados.getInterpretacaoTsb() : "Normal"));
+            tsb != null ? tsb : 0.0,
+            metaDados != null && metaDados.getInterpretacaoTsb() != null ? metaDados.getInterpretacaoTsb() : "Normal"));
         historicoCompleto.append(String.format("  - Ramp Rate atual: %.1f pts/sem (%s)\n\n",
-            metaDados.getRampRateAtual() != null ? metaDados.getRampRateAtual() : 0.0,
-            interpretarRampRate(metaDados.getRampRateAtual())));
+            metaDados != null && metaDados.getRampRateAtual() != null ? metaDados.getRampRateAtual() : 0.0,
+            interpretarRampRate(metaDados != null ? metaDados.getRampRateAtual() : null)));
 
         historicoCompleto.append(String.format("- **Máximo de Dias Consecutivos Recomendado:** %d dias\n", maxDiasConsecutivos));
         historicoCompleto.append(String.format("  - Atual: %d dias consecutivos\n",
-            metaDados.getDiasConsecutivosTreino() != null ? metaDados.getDiasConsecutivosTreino() : 0));
-        historicoCompleto.append(String.format("  - Baseado em TSB, experiência e histórico\n"));
+            metaDados != null && metaDados.getDiasConsecutivosTreino() != null ? metaDados.getDiasConsecutivosTreino() : 0));
+        historicoCompleto.append(String.format("  - Baseado em TSB, experiência e histórico\n\n"));
 
-        if (metaDados.getDiasConsecutivosTreino() != null &&
-            metaDados.getDiasConsecutivosTreino() >= maxDiasConsecutivos) {
-            historicoCompleto.append("  - ⚠️ **ALERTA:** Atleta no limite ou acima. Incluir descanso obrigatório!\n");
-        }
-        historicoCompleto.append("\n");
-
-        // 4. Fallbacks para dados nulos
+        // 8. Fallbacks para dados nulos
         String diaPreferidoLongo = atleta.getDiaPreferidoLongo() != null ?
                 atleta.getDiaPreferidoLongo().toString() : "SABADO";
 
-        // 5. Carregar e formatar o novo template otimizado (apenas com os 9 placeholders existentes)
+        // 9. Montar histórico completo com todas as seções na ordem correta
+        StringBuilder historicoFinal = new StringBuilder();
+        
+        // Ordem prioritária: alertas primeiro, depois dados, depois regras
+        historicoFinal.append(alertasObrigatorios);
+        historicoFinal.append(hierarquiaDecisao);
+        historicoFinal.append(restricoesLesoes);
+        historicoFinal.append(historicoCompleto.toString());
+
+        // 10. Carregar e formatar o novo template otimizado
         return templateLoader.loadAndFormat(
                 "plano-treino-otimizado-claude.txt",
                 atleta.getNome(),                                                                              // %s - Nome
@@ -1993,7 +2350,7 @@ public class PlanoTreinoPromptBuilder {
                 formatarDias(atleta.getDiasDisponiveis()),                                                     // %s - Dias disponíveis
                 diaPreferidoLongo,                                                                             // %s - Dia preferido longo
                 provas,                                                                                        // %s - Provas
-                historicoCompleto.toString(),                                                                  // %s - Histórico completo com todas as análises
+                historicoFinal.toString(),                                                                     // %s - Histórico completo (com alertas no topo)
                 atleta.getObjetivo() != null ? atleta.getObjetivo() : "Melhorar condicionamento"              // %s - Objetivo (repetido para linha 148)
         );
     }

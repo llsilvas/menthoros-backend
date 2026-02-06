@@ -566,7 +566,7 @@ public class IaServiceImpl implements IaService {
             ));
         }
 
-        if (etapas.size() < 8) {
+        if (etapas.size() < 6) {
             log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} tem apenas {} etapas (mínimo 8)",
                     atletaId, treino.tipoTreino(), etapas.size());
             throw new LLMException(String.format(

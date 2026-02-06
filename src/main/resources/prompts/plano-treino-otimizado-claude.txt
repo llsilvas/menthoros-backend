@@ -376,14 +376,14 @@ Todos os campos abaixo são **obrigatórios** e **não podem ser null ou ""**:
 
 - `diaSemana` (string, enum válido)
 - `tipoTreino` (string, enum válido)
-- `fcAlvo` (string, formato: `"60-70%%% FCmax"` ou `"70-80%%% FCmax"`)
+- `fcAlvo` (string, formato: `"60-70%%% FCmax"` ou `"70-80%%% FCmax"` baseado em %%%FC limiar do atleta)
 - `tssPlanejado` (number, ≥ 0)
 - `intensidadePlanejada` (number, 0.5-1.5)
 - `percepcaoEsforcoEsperada` (number, 1-10)
 - `justificativaIa` (string, ≤ 200 caracteres, conectar ao objetivo principal)
 - `duracaoMin` (number, ≥ 1)
 - `distanciaKm` (number, ≥ 0, pode ser 0 se não aplicável)
-- `ritmoAlvo` (string, formato: `"5:00-5:30/km"` com hífen, não travessão)
+- `ritmoAlvo` (string, formato: `"5:00-5:30/km"` com hífen, não travessão baseado no Pace limiar do atleta)
 - `etapas` (array, **NUNCA vazio**)
   - Treino **INTERVALADO**: mínimo 7 etapas (aquec + pelo menos 2 tiros com recuperação + desaq)
   - Treino **LONGO**: exatamente 3 etapas (aquec + principal + desaq)
@@ -400,6 +400,7 @@ Todos os campos abaixo são **obrigatórios** em cada etapa:
 - `duracaoMin` (number, ≥ 1)
 - `distanciaKm` (number, ≥ 0)
 - `fcAlvoEtapa` (string, formato: `"60-70%%% FCmax"`)
+- `ritmoAlvo` (string, formato: `"5:00-5:30/km"` com hífen, não travessão baseado no Pace limiar do atleta)
 - `repeticoes` (number, ≥ 1)
 
 **Fallbacks obrigatórios se faltar especificidade:**

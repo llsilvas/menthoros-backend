@@ -39,4 +39,24 @@ public class RegraGeracaoTreino {
                 .toList();
     }
 
+    public List<DiaSemana> filtrarDiasDisponiveis(List<DiaSemana> diasDisponiveis) {
+        // Data de referência é sempre hoje
+        int ordemHoje = java.time.LocalDate.now().getDayOfWeek().getValue() % 7; // segunda=1...domingo=0
+    
+        // Identifica o menor 'order' dos dias disponíveis (primeiro dia de treino da semana)
+        int ordemPrimeiroDia = diasDisponiveis.stream()
+            .mapToInt(DiaSemana::getOrder)
+            .min()
+            .orElse(1); // padrão segunda
+    
+        if (ordemHoje < ordemPrimeiroDia) {
+            // Antes do primeiro dia disponível: retorna todos os dias (plano para próxima semana)
+            return diasDisponiveis;
+        } else {
+            // Semana já iniciada: retorna só os dias restantes (>= hoje)
+            return diasDisponiveis.stream()
+                .filter(dia -> dia.getOrder() >= ordemHoje)
+                .collect(java.util.stream.Collectors.toList());
+        }
+    }
 }

@@ -3,6 +3,7 @@ package com.menthoros.services.impl;
 import com.menthoros.dto.input.DadosPlanoDto;
 import com.menthoros.dto.llm.PlanoSemanalLlmDto;
 import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
+import com.menthoros.dto.output.PadroesTreino;
 import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.*;
@@ -150,6 +151,17 @@ public class PlanoServiceImpl implements PlanoService {
         LocalDate semanaInicio = calcularSemanaInicio(atleta.getId(), hoje, modoGeracao);
         PeriodoPlano periodo = new PeriodoPlano(semanaInicio);
 
+        // ** Adição da verificação de duplicidade **
+        planoSemanalRepository.findByAtletaIdAndSemanaInicio(atleta.getId(), semanaInicio)
+                .ifPresent(existingPlano -> {
+                    log.debug("Tentativa de gerar plano duplicado para atleta {} na semana de início {}. Plano existente ID: {}", atleta.getId(), semanaInicio, existingPlano.getId());
+                    throw new DomainRuleViolationException(
+                            "Já existe um plano semanal para o atleta " + atleta.getId() +
+                                    " iniciando em " + semanaInicio + ". Não é possível gerar planos duplicados."
+                    );
+                });
+        // ** Fim da adição **
+
         log.info("Período calculado: {} a {} (Modo: {}, {} treinos no plano LLM)",
                 periodo.inicio(), periodo.fim(), modoGeracao, planoDto.treinosPlanejados().size());
 
@@ -205,8 +217,16 @@ public class PlanoServiceImpl implements PlanoService {
     private LocalDate calcularSemanaInicio(UUID atletaId, LocalDate hoje, ModoGeracaoPlano modoGeracao) {
         return planoSemanalRepository
                 .findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)
-                .map(p -> p.getSemanaInicio().plusWeeks(1))
-                .orElse(hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)));
+                .map(p -> {
+                    // Se o último plano já passou, gera para a próxima semana
+                    LocalDate proximaSemana = hoje.with(java.time.temporal.TemporalAdjusters.next(java.time.DayOfWeek.MONDAY));
+                    if (p.getSemanaInicio().plusWeeks(1).isBefore(proximaSemana)) {
+                        return proximaSemana;
+                    }
+                    // Caso contrário, segue a lógica padrão
+                    return p.getSemanaInicio().plusWeeks(1);
+                })
+                .orElse(hoje.with(java.time.temporal.TemporalAdjusters.next(java.time.DayOfWeek.MONDAY)));
     }
 
     /**
@@ -322,10 +342,7 @@ public class PlanoServiceImpl implements PlanoService {
      * Persiste o plano completo e atualiza os metadados.
      */
     private PlanoSemanal salvarPlanoCompleto(PlanoSemanal plano, PlanoMetaDados metaDados) {
-        // Save PlanoMetaDados first to ensure it's persisted before PlanoSemanal references it
-        // This prevents: "persistent instance references an unsaved transient instance"
-        planoMetadadosRepository.save(metaDados);
-
+        // PlanoMetaDados is already persisted in prepararMetadados(), no need to save again
         PlanoSemanal planoSalvo = planoSemanalRepository.save(plano);
 
         log.info("✅ Plano salvo - {} treinos, volume: {}km",
@@ -358,6 +375,7 @@ public class PlanoServiceImpl implements PlanoService {
         }
 
         plano.setPlanoMetaDados(metaDados);
+
         return plano;
     }
 
@@ -405,7 +423,7 @@ public class PlanoServiceImpl implements PlanoService {
             metricas.volumeMedio(), metricas.tssMedio(), metricas.treinosPorSemanaMedio());
 
         // 2. Calcular padrões de treino (dias consecutivos e desde último descanso)
-        com.menthoros.dto.output.PadroesTreino padroes =
+        PadroesTreino padroes =
             tsbService.calcularPadroesTreino(atletaId);
 
         metaDados.setDiasConsecutivosTreino(padroes.diasConsecutivos());
@@ -508,18 +526,22 @@ public class PlanoServiceImpl implements PlanoService {
         return semanaInicio.with(TemporalAdjusters.nextOrSame(dayOfWeek));
     }
 
-
     @Override
     @Transactional
     public void deletePlanoSemanal(UUID planoSemanalId) {
         PlanoSemanal plano = planoSemanalRepository.findById(planoSemanalId)
                 .orElseThrow(() -> new ResourceNotFoundException("Plano não encontrado: " + planoSemanalId));
 
-        // Initialize lazy-loaded relationships to ensure proper cascade handling during deletion
+        // Initialize lazy-loaded TreinosPlanejados to allow cascade deletion of child entities
         Hibernate.initialize(plano.getTreinosPlanejados());
 
+        // Note: Do NOT initialize planoMetaDados collection. Let Hibernate's orphanRemoval handle the bidirectional cleanup.
+        // Initializing the collection during deletion causes Hibernate to confuse object states.
+
         planoSemanalRepository.delete(plano);
+        log.info("✅ Plano deletado com sucesso - ID: {}", planoSemanalId);
     }
+
 
     @Transactional
     public PlanoSemanalOutputDto buscarPlanoPorAtleta(UUID atletaId) {
@@ -615,6 +637,3 @@ public class PlanoServiceImpl implements PlanoService {
                 atleta.getNivelExperiencia());
     }
 }
-
-
-

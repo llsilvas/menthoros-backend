@@ -1,5 +1,6 @@
 package com.menthoros.services.impl;
 
+import com.menthoros.dto.output.PadroesTreino;
 import com.menthoros.entity.Atleta;
 import com.menthoros.entity.MetricasDiarias;
 import com.menthoros.entity.PlanoMetaDados;
@@ -16,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -799,7 +801,7 @@ public class TsbServiceImpl implements TsbService {
      * @throws IllegalArgumentException se atletaId for nulo ou atleta não existir
      */
     @Override
-    public com.menthoros.dto.output.PadroesTreino calcularPadroesTreino(UUID atletaId) {
+    public PadroesTreino calcularPadroesTreino(UUID atletaId) {
         validarAtletaExiste(atletaId);
 
         log.debug("Calculando padrões de treino para atleta {}", atletaId);
@@ -811,7 +813,11 @@ public class TsbServiceImpl implements TsbService {
 
         if (metricas.isEmpty()) {
             log.warn("Nenhuma métrica encontrada para atleta {} nos últimos 14 dias", atletaId);
-            return new com.menthoros.dto.output.PadroesTreino(0, 0);
+            List<TreinoRealizado> treinosRealizados = treinoRealizadoRepository.findTreinoRealizadosByAtletaId(atletaId);
+            var diasConsecutivos = contarDiasConsecutivos(treinosRealizados);
+            var diasDescanso = contarDiasDeDescansoNoPeriodo(treinosRealizados);
+
+            return new PadroesTreino(diasConsecutivos, diasDescanso);
         }
 
         // Ordenar do mais recente para o mais antigo
@@ -856,5 +862,50 @@ public class TsbServiceImpl implements TsbService {
             diasDesdeDescanso
         );
     }
+
+    public static int contarDiasConsecutivos(List<TreinoRealizado> treinoRealizadosByAtletaId) {
+
+        List<LocalDate> dateList = treinoRealizadosByAtletaId.stream()
+                .map(TreinoRealizado::getDataTreino)
+                .distinct()
+                .sorted()
+                .toList();
+
+        if(dateList.isEmpty()){
+            return 0;
+        }
+
+        int maiorSequencia = 1;
+        int sequenciaAtual = 1;
+
+        for (int i = 0; i < dateList.size(); i++) {
+            if(dateList.get(i).equals(dateList.get(i -1).plusDays(1))){
+                sequenciaAtual++;
+                maiorSequencia = Math.max(maiorSequencia, sequenciaAtual);
+            }else {
+                sequenciaAtual = 1;
+            }
+        }
+        return maiorSequencia;
+    }
+
+    public static int contarDiasDeDescansoNoPeriodo(List<TreinoRealizado> treinos) {
+        var datas = treinos.stream()
+                .map(TreinoRealizado::getDataTreino)
+                .distinct()
+                .sorted()
+                .toList();
+
+        if (datas.isEmpty()) return 0;
+
+        LocalDate inicio = datas.get(0);
+        LocalDate fim = datas.get(datas.size() - 1);
+
+        int totalDiasNoIntervalo = (int) (ChronoUnit.DAYS.between(inicio, fim) + 1); // inclusivo
+        int diasComTreino = datas.size();
+
+        return totalDiasNoIntervalo - diasComTreino;
+    }
+
 }
 
