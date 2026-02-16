@@ -63,6 +63,8 @@ public class PlanoServiceImpl implements PlanoService {
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final RedistribuicaoTreinoHelper redistribuicaoHelper;
     private final RegraGeracaoTreino regraGeracaoTreino;
+    private final MetricasAlertaService metricasAlertaService;
+    private final MetricasAgregadasServiceImpl metricasAgregadasService;
 
     /**
      * Gera um plano de treino semanal personalizado para um atleta usando IA.
@@ -413,7 +415,7 @@ public class PlanoServiceImpl implements PlanoService {
 
         // 1. Calcular métricas semanais médias baseadas em treinos realizados
         com.menthoros.dto.output.MetricasSemanaisMedias metricas =
-            tsbService.calcularMetricasSemanais(atletaId, 6);
+            metricasAgregadasService.calcularMetricasSemanais(atletaId, 6);
 
         metaDados.setVolumeSemanalMedio(metricas.volumeMedio());
         metaDados.setTssSemanalMedio(metricas.tssMedio());
@@ -424,7 +426,7 @@ public class PlanoServiceImpl implements PlanoService {
 
         // 2. Calcular padrões de treino (dias consecutivos e desde último descanso)
         PadroesTreino padroes =
-            tsbService.calcularPadroesTreino(atletaId);
+            metricasAgregadasService.calcularPadroesTreino(atletaId);
 
         metaDados.setDiasConsecutivosTreino(padroes.diasConsecutivos());
         metaDados.setDiasDesdeUltimoDescanso(padroes.diasDesdeDescanso());
@@ -438,8 +440,10 @@ public class PlanoServiceImpl implements PlanoService {
         // 4. Atualizar progressão de volume
         atualizarProgressao(metaDados, planoDto.volumePlanejadoKm());
 
-        // 5. Persistir metadados atualizados
-        // Nota: @PreUpdate na entidade irá atualizar automaticamente alertas, status e recomendação
+        // 5. Analisar métricas e aplicar alertas/status/recomendação
+        metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados));
+
+        // 6. Persistir metadados atualizados
         metaDados = planoMetadadosRepository.save(metaDados);
 
         log.info("Metadados atualizados com sucesso para atleta {}", atletaId);

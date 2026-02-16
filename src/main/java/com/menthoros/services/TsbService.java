@@ -1,11 +1,14 @@
 package com.menthoros.services;
 
-import com.menthoros.dto.output.MetricasSemanaisMedias;
-import com.menthoros.dto.output.PadroesTreino;
-
 import java.time.LocalDate;
 import java.util.UUID;
 
+/**
+ * Serviço de cálculo de TSB (Training Stress Balance).
+ *
+ * <p>Responsável por calcular CTL, ATL, TSB e Ramp Rate
+ * usando médias móveis exponenciais.
+ */
 public interface TsbService {
     void recalcularHistoricoCompleto(UUID id);
 
@@ -16,21 +19,4 @@ public interface TsbService {
      * @param data Data para atualizar
      */
     void atualizarTsbDia(UUID atletaId, LocalDate data);
-
-    /**
-     * Calcula métricas semanais médias baseadas no histórico de treinos realizados
-     *
-     * @param atletaId ID do atleta
-     * @param numSemanas Número de semanas para calcular a média (padrão: 4-6 semanas)
-     * @return Métricas semanais médias (volume, TSS, frequência)
-     */
-    MetricasSemanaisMedias calcularMetricasSemanais(UUID atletaId, int numSemanas);
-
-    /**
-     * Calcula padrões de treino (dias consecutivos e desde último descanso)
-     *
-     * @param atletaId ID do atleta
-     * @return Padrões de treino identificados
-     */
-    PadroesTreino calcularPadroesTreino(UUID atletaId);
 }

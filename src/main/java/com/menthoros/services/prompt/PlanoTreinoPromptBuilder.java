@@ -11,6 +11,7 @@ import com.menthoros.entity.TreinoRealizado;
 import com.menthoros.enums.DiaSemana;
 import com.menthoros.repository.ProvaRepository;
 import com.menthoros.repository.TreinoRealizadoRepository;
+import com.menthoros.services.impl.MetricasAlertaService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
@@ -32,14 +33,17 @@ public class PlanoTreinoPromptBuilder {
     private final ProvaRepository provaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final PromptTemplateLoader templateLoader;
+    private final MetricasAlertaService metricasAlertaService;
 
     public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource,
                                     ProvaRepository provaRepository,
                                     TreinoRealizadoRepository treinoRealizadoRepository,
-                                    PromptTemplateLoader templateLoader) {
+                                    PromptTemplateLoader templateLoader,
+                                    MetricasAlertaService metricasAlertaService) {
         this.provaRepository = provaRepository;
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.templateLoader = templateLoader;
+        this.metricasAlertaService = metricasAlertaService;
         try {
             this.promptTemplate = new String(promptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -629,8 +633,9 @@ public class PlanoTreinoPromptBuilder {
             return "⚠️ Metadados não disponíveis. Inicialize o perfil do atleta.";
         }
 
-        // USAR ALERTAS JÁ CALCULADOS DA ENTIDADE
-        var alertasAtivos = metaDados.getAlertasAtivos();
+        // Gerar alertas via service centralizado
+        var analise = metricasAlertaService.analisarMetricas(metaDados);
+        var alertasAtivos = analise.alertas();
 
         if (alertasAtivos.isEmpty()) {
             // Verificar se é falta de dados ou realmente está tudo ok
