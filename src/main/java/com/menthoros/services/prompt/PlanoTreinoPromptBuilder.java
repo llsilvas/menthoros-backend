@@ -9,6 +9,7 @@ import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.entity.Prova;
 import com.menthoros.entity.TreinoRealizado;
 import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.MetricasThresholds;
 import com.menthoros.repository.ProvaRepository;
 import com.menthoros.repository.TreinoRealizadoRepository;
 import com.menthoros.services.impl.MetricasAlertaService;
@@ -259,7 +260,7 @@ public class PlanoTreinoPromptBuilder {
                         - **CTL (Fitness):** %.1f pontos - Forma física acumulada (6 semanas)
                         - **ATL (Fadiga):** %.1f pontos - Fadiga recente (última semana)
                         - **TSB (Prontidão):** %.1f pontos - %s
-                        - **Ramp Rate:** %.1f pts/sem - %s
+                        - **Ramp Rate:** %s - %s
                         
                         ### Médias Semanais
                         - Volume: %.1f km | TSS: %d pts | Treinos: %.1f sessões
@@ -279,8 +280,8 @@ public class PlanoTreinoPromptBuilder {
                 metaDados.getAtlAtual() != null ? metaDados.getAtlAtual() : 0.0,
                 metaDados.getTsbAtual() != null ? metaDados.getTsbAtual() : 0.0,
                 metaDados.getInterpretacaoTsb(),
-                metaDados.getRampRateAtual() != null ? metaDados.getRampRateAtual() : 0.0,
-                interpretarRampRate(metaDados.getRampRateAtual()),
+                formatarRampRateResumo(metaDados.getCtlAtual(), metaDados.getRampRateAtual()),
+                interpretarRampRate(metaDados.getCtlAtual(), metaDados.getRampRateAtual()),
                 metaDados.getVolumeSemanalMedio() != null ? metaDados.getVolumeSemanalMedio().doubleValue() : 0.0,
                 metaDados.getTssSemanalMedio() != null ? metaDados.getTssSemanalMedio() : 0,
                 metaDados.getTreinosPorSemanaMedio(),
@@ -296,25 +297,70 @@ public class PlanoTreinoPromptBuilder {
      * Interpreta o Ramp Rate com recomendações
      */
     private String interpretarRampRate(Double rampRate) {
-        if (rampRate == null) {
+        return interpretarRampRate(null, rampRate);
+    }
+
+    private String interpretarRampRate(Double ctlAtual, Double rampRatePontosSemana) {
+        if (rampRatePontosSemana == null) {
             return "Sem dados suficientes";
         }
 
-        if (rampRate > 10) {
+        Double rampRel = calcularRampRateRelativoPercentual(ctlAtual, rampRatePontosSemana);
+        if (rampRel != null) {
+            if (rampRel > MetricasThresholds.RAMP_RATE_RELATIVO_CRITICO) {
+                return "MUITO ALTO - Progressão perigosa, risco de lesão!";
+            } else if (rampRel > MetricasThresholds.RAMP_RATE_RELATIVO_ALTO) {
+                return "ALTO - Progressão rápida, monitorar sinais de fadiga";
+            } else if (rampRel >= 5 && rampRel <= MetricasThresholds.RAMP_RATE_RELATIVO_ALTO) {
+                return "IDEAL - Progressão segura e efetiva";
+            } else if (rampRel >= 3 && rampRel < 5) {
+                return "BOM - Progressão moderada e sustentável";
+            } else if (rampRel >= 0 && rampRel < 3) {
+                return "BAIXO - Manutenção ou progressão muito lenta";
+            } else if (rampRel > -3 && rampRel < 0) {
+                return "NEGATIVO - Destreino leve, normal em recuperação";
+            } else {
+                return "MUITO NEGATIVO - Perda significativa de forma";
+            }
+        }
+
+        // Fallback: sem CTL para inferir percentual, usa thresholds absolutos legados (pts/sem).
+        if (rampRatePontosSemana > MetricasThresholds.RAMP_RATE_CRITICO) {
             return "MUITO ALTO - Progressão perigosa, risco de lesão!";
-        } else if (rampRate > 8) {
+        } else if (rampRatePontosSemana > MetricasThresholds.RAMP_RATE_ALTO) {
             return "ALTO - Progressão rápida, monitorar sinais de fadiga";
-        } else if (rampRate >= 5 && rampRate <= 8) {
+        } else if (rampRatePontosSemana >= 5 && rampRatePontosSemana <= MetricasThresholds.RAMP_RATE_ALTO) {
             return "IDEAL - Progressão segura e efetiva";
-        } else if (rampRate >= 3 && rampRate < 5) {
+        } else if (rampRatePontosSemana >= 3 && rampRatePontosSemana < 5) {
             return "BOM - Progressão moderada e sustentável";
-        } else if (rampRate >= 0 && rampRate < 3) {
+        } else if (rampRatePontosSemana >= 0 && rampRatePontosSemana < 3) {
             return "BAIXO - Manutenção ou progressão muito lenta";
-        } else if (rampRate > -3 && rampRate < 0) {
+        } else if (rampRatePontosSemana > -3 && rampRatePontosSemana < 0) {
             return "NEGATIVO - Destreino leve, normal em recuperação";
         } else {
             return "MUITO NEGATIVO - Perda significativa de forma";
         }
+    }
+
+    private String formatarRampRateResumo(Double ctlAtual, Double rampRatePontosSemana) {
+        if (rampRatePontosSemana == null) {
+            return "0.0 pts/sem";
+        }
+
+        Double rampRel = calcularRampRateRelativoPercentual(ctlAtual, rampRatePontosSemana);
+        if (rampRel == null) {
+            return String.format("%.1f pts/sem", rampRatePontosSemana);
+        }
+        return String.format("%.1f%%/sem (%.1f pts)", rampRel, rampRatePontosSemana);
+    }
+
+    private Double calcularRampRateRelativoPercentual(Double ctlAtual, Double rampRatePontosSemana) {
+        if (ctlAtual == null || rampRatePontosSemana == null) {
+            return null;
+        }
+        double ctlAnterior = ctlAtual - rampRatePontosSemana;
+        double ctlEfetivo = Math.max(ctlAnterior, MetricasThresholds.CTL_MINIMO_RAMP_RELATIVO);
+        return (rampRatePontosSemana / ctlEfetivo) * 100.0;
     }
 
     private String interpretarTsb(Double tsb) {

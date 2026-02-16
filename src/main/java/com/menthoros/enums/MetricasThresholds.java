@@ -45,6 +45,23 @@ public final class MetricasThresholds {
     /** Ramp rate acima deste valor = progressão rápida */
     public static final double RAMP_RATE_ALTO = 8.0;
 
+    // ===== RAMP RATE (RELATIVO) =====
+
+    /** Ramp rate relativo acima deste valor = progressão crítica (risco de lesão) */
+    public static final double RAMP_RATE_RELATIVO_CRITICO = 15.0; // % do CTL/semana
+
+    /** Ramp rate relativo acima deste valor = progressão rápida */
+    public static final double RAMP_RATE_RELATIVO_ALTO = 10.0; // % do CTL/semana
+
+    /**
+     * CTL mínimo para estabilizar o cálculo de ramp rate relativo.
+     *
+     * <p>Quando CTL é muito baixo, percentuais podem explodir (ex: CTL=2 e ramp=3 => 150%).
+     * Para manter a interpretação estável e ainda sensível, usa-se o maior valor entre
+     * CTL anterior e este mínimo como denominador.
+     */
+    public static final double CTL_MINIMO_RAMP_RELATIVO = 10.0;
+
     // ===== DIAS CONSECUTIVOS =====
 
     /** Dias consecutivos a partir deste valor = alerta crítico */

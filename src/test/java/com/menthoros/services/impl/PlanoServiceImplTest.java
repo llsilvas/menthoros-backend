@@ -3,6 +3,9 @@ package com.menthoros.services.impl;
 import com.menthoros.dto.input.DadosPlanoDto;
 import com.menthoros.dto.llm.PlanoSemanalLlmDto;
 import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
+import com.menthoros.dto.output.MetricasSemanaisMedias;
+import com.menthoros.dto.output.PadroesTreino;
+import com.menthoros.dto.output.ResultadoAnalise;
 import com.menthoros.entity.Atleta;
 import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.entity.PlanoSemanal;
@@ -38,6 +41,7 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
@@ -74,9 +78,29 @@ class PlanoServiceImplTest {
     private RegraGeracaoTreino regraGeracaoTreino;
     @Mock
     private com.menthoros.services.PlanoMetadadosService planoMetadadosService;
+    @Mock
+    private MetricasAlertaService metricasAlertaService;
+    @Mock
+    private MetricasAgregadasServiceImpl metricasAgregadasService;
 
     @InjectMocks
     private PlanoServiceImpl planoService;
+
+    private void mockMetricasAgregadasEAlertas(PlanoMetaDados metaDados) {
+        when(metricasAgregadasService.calcularMetricasSemanais(any(), anyInt()))
+                .thenReturn(new MetricasSemanaisMedias(BigDecimal.valueOf(30.0), 300, 4.0));
+        when(metricasAgregadasService.calcularPadroesTreino(any()))
+                .thenReturn(new PadroesTreino(0, 0));
+
+        when(metricasAlertaService.analisarMetricas(any()))
+                .thenReturn(new ResultadoAnalise(
+                        "NORMAL",
+                        "Continuar treinamento normalmente, respeitando os princípios de progressão.",
+                        null,
+                        false, false, false, false,
+                        Collections.emptyList()
+                ));
+    }
 
     @Test
     @DisplayName("Deve gerar plano com atleta válido e modo de geração válido")
@@ -93,6 +117,8 @@ class PlanoServiceImplTest {
         List<TreinoPlanejadoLlmDto> treinos = criarTreinosCompletos();
         PlanoSemanal planoSalvo = criarPlanoSemanalMock();
         TreinoPlanejado treinoPlanejado = criarTreinoPlanejadoMock();
+
+        mockMetricasAgregadasEAlertas(metaDados);
 
         // Mock dependencies
         when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
@@ -122,7 +148,7 @@ class PlanoServiceImplTest {
             verify(atletaRepository).findById(atletaId);
             verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any());
             verify(planoSemanalRepository).save(any(PlanoSemanal.class));
-            verify(planoMetadadosRepository, times(2)).save(any(PlanoMetaDados.class));
+            verify(planoMetadadosRepository, times(1)).save(any(PlanoMetaDados.class));
         }
     }
 
@@ -258,6 +284,8 @@ class PlanoServiceImplTest {
         PlanoSemanal planoSalvo = criarPlanoSemanalMock();
         TreinoPlanejado treinoPlanejado = criarTreinoPlanejadoMock();
 
+        mockMetricasAgregadasEAlertas(metaDados);
+
         when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
         when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
@@ -297,7 +325,9 @@ class PlanoServiceImplTest {
 
         Atleta atleta = criarAtletaMock(atletaId);
         PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
-        PlanoSemanalLlmDto planoDto = criarPlanoSemanalLlmDto();
+        PlanoSemanalLlmDto planoDto = new PlanoSemanalLlmDto(
+                22, 22, 50.0, 60.0, PlanoStatus.PLANEJADO.getValue(), "Teste Plano", Collections.emptyList()
+        );
 
         when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);

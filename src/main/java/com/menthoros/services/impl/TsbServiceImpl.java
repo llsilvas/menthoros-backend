@@ -217,10 +217,46 @@ public class TsbServiceImpl implements TsbService {
         metaDados.setRampRateAtual(metricas.getRampRate());
         metaDados.setDataUltimaAtualizacao(LocalDate.now());
 
+        // Atualizar dias consecutivos ANTES da análise (ISSUE-06)
+        boolean hojeTemTreino = metricas.getTreinosRealizados() != null && metricas.getTreinosRealizados() > 0;
+        metaDados.setDiasConsecutivosTreino(
+                contarDiasConsecutivosTreino(atletaId, metricas.getData(), hojeTemTreino));
+
         // Analisar métricas e aplicar alertas/status/recomendação
         metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados));
 
         planoMetaDadosRepository.save(metaDados);
+    }
+
+    /**
+     * Conta dias consecutivos de treino até a data informada (inclusive).
+     *
+     * <p>Percorre os dias para trás a partir de {@code data}, verificando se
+     * há treinos registrados. Para no primeiro dia sem treino ou após 14 dias
+     * (limite de segurança).
+     *
+     * @param atletaId  ID do atleta
+     * @param data      data do dia sendo processado
+     * @param hojeTemTreino se o dia atual possui treinos
+     * @return número de dias consecutivos com treino (0 se hoje é descanso)
+     */
+    private int contarDiasConsecutivosTreino(UUID atletaId, LocalDate data, boolean hojeTemTreino) {
+        if (!hojeTemTreino) {
+            return 0;
+        }
+
+        int consecutivos = 1; // hoje conta
+        LocalDate dia = data.minusDays(1);
+
+        for (int i = 0; i < 14; i++) {
+            List<TreinoRealizado> treinos = treinoRealizadoRepository
+                    .findByAtletaIdAndDataTreino(atletaId, dia);
+            if (treinos.isEmpty()) break;
+            consecutivos++;
+            dia = dia.minusDays(1);
+        }
+
+        return consecutivos;
     }
 
     /**

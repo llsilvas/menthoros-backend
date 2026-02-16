@@ -24,6 +24,10 @@ import java.util.List;
 @Component
 public class TssCalculatorService {
 
+    private enum MetodoCalculoTss {
+        FC, PACE, RPE
+    }
+
     /**
      * Calcula TSS total do dia (soma de todos os treinos)
      */
@@ -39,22 +43,26 @@ public class TssCalculatorService {
      */
     public int calcularTss(TreinoRealizado treino) {
         int tssBase;
+        MetodoCalculoTss metodo;
 
         // Se tem dados de FC, usar método de FC
         if (treino.getFcMedia() != null && treino.getFcMedia() > 0) {
             tssBase = calcularTssFrequenciaCardiaca(treino);
+            metodo = MetodoCalculoTss.FC;
         }
         // Se tem dados de pace, usar método de pace
         else if (treino.getPaceMedia() != null) {
             tssBase = calcularTssPace(treino);
+            metodo = MetodoCalculoTss.PACE;
         }
         // Fallback: usar RPE (menos preciso mas melhor que nada)
         else {
             tssBase = calcularTssRpe(treino);
+            metodo = MetodoCalculoTss.RPE;
         }
 
         // Aplicar fator de impacto por tipo de treino
-        return aplicarFatorImpactoTreino(tssBase, treino);
+        return aplicarFatorImpactoTreino(tssBase, treino, metodo);
     }
 
     /**
@@ -71,13 +79,20 @@ public class TssCalculatorService {
      * @param treino Treino com tipo definido
      * @return TSS ajustado pelo fator de impacto
      */
-    private int aplicarFatorImpactoTreino(int tssBase, TreinoRealizado treino) {
+    private int aplicarFatorImpactoTreino(int tssBase, TreinoRealizado treino, MetodoCalculoTss metodo) {
         if (treino.getTipoTreino() == null) {
             log.debug("Treino {} sem tipo definido. Usando TSS base: {}", treino.getId(), tssBase);
             return tssBase;
         }
 
         double fator = treino.getTipoTreino().getFatorImpacto();
+
+        // ISSUE-04: evitar dupla contagem no cálculo por FC.
+        // A FC já captura boa parte da intensidade; aplicar apenas parte do "componente extra" do fator.
+        if (metodo == MetodoCalculoTss.FC && fator > 1.0) {
+            double componenteExtra = fator - 1.0;
+            fator = 1.0 + (componenteExtra * 0.5);
+        }
         int tssAjustado = (int) Math.round(tssBase * fator);
 
         log.debug("TSS ajustado para treino {}: {} (base) × {} ({}) = {}",
@@ -251,12 +266,29 @@ public class TssCalculatorService {
             : 0.0;
         double rpe = treino.getPercepcaoEsforco(); // Escala 1-10
 
-        // Converter RPE para IF aproximado
-        // RPE 6 = IF 0.6, RPE 10 = IF 1.0
-        double intensityFactor = (rpe / 10.0) * 0.9 + 0.1;
+        // Converter RPE para IF com mapeamento fisiológico (ISSUE-02)
+        // Referências aproximadas:
+        // - RPE 3-4: zona aeróbica fácil (IF ~0.55-0.65)
+        // - RPE 5-6: zona aeróbica moderada (IF ~0.70-0.80)
+        // - RPE 7: tempo/sublimiar (IF ~0.88-0.93)
+        // - RPE 8: limiar anaeróbico (IF ~1.00 por definição)
+        // - RPE 9: VO2max (IF ~1.10-1.15)
+        // - RPE 10: máximo/sprint (IF ~1.20-1.30)
+        double intensityFactor = converterRpeParaIf(rpe);
+
+        // Limitar IF entre 0.5 e 1.5 (consistente com outros métodos)
+        intensityFactor = Math.max(0.5, Math.min(1.5, intensityFactor));
 
         double tss = duracaoHoras * intensityFactor * 100 * intensityFactor;
 
         return (int) Math.round(tss);
+    }
+
+    private double converterRpeParaIf(double rpe) {
+        if (rpe <= 1) return 0.45;
+        if (rpe <= 3) return 0.45 + (rpe - 1) * 0.075; // 1→0.45, 3→0.60
+        if (rpe <= 6) return 0.60 + (rpe - 3) * 0.067; // 3→0.60, 6→0.80
+        if (rpe <= 8) return 0.80 + (rpe - 6) * 0.10;  // 6→0.80, 8→1.00
+        return 1.00 + (rpe - 8) * 0.125;               // 8→1.00, 10→1.25
     }
 }

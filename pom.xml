@@ -98,6 +98,12 @@
             <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Needed to run Mockito inline mock maker without self-attach in restricted environments -->
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy-agent</artifactId>
+            <scope>test</scope>
+        </dependency>
 
         <!-- MapStruct -->
         <dependency>
@@ -268,6 +274,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${surefire.plugin.version}</version>
                 <configuration>
+                    <argLine>${argLine} -javaagent:${project.build.directory}/byte-buddy-agent.jar -XX:+EnableDynamicAgentLoading -Djdk.attach.allowAttachSelf=true</argLine>
                     <includes>
                         <include>**/unit/**/*.java</include>
                     </includes>
@@ -296,6 +303,7 @@
                     </execution>
                 </executions>
                 <configuration>
+                    <argLine>${argLine} -javaagent:${project.build.directory}/byte-buddy-agent.jar -XX:+EnableDynamicAgentLoading -Djdk.attach.allowAttachSelf=true</argLine>
                     <includes>
                         <include>**/integration/*IT.java</include>
                     </includes>
@@ -303,6 +311,31 @@
                         <spring.profiles.active>test</spring.profiles.active>
                     </systemPropertyVariables>
                 </configuration>
+            </plugin>
+
+            <!-- Copies Byte Buddy agent to a stable path for surefire/failsafe -javaagent -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy-byte-buddy-agent</id>
+                        <phase>process-test-resources</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                        <configuration>
+                            <artifactItems>
+                                <artifactItem>
+                                    <groupId>net.bytebuddy</groupId>
+                                    <artifactId>byte-buddy-agent</artifactId>
+                                    <destFileName>byte-buddy-agent.jar</destFileName>
+                                </artifactItem>
+                            </artifactItems>
+                            <outputDirectory>${project.build.directory}</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- Gera relatório de cobertura de testes (Jacoco) -->
@@ -316,6 +349,19 @@
                         <goals>
                             <goal>prepare-agent</goal>
                         </goals>
+                        <configuration>
+                            <excludes>
+                                <exclude>java/*</exclude>
+                                <exclude>javax/*</exclude>
+                                <exclude>jdk/*</exclude>
+                                <exclude>sun/*</exclude>
+                                <exclude>com/sun/*</exclude>
+                                <exclude>net/bytebuddy/*</exclude>
+                                <exclude>org/mockito/*</exclude>
+                                <exclude>*MockitoMock*</exclude>
+                                <exclude>*ByteBuddy*</exclude>
+                            </excludes>
+                        </configuration>
                     </execution>
                     <execution>
                         <id>default-report</id>

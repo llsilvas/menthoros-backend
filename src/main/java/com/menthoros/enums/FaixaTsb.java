@@ -28,7 +28,7 @@ public enum FaixaTsb {
     FADIGA_ALTA(
             MetricasThresholds.TSB_CRITICO, MetricasThresholds.TSB_SOBRECARGA,
             NivelAlerta.ALTO,
-            "Fadiga excessiva",
+            "Fadiga alta",
             "FADIGA ALTA",
             "Reduzir volume em 30-40%. Priorizar treinos regenerativos e descanso."
     ),

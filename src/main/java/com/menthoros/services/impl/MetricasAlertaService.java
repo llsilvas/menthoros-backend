@@ -25,6 +25,28 @@ import java.util.List;
 @Service
 public class MetricasAlertaService {
 
+    private record RampRateInfo(Double pontosSemana, Double percentualSemana) {
+        static RampRateInfo from(Double ctlAtual, Double rampRatePontosSemana) {
+            if (rampRatePontosSemana == null) return new RampRateInfo(null, null);
+            if (ctlAtual == null) return new RampRateInfo(rampRatePontosSemana, null);
+
+            double pontos = rampRatePontosSemana;
+            double ctlAnterior = ctlAtual - pontos;
+            double ctlEfetivo = Math.max(ctlAnterior, MetricasThresholds.CTL_MINIMO_RAMP_RELATIVO);
+
+            double percentual = (pontos / ctlEfetivo) * 100.0;
+            return new RampRateInfo(pontos, percentual);
+        }
+
+        String formatarResumo() {
+            if (pontosSemana == null) return null;
+            if (percentualSemana == null) {
+                return String.format("%.1f pts/sem", pontosSemana);
+            }
+            return String.format("%.1f%%/sem (%.1f pts)", percentualSemana, pontosSemana);
+        }
+    }
+
     /**
      * Analisa as métricas atuais do PlanoMetaDados e retorna o resultado completo.
      *
@@ -38,32 +60,39 @@ public class MetricasAlertaService {
         Integer diasConsecutivosTreino = metaDados.getDiasConsecutivosTreino();
         Integer semanasProgressaoContinua = metaDados.getSemanasProgressaoContinua();
 
+        RampRateInfo rampInfo = RampRateInfo.from(ctlAtual, rampRateAtual);
+
         // 1. Calcular booleans de alerta
         boolean sobrecarga = tsbAtual != null && tsbAtual < MetricasThresholds.TSB_SOBRECARGA;
-        boolean rampAlto = rampRateAtual != null && rampRateAtual > MetricasThresholds.RAMP_RATE_CRITICO;
+        boolean rampCritico = rampInfo.percentualSemana != null
+                ? rampInfo.percentualSemana > MetricasThresholds.RAMP_RATE_RELATIVO_CRITICO
+                : (rampRateAtual != null && rampRateAtual > MetricasThresholds.RAMP_RATE_CRITICO);
+        boolean rampAlto = rampInfo.percentualSemana != null
+                ? rampInfo.percentualSemana > MetricasThresholds.RAMP_RATE_RELATIVO_ALTO
+                : (rampRateAtual != null && rampRateAtual > MetricasThresholds.RAMP_RATE_ALTO);
         boolean diasConsecutivos = diasConsecutivosTreino != null
                 && diasConsecutivosTreino >= MetricasThresholds.DIAS_CONSECUTIVOS_ALTO;
         boolean necessitaDescanso = sobrecarga || diasConsecutivos;
 
         // 2. Gerar status
-        String status = calcularStatus(tsbAtual, ctlAtual, rampAlto, sobrecarga, diasConsecutivosTreino);
+        String status = calcularStatus(tsbAtual, ctlAtual, rampCritico, sobrecarga, diasConsecutivosTreino);
 
         // 3. Gerar recomendação
-        String recomendacao = calcularRecomendacao(tsbAtual, sobrecarga, rampAlto,
+        String recomendacao = calcularRecomendacao(tsbAtual, sobrecarga, rampCritico,
                 diasConsecutivos, diasConsecutivosTreino, semanasProgressaoContinua);
 
         // 4. Gerar mensagem de alerta resumida
-        String mensagem = gerarMensagemAlerta(tsbAtual, rampRateAtual, diasConsecutivosTreino,
-                sobrecarga, rampAlto, diasConsecutivos);
+        String mensagem = gerarMensagemAlerta(tsbAtual, rampInfo, diasConsecutivosTreino,
+                sobrecarga, rampCritico, diasConsecutivos);
 
         // 5. Gerar lista estruturada de alertas
-        List<AlertaMetricas> alertas = gerarAlertasAtivos(tsbAtual, rampRateAtual,
+        List<AlertaMetricas> alertas = gerarAlertasAtivos(tsbAtual, rampInfo,
                 diasConsecutivosTreino, semanasProgressaoContinua,
-                sobrecarga, rampAlto, diasConsecutivos);
+                sobrecarga, rampCritico, rampAlto, diasConsecutivos);
 
         return new ResultadoAnalise(
                 status, recomendacao, mensagem,
-                sobrecarga, rampAlto, diasConsecutivos, necessitaDescanso,
+                sobrecarga, rampCritico, diasConsecutivos, necessitaDescanso,
                 alertas
         );
     }
@@ -75,9 +104,11 @@ public class MetricasAlertaService {
             return "COLETANDO DADOS";
         }
 
+        boolean tsbCritico = tsbAtual != null && tsbAtual < MetricasThresholds.TSB_CRITICO;
+
         // Prioridade 1: Alertas críticos combinados
         if (sobrecarga && rampAlto) {
-            return "FADIGA CRÍTICA + PROGRESSÃO RÁPIDA";
+            return (tsbCritico ? "FADIGA CRÍTICA" : "FADIGA ALTA") + " + PROGRESSÃO RÁPIDA";
         }
 
         // Prioridade 2: Usar FaixaTsb para classificar, com overrides para alertas compostos
@@ -87,9 +118,8 @@ public class MetricasAlertaService {
 
         if (diasConsecutivosTreino != null && diasConsecutivosTreino >= MetricasThresholds.DIAS_CONSECUTIVOS_CRITICO) {
             // Dias consecutivos tem prioridade sobre faixas intermediárias de TSB
-            FaixaTsb faixa = FaixaTsb.classificar(tsbAtual);
-            if (faixa != null && faixa.isFadigaCritica()) {
-                return faixa.getStatus(); // fadiga crítica tem prioridade
+            if (tsbCritico) {
+                return "FADIGA CRÍTICA";
             }
             if (sobrecarga) {
                 return "FADIGA ALTA"; // sobrecarga tem prioridade sobre dias consecutivos
@@ -98,7 +128,7 @@ public class MetricasAlertaService {
         }
 
         if (sobrecarga) {
-            return "FADIGA ALTA";
+            return tsbCritico ? "FADIGA CRÍTICA" : "FADIGA ALTA";
         }
 
         // Sem alertas compostos: classificar puramente por FaixaTsb
@@ -145,7 +175,7 @@ public class MetricasAlertaService {
         return rec.length() > 0 ? rec.toString().trim() : null;
     }
 
-    private String gerarMensagemAlerta(Double tsbAtual, Double rampRateAtual,
+    private String gerarMensagemAlerta(Double tsbAtual, RampRateInfo rampInfo,
                                        Integer diasConsecutivosTreino,
                                        boolean sobrecarga, boolean rampAlto,
                                        boolean diasConsecutivos) {
@@ -155,7 +185,8 @@ public class MetricasAlertaService {
             mensagens.add("TSB crítico (" + tsbAtual + "). Descanso recomendado.");
         }
         if (rampAlto) {
-            mensagens.add("Progressão muito rápida (" + rampRateAtual + " pts/sem). Reduzir volume.");
+            String rr = rampInfo != null ? rampInfo.formatarResumo() : null;
+            mensagens.add("Progressão muito rápida (" + (rr != null ? rr : "sem dados") + "). Reduzir volume.");
         }
         if (diasConsecutivos) {
             mensagens.add(diasConsecutivosTreino + " dias seguidos treinando. Dia de descanso necessário.");
@@ -164,10 +195,11 @@ public class MetricasAlertaService {
         return mensagens.isEmpty() ? null : String.join(" ", mensagens);
     }
 
-    private List<AlertaMetricas> gerarAlertasAtivos(Double tsbAtual, Double rampRateAtual,
+    private List<AlertaMetricas> gerarAlertasAtivos(Double tsbAtual, RampRateInfo rampInfo,
                                                      Integer diasConsecutivosTreino,
                                                      Integer semanasProgressaoContinua,
-                                                     boolean sobrecarga, boolean rampAlto,
+                                                     boolean sobrecarga, boolean rampCritico,
+                                                     boolean rampAlto,
                                                      boolean diasConsecutivos) {
         List<AlertaMetricas> alertas = new ArrayList<>();
 
@@ -193,16 +225,16 @@ public class MetricasAlertaService {
         }
 
         // Alerta Ramp Rate
-        if (rampAlto) {
+        if (rampCritico) {
             alertas.add(new AlertaMetricas(
                     NivelAlerta.CRITICO, "RAMP_RATE_ALTO",
-                    String.format("Progressão muito rápida (%.1f pts/sem). Risco de lesão!", rampRateAtual),
+                    "Progressão muito rápida (" + (rampInfo != null ? rampInfo.formatarResumo() : "sem dados") + "). Risco de lesão!",
                     "Reduzir volume em 20-30% nas próximas 2 semanas. Não aumentar carga."
             ));
-        } else if (rampRateAtual != null && rampRateAtual > MetricasThresholds.RAMP_RATE_ALTO) {
+        } else if (rampAlto) {
             alertas.add(new AlertaMetricas(
                     NivelAlerta.ALTO, "RAMP_RATE_MODERADO",
-                    String.format("Progressão rápida (%.1f pts/sem).", rampRateAtual),
+                    "Progressão rápida (" + (rampInfo != null ? rampInfo.formatarResumo() : "sem dados") + ").",
                     "Manter volume atual sem aumentar. Monitorar sinais de fadiga."
             ));
         }
