@@ -22,11 +22,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Component
@@ -38,9 +34,9 @@ public class PlanoTreinoPromptBuilder {
     private final PromptTemplateLoader templateLoader;
 
     public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource,
-                                   ProvaRepository provaRepository,
-                                   TreinoRealizadoRepository treinoRealizadoRepository,
-                                   PromptTemplateLoader templateLoader) {
+                                    ProvaRepository provaRepository,
+                                    TreinoRealizadoRepository treinoRealizadoRepository,
+                                    PromptTemplateLoader templateLoader) {
         this.provaRepository = provaRepository;
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.templateLoader = templateLoader;
@@ -283,7 +279,7 @@ public class PlanoTreinoPromptBuilder {
                 interpretarRampRate(metaDados.getRampRateAtual()),
                 metaDados.getVolumeSemanalMedio() != null ? metaDados.getVolumeSemanalMedio().doubleValue() : 0.0,
                 metaDados.getTssSemanalMedio() != null ? metaDados.getTssSemanalMedio() : 0,
-                metaDados.getTreinosPorSemanaMedio() != null ? metaDados.getTreinosPorSemanaMedio() : 0.0,
+                metaDados.getTreinosPorSemanaMedio(),
                 metaDados.getDiasConsecutivosTreino() != null ? metaDados.getDiasConsecutivosTreino() : 0,
                 metaDados.getDiasDesdeUltimoDescanso() != null ? metaDados.getDiasDesdeUltimoDescanso() : 0,
                 metaDados.getSemanasProgressaoContinua() != null ? metaDados.getSemanasProgressaoContinua() : 0,
@@ -850,7 +846,6 @@ public class PlanoTreinoPromptBuilder {
         StringBuilder sb = new StringBuilder();
 
 
-
         sb.append("## 📅 PADRÕES DE TREINO E DISPONIBILIDADE\n\n");
 
         // Dias disponíveis do atleta
@@ -902,13 +897,14 @@ public class PlanoTreinoPromptBuilder {
         sb.append("\n");
 
         // Volume médio por dia
-        if (metaDados.getVolumeSemanalMedio() != null && metaDados.getTreinosPorSemanaMedio() != null) {
+        if (metaDados.getVolumeSemanalMedio() != null) {
             double volumeMedioPorTreino = metaDados.getVolumeSemanalMedio().doubleValue() /
                     metaDados.getTreinosPorSemanaMedio();
             sb.append(String.format("**Volume médio por treino:** %.1f km\n", volumeMedioPorTreino));
         }
 
-        if (metaDados.getTssSemanalMedio() != null && metaDados.getTreinosPorSemanaMedio() != null) {
+        if (metaDados.getTssSemanalMedio() != null) {
+
             double tssMedioPorTreino = metaDados.getTssSemanalMedio() /
                     metaDados.getTreinosPorSemanaMedio();
             sb.append(String.format("**TSS médio por treino:** %.0f pontos\n", tssMedioPorTreino));
@@ -1069,34 +1065,34 @@ public class PlanoTreinoPromptBuilder {
         if (metaDados == null) {
             return "DESENVOLVIMENTO";
         }
-        
+
         Double tsb = metaDados.getTsbAtual();
         Integer semanasProgressao = metaDados.getSemanasProgressaoContinua();
-        
+
         // Semana regenerativa
-        if ((semanasProgressao != null && semanasProgressao >= 4) || 
-            (tsb != null && tsb < -25)) {
+        if ((semanasProgressao != null && semanasProgressao >= 4) ||
+                (tsb != null && tsb < -25)) {
             return "REGENERATIVA (redução de carga)";
         }
-        
+
         // Semana de recuperação
         if (tsb != null && tsb < -15) {
             return "RECUPERAÇÃO (foco em treinos leves)";
         }
-        
+
         // Semana normal
         if (tsb != null && tsb >= -5 && tsb <= 15) {
             return "DESENVOLVIMENTO (progressão normal)";
         }
-        
+
         // Semana de pico (se bem recuperado)
         if (tsb != null && tsb > 15) {
             return "PICO (ótimo para treinos intensos)";
         }
-        
+
         return "DESENVOLVIMENTO";
     }
-    
+
     /**
      * Gera alertas específicos sobre padrões de dias
      */
@@ -1194,7 +1190,7 @@ public class PlanoTreinoPromptBuilder {
     /**
      * Analisa estímulos recentes (últimas 4 semanas) e retorna análise formatada
      * para o prompt otimizado.
-     *
+     * <p>
      * Calcula:
      * 1. Tipos de treino ausentes há >14 dias
      * 2. Volume semanal detalhado (últimas 3 semanas)
@@ -1293,19 +1289,19 @@ public class PlanoTreinoPromptBuilder {
 
             BigDecimal volumeSemana = treinos.stream()
                     .filter(t -> !t.getDataTreino().isBefore(inicioSemana) &&
-                               !t.getDataTreino().isAfter(fimSemana))
+                            !t.getDataTreino().isAfter(fimSemana))
                     .map(t -> t.getDistanciaKm() != null ? t.getDistanciaKm() : BigDecimal.ZERO)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
             int tssSemana = treinos.stream()
                     .filter(t -> !t.getDataTreino().isBefore(inicioSemana) &&
-                               !t.getDataTreino().isAfter(fimSemana))
+                            !t.getDataTreino().isAfter(fimSemana))
                     .mapToInt(t -> t.getTssCalculado() != null ? t.getTssCalculado() : 0)
                     .sum();
 
             long treinosSemana = treinos.stream()
                     .filter(t -> !t.getDataTreino().isBefore(inicioSemana) &&
-                               !t.getDataTreino().isAfter(fimSemana))
+                            !t.getDataTreino().isAfter(fimSemana))
                     .count();
 
             String tendencia = semana == 2 ? "📊 Base" : (semana == 1 ? "📈 Comparação" : "📊 Atual");
@@ -1393,14 +1389,14 @@ public class PlanoTreinoPromptBuilder {
     /**
      * Identifica a matriz de variabilidade de treinos (últimas 4 semanas)
      * e recomenda qual categoria de intervalado usar esta semana.
-     *
+     * <p>
      * Categorias de Intervalado:
      * - A: VO2max curto (200m, 400m, 600m)
      * - B: VO2max longo (3-5 min)
      * - C: Threshold (4-6 min no pace limiar)
      * - D: Tempo Run (contínuo em Z3)
      * - E: Fartlek estruturado (variado)
-     *
+     * <p>
      * Retorna string formatada com análise e recomendação
      */
     public String identificarMatrizVariabilidade(Atleta atleta, LocalDate inicioSemana) {
@@ -1414,7 +1410,7 @@ public class PlanoTreinoPromptBuilder {
         if (treinos.isEmpty()) {
             return """
                     **MATRIZ DE VARIABILIDADE:**
-
+                    
                     ⚠️ Nenhum treino realizado nos últimos 28 dias.
                     ✅ RECOMENDAÇÃO: Começar com INTERVALADO Categoria A ou B (VO2max)
                     """;
@@ -1434,10 +1430,10 @@ public class PlanoTreinoPromptBuilder {
             // Encontrar treino intervalado dessa semana
             TreinoRealizado treinoIntervalado = treinos.stream()
                     .filter(t -> !t.getDataTreino().isBefore(inicioSem) &&
-                               !t.getDataTreino().isAfter(fimSemana) &&
-                               t.getTipoTreino() != null &&
-                               (t.getTipoTreino().toString().contains("INTERVALADO") ||
-                                t.getTipoTreino().toString().contains("FARTLEK")))
+                            !t.getDataTreino().isAfter(fimSemana) &&
+                            t.getTipoTreino() != null &&
+                            (t.getTipoTreino().toString().contains("INTERVALADO") ||
+                                    t.getTipoTreino().toString().contains("FARTLEK")))
                     .findFirst()
                     .orElse(null);
 
@@ -1520,19 +1516,26 @@ public class PlanoTreinoPromptBuilder {
         if (categoriaSemanaAtual.equals("NENHUM") || categoriaSemanaAtual.equals("Indeterminada")) {
             // Se semana passada teve algo, alternar
             recomendacao = switch (categoriaUltimaSemanab) {
-                case "A (VO2max curto)" -> "→ Use **Categoria B** (VO2max longo - 3-5 min)\n  Razão: Alternar com semana anterior (A→B)";
-                case "B (VO2max longo)" -> "→ Use **Categoria C** (Threshold - 4-6 min)\n  Razão: Alternar com semana anterior (B→C)";
-                case "C (Threshold)" -> "→ Use **Categoria D** (Tempo Run - Z3)\n  Razão: Alternar com semana anterior (C→D)";
-                case "D (Tempo Run)" -> "→ Use **Categoria A** (VO2max curto - 200m/400m)\n  Razão: Alternar com semana anterior (D→A)";
+                case "A (VO2max curto)" ->
+                        "→ Use **Categoria B** (VO2max longo - 3-5 min)\n  Razão: Alternar com semana anterior (A→B)";
+                case "B (VO2max longo)" ->
+                        "→ Use **Categoria C** (Threshold - 4-6 min)\n  Razão: Alternar com semana anterior (B→C)";
+                case "C (Threshold)" ->
+                        "→ Use **Categoria D** (Tempo Run - Z3)\n  Razão: Alternar com semana anterior (C→D)";
+                case "D (Tempo Run)" ->
+                        "→ Use **Categoria A** (VO2max curto - 200m/400m)\n  Razão: Alternar com semana anterior (D→A)";
                 case "E (Fartlek)" -> "→ Use **Categoria A** (VO2max curto)\n  Razão: Alternar com Fartlek (E→A)";
                 default -> "→ Use **Categoria A** (VO2max curto - 200m/400m)\n  Razão: Começar com base sólida";
             };
         } else {
             // Se semana atual teve intervalado, considerar incluir outra categoria
             recomendacao = switch (categoriaSemanaAtual) {
-                case "A (VO2max curto)" -> "→ Considerou **Categoria B** (VO2max longo) na próxima\n  Razão: Progressão natural (A→B)";
-                case "B (VO2max longo)" -> "→ Considerou **Categoria C** (Threshold) na próxima\n  Razão: Progressão natural (B→C)";
-                case "C (Threshold)" -> "→ Considerou **Categoria D** (Tempo Run) na próxima\n  Razão: Progressão natural (C→D)";
+                case "A (VO2max curto)" ->
+                        "→ Considerou **Categoria B** (VO2max longo) na próxima\n  Razão: Progressão natural (A→B)";
+                case "B (VO2max longo)" ->
+                        "→ Considerou **Categoria C** (Threshold) na próxima\n  Razão: Progressão natural (B→C)";
+                case "C (Threshold)" ->
+                        "→ Considerou **Categoria D** (Tempo Run) na próxima\n  Razão: Progressão natural (C→D)";
                 case "D (Tempo Run)" -> "→ Use **Categoria A** (VO2max curto)\n  Razão: Volta ao ciclo (D→A)";
                 case "E (Fartlek)" -> "→ Use **Categoria B** (VO2max longo)\n  Razão: Alternar após Fartlek (E→B)";
                 default -> "→ Use **Categoria A** (VO2max curto)\n  Razão: Recomendação padrão";
@@ -1553,8 +1556,8 @@ public class PlanoTreinoPromptBuilder {
 
         // Aviso 1: Mesma categoria repetida
         if (!categoriaSemanaAtual.equals("NENHUM") &&
-            !categoriaSemanaAtual.equals("Indeterminada") &&
-            categoriaSemanaAtual.equals(categoriaUltimaSemanab)) {
+                !categoriaSemanaAtual.equals("Indeterminada") &&
+                categoriaSemanaAtual.equals(categoriaUltimaSemanab)) {
             avisos.append(String.format("🟡 Mesma categoria (%s) em 2 semanas consecutivas\n", categoriaSemanaAtual));
             avisos.append("   → MUDAR para outra categoria esta semana\n\n");
         }
@@ -1581,7 +1584,7 @@ public class PlanoTreinoPromptBuilder {
     /**
      * Gera alertas de variabilidade de treinos (repetição de estímulos, gaps, etc)
      * para serem incluídos no prompt otimizado.
-     *
+     * <p>
      * Verifica:
      * 1. Tipos de treino não realizados há >14 dias
      * 2. Mesma categoria de intervalado repetida 2+ semanas
@@ -1661,9 +1664,9 @@ public class PlanoTreinoPromptBuilder {
         alertas.append("\n### Frequência de Treinos Intensivos\n");
         long treinosIntensivos = treinos.stream()
                 .filter(t -> t.getTipoTreino() != null &&
-                           (t.getTipoTreino().toString().contains("INTERVALADO") ||
-                            t.getTipoTreino().toString().contains("TEMPO_RUN") ||
-                            t.getTipoTreino().toString().contains("FARTLEK")))
+                        (t.getTipoTreino().toString().contains("INTERVALADO") ||
+                                t.getTipoTreino().toString().contains("TEMPO_RUN") ||
+                                t.getTipoTreino().toString().contains("FARTLEK")))
                 .count();
 
         long totalTreinos = treinos.size();
@@ -1730,10 +1733,10 @@ public class PlanoTreinoPromptBuilder {
 
             TreinoRealizado treinoIntervalado = treinos.stream()
                     .filter(t -> !t.getDataTreino().isBefore(inicioSem) &&
-                               !t.getDataTreino().isAfter(fimSemana) &&
-                               t.getTipoTreino() != null &&
-                               (t.getTipoTreino().toString().contains("INTERVALADO") ||
-                                t.getTipoTreino().toString().contains("FARTLEK")))
+                            !t.getDataTreino().isAfter(fimSemana) &&
+                            t.getTipoTreino() != null &&
+                            (t.getTipoTreino().toString().contains("INTERVALADO") ||
+                                    t.getTipoTreino().toString().contains("FARTLEK")))
                     .findFirst()
                     .orElse(null);
 
@@ -1955,13 +1958,13 @@ public class PlanoTreinoPromptBuilder {
      */
     private String gerarAlertasObrigatorios(Atleta atleta, PlanoMetaDados metaDados, LocalDate inicioSemana) {
         List<String> alertas = new ArrayList<>();
-        
+
         // Alertas críticos (segurança)
         Double tsb = metaDados != null ? metaDados.getTsbAtual() : null;
         Double rampRate = metaDados != null ? metaDados.getRampRateAtual() : null;
         Integer diasConsecutivos = metaDados != null ? metaDados.getDiasConsecutivosTreino() : null;
         Integer maxDiasConsecutivos = metaDados != null ? calcularMaxDiasConsecutivos(metaDados, atleta) : 5;
-        
+
         StringBuilder sb = new StringBuilder();
 
         // TSB crítico
@@ -1972,36 +1975,36 @@ public class PlanoTreinoPromptBuilder {
         } else if (tsb != null && tsb < -15) {
             alertas.add("🟡 FADIGA MODERADA: TSB " + String.format("%.1f", tsb) + " → Considerar treinos mais leves");
         }
-        
+
         // Ramp Rate crítico
         if (rampRate != null && rampRate > 10) {
             alertas.add("🔴 PROGRESSÃO PERIGOSA: Ramp Rate " + String.format("%.1f", rampRate) + " → REDUZIR VOLUME 20-30%");
         } else if (rampRate != null && rampRate > 8) {
             alertas.add("🟡 RAMP RATE ALTO: " + String.format("%.1f", rampRate) + " → Manter volume, não aumentar");
         }
-        
+
         // Dias consecutivos
         if (diasConsecutivos != null && diasConsecutivos >= maxDiasConsecutivos + 1) {
             alertas.add("🔴 EXCESSO DE DIAS CONSECUTIVOS: " + diasConsecutivos + " dias → DESCANSO OBRIGATÓRIO IMEDIATO");
         } else if (diasConsecutivos != null && diasConsecutivos == maxDiasConsecutivos) {
             alertas.add("🟡 NO LIMITE: " + diasConsecutivos + " dias consecutivos → Próximo treino DEVE ser descanso");
         }
-        
+
         // Lesões ativas
         if (atleta.getTemLesao() != null && atleta.getTemLesao()) {
-            alertas.add("🔴 LESÃO ATIVA: " + (atleta.getDescricaoLesao() != null ? atleta.getDescricaoLesao() : "Lesão reportada") + 
-                       " → Máximo Z2, sem intervalados");
+            alertas.add("🔴 LESÃO ATIVA: " + (atleta.getDescricaoLesao() != null ? atleta.getDescricaoLesao() : "Lesão reportada") +
+                    " → Máximo Z2, sem intervalados");
         }
-        
+
         // Análise de variabilidade - estímulos ausentes
         LocalDate hoje = LocalDate.now();
         LocalDate quatroSemanas = hoje.minusWeeks(4);
         List<TreinoRealizado> treinos = treinoRealizadoRepository
                 .findByAtletaAndDataTreinoGreaterThanEqualOrderByDataTreinoDesc(atleta, quatroSemanas);
-        
+
         Map<String, LocalDate> ultimaDataPorTipo = extrairUltimaDataPorTipo(treinos);
         List<String> tiposAusentes = Arrays.asList("FARTLEK", "TEMPO_RUN", "INTERVALADO");
-        
+
         for (String tipo : tiposAusentes) {
             if (!ultimaDataPorTipo.containsKey(tipo)) {
                 alertas.add("🟡 " + tipo + ": NUNCA realizado → CONSIDERAR INCLUSÃO");
@@ -2012,7 +2015,7 @@ public class PlanoTreinoPromptBuilder {
                 }
             }
         }
-        
+
         // RPE médio alto (últimos treinos)
         List<TreinoRealizado> treinosComRpe = treinos.stream()
                 .filter(t -> t.getPercepcaoEsforco() != null)
@@ -2038,13 +2041,13 @@ public class PlanoTreinoPromptBuilder {
         } else if (rpeMedia >= 7.5 && treinosComRpe.size() > 0) {
             alertas.add("🟡 RPE MÉDIO ALTO: " + String.format("%.1f", rpeMedia) + "/10 → REDUZIR INTENSIDADE ESTA SEMANA");
         }
-        
+
         // Semana regenerativa recomendada
         Integer semanasProgressao = metaDados != null ? metaDados.getSemanasProgressaoContinua() : null;
         if (semanasProgressao != null && semanasProgressao >= 4) {
             alertas.add("🟡 " + semanasProgressao + " semanas de progressão → SEMANA REGENERATIVA RECOMENDADA");
         }
-        
+
         if (alertas.isEmpty()) {
             return "✅ **NENHUM ALERTA CRÍTICO** - Atleta em condições normais de treino\n\n";
         }
@@ -2065,13 +2068,13 @@ public class PlanoTreinoPromptBuilder {
     private String gerarHierarquiaDecisao(PlanoMetaDados metaDados, Atleta atleta) {
         StringBuilder sb = new StringBuilder();
         sb.append("## 🎯 HIERARQUIA DE DECISÃO (resolver conflitos nesta ordem)\n\n");
-        
+
         sb.append("**NÍVEL 1 - SEGURANÇA (sempre vence):**\n");
         sb.append("- Se RPE médio > 7.5 → FORÇAR semana leve\n");
         sb.append("- Se TSB < -25 → APENAS Z1-Z2, máximo 3 treinos\n");
         sb.append("- Se lesão ativa → máximo Z2, sem intervalados\n");
         sb.append("- Se dias consecutivos >= limite → DESCANSO OBRIGATÓRIO\n\n");
-        
+
         sb.append("**NÍVEL 2 - RECUPERAÇÃO:**\n");
         Double tsb = metaDados != null ? metaDados.getTsbAtual() : null;
         if (tsb != null && tsb < -15) {
@@ -2082,26 +2085,26 @@ public class PlanoTreinoPromptBuilder {
             sb.append("- " + semanas + " semanas progressão → semana regenerativa (-40-50% volume)\n");
         }
         sb.append("- Se recomendação = regenerativa → REDUZIR volume 40-50%\n\n");
-        
+
         sb.append("**NÍVEL 3 - VARIABILIDADE:**\n");
         sb.append("- Incluir estímulos ausentes há >14 dias\n");
         sb.append("- Alternar categorias de intervalado (não repetir 2 semanas seguidas)\n");
         sb.append("- Se conflitar com N1/N2 → usar versão LEVE do estímulo\n\n");
-        
+
         sb.append("**NÍVEL 4 - OBJETIVO:**\n");
         sb.append("- Alinhar treino-chave com meta do atleta\n");
         sb.append("- Respeitar fase de periodização (BASE/BUILD/ESPECÍFICO/TAPER)\n\n");
-        
+
         return sb.toString();
     }
-    
+
     /**
      * Gera seção de restrições e histórico de lesões
      */
     private String formatarRestricoesLesoes(Atleta atleta) {
         StringBuilder sb = new StringBuilder();
         sb.append("## 🚨 RESTRIÇÕES E HISTÓRICO DE SAÚDE\n\n");
-        
+
         if (atleta.getTemLesao() != null && atleta.getTemLesao()) {
             sb.append("**LESÃO ATIVA:**\n");
             if (atleta.getDescricaoLesao() != null) {
@@ -2113,11 +2116,11 @@ public class PlanoTreinoPromptBuilder {
             }
             sb.append("- **REGRAS:** Máximo Z2, sem intervalados, sem longos >60min\n\n");
         }
-        
+
         if (atleta.getHistoricoLesoes() != null && !atleta.getHistoricoLesoes().trim().isEmpty()) {
             sb.append("**HISTÓRICO DE LESÕES:**\n");
             sb.append(atleta.getHistoricoLesoes()).append("\n\n");
-            
+
             // Adicionar regras preventivas baseadas no histórico
             String historicoLower = atleta.getHistoricoLesoes().toLowerCase();
             if (historicoLower.contains("canelite") || historicoLower.contains("shin splint")) {
@@ -2131,22 +2134,22 @@ public class PlanoTreinoPromptBuilder {
             }
             sb.append("\n");
         }
-        
+
         if ((atleta.getTemLesao() == null || !atleta.getTemLesao()) &&
-            (atleta.getHistoricoLesoes() == null || atleta.getHistoricoLesoes().trim().isEmpty())) {
+                (atleta.getHistoricoLesoes() == null || atleta.getHistoricoLesoes().trim().isEmpty())) {
             sb.append("✅ Nenhuma lesão ativa ou histórico de lesões reportado\n\n");
         }
-        
+
         return sb.toString();
     }
-    
+
     /**
      * Valida e adiciona fallbacks para dados fisiológicos inválidos/zerados
      */
     private String validarEFallbacksDadosFisiologicos(Atleta atleta) {
         StringBuilder fallbacks = new StringBuilder();
         boolean temProblema = false;
-        
+
         // Validar pace limiar
         if (atleta.getPaceLimiar() == null || atleta.getPaceLimiar().compareTo(BigDecimal.ZERO) == 0) {
             temProblema = true;
@@ -2155,13 +2158,13 @@ public class PlanoTreinoPromptBuilder {
             fallbacks.append("  - Pace estimado: ").append(paceEstimado).append(" min/km\n");
             fallbacks.append("  - **USAR APENAS FC para prescrição, não pace\n");
         }
-        
+
         // Validar zonas de pace (verificar se estão zeradas no formatarDadosFisiologicos)
         if (atleta.getPaceLimiar() == null || atleta.getPaceLimiar().compareTo(BigDecimal.ZERO) == 0) {
             temProblema = true;
             fallbacks.append("⚠️ **Zonas de pace inutilizáveis** → Usar apenas FC (Z1-Z5 por percentual FCmax)\n");
         }
-        
+
         // Validar FC limiar
         if (atleta.getFcLimiarCalculada() == null || atleta.getFcLimiarCalculada() <= 0) {
             temProblema = true;
@@ -2174,7 +2177,7 @@ public class PlanoTreinoPromptBuilder {
                 fallbacks.append("  - Estimar FC Limiar: ~150-160 bpm\n");
             }
         }
-        
+
         if (temProblema) {
             StringBuilder sb = new StringBuilder();
             sb.append("## ⚠️ FALLBACKS PARA DADOS INCOMPLETOS\n\n");
@@ -2185,10 +2188,10 @@ public class PlanoTreinoPromptBuilder {
             sb.append("- Adicionar na justificativa: \"Zonas estimadas - recomenda-se teste de limiar\"\n\n");
             return sb.toString();
         }
-        
+
         return "";
     }
-    
+
     /**
      * Estima pace limiar baseado no nível de experiência
      */
@@ -2196,7 +2199,7 @@ public class PlanoTreinoPromptBuilder {
         if (atleta.getNivelExperiencia() == null) {
             return "5:30-6:00";
         }
-        
+
         return switch (atleta.getNivelExperiencia()) {
             case INICIANTE -> "6:30-7:00";
             case INTERMEDIARIO -> "5:30-6:00";
@@ -2204,27 +2207,27 @@ public class PlanoTreinoPromptBuilder {
             case ELITE -> "3:30-4:30";
         };
     }
-    
+
     /**
      * Garante que TSS alvo está alinhado com recomendações de regeneração
      */
     private int calcularTssAlvoAjustado(PlanoMetaDados metaDados, Atleta atleta) {
         int tssAlvoBase = calcularTssAlvo(metaDados);
-        
+
         // Verificar se há recomendação de semana regenerativa
         Integer semanasProgressao = metaDados != null ? metaDados.getSemanasProgressaoContinua() : null;
         Double tsb = metaDados != null ? metaDados.getTsbAtual() : null;
-        
+
         // Se 4+ semanas de progressão OU TSB muito negativo → reduzir
         if ((semanasProgressao != null && semanasProgressao >= 4) || (tsb != null && tsb < -25)) {
             return (int) Math.round(tssAlvoBase * 0.55); // Redução de 45%
         } else if (tsb != null && tsb < -15) {
             return (int) Math.round(tssAlvoBase * 0.75); // Redução de 25%
         }
-        
+
         return tssAlvoBase;
     }
-    
+
     /**
      * Constrói o prompt otimizado usando o novo template plano-treino-otimizado-claude.txt
      * Orquestra todos os métodos de análise pré-planejamento para criar um contexto completo
@@ -2233,19 +2236,19 @@ public class PlanoTreinoPromptBuilder {
 
         // 1. Dados básicos do atleta
         var provas = formatarProvas(atleta, provaAlvo);
-        
+
         // 2. ALERTAS OBRIGATÓRIOS NO TOPO (prioridade máxima)
         String alertasObrigatorios = gerarAlertasObrigatorios(atleta, metaDados, inicioSemana);
-        
+
         // 3. HIERARQUIA DE DECISÃO (para resolver conflitos)
         String hierarquiaDecisao = gerarHierarquiaDecisao(metaDados, atleta);
-        
+
         // 4. RESTRIÇÕES E LESÕES
         String restricoesLesoes = formatarRestricoesLesoes(atleta);
-        
+
         // 5. VALIDAÇÃO E FALLBACKS DE DADOS
         String fallbacksDados = validarEFallbacksDadosFisiologicos(atleta);
-        
+
         // 6. Análises de pré-planejamento
         var analiseEstimulos = analisarEstimulosRecentes(atleta, inicioSemana);
         var volumeUltimas3Semanas = calcularVolumeMedioUltimasTresSemanas(atleta);
@@ -2274,7 +2277,7 @@ public class PlanoTreinoPromptBuilder {
 
         // ETAPA 5: Análise de estímulos recentes
         historicoCompleto.append(analiseEstimulos).append("\n\n");
-        
+
         // ETAPA 6: Volume das últimas 3 semanas (consolidado)
         historicoCompleto.append("## 📈 VOLUME MÉDIO DAS ÚLTIMAS 3 SEMANAS\n");
         historicoCompleto.append(String.format("- **Volume Médio:** %.1f km\n", volumeUltimas3Semanas.get("volumeMedioKm")));
@@ -2282,11 +2285,11 @@ public class PlanoTreinoPromptBuilder {
         historicoCompleto.append(String.format("- **Semana Mais Recente:** %.1f km\n", volumeUltimas3Semanas.get("volumeSemanaMaisRecente")));
         historicoCompleto.append(String.format("- **Semana Anterior:** %.1f km\n", volumeUltimas3Semanas.get("volumeSemanaAnterior")));
         historicoCompleto.append(String.format("- **2 Semanas Atrás:** %.1f km\n\n", volumeUltimas3Semanas.get("volumeDuasSemanas")));
-        
+
         // ETAPA 7: Matriz de variabilidade
         historicoCompleto.append(matrizVariabilidade).append("\n");
         historicoCompleto.append(alertasVariabilidade).append("\n");
-        
+
         // ETAPA 8: Instruções de recuperação
         historicoCompleto.append(instrucoesRecuperacao).append("\n\n");
 
@@ -2297,14 +2300,14 @@ public class PlanoTreinoPromptBuilder {
         // ETAPA 10: METAS CALCULADAS PARA ESTA SEMANA (ajustadas e consistentes)
         int tssAlvo = calcularTssAlvoAjustado(metaDados, atleta);
         int maxDiasConsecutivos = calcularMaxDiasConsecutivos(metaDados, atleta);
-        
+
         // Determinar tipo de semana baseado nas recomendações
         String tipoSemana = determinarTipoSemana(metaDados, atleta, tssAlvo);
-        
+
         historicoCompleto.append("## 🎯 METAS PARA ESTA SEMANA\n\n");
         historicoCompleto.append(String.format("**Tipo de Semana:** %s\n\n", tipoSemana));
         historicoCompleto.append(String.format("- **TSS Alvo Semanal:** %d pontos", tssAlvo));
-        
+
         // Explicar se houve ajuste por regeneração
         Double tsb = metaDados != null ? metaDados.getTsbAtual() : null;
         int tssAlvoBase = calcularTssAlvo(metaDados);
@@ -2313,18 +2316,18 @@ public class PlanoTreinoPromptBuilder {
             historicoCompleto.append(String.format(" (reduzido %d%% por semana regenerativa)", reducaoPercentual));
         }
         historicoCompleto.append("\n");
-        
+
         historicoCompleto.append(String.format("  - Baseado em CTL atual: %.1f\n", metaDados != null && metaDados.getCtlAtual() != null ? metaDados.getCtlAtual() : 0.0));
         historicoCompleto.append(String.format("  - Ajustado por TSB: %.1f (%s)\n",
-            tsb != null ? tsb : 0.0,
-            metaDados != null && metaDados.getInterpretacaoTsb() != null ? metaDados.getInterpretacaoTsb() : "Normal"));
+                tsb != null ? tsb : 0.0,
+                metaDados != null && metaDados.getInterpretacaoTsb() != null ? metaDados.getInterpretacaoTsb() : "Normal"));
         historicoCompleto.append(String.format("  - Ramp Rate atual: %.1f pts/sem (%s)\n\n",
-            metaDados != null && metaDados.getRampRateAtual() != null ? metaDados.getRampRateAtual() : 0.0,
-            interpretarRampRate(metaDados != null ? metaDados.getRampRateAtual() : null)));
+                metaDados != null && metaDados.getRampRateAtual() != null ? metaDados.getRampRateAtual() : 0.0,
+                interpretarRampRate(metaDados != null ? metaDados.getRampRateAtual() : null)));
 
         historicoCompleto.append(String.format("- **Máximo de Dias Consecutivos Recomendado:** %d dias\n", maxDiasConsecutivos));
         historicoCompleto.append(String.format("  - Atual: %d dias consecutivos\n",
-            metaDados != null && metaDados.getDiasConsecutivosTreino() != null ? metaDados.getDiasConsecutivosTreino() : 0));
+                metaDados != null && metaDados.getDiasConsecutivosTreino() != null ? metaDados.getDiasConsecutivosTreino() : 0));
         historicoCompleto.append(String.format("  - Baseado em TSB, experiência e histórico\n\n"));
 
         // 8. Fallbacks para dados nulos
@@ -2333,7 +2336,7 @@ public class PlanoTreinoPromptBuilder {
 
         // 9. Montar histórico completo com todas as seções na ordem correta
         StringBuilder historicoFinal = new StringBuilder();
-        
+
         // Ordem prioritária: alertas primeiro, depois dados, depois regras
         historicoFinal.append(alertasObrigatorios);
         historicoFinal.append(hierarquiaDecisao);
@@ -2394,7 +2397,7 @@ public class PlanoTreinoPromptBuilder {
             // Filtrar treinos desta semana
             List<TreinoRealizado> treinosSemana = treinos.stream()
                     .filter(t -> !t.getDataTreino().isBefore(inicioSemana) &&
-                               !t.getDataTreino().isAfter(fimSemana))
+                            !t.getDataTreino().isAfter(fimSemana))
                     .collect(Collectors.toList());
 
             // Volume total da semana
@@ -2454,7 +2457,7 @@ public class PlanoTreinoPromptBuilder {
         } else if (semanaMaisRecente < semanaAnterior && semanaAnterior < duasSemanas) {
             tendencia = "DECRESCENTE";
         } else if (Math.abs(semanaMaisRecente - semanaAnterior) > 10 ||
-                   Math.abs(semanaAnterior - duasSemanas) > 10) {
+                Math.abs(semanaAnterior - duasSemanas) > 10) {
             tendencia = "VARIÁVEL";
         } else {
             tendencia = "ESTÁVEL";

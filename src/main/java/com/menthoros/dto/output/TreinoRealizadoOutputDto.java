@@ -8,6 +8,7 @@ import com.menthoros.enums.TreinoExecucaoStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 @Schema(description = "Dados de saída de um treino realizado")
@@ -101,5 +102,10 @@ public record TreinoRealizadoOutputDto(
         TreinoExecucaoStatus status,
 
         @Schema(description = "ID externo (referência em sistema de terceiros)", example = "garmin-12345678")
-        String externalId
+        String externalId,
+
+        // ===== ETAPAS REALIZADAS =====
+
+        @Schema(description = "Etapas detalhadas do treino realizado")
+        List<EtapaRealizadaOutputDto> etapasRealizadas
 ) {}

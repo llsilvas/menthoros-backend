@@ -878,7 +878,7 @@ public class TsbServiceImpl implements TsbService {
         int maiorSequencia = 1;
         int sequenciaAtual = 1;
 
-        for (int i = 0; i < dateList.size(); i++) {
+        for (int i = 1; i < dateList.size(); i++) {
             if(dateList.get(i).equals(dateList.get(i -1).plusDays(1))){
                 sequenciaAtual++;
                 maiorSequencia = Math.max(maiorSequencia, sequenciaAtual);

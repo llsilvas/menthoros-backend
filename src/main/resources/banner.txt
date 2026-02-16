@@ -1,0 +1,20 @@
+
+   \  |               |    |
+  |\/ |   _ \  __ \   __|  __ \    _ \    __|  _ \    __|
+  |   |   __/  |   |  |    | | |  (   |  |    (   | \__ \
+ _|  _| \___| _|  _| \__| _| |_| \___/  _|   \___/  ____/
+
+${AnsiColor.BRIGHT_GREEN}╔══════════════════════════════════════════════════════╗
+${AnsiColor.BRIGHT_GREEN}║                                                      ║
+${AnsiColor.BRIGHT_GREEN}║   M E N T H O R O S   -   P L A T F O R M A   D E    ║
+${AnsiColor.BRIGHT_GREEN}║                                                      ║
+${AnsiColor.BRIGHT_GREEN}║   T R E I N A M E N T O   P E R S O N A L I Z A D O  ║
+${AnsiColor.BRIGHT_GREEN}║                                                      ║
+${AnsiColor.BRIGHT_GREEN}╚══════════════════════════════════════════════════════╝
+${AnsiColor.BRIGHT_YELLOW}
+${AnsiColor.BRIGHT_YELLOW}      Application Name: ${application.title}                                            Application Version: ${application.formatted-version}
+${AnsiColor.BRIGHT_YELLOW}  🏃‍♂️  Powered by Spring Boot ${spring-boot.version}
+${AnsiColor.BRIGHT_YELLOW}  🎯  Inteligência Artificial para Treinos
+${AnsiColor.BRIGHT_YELLOW}  💪  Personalização Avançada
+${AnsiColor.BRIGHT_YELLOW}
+${AnsiColor.BRIGHT_BLACK}   Design By Leandro Silva

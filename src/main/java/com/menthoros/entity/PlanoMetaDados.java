@@ -149,10 +149,8 @@ public class PlanoMetaDados {
         alertaDiasConsecutivos = (diasConsecutivosTreino != null &&
                 diasConsecutivosTreino >= 5);
 
-        // Combinar alertas
-        alertaNecessitaDescanso = alertaSobrecarga ||
-                alertaDiasConsecutivos ||
-                (tsbAtual != null && tsbAtual < -35);
+        // Combinar alertas (TSB < -35 já está coberto por alertaSobrecarga que é TSB < -30)
+        alertaNecessitaDescanso = alertaSobrecarga || alertaDiasConsecutivos;
 
         // Gerar mensagem
         mensagemAlerta = gerarMensagemAlerta();
@@ -190,7 +188,7 @@ public class PlanoMetaDados {
         if (Boolean.TRUE.equals(alertaSobrecarga) && Boolean.TRUE.equals(alertaRampAlto)) {
             this.statusGeral = "FADIGA CRÍTICA + PROGRESSÃO RÁPIDA";
         }
-        // Prioridade 2: Fadiga crítica
+        // Prioridade 2: Fadiga crítica (TSB < -35)
         else if (tsbAtual != null && tsbAtual < -35) {
             this.statusGeral = "FADIGA CRÍTICA";
         }
@@ -198,7 +196,7 @@ public class PlanoMetaDados {
         else if (Boolean.TRUE.equals(alertaRampAlto)) {
             this.statusGeral = "PROGRESSÃO MUITO RÁPIDA";
         }
-        // Prioridade 4: Sobrecarga
+        // Prioridade 4: Sobrecarga (TSB < -30)
         else if (Boolean.TRUE.equals(alertaSobrecarga)) {
             this.statusGeral = "FADIGA ALTA";
         }
@@ -206,20 +204,32 @@ public class PlanoMetaDados {
         else if (diasConsecutivosTreino != null && diasConsecutivosTreino >= 6) {
             this.statusGeral = "MUITOS DIAS CONSECUTIVOS";
         }
-        // Prioridade 6: Forma ideal
-        else if (tsbAtual != null && tsbAtual >= 5 && tsbAtual <= 15) {
-            this.statusGeral = "FORMA IDEAL";
-        }
-        // Prioridade 7: Fadiga moderada
+        // Prioridade 6: Fadiga moderada (TSB -30 a -20)
         else if (tsbAtual != null && tsbAtual < -20) {
             this.statusGeral = "FADIGA MODERADA";
         }
-        // Prioridade 8: Recuperando
-        else if (tsbAtual != null && tsbAtual >= 0 && tsbAtual < 5) {
+        // Prioridade 7: Acumulando fadiga (TSB -20 a -10)
+        else if (tsbAtual != null && tsbAtual < -10) {
+            this.statusGeral = "ACUMULANDO FADIGA";
+        }
+        // Prioridade 8: Fatigado (TSB -10 a 0)
+        else if (tsbAtual != null && tsbAtual < 0) {
+            this.statusGeral = "FATIGADO";
+        }
+        // Prioridade 9: Recuperando (TSB 0 a 5)
+        else if (tsbAtual != null && tsbAtual < 5) {
             this.statusGeral = "RECUPERANDO";
         }
-        // Prioridade 9: Muito descansado
-        else if (tsbAtual != null && tsbAtual > 20) {
+        // Prioridade 10: Forma ideal (TSB 5 a 15)
+        else if (tsbAtual != null && tsbAtual <= 15) {
+            this.statusGeral = "FORMA IDEAL";
+        }
+        // Prioridade 11: Descansado (TSB 15 a 25)
+        else if (tsbAtual != null && tsbAtual <= 25) {
+            this.statusGeral = "DESCANSADO";
+        }
+        // Prioridade 12: Muito descansado (TSB > 25)
+        else if (tsbAtual != null) {
             this.statusGeral = "MUITO DESCANSADO";
         }
         // Default: Normal
@@ -256,15 +266,25 @@ public class PlanoMetaDados {
             rec.append("Considerar semana regenerativa (reduzir volume em 40-50%) para assimilação. ");
         }
 
-        // Recomendações positivas se não houver alertas
-        if (rec.length() == 0) {
-            if (tsbAtual != null && tsbAtual >= 5 && tsbAtual <= 15) {
+        // Recomendações por faixa de TSB (quando não há alertas críticos)
+        if (rec.length() == 0 && tsbAtual != null) {
+            if (tsbAtual < -20) {
+                rec.append("⚠️ Fadiga moderada acumulada. Reduzir intensidade e priorizar recuperação entre sessões. ");
+            } else if (tsbAtual < -10) {
+                rec.append("Fadiga em acumulação. Evitar sessões intensas consecutivas e reforçar recuperação. ");
+            } else if (tsbAtual < 0) {
+                rec.append("Fadiga normal de treinamento. Respeitar intervalos de recuperação entre sessões intensas. ");
+            } else if (tsbAtual < 5) {
+                rec.append("Em fase de recuperação. Bom momento para treinos de base e consolidação. ");
+            } else if (tsbAtual <= 15) {
                 rec.append("✅ Condições ideais para treinos intensos ou provas importantes. ");
-            } else if (tsbAtual != null && tsbAtual > 20) {
-                rec.append("Considerar aumentar volume ou incluir sessão de qualidade. ");
+            } else if (tsbAtual <= 25) {
+                rec.append("Descansado. Considerar incluir sessão de qualidade para manter adaptações. ");
             } else {
-                rec.append("Continuar treinamento normalmente, respeitando os princípios de progressão. ");
+                rec.append("Muito descansado. Risco de perda de adaptações. Retomar volume gradualmente. ");
             }
+        } else if (rec.length() == 0) {
+            rec.append("Continuar treinamento normalmente, respeitando os princípios de progressão. ");
         }
 
         this.recomendacaoTreino = rec.length() > 0 ? rec.toString().trim() : null;
@@ -272,12 +292,12 @@ public class PlanoMetaDados {
 
     @Transient
     public boolean estaEmFormaIdeal() {
-        return tsbAtual != null && tsbAtual >= 5 && tsbAtual <= 10;
+        return tsbAtual != null && tsbAtual >= 5 && tsbAtual <= 15;
     }
 
     @Transient
     public boolean estaMuitoFatigado() {
-        return tsbAtual != null && tsbAtual < -25;
+        return tsbAtual != null && tsbAtual < -30;
     }
 
     @Transient
@@ -288,7 +308,8 @@ public class PlanoMetaDados {
         if (tsbAtual < -10) return "Acumulando fadiga";
         if (tsbAtual < 0) return "Fatigado";
         if (tsbAtual < 5) return "Recuperando";
-        if (tsbAtual < 15) return "Forma ideal";
+        if (tsbAtual <= 15) return "Forma ideal";
+        if (tsbAtual <= 25) return "Descansado";
         return "Muito descansado";
     }
 
@@ -387,5 +408,12 @@ public class PlanoMetaDados {
         }
 
         return alertas;
+    }
+
+    public double getTreinosPorSemanaMedio() {
+        if (treinosPorSemanaMedio == null || treinosPorSemanaMedio == 0) {
+            return 0;
+        }
+        return treinosPorSemanaMedio;
     }
 }

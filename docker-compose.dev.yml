@@ -8,8 +8,7 @@ services:
       # Debug mode
       SPRING_PROFILES_ACTIVE: dev,docker
       # Database
-      DB_HOST: menthoros-db
-      DB_NAME: menthoros-db
+      DB_HOST: localhost
       DB_USER: menthoros
       DB_PASSWORD: menthoros123
       SPRING_JPA_SHOW_SQL: true

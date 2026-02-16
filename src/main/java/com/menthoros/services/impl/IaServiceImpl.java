@@ -570,7 +570,7 @@ public class IaServiceImpl implements IaService {
             log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} tem apenas {} etapas (mínimo 8)",
                     atletaId, treino.tipoTreino(), etapas.size());
             throw new LLMException(String.format(
-                    "Treino %s inválido: gerou apenas %d etapas (mínimo 8 para intervalados)",
+                    "Treino %s inválido: gerou apenas %d etapas (mínimo 6 para intervalados)",
                     treino.tipoTreino(), etapas.size()
             ));
         }

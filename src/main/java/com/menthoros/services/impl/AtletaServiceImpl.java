@@ -4,14 +4,12 @@ import com.menthoros.dto.input.AtletaInputDto;
 import com.menthoros.dto.output.AtletaOutputDto;
 import com.menthoros.entity.Atleta;
 import com.menthoros.enums.AtletaStatus;
+import com.menthoros.exception.ResourceNotFoundException;
 import com.menthoros.mapper.AtletaMapper;
 import com.menthoros.repository.AtletaRepository;
 import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.services.AtletaService;
-import com.menthoros.exception.ResourceNotFoundException;
-import com.menthoros.services.EmbeddingService;
 import com.menthoros.services.TsbService;
-import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
 import org.springframework.cache.annotation.CacheEvict;
@@ -19,16 +17,16 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+
 @Service
 @RequiredArgsConstructor
 public class AtletaServiceImpl implements AtletaService {
 
     private final AtletaRepository atletaRepository;
-    private final EmbeddingService embeddingService;
     private final JdbcTemplate jdbcTemplate;
     private final AtletaMapper atletaMapper;
     private final PlanoMetadadosRepository planoMetaDadosRepository;
@@ -45,9 +43,9 @@ public class AtletaServiceImpl implements AtletaService {
     @Transactional
     @Override
     @Caching(evict = {
-        @CacheEvict(value = "atletas", key = "#id"),
-        @CacheEvict(value = "atletas-list", allEntries = true),
-        @CacheEvict(value = "metadados-atleta", key = "#id")
+            @CacheEvict(value = "atletas", key = "#id"),
+            @CacheEvict(value = "atletas-list", allEntries = true),
+            @CacheEvict(value = "metadados-atleta", key = "#id")
     })
     public AtletaOutputDto updateAtleta(UUID id, AtletaInputDto atletaInputDto) {
         Atleta atleta = atletaRepository.findById(id)
@@ -60,9 +58,9 @@ public class AtletaServiceImpl implements AtletaService {
 
     @Override
     @Caching(evict = {
-        @CacheEvict(value = "atletas", key = "#id"),
-        @CacheEvict(value = "atletas-list", allEntries = true),
-        @CacheEvict(value = "metadados-atleta", key = "#id")
+            @CacheEvict(value = "atletas", key = "#id"),
+            @CacheEvict(value = "atletas-list", allEntries = true),
+            @CacheEvict(value = "metadados-atleta", key = "#id")
     })
     public void deleteAtleta(UUID id) {
         Atleta atleta = atletaRepository.findById(id)
@@ -81,14 +79,6 @@ public class AtletaServiceImpl implements AtletaService {
         Hibernate.initialize(atleta.getProvas());
         Hibernate.initialize(atleta.getDiasDisponiveis());
         return atletaMapper.toOutputDto(atleta);
-    }
-
-    @Override
-    @CacheEvict(value = "embeddings", key = "#atletaId")
-    public void atualizarEmbedding(UUID atletaId, List<Float> vetor) {
-        String vetorFormatado = vetor.toString().replace("[", "[").replace("]", "]");
-        String sql = "UPDATE tb_atleta SET embedding = ?::vector WHERE id = ?";
-        jdbcTemplate.update(sql, vetorFormatado, atletaId);
     }
 
     @Override

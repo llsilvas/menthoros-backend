@@ -50,48 +50,51 @@ services:
       context: .
       dockerfile: docker/Dockerfile.dev
     container_name: menthoros-app
-    environment:
-      # Database
-      DB_HOST: postgres
-      DB_NAME: menthoros-db
-      DB_USER: menthoros
-      DB_PASSWORD: menthoros123
-      
-      # JPA/Hibernate
-      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
-      SPRING_JPA_SHOW_SQL: false
-      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: false
-      
-      # Flyway
-      SPRING_FLYWAY_ENABLED: true
-      SPRING_FLYWAY_BASELINE_ON_MIGRATE: true
-      
-      # Cache (Redis)
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: 6379
-      SPRING_CACHE_TYPE: redis
-      
-      # AI Service
-      SPRING_AI_OPENAI_API_KEY: ${OPENAI_API_KEY}
-      SPRING_AI_OPENAI_CHAT_MODEL: gpt-4o-mini
-      SPRING_AI_OPENAI_EMBEDDING_MODEL: text-embedding-3-small
-      
-      # Profile
-      SPRING_PROFILES_ACTIVE: docker,dev
+
+    env_file:
+      - .env
+#    environment:
+#      # Database
+#      DB_HOST: localhost
+#      DB_NAME: menthoros-db
+#      DB_USER: menthoros
+#      DB_PASSWORD: menthoros123
+#
+#      # JPA/Hibernate
+#      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+#      SPRING_JPA_SHOW_SQL: false
+#      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: false
+#
+#      # Flyway
+#      SPRING_FLYWAY_ENABLED: true
+#      SPRING_FLYWAY_BASELINE_ON_MIGRATE: true
+#
+#      # Cache (Redis)
+#      SPRING_DATA_REDIS_HOST: redis
+#      SPRING_DATA_REDIS_PORT: 6379
+#      SPRING_CACHE_TYPE: redis
+#
+#      # AI Service
+#      SPRING_AI_OPENAI_API_KEY: ${OPENAI_API_KEY}
+#      SPRING_AI_OPENAI_CHAT_MODEL: gpt-4o-mini
+#      SPRING_AI_OPENAI_EMBEDDING_MODEL: text-embedding-3-small
+#
+#      # Profile
+#      SPRING_PROFILES_ACTIVE: docker,dev
       
       # JVM Settings
-      JAVA_OPTS: >-
-        -XX:+UseContainerSupport
-        -XX:MaxRAMPercentage=75.0
-        -XX:+UseG1GC
-        -XX:+UseStringDeduplication
-        -Djava.security.egd=file:/dev/./urandom
-        -Dserver.port=8099
+#      JAVA_OPTS: >-
+#        -XX:+UseContainerSupport
+#        -XX:MaxRAMPercentage=75.0
+#        -XX:+UseG1GC
+#        -XX:+UseStringDeduplication
+#        -Djava.security.egd=file:/dev/./urandom
+#        -Dserver.port=8099
     ports:
       - "8099:8099"
     depends_on:
-      postgres:
-        condition: service_healthy
+#      postgres:
+#        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
