@@ -12,6 +12,9 @@ import java.util.List;
 @Builder
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record PlanoSemanalOutputDto(
+
+        String id,
+
         @Schema(description = "Data de início da semana", example = "2024-01-15")
         LocalDate semanaInicio,
 
