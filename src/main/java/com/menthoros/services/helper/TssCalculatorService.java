@@ -110,12 +110,12 @@ public class TssCalculatorService {
         Atleta atleta = treino.getAtleta();
 
         // Validar dados necessários
-        if (atleta.getFcMaxima() == null || atleta.getFcRepouso() == null) {
+        if (atleta.getFcMaximaCalculada() == null || atleta.getFcRepouso() == null) {
             log.warn("Atleta {} sem FC máxima/repouso configurada", atleta.getId());
             return calcularTssRpe(treino);
         }
 
-        Integer fcMax = atleta.getFcMaxima();
+        Integer fcMax = atleta.getFcMaximaCalculada();
         Integer fcRepouso = atleta.getFcRepouso();
         Integer fcLimiar = atleta.getFcLimiar() != null
                 ? atleta.getFcLimiar()
