@@ -10,15 +10,20 @@ import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.repository.TreinoRealizadoRepository;
 import com.menthoros.services.TsbService;
 import com.menthoros.services.helper.TssCalculatorService;
+import com.menthoros.services.prompt.MetricasPromptFormatter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.TreeMap;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -31,6 +36,7 @@ public class TsbServiceImpl implements TsbService {
     private final AtletaRepository atletaRepository;
     private final TssCalculatorService tssCalculatorService;
     private final MetricasAlertaService metricasAlertaService;
+    private MetricasPromptFormatter metricasPromptFormatter;
 
     private static final int CTL_TIME_CONSTANT = 42;
     private static final int ATL_TIME_CONSTANT = 7;
@@ -211,6 +217,7 @@ public class TsbServiceImpl implements TsbService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "MetaDados não encontrado para atleta: " + atletaId));
 
+
         metaDados.setCtlAtual(metricas.getCtl());
         metaDados.setAtlAtual(metricas.getAtl());
         metaDados.setTsbAtual(metricas.getTsb());
@@ -222,8 +229,8 @@ public class TsbServiceImpl implements TsbService {
         metaDados.setDiasConsecutivosTreino(
                 contarDiasConsecutivosTreino(atletaId, metricas.getData(), hojeTemTreino));
 
-        // Analisar métricas e aplicar alertas/status/recomendação
-        metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados));
+        // Analisar métricas e aplicar alertas/status/recomendação (com nível de experiência para thresholds adaptativos)
+        metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados, metricas.getAtleta().getNivelExperiencia()));
 
         planoMetaDadosRepository.save(metaDados);
     }
@@ -321,6 +328,9 @@ public class TsbServiceImpl implements TsbService {
 
             // 4. Recalcular período com tracking de progresso
             recalcularPeriodoComProgresso(atletaId, dataInicio, dataFim);
+
+            // 5. Recalcular progressão contínua de semanas com base nos treinos realizados
+            recalcularSemanasProgressao(atletaId);
 
             log.info("✅ Histórico recalculado com sucesso para atleta {}", atletaId);
 
@@ -462,6 +472,74 @@ public class TsbServiceImpl implements TsbService {
             case AVANCADO -> 7;        // Padrão clássico
             case ELITE -> 8;           // Recupera lento, maior resiliência
         };
+    }
+
+    /**
+     * Recalcula {@code semanasProgressaoContinua} no {@link PlanoMetaDados} com base nos
+     * {@link MetricasDiarias} realizados, sem depender do volume planejado.
+     *
+     * <p>Agrupa os registros diários por semana (início = segunda-feira), soma o volume
+     * de cada semana e percorre cronologicamente: se a semana atual teve volume maior que
+     * a anterior, incrementa o streak; caso contrário, reseta para zero. O valor final
+     * representa as semanas consecutivas de progressão de volume até hoje.
+     *
+     * @param atletaId ID do atleta a recalcular
+     */
+    private void recalcularSemanasProgressao(UUID atletaId) {
+        PlanoMetaDados metaDados = planoMetaDadosRepository
+                .findByAtletaId(atletaId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "MetaDados não encontrado para atleta: " + atletaId));
+
+
+
+        List<MetricasDiarias> todasMetricas = metricasDiariasRepository
+                .findByAtletaIdOrderByDataAsc(atletaId);
+
+        if (todasMetricas.isEmpty()) {
+            metaDados.setSemanasProgressaoContinua(0);
+            planoMetaDadosRepository.save(metaDados);
+            log.info("Nenhuma métrica encontrada — semanasProgressaoContinua zerada para atleta {}", atletaId);
+            return;
+        }
+
+        // Agrupar por início da semana (segunda-feira) somando volumeKm.
+        // TreeMap garante ordem cronológica das chaves.
+        TreeMap<LocalDate, BigDecimal> volumePorSemana = todasMetricas.stream()
+                .collect(Collectors.groupingBy(
+                        m -> m.getData().with(DayOfWeek.MONDAY),
+                        TreeMap::new,
+                        Collectors.reducing(
+                                BigDecimal.ZERO,
+                                m -> m.getVolumeKm() != null ? m.getVolumeKm() : BigDecimal.ZERO,
+                                BigDecimal::add
+                        )
+                ));
+
+        // Percorrer semanas cronologicamente e contar streak de aumento de volume
+        List<BigDecimal> volumes = new ArrayList<>(volumePorSemana.values());
+        int semanasConsecutivas = 0;
+
+        for (int i = 1; i < volumes.size(); i++) {
+            if (volumes.get(i).compareTo(volumes.get(i - 1)) > 0) {
+                semanasConsecutivas++;
+            } else {
+                semanasConsecutivas = 0;
+            }
+        }
+
+
+
+        metaDados.setSemanasProgressaoContinua(semanasConsecutivas);
+        metaDados.setDataUltimaAtualizacao(LocalDate.now());
+
+        // Reaplicar análise de alertas e recomendação considerando o nível de experiência do atleta
+        Atleta atleta = buscarAtleta(atletaId);
+        metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados, atleta.getNivelExperiencia()));
+
+        planoMetaDadosRepository.save(metaDados);
+        log.info("semanasProgressaoContinua recalculadas: {} para atleta {} (nível: {})",
+                semanasConsecutivas, atletaId, atleta.getNivelExperiencia());
     }
 
     /**
