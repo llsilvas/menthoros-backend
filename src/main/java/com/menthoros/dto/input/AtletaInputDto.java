@@ -15,10 +15,7 @@ public record AtletaInputDto(
         @Size(min = 2, max = 100, message = "Nome deve ter entre 2 e 100 caracteres")
         String nome,
 
-        @Schema(description = "Idade do atleta em anos", example = "30", minimum = "10", maximum = "100", requiredMode = Schema.RequiredMode.REQUIRED)
-        @Min(value = 10, message = "Idade mínima é 10 anos")
-        @Max(value = 100, message = "Idade máxima é 100 anos")
-        int idade,
+        String dataNascimento,
 
         @Schema(description = "Peso do atleta em quilogramas", example = "75.5", requiredMode = Schema.RequiredMode.REQUIRED)
         @Positive(message = "Peso deve ser positivo")
