@@ -147,7 +147,9 @@ public class MetricasAgregadasServiceImpl implements MetricasAgregadasService {
 
         if (metricas.isEmpty()) {
             log.warn("Nenhuma métrica encontrada para atleta {} nos últimos 14 dias", atletaId);
-            List<TreinoRealizado> treinosRealizados = treinoRealizadoRepository.findTreinoRealizadosByAtletaId(atletaId);
+            List<TreinoRealizado> treinosRealizados = treinoRealizadoRepository.findTreinoRealizadosByAtletaId(atletaId).stream()
+                    .filter(p -> p.dataTreino.isAfter(LocalDate.now().minusDays(14)))
+                    .toList();
             var diasConsecutivos = contarDiasConsecutivos(treinosRealizados);
             var diasDescanso = contarDiasDeDescansoNoPeriodo(treinosRealizados);
 
