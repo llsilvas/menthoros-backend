@@ -164,7 +164,7 @@ Antes de gerar o plano, você DEVE analisar mentalmente:
 ### REGRAS DO PLANO
 
 **PRIORIDADE 1 - Alinhamento com Objetivo Principal:**
-- O objetivo "%s" determina o treino-chave da semana
+- O objetivo "%3$s" determina o treino-chave da semana
 - Treino-chave deve ser posicionado no dia de maior disponibilidade
 - 100%%% dos treinos devem contribuir diretamente para o objetivo
 - Justificativa IA deve sempre conectar o treino ao objetivo
@@ -176,12 +176,12 @@ Antes de gerar o plano, você DEVE analisar mentalmente:
 - Variar zonas de treinamento (evitar predominância excessiva de uma zona)
 
 **PRIORIDADE 3 - Distribuição Semanal:**
-- Mínimo 3 treinos, máximo 5 treinos na semana
-- Distribua nos dias disponíveis do atleta
-- Treino **LONGO** preferencialmente no dia preferido indicado
-- Se houver **≥ 4 treinos**, **segunda-feira** deve ser **REGENERATIVO**
-- **REGENERATIVO** NUNCA posicionado imediatamente **DEPOIS** de **INTERVALADO** ou **LONGO**
-- Intercalar dias intensos com dias leves/regenerativos
+- Mínimo 3 treinos, máximo 7 treinos na semana
+ - Distribua nos dias disponíveis do atleta
+ - Treino **LONGO** preferencialmente no dia preferido indicado
+ - Se houver **≥ 4 treinos**, **segunda-feira** deve ser **REGENERATIVO**
+ - **REGENERATIVO** NUNCA posicionado imediatamente **DEPOIS** de **INTERVALADO** ou **LONGO**
+ - Intercalar dias intensos com dias leves/regenerativos
 
 **PRIORIDADE 4 - Progressão e Segurança:**
 - Progressão ≤ **10%%%** no volume semanal (comparado à média das últimas 3 semanas)
@@ -368,7 +368,20 @@ Expandir SEMPRE como pares alternados:
 - `diaSemana`: `SEGUNDA`, `TERCA`, `QUARTA`, `QUINTA`, `SEXTA`, `SABADO`, `DOMINGO`
 - `tipoTreino`: `REGENERATIVO`, `INTERVALADO`, `CONTINUO`, `LONGO`, `TIRO`, `FARTLEK`, `TEMPO_RUN`
 - `tipoEtapa`: `AQUECIMENTO`, `PRINCIPAL`, `INTERVALADO`, `RECUPERACAO`, `DESAQUECIMENTO`
-- `statusTreino`: `PENDENTE`, `REALIZADO`, `CANCELADO`
+
+### CAMPOS OBRIGATÓRIOS (TOPO DO JSON / PLANO SEMANAL)
+
+O objeto JSON final deve conter **exatamente** estes campos no nível do plano:
+
+- `volumePlanejadoKm` (number, ≥ 0)
+- `volumeAlvoKm` (number, ≥ 0)
+- `status` (string, enum válido)
+- `objetivoSemanal` (string, ≤ 200 caracteres)
+- `treinosPlanejados` (array, 3 a 7 itens)
+
+**Campos opcionais (se não souber, OMITA - nunca use `null`):**
+- `tsbInicio` (number)
+- `tsbFim` (number)
 
 ### CAMPOS OBRIGATÓRIOS (POR TREINO)
 
@@ -381,7 +394,7 @@ Todos os campos abaixo são **obrigatórios** e **não podem ser null ou ""**:
 - `intensidadePlanejada` (number, 0.5-1.5)
 - `percepcaoEsforcoEsperada` (number, 1-10)
 - `justificativaIa` (string, ≤ 200 caracteres, conectar ao objetivo principal)
-- `duracaoMin` (number, ≥ 1)
+- `duracaoMin` (string, formato duração: `"MM:SS"` ou `"HH:MM:SS"`; exemplo: `"45:00"`)
 - `distanciaKm` (number, ≥ 0, pode ser 0 se não aplicável)
 - `ritmoAlvo` (string, formato: `"5:00-5:30/km"` com hífen, não travessão baseado no Pace limiar do atleta)
 - `etapas` (array, **NUNCA vazio**)
@@ -400,7 +413,6 @@ Todos os campos abaixo são **obrigatórios** em cada etapa:
 - `duracaoMin` (number, ≥ 1)
 - `distanciaKm` (number, ≥ 0)
 - `fcAlvoEtapa` (string, formato: `"60-70%%% FCmax"`)
-- `ritmoAlvo` (string, formato: `"5:00-5:30/km"` com hífen, não travessão baseado no Pace limiar do atleta)
 - `repeticoes` (number, ≥ 1)
 
 **Fallbacks obrigatórios se faltar especificidade:**
@@ -487,12 +499,11 @@ Antes de retornar o JSON, você DEVE verificar mentalmente:
 
 3. **Garantia de completude:**
    - Use hífen **-** para intervalos (ex: `"5:00-5:30/km"`)
-   - Máximo **5 treinos**, mínimo **3 treinos**
+   - Máximo **7 treinos**, mínimo **3 treinos**
    - Se necessário, reduza quantidade de treinos para garantir JSON completo
    - Todos os treinos devem estar 100%%% completos (último treino também!)
 
 4. **Formato de números:**
-   - `duracaoMin`: inteiro (ex: `45`)
    - `distanciaKm`: decimal com 1 casa (ex: `10.5`)
    - `tssPlanejado`: inteiro (ex: `65`)
    - `intensidadePlanejada`: decimal (ex: `0.85`)
