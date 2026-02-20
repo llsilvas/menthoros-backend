@@ -400,12 +400,19 @@ public class PlanoServiceImpl implements PlanoService {
      * @return Metadados atualizados e persistidos
      */
     private PlanoMetaDados prepararMetadados(PlanoSemanalLlmDto planoDto, DadosPlanoDto dadosPlano) {
-        PlanoMetaDados metaDados = dadosPlano.metaDados();
+        PlanoMetaDados metaDadosCached = dadosPlano.metaDados();
 
-        if (metaDados.getId() == null) {
+        if (metaDadosCached.getId() == null) {
             log.debug("Metadados sem ID - retornando sem atualizar");
-            return metaDados;
+            return metaDadosCached;
         }
+
+        // Re-busca do banco para obter entidade managed no contexto de persistência atual.
+        // O @Cacheable em buscarOuCriarMetadados pode retornar entidade detached,
+        // causando StaleObjectStateException no merge.
+        PlanoMetaDados metaDados = planoMetadadosRepository.findById(metaDadosCached.getId())
+                .orElseThrow(() -> new DomainNotFoundException(
+                        "Metadados não encontrados: " + metaDadosCached.getId()));
 
         Atleta atleta = dadosPlano.atleta();
         UUID atletaId = atleta.getId();
