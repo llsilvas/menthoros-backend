@@ -548,7 +548,6 @@ public class PlanoServiceImpl implements PlanoService {
 
         // Note: Do NOT initialize planoMetaDados collection. Let Hibernate's orphanRemoval handle the bidirectional cleanup.
         // Initializing the collection during deletion causes Hibernate to confuse object states.
-
         planoSemanalRepository.delete(plano);
         log.info("✅ Plano deletado com sucesso - ID: {}", planoSemanalId);
     }
