@@ -165,6 +165,30 @@ public class PlanoMetaDados {
         return faixa != null ? faixa.getInterpretacao() : "Sem dados";
     }
 
+    @Transient
+    public String interpretarTsb() {
+        FaixaTsb faixa = FaixaTsb.classificar(tsbAtual);
+        return faixa != null ? faixa.getStatus() : "Sem dados suficientes";
+    }
+
+    @Transient
+    public String getRecomendacaoTsb() {
+        FaixaTsb faixa = FaixaTsb.classificar(tsbAtual);
+        return faixa != null ? faixa.getRecomendacao() : "";
+    }
+
+    @Transient
+    public String avaliarStatusGeral() {
+        if (statusGeral != null && !statusGeral.isBlank()) {
+            return statusGeral;
+        }
+        FaixaTsb faixa = FaixaTsb.classificar(tsbAtual);
+        if (faixa == null) {
+            return "COLETANDO DADOS - Aguardando histórico de treinos para análise";
+        }
+        return faixa.getStatus();
+    }
+
     public double getTreinosPorSemanaMedio() {
         if (treinosPorSemanaMedio == null || treinosPorSemanaMedio == 0) {
             return 0;
