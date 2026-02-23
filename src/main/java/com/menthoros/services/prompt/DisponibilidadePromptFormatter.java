@@ -32,7 +32,8 @@ public class DisponibilidadePromptFormatter {
     /**
      * Formata bloco completo de disponibilidade e padrões de treino para o prompt.
      */
-    public String formatarDisponibilidade(Atleta atleta, PlanoMetaDados metaDados, LocalDate inicioSemana) {
+    public String formatarDisponibilidade(Atleta atleta, PlanoMetaDados metaDados, LocalDate inicioSemana,
+                                           List<DiaSemana> diasEfetivos) {
         if (atleta == null) {
             return "⚠️ Atleta não informado. Não foi possível formatar disponibilidade.";
         }
@@ -50,10 +51,29 @@ public class DisponibilidadePromptFormatter {
                     inicioSemana.plusDays(6).format(DATA_FMT)));
         }
 
-        // Dias disponíveis do atleta
+        // Bloco de instrução explícita quando a semana já está em andamento
+        if (diasEfetivos != null) {
+            sb.append("### ⚠️ SEMANA EM ANDAMENTO\n");
+            if (diasEfetivos.isEmpty()) {
+                sb.append("**Todos os dias disponíveis desta semana já passaram.**\n");
+                sb.append("Não gere nenhum treino para esta semana.\n\n");
+            } else {
+                sb.append("**Dias já passados não podem receber treinos.**\n");
+                sb.append("**Dias restantes disponíveis para treino nesta semana:** ");
+                sb.append(diasEfetivos.stream()
+                        .map(DiaSemana::getLabel)
+                        .collect(Collectors.joining(", ")));
+                sb.append("\n");
+                sb.append(String.format("**Total de dias restantes:** %d\n", diasEfetivos.size()));
+                sb.append("**INSTRUÇÃO OBRIGATÓRIA:** Gere treinos EXCLUSIVAMENTE para os dias listados acima. ");
+                sb.append("NÃO inclua treinos em dias que já passaram.\n\n");
+            }
+        }
+
+        // Dias disponíveis do atleta (contexto geral)
         sb.append("### Disponibilidade Semanal\n");
         if (atleta.getDiasDisponiveis() != null && !atleta.getDiasDisponiveis().isEmpty()) {
-            sb.append("**Dias disponíveis para treinar:** ");
+            sb.append("**Dias disponíveis para treinar (configuração do atleta):** ");
             sb.append(atleta.getDiasDisponiveis().stream()
                     .map(DiaSemana::getLabel)
                     .collect(Collectors.joining(", ")));

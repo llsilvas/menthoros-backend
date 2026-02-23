@@ -8,7 +8,10 @@ import com.menthoros.entity.Atleta;
 import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.entity.Prova;
 import com.menthoros.entity.TreinoRealizado;
+import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.TipoTreino;
 import com.menthoros.services.helper.IntervaladoElegibilidadeService;
+import com.menthoros.services.helper.PaceZoneCalculator;
 import com.menthoros.services.helper.RecomendacaoIntervalado;
 import com.menthoros.services.helper.TreinoHistoricoProvider;
 import com.menthoros.services.helper.TreinoHistoricoProvider.ContextoTreino;
@@ -43,6 +46,8 @@ public class PlanoTreinoPromptBuilder {
     private final VariabilidadePromptFormatter variabilidadePromptFormatter;
     private final DisponibilidadePromptFormatter disponibilidadePromptFormatter;
     private final IntervaladoElegibilidadeService intervaladoElegibilidadeService;
+    private final PaceHistoricoFormatter paceHistoricoFormatter;
+    private final PaceZoneCalculator paceZoneCalculator;
 
     public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource,
                                     PromptTemplateLoader templateLoader,
@@ -55,7 +60,9 @@ public class PlanoTreinoPromptBuilder {
                                     PeriodizacaoPromptFormatter periodizacaoPromptFormatter,
                                     VariabilidadePromptFormatter variabilidadePromptFormatter,
                                     DisponibilidadePromptFormatter disponibilidadePromptFormatter,
-                                    IntervaladoElegibilidadeService intervaladoElegibilidadeService) {
+                                    IntervaladoElegibilidadeService intervaladoElegibilidadeService,
+                                    PaceHistoricoFormatter paceHistoricoFormatter,
+                                    PaceZoneCalculator paceZoneCalculator) {
         this.templateLoader = templateLoader;
         this.metricasAlertaService = metricasAlertaService;
         this.zonaTreinoService = zonaTreinoService;
@@ -67,6 +74,8 @@ public class PlanoTreinoPromptBuilder {
         this.variabilidadePromptFormatter = variabilidadePromptFormatter;
         this.disponibilidadePromptFormatter = disponibilidadePromptFormatter;
         this.intervaladoElegibilidadeService = intervaladoElegibilidadeService;
+        this.paceHistoricoFormatter = paceHistoricoFormatter;
+        this.paceZoneCalculator = paceZoneCalculator;
         try {
             this.promptTemplate = new String(promptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -144,7 +153,8 @@ public class PlanoTreinoPromptBuilder {
 
     // ======================== MÉTODO OTIMIZADO (principal) ========================
 
-    public String buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo, LocalDate inicioSemana) {
+    public String buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo,
+                                       LocalDate inicioSemana, List<DiaSemana> diasEfetivos) {
         var ctx = treinoHistoricoProvider.prepararContexto(atleta);
 
         // DECISÃO INTERVALADO — avaliação determinística pré-LLM (5 portões fisiológicos)
@@ -190,14 +200,35 @@ public class PlanoTreinoPromptBuilder {
             historicoCompleto.append(fallbacksDados);
         }
 
+        // Ajuste de pace por TSB (Fase 2): nota explícita ao LLM sobre penalidade de fadiga
+        String avisoTsb = paceZoneCalculator.formatarAvisoAjuste(metaDados != null ? metaDados.getTsbAtual() : null);
+        if (!avisoTsb.isEmpty()) {
+            historicoCompleto.append(avisoTsb).append("\n");
+        }
+
         // ETAPA 2: Métricas de carga e fadiga (consolidadas)
         historicoCompleto.append(metricasPromptFormatter.formatarMetricas(metaDados)).append("\n\n");
 
         // ETAPA 3: Histórico recente de treinos
         historicoCompleto.append(formatarHistoricoTreinos(ctx.treinosUltimos14Dias())).append("\n\n");
 
+        // ETAPA 3.5: Pace demonstrado por tipo nas últimas 4 semanas (Fase 1)
+        historicoCompleto.append(paceHistoricoFormatter.formatarHistoricoPace(ctx.treinosUltimas4Semanas())).append("\n\n");
+
+        // ETAPA 3.6: Teto obrigatório de pace por tipo (Fase 3)
+        Map<TipoTreino, BigDecimal> tetoPorTipo = paceHistoricoFormatter.calcularTetoPorTipo(ctx.treinosUltimas4Semanas());
+        if (!tetoPorTipo.isEmpty()) {
+            historicoCompleto.append(paceHistoricoFormatter.formatarTetoPace(tetoPorTipo)).append("\n\n");
+        }
+
+        // ETAPA 3.7: Aviso de paceLimiar desatualizado (Fase 5)
+        String avisoPaceLimiar = paceHistoricoFormatter.verificarPaceLimiarAtualizado(atleta);
+        if (!avisoPaceLimiar.isEmpty()) {
+            historicoCompleto.append(avisoPaceLimiar).append("\n\n");
+        }
+
         // ETAPA 4: Disponibilidade e padrões de treino
-        historicoCompleto.append(disponibilidadePromptFormatter.formatarDisponibilidade(atleta, metaDados, inicioSemana)).append("\n\n");
+        historicoCompleto.append(disponibilidadePromptFormatter.formatarDisponibilidade(atleta, metaDados, inicioSemana, diasEfetivos)).append("\n\n");
 
         // ETAPA 5: Análise de estímulos recentes
         historicoCompleto.append(analiseEstimulos).append("\n\n");
