@@ -1,10 +1,13 @@
 package com.menthoros.mapper;
 
+import com.menthoros.dto.input.EtapaRealizadaInputDto;
 import com.menthoros.dto.input.TreinoPlanejadoInputDto;
 import com.menthoros.dto.input.TreinoRealizadoInputDto;
 import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
+import com.menthoros.dto.output.EtapaRealizadaOutputDto;
 import com.menthoros.dto.output.TreinoPlanejadoOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
+import com.menthoros.entity.EtapaRealizada;
 import com.menthoros.entity.TreinoPlanejado;
 import com.menthoros.entity.TreinoRealizado;
 import org.mapstruct.*;
@@ -117,6 +120,28 @@ public interface TreinoMapper {
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     TreinoRealizadoOutputDto toOutputDto(TreinoRealizado treinoRealizado);
 
+    // ===== EtapaRealizada: Input -> Entity =====
+
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "treinoRealizado", ignore = true)
+    @Mapping(target = "etapaPlanejada", ignore = true)
+    @Mapping(target = "duracao", source = "duracao", qualifiedByName = "stringToDuration")
+    @Mapping(target = "paceMedia", source = "paceMedia", qualifiedByName = "stringToDuration")
+    @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "doubleToBigDecimal")
+    EtapaRealizada toEntity(EtapaRealizadaInputDto dto);
+
+    List<EtapaRealizada> toEtapaRealizadaEntityList(List<EtapaRealizadaInputDto> dtos);
+
+    // ===== EtapaRealizada: Entity -> Output =====
+
+    @Mapping(target = "etapaPlanejadaId", source = "etapaPlanejada.id")
+    @Mapping(target = "duracao", source = "duracao", qualifiedByName = "durationToString")
+    @Mapping(target = "paceMedia", source = "paceMedia", qualifiedByName = "durationToString")
+    @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
+    EtapaRealizadaOutputDto toOutputDto(EtapaRealizada etapaRealizada);
+
+    List<EtapaRealizadaOutputDto> toEtapaRealizadaOutputDtoList(List<EtapaRealizada> etapas);
+
     @Named("treinoRealizadoListToOutputDtoList")
     List<TreinoRealizadoOutputDto> toOutputDtoListTreinoRealizado(List<TreinoRealizado> treinosRealizados);
 
@@ -125,6 +150,14 @@ public interface TreinoMapper {
         if(treinoPlanejado.getEtapas() != null){
             treinoPlanejado.getEtapas().forEach(etapa ->
                     etapa.setTreinoPlanejado(treinoPlanejado));
+        }
+    }
+
+    @AfterMapping
+    default void linkEtapasRealizadas(@MappingTarget TreinoRealizado treinoRealizado) {
+        if (treinoRealizado.getEtapasRealizadas() != null) {
+            treinoRealizado.getEtapasRealizadas().forEach(etapa ->
+                    etapa.setTreinoRealizado(treinoRealizado));
         }
     }
 

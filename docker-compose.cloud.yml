@@ -1,0 +1,137 @@
+# docker-compose.cloud.yml — Perfil CLOUD DEV
+# Build multi-stage otimizado com OpenTelemetry para deploy em nuvem
+#
+# Uso:
+#   docker compose -f docker-compose.cloud.yml up --build
+#
+# Pré-requisito: arquivo .env com OPENAI_API_KEY e demais variáveis definidas
+
+services:
+
+  # ── PostgreSQL com extensão pgvector ────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: menthoros-db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-menthoros-db}
+      POSTGRES_USER: ${DB_USER:-menthoros}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-menthoros123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./src/main/resources/db/init/menthoros_schema.sql:/docker-entrypoint-initdb.d/init.sql
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=2GB
+      -c maintenance_work_mem=256MB
+      -c max_parallel_workers_per_gather=4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-menthoros} -d ${DB_NAME:-menthoros-db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - menthoros-network
+
+  # ── Redis (cache) ────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: menthoros-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - menthoros-network
+
+  # ── Aplicação Spring Boot (build completo + OTEL) ────────────────────────────
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.cloud
+    container_name: menthoros-app
+    env_file:
+      - .env.docker  # sobrescreve variáveis Railway com valores Docker locais
+    environment:
+      # Banco de dados
+      # PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD são resolvidos pelo application-cloud.yml
+      # usando as variáveis do container (injetadas pelo Railway ou pelo .env.docker local).
+      # NÃO definir SPRING_DATASOURCE_URL aqui — variáveis de ambiente do compose usam o .env
+      # do HOST para substituição, o que ignora o .env.docker do container.
+
+      # Redis
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_CACHE_TYPE: redis
+
+      # JPA (cloud: sem DDL automático, sem SQL log)
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_JPA_SHOW_SQL: "false"
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: "false"
+
+      # Flyway
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
+
+      # Spring AI
+      SPRING_AI_OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SPRING_AI_OPENAI_CHAT_MODEL: gpt-4o-mini
+      SPRING_AI_OPENAI_EMBEDDING_MODEL: text-embedding-3-small
+
+      # Porta — deve coincidir com o mapeamento abaixo e com o CMD do Dockerfile
+      PORT: 8080
+
+      # Perfil ativo
+      SPRING_PROFILES_ACTIVE: cloud,docker
+
+      # JVM otimizada para containers em nuvem
+      JAVA_OPTS: >-
+        -XX:+UseContainerSupport
+        -XX:MaxRAMPercentage=75.0
+        -XX:+UseG1GC
+        -XX:+UseStringDeduplication
+        -Djava.security.egd=file:/dev/./urandom
+        -javaagent:/app/opentelemetry-javaagent.jar
+
+      # OpenTelemetry — observabilidade (tracing, métricas, logs)
+      OTEL_SERVICE_NAME: menthoros
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-http://otel-collector:4317}
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev
+
+      # Logging
+      LOGGING_LEVEL_COM_MENTHOROS: INFO
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+    networks:
+      - menthoros-network
+
+volumes:
+  pg_data:
+  redis_data:
+
+networks:
+  menthoros-network:
+    name: menthoros-network    # Nome fixo sem prefixo de projeto — necessário para external: true no frontend
+    driver: bridge

@@ -1,6 +1,5 @@
 package com.menthoros.services.impl;
 
-import com.menthoros.dto.output.PadroesTreino;
 import com.menthoros.entity.Atleta;
 import com.menthoros.entity.MetricasDiarias;
 import com.menthoros.entity.PlanoMetaDados;
@@ -10,16 +9,21 @@ import com.menthoros.repository.MetricasDiariasRepository;
 import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.repository.TreinoRealizadoRepository;
 import com.menthoros.services.TsbService;
+import com.menthoros.services.helper.TssCalculatorService;
+import com.menthoros.services.prompt.MetricasPromptFormatter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.TreeMap;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -30,6 +34,9 @@ public class TsbServiceImpl implements TsbService {
     private final PlanoMetadadosRepository planoMetaDadosRepository;
     private final MetricasDiariasRepository metricasDiariasRepository;
     private final AtletaRepository atletaRepository;
+    private final TssCalculatorService tssCalculatorService;
+    private final MetricasAlertaService metricasAlertaService;
+    private MetricasPromptFormatter metricasPromptFormatter;
 
     private static final int CTL_TIME_CONSTANT = 42;
     private static final int ATL_TIME_CONSTANT = 7;
@@ -43,7 +50,7 @@ public class TsbServiceImpl implements TsbService {
 
         Atleta atleta = buscarAtleta(atletaId);
         List<TreinoRealizado> treinosDoDia = buscarTreinosDia(atletaId, data);
-        Integer tssHoje = calcularTssDia(treinosDoDia);
+        Integer tssHoje = tssCalculatorService.calcularTssDia(treinosDoDia);
 
         MetricasDiarias metricasHoje = obterOuCriarMetricasDia(atleta, data);
         atualizarVolumeDiario(metricasHoje, treinosDoDia);
@@ -187,242 +194,6 @@ public class TsbServiceImpl implements TsbService {
     }
 
     /**
-     * Calcula TSS total do dia (soma de todos os treinos)
-     */
-    private Integer calcularTssDia(List<TreinoRealizado> treinos) {
-        return treinos.stream()
-                .mapToInt(this::calcularTssCorreto)
-                .sum();
-    }
-
-    /**
-     * CÁLCULO CORRETO de TSS para corrida
-     * Baseado em Frequência Cardíaca ou Pace
-     */
-    private int calcularTssCorreto(TreinoRealizado treino) {
-        int tssBase;
-
-        // Se tem dados de FC, usar método de FC
-        if (treino.getFcMedia() != null && treino.getFcMedia() > 0) {
-            tssBase = calcularTssFrequenciaCardiaca(treino);
-        }
-        // Se tem dados de pace, usar método de pace
-        else if (treino.getPaceMedia() != null) {
-            tssBase = calcularTssPace(treino);
-        }
-        // Fallback: usar RPE (menos preciso mas melhor que nada)
-        else {
-            tssBase = calcularTssRpe(treino);
-        }
-
-        // Aplicar fator de impacto por tipo de treino
-        return aplicarFatorImpactoTreino(tssBase, treino);
-    }
-
-    /**
-     * Aplica fator de impacto fisiológico baseado no tipo de treino
-     *
-     * <p>Fundamento: Treinos com mesma intensidade (TSS) têm impactos diferentes:
-     * <ul>
-     *   <li>Intervalados causam maior fadiga neuromuscular</li>
-     *   <li>Longões causam maior depleção de glicogênio</li>
-     *   <li>Tiros de subida causam maior fadiga muscular</li>
-     * </ul>
-     *
-     * @param tssBase TSS calculado por FC/Pace/RPE
-     * @param treino Treino com tipo definido
-     * @return TSS ajustado pelo fator de impacto
-     */
-    private int aplicarFatorImpactoTreino(int tssBase, TreinoRealizado treino) {
-        if (treino.getTipoTreino() == null) {
-            log.debug("Treino {} sem tipo definido. Usando TSS base: {}", treino.getId(), tssBase);
-            return tssBase;
-        }
-
-        double fator = treino.getTipoTreino().getFatorImpacto();
-        int tssAjustado = (int) Math.round(tssBase * fator);
-
-        log.debug("TSS ajustado para treino {}: {} (base) × {} ({}) = {}",
-                treino.getId(), tssBase, fator,
-                treino.getTipoTreino().getLabel(), tssAjustado);
-
-        return tssAjustado;
-    }
-
-    /**
-     * TSS baseado em Frequência Cardíaca
-     * Método mais preciso quando disponível
-     */
-    private int calcularTssFrequenciaCardiaca(TreinoRealizado treino) {
-        Atleta atleta = treino.getAtleta();
-
-        // Validar dados necessários
-        if (atleta.getFcMaxima() == null || atleta.getFcRepouso() == null) {
-            log.warn("Atleta {} sem FC máxima/repouso configurada", atleta.getId());
-            return calcularTssRpe(treino);
-        }
-
-        Integer fcMax = atleta.getFcMaxima();
-        Integer fcRepouso = atleta.getFcRepouso();
-        Integer fcLimiar = atleta.getFcLimiar() != null
-                ? atleta.getFcLimiar()
-                : (int) (fcRepouso + (fcMax - fcRepouso) * 0.85); // Estimativa 85%
-
-        double fcMedia = treino.getFcMedia();
-        double duracaoHoras = treino.getDuracaoMin() != null
-            ? treino.getDuracaoMin().toMinutes() / 60.0
-            : 0.0;
-
-        // Calcular HR Reserve %
-        double hrReserve = fcMax - fcRepouso;
-        double workingHR = fcMedia - fcRepouso;
-        double hrReservePercent = workingHR / hrReserve;
-
-        // Calcular Intensity Factor
-        double thresholdPercent = (fcLimiar - fcRepouso) / (double) hrReserve;
-        double intensityFactor = hrReservePercent / thresholdPercent;
-
-        // Limitar IF entre 0.5 e 1.5 (valores realistas)
-        intensityFactor = Math.max(0.5, Math.min(1.5, intensityFactor));
-
-        // TSS = duração_horas × IF × 100 × IF
-        double tss = duracaoHoras * intensityFactor * 100 * intensityFactor;
-
-        return (int) Math.round(tss);
-    }
-
-    /**
-     * TSS baseado em Pace (velocidade)
-     * Útil quando não há dados de FC
-     */
-    private int calcularTssPace(TreinoRealizado treino) {
-        Atleta atleta = treino.getAtleta();
-
-        if (atleta.getPaceLimiar() == null) {
-            log.warn("Atleta {} sem pace limiar configurado", atleta.getId());
-            return calcularTssRpe(treino);
-        }
-
-        // Converter Duration (pace) para minutos decimais (5:30 → 5.5)
-        double paceMedia = treino.getPaceMedia() != null
-            ? treino.getPaceMedia().toMillis() / 60000.0 // millis → minutos
-            : 0.0;
-
-        if (paceMedia == 0) {
-            log.warn("Treino {} sem pace válido", treino.getId());
-            return calcularTssRpe(treino);
-        }
-
-        double paceLimiar = atleta.getPaceLimiar().doubleValue(); // min/km
-        double duracaoHoras = treino.getDuracaoMin() != null
-            ? treino.getDuracaoMin().toMinutes() / 60.0
-            : 0.0;
-
-        // IF = pace_limiar / pace_media (quanto menor o pace, maior o IF)
-        double intensityFactor = paceLimiar / paceMedia;
-
-        // Limitar IF entre 0.5 e 1.5
-        intensityFactor = Math.max(0.5, Math.min(1.5, intensityFactor));
-
-        // Aplicar fator de elevação (terreno)
-        double fatorElevacao = calcularFatorElevacao(treino);
-
-        // TSS = duração_horas × IF² × 100 × fator_elevação
-        double tss = duracaoHoras * intensityFactor * 100 * intensityFactor * fatorElevacao;
-
-        if (fatorElevacao > 1.0) {
-            log.debug("TSS ajustado por elevação: {} (fator {})", tss, fatorElevacao);
-        }
-
-        return (int) Math.round(tss);
-    }
-
-    /**
-     * Calcula fator de correção baseado em elevação acumulada
-     *
-     * <p><b>Fundamento Fisiológico:</b>
-     * <ul>
-     *   <li>Cada 100m de elevação ≈ 1km extra de corrida plana (custo energético)</li>
-     *   <li>Gradiente médio determina o aumento de TSS</li>
-     *   <li>Baseado em estudos de Minetti et al. (2002) - Journal of Applied Physiology</li>
-     * </ul>
-     *
-     * <p><b>Fórmula aplicada:</b>
-     * <pre>
-     * Gradiente (m/km) | Aumento TSS
-     * -----------------|--------------
-     * 0-20 m/km        | +0.5% por m/km (subidas suaves)
-     * 20-50 m/km       | +1.0% por m/km (subidas moderadas)
-     * >50 m/km         | +1.5% por m/km (subidas íngremes)
-     * </pre>
-     *
-     * @param treino Treino com dados de elevação e distância
-     * @return Fator multiplicador (1.0 = plano, 1.5 = montanha pesada)
-     */
-    private double calcularFatorElevacao(TreinoRealizado treino) {
-        Integer elevacaoMetros = treino.getElevacaoGanhoMetros();
-        BigDecimal distanciaKm = treino.getDistanciaKm();
-
-        // Se não tem dados de elevação ou distância, assume plano
-        if (elevacaoMetros == null || elevacaoMetros <= 0 ||
-                distanciaKm == null || distanciaKm.doubleValue() <= 0) {
-            return 1.0;
-        }
-
-        double distancia = distanciaKm.doubleValue();
-        double gradienteMedio = elevacaoMetros / distancia; // m/km
-
-        // Fórmula baseada em custo energético de subidas
-        // Fonte: Minetti, A. E., Moia, C., Roi, G. S., Susta, D., & Ferretti, G. (2002)
-        // "Energy cost of walking and running at extreme gradients on a treadmill"
-        double fator;
-
-        if (gradienteMedio < 20) {
-            // Subidas suaves: +0.5% por m/km
-            fator = 1.0 + (gradienteMedio * 0.005);
-        } else if (gradienteMedio < 50) {
-            // Subidas moderadas: progressão para +1.0% por m/km adicional
-            fator = 1.0 + (20 * 0.005) + ((gradienteMedio - 20) * 0.01);
-        } else {
-            // Subidas íngremes: +1.5% por m/km adicional
-            fator = 1.0 + (20 * 0.005) + (30 * 0.01) + ((gradienteMedio - 50) * 0.015);
-        }
-
-        // Limitar fator entre 1.0 e 2.0 (evitar valores absurdos)
-        fator = Math.min(fator, 2.0);
-
-        log.debug("Fator elevação: {} ({}m D+ em {}km = {} m/km)",
-                String.format("%.2f", fator), elevacaoMetros, distancia,
-                String.format("%.1f", gradienteMedio));
-
-        return fator;
-    }
-
-    /**
-     * TSS baseado em RPE (Rating of Perceived Exertion)
-     * Método menos preciso, usado como fallback
-     */
-    private int calcularTssRpe(TreinoRealizado treino) {
-        if (treino.getPercepcaoEsforco() == null) {
-            log.warn("Treino {} sem dados para calcular TSS", treino.getId());
-            return 0;
-        }
-
-        double duracaoHoras = treino.getDuracaoMin() != null
-            ? treino.getDuracaoMin().toMinutes() / 60.0
-            : 0.0;
-        double rpe = treino.getPercepcaoEsforco(); // Escala 1-10
-
-        // Converter RPE para IF aproximado
-        // RPE 6 = IF 0.6, RPE 10 = IF 1.0
-        double intensityFactor = (rpe / 10.0) * 0.9 + 0.1;
-
-        double tss = duracaoHoras * intensityFactor * 100 * intensityFactor;
-
-        return (int) Math.round(tss);
-    }
-
-    /**
      * Calcula Ramp Rate (mudança semanal de CTL)
      */
     private double calcularRampRate(UUID atletaId, LocalDate data, double ctlAtual) {
@@ -446,13 +217,53 @@ public class TsbServiceImpl implements TsbService {
                 .orElseThrow(() -> new IllegalArgumentException(
                         "MetaDados não encontrado para atleta: " + atletaId));
 
+
         metaDados.setCtlAtual(metricas.getCtl());
         metaDados.setAtlAtual(metricas.getAtl());
         metaDados.setTsbAtual(metricas.getTsb());
         metaDados.setRampRateAtual(metricas.getRampRate());
         metaDados.setDataUltimaAtualizacao(LocalDate.now());
 
+        // Atualizar dias consecutivos ANTES da análise (ISSUE-06)
+        boolean hojeTemTreino = metricas.getTreinosRealizados() != null && metricas.getTreinosRealizados() > 0;
+        metaDados.setDiasConsecutivosTreino(
+                contarDiasConsecutivosTreino(atletaId, metricas.getData(), hojeTemTreino));
+
+        // Analisar métricas e aplicar alertas/status/recomendação (com nível de experiência para thresholds adaptativos)
+        metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados, metricas.getAtleta().getNivelExperiencia()));
+
         planoMetaDadosRepository.save(metaDados);
+    }
+
+    /**
+     * Conta dias consecutivos de treino até a data informada (inclusive).
+     *
+     * <p>Percorre os dias para trás a partir de {@code data}, verificando se
+     * há treinos registrados. Para no primeiro dia sem treino ou após 14 dias
+     * (limite de segurança).
+     *
+     * @param atletaId  ID do atleta
+     * @param data      data do dia sendo processado
+     * @param hojeTemTreino se o dia atual possui treinos
+     * @return número de dias consecutivos com treino (0 se hoje é descanso)
+     */
+    private int contarDiasConsecutivosTreino(UUID atletaId, LocalDate data, boolean hojeTemTreino) {
+        if (!hojeTemTreino) {
+            return 0;
+        }
+
+        int consecutivos = 1; // hoje conta
+        LocalDate dia = data.minusDays(1);
+
+        for (int i = 0; i < 14; i++) {
+            List<TreinoRealizado> treinos = treinoRealizadoRepository
+                    .findByAtletaIdAndDataTreino(atletaId, dia);
+            if (treinos.isEmpty()) break;
+            consecutivos++;
+            dia = dia.minusDays(1);
+        }
+
+        return consecutivos;
     }
 
     /**
@@ -517,6 +328,9 @@ public class TsbServiceImpl implements TsbService {
 
             // 4. Recalcular período com tracking de progresso
             recalcularPeriodoComProgresso(atletaId, dataInicio, dataFim);
+
+            // 5. Recalcular progressão contínua de semanas com base nos treinos realizados
+            recalcularSemanasProgressao(atletaId);
 
             log.info("✅ Histórico recalculado com sucesso para atleta {}", atletaId);
 
@@ -661,250 +475,79 @@ public class TsbServiceImpl implements TsbService {
     }
 
     /**
+     * Recalcula {@code semanasProgressaoContinua} no {@link PlanoMetaDados} com base nos
+     * {@link MetricasDiarias} realizados, sem depender do volume planejado.
+     *
+     * <p>Agrupa os registros diários por semana (início = segunda-feira), soma o volume
+     * de cada semana e percorre cronologicamente: se a semana atual teve volume maior que
+     * a anterior, incrementa o streak; caso contrário, reseta para zero. O valor final
+     * representa as semanas consecutivas de progressão de volume até hoje.
+     *
+     * @param atletaId ID do atleta a recalcular
+     */
+    private void recalcularSemanasProgressao(UUID atletaId) {
+        PlanoMetaDados metaDados = planoMetaDadosRepository
+                .findByAtletaId(atletaId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "MetaDados não encontrado para atleta: " + atletaId));
+
+
+
+        List<MetricasDiarias> todasMetricas = metricasDiariasRepository
+                .findByAtletaIdOrderByDataAsc(atletaId);
+
+        if (todasMetricas.isEmpty()) {
+            metaDados.setSemanasProgressaoContinua(0);
+            planoMetaDadosRepository.save(metaDados);
+            log.info("Nenhuma métrica encontrada — semanasProgressaoContinua zerada para atleta {}", atletaId);
+            return;
+        }
+
+        // Agrupar por início da semana (segunda-feira) somando volumeKm.
+        // TreeMap garante ordem cronológica das chaves.
+        TreeMap<LocalDate, BigDecimal> volumePorSemana = todasMetricas.stream()
+                .collect(Collectors.groupingBy(
+                        m -> m.getData().with(DayOfWeek.MONDAY),
+                        TreeMap::new,
+                        Collectors.reducing(
+                                BigDecimal.ZERO,
+                                m -> m.getVolumeKm() != null ? m.getVolumeKm() : BigDecimal.ZERO,
+                                BigDecimal::add
+                        )
+                ));
+
+        // Percorrer semanas cronologicamente e contar streak de aumento de volume
+        List<BigDecimal> volumes = new ArrayList<>(volumePorSemana.values());
+        int semanasConsecutivas = 0;
+
+        for (int i = 1; i < volumes.size(); i++) {
+            if (volumes.get(i).compareTo(volumes.get(i - 1)) > 0) {
+                semanasConsecutivas++;
+            } else {
+                semanasConsecutivas = 0;
+            }
+        }
+
+
+
+        metaDados.setSemanasProgressaoContinua(semanasConsecutivas);
+        metaDados.setDataUltimaAtualizacao(LocalDate.now());
+
+        // Reaplicar análise de alertas e recomendação considerando o nível de experiência do atleta
+        Atleta atleta = buscarAtleta(atletaId);
+        metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados, atleta.getNivelExperiencia()));
+
+        planoMetaDadosRepository.save(metaDados);
+        log.info("semanasProgressaoContinua recalculadas: {} para atleta {} (nível: {})",
+                semanasConsecutivas, atletaId, atleta.getNivelExperiencia());
+    }
+
+    /**
      * Arredonda valor para N casas decimais
      */
     private double round(double value, int places) {
         double scale = Math.pow(10, places);
         return Math.round(value * scale) / scale;
-    }
-
-    /**
-     * Calcula métricas semanais médias baseadas no histórico de treinos realizados.
-     *
-     * <p>Este método agrega dados das últimas N semanas para fornecer uma visão
-     * estatística do padrão de treino do atleta, usada para:
-     * <ul>
-     *   <li>Calcular progressão de carga (Ramp Rate)</li>
-     *   <li>Determinar TSS Alvo para próxima semana</li>
-     *   <li>Identificar variações no volume de treino</li>
-     * </ul>
-     *
-     * <p><b>Dados calculados:</b>
-     * <ul>
-     *   <li>Volume semanal médio (km)</li>
-     *   <li>TSS semanal médio (pontos)</li>
-     *   <li>Frequência média de treinos por semana</li>
-     * </ul>
-     *
-     * @param atletaId ID do atleta
-     * @param numSemanas Número de semanas para calcular médias (recomendado: 4-6)
-     * @return {@link com.menthoros.dto.output.MetricasSemanaisMedias} com médias calculadas
-     * @throws IllegalArgumentException se atletaId for nulo ou atleta não existir
-     */
-    @Override
-    public com.menthoros.dto.output.MetricasSemanaisMedias calcularMetricasSemanais(UUID atletaId, int numSemanas) {
-        validarAtletaExiste(atletaId);
-
-        if (numSemanas < 1) {
-            log.warn("numSemanas inválido ({}), usando padrão de 4 semanas", numSemanas);
-            numSemanas = 4;
-        }
-
-        log.debug("Calculando métricas semanais médias para atleta {} (últimas {} semanas)",
-            atletaId, numSemanas);
-
-        // Buscar métricas diárias das últimas N semanas
-        LocalDate dataLimite = LocalDate.now().minusWeeks(numSemanas);
-        List<MetricasDiarias> metricas = metricasDiariasRepository
-            .findByAtletaIdAndDataGreaterThanEqualOrderByDataAsc(atletaId, dataLimite);
-
-        if (metricas.isEmpty()) {
-            log.warn("Nenhuma métrica encontrada para atleta {} nas últimas {} semanas",
-                atletaId, numSemanas);
-            return new com.menthoros.dto.output.MetricasSemanaisMedias(
-                BigDecimal.ZERO,
-                0,
-                0.0
-            );
-        }
-
-        // Agrupar métricas por semana
-        java.util.Map<Integer, List<MetricasDiarias>> metricasPorSemana = metricas.stream()
-            .collect(java.util.stream.Collectors.groupingBy(
-                m -> m.getData().get(java.time.temporal.ChronoField.ALIGNED_WEEK_OF_YEAR)
-            ));
-
-        // Calcular totais por semana
-        List<BigDecimal> volumesPorSemana = new java.util.ArrayList<>();
-        List<Integer> tssPorSemana = new java.util.ArrayList<>();
-        List<Integer> treinosPorSemana = new java.util.ArrayList<>();
-
-        for (List<MetricasDiarias> metricasSemana : metricasPorSemana.values()) {
-            // Volume total da semana
-            BigDecimal volumeSemanal = metricasSemana.stream()
-                .map(m -> m.getVolumeKm() != null ? m.getVolumeKm() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-            volumesPorSemana.add(volumeSemanal);
-
-            // TSS total da semana
-            Integer tssSemanal = metricasSemana.stream()
-                .mapToInt(m -> m.getTss() != null ? m.getTss() : 0)
-                .sum();
-            tssPorSemana.add(tssSemanal);
-
-            // Treinos realizados na semana (dias com treinosRealizados > 0)
-            Integer treinosSemana = (int) metricasSemana.stream()
-                .filter(m -> m.getTreinosRealizados() != null && m.getTreinosRealizados() > 0)
-                .count();
-            treinosPorSemana.add(treinosSemana);
-        }
-
-        // Calcular médias
-        int semanas = volumesPorSemana.size();
-
-        BigDecimal volumeMedio = volumesPorSemana.stream()
-            .reduce(BigDecimal.ZERO, BigDecimal::add)
-            .divide(BigDecimal.valueOf(semanas), 2, java.math.RoundingMode.HALF_UP);
-
-        Integer tssMedio = tssPorSemana.stream()
-            .mapToInt(Integer::intValue)
-            .sum() / semanas;
-
-        Double treinosPorSemanaMedio = treinosPorSemana.stream()
-            .mapToDouble(Integer::doubleValue)
-            .average()
-            .orElse(0.0);
-
-        log.info("Métricas semanais calculadas - Volume: {}km/semana, TSS: {}/semana, Treinos: {}/semana",
-            volumeMedio, tssMedio, String.format("%.1f", treinosPorSemanaMedio));
-
-        return new com.menthoros.dto.output.MetricasSemanaisMedias(
-            volumeMedio,
-            tssMedio,
-            Math.round(treinosPorSemanaMedio * 10.0) / 10.0 // Arredondar para 1 casa decimal
-        );
-    }
-
-    /**
-     * Calcula padrões de treino baseados em dias consecutivos e recuperação.
-     *
-     * <p>Este método analisa o histórico recente de treinos para identificar:
-     * <ul>
-     *   <li><b>Dias consecutivos treinando:</b> Sequência contínua de dias com treino até hoje</li>
-     *   <li><b>Dias desde último descanso:</b> Dias passados desde o último dia SEM treino</li>
-     * </ul>
-     *
-     * <p><b>Fundamento Fisiológico:</b>
-     * <ul>
-     *   <li>Treinar mais de 5-6 dias consecutivos aumenta risco de overtraining</li>
-     *   <li>Dias de descanso permitem adaptação e regeneração muscular</li>
-     *   <li>Atletas iniciantes necessitam mais descanso (máx 4-5 dias consecutivos)</li>
-     *   <li>Atletas avançados podem treinar 6-7 dias se volume/intensidade forem controlados</li>
-     * </ul>
-     *
-     * <p><b>Uso prático:</b>
-     * Este método é essencial para o {@link com.menthoros.services.PlanoService} decidir se deve
-     * incluir dia de descanso obrigatório no plano semanal.
-     *
-     * @param atletaId ID do atleta
-     * @return {@link com.menthoros.dto.output.PadroesTreino} com padrões identificados
-     * @throws IllegalArgumentException se atletaId for nulo ou atleta não existir
-     */
-    @Override
-    public PadroesTreino calcularPadroesTreino(UUID atletaId) {
-        validarAtletaExiste(atletaId);
-
-        log.debug("Calculando padrões de treino para atleta {}", atletaId);
-
-        // Buscar últimos 14 dias de métricas
-        LocalDate dataLimite = LocalDate.now().minusDays(14);
-        List<MetricasDiarias> metricas = metricasDiariasRepository
-            .findByAtletaIdAndDataGreaterThanEqualOrderByDataAsc(atletaId, dataLimite);
-
-        if (metricas.isEmpty()) {
-            log.warn("Nenhuma métrica encontrada para atleta {} nos últimos 14 dias", atletaId);
-            List<TreinoRealizado> treinosRealizados = treinoRealizadoRepository.findTreinoRealizadosByAtletaId(atletaId);
-            var diasConsecutivos = contarDiasConsecutivos(treinosRealizados);
-            var diasDescanso = contarDiasDeDescansoNoPeriodo(treinosRealizados);
-
-            return new PadroesTreino(diasConsecutivos, diasDescanso);
-        }
-
-        // Ordenar do mais recente para o mais antigo
-        List<MetricasDiarias> metricasDesc = new java.util.ArrayList<>(metricas);
-        metricasDesc.sort((m1, m2) -> m2.getData().compareTo(m1.getData()));
-
-        // Calcular dias consecutivos (sequência de hoje para trás)
-        int diasConsecutivos = 0;
-        LocalDate dataEsperada = LocalDate.now();
-
-        for (MetricasDiarias metrica : metricasDesc) {
-            // Se a data não é a esperada, quebra a sequência
-            if (!metrica.getData().equals(dataEsperada)) {
-                break;
-            }
-
-            // Se houve treino neste dia, incrementa
-            if (metrica.getTreinosRealizados() != null && metrica.getTreinosRealizados() > 0) {
-                diasConsecutivos++;
-                dataEsperada = dataEsperada.minusDays(1);
-            } else {
-                // Encontrou dia sem treino, para a contagem
-                break;
-            }
-        }
-
-        // Calcular dias desde último descanso
-        int diasDesdeDescanso = 0;
-        for (MetricasDiarias metrica : metricasDesc) {
-            // Se encontrou dia sem treino, para
-            if (metrica.getTreinosRealizados() == null || metrica.getTreinosRealizados() == 0) {
-                break;
-            }
-            diasDesdeDescanso++;
-        }
-
-        log.info("Padrões de treino calculados - Dias consecutivos: {}, Dias desde descanso: {}",
-            diasConsecutivos, diasDesdeDescanso);
-
-        return new com.menthoros.dto.output.PadroesTreino(
-            diasConsecutivos,
-            diasDesdeDescanso
-        );
-    }
-
-    public static int contarDiasConsecutivos(List<TreinoRealizado> treinoRealizadosByAtletaId) {
-
-        List<LocalDate> dateList = treinoRealizadosByAtletaId.stream()
-                .map(TreinoRealizado::getDataTreino)
-                .distinct()
-                .sorted()
-                .toList();
-
-        if(dateList.isEmpty()){
-            return 0;
-        }
-
-        int maiorSequencia = 1;
-        int sequenciaAtual = 1;
-
-        for (int i = 0; i < dateList.size(); i++) {
-            if(dateList.get(i).equals(dateList.get(i -1).plusDays(1))){
-                sequenciaAtual++;
-                maiorSequencia = Math.max(maiorSequencia, sequenciaAtual);
-            }else {
-                sequenciaAtual = 1;
-            }
-        }
-        return maiorSequencia;
-    }
-
-    public static int contarDiasDeDescansoNoPeriodo(List<TreinoRealizado> treinos) {
-        var datas = treinos.stream()
-                .map(TreinoRealizado::getDataTreino)
-                .distinct()
-                .sorted()
-                .toList();
-
-        if (datas.isEmpty()) return 0;
-
-        LocalDate inicio = datas.get(0);
-        LocalDate fim = datas.get(datas.size() - 1);
-
-        int totalDiasNoIntervalo = (int) (ChronoUnit.DAYS.between(inicio, fim) + 1); // inclusivo
-        int diasComTreino = datas.size();
-
-        return totalDiasNoIntervalo - diasComTreino;
     }
 
 }

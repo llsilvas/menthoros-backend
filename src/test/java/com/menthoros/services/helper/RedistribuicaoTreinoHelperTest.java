@@ -10,12 +10,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.menthoros.util.Utils;
+
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -28,7 +29,7 @@ class RedistribuicaoTreinoHelperTest {
     private RedistribuicaoTreinoHelper redistribuicaoTreinoHelper;
 
     @Test
-    @DisplayName("Deve filtrar treinos Longo e Intervalados no meio da semana")
+    @DisplayName("Deve descartar LONGO por adjacência com INTERVALADO, mantendo os demais treinos")
     void deveFiltrarTreinosIncompativeisNoMeioDaSemana() {
         LocalDate quarta = LocalDate.of(2025, 10, 8);
         LocalDate semanaInicio = quarta.with(DayOfWeek.MONDAY);
@@ -36,6 +37,8 @@ class RedistribuicaoTreinoHelperTest {
 
         when(regraGeracaoTreinoMock.isMeioSemana(quarta)).thenReturn(true);
 
+        // LONGO e INTERVALADO são ambos alta intensidade.
+        // Placement: REGEN→QUI, CONTINUO→SEX, INTERVALADO→SAB (OK), LONGO→DOM (consecutivo com SAB=INTERVALADO → descartado)
         List<TreinoPlanejadoLlmDto> treinos = List.of(
                 criarTreinoMock("QUINTA", "LONGO"),
                 criarTreinoMock("SEXTA", "INTERVALADO"),
@@ -52,9 +55,12 @@ class RedistribuicaoTreinoHelperTest {
                 ModoGeracaoPlano.SEMANA_ATUAL
         );
 
-        assertEquals(2, resultado.size());
-        assertTrue(resultado.stream().noneMatch(t ->
-                t.tipoTreino().equals("LONGO") || t.tipoTreino().equals("INTERVALADO")));
+        // REGEN, CONTINUO e INTERVALADO alocados; LONGO descartado por adjacência com INTERVALADO
+        assertEquals(3, resultado.size());
+        assertTrue(resultado.stream().noneMatch(t -> t.tipoTreino().equals("LONGO")),
+                "LONGO deve ser descartado pois ficaria em dia consecutivo ao INTERVALADO");
+        assertTrue(resultado.stream().anyMatch(t -> t.tipoTreino().equals("INTERVALADO")),
+                "INTERVALADO tem slot válido e deve ser mantido");
     }
 
     @Test
@@ -133,20 +139,21 @@ class RedistribuicaoTreinoHelperTest {
     }
 
     @Test
-    @DisplayName("Deve manter todos os dias quando modo for PROXIMA_SEMANA")
+    @DisplayName("Deve manter todos os dias quando modo for PROXIMA_SEMANA sem dias consecutivos intensos")
     void deveManterTodosDiasQuandoModoForProximaSemana() {
         LocalDate quinta = LocalDate.of(2025, 10, 9);
         LocalDate semanaInicio = quinta.plusWeeks(1).with(DayOfWeek.MONDAY);
         LocalDate semanaFim = semanaInicio.plusDays(6);
 
+        // SEGUNDA, TERCA, QUINTA — FARTLEK(TER) e INTERVALADO(QUI) têm QUA como buffer
         List<TreinoPlanejadoLlmDto> treinos = List.of(
                 criarTreinoMock("SEGUNDA", "CONTINUO"),
                 criarTreinoMock("TERCA", "FARTLEK"),
-                criarTreinoMock("QUARTA", "INTERVALADO")
+                criarTreinoMock("QUINTA", "INTERVALADO")
         );
 
         List<DiaSemana> diasDisponiveis = List.of(
-                DiaSemana.SEGUNDA, DiaSemana.TERCA, DiaSemana.QUARTA
+                DiaSemana.SEGUNDA, DiaSemana.TERCA, DiaSemana.QUINTA
         );
 
         var resultado = redistribuicaoTreinoHelper.redistribuirTreinos(
@@ -155,6 +162,92 @@ class RedistribuicaoTreinoHelperTest {
         );
 
         assertEquals(3, resultado.size());
+    }
+
+    @Test
+    @DisplayName("Não deve colocar dois treinos intensivos em dias consecutivos")
+    void naoDeveColocarDoisIntensivosEmDiasConsecutivos() {
+        LocalDate segunda = LocalDate.of(2025, 10, 6);
+        LocalDate semanaInicio = segunda;
+        LocalDate semanaFim = semanaInicio.plusDays(6);
+
+        // INTERVALADO e TIRO são ambos alta intensidade — não podem ser TER+QUA (consecutivos)
+        List<TreinoPlanejadoLlmDto> treinos = List.of(
+                criarTreinoMock("SEGUNDA", "REGENERATIVO"),
+                criarTreinoMock("TERCA", "INTERVALADO"),
+                criarTreinoMock("QUINTA", "TIRO")
+        );
+
+        List<DiaSemana> diasDisponiveis = List.of(
+                DiaSemana.SEGUNDA, DiaSemana.TERCA, DiaSemana.QUARTA, DiaSemana.QUINTA
+        );
+
+        var resultado = redistribuicaoTreinoHelper.redistribuirTreinos(
+                treinos, diasDisponiveis, segunda, semanaInicio, semanaFim,
+                ModoGeracaoPlano.PROXIMA_SEMANA
+        );
+
+        // Verifica que INTERVALADO e TIRO não estão em dias consecutivos
+        var diasIntensivos = resultado.stream()
+                .filter(t -> t.tipoTreino().equals("INTERVALADO") || t.tipoTreino().equals("TIRO"))
+                .map(TreinoPlanejadoLlmDto::diaSemana)
+                .map(DiaSemana::valueOf)
+                .toList();
+
+        assertEquals(2, diasIntensivos.size(), "Ambos os intensivos devem ser alocados");
+        DiaSemana d1 = diasIntensivos.get(0);
+        DiaSemana d2 = diasIntensivos.get(1);
+        int diff = Math.abs(
+                Utils.converterParaDayOfWeek(d1).getValue() -
+                Utils.converterParaDayOfWeek(d2).getValue()
+        );
+        assertTrue(diff > 1, "Dias intensivos não devem ser consecutivos (diff=" + diff + ")");
+    }
+
+    @Test
+    @DisplayName("Deve descartar intensivo quando não há slot sem conflito de adjacência")
+    void deveDescartarIntensivoSemEspacoDisponivel() {
+        LocalDate segunda = LocalDate.of(2025, 10, 6);
+        LocalDate semanaInicio = segunda;
+        LocalDate semanaFim = semanaInicio.plusDays(6);
+
+        // Apenas TER e QUA disponíveis — dois intensivos consecutivos: o segundo deve ser descartado
+        List<TreinoPlanejadoLlmDto> treinos = List.of(
+                criarTreinoMock("TERCA", "INTERVALADO"),
+                criarTreinoMock("QUARTA", "TIRO")
+        );
+
+        List<DiaSemana> diasDisponiveis = List.of(DiaSemana.TERCA, DiaSemana.QUARTA);
+
+        var resultado = redistribuicaoTreinoHelper.redistribuirTreinos(
+                treinos, diasDisponiveis, segunda, semanaInicio, semanaFim,
+                ModoGeracaoPlano.PROXIMA_SEMANA
+        );
+
+        assertEquals(1, resultado.size(), "Apenas o primeiro intensivo deve ser alocado");
+    }
+
+    @Test
+    @DisplayName("Deve permitir treino intensivo e leve em dias consecutivos")
+    void devePermitirIntensivoELeveConsecutivos() {
+        LocalDate segunda = LocalDate.of(2025, 10, 6);
+        LocalDate semanaInicio = segunda;
+        LocalDate semanaFim = semanaInicio.plusDays(6);
+
+        // TER=INTERVALADO, QUA=REGENERATIVO — leve depois de intenso é permitido fisiologicamente
+        List<TreinoPlanejadoLlmDto> treinos = List.of(
+                criarTreinoMock("TERCA", "INTERVALADO"),
+                criarTreinoMock("QUARTA", "REGENERATIVO")
+        );
+
+        List<DiaSemana> diasDisponiveis = List.of(DiaSemana.TERCA, DiaSemana.QUARTA);
+
+        var resultado = redistribuicaoTreinoHelper.redistribuirTreinos(
+                treinos, diasDisponiveis, segunda, semanaInicio, semanaFim,
+                ModoGeracaoPlano.PROXIMA_SEMANA
+        );
+
+        assertEquals(2, resultado.size(), "Intensivo + leve em dias consecutivos deve ser permitido");
     }
 
     @Test

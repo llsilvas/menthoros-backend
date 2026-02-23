@@ -1,40 +1,66 @@
 # ========================================
-# SPRING CORE CONFIGURATION
+# PERFIL: dev  (Railway cloud / local docker)
 # ========================================
 spring:
   config:
     activate:
       on-profile: dev
 
+  # ----------------------------------------
+  # DATABASE — Railway ou local
+  #
+  # Ordem de resolução:
+  #   1. PGHOST / PGPORT / PGDATABASE / POSTGRES_USER / POSTGRES_PASSWORD
+  #      → injetados pelo serviço Postgres do Railway
+  #   2. DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD
+  #      → definidos no docker-compose local
+  #   3. Defaults hardcoded (localhost, menthoros-db, etc.)
+  # ----------------------------------------
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:menthoros-db}}
+    username: ${SPRING_DATASOURCE_USERNAME:${DB_USER:menthoros}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${DB_PASSWORD:menthoros123}}
+    hikari:
+      maximum-pool-size: 5        # Railway free tier limita conexões simultâneas
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # ----------------------------------------
+  # JPA / HIBERNATE
+  # ----------------------------------------
   jpa:
     properties:
       hibernate:
-        format_sql: false
+        "[format_sql]": false
         dialect: org.hibernate.dialect.PostgreSQLDialect
     show-sql: false
     open-in-view: false
     hibernate:
-      ddl-auto: none
+      ddl-auto: none              # Flyway gerencia o schema
 
   # ----------------------------------------
-  # FLYWAY CONFIGURATION
+  # FLYWAY
   # ----------------------------------------
   flyway:
     enabled: true
 
+  # ----------------------------------------
+  # CACHE — Caffeine (sem Redis no Railway por padrão)
+  # ----------------------------------------
+  cache:
+    type: caffeine
 
 # ========================================
-# LOGGING CONFIGURATION
+# LOGGING
 # ========================================
 logging:
   level:
     root: info
-    # Desabilita logs SQL do Hibernate
-    org.hibernate.SQL: off
-    org.hibernate.type.descriptor.sql.BasicBinder: off
-    org.hibernate.orm.jdbc.bind: off
-    # Desabilita logs de transações
-    org.springframework.orm.jpa: warn
-    org.springframework.transaction: warn
-    # Desabilita logs do HikariCP (connection pool)
-    com.zaxxer.hikari: warn
+    "[org.hibernate.SQL]": off
+    "[org.hibernate.type.descriptor.sql.BasicBinder]": off
+    "[org.hibernate.orm.jdbc.bind]": off
+    "[org.springframework.orm.jpa]": warn
+    "[org.springframework.transaction]": warn
+    "[com.zaxxer.hikari]": warn

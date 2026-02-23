@@ -1,6 +1,6 @@
 -- Initial schema for Menthoros application
 -- This migration creates the basic tables structure
-
+CREATE EXTENSION IF NOT EXISTS vector;
 -- Atleta table
 CREATE TABLE IF NOT EXISTS tb_atleta (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

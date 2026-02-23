@@ -12,6 +12,8 @@ import org.hibernate.type.SqlTypes;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "tb_treino_realizado",
@@ -85,6 +87,10 @@ public class TreinoRealizado extends TreinoBase{
 
     @ManyToOne(fetch = FetchType.LAZY)
     private PlanoSemanal planoSemanal;
+
+    @OneToMany(mappedBy = "treinoRealizado", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    @OrderBy("ordem ASC")
+    private List<EtapaRealizada> etapasRealizadas = new ArrayList<>();
 
     @Column(name = "external_id")
     private String externalId;

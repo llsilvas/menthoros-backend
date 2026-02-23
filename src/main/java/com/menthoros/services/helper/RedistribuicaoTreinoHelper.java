@@ -13,6 +13,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -25,6 +26,20 @@ public class RedistribuicaoTreinoHelper {
             TipoTreino.LONGO,
             TipoTreino.INTERVALADO,
             TipoTreino.TEMPO_RUN
+    );
+
+    /**
+     * Tipos de alta intensidade que exigem ao menos 1 dia de intervalo entre si.
+     * Critério: fatorImpacto >= 1.15 (exige 36h+ de recuperação).
+     */
+    private static final Set<TipoTreino> TIPOS_ALTA_INTENSIDADE = Set.of(
+            TipoTreino.LONGO,
+            TipoTreino.FARTLEK,
+            TipoTreino.TEMPO_RUN,
+            TipoTreino.PROVA,
+            TipoTreino.INTERVALADO,
+            TipoTreino.TIRO,
+            TipoTreino.SUBIDA
     );
 
     public List<TreinoPlanejadoLlmDto> redistribuirTreinos(
@@ -79,38 +94,24 @@ public class RedistribuicaoTreinoHelper {
     }
 
     /**
-     * Filtra treinos que são compatíveis com o modo de geração
+     * Verifica (sem excluir) se a LLM gerou treinos de alta intensidade no meio da semana.
+     * O LLM já recebe instrução sobre dias restantes — este método serve apenas como guard de log.
      */
     private List<TreinoPlanejadoLlmDto> filtrarTreinosCompativeis(
             List<TreinoPlanejadoLlmDto> treinos,
             LocalDate hoje,
             ModoGeracaoPlano modo) {
 
-        boolean isMeioDaSemana = regraGeracao.isMeioSemana(hoje);
+        if (modo == ModoGeracaoPlano.SEMANA_ATUAL && regraGeracao.isMeioSemana(hoje)) {
+            treinos.forEach(treino -> {
+                TipoTreino tipo = TipoTreino.valueOf(treino.tipoTreino());
+                if (TIPOS_INCOMPATIVEIS_MEIO_SEMANA.contains(tipo)) {
+                    log.warn("Safety-net: LLM gerou treino {} no meio da semana — verifique o prompt.", tipo);
+                }
+            });
+        }
 
-        return treinos.stream()
-                .filter(treino -> {
-                    TipoTreino tipo = TipoTreino.valueOf(treino.tipoTreino());
-
-                    // Se modo = PRÓXIMA_SEMANA, aceita todos
-                    if (modo == ModoGeracaoPlano.PROXIMA_SEMANA) {
-                        return true;
-                    }
-
-                    // Se modo = SEMANA_ATUAL e é meio da semana
-                    if (isMeioDaSemana) {
-                        boolean isCompativel = !TIPOS_INCOMPATIVEIS_MEIO_SEMANA.contains(tipo);
-
-                        if (!isCompativel) {
-                            log.info("Treino {} EXCLUÍDO - incompatível com meio da semana", tipo);
-                        }
-
-                        return isCompativel;
-                    }
-
-                    return true;
-                })
-                .toList();
+        return treinos;
     }
 
     private List<DiaSemana> filtrarDiasValidos(
@@ -138,43 +139,76 @@ public class RedistribuicaoTreinoHelper {
     }
 
     /**
-     * Redistribui treinos pelos dias disponíveis
+     * Redistribui treinos pelos dias disponíveis usando greedy placement.
+     *
+     * <p>Garante que dois treinos de alta intensidade nunca sejam alocados em dias consecutivos,
+     * prevenindo overtraining e risco de lesão. Treinos leves são alocados primeiro (menor prioridade
+     * numérica), abrindo espaço para que os intensos encontrem slots com buffers adequados.
+     * Se um treino intenso não encontrar slot válido (sem conflito de adjacência), é descartado
+     * com log de aviso.
      */
     private List<TreinoPlanejadoLlmDto> redistribuir(
             List<TreinoPlanejadoLlmDto> treinos,
             List<DiaSemana> diasValidos,
             LocalDate semanaInicio) {
 
-        // Ordena treinos por prioridade (regenerativo → contínuo → fartlek → outros)
         List<TreinoPlanejadoLlmDto> treinosOrdenados = ordenarPorPrioridade(treinos);
-
-        // Ordena dias por ordem da semana
         List<DiaSemana> diasOrdenados = ordenarDiasSemana(diasValidos);
 
-        List<TreinoPlanejadoLlmDto> resultado = new ArrayList<>();
+        // Mapa: dia → treino alocado (preserva ordem de inserção)
+        Map<DiaSemana, TreinoPlanejadoLlmDto> atribuicoes = new LinkedHashMap<>();
 
-        // Distribui 1 treino por dia disponível
-        int totalTreinos = Math.min(treinosOrdenados.size(), diasOrdenados.size());
+        for (TreinoPlanejadoLlmDto treino : treinosOrdenados) {
+            TipoTreino tipo = TipoTreino.valueOf(treino.tipoTreino());
+            boolean isIntensivo = TIPOS_ALTA_INTENSIDADE.contains(tipo);
 
-        for (int i = 0; i < totalTreinos; i++) {
-            TreinoPlanejadoLlmDto treinoOriginal = treinosOrdenados.get(i);
-            DiaSemana novoDia = diasOrdenados.get(i);
-            LocalDate novaData = calcularDataDia(semanaInicio, novoDia);
+            DiaSemana diaEscolhido = null;
+            for (DiaSemana dia : diasOrdenados) {
+                if (atribuicoes.containsKey(dia)) continue; // dia já ocupado
 
-            // Cria novo DTO com dia atualizado
-            TreinoPlanejadoLlmDto treinoAtualizado = atualizarDiaTreino(
-                    treinoOriginal,
-                    novoDia,
-                    novaData
-            );
+                if (isIntensivo && temIntensivoConsecutivo(dia, atribuicoes)) continue; // conflito de adjacência
 
-            resultado.add(treinoAtualizado);
+                diaEscolhido = dia;
+                break;
+            }
 
-            log.debug("Treino redistribuído: {} → {} ({})",
-                    treinoOriginal.tipoTreino(), novoDia, novaData);
+            if (diaEscolhido != null) {
+                atribuicoes.put(diaEscolhido, treino);
+                log.debug("Treino redistribuído: {} → {} ({})",
+                        treino.tipoTreino(), diaEscolhido, calcularDataDia(semanaInicio, diaEscolhido));
+            } else {
+                log.warn("Treino {} descartado — nenhum slot disponível sem conflito de dias consecutivos.", tipo);
+            }
         }
 
-        return resultado;
+        return atribuicoes.entrySet().stream()
+                .sorted(Comparator.comparingInt(e -> Utils.converterParaDayOfWeek(e.getKey()).getValue()))
+                .map(e -> atualizarDiaTreino(e.getValue(), e.getKey(), calcularDataDia(semanaInicio, e.getKey())))
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Verifica se o dia candidato é adjacente a algum dia já alocado com sessão de alta intensidade.
+     */
+    private boolean temIntensivoConsecutivo(DiaSemana dia, Map<DiaSemana, TreinoPlanejadoLlmDto> atribuicoes) {
+        return atribuicoes.entrySet().stream()
+                .anyMatch(e -> {
+                    TipoTreino tipoAtribuido = TipoTreino.valueOf(e.getValue().tipoTreino());
+                    return TIPOS_ALTA_INTENSIDADE.contains(tipoAtribuido)
+                            && diasSaoConsecutivos(dia, e.getKey());
+                });
+    }
+
+    /**
+     * Retorna true se os dois dias da semana são consecutivos (diferença de 1 dia).
+     * Não há wrap-around entre domingo e segunda (semana já encerrada).
+     */
+    private boolean diasSaoConsecutivos(DiaSemana d1, DiaSemana d2) {
+        int diff = Math.abs(
+                Utils.converterParaDayOfWeek(d1).getValue()
+                        - Utils.converterParaDayOfWeek(d2).getValue()
+        );
+        return diff == 1;
     }
 
     /**

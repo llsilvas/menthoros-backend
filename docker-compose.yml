@@ -1,12 +1,22 @@
+# docker-compose.yml — Perfil LOCAL
+# Sobe a infraestrutura (postgres, redis) + aplicação com hot reload via Maven
+#
+# Uso:
+#   docker compose up           # inicia tudo
+#   docker compose up postgres redis  # apenas infraestrutura
+#
+# Pré-requisito: arquivo .env com OPENAI_API_KEY definido
+
 services:
-  # Banco de dados PostgreSQL com extensão pgvector
+
+  # ── PostgreSQL com extensão pgvector ────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg17
     container_name: menthoros-db
     environment:
-      POSTGRES_DB: menthoros-db
-      POSTGRES_USER: menthoros
-      POSTGRES_PASSWORD: menthoros123
+      POSTGRES_DB: ${DB_NAME:-menthoros-db}
+      POSTGRES_USER: ${DB_USER:-menthoros}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-menthoros123}
     ports:
       - "5432:5432"
     volumes:
@@ -14,20 +24,18 @@ services:
       - ./src/main/resources/db/init/menthoros_schema.sql:/docker-entrypoint-initdb.d/init.sql
     command: >
       postgres
-      -c shared_buffers=512MB
-      -c effective_cache_size=2GB
-      -c maintenance_work_mem=256MB
-      -c max_parallel_workers_per_gather=4
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U menthoros -d menthoros-db"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-menthoros} -d ${DB_NAME:-menthoros-db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - menthoros-network
 
-  # Redis para cache (opcional, mas recomendado para produção)
+  # ── Redis (cache) ────────────────────────────────────────────────────────────
   redis:
     image: redis:7.2-alpine
     container_name: menthoros-redis
@@ -44,90 +52,72 @@ services:
     networks:
       - menthoros-network
 
-  # Aplicação Spring Boot
-  menthoros-app:
+  # ── Aplicação Spring Boot (hot reload) ───────────────────────────────────────
+  app:
     build:
       context: .
-      dockerfile: docker/Dockerfile.dev
+      dockerfile: docker/Dockerfile.local
     container_name: menthoros-app
+    env_file:
+      - .env
     environment:
-      # Database
-      DB_HOST: postgres
-      DB_NAME: menthoros-db
-      DB_USER: menthoros
-      DB_PASSWORD: menthoros123
-      
-      # JPA/Hibernate
-      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
-      SPRING_JPA_SHOW_SQL: false
-      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: false
-      
-      # Flyway
-      SPRING_FLYWAY_ENABLED: true
-      SPRING_FLYWAY_BASELINE_ON_MIGRATE: true
-      
-      # Cache (Redis)
+      # Banco de dados (aponta para o serviço postgres, não localhost)
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-menthoros-db}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-menthoros}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-menthoros123}
+
+      # Redis
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_CACHE_TYPE: redis
-      
-      # AI Service
+
+      # JPA (modo desenvolvimento: DDL validate + SQL log ativo)
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_JPA_SHOW_SQL: "true"
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: "true"
+
+      # Flyway
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
+
+      # Spring AI
       SPRING_AI_OPENAI_API_KEY: ${OPENAI_API_KEY}
       SPRING_AI_OPENAI_CHAT_MODEL: gpt-4o-mini
       SPRING_AI_OPENAI_EMBEDDING_MODEL: text-embedding-3-small
-      
-      # Profile
-      SPRING_PROFILES_ACTIVE: docker,dev
-      
-      # JVM Settings
-      JAVA_OPTS: >-
-        -XX:+UseContainerSupport
-        -XX:MaxRAMPercentage=75.0
-        -XX:+UseG1GC
-        -XX:+UseStringDeduplication
-        -Djava.security.egd=file:/dev/./urandom
-        -Dserver.port=8099
+
+      # Perfil ativo
+      SPRING_PROFILES_ACTIVE: local,docker
+
+      # Spring DevTools
+      SPRING_DEVTOOLS_RESTART_ENABLED: "true"
+      SPRING_DEVTOOLS_LIVERELOAD_ENABLED: "true"
+
+      # Logging
+      LOGGING_LEVEL_COM_MENTHOROS: DEBUG
+      LOGGING_LEVEL_SQL: DEBUG
     ports:
-      - "8099:8099"
+      - "${SERVER_PORT:-8099}:8099"
+      - "5005:5005"    # Debug JDWP (IDE remote debug)
+      - "35729:35729"  # LiveReload (Spring DevTools)
+    volumes:
+      - ./src:/app/src:ro           # Hot reload: source code montado como volume
+      - ./pom.xml:/app/pom.xml:ro   # Hot reload: pom atualizado sem rebuild
+      - maven_cache:/root/.m2       # Cache do Maven entre restarts
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8099/actuator/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    restart: unless-stopped
+    restart: "no"  # Não reiniciar automaticamente em desenvolvimento
     networks:
       - menthoros-network
-
-  # Nginx para load balancing (opcional para produção)
-  nginx:
-    image: nginx:alpine
-    container_name: menthoros-nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - menthoros-app
-    restart: unless-stopped
-    networks:
-      - menthoros-network
-    profiles:
-      - production
 
 volumes:
   pg_data:
-    driver: local
   redis_data:
-    driver: local
+  maven_cache:
 
 networks:
   menthoros-network:
+    name: menthoros-network    # Nome fixo sem prefixo de projeto — necessário para external: true no frontend
     driver: bridge

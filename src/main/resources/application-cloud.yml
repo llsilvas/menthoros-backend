@@ -1,0 +1,64 @@
+# ========================================
+# PERFIL: cloud  (Railway)
+# ========================================
+server:
+  port: 8080
+spring:
+  config:
+    activate:
+      on-profile: cloud
+
+  # ----------------------------------------
+  # DATABASE — Railway Postgres
+  #
+  # Variáveis injetadas automaticamente pelo serviço Postgres do Railway:
+  #   PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE, DATABASE_URL
+  # ----------------------------------------
+  datasource:
+    url: ${JDBC_DATABASE_URL:jdbc:postgresql://localhost:5432/menthoros}
+    username: ${JDBC_DATABASE_USERNAME:postgres}
+    password: ${JDBC_DATABASE_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: 5        # Railway free tier limita conexões simultâneas
+      minimum-idle: 1
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  # ----------------------------------------
+  # JPA / HIBERNATE
+  # ----------------------------------------
+  jpa:
+    properties:
+      hibernate:
+        "[format_sql]": false
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: false
+    open-in-view: false
+    hibernate:
+      ddl-auto: none              # Flyway gerencia o schema
+
+  # ----------------------------------------
+  # FLYWAY
+  # ----------------------------------------
+  flyway:
+    enabled: true
+
+  # ----------------------------------------
+  # CACHE — Caffeine (sem Redis no Railway por padrão)
+  # ----------------------------------------
+  cache:
+    type: caffeine
+
+# ========================================
+# LOGGING
+# ========================================
+logging:
+  level:
+    root: info
+    "[org.hibernate.SQL]": off
+    "[org.hibernate.type.descriptor.sql.BasicBinder]": off
+    "[org.hibernate.orm.jdbc.bind]": off
+    "[org.springframework.orm.jpa]": warn
+    "[org.springframework.transaction]": warn
+    "[com.zaxxer.hikari]": warn

@@ -1,0 +1,71 @@
+# Dockerfile para deploy em nuvem (Railway / cloud)
+# Build multi-stage: stage 1 (compilação) → stage 2 (extração de layers) → stage 3 (runtime enxuto)
+# Aproveita a feature de layers do Spring Boot para cache otimizado no Docker
+
+# ── Stage 1: Build ────────────────────────────────────────────────────────────
+FROM llsilvas/java21-maven-otel:2.16.0 AS builder
+
+WORKDIR /app
+
+# Cache de dependências como layer separada (rebuild mais rápido quando só o src muda)
+COPY pom.xml .
+RUN mvn dependency:resolve dependency:resolve-plugins -B -q \
+    -Dmaven.test.skip=true \
+    || true
+
+# Compilar aplicação
+COPY src ./src
+RUN mvn clean package -DskipTests -B
+
+# ── Stage 2: Extração de layers ───────────────────────────────────────────────
+# Usa layertools para separar o JAR em camadas por frequência de mudança:
+#   dependencies         → dependências non-SNAPSHOT (raramente mudam)
+#   spring-boot-loader   → classes do loader do Spring Boot
+#   snapshot-dependencies→ dependências SNAPSHOT (mudam ocasionalmente)
+#   application          → código da aplicação (muda com frequência)
+FROM eclipse-temurin:21-jre-alpine AS layertools
+
+WORKDIR /app
+COPY --from=builder /app/target/menthoros-*.jar app.jar
+RUN java -Djarmode=layertools -jar app.jar extract
+
+# ── Stage 3: Runtime ──────────────────────────────────────────────────────────
+FROM eclipse-temurin:21-jre-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache dumb-init && \
+    addgroup -g 1001 -S spring && \
+    adduser -u 1001 -S spring -G spring
+
+COPY --from=builder /opt/opentelemetry-javaagent.jar /app/opentelemetry-javaagent.jar
+
+# Camadas copiadas em ordem crescente de frequência de mudança:
+# Docker cacheia as primeiras e só reconstrói a partir da camada que mudou.
+COPY --from=layertools /app/dependencies/ ./
+COPY --from=layertools /app/spring-boot-loader/ ./
+COPY --from=layertools /app/snapshot-dependencies/ ./
+COPY --from=layertools /app/application/ ./
+
+RUN chown -R spring:spring /app
+USER spring:spring
+
+# Railway injeta $PORT dinamicamente — fallback 8080 (padrão Spring Boot)
+EXPOSE 8080
+
+ENTRYPOINT ["dumb-init", "--"]
+
+# JarLauncher é o entry point correto quando as classes estão extraídas no classpath (Spring Boot 3.x)
+# Flags JVM inline (sem ENV JAVA_OPTS) para evitar problemas de expansão no Alpine sh
+# -Dserver.port         → usa $PORT do Railway (obrigatório)
+# -Dspring.profiles.active → usa var do Railway ou padrão "cloud"
+CMD ["sh", "-c", \
+  "java \
+  -XX:+UseContainerSupport \
+  -XX:MaxRAMPercentage=75.0 \
+  -XX:+UseG1GC \
+  -XX:+UseStringDeduplication \
+  -Djava.security.egd=file:/dev/./urandom \
+  -Dserver.port=${PORT:-8080} \
+  -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-cloud} \
+  org.springframework.boot.loader.launch.JarLauncher"]
