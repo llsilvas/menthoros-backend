@@ -102,7 +102,7 @@ public class PlanoServiceImpl implements PlanoService {
         Hibernate.initialize(dadosPlano.atleta().getProvas()); // evita LazyInitializationException
 
         try {
-            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano);
+            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano, modoGeracao);
 
             if (planoDto == null) {
                 throw new LLMException("Falha ao gerar plano: IA retornou resposta nula. Tente novamente.");
@@ -217,18 +217,23 @@ public class PlanoServiceImpl implements PlanoService {
      * @return data de início calculada para o novo plano
      */
     private LocalDate calcularSemanaInicio(UUID atletaId, LocalDate hoje, ModoGeracaoPlano modoGeracao) {
+        LocalDate segundaFeiraSemanaAtual = hoje.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY));
+        LocalDate segundaFeiraSemanaProxima = hoje.with(java.time.temporal.TemporalAdjusters.next(java.time.DayOfWeek.MONDAY));
+
+        if (ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracao)) {
+            return segundaFeiraSemanaAtual;
+        }
+
         return planoSemanalRepository
                 .findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)
                 .map(p -> {
-                    // Se o último plano já passou, gera para a próxima semana
-                    LocalDate proximaSemana = hoje.with(java.time.temporal.TemporalAdjusters.next(java.time.DayOfWeek.MONDAY));
-                    if (p.getSemanaInicio().plusWeeks(1).isBefore(proximaSemana)) {
-                        return proximaSemana;
-                    }
-                    // Caso contrário, segue a lógica padrão
-                    return p.getSemanaInicio().plusWeeks(1);
+                    LocalDate proximaDataPlano = p.getSemanaInicio().plusWeeks(1);
+                    // Se o último plano já passou, usa a próxima segunda-feira
+                    return proximaDataPlano.isBefore(segundaFeiraSemanaProxima)
+                            ? segundaFeiraSemanaProxima
+                            : proximaDataPlano;
                 })
-                .orElse(hoje.with(java.time.temporal.TemporalAdjusters.next(java.time.DayOfWeek.MONDAY)));
+                .orElse(segundaFeiraSemanaProxima);
     }
 
     /**
@@ -501,11 +506,11 @@ public class PlanoServiceImpl implements PlanoService {
         return new DadosPlanoDto(atleta, dataInicio, planoAnterior, ultimosTreinos, metaDados);
     }
 
-    private PlanoSemanalLlmDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto) {
+    private PlanoSemanalLlmDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto, ModoGeracaoPlano modoGeracao) {
         try {
             log.info("Iniciando geração de plano para atleta: {}", dadosPlanoDto.atleta().getId());
 
-            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), null);
+            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), null, modoGeracao);
 
             validaPlanoGerado(planoDto);
             return planoDto;
