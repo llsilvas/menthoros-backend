@@ -10,10 +10,17 @@ import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.Atleta;
 import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.entity.Prova;
+import com.menthoros.enums.DiaSemana;
+import com.menthoros.enums.ModoGeracaoPlano;
 import com.menthoros.enums.NivelExperiencia;
+import com.menthoros.enums.TipoTreino;
 import com.menthoros.exception.LLMException;
 import com.menthoros.repository.AtletaRepository;
 import com.menthoros.services.IaService;
+import com.menthoros.services.helper.PaceValidator;
+import com.menthoros.services.helper.RegraGeracaoTreino;
+import com.menthoros.services.helper.TreinoHistoricoProvider;
+import com.menthoros.services.prompt.PaceHistoricoFormatter;
 import com.menthoros.services.prompt.PlanoTreinoPromptBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -24,10 +31,12 @@ import org.springframework.ai.openai.api.ResponseFormat;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -40,11 +49,23 @@ public class IaServiceImpl implements IaService {
     private final ChatClient chatClient;
     private final PlanoTreinoPromptBuilder promptBuilder;
     private final AtletaRepository atletaRepository;
+    private final RegraGeracaoTreino regraGeracaoTreino;
+    private final TreinoHistoricoProvider treinoHistoricoProvider;
+    private final PaceHistoricoFormatter paceHistoricoFormatter;
+    private final PaceValidator paceValidator;
 
-    public IaServiceImpl(ChatClient chatClient, PlanoTreinoPromptBuilder promptBuilder, AtletaRepository atletaRepository) {
+    public IaServiceImpl(ChatClient chatClient, PlanoTreinoPromptBuilder promptBuilder,
+                         AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
+                         TreinoHistoricoProvider treinoHistoricoProvider,
+                         PaceHistoricoFormatter paceHistoricoFormatter,
+                         PaceValidator paceValidator) {
         this.chatClient = chatClient;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
+        this.regraGeracaoTreino = regraGeracaoTreino;
+        this.treinoHistoricoProvider = treinoHistoricoProvider;
+        this.paceHistoricoFormatter = paceHistoricoFormatter;
+        this.paceValidator = paceValidator;
     }
 
     private OpenAiChatOptions defaultJsonSchemaOptions() {
@@ -230,11 +251,22 @@ public class IaServiceImpl implements IaService {
         }
     }
 
-    public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova){
-        LocalDate inicioSemana = LocalDate.now().plusWeeks(1).with(DayOfWeek.MONDAY);
+    public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracaoPlano){
+        LocalDate inicioSemana;
 
-//        String prompt = promptBuilder.buildEnhancedPrompt(atleta, metaDados, prova, inicioSemana);
-        String prompt = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana);
+        if(ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracaoPlano)){
+            inicioSemana = LocalDate.now().with(DayOfWeek.MONDAY);
+        }else{
+            inicioSemana = LocalDate.now().plusWeeks(1).with(DayOfWeek.MONDAY);
+        }
+
+        // Para SEMANA_ATUAL, filtra apenas os dias que ainda não passaram e informa o LLM.
+        // Para PROXIMA_SEMANA, passa null — o prompt usa todos os dias disponíveis do atleta.
+        List<DiaSemana> diasEfetivos = ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracaoPlano)
+                ? regraGeracaoTreino.filtrarDiasDisponiveis(atleta.getDiasDisponiveis(), LocalDate.now(), modoGeracaoPlano)
+                : null;
+
+        String prompt = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos);
 
         try {
             long startTime = System.currentTimeMillis(); // Captura o tempo de início
@@ -266,10 +298,13 @@ public class IaServiceImpl implements IaService {
 
         Atleta atleta = atletaRepository.findById(atletaId).orElseThrow(() -> new LLMException("Atleta não encontrado"));
 
-
         if (plano == null || plano.treinosPlanejados() == null) {
             throw new LLMException("Plano gerado está nulo ou sem treinos");
         }
+
+        // Pré-computar tetos de pace para validação (Fase 4)
+        var ctx = treinoHistoricoProvider.prepararContexto(atleta);
+        Map<TipoTreino, BigDecimal> tetoPorTipo = paceHistoricoFormatter.calcularTetoPorTipo(ctx.treinosUltimas4Semanas());
 
         List<TreinoPlanejadoLlmDto> treinosNormalizados = plano.treinosPlanejados().stream().map(treino -> {
             String tipoTreino = treino.tipoTreino();
@@ -294,6 +329,21 @@ public class IaServiceImpl implements IaService {
 
             // Validar repeticoes = 1 em todas as etapas
             validarRepeticoes(treino, atletaId);
+
+            // Validar ritmoAlvo contra teto de pace (Fase 4)
+            BigDecimal teto = null;
+            try {
+                teto = tetoPorTipo.get(TipoTreino.valueOf(tipoTreino));
+            } catch (IllegalArgumentException ignored) {}
+            String ritmoValidado = paceValidator.validar(treino.ritmoAlvo(), teto);
+            if (!Objects.equals(ritmoValidado, treino.ritmoAlvo())) {
+                treino = new TreinoPlanejadoLlmDto(
+                        treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
+                        treino.tssPlanejado(), treino.intensidadePlanejada(),
+                        treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
+                        treino.duracaoMin(), treino.distanciaKm(), ritmoValidado, treino.etapas()
+                );
+            }
 
             return treino;
         }).collect(Collectors.toList());

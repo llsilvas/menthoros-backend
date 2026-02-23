@@ -8,6 +8,7 @@ import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.Atleta;
 import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.entity.Prova;
+import com.menthoros.enums.ModoGeracaoPlano;
 
 import java.util.List;
 import java.util.Map;
@@ -16,7 +17,7 @@ public interface IaService {
 
     PlanoSemanalLlmDto gerarPlanoSemanal(AtletaOutputDto atletaOutputDto, List<TreinoRealizadoOutputDto> treinoRealizadoOutputDtoList, PlanoSemanalOutputDto planoSemanalOutputDto);
 
-    PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova);
+    PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracao);
 
     Map<Long, PlanoTreinoOutputDto> gerarPlanosEmLote(Map<AtletaOutputDto, List<TreinoRealizadoOutputDto>> atletaDtoListMap);
 }
