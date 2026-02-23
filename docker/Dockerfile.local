@@ -1,0 +1,25 @@
+# Dockerfile para desenvolvimento LOCAL
+# App roda com Maven hot reload dentro do container
+# O source code é montado via volume no docker-compose (não copiado aqui)
+#
+# Uso: docker compose up
+FROM maven:3.9.5-eclipse-temurin-21
+
+WORKDIR /app
+
+# Copia apenas o pom.xml para cache de dependências como layer separado
+# O source code é montado via volume em tempo de execução
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# Portas: aplicação | debug JDWP | LiveReload (Spring DevTools)
+EXPOSE 8099 5005 35729
+
+# Hot reload com debug remoto habilitado
+ENTRYPOINT ["mvn", "spring-boot:run", \
+    "-Dspring-boot.run.profiles=local,docker", \
+    "-Dspring-boot.run.jvmArguments=\
+-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005 \
+-XX:+UseContainerSupport \
+-XX:MaxRAMPercentage=50.0 \
+-Djava.security.egd=file:/dev/./urandom"]

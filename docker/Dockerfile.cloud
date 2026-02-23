@@ -1,0 +1,61 @@
+# Dockerfile para deploy em nuvem (cloud dev / produção)
+# Build multi-stage otimizado com OpenTelemetry
+#
+# Uso: docker compose -f docker-compose.cloud.yml up --build
+
+# ── Stage 1: Build ────────────────────────────────────────────────────────────
+# Imagem customizada com Maven 3.9.5, Java 21 e agente OpenTelemetry pré-instalado
+FROM llsilvas/java21-maven-otel:2.16.0 AS builder
+
+WORKDIR /app
+
+# Cache de dependências como layer separado (rebuild mais rápido)
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# Compilar aplicação
+COPY src ./src
+RUN mvn clean package -DskipTests -B
+
+# Extrair layers do Spring Boot para otimizar camadas da imagem final
+RUN mkdir -p extracted && \
+    java -Djarmode=tools -jar target/*.jar extract --layers --destination extracted
+
+# ── Stage 2: Runtime ──────────────────────────────────────────────────────────
+# JRE mínima Alpine — imagem final enxuta (~200MB vs ~600MB do builder)
+FROM eclipse-temurin:21-jre-alpine
+
+WORKDIR /app
+
+# dumb-init: gerenciador de processos leve (evita zombie processes)
+# Usuário não-root por segurança
+RUN apk add --no-cache dumb-init && \
+    addgroup -g 1001 -S spring && \
+    adduser -u 1001 -S spring -G spring
+
+# Agente OpenTelemetry para observabilidade (tracing, métricas, logs)
+COPY --from=builder /opt/opentelemetry-javaagent.jar /app/opentelemetry-javaagent.jar
+
+# Layers em ordem crescente de frequência de mudança (melhor aproveitamento de cache)
+COPY --from=builder /app/extracted/dependencies/ ./
+COPY --from=builder /app/extracted/spring-boot-loader/ ./
+COPY --from=builder /app/extracted/snapshot-dependencies/ ./
+COPY --from=builder /app/extracted/application/ ./
+
+RUN chown -R spring:spring /app
+USER spring:spring
+
+# JVM otimizada para containers
+ENV JAVA_OPTS="-XX:+UseContainerSupport \
+               -XX:MaxRAMPercentage=75.0 \
+               -XX:+UseG1GC \
+               -XX:+UseStringDeduplication \
+               -Djava.security.egd=file:/dev/./urandom"
+
+EXPOSE 8099
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8099/actuator/health || exit 1
+
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["sh", "-c", "java $JAVA_OPTS org.springframework.boot.loader.launch.JarLauncher"]

@@ -1,11 +1,10 @@
-# docker-compose.yml — Perfil LOCAL
-# Sobe a infraestrutura (postgres, redis) + aplicação com hot reload via Maven
+# docker-compose.cloud.yml — Perfil CLOUD DEV
+# Build multi-stage otimizado com OpenTelemetry para deploy em nuvem
 #
 # Uso:
-#   docker compose up           # inicia tudo
-#   docker compose up postgres redis  # apenas infraestrutura
+#   docker compose -f docker-compose.cloud.yml up --build
 #
-# Pré-requisito: arquivo .env com OPENAI_API_KEY definido
+# Pré-requisito: arquivo .env com OPENAI_API_KEY e demais variáveis definidas
 
 services:
 
@@ -17,15 +16,15 @@ services:
       POSTGRES_DB: ${DB_NAME:-menthoros-db}
       POSTGRES_USER: ${DB_USER:-menthoros}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-menthoros123}
-    ports:
-      - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./src/main/resources/db/init/menthoros_schema.sql:/docker-entrypoint-initdb.d/init.sql
     command: >
       postgres
-      -c shared_buffers=256MB
-      -c effective_cache_size=1GB
+      -c shared_buffers=512MB
+      -c effective_cache_size=2GB
+      -c maintenance_work_mem=256MB
+      -c max_parallel_workers_per_gather=4
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-menthoros} -d ${DB_NAME:-menthoros-db}"]
@@ -39,8 +38,6 @@ services:
   redis:
     image: redis:7.2-alpine
     container_name: menthoros-redis
-    ports:
-      - "6379:6379"
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -49,19 +46,20 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
     networks:
       - menthoros-network
 
-  # ── Aplicação Spring Boot (hot reload) ───────────────────────────────────────
+  # ── Aplicação Spring Boot (build completo + OTEL) ────────────────────────────
   app:
     build:
       context: .
-      dockerfile: docker/Dockerfile.local
+      dockerfile: docker/Dockerfile.cloud
     container_name: menthoros-app
     env_file:
       - .env
     environment:
-      # Banco de dados (aponta para o serviço postgres, não localhost)
+      # Banco de dados
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-menthoros-db}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-menthoros}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-menthoros123}
@@ -71,10 +69,10 @@ services:
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_CACHE_TYPE: redis
 
-      # JPA (modo desenvolvimento: DDL validate + SQL log ativo)
+      # JPA (cloud: sem DDL automático, sem SQL log)
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
-      SPRING_JPA_SHOW_SQL: "true"
-      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: "true"
+      SPRING_JPA_SHOW_SQL: "false"
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: "false"
 
       # Flyway
       SPRING_FLYWAY_ENABLED: "true"
@@ -86,36 +84,46 @@ services:
       SPRING_AI_OPENAI_EMBEDDING_MODEL: text-embedding-3-small
 
       # Perfil ativo
-      SPRING_PROFILES_ACTIVE: local,docker
+      SPRING_PROFILES_ACTIVE: dev,docker
 
-      # Spring DevTools
-      SPRING_DEVTOOLS_RESTART_ENABLED: "true"
-      SPRING_DEVTOOLS_LIVERELOAD_ENABLED: "true"
+      # JVM otimizada para containers em nuvem
+      JAVA_OPTS: >-
+        -XX:+UseContainerSupport
+        -XX:MaxRAMPercentage=75.0
+        -XX:+UseG1GC
+        -XX:+UseStringDeduplication
+        -Djava.security.egd=file:/dev/./urandom
+        -javaagent:/app/opentelemetry-javaagent.jar
+
+      # OpenTelemetry — observabilidade (tracing, métricas, logs)
+      OTEL_SERVICE_NAME: menthoros
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_ENDPOINT:-http://otel-collector:4317}
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=dev
 
       # Logging
-      LOGGING_LEVEL_COM_MENTHOROS: DEBUG
-      LOGGING_LEVEL_SQL: DEBUG
+      LOGGING_LEVEL_COM_MENTHOROS: INFO
     ports:
       - "${SERVER_PORT:-8099}:8099"
-      - "5005:5005"    # Debug JDWP (IDE remote debug)
-      - "35729:35729"  # LiveReload (Spring DevTools)
-    volumes:
-      - ./src:/app/src:ro           # Hot reload: source code montado como volume
-      - ./pom.xml:/app/pom.xml:ro   # Hot reload: pom atualizado sem rebuild
-      - maven_cache:/root/.m2       # Cache do Maven entre restarts
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    restart: "no"  # Não reiniciar automaticamente em desenvolvimento
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8099/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
     networks:
       - menthoros-network
 
 volumes:
   pg_data:
   redis_data:
-  maven_cache:
 
 networks:
   menthoros-network:
