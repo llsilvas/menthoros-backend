@@ -128,7 +128,8 @@ class PlanoServiceImplTest {
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
 
-        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any())).thenReturn(planoDto);
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao))).thenReturn(planoDto);
+        when(planoMetadadosRepository.findById(any())).thenReturn(Optional.of(metaDados));
 
         when(planoSemanalMapper.toEntity(planoDto)).thenReturn(planoSalvo);
         when(treinoMapper.toEntity(any(TreinoPlanejadoLlmDto.class))).thenReturn(treinoPlanejado);
@@ -146,7 +147,7 @@ class PlanoServiceImplTest {
             assertEquals(planoSalvo, resultado);
 
             verify(atletaRepository).findById(atletaId);
-            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any());
+            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao));
             verify(planoSemanalRepository).save(any(PlanoSemanal.class));
             verify(planoMetadadosRepository, times(1)).save(any(PlanoMetaDados.class));
         }
@@ -169,7 +170,7 @@ class PlanoServiceImplTest {
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
 
-        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any())).thenReturn(null);
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao))).thenReturn(null);
 
         try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
             hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
@@ -178,7 +179,7 @@ class PlanoServiceImplTest {
             assertThrows(LLMException.class, () ->
                     planoService.gerarPlanoTreino(atletaId, modoGeracao));
 
-            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any());
+            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao));
             verify(redistribuicaoHelper, never()).redistribuirTreinos(any(), any(), any(), any(), any(), any());
         }
     }
@@ -201,7 +202,7 @@ class PlanoServiceImplTest {
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
 
-        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any())).thenReturn(planoDto);
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao))).thenReturn(planoDto);
         when(redistribuicaoHelper.redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao)))
                 .thenReturn(Collections.emptyList());
 
@@ -214,7 +215,7 @@ class PlanoServiceImplTest {
 
             assertTrue(exception.getMessage().contains("Não foi possível gerar treinos"));
 
-            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any());
+            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao));
             verify(redistribuicaoHelper).redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao));
         }
     }
@@ -233,7 +234,7 @@ class PlanoServiceImplTest {
                 planoService.gerarPlanoTreino(atletaId, modoGeracao));
 
         verify(atletaRepository).findById(atletaId);
-        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any());
+        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any(), eq(modoGeracao));
     }
 
     @Test
@@ -253,7 +254,7 @@ class PlanoServiceImplTest {
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
 
-        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any()))
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao)))
                 .thenThrow(new LLMException("Erro na IA"));
 
         try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
@@ -265,7 +266,7 @@ class PlanoServiceImplTest {
 
             assertEquals("Erro na IA", exception.getMessage());
 
-            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any());
+            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao));
             verify(redistribuicaoHelper, never()).redistribuirTreinos(any(), any(), any(), any(), any(), any());
         }
     }
@@ -293,9 +294,10 @@ class PlanoServiceImplTest {
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
 
-        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any())).thenReturn(planoDto);
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao))).thenReturn(planoDto);
         when(redistribuicaoHelper.redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao)))
                 .thenReturn(treinosRedistribuidos);
+        when(planoMetadadosRepository.findById(any())).thenReturn(Optional.of(metaDados));
 
         when(planoSemanalMapper.toEntity(planoDto)).thenReturn(planoSalvo);
         when(treinoMapper.toEntity(any(TreinoPlanejadoLlmDto.class))).thenReturn(treinoPlanejado);
@@ -336,7 +338,7 @@ class PlanoServiceImplTest {
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
 
-        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any())).thenReturn(planoDto);
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao))).thenReturn(planoDto);
 
         try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
             hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
@@ -345,7 +347,7 @@ class PlanoServiceImplTest {
             assertThrows(LLMException.class, () ->
                     planoService.gerarPlanoTreino(atletaId, modoGeracao));
 
-            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any());
+            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao));
             verify(redistribuicaoHelper, never()).redistribuirTreinos(any(), any(), any(), any(), any(), any());
         }
     }
@@ -371,7 +373,7 @@ class PlanoServiceImplTest {
 
         // Verifica que a validação falhou antes de chamar serviços de IA ou redistribuição
         verify(atletaRepository).findById(atletaId);
-        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any());
+        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any(), eq(modoGeracao));
         verify(redistribuicaoHelper, never()).redistribuirTreinos(any(), any(), any(), any(), any(), any());
     }
 
@@ -396,7 +398,7 @@ class PlanoServiceImplTest {
 
         // Verifica que a validação falhou antes de chamar serviços de IA
         verify(atletaRepository).findById(atletaId);
-        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any());
+        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any(), eq(modoGeracao));
     }
 
     @Test
@@ -420,7 +422,7 @@ class PlanoServiceImplTest {
 
         // Verifica que a validação falhou antes de chamar serviços de IA
         verify(atletaRepository).findById(atletaId);
-        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any());
+        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any(), eq(modoGeracao));
     }
 
     @Test
@@ -444,7 +446,7 @@ class PlanoServiceImplTest {
 
         // Verifica que a validação falhou antes de chamar serviços de IA
         verify(atletaRepository).findById(atletaId);
-        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any());
+        verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any(), eq(modoGeracao));
     }
 
     // Helper methods to create mock objects
