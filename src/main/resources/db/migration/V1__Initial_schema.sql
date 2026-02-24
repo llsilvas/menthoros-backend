@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS tb_prova (
 );
 
 -- Plano Meta Dados table
-CREATE TABLE IF NOT EXISTS tb_plano_meta_dados (
+CREATE TABLE IF NOT EXISTS tb_plano_metadados (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     atleta_id UUID NOT NULL,
     contexto TEXT,
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS tb_plano_treino (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (atleta_id) REFERENCES tb_atleta(id) ON DELETE CASCADE,
     FOREIGN KEY (prova_id) REFERENCES tb_prova(id) ON DELETE CASCADE,
-    FOREIGN KEY (contexto_id) REFERENCES tb_plano_meta_dados(id),
+    FOREIGN KEY (contexto_id) REFERENCES tb_plano_metadados(id),
     FOREIGN KEY (prova_alvo_id) REFERENCES tb_prova(id)
 );
 

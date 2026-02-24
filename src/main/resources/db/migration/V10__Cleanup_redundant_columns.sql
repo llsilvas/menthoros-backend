@@ -105,9 +105,19 @@ WHERE cadencia_media IS NOT NULL;
 -- 4. Add column comments for documentation
 -- ========================================
 
-COMMENT ON COLUMN tb_treino_realizado.fc_maxima_treino IS 'Frequência cardíaca máxima atingida durante o treino (bpm)';
-COMMENT ON COLUMN tb_treino_realizado.feedback_atleta IS 'Comentário/observação do atleta sobre o treino';
-COMMENT ON COLUMN tb_treino_realizado.pace_media IS 'Ritmo médio em minutos por quilômetro (min/km) - decimal';
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tb_treino_realizado' AND column_name = 'fc_maxima_treino') THEN
+        COMMENT ON COLUMN tb_treino_realizado.fc_maxima_treino IS 'Frequência cardíaca máxima atingida durante o treino (bpm)';
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tb_treino_realizado' AND column_name = 'feedback_atleta') THEN
+        COMMENT ON COLUMN tb_treino_realizado.feedback_atleta IS 'Comentário/observação do atleta sobre o treino';
+    END IF;
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tb_treino_realizado' AND column_name = 'pace_media') THEN
+        COMMENT ON COLUMN tb_treino_realizado.pace_media IS 'Ritmo médio em minutos por quilômetro (min/km) - decimal';
+    END IF;
+END$$;
+
 COMMENT ON COLUMN tb_treino_realizado.elevacao_ganho_metros IS 'Elevação acumulada (ganho) em metros';
 COMMENT ON COLUMN tb_treino_realizado.cadencia_media IS 'Cadência média em passos por minuto (spm)';
 COMMENT ON COLUMN tb_treino_realizado.potencia_media IS 'Potência média em watts';

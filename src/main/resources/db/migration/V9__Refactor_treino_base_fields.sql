@@ -194,7 +194,18 @@ END$$;
 -- For now, keep fc_alvo as is (it's more specific - heart rate range like "140-155")
 
 -- ========================================
--- 4. Create indexes for new columns
+-- 4. Add columns that may not exist in fresh DB
+-- ========================================
+
+ALTER TABLE tb_treino_realizado
+    ADD COLUMN IF NOT EXISTS potencia_media INTEGER,
+    ADD COLUMN IF NOT EXISTS cadencia_media INTEGER,
+    ADD COLUMN IF NOT EXISTS fc_maxima_treino INTEGER,
+    ADD COLUMN IF NOT EXISTS feedback_atleta TEXT,
+    ADD COLUMN IF NOT EXISTS pace_media DECIMAL(5,2);
+
+-- ========================================
+-- 5. Create indexes for new columns
 -- ========================================
 
 CREATE INDEX IF NOT EXISTS idx_treino_realizado_potencia ON tb_treino_realizado(potencia_media)
@@ -204,7 +215,7 @@ CREATE INDEX IF NOT EXISTS idx_treino_realizado_cadencia ON tb_treino_realizado(
 WHERE cadencia_media IS NOT NULL;
 
 -- ========================================
--- 5. Add comments for documentation
+-- 6. Add comments for documentation
 -- ========================================
 
 COMMENT ON COLUMN tb_treino_realizado.cadencia_media IS 'Cadência média em passos por minuto (spm)';
