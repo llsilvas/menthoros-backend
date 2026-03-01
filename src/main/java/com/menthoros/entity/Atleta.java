@@ -177,6 +177,10 @@ public class Atleta {
             cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Prova> provas;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "tenant_id", nullable = false)
+    private Assessoria assessoria;
+
     public Integer getFcMaximaCalculada() {
         Integer idade = getIdade();
         if (idade == null) {
