@@ -22,6 +22,11 @@ ALTER TABLE tb_atleta
     ADD COLUMN IF NOT EXISTS email VARCHAR(255) NULL DEFAULT 'temp@example.com',
     ADD COLUMN IF NOT EXISTS sexo VARCHAR(1) NULL DEFAULT 'M';
 
+-- Torna emails únicos para registros existentes que receberam o default 'temp@example.com'
+UPDATE tb_atleta
+SET email = 'atleta_' || id::text || '@placeholder.com'
+WHERE email = 'temp@example.com';
+
 -- Adiciona constraint unique no email
 ALTER TABLE tb_atleta
     ADD CONSTRAINT uk_atleta_email UNIQUE (email);

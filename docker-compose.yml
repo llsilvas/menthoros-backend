@@ -12,9 +12,9 @@ services:
   # ── PostgreSQL com extensão pgvector ────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg17
-    container_name: menthoros-db
+    container_name: menthoros-multi
     environment:
-      POSTGRES_DB: ${DB_NAME:-menthoros-db}
+      POSTGRES_DB: ${DB_NAME:-menthoros-multi}
       POSTGRES_USER: ${DB_USER:-menthoros}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-menthoros123}
     ports:
@@ -100,8 +100,6 @@ services:
     networks:
       - menthoros-network
 
-  # Aplicação Spring Boot
-  menthoros-app:
   # ── Aplicação Spring Boot (hot reload) ───────────────────────────────────────
   app:
     build:
@@ -112,7 +110,7 @@ services:
       - .env
     environment:
       # Banco de dados (aponta para o serviço postgres, não localhost)
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-menthoros-db}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-menthoros-multi}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-menthoros}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-menthoros123}
 

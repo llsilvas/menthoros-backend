@@ -1,0 +1,95 @@
+# Dockerfile.multi-tenancy
+# Multi-stage build otimizado para ambiente multi-tenancy
+# Stage 1: Builder
+FROM llsilvas/java21-maven-otel:2.16.0 as builder
+
+WORKDIR /app
+
+# ─── Copiar apenas pom.xml para cache de dependências ───────────────────────
+COPY pom.xml .
+
+# Download de dependências (reutilizável se pom.xml não mudar)
+RUN mvn dependency:go-offline -B
+
+# ─── Copiar código fonte ────────────────────────────────────────────────────
+COPY src ./src
+
+# ─── Compilar aplicação (sem testes) ────────────────────────────────────────
+RUN mvn clean package -DskipTests -B
+
+# ─── Extrair Spring Boot layers para otimizar imagem ────────────────────────
+RUN mkdir -p extracted && \
+    java -Djarmode=tools -jar target/*.jar extract \
+    --layers \
+    --destination extracted
+
+# Stage 2: Runtime (JRE otimizada)
+FROM eclipse-temurin:21-jre-alpine
+
+WORKDIR /app
+
+# ─── Instalar ferramentas essenciais para multi-tenancy ─────────────────────
+RUN apk add --no-cache \
+    dumb-init \
+    curl \
+    postgresql-client
+
+# ─── Criar usuário não-root (segurança) ─────────────────────────────────────
+RUN addgroup -g 1001 -S spring && \
+    adduser -u 1001 -S spring -G spring
+
+# ─── Copiar OpenTelemetry Agent (se disponível) ──────────────────────────────
+COPY --from=builder /opt/opentelemetry-javaagent.jar /app/opentelemetry-javaagent.jar 2>/dev/null || true
+
+# ─── Copiar layers do Spring Boot em ordem de frequência de mudança ─────────
+# Layer 1: Dependencies (menos muda)
+COPY --from=builder /app/extracted/dependencies/ ./
+
+# Layer 2: Spring Boot Loader
+COPY --from=builder /app/extracted/spring-boot-loader/ ./
+
+# Layer 3: Snapshot dependencies
+COPY --from=builder /app/extracted/snapshot-dependencies/ ./
+
+# Layer 4: Application code (mais frequente)
+COPY --from=builder /app/extracted/application/ ./
+
+# ─── Definir permissões para usuário spring ──────────────────────────────────
+RUN chown -R spring:spring /app
+
+# ─── Trocar para usuário não-root ────────────────────────────────────────────
+USER spring:spring
+
+# ─── Configurar JVM para Multi-Tenancy e Containers ──────────────────────────
+ENV JAVA_OPTS="\
+    -XX:+UseContainerSupport \
+    -XX:MaxRAMPercentage=75.0 \
+    -XX:+UseG1GC \
+    -XX:+UseStringDeduplication \
+    -Djava.security.egd=file:/dev/./urandom \
+    -XX:InitiatingHeapOccupancyPercent=35 \
+    -XX:G1ReservePercent=10"
+
+# ─── Variáveis para multi-tenancy ────────────────────────────────────────────
+ENV SPRING_PROFILES_ACTIVE="docker,multi-tenancy"
+ENV SPRING_JPA_HIBERNATE_DDL_AUTO="validate"
+ENV SPRING_FLYWAY_ENABLED="true"
+
+# ─── Expor portas ────────────────────────────────────────────────────────────
+EXPOSE 8099    # API HTTP
+EXPOSE 5005    # Debug JDWP
+EXPOSE 35729   # LiveReload (se habilitado)
+
+# ─── Health Check (Keycloak ready?) ──────────────────────────────────────────
+HEALTHCHECK \
+    --interval=30s \
+    --timeout=5s \
+    --start-period=90s \
+    --retries=3 \
+    CMD curl -f http://localhost:8099/actuator/health || exit 1
+
+# ─── Usar dumb-init para melhor handling de sinais ──────────────────────────
+ENTRYPOINT ["dumb-init", "--"]
+
+# ─── Comando para iniciar aplicação usando Spring Boot layers ────────────────
+CMD ["sh", "-c", "java $JAVA_OPTS org.springframework.boot.loader.launch.JarLauncher"]

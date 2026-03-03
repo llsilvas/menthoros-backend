@@ -143,15 +143,18 @@ END $$;
 
 CREATE INDEX IF NOT EXISTS idx_prova_tenant ON tb_prova (tenant_id);
 
--- tb_metricas_diarias
+-- tb_metricas_diarias (tabela pode não existir em todos os ambientes)
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tb_metricas_diarias' AND column_name = 'tenant_id') THEN
-        ALTER TABLE tb_metricas_diarias ADD COLUMN tenant_id UUID REFERENCES tb_assessoria (id) ON DELETE CASCADE;
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tb_metricas_diarias' AND table_schema = 'public') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tb_metricas_diarias' AND column_name = 'tenant_id') THEN
+            ALTER TABLE tb_metricas_diarias ADD COLUMN tenant_id UUID REFERENCES tb_assessoria (id) ON DELETE CASCADE;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = 'tb_metricas_diarias' AND indexname = 'idx_metricas_diarias_tenant') THEN
+            CREATE INDEX idx_metricas_diarias_tenant ON tb_metricas_diarias (tenant_id);
+        END IF;
     END IF;
 END $$;
-
-CREATE INDEX IF NOT EXISTS idx_metricas_diarias_tenant ON tb_metricas_diarias (tenant_id);
 
 -- =============================================
 -- CRIAR ASSESSORIA PADRÃO (para dados existentes)
@@ -199,9 +202,14 @@ UPDATE tb_prova
 SET tenant_id = (SELECT id FROM tb_assessoria WHERE dominio = 'default' LIMIT 1)
 WHERE tenant_id IS NULL;
 
-UPDATE tb_metricas_diarias
-SET tenant_id = (SELECT id FROM tb_assessoria WHERE dominio = 'default' LIMIT 1)
-WHERE tenant_id IS NULL;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tb_metricas_diarias' AND table_schema = 'public') THEN
+        UPDATE tb_metricas_diarias
+        SET tenant_id = (SELECT id FROM tb_assessoria WHERE dominio = 'default' LIMIT 1)
+        WHERE tenant_id IS NULL;
+    END IF;
+END $$;
 
 -- =============================================
 -- TORNAR tenant_id OBRIGATÓRIO

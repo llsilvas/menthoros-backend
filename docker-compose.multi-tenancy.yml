@@ -1,0 +1,299 @@
+# docker-compose.multi-tenancy.yml
+# Infraestrutura para Multi-Tenancy com Keycloak
+#
+# Arquitetura Simplificada:
+# ├── postgres-db         (PostgreSQL banco ATUAL menthoros-db - NÃO ALTERADO)
+# ├── postgres-mt         (PostgreSQL com DOIS bancos: menthoros-multi + keycloak)
+# ├── redis              (Cache compartilhado)
+# ├── keycloak           (Autenticação OAuth2/OIDC - usa postgres-mt)
+# └── app                (Spring Boot - conecta a postgres-mt)
+#
+# IMPORTANTE: Keycloak e Menthoros compartilham o MESMO container PostgreSQL
+#             mas bancos diferentes (keycloak vs menthoros-multi)
+#
+# Uso:
+#   docker compose -f docker-compose.multi-tenancy.yml up -d
+#   docker compose -f docker-compose.multi-tenancy.yml logs -f app
+#   docker compose -f docker-compose.multi-tenancy.yml down
+#
+# Pré-requisito: arquivo .env.multi-tenancy com variáveis necessárias
+
+services:
+
+#  # ════════════════════════════════════════════════════════════════════════════════
+#  # 1️⃣ PostgreSQL ATUAL (menthoros-db) - NÃO ALTERADO
+#  # ════════════════════════════════════════════════════════════════════════════════
+#  postgres-db:
+#    image: pgvector/pgvector:pg17
+#    container_name: menthoros-postgres-db
+#    hostname: postgres-db
+#    environment:
+#      POSTGRES_DB: ${DB_CURRENT_NAME:-menthoros-db}
+#      POSTGRES_USER: ${DB_CURRENT_USER:-menthoros}
+#      POSTGRES_PASSWORD: ${DB_CURRENT_PASSWORD:-menthoros123}
+#    ports:
+#      - "5432:5432"  # ← PORTA PADRÃO PostgreSQL
+#    volumes:
+#      # Preserva dados do banco atual em volume separado
+#      - pg_data_db:/var/lib/postgresql/data
+#    command: >
+#      postgres
+#      -c shared_buffers=256MB
+#      -c effective_cache_size=1GB
+#      -c work_mem=64MB
+#    healthcheck:
+#      test: ["CMD-SHELL", "pg_isready -U ${DB_CURRENT_USER:-menthoros} -d ${DB_CURRENT_NAME:-menthoros-db}"]
+#      interval: 10s
+#      timeout: 5s
+#      retries: 5
+#    restart: unless-stopped
+#    networks:
+#      - menthoros-network
+#    labels:
+#      description: "PostgreSQL para banco atual (menthoros-db) - NÃO ALTERADO"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # 2️⃣ PostgreSQL MULTI-TENANCY (Keycloak + Menthoros-multi compartilham)
+  # ════════════════════════════════════════════════════════════════════════════════
+  postgres-mt:
+    image: pgvector/pgvector:pg17
+    container_name: menthoros-postgres-mt
+    hostname: postgres-mt
+    environment:
+      POSTGRES_DB: ${DB_MT_NAME:-menthoros-multi}
+      POSTGRES_USER: ${DB_MT_USER:-menthoros}
+      POSTGRES_PASSWORD: ${DB_MT_PASSWORD:-menthoros123}
+      # Variáveis para inicialização de múltiplos bancos
+      POSTGRES_INITDB_ARGS: >
+        -c shared_buffers=256MB
+        -c effective_cache_size=1GB
+        -c work_mem=64MB
+    ports:
+      - "5433:5432"  # ⚠️ PORTA DIFERENTE - DBeaver usa esta porta para conectar
+    volumes:
+      # Dados de AMBOS Keycloak + Menthoros em volume separado
+      - pg_data_mt:/var/lib/postgresql/data
+      # Script para criar banco menthoros-multi (além do keycloak)
+      - ./src/main/resources/db/init/menthoros_mt_init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./src/main/resources/db/init/keycloak_init.sql:/docker-entrypoint-initdb.d/02-keycloak.sql:ro
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c work_mem=64MB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_MT_USER:-menthoros} -d ${DB_NAME:-menthoros-multi}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - menthoros-network
+    labels:
+      description: "PostgreSQL para multi-tenancy (menthoros-multi + keycloak em 1 container)"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # 3️⃣ Redis (cache compartilhado)
+  # ════════════════════════════════════════════════════════════════════════════════
+  redis:
+    image: redis:7.2-alpine
+    container_name: menthoros-redis
+    hostname: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --appendfsync everysec
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - menthoros-network
+    labels:
+      description: "Redis cache - compartilhado por todos os serviços"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # 4️⃣ Keycloak (Autenticação OAuth2/OIDC - usa postgres-mt)
+  # ════════════════════════════════════════════════════════════════════════════════
+  keycloak:
+    image: quay.io/keycloak/keycloak:${KC_VERSION:-26.5.4}
+    container_name: menthoros-keycloak
+    hostname: keycloak
+    # --import-realm: importa realms de /opt/keycloak/data/import/ na primeira inicialização
+    # Keycloak ignora o import se o realm já existir (idempotente)
+    command: start-dev --import-realm
+    depends_on:
+      postgres-mt:
+        condition: service_healthy
+    volumes:
+      # Realm JSON importado automaticamente na primeira inicialização
+      # Keycloak ignora se o realm já existir
+      - ../scripts/keycloak/menthoros-app-realm.json:/opt/keycloak/data/import/menthoros-app-realm.json:ro
+    ports:
+      - "${KC_PORT:-8080}:8080"        # HTTP Admin Console
+      - "${KC_DEBUG_PORT:-9001}:9001"  # Health/Metrics
+    environment:
+      # ─── Admin Credentials ───────────────────────────────────────────────────
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin123}
+
+      # ─── Hostname Configuration ──────────────────────────────────────────────
+      KC_HOSTNAME: ${KC_HOSTNAME:-localhost}
+      KC_HOSTNAME_STRICT: false
+      KC_HOSTNAME_STRICT_HTTPS: false
+      KC_HTTP_ENABLED: true
+
+      # ─── Database Configuration (Usa MESMO postgres-mt) ──────────────────────
+      # Importante: mesmo container PostgreSQL (postgres-mt:5432)
+      # Mas banco diferente (keycloak, não menthoros-app)
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres-mt:5432/${KC_DB_NAME:-keycloak}
+      KC_DB_USERNAME: ${KC_DB_USER:-menthoros}
+      KC_DB_PASSWORD: ${KC_DB_PASSWORD:-menthoros123}
+      KC_DB_SCHEMA: public
+
+      # ─── Health & Metrics ────────────────────────────────────────────────────
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+
+      # ─── Logging ─────────────────────────────────────────────────────────────
+      KC_LOG_LEVEL: ${KC_LOG_LEVEL:-info}
+
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9001 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+    restart: unless-stopped
+    networks:
+      - menthoros-network
+    labels:
+      description: "Keycloak OAuth2/OIDC - usa postgres-mt para seus dados"
+
+  # ════════════════════════════════════════════════════════════════════════════════
+  # 5️⃣ Spring Boot Application (conecta a postgres-mt)
+  # ════════════════════════════════════════════════════════════════════════════════
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.multi-tenancy
+    container_name: menthoros-app-mt
+    hostname: app
+    env_file:
+      - .env.multi-tenancy
+    environment:
+      # ─── Database (aponta para postgres-mt - NOVO banco) ─────────────────────
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-mt:5432/${DB_MT_NAME:-menthoros-multi}
+      SPRING_DATASOURCE_USERNAME: ${DB_MT_USER:-menthoros}
+      SPRING_DATASOURCE_PASSWORD: ${DB_MT_PASSWORD:-menthoros123}
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+
+      # ─── Redis ───────────────────────────────────────────────────────────────
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_CACHE_TYPE: redis
+      SPRING_REDIS_TIMEOUT: 2000
+
+      # ─── JPA Configuration ──────────────────────────────────────────────────
+      SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      SPRING_JPA_DATABASE_PLATFORM: org.hibernate.dialect.PostgreSQL17Dialect
+      SPRING_JPA_SHOW_SQL: "false"
+      SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL: "true"
+
+      # ─── Flyway (Database migrations) ───────────────────────────────────────
+      SPRING_FLYWAY_ENABLED: "true"
+      SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
+      SPRING_FLYWAY_BASELINE_VERSION: "0"
+      SPRING_FLYWAY_LOCATIONS: "classpath:db/migration"
+
+      # ─── Spring AI (OpenAI) ──────────────────────────────────────────────────
+      SPRING_AI_OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SPRING_AI_OPENAI_CHAT_MODEL: ${AI_CHAT_MODEL:-gpt-4o-mini}
+      SPRING_AI_OPENAI_EMBEDDING_MODEL: ${AI_EMBEDDING_MODEL:-text-embedding-3-small}
+
+      # ─── Keycloak OAuth2 (Resource Server) ─────────────────────────────────
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: http://keycloak:8080/realms/menthoros-app
+      SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: http://keycloak:8080/realms/menthoros-app/protocol/openid-connect/certs
+
+      KEYCLOAK_AUTH_SERVER_URL: http://keycloak:8080
+      KEYCLOAK_REALM: ${KC_REALM:-menthoros-app}
+      KEYCLOAK_RESOURCE: ${KC_CLIENT_ID:-menthoros-backend}
+      KEYCLOAK_CREDENTIALS_SECRET: ${KC_CLIENT_SECRET}
+
+      # ─── Application Configuration ───────────────────────────────────────────
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES:-docker,multi-tenancy}
+      SERVER_PORT: ${SERVER_PORT:-8099}
+
+      # ─── Logging ─────────────────────────────────────────────────────────────
+      LOGGING_LEVEL_ROOT: ${LOGGING_LEVEL_ROOT:-info}
+      LOGGING_LEVEL_COM_MENTHOROS: ${LOGGING_LEVEL_APP:-info}
+      LOGGING_LEVEL_ORG_HIBERNATE: ${LOGGING_LEVEL_HIBERNATE:-warn}
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: ${LOGGING_LEVEL_SECURITY:-debug}
+
+      # ─── DevTools ───────────────────────────────────────────────────────────
+      SPRING_DEVTOOLS_RESTART_ENABLED: ${DEVTOOLS_ENABLED:-false}
+      SPRING_DEVTOOLS_LIVERELOAD_ENABLED: ${DEVTOOLS_ENABLED:-false}
+
+    ports:
+      - "${SERVER_PORT:-8099}:8099"   # API HTTP
+      - "5005:5005"                   # Debug JDWP
+      - "35729:35729"                 # LiveReload (se habilitado)
+
+    depends_on:
+      postgres-mt:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+
+    volumes:
+      - ./src:/app/src:ro           # Hot reload
+      - ./pom.xml:/app/pom.xml:ro   # Maven
+      - maven_cache:/root/.m2       # Maven cache
+      - ./logs:/app/logs            # Application logs
+
+    restart: unless-stopped
+    networks:
+      - menthoros-network
+    labels:
+      description: "Menthoros Backend - Multi-Tenancy"
+
+# ════════════════════════════════════════════════════════════════════════════════
+# VOLUMES (Data Persistence)
+# ════════════════════════════════════════════════════════════════════════════════
+
+volumes:
+  # ─── Banco Atual (não alterado) ─────────────────────────────────────────────
+  pg_data_db:
+    name: menthoros-pg-data-db
+    driver: local
+
+  # ─── Banco Multi-Tenancy + Keycloak (compartilham container) ────────────────
+  pg_data_mt:
+    name: menthoros-pg-data-mt
+    driver: local
+
+  # ─── Cache Redis ───────────────────────────────────────────────────────────
+  redis_data:
+    name: menthoros-redis-data
+    driver: local
+
+  # ─── Maven Cache ───────────────────────────────────────────────────────────
+  maven_cache:
+    name: menthoros-maven-cache
+    driver: local
+
+# ════════════════════════════════════════════════════════════════════════════════
+# NETWORKS
+# ════════════════════════════════════════════════════════════════════════════════
+
+networks:
+  menthoros-network:
+    name: menthoros-network
+    driver: bridge
