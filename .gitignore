@@ -31,13 +31,3 @@ build/
 
 ### VS Code ###
 .vscode/
-
-.env
-.env.dev
-.env.*
-*.env
-
-/relatorios/
-/.claude/
-
-docs/
