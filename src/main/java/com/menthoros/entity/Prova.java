@@ -35,7 +35,8 @@ public class Prova {
     @Column(nullable = false)
     private LocalDate dataProva;
 
-    @Column(name = "distancia", nullable = false, precision = 10, scale = 3)
+    @Enumerated(EnumType.ORDINAL)
+    @Column(name = "distancia", nullable = false)
     private DistanciaProva distancia;
 
     @Column(name = "distancia_km", precision = 6, scale = 2)

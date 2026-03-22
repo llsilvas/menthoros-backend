@@ -128,6 +128,7 @@ public interface TreinoMapper {
     @Mapping(target = "duracao", source = "duracao", qualifiedByName = "stringToDuration")
     @Mapping(target = "paceMedia", source = "paceMedia", qualifiedByName = "stringToDuration")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "doubleToBigDecimal")
+    @Mapping(target = "velocidadeMedia", source = "velocidadeMedia", qualifiedByName = "doubleToBigDecimal")
     EtapaRealizada toEntity(EtapaRealizadaInputDto dto);
 
     List<EtapaRealizada> toEtapaRealizadaEntityList(List<EtapaRealizadaInputDto> dtos);
@@ -138,6 +139,7 @@ public interface TreinoMapper {
     @Mapping(target = "duracao", source = "duracao", qualifiedByName = "durationToString")
     @Mapping(target = "paceMedia", source = "paceMedia", qualifiedByName = "durationToString")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "velocidadeMedia", source = "velocidadeMedia", qualifiedByName = "bigDecimalToDouble")
     EtapaRealizadaOutputDto toOutputDto(EtapaRealizada etapaRealizada);
 
     List<EtapaRealizadaOutputDto> toEtapaRealizadaOutputDtoList(List<EtapaRealizada> etapas);

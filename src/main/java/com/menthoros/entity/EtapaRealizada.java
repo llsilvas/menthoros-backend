@@ -62,8 +62,8 @@ public class EtapaRealizada {
     @Column(name = "pace_media")
     private Duration paceMedia;
 
-    @Column(name = "velocidade_media")
-    private Double velocidadeMedia; // km/h
+    @Column(name = "velocidade_media", precision = 5, scale = 2)
+    private BigDecimal velocidadeMedia; // km/h
 
     @Column(name = "percepcao_esforco")
     private Integer percepcaoEsforco; // RPE 1-10

@@ -35,7 +35,7 @@ spring:
     show-sql: false
     open-in-view: false    # evita manutenção de sessão aberta
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
 
   # ----------------------------------------
   # FLYWAY CONFIGURATION

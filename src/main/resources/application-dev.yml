@@ -17,9 +17,10 @@ spring:
   #   3. Defaults hardcoded (localhost, menthoros-db, etc.)
   # ----------------------------------------
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:menthoros-db}}
-    username: ${SPRING_DATASOURCE_USERNAME:${DB_USER:menthoros}}
-    password: ${SPRING_DATASOURCE_PASSWORD:${DB_PASSWORD:menthoros123}}
+    url: jdbc:postgresql://${POSTGRES_DB:localhost}:${DB_PORT:5432}/${DB_NAME:menthoros-db}
+    username: ${POSTGRES_USER:menthoros}
+    password: ${POSTGRES_PASSWORD:menthoros123}
+    driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 5        # Railway free tier limita conexões simultâneas
       minimum-idle: 1
@@ -33,8 +34,7 @@ spring:
   jpa:
     properties:
       hibernate:
-        "[format_sql]": false
-        dialect: org.hibernate.dialect.PostgreSQLDialect
+        "[format_sql]": false.env
     show-sql: false
     open-in-view: false
     hibernate:
