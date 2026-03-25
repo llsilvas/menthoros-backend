@@ -1,7 +1,8 @@
 -- V19: Cria tabela tb_metricas_diarias
 -- Inclui tenant_id (V17 pulou esta tabela por não existir na época)
+-- Usa IF NOT EXISTS para ser idempotente (tabela pode já existir no banco)
 
-CREATE TABLE tb_metricas_diarias
+CREATE TABLE IF NOT EXISTS tb_metricas_diarias
 (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id           UUID         NOT NULL REFERENCES tb_assessoria (id) ON DELETE CASCADE,
@@ -19,6 +20,6 @@ CREATE TABLE tb_metricas_diarias
     foi_dia_descanso    BOOLEAN               DEFAULT FALSE
 );
 
-CREATE UNIQUE INDEX idx_atleta_data ON tb_metricas_diarias (atleta_id, data);
-CREATE INDEX idx_atleta_data_desc ON tb_metricas_diarias (atleta_id, data DESC);
-CREATE INDEX idx_metricas_diarias_tenant ON tb_metricas_diarias (tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_atleta_data ON tb_metricas_diarias (atleta_id, data);
+CREATE INDEX IF NOT EXISTS idx_atleta_data_desc ON tb_metricas_diarias (atleta_id, data DESC);
+CREATE INDEX IF NOT EXISTS idx_metricas_diarias_tenant ON tb_metricas_diarias (tenant_id);
