@@ -119,7 +119,6 @@ public class TreinoServiceImpl implements TreinoService {
 
     private void atualizarTsb(Atleta atleta, LocalDate dataTreino) {
         LocalDate dataParaAtualizar = dataTreino != null ? dataTreino : LocalDate.now();
-        log.info("Atualizando TSB para atleta {} na data {}", atleta.getId(), dataParaAtualizar);
         tsbService.atualizarTsbDia(atleta.getId(), dataParaAtualizar);
     }
 
@@ -136,6 +135,7 @@ public class TreinoServiceImpl implements TreinoService {
         // 4) Monta entidade realizado
         TreinoRealizado realizado = treinoMapper.toEntity(treinoRealizadoInputDto);
         realizado.setAtleta(atleta);
+        realizado.setTenantId(atleta.getAssessoria().getId());
         realizado.setTreinoPlanejado(planejado);
         realizado.setStatus(TreinoExecucaoStatus.REALIZADO);
         realizado.setFonteDados(treinoRealizadoInputDto.fonteDados());
@@ -253,6 +253,7 @@ public class TreinoServiceImpl implements TreinoService {
         treinoRealizado.setFonteDados(FonteDados.MANUAL);
         treinoRealizado.setStatus(TreinoExecucaoStatus.REALIZADO);
         treinoRealizado.setAtleta(atleta);
+        treinoRealizado.setTenantId(atleta.getAssessoria().getId());
 
         TreinoRealizado treinoSalvo = treinoRealizadoRepository.save(treinoRealizado);
         log.info("Treino salvo com sucesso. ID: {}", treinoSalvo.getId());
