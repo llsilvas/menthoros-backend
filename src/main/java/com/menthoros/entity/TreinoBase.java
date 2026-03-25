@@ -87,4 +87,7 @@ public abstract class TreinoBase {
     @Column(name = "criado_por")
     private String criadoPor; // "IA", "USUARIO", "GARMIN", "STRAVA"
 
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
 }
