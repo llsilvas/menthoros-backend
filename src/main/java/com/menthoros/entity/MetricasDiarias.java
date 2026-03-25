@@ -64,6 +64,9 @@ public class MetricasDiarias {
     @Column(name = "foi_dia_descanso")
     private Boolean foiDiaDescanso = false;
 
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
     @PrePersist
     @PreUpdate
     private void calcularDerivativos() {

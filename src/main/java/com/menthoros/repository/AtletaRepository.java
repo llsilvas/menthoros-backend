@@ -3,6 +3,7 @@ package com.menthoros.repository;
 import com.menthoros.entity.Atleta;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.PagingAndSortingRepository;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
@@ -14,35 +15,54 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     Atleta save(Atleta entity);
 
     @Query("""
-    select distinct atl from Atleta atl 
-    left join fetch atl.diasDisponiveis 
-    where atl.ativo = 'ATIVO' 
-    order by atl.nome ASC 
+    select distinct atl from Atleta atl
+    left join fetch atl.diasDisponiveis
+    where atl.assessoria.id = :tenantId
+      and atl.ativo = 'ATIVO'
+    order by atl.nome ASC
     """)
-    List<Atleta> findAllAtletasWithDias();
-    
+    List<Atleta> findAllAtletasWithDias(@Param("tenantId") UUID tenantId);
+
     @Query("""
-    select distinct atl from Atleta atl 
-    left join fetch atl.provas 
-    where atl.ativo = 'ATIVO' 
-    order by atl.nome ASC 
+    select distinct atl from Atleta atl
+    left join fetch atl.provas
+    where atl.assessoria.id = :tenantId
+      and atl.ativo = 'ATIVO'
+    order by atl.nome ASC
     """)
-    List<Atleta> findAllAtletasWithProvas();
-    
+    List<Atleta> findAllAtletasWithProvas(@Param("tenantId") UUID tenantId);
+
     @Query("""
-    select atl from Atleta atl where atl.ativo = 'ATIVO' order by atl.nome ASC 
+    select atl from Atleta atl
+    where atl.assessoria.id = :tenantId
+      and atl.ativo = 'ATIVO'
+    order by atl.nome ASC
     """)
-    List<Atleta> findAllAtletasWithBasicInfo();
-    
+    List<Atleta> findAllAtletasWithBasicInfo(@Param("tenantId") UUID tenantId);
+
     @Query("""
-    select atl from Atleta atl where atl.ativo = 'ATIVO' order by atl.nome ASC 
+    select atl from Atleta atl
+    where atl.assessoria.id = :tenantId
+      and atl.ativo = 'ATIVO'
+    order by atl.nome ASC
     """)
-    List<Atleta> findAllAtletas();
-    
-    // Método para buscar atleta específico - será usado para inicialização manual de coleções
+    List<Atleta> findAllAtletas(@Param("tenantId") UUID tenantId);
+
+    /**
+     * Busca atleta por ID garantindo que pertence ao tenant correto.
+     * Retorna vazio se o ID existir mas for de outro tenant (evita vazamento de dados).
+     */
     @Query("""
-    select atl from Atleta atl 
+    select atl from Atleta atl
+    where atl.id = :id
+      and atl.assessoria.id = :tenantId
+    """)
+    Optional<Atleta> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+
+    // Mantido para uso interno (services que já validam ownership por outros meios)
+    @Query("""
+    select atl from Atleta atl
     where atl.id = :id
     """)
-    Optional<Atleta> findByIdBasic(UUID id);
+    Optional<Atleta> findByIdBasic(@Param("id") UUID id);
 }

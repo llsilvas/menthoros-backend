@@ -11,8 +11,11 @@ O projeto segue uma arquitetura em camadas padrão, com controladores para expor
 
 - **Java 24**: A versão mais recente do Java, garantindo acesso aos recursos e melhorias de desempenho mais recentes.
 - **Spring Boot 3.5.4**: Fornece uma base robusta para a criação de aplicações autônomas e de nível de produção.
+- **Spring Security OAuth2**: Integração com Keycloak para autenticação e autorização via JWT.
+- **Keycloak**: Identity Provider (IdP) para gestão de usuários, autenticação e autorização com suporte a multi-tenancy.
 - **Spring AI**: Facilita a integração de recursos de IA, como o processamento de linguagem natural com o OpenAI.
 - **PostgreSQL com pgvector**: Permite o armazenamento e a consulta eficientes de embeddings de vetores, essenciais para recursos de IA.
+- **Redis**: Cache distribuído para melhorar a performance da aplicação.
 - **Flyway**: Gerencia as migrações de esquema de banco de dados, garantindo a consistência do banco de dados em diferentes ambientes.
 - **MapStruct**: Simplifica o mapeamento entre DTOs e entidades, reduzindo o código boilerplate.
 - **Lombok**: Reduz ainda mais o código boilerplate por meio de anotações.
@@ -36,23 +39,67 @@ O projeto segue uma arquitetura em camadas padrão, com controladores para expor
    ```
 
 2. **Configure as variáveis de ambiente:**
-   Crie um arquivo `.env` na raiz do projeto e adicione as seguintes variáveis:
-   ```
-   OPENAI_API_KEY=sua_chave_de_api_da_openai
-   POSTGRES_PASSWORD=seu_postgres_password
+   Copie o arquivo `.env.example` para `.env` e configure as variáveis necessárias:
+   ```bash
+   cp .env.example .env
    ```
 
-3. **Inicie o banco de dados:**
+   Edite o arquivo `.env` e configure pelo menos:
+   ```
+   OPENAI_API_KEY=sua_chave_de_api_da_openai
+   KC_ADMIN_USER=admin
+   KC_ADMIN_PASSWORD=admin123
+   ```
+
+3. **Inicie os serviços com Docker Compose:**
    ```bash
    docker-compose up -d
    ```
+
+   Isso irá iniciar:
+   - PostgreSQL (com pgvector) na porta 5432
+   - Keycloak na porta 8443 (admin console) e 9000 (metrics)
+   - Redis na porta 6379
+
+   **Nota**: O Keycloak pode levar até 2 minutos para estar completamente pronto na primeira inicialização.
 
 4. **Execute a aplicação:**
    ```bash
    ./mvnw spring-boot:run
    ```
 
-A aplicação estará disponível em `http://localhost:8099`.
+A aplicação estará disponível em `http://localhost:8098`.
+
+## Configuração do Keycloak
+
+O Menthoros utiliza Keycloak para autenticação e autorização com suporte a multi-tenancy. Após iniciar os serviços, você precisará configurar o Keycloak:
+
+### Acesso ao Admin Console
+
+1. Acesse o Keycloak Admin Console: `http://localhost:8443`
+2. Faça login com as credenciais configuradas no `.env`:
+   - Username: `admin` (valor de `KC_ADMIN_USER`)
+   - Password: `admin123` (valor de `KC_ADMIN_PASSWORD`)
+
+### Configuração Inicial do Realm
+
+Siga o guia completo de configuração em: `docs/MULTI_TENANCY_INTEGRATION_GUIDE.md`
+
+Principais passos:
+
+1. **Criar Realm**: Crie um realm chamado `menthoros-app`
+2. **Configurar Client**: Crie um client OAuth2 para a aplicação
+3. **Definir Roles**: Configure as roles (ADMIN, TECNICO, VISUALIZADOR)
+4. **Criar Token Mappers**: Configure mappers para incluir `tenant_id` no JWT
+5. **Criar Groups**: Crie grupos para representar cada assessoria (tenant)
+6. **Criar Usuários**: Adicione usuários e associe-os aos grupos
+
+### URLs Importantes
+
+- **Admin Console**: http://localhost:8443/admin
+- **Realm Endpoint**: http://localhost:8443/realms/menthoros-app
+- **Health Check**: http://localhost:9000/health
+- **Metrics**: http://localhost:9000/metrics
 
 ## Endpoints da API
 

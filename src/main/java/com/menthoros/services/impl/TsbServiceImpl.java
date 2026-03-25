@@ -90,6 +90,7 @@ public class TsbServiceImpl implements TsbService {
                 .findByAtletaIdAndData(atleta.getId(), data)
                 .orElseGet(() -> MetricasDiarias.builder()
                         .atleta(atleta)
+                        .tenantId(atleta.getAssessoria().getId())
                         .data(data)
                         .volumeKm(BigDecimal.ZERO)
                         .treinosRealizados(0)
