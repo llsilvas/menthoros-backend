@@ -45,3 +45,5 @@ docs/
 menthoros_backup_20251012_205505.sql
 
 scripts/
+
+.DS_Store
