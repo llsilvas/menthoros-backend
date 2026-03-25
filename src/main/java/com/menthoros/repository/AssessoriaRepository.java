@@ -31,6 +31,11 @@ public interface AssessoriaRepository extends JpaRepository<Assessoria, UUID> {
     boolean existsByCnpj(String cnpj);
 
     /**
+     * Retorna a primeira assessoria ativa — usada como fallback em ambiente sem autenticação
+     */
+    Optional<Assessoria> findFirstByAtivoTrue();
+
+    /**
      * Lista assessorias ativas
      */
     @Query("SELECT a FROM Assessoria a WHERE a.ativo = true ORDER BY a.nome")
