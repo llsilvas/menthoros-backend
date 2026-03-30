@@ -1,37 +1,81 @@
 package com.menthoros.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.menthoros.enums.DistanciaProva;
 import com.menthoros.enums.ProvaStatus;
 import com.menthoros.enums.TipoProva;
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 
-@Schema(description = "Dados de saída de uma prova")
+@Schema(description = "Dados de saída de uma prova do atleta")
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record ProvaOutputDto(
-        @Schema(description = "Identificador único da prova", example = "123e4567-e89b-12d3-a456-426614174005")
+
+        @Schema(description = "Identificador único da prova")
         UUID id,
 
         @Schema(description = "Nome da prova", example = "Maratona Internacional de São Paulo")
         String nomeProva,
 
-        @Schema(description = "Data da prova", example = "2024-06-15")
+        @Schema(description = "Data da prova", example = "2025-10-12")
         LocalDate dataProva,
 
-        @Schema(description = "Distância em quilômetros", example = "42.195")
-        Double distanciaKm,
-
-        @Schema(description = "Tipo da prova", example = "MARATONA")
+        @Schema(description = "Tipo da prova")
         TipoProva tipoProva,
+
+        @Schema(description = "Distância da prova")
+        DistanciaProva distancia,
+
+        @Schema(description = "Distância em quilômetros (para distâncias customizadas)", example = "42.195")
+        BigDecimal distanciaKm,
+
+        @Schema(description = "Indica se é a prova alvo principal da temporada", example = "true")
+        boolean provaAlvo,
 
         @Schema(description = "Status da prova", example = "PLANEJADA")
         ProvaStatus statusProva,
 
-        @Schema(description = "Indica se é a prova alvo principal", example = "true")
-        boolean provaAlvo,
+        @Schema(description = "Meta de tempo para a prova", example = "01:45:00")
+        LocalTime tempoObjetivo,
 
-        @Schema(description = "Objetivo na prova", example = "Completar em menos de 4 horas")
-        String objetivo
-) {}
+        @Schema(description = "Pace objetivo em min/km", example = "4.50")
+        BigDecimal paceObjetivo,
+
+        @Schema(description = "TSB alvo no dia da prova", example = "7.0")
+        Double tsbIdealProva,
+
+        @Schema(description = "Indica se a prova já foi realizada", example = "false")
+        Boolean foiRealizada,
+
+        @Schema(description = "Tempo realizado na prova", example = "01:48:30")
+        LocalTime tempoRealizado,
+
+        @Schema(description = "Posição geral na prova", example = "150")
+        Integer posicaoGeral,
+
+        @Schema(description = "Posição na categoria de idade", example = "12")
+        Integer posicaoCategoria,
+
+        @Schema(description = "TSS da prova", example = "220")
+        Integer tssProva,
+
+        @Schema(description = "Percepção de esforço na prova (1-10)", example = "9")
+        Integer percepcaoEsforcoProva,
+
+        @Schema(description = "Feedback sobre a prova")
+        String feedbackProva,
+
+        @Schema(description = "Quantidade de semanas de preparação", example = "16")
+        Integer semanasPreparacao,
+
+        @Schema(description = "Data de início da preparação", example = "2025-06-22")
+        LocalDate inicioPreparacao,
+
+        @Schema(description = "Dias faltando para a prova", example = "45")
+        int diasFaltando
+) {
+}

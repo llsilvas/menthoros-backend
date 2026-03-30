@@ -6,7 +6,8 @@ import com.menthoros.entity.Atleta;
 import org.mapstruct.*;
 
 @Mapper(
-        unmappedSourcePolicy = ReportingPolicy.IGNORE
+        unmappedSourcePolicy = ReportingPolicy.IGNORE,
+        uses = {ProvaMapper.class}
 )
 public interface AtletaMapper {
 
