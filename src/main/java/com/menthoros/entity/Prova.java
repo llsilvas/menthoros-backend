@@ -46,6 +46,10 @@ public class Prova {
     private boolean provaAlvo;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_prova", nullable = false)
+    private TipoProva tipoProva;
+
+    @Enumerated(EnumType.STRING)
     @Column(name = "status_prova", nullable = false)
     private ProvaStatus statusProva = ProvaStatus.PLANEJADA;
 
@@ -94,6 +98,10 @@ public class Prova {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "atleta_id", nullable = false)
     private Atleta atleta;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "tenant_id", nullable = false)
+    private Assessoria assessoria;
 
     /**
      * Verifica se é a prova alvo principal
