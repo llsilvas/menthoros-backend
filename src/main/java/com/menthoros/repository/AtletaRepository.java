@@ -1,6 +1,8 @@
 package com.menthoros.repository;
 
 import com.menthoros.entity.Atleta;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.PagingAndSortingRepository;
 import org.springframework.data.repository.query.Param;
@@ -65,4 +67,11 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     where atl.id = :id
     """)
     Optional<Atleta> findByIdBasic(@Param("id") UUID id);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    select atl from Atleta atl
+    where atl.id = :id
+    """)
+    Optional<Atleta> findByIdForUpdate(@Param("id") UUID id);
 }
