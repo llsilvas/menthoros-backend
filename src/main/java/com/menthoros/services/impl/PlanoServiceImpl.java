@@ -546,11 +546,11 @@ public class PlanoServiceImpl implements PlanoService {
         PlanoSemanal plano = planoSemanalRepository.findById(planoSemanalId)
                 .orElseThrow(() -> new ResourceNotFoundException("Plano não encontrado: " + planoSemanalId));
 
-        // Initialize lazy-loaded TreinosPlanejados to allow cascade deletion of child entities
-        Hibernate.initialize(plano.getTreinosPlanejados());
-
-        // Note: Do NOT initialize planoMetaDados collection. Let Hibernate's orphanRemoval handle the bidirectional cleanup.
-        // Initializing the collection during deletion causes Hibernate to confuse object states.
+        // Do NOT initialize TreinosPlanejados or any other lazy collection before deletion.
+        // Loading children into the session causes Hibernate 6.6 CHECK_ON_FLUSH to fail:
+        // the loaded TreinoPlanejado entities reference the PlanoSemanal being removed,
+        // and Hibernate treats this as a transient reference during commit.
+        // CascadeType.ALL (REMOVE) + DB ON DELETE CASCADE handles child deletion without loading them.
         planoSemanalRepository.delete(plano);
         log.info("✅ Plano deletado com sucesso - ID: {}", planoSemanalId);
     }
