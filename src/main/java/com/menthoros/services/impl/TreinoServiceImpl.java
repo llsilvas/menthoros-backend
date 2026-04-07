@@ -63,9 +63,7 @@ public class TreinoServiceImpl implements TreinoService {
 
         // 5) Resolve vínculo de plano semanal
         PlanoSemanal semanal = resolverPlanoSemanal(planejado, treinoRealizado, atleta).orElse(null);
-        if (semanal != null) {
-            realizado.setPlanoSemanal(semanal);
-        }
+        realizado.setPlanoSemanal(semanal);
 
         // 6) Persiste realizado
         TreinoRealizado salvo = treinoRealizadoRepository.save(realizado);

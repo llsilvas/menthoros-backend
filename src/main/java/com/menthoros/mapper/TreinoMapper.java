@@ -108,7 +108,7 @@ public interface TreinoMapper {
     List<TreinoPlanejadoOutputDto> toOutputDtoListTreinoPlanejado(List<TreinoPlanejado> treinosPlanejados);
 
     @Mapping(target = "atleta.id", source = "atletaId")
-    @Mapping(target = "planoSemanal.id", source = "planoSemanalId")
+    @Mapping(target = "planoSemanal", ignore = true)
     @Mapping(target = "treinoPlanejado.id", source = "treinoPlanejadoId")
     @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "stringToDuration")
     @Mapping(target = "paceMedia", source = "ritmoMedio", qualifiedByName = "stringToDuration")
