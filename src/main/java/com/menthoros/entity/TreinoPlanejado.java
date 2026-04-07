@@ -100,6 +100,12 @@ public class TreinoPlanejado extends TreinoBase{
         if (this.atleta == null && this.planoSemanal != null) {
             this.atleta = this.planoSemanal.getAtleta();
         }
+        if (this.getTenantId() == null && this.planoSemanal != null && this.planoSemanal.getAssessoria() != null) {
+            this.setTenantId(this.planoSemanal.getAssessoria().getId());
+        }
+        if (this.getTenantId() == null && this.atleta != null && this.atleta.getAssessoria() != null) {
+            this.setTenantId(this.atleta.getAssessoria().getId());
+        }
         if (this.statusTreino == null) {
             this.statusTreino = TreinoExecucaoStatus.PENDENTE;
         }

@@ -123,6 +123,12 @@ public class TreinoRealizado extends TreinoBase{
 
     @PrePersist
     private void prePersist() {
+        if (this.getTenantId() == null && this.planoSemanal != null && this.planoSemanal.getAssessoria() != null) {
+            this.setTenantId(this.planoSemanal.getAssessoria().getId());
+        }
+        if (this.getTenantId() == null && this.atleta != null && this.atleta.getAssessoria() != null) {
+            this.setTenantId(this.atleta.getAssessoria().getId());
+        }
         if(this.getCriadoEm() == null) {
             this.setCriadoEm(LocalDateTime.now());
         }

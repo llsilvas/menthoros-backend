@@ -34,6 +34,10 @@ public class PlanoSemanal {
     @JoinColumn(name = "plano_metadados_id", nullable = false)
     private PlanoMetaDados planoMetaDados; // Preferências do atleta + snapshot da semana
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "tenant_id", nullable = false)
+    private Assessoria assessoria;
+
     @Column(name = "semana_inicio", nullable = false)
     private LocalDate semanaInicio;
 

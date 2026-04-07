@@ -364,6 +364,7 @@ public class PlanoServiceImpl implements PlanoService {
 
         PlanoSemanal plano = planoSemanalMapper.toEntity(planoDto);
         plano.setAtleta(atleta);
+        plano.setAssessoria(atleta.getAssessoria());
 
         plano.setSemanaInicio(semanaInicio);
         plano.setSemanaFim(semanaFim);
