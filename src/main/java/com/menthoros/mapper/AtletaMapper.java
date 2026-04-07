@@ -6,6 +6,7 @@ import com.menthoros.entity.Atleta;
 import org.mapstruct.*;
 
 @Mapper(
+        componentModel = "spring",
         unmappedSourcePolicy = ReportingPolicy.IGNORE,
         uses = {ProvaMapper.class}
 )
