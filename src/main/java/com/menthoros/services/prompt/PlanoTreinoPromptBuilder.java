@@ -172,13 +172,17 @@ public class PlanoTreinoPromptBuilder {
         // 3. HIERARQUIA DE DECISÃO (para resolver conflitos)
         String hierarquiaDecisao = alertasPromptFormatter.gerarHierarquiaDecisao(metaDados, atleta);
 
-        // 4. RESTRIÇÕES E LESÕES
+        // 4. EVENTO COMPETITIVO NA SEMANA (regra mandatória baseada na semana planejada)
+        String eventoCompetitivoSemana = periodizacaoPromptFormatter.formatarEventoCompetitivoSemana(
+                provaAlvo, ctx.provasPreparatorias(), inicioSemana);
+
+        // 5. RESTRIÇÕES E LESÕES
         String restricoesLesoes = alertasPromptFormatter.formatarRestricoesLesoes(atleta, ctx.dataReferencia());
 
-        // 5. VALIDAÇÃO E FALLBACKS DE DADOS
+        // 6. VALIDAÇÃO E FALLBACKS DE DADOS
         String fallbacksDados = validarEFallbacksDadosFisiologicos(atleta);
 
-        // 6. Análises de pré-planejamento
+        // 7. Análises de pré-planejamento
         var analiseEstimulos = variabilidadePromptFormatter.analisarEstimulosRecentes(
                 ctx.treinosUltimas4Semanas(), ctx.dataReferencia());
         var volumeUltimas3Semanas = variabilidadePromptFormatter.calcularVolumeMedioUltimasTresSemanas(
@@ -298,6 +302,7 @@ public class PlanoTreinoPromptBuilder {
         // Ordem prioritária: alertas primeiro, depois dados, depois regras
         historicoFinal.append(alertasObrigatorios);
         historicoFinal.append(hierarquiaDecisao);
+        historicoFinal.append(eventoCompetitivoSemana);
         historicoFinal.append(restricoesLesoes);
         historicoFinal.append(formatarDecisaoIntervalado(recomIntervalado));
         historicoFinal.append(historicoCompleto);

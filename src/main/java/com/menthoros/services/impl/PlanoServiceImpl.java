@@ -63,6 +63,8 @@ public class PlanoServiceImpl implements PlanoService {
     private final MetricasAlertaService metricasAlertaService;
     private final MetricasAgregadasServiceImpl metricasAgregadasService;
 
+    private final ProvaRepository provaRepository;
+
     /**
      * Gera um plano de treino semanal personalizado para um atleta usando IA.
      *
@@ -508,7 +510,9 @@ public class PlanoServiceImpl implements PlanoService {
         try {
             log.info("Iniciando geração de plano para atleta: {}", dadosPlanoDto.atleta().getId());
 
-            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), null, modoGeracao);
+            var prova = dadosPlanoDto.atleta().getProvas().get(0);
+
+            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), prova, modoGeracao);
 
             validaPlanoGerado(planoDto);
             return planoDto;
