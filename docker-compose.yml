@@ -12,23 +12,25 @@ services:
   # ── PostgreSQL com extensão pgvector ────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg17
-    container_name: menthoros-multi
+    container_name: menthoros-db
     environment:
-      POSTGRES_DB: ${DB_NAME:-menthoros-multi}
+      POSTGRES_DB: ${DB_NAME:-menthoros}
       POSTGRES_USER: ${DB_USER:-menthoros}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-menthoros123}
     ports:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./src/main/resources/db/init/menthoros_schema.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./src/main/resources/db/init/menthoros_mt_init.sql:/docker-entrypoint-initdb.d/01-menthoros-init.sql:ro
+      - ./src/main/resources/db/init/keycloak_init.sql:/docker-entrypoint-initdb.d/02-keycloak-init.sql:ro
     command: >
       postgres
       -c shared_buffers=256MB
       -c effective_cache_size=1GB
+      -c work_mem=64MB
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-menthoros} -d ${DB_NAME:-menthoros-db}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-menthoros} -d ${DB_NAME:-menthoros}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -54,39 +56,35 @@ services:
 
   # Keycloak para autenticação e autorização
   keycloak:
-    image: quay.io/keycloak/keycloak:latest
+    image: quay.io/keycloak/keycloak:${KC_VERSION:-26.5.4}
     container_name: menthoros-keycloak
     command: start-dev
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "8443:8443"
-      - "9000:9000"
+      - "${KC_PORT:-8080}:8080"
+      - "${KC_MANAGEMENT_PORT:-9001}:9000"
     environment:
       # Admin credentials
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin123}
 
       # Hostname configuration
-      KC_HOSTNAME: ${KC_HOSTNAME:-localhost}
       KC_HOSTNAME_STRICT: false
       KC_HOSTNAME_STRICT_HTTPS: false
       KC_HTTP_ENABLED: true
 
       # Database configuration (PostgreSQL)
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
-      KC_DB_USERNAME: menthoros
-      KC_DB_PASSWORD: menthoros123
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${KC_DB_NAME:-keycloak}
+      KC_DB_USERNAME: ${DB_USER:-menthoros}
+      KC_DB_PASSWORD: ${DB_PASSWORD:-menthoros123}
       KC_DB_SCHEMA: public
 
       # Health and metrics
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
-
-      # HTTP port
-      KC_HTTP_PORT: "8443"
 
       # Logging
       KC_LOG_LEVEL: ${KC_LOG_LEVEL:-info}
@@ -110,7 +108,7 @@ services:
       - .env
     environment:
       # Banco de dados (aponta para o serviço postgres, não localhost)
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-menthoros-multi}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${DB_NAME:-menthoros}
       SPRING_DATASOURCE_USERNAME: ${DB_USER:-menthoros}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-menthoros123}
 
@@ -155,6 +153,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
     restart: "no"  # Não reiniciar automaticamente em desenvolvimento
     networks:
