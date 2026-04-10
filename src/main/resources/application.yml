@@ -27,7 +27,7 @@ spring:
   # DATABASE CONFIGURATION
   # ----------------------------------------
   datasource:
-    url: jdbc:postgresql://${POSTGRES_DB:localhost}:${DB_PORT:5433}/${DB_NAME:menthoros-multi}
+    url: jdbc:postgresql://${POSTGRES_DB:localhost}:${DB_PORT:5432}/${APP_DB_NAME:menthoros-db}
     username: ${POSTGRES_USER:menthoros}
     password: ${POSTGRES_PASSWORD:menthoros123}
     driver-class-name: org.postgresql.Driver
