@@ -1,7 +1,6 @@
 -- menthoros_mt_init.sql
--- Script de inicialização do banco menthoros-multi
--- Executado automaticamente quando Docker criar o container postgres-mt
--- Este script cria extensões e schemas necessários para multi-tenancy
+-- Script de inicializacao do database principal "menthoros"
+-- Executado automaticamente na primeira inicializacao do container PostgreSQL
 
 -- ════════════════════════════════════════════════════════════════════════════════
 -- CRIAR EXTENSÕES
@@ -17,18 +16,16 @@ CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS "pg_trgm" WITH SCHEMA public;
 
 -- ════════════════════════════════════════════════════════════════════════════════
--- CRIAR SCHEMA PÚBLICO
+-- CRIAR SCHEMA PUBLIC
 -- ════════════════════════════════════════════════════════════════════════════════
 
--- O schema "public" já existe por padrão no PostgreSQL
--- Mas garantir que ele existe e tem as permissões corretas
 CREATE SCHEMA IF NOT EXISTS public;
 
 -- ════════════════════════════════════════════════════════════════════════════════
 -- COMENTÁRIOS DE DOCUMENTAÇÃO
 -- ════════════════════════════════════════════════════════════════════════════════
 
-COMMENT ON SCHEMA public IS 'Schema padrão para aplicação Menthoros Multi-Tenancy';
+COMMENT ON SCHEMA public IS 'Schema compartilhado apenas para extensoes e objetos globais';
 
 -- ════════════════════════════════════════════════════════════════════════════════
 -- CRIAR USUÁRIO ESPECÍFICO PARA APLICAÇÃO (se não existir)
@@ -38,7 +35,7 @@ COMMENT ON SCHEMA public IS 'Schema padrão para aplicação Menthoros Multi-Ten
 -- Mas garantir que tem permissões corretas
 DO $$
 BEGIN
-    -- Dar permissões ao usuário menthoros
+    -- Dar permissoes ao usuario menthoros no database principal
     GRANT ALL PRIVILEGES ON SCHEMA public TO menthoros;
     GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO menthoros;
     GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO menthoros;
@@ -66,15 +63,23 @@ $$;
 -- CONFIGURAÇÕES DE SEGURANÇA
 -- ════════════════════════════════════════════════════════════════════════════════
 
--- Revogar permissões públicas (apenas usuários específicos terão acesso)
+-- Revogar permissoes publicas (apenas usuarios especificos terao acesso)
 REVOKE ALL ON SCHEMA public FROM PUBLIC;
 
 -- Permitir apenas menthoros acessar
-GRANT USAGE ON SCHEMA public TO menthoros;
+GRANT USAGE, CREATE ON SCHEMA public TO menthoros;
+
+ALTER DEFAULT PRIVILEGES FOR USER menthoros IN SCHEMA public
+GRANT ALL PRIVILEGES ON TABLES TO menthoros;
+
+ALTER DEFAULT PRIVILEGES FOR USER menthoros IN SCHEMA public
+GRANT ALL PRIVILEGES ON SEQUENCES TO menthoros;
+
+ALTER DEFAULT PRIVILEGES FOR USER menthoros IN SCHEMA public
+GRANT ALL PRIVILEGES ON FUNCTIONS TO menthoros;
 
 -- ════════════════════════════════════════════════════════════════════════════════
 -- COMENTÁRIO FINAL
 -- ════════════════════════════════════════════════════════════════════════════════
 
--- Banco menthoros-multi está pronto para Flyway executar migrations
--- Flyway criará as tabelas e dados conforme definido em src/main/resources/db/migration/
+-- Database "menthoros" pronto para a aplicacao no schema public.
