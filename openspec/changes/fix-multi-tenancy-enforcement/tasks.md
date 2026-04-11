@@ -1,8 +1,14 @@
+## 0. Pré-requisito: Exception Handler para Tenant Ausente
+
+- [ ] 0.1 Em `GlobalExceptionHandler`, adicionar `@ExceptionHandler(IllegalStateException.class)` retornando 403 Forbidden com mensagem genérica (`"Acesso não autorizado: contexto de tenant ausente"`) — evita que `TenantContext.getRequiredTenantId()` exponha mensagem interna via HTTP 500
+
 ## 1. Segurança: Autenticação Obrigatória
 
 - [ ] 1.1 Em `SecurityConfig`, remover `.anyRequest().permitAll()` e substituir por `.anyRequest().authenticated()`
 - [ ] 1.2 Verificar que as rotas públicas `/api/public/**`, `/swagger-ui/**`, `/api-docs/**`, `/actuator/health` continuam com `permitAll`
 - [ ] 1.3 Executar testes existentes para confirmar que requests sem JWT retornam 401 nos endpoints de negócio
+- [ ] 1.4 Criar `application-local.yml` com override de `SecurityConfig` via profile `local`: `permitAll` em todas as rotas e tenant fixo de desenvolvimento; adicionar aviso explícito no arquivo de que este profile não pode ser usado em produção ou CI
+- [ ] 1.5 Nos testes de integração que cobrem endpoints de negócio, configurar mock JWT válido com `tenant_id` usando `SecurityMockMvcRequestPostProcessors.jwt()` ou `@WithMockUser` — necessário antes de executar os testes após a task 1.1
 
 ## 2. Remoção do Fallback de Tenant Default
 
@@ -27,6 +33,7 @@
 - [ ] 4.5 Em `PlanoServiceImpl`, substituir `planoSemanalRepository.findById(planoSemanalId)` por variante tenant-aware
 - [ ] 4.6 Em `PlanoServiceImpl`, substituir `planoMetadadosRepository.findById(metaDadosCached.getId())` por variante tenant-aware
 - [ ] 4.7 Em `ProvaServiceImpl`, substituir `provaRepository.findById(...)` por `findByIdAndTenantId`
+- [ ] 4.8 Em `IaServiceImpl` (linha 299), substituir `atletaRepository.findById(atletaId)` por `atletaRepository.findByIdAndTenantId(atletaId, TenantContext.getRequiredTenantId())` — este método é chamado via HTTP pelo fluxo `PlanoTreinoController → PlanoServiceImpl → IaServiceImpl`
 
 ## 5. Entidade PlanoMetaDados: Mapear tenant_id
 
@@ -44,6 +51,8 @@
 
 ## 7. Migration: Constraints e Índice de Deduplicação
 
-- [ ] 7.1 Criar `V26__Add_multi_tenancy_constraints.sql` com índice único parcial em `tb_treino_realizado` para `(tenant_id, fonte_dados, external_id)` onde `fonte_dados IS NOT NULL AND external_id IS NOT NULL`
+- [ ] 7.1 Criar `V11__Add_multi_tenancy_constraints.sql` com:
+  - `DROP INDEX IF EXISTS uk_treino_realizado_external_id` (índice global criado em V8, sem escopo de tenant; `IF EXISTS` garante idempotência)
+  - CREATE de índice único composto `(tenant_id, fonte_dados, external_id)` em `tb_treino_realizado` com filtro parcial `WHERE fonte_dados IS NOT NULL AND external_id IS NOT NULL`
 - [ ] 7.2 Verificar que não há duplicatas existentes em `tb_treino_realizado` antes de aplicar o unique index (query de diagnóstico no design.md)
-- [ ] 7.3 Executar `./mvnw flyway:migrate` localmente e confirmar que a migration V26 é aplicada sem erros
+- [ ] 7.3 Executar `./mvnw flyway:migrate` localmente e confirmar que a migration V11 é aplicada sem erros
