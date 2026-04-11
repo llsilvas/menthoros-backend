@@ -412,7 +412,7 @@
                     </locations>
                     <baselineOnMigrate>true</baselineOnMigrate>
                     <validateOnMigrate>true</validateOnMigrate>
-                    <cleanDisabled>true</cleanDisabled>
+                    <cleanDisabled>false</cleanDisabled>
                 </configuration>
             </plugin>
 

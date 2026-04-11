@@ -47,3 +47,5 @@ scripts/
 .DS_Store
 
 .env
+
+src/main/resources/db/Arquivo.zip

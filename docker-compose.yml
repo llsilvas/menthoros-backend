@@ -21,8 +21,8 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./src/main/resources/db/init/menthoros_mt_init.sql:/docker-entrypoint-initdb.d/01-menthoros-init.sql:ro
-      - ./src/main/resources/db/init/keycloak_init.sql:/docker-entrypoint-initdb.d/02-keycloak-init.sql:ro
+#      - ./src/main/resources/db/init/menthoros_mt_init.sql:/docker-entrypoint-initdb.d/01-menthoros-init.sql:ro
+#      - ./src/main/resources/db/init/keycloak_init.sql:/docker-entrypoint-initdb.d/02-keycloak-init.sql:ro
     command: >
       postgres
       -c shared_buffers=256MB
@@ -56,7 +56,7 @@ services:
 
   # Keycloak para autenticação e autorização
   keycloak:
-    image: quay.io/keycloak/keycloak:${KC_VERSION:-26.5.4}
+    image: quay.io/keycloak/keycloak:${KC_VERSION:-26.6}
     container_name: menthoros-keycloak
     command: start-dev
     depends_on:
