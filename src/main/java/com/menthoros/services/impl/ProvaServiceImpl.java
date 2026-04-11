@@ -2,13 +2,11 @@ package com.menthoros.services.impl;
 
 import com.menthoros.dto.input.ProvaInputDto;
 import com.menthoros.dto.output.ProvaOutputDto;
-import com.menthoros.entity.Assessoria;
 import com.menthoros.entity.Atleta;
 import com.menthoros.entity.Prova;
 import com.menthoros.exception.ResourceNotFoundException;
 import com.menthoros.mapper.ProvaMapper;
 import com.menthoros.multitenancy.TenantContext;
-import com.menthoros.repository.AssessoriaRepository;
 import com.menthoros.repository.AtletaRepository;
 import com.menthoros.repository.ProvaRepository;
 import com.menthoros.services.ProvaService;
@@ -25,29 +23,15 @@ public class ProvaServiceImpl implements ProvaService {
 
     private final ProvaRepository provaRepository;
     private final AtletaRepository atletaRepository;
-    private final AssessoriaRepository assessoriaRepository;
     private final ProvaMapper provaMapper;
 
-    // TODO(tenant-isolation): substituir resolveTenantId() por TenantContext.getRequiredTenantId()
-    //   quando autenticação estiver habilitada no frontend.
-    //   O fallback para a primeira assessoria ativa é apenas para dev local sem JWT.
-    private UUID resolveTenantId() {
-        if (TenantContext.hasTenant()) {
-            return TenantContext.getTenantId();
-        }
-        return assessoriaRepository.findFirstByAtivoTrue()
-                .map(Assessoria::getId)
-                .orElseThrow(() -> new ResourceNotFoundException("Nenhuma assessoria cadastrada no banco"));
-    }
-
     private Atleta resolveAtleta(UUID atletaId) {
-        UUID tenantId = resolveTenantId();
-        return atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+        return atletaRepository.findByIdAndTenantId(atletaId, TenantContext.getRequiredTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + atletaId));
     }
 
     private Prova resolveProva(Atleta atleta, UUID provaId) {
-        Prova prova = provaRepository.findById(provaId)
+        Prova prova = provaRepository.findByIdAndTenantId(provaId, TenantContext.getRequiredTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Prova não encontrada: " + provaId));
         if (!prova.getAtleta().getId().equals(atleta.getId())) {
             throw new ResourceNotFoundException("Prova não encontrada: " + provaId);

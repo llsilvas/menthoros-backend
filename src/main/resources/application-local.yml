@@ -1,0 +1,21 @@
+# =============================================================================
+# PROFILE LOCAL — desenvolvimento sem Keycloak
+#
+# ⚠️  ATENÇÃO: Este profile NUNCA deve ser ativado em produção ou CI.
+#     Ele desabilita autenticação JWT e usa um tenant fixo de desenvolvimento.
+#     Para ativar: -Dspring.profiles.active=local
+# =============================================================================
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Desabilita validação de JWT — aceita qualquer request sem token
+          issuer-uri: ""
+
+app:
+  local-dev:
+    # UUID do tenant fixo usado como fallback quando não há JWT
+    # Deve corresponder a uma assessoria existente no banco local
+    default-tenant-id: "00000000-0000-0000-0000-000000000001"

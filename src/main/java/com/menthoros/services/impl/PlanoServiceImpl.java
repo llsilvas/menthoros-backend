@@ -17,6 +17,7 @@ import com.menthoros.exception.ResourceNotFoundException;
 import com.menthoros.mapper.AtletaMapper;
 import com.menthoros.mapper.PlanoSemanalMapper;
 import com.menthoros.mapper.TreinoMapper;
+import com.menthoros.multitenancy.TenantContext;
 import com.menthoros.repository.*;
 import com.menthoros.services.*;
 import com.menthoros.services.helper.RedistribuicaoTreinoHelper;
@@ -415,7 +416,7 @@ public class PlanoServiceImpl implements PlanoService {
         // Re-busca do banco para obter entidade managed no contexto de persistência atual.
         // O @Cacheable em buscarOuCriarMetadados pode retornar entidade detached,
         // causando StaleObjectStateException no merge.
-        PlanoMetaDados metaDados = planoMetadadosRepository.findById(metaDadosCached.getId())
+        PlanoMetaDados metaDados = planoMetadadosRepository.findByIdAndTenantId(metaDadosCached.getId(), TenantContext.getRequiredTenantId())
                 .orElseThrow(() -> new DomainNotFoundException(
                         "Metadados não encontrados: " + metaDadosCached.getId()));
 
@@ -478,7 +479,7 @@ public class PlanoServiceImpl implements PlanoService {
     }
 
     private DadosPlanoDto getPreparaDadosPlano(UUID atletaId) {
-        Atleta atleta = atletaRepository.findById(atletaId)
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, TenantContext.getRequiredTenantId())
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
         // Validações de negócio do atleta
@@ -547,7 +548,7 @@ public class PlanoServiceImpl implements PlanoService {
     @Override
     @Transactional
     public void deletePlanoSemanal(UUID planoSemanalId) {
-        PlanoSemanal plano = planoSemanalRepository.findById(planoSemanalId)
+        PlanoSemanal plano = planoSemanalRepository.findByIdAndTenantId(planoSemanalId, TenantContext.getRequiredTenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Plano não encontrado: " + planoSemanalId));
 
         // Do NOT initialize TreinosPlanejados or any other lazy collection before deletion.
@@ -556,7 +557,7 @@ public class PlanoServiceImpl implements PlanoService {
         // and Hibernate treats this as a transient reference during commit.
         // CascadeType.ALL (REMOVE) + DB ON DELETE CASCADE handles child deletion without loading them.
         planoSemanalRepository.delete(plano);
-        log.info("✅ Plano deletado com sucesso - ID: {}", planoSemanalId);
+        log.info("Plano deletado com sucesso - ID: {}", planoSemanalId);
     }
 
 

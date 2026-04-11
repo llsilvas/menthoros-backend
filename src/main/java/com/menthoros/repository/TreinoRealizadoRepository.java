@@ -18,11 +18,17 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
 
     Optional<TreinoRealizado> findById(UUID id);
 
+    @Query("select t from TreinoRealizado t where t.id = :id and t.tenantId = :tenantId")
+    Optional<TreinoRealizado> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+
     TreinoRealizado save(TreinoRealizado entity);
 
     List<TreinoRealizado> findByAtletaIdOrderByDataTreinoAsc(UUID atletaId);
 
     Optional<TreinoRealizado> findByFonteDadosAndExternalId(FonteDados fonte, String externalId);
+
+    @Query("select t from TreinoRealizado t where t.fonteDados = :fonteDados and t.externalId = :externalId and t.tenantId = :tenantId")
+    Optional<TreinoRealizado> findByFonteDadosAndExternalIdAndTenantId(@Param("fonteDados") FonteDados fonteDados, @Param("externalId") String externalId, @Param("tenantId") UUID tenantId);
 
     @Query("select coalesce(sum(t.distanciaKm),0) from TreinoRealizado t where t.planoSemanal.id = :planoSemanalId")
     double sumDistanciaByPlanoSemanalId(@Param("planoSemanalId") UUID planoSemanalId);

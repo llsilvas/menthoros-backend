@@ -17,6 +17,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -32,6 +34,8 @@ import java.util.UUID;
 public class JwtTenantFilter extends OncePerRequestFilter {
 
     private final UsuarioSyncService usuarioSyncService;
+    private static final String TENANT_ID_CLAIM = "tenant_id";
+    private static final String ORGANIZATION_CLAIM = "organization";
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -42,8 +46,8 @@ public class JwtTenantFilter extends OncePerRequestFilter {
             // Só processa se for um JWT válido
             if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
 
-                // Extrai tenant_id do JWT (claim configurado no Keycloak)
-                String tenantIdStr = jwt.getClaimAsString("tenant_id");
+                // Extrai tenant_id do JWT, aceitando tanto claim flat quanto o formato nativo de organization.
+                String tenantIdStr = extractTenantId(jwt);
 
                 if (tenantIdStr == null || tenantIdStr.isBlank()) {
                     log.error("JWT sem tenant_id - REJEITADO: subject={}, uri={}",
@@ -90,5 +94,43 @@ public class JwtTenantFilter extends OncePerRequestFilter {
             // CRÍTICO: Sempre limpa o contexto ao final (evita vazamento entre requests)
             TenantContext.clear();
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractTenantId(Jwt jwt) {
+        String flatTenantId = jwt.getClaimAsString(TENANT_ID_CLAIM);
+        if (flatTenantId != null && !flatTenantId.isBlank()) {
+            return flatTenantId;
+        }
+
+        Object organizationClaim = jwt.getClaim(ORGANIZATION_CLAIM);
+        if (!(organizationClaim instanceof Map<?, ?> organizationMap) || organizationMap.isEmpty()) {
+            return null;
+        }
+
+        if (organizationMap.size() != 1) {
+            log.warn("JWT com múltiplas organizations não suportadas: subject={}, organizations={}",
+                    jwt.getSubject(), organizationMap.keySet());
+            return null;
+        }
+
+        Object organizationData = organizationMap.values().iterator().next();
+        if (!(organizationData instanceof Map<?, ?> orgData)) {
+            return null;
+        }
+
+        Object tenantIdValue = orgData.get(TENANT_ID_CLAIM);
+        if (tenantIdValue instanceof String tenantId && !tenantId.isBlank()) {
+            return tenantId;
+        }
+
+        if (tenantIdValue instanceof List<?> tenantIds && !tenantIds.isEmpty()) {
+            Object firstTenantId = tenantIds.getFirst();
+            if (firstTenantId instanceof String tenantId && !tenantId.isBlank()) {
+                return tenantId;
+            }
+        }
+
+        return null;
     }
 }

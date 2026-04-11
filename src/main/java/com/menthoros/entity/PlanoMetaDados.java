@@ -30,6 +30,10 @@ public class PlanoMetaDados {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "tenant_id", nullable = false)
+    private Assessoria assessoria;
+
     @OneToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "atleta_id", nullable = false, unique = true)
     private Atleta atleta;

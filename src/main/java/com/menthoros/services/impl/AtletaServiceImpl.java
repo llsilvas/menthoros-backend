@@ -28,35 +28,21 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AtletaServiceImpl implements AtletaService {
 
+    private static final String TENANT_KEY =
+            "T(com.menthoros.multitenancy.TenantContext).getRequiredTenantId()";
+    private static final String TENANT_ID_KEY =
+            "T(com.menthoros.multitenancy.TenantContext).getRequiredTenantId() + ':' + #id";
+
     private final AtletaRepository atletaRepository;
     private final AssessoriaRepository assessoriaRepository;
     private final AtletaMapper atletaMapper;
     private final PlanoMetadadosRepository planoMetaDadosRepository;
     private final TsbService tsbService;
 
-    // TODO(tenant-isolation): reativar quando autenticação estiver habilitada no frontend
-    // private static final String HAS_TENANT =
-    //         "T(com.menthoros.multitenancy.TenantContext).hasTenant()";
-    // private static final String TENANT_KEY =
-    //         "T(com.menthoros.multitenancy.TenantContext).getTenantId()";
-
-    // TODO(tenant-isolation): substituir resolveTenantId() por TenantContext.getRequiredTenantId()
-    //   quando autenticação estiver habilitada no frontend.
-    //   O fallback para a primeira assessoria ativa é apenas para dev local sem JWT.
-    private UUID resolveTenantId() {
-        if (TenantContext.hasTenant()) {
-            return TenantContext.getTenantId();
-        }
-        return assessoriaRepository.findFirstByAtivoTrue()
-                .map(Assessoria::getId)
-                .orElseThrow(() -> new ResourceNotFoundException("Nenhuma assessoria cadastrada no banco"));
-    }
-
     @Override
-    // TODO(tenant-isolation): @CacheEvict(value = "atletas-list", key = TENANT_KEY, condition = HAS_TENANT)
-    @CacheEvict(value = "atletas-list", allEntries = true)
+    @CacheEvict(value = "atletas-list", key = TENANT_KEY)
     public Atleta createAtleta(AtletaInputDto atletaInputDto) {
-        UUID tenantId = resolveTenantId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
 
         Assessoria assessoria = assessoriaRepository.findById(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Assessoria não encontrada para tenant: " + tenantId));
@@ -69,14 +55,13 @@ public class AtletaServiceImpl implements AtletaService {
 
     @Transactional
     @Override
-    // TODO(tenant-isolation): restaurar @Caching com chaves tenant-aware e condition = HAS_TENANT
     @Caching(evict = {
-            @CacheEvict(value = "atletas", key = "#id"),
-            @CacheEvict(value = "atletas-list", allEntries = true),
-            @CacheEvict(value = "metadados-atleta", key = "#id")
+            @CacheEvict(value = "atletas", key = TENANT_ID_KEY),
+            @CacheEvict(value = "atletas-list", key = TENANT_KEY),
+            @CacheEvict(value = "metadados-atleta", key = TENANT_ID_KEY)
     })
     public AtletaOutputDto updateAtleta(UUID id, AtletaInputDto atletaInputDto) {
-        UUID tenantId = resolveTenantId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
 
         Atleta atleta = atletaRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + id));
@@ -87,14 +72,13 @@ public class AtletaServiceImpl implements AtletaService {
     }
 
     @Override
-    // TODO(tenant-isolation): restaurar @Caching com chaves tenant-aware e condition = HAS_TENANT
     @Caching(evict = {
-            @CacheEvict(value = "atletas", key = "#id"),
-            @CacheEvict(value = "atletas-list", allEntries = true),
-            @CacheEvict(value = "metadados-atleta", key = "#id")
+            @CacheEvict(value = "atletas", key = TENANT_ID_KEY),
+            @CacheEvict(value = "atletas-list", key = TENANT_KEY),
+            @CacheEvict(value = "metadados-atleta", key = TENANT_ID_KEY)
     })
     public void deleteAtleta(UUID id) {
-        UUID tenantId = resolveTenantId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
 
         Atleta atleta = atletaRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + id));
@@ -104,11 +88,10 @@ public class AtletaServiceImpl implements AtletaService {
     }
 
     @Override
-    // TODO(tenant-isolation): @Cacheable(value = "atletas", key = "#id + '_' + TENANT_KEY, condition = HAS_TENANT)
-    @Cacheable(value = "atletas", key = "#id")
+    @Cacheable(value = "atletas", key = TENANT_ID_KEY)
     @Transactional(readOnly = true)
     public AtletaOutputDto getAtletaById(UUID id) {
-        UUID tenantId = resolveTenantId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
 
         Atleta atleta = atletaRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + id));
@@ -119,11 +102,10 @@ public class AtletaServiceImpl implements AtletaService {
     }
 
     @Override
-    // TODO(tenant-isolation): @Cacheable(value = "atletas-list", key = TENANT_KEY, condition = HAS_TENANT)
-    @Cacheable(value = "atletas-list")
+    @Cacheable(value = "atletas-list", key = TENANT_KEY)
     @Transactional(readOnly = true)
     public List<AtletaOutputDto> getAllAtletas() {
-        UUID tenantId = resolveTenantId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
 
         List<Atleta> allAtletas = atletaRepository.findAllAtletasWithBasicInfo(tenantId);
 

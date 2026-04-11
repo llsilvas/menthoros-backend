@@ -11,6 +11,7 @@ import com.menthoros.exception.DomainNotFoundException;
 import com.menthoros.exception.DomainRuleViolationException;
 import com.menthoros.mapper.PlanoSemanalMapper;
 import com.menthoros.mapper.TreinoMapper;
+import com.menthoros.multitenancy.TenantContext;
 import com.menthoros.repository.*;
 import com.menthoros.services.TreinoService;
 import jakarta.transaction.Transactional;
@@ -52,7 +53,7 @@ public class TreinoServiceImpl implements TreinoService {
         }
 
         // 2) Carrega atleta
-        Atleta atleta = atletaRepository.findById(treinoRealizado.atletaId())
+        Atleta atleta = atletaRepository.findByIdAndTenantId(treinoRealizado.atletaId(), TenantContext.getRequiredTenantId())
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
         // 3) Resolve planejado (id explícito OU conciliação automática)
@@ -154,7 +155,7 @@ public class TreinoServiceImpl implements TreinoService {
 
     private Optional<TreinoPlanejado> resolveTreinoPlanejado(UUID treinoPlanejadoId, TreinoRealizadoInputDto treinoRealizadoInputDto) {
         if (treinoPlanejadoId != null) {
-            TreinoPlanejado planejado = treinoPlanejadoRepository.findById(treinoPlanejadoId)
+            TreinoPlanejado planejado = treinoPlanejadoRepository.findByIdAndTenantId(treinoPlanejadoId, TenantContext.getRequiredTenantId())
                     .orElseThrow(() -> new DomainNotFoundException("Treino planejado não encontrado"));
             if (!planejado.getAtleta().getId().equals(treinoRealizadoInputDto.atletaId())) {
                 throw new DomainRuleViolationException("Treino planejado não pertence ao atleta.");
@@ -207,8 +208,10 @@ public class TreinoServiceImpl implements TreinoService {
 
     private Optional<TreinoRealizado> buscarTreinoDuplicado(TreinoRealizadoInputDto treinoRealizadoInputDto) {
         if (treinoRealizadoInputDto.fonteDados() != null && treinoRealizadoInputDto.externalId() != null) {
-            return treinoRealizadoRepository
-                    .findByFonteDadosAndExternalId(treinoRealizadoInputDto.fonteDados(), treinoRealizadoInputDto.externalId());
+            return treinoRealizadoRepository.findByFonteDadosAndExternalIdAndTenantId(
+                    treinoRealizadoInputDto.fonteDados(),
+                    treinoRealizadoInputDto.externalId(),
+                    TenantContext.getRequiredTenantId());
         }
         return Optional.empty();
     }
@@ -230,7 +233,7 @@ public class TreinoServiceImpl implements TreinoService {
 
     @Override
     public void gravarTreino(UUID atletaId, TreinoPlanejadoLlmDto planoSemanalOutputDto) {
-        Atleta atleta = atletaRepository.findById(atletaId).orElseThrow();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, TenantContext.getRequiredTenantId()).orElseThrow();
 
         PlanoSemanal planoSemanal = planoSemanalMapper.toEntity(planoSemanalOutputDto);
         planoSemanal.setAtleta(atleta);
@@ -243,7 +246,7 @@ public class TreinoServiceImpl implements TreinoService {
     public TreinoRealizadoOutputDto lancarTreino(UUID atletaId, TreinoRealizadoInputDto treinoRealizadoInputDto) {
         log.debug("Criando treino realizado: {}", treinoRealizadoInputDto);
 
-        Atleta atleta = atletaRepository.findById(atletaId)
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, TenantContext.getRequiredTenantId())
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
         TreinoRealizado treinoRealizado = treinoMapper.toEntity(treinoRealizadoInputDto);

@@ -3,6 +3,8 @@ package com.menthoros.services.impl;
 import com.menthoros.entity.Atleta;
 import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.exception.DomainNotFoundException;
+import com.menthoros.multitenancy.TenantContext;
+import com.menthoros.repository.AssessoriaRepository;
 import com.menthoros.repository.AtletaRepository;
 import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.services.PlanoMetadadosService;
@@ -35,6 +37,7 @@ public class PlanoMetadadosServiceImpl implements PlanoMetadadosService {
 
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final AtletaRepository atletaRepository;
+    private final AssessoriaRepository assessoriaRepository;
 
     /**
      * {@inheritDoc}
@@ -43,7 +46,7 @@ public class PlanoMetadadosServiceImpl implements PlanoMetadadosService {
      * automaticamente quando os metadados são atualizados.
      */
     @Override
-    @Cacheable(value = "metadados-atleta", key = "#atleta.id")
+    @Cacheable(value = "metadados-atleta", key = "T(com.menthoros.multitenancy.TenantContext).getRequiredTenantId() + ':' + #atleta.id")
     public PlanoMetaDados buscarOuCriarMetadados(Atleta atleta) {
         Objects.requireNonNull(atleta, "Atleta não pode ser nulo");
         Objects.requireNonNull(atleta.getId(), "ID do atleta não pode ser nulo");
@@ -76,6 +79,7 @@ public class PlanoMetadadosServiceImpl implements PlanoMetadadosService {
 
         PlanoMetaDados metaDados = PlanoMetaDados.builder()
                 .atleta(atleta)
+                .assessoria(assessoriaRepository.getReferenceById(TenantContext.getRequiredTenantId()))
                 .diaPreferidoLongo(atleta.getDiaPreferidoLongo())
                 .dataCriacao(LocalDateTime.now())
                 .build();

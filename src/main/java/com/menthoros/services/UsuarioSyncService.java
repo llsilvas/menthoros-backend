@@ -7,11 +7,16 @@ import com.menthoros.repository.AssessoriaRepository;
 import com.menthoros.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -27,8 +32,13 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class UsuarioSyncService {
 
+    private static final String ROLES_CLAIM = "roles";
+
     private final UsuarioRepository usuarioRepository;
     private final AssessoriaRepository assessoriaRepository;
+
+    @Value("${app.security.roles-client-id:menthoros-api}")
+    private String rolesClientId;
 
     /**
      * Sincroniza usuário a partir do JWT do Keycloak
@@ -103,16 +113,35 @@ public class UsuarioSyncService {
      */
     @SuppressWarnings("unchecked")
     private List<String> extractRoles(Jwt jwt) {
-        Object rolesClaim = jwt.getClaim("roles");
+        Set<String> roles = new LinkedHashSet<>();
+        Object rolesClaim = jwt.getClaim(ROLES_CLAIM);
 
         if (rolesClaim instanceof List) {
-            return (List<String>) rolesClaim;
+            roles.addAll((List<String>) rolesClaim);
         } else if (rolesClaim instanceof String) {
-            return List.of((String) rolesClaim);
-        } else {
-            log.warn("JWT sem claim 'roles': {}", jwt.getSubject());
-            return List.of();
+            roles.add((String) rolesClaim);
         }
+
+        Object resourceAccessClaim = jwt.getClaim("resource_access");
+        if (resourceAccessClaim instanceof Map<?, ?> resourceAccessMap) {
+            Object clientAccess = resourceAccessMap.get(rolesClientId);
+            if (clientAccess instanceof Map<?, ?> clientAccessMap) {
+                Object clientRoles = clientAccessMap.get(ROLES_CLAIM);
+                if (clientRoles instanceof List<?>) {
+                    for (Object role : (List<?>) clientRoles) {
+                        if (role instanceof String roleName && !roleName.isBlank()) {
+                            roles.add(roleName);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (roles.isEmpty()) {
+            log.warn("JWT sem roles reconhecíveis: {}", jwt.getSubject());
+        }
+
+        return new ArrayList<>(roles);
     }
 
     /**

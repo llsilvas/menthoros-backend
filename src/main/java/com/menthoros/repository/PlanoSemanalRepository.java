@@ -40,4 +40,7 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
                         and ps.status != 'CONCLUIDO'
             """)
     Optional<PlanoSemanal> findByAtletaId(UUID atletaId);
+
+    @Query("select ps from PlanoSemanal ps where ps.id = :id and ps.assessoria.id = :tenantId")
+    Optional<PlanoSemanal> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 }

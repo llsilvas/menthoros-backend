@@ -82,6 +82,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, Object>> handleIllegalState(IllegalStateException ex) {
+        log.warn("Contexto de tenant ausente: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 403,
+                "error", "Forbidden",
+                "message", "Acesso não autorizado: contexto de tenant ausente"
+        );
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntimeException(RuntimeException ex) {
         if (ex.getMessage() != null && ex.getMessage().contains("OpenAI")) {
