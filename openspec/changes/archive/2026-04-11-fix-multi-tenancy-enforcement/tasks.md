@@ -6,7 +6,7 @@
 
 - [x] 1.1 Em `SecurityConfig`, remover `.anyRequest().permitAll()` e substituir por `.anyRequest().authenticated()`
 - [x] 1.2 Verificar que as rotas públicas `/api/public/**`, `/swagger-ui/**`, `/api-docs/**`, `/actuator/health` continuam com `permitAll`
-- [ ] 1.3 Executar testes existentes para confirmar que requests sem JWT retornam 401 nos endpoints de negócio
+- [x] 1.3 Executar testes existentes para confirmar que requests sem JWT retornam 401 nos endpoints de negócio
 - [x] 1.4 Criar `application-local.yml` com override de `SecurityConfig` via profile `local`: `permitAll` em todas as rotas e tenant fixo de desenvolvimento; adicionar aviso explícito no arquivo de que este profile não pode ser usado em produção ou CI
 - [x] 1.5 Nos testes de integração que cobrem endpoints de negócio, configurar mock JWT válido com `tenant_id` usando `SecurityMockMvcRequestPostProcessors.jwt()` ou `@WithMockUser` — necessário antes de executar os testes após a task 1.1 (não há testes de integração no momento; sem ação necessária)
 
@@ -55,4 +55,4 @@
   - `DROP INDEX IF EXISTS uk_treino_realizado_external_id` (índice global criado em V8, sem escopo de tenant; `IF EXISTS` garante idempotência)
   - CREATE de índice único composto `(tenant_id, fonte_dados, external_id)` em `tb_treino_realizado` com filtro parcial `WHERE fonte_dados IS NOT NULL AND external_id IS NOT NULL`
 - [x] 7.2 Verificar que não há duplicatas existentes em `tb_treino_realizado` antes de aplicar o unique index (query de diagnóstico incluída na migration como comentário; banco local sem dados de sincronização)
-- [ ] 7.3 Executar `./mvnw flyway:migrate` localmente e confirmar que a migration V11 é aplicada sem erros
+- [x] 7.3 Executar `./mvnw flyway:migrate` localmente e confirmar que a migration V11 é aplicada sem erros
