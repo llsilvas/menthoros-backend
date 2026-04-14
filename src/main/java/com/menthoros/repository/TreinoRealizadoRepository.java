@@ -5,6 +5,7 @@ import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.entity.TreinoPlanejado;
 import com.menthoros.entity.TreinoRealizado;
 import com.menthoros.enums.FonteDados;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.PagingAndSortingRepository;
 import org.springframework.data.repository.query.Param;
@@ -49,4 +50,13 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     List<TreinoRealizado> findTreinoRealizadosByAtleta(Atleta atleta);
 
     List<TreinoRealizado> findTreinoRealizadosByAtletaId(UUID atletaId);
+
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE TreinoRealizado t SET t.planoSemanal = null WHERE t.planoSemanal.id = :planoSemanalId")
+    void desvinculardePlanoSemanal(@Param("planoSemanalId") UUID planoSemanalId);
+
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE TreinoRealizado t SET t.treinoPlanejado = null WHERE t.treinoPlanejado.id IN " +
+           "(SELECT tp.id FROM TreinoPlanejado tp WHERE tp.planoSemanal.id = :planoSemanalId)")
+    void desvinculardeTreinosPlanejados(@Param("planoSemanalId") UUID planoSemanalId);
 }

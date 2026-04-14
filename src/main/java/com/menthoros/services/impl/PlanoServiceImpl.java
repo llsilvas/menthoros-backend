@@ -506,11 +506,39 @@ public class PlanoServiceImpl implements PlanoService {
         return new DadosPlanoDto(atleta, dataInicio, planoAnterior, ultimosTreinos, metaDados);
     }
 
+    /**
+     * Retorna a próxima prova futura do atleta.
+     * Prioriza a prova marcada como alvo; se não houver, usa a de data mais próxima.
+     * Retorna empty quando não há provas com data futura cadastradas.
+     */
+    private Optional<Prova> buscarProximaProva(Atleta atleta) {
+        LocalDate hoje = LocalDate.now();
+        List<Prova> provasFuturas = atleta.getProvas() == null
+                ? Collections.emptyList()
+                : atleta.getProvas().stream()
+                        .filter(p -> p.getDataProva() != null && !p.getDataProva().isBefore(hoje))
+                        .sorted(Comparator.comparing(Prova::getDataProva))
+                        .toList();
+
+        if (provasFuturas.isEmpty()) {
+            return Optional.empty();
+        }
+
+        return provasFuturas.stream()
+                .filter(Prova::isProvaAlvo)
+                .findFirst()
+                .or(() -> provasFuturas.stream().findFirst());
+    }
+
     private PlanoSemanalLlmDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto, ModoGeracaoPlano modoGeracao) {
         try {
             log.info("Iniciando geração de plano para atleta: {}", dadosPlanoDto.atleta().getId());
 
-            var prova = dadosPlanoDto.atleta().getProvas().get(0);
+            Prova prova = buscarProximaProva(dadosPlanoDto.atleta()).orElse(null);
+            if (prova == null) {
+                log.warn("Atleta {} não possui provas futuras cadastradas — plano gerado sem prova alvo",
+                        dadosPlanoDto.atleta().getId());
+            }
 
             PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), prova, modoGeracao);
 
@@ -550,11 +578,17 @@ public class PlanoServiceImpl implements PlanoService {
         PlanoSemanal plano = planoSemanalRepository.findById(planoSemanalId)
                 .orElseThrow(() -> new ResourceNotFoundException("Plano não encontrado: " + planoSemanalId));
 
-        // Do NOT initialize TreinosPlanejados or any other lazy collection before deletion.
-        // Loading children into the session causes Hibernate 6.6 CHECK_ON_FLUSH to fail:
-        // the loaded TreinoPlanejado entities reference the PlanoSemanal being removed,
-        // and Hibernate treats this as a transient reference during commit.
-        // CascadeType.ALL (REMOVE) + DB ON DELETE CASCADE handles child deletion without loading them.
+        if (plano.getStatus() != PlanoStatus.PLANEJADO) {
+            throw new DomainRuleViolationException("Apenas planos ainda não iniciados podem ser excluídos");
+        }
+
+        // Plano com status PLANEJADO não tem TreinoRealizado vinculados,
+        // mas os bulk updates garantem integridade caso haja dados inconsistentes.
+        // clearAutomatically=true limpa o cache L1 do Hibernate evitando CHECK_ON_FLUSH.
+        treinoRealizadoRepository.desvinculardeTreinosPlanejados(planoSemanalId);
+        treinoRealizadoRepository.desvinculardePlanoSemanal(planoSemanalId);
+
+        // CascadeType.ALL propaga a exclusão para os TreinoPlanejado vinculados.
         planoSemanalRepository.delete(plano);
         log.info("✅ Plano deletado com sucesso - ID: {}", planoSemanalId);
     }

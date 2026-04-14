@@ -22,4 +22,6 @@ public interface TreinoService {
     void gravarTreino(UUID atletaId, TreinoPlanejadoLlmDto planoSemanalOutputDto);
 
     TreinoRealizadoOutputDto lancarTreino(UUID atletaId, @Valid TreinoRealizadoInputDto treinoRealizadoInputDto);
+
+    void marcarTreinoPerdido(UUID treinoPlanejadoId);
 }

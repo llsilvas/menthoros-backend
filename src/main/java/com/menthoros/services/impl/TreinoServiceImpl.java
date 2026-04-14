@@ -180,12 +180,16 @@ public class TreinoServiceImpl implements TreinoService {
         long realizados = treinos.stream()
                 .filter(t -> t.getStatusTreino() == TreinoExecucaoStatus.REALIZADO)
                 .count();
+        long perdidos = treinos.stream()
+                .filter(t -> t.getStatusTreino() == TreinoExecucaoStatus.PERDIDO)
+                .count();
+        long finalizados = realizados + perdidos;
 
-        if (realizados == 0) {
+        if (finalizados == 0) {
             plano.setStatus(PlanoStatus.PLANEJADO);
-        } else if (realizados == total) {
+        } else if (finalizados == total) {
             plano.setStatus(PlanoStatus.CONCLUIDO);
-        } else if (realizados == 1) {
+        } else if (finalizados == 1) {
             plano.setStatus(PlanoStatus.INICIADO);
         } else {
             plano.setStatus(PlanoStatus.EM_ANDAMENTO);
@@ -277,6 +281,31 @@ public class TreinoServiceImpl implements TreinoService {
 
     private Double calcularVolumeUltimaSemana(Atleta atleta) {
         return null;
+    }
+
+    @Override
+    @Transactional
+    public void marcarTreinoPerdido(UUID treinoPlanejadoId) {
+        TreinoPlanejado planejado = treinoPlanejadoRepository.findById(treinoPlanejadoId)
+                .orElseThrow(() -> new DomainNotFoundException("Treino planejado não encontrado"));
+
+        if (planejado.getStatusTreino() == TreinoExecucaoStatus.REALIZADO) {
+            throw new DomainRuleViolationException("Treino já realizado não pode ser marcado como perdido");
+        }
+        if (planejado.getStatusTreino() == TreinoExecucaoStatus.PERDIDO) {
+            log.warn("Treino {} já está marcado como perdido", treinoPlanejadoId);
+            return;
+        }
+
+        planejado.setStatusTreino(TreinoExecucaoStatus.PERDIDO);
+        treinoPlanejadoRepository.save(planejado);
+        log.info("Treino {} marcado como perdido", treinoPlanejadoId);
+
+        PlanoSemanal semanal = planejado.getPlanoSemanal();
+        if (semanal != null) {
+            Hibernate.initialize(semanal.getTreinosPlanejados());
+            atualizarStatusDoPlano(semanal);
+        }
     }
 
     @Transactional

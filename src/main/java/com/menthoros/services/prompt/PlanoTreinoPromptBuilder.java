@@ -162,8 +162,11 @@ public class PlanoTreinoPromptBuilder {
                 atleta, metaDados, ctx.treinosUltimas4Semanas(), ctx.dataReferencia());
 
         // 1. Dados básicos do atleta
-        var provas = periodizacaoPromptFormatter.formatarProvas(provaAlvo, ctx.provasPreparatorias());
 
+        String provas = null;
+        if(provaAlvo != null) {
+            provas = periodizacaoPromptFormatter.formatarProvas(provaAlvo, ctx.provasPreparatorias());
+        }
         // 2. ALERTAS OBRIGATÓRIOS NO TOPO (prioridade máxima)
         int maxDiasConsecutivos = disponibilidadePromptFormatter.calcularMaxDiasConsecutivos(metaDados, atleta);
         String alertasObrigatorios = alertasPromptFormatter.gerarAlertasObrigatorios(

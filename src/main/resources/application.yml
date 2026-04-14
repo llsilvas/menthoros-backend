@@ -27,7 +27,7 @@ spring:
   # DATABASE CONFIGURATION
   # ----------------------------------------
   datasource:
-    url: jdbc:postgresql://${POSTGRES_DB:localhost}:${DB_PORT:5432}/${APP_DB_NAME:menthoros-db}
+    url: jdbc:postgresql://${POSTGRES_DB:localhost}:${DB_PORT:5432}/${DB_NAME:menthoros-db}
     username: ${POSTGRES_USER:menthoros}
     password: ${POSTGRES_PASSWORD:menthoros123}
     driver-class-name: org.postgresql.Driver
@@ -117,7 +117,7 @@ app:
   # ----------------------------------------
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:3000}
-    allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,DELETE,OPTIONS}
+    allowed-methods: ${CORS_ALLOWED_METHODS:GET,POST,PUT,PATCH,DELETE,OPTIONS}
     allowed-headers: ${CORS_ALLOWED_HEADERS:*}
     allow-credentials: ${CORS_ALLOW_CREDENTIALS:true}
 

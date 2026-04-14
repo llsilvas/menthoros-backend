@@ -16,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import static org.springframework.http.ResponseEntity.noContent;
+
 import jakarta.validation.Valid;
 
 import java.util.UUID;
@@ -52,6 +54,23 @@ public class TreinoRealizadoController {
             @Valid @RequestBody TreinoRealizadoInputDto treinoRealizadoInputDto) {
         TreinoRealizado treinoRealizado = treinoService.addTreino(treinoPlanejadoId, treinoRealizadoInputDto);
         return status(HttpStatus.CREATED).body(treinoMapper.toOutputDto(treinoRealizado));
+    }
+
+    @Operation(summary = "Marcar treino como perdido",
+               description = "Registra que um treino planejado não foi realizado")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "204", description = "Treino marcado como perdido com sucesso"),
+            @ApiResponse(responseCode = "400", description = "Treino já realizado não pode ser marcado como perdido",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "404", description = "Treino planejado não encontrado",
+                    content = @Content(mediaType = "application/json"))
+    })
+    @PatchMapping("{treinoPlanejadoId}/marcar-perdido")
+    public ResponseEntity<Void> marcarPerdido(
+            @Parameter(description = "ID do treino planejado")
+            @PathVariable("treinoPlanejadoId") UUID treinoPlanejadoId) {
+        treinoService.marcarTreinoPerdido(treinoPlanejadoId);
+        return noContent().build();
     }
 
     @Operation(summary = "Lançar treinos manualmente para o atleta",

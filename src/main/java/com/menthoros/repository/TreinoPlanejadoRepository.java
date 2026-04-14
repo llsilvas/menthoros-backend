@@ -13,6 +13,8 @@ import java.util.UUID;
 public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejado, UUID>{
     List<TreinoPlanejado> findByAtletaId(UUID atletaId);
 
+    Optional<TreinoPlanejado> findByIdAndTenantId(UUID id, UUID tenantId);
+
     @Query("""
        select tp from TreinoPlanejado tp
        where tp.atleta.id = :atletaId
