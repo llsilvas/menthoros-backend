@@ -329,11 +329,13 @@ public class IaServiceImpl implements IaService {
                 treino = expandirEtapasAgregadas(treino);
                 validarTreinoIntervalado(treino, atletaId);
                 treino = normalizarTreinoIntervalado(treino, atleta.getNivelExperiencia());
+                treino = reconciliarDistanciaComEtapas(treino);
             }
 
-            // Fartlek: expande alucinações "Nx (AccelMin + RecovMin)" sem validação estrita
+            // Fartlek: expande alucinações "Nx (AccelMin + RecovMin)" e reconcilia distância
             if ("FARTLEK".equals(tipoTreino)) {
                 treino = expandirEtapasAgregadas(treino);
+                treino = reconciliarDistanciaComEtapas(treino);
             }
 
             // Validar treino LONGO
@@ -343,6 +345,19 @@ public class IaServiceImpl implements IaService {
 
             // Validar repeticoes = 1 em todas as etapas
             validarRepeticoes(treino, atletaId);
+
+            // Validar FC das etapas contra zonas fisiológicas LTHR
+            if (zonasParaValidacao != null && treino.etapas() != null) {
+                List<EtapaTreinoLlmDto> etapasValidadas = treino.etapas().stream()
+                        .map(etapa -> validarFcEtapa(etapa, zonasParaValidacao))
+                        .collect(Collectors.toList());
+                treino = new TreinoPlanejadoLlmDto(
+                        treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
+                        treino.tssPlanejado(), treino.intensidadePlanejada(),
+                        treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
+                        treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(), etapasValidadas
+                );
+            }
 
             // Validar ritmoAlvo contra teto de pace (Fase 4)
             BigDecimal teto = null;
@@ -371,6 +386,83 @@ public class IaServiceImpl implements IaService {
                 plano.objetivoSemanal(),
                 treinosNormalizados
         );
+    }
+
+    // ======================== VALIDAÇÃO FC POR ZONA (LTHR) ========================
+
+    /**
+     * Extrai o range de FC do formato "NNN-NNN bpm".
+     * Retorna null se o formato não for reconhecido ou o valor for nulo.
+     */
+    private int[] parseFcRange(String fcAlvoEtapa) {
+        if (fcAlvoEtapa == null) return null;
+        var matcher = Pattern.compile("^(\\d{2,3})-(\\d{2,3}) bpm$").matcher(fcAlvoEtapa.trim());
+        if (!matcher.matches()) return null;
+        return new int[]{ Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)) };
+    }
+
+    /**
+     * Retorna o range de FC esperado (fcMin, fcMax em bpm) para o tipo de etapa dado.
+     * Mapeamento baseado no design LTHR:
+     * <ul>
+     *   <li>AQUECIMENTO / RECUPERACAO / DESAQUECIMENTO → Z1</li>
+     *   <li>PRINCIPAL → Z2–Z4 (range amplo de treino aeróbico a limiar)</li>
+     *   <li>INTERVALADO → Z4–Z5 (esforço de limiar a VO2max)</li>
+     * </ul>
+     * Retorna null para tipos não mapeados (sem validação).
+     */
+    private int[] zonaEsperadaFC(String tipoEtapa, List<ZonaFC> zonasFC) {
+        if (tipoEtapa == null || zonasFC == null || zonasFC.size() < 5) return null;
+        return switch (tipoEtapa.toUpperCase()) {
+            case "AQUECIMENTO", "RECUPERACAO", "DESAQUECIMENTO" ->
+                    new int[]{ zonasFC.get(0).fcMin(), zonasFC.get(0).fcMax() }; // Z1
+            case "PRINCIPAL" ->
+                    new int[]{ zonasFC.get(1).fcMin(), zonasFC.get(3).fcMax() }; // Z2–Z4
+            case "INTERVALADO" ->
+                    new int[]{ zonasFC.get(3).fcMin(), zonasFC.get(4).fcMax() }; // Z4–Z5
+            default -> null;
+        };
+    }
+
+    /**
+     * Verifica se o {@code fcAlvoEtapa} tem sobreposição ≥50% com a zona fisiológica esperada.
+     * <p>Em caso de divergência, corrige o valor para o quartil central da zona esperada
+     * e registra um {@code WARN}. Nunca lança exceção — manter o plano válido é prioridade.</p>
+     */
+    private EtapaTreinoLlmDto validarFcEtapa(EtapaTreinoLlmDto etapa, List<ZonaFC> zonasFC) {
+        int[] prescrito = parseFcRange(etapa.fcAlvoEtapa());
+        if (prescrito == null) {
+            if (etapa.fcAlvoEtapa() != null) {
+                log.warn("fcAlvoEtapa não parseable, mantendo original: tipo='{}' valor='{}'",
+                        etapa.tipoEtapa(), etapa.fcAlvoEtapa());
+            }
+            return etapa;
+        }
+
+        int[] esperado = zonaEsperadaFC(etapa.tipoEtapa(), zonasFC);
+        if (esperado == null) return etapa;
+
+        int prescMin = prescrito[0], prescMax = prescrito[1];
+        int espMin   = esperado[0],  espMax   = esperado[1];
+
+        int overlap = Math.max(0, Math.min(prescMax, espMax) - Math.max(prescMin, espMin));
+        int larguraPrescrita = Math.max(1, prescMax - prescMin);
+        double overlapPct = (double) overlap / larguraPrescrita;
+
+        if (overlapPct < 0.50) {
+            // Corrigir para o quartil central da zona esperada
+            int amplitude = espMax - espMin;
+            int centroMin = espMin + amplitude / 4;
+            int centroMax = espMax - amplitude / 4;
+            String fcCorrigida = centroMin + "-" + centroMax + " bpm";
+            log.warn("FC fora da zona esperada: tipo='{}', prescrito='{}', esperado='{}-{} bpm', corrigindo para '{}'",
+                    etapa.tipoEtapa(), etapa.fcAlvoEtapa(), espMin, espMax, fcCorrigida);
+            return new EtapaTreinoLlmDto(
+                    etapa.ordem(), etapa.tipoEtapa(), etapa.descricaoEtapa(),
+                    etapa.duracaoMin(), etapa.distanciaKm(), fcCorrigida, etapa.repeticoes()
+            );
+        }
+        return etapa;
     }
 
     /**
@@ -434,6 +526,46 @@ public class IaServiceImpl implements IaService {
 
         // 3) Retornar novo record com etapas ajustadas e duração recalculada
         return recalcularDuracaoTreino(treino, etapas);
+    }
+
+    /**
+     * Reconcilia distanciaKm do treino com a soma real das etapas geradas.
+     *
+     * <p>Após expansão de etapas (Fartlek, Intervalado), a distância declarada no nível
+     * do treino pode divergir da soma das etapas individuais. Se o desvio for superior
+     * a 10%, substitui distanciaKm pela soma das etapas (que representa a realidade).</p>
+     */
+    private TreinoPlanejadoLlmDto reconciliarDistanciaComEtapas(TreinoPlanejadoLlmDto treino) {
+        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
+
+        double somaEtapas = somarDistancias(treino.etapas());
+        double distanciaAtual = treino.distanciaKm() != null ? treino.distanciaKm() : 0.0;
+
+        if (distanciaAtual <= 0) {
+            log.info("RECONCILIAÇÃO [{}]: distanciaKm não definida → usando soma das etapas: {} km",
+                    treino.tipoTreino(), somaEtapas);
+            return new TreinoPlanejadoLlmDto(
+                    treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
+                    treino.tssPlanejado(), treino.intensidadePlanejada(),
+                    treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
+                    treino.duracaoMin(), somaEtapas, treino.ritmoAlvo(), treino.etapas()
+            );
+        }
+
+        double desvioPercent = Math.abs(somaEtapas - distanciaAtual) / distanciaAtual;
+        if (desvioPercent > 0.10) {
+            log.warn("RECONCILIAÇÃO [{}]: distanciaKm={} km, soma_etapas={} km → desvio {}% > 10%, reconciliando",
+                    treino.tipoTreino(), distanciaAtual, String.format("%.2f", somaEtapas),
+                    Math.round(desvioPercent * 100));
+            return new TreinoPlanejadoLlmDto(
+                    treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
+                    treino.tssPlanejado(), treino.intensidadePlanejada(),
+                    treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
+                    treino.duracaoMin(), somaEtapas, treino.ritmoAlvo(), treino.etapas()
+            );
+        }
+
+        return treino;
     }
 
     /**
