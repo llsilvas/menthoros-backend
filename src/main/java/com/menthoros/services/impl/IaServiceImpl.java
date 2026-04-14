@@ -20,6 +20,8 @@ import com.menthoros.services.IaService;
 import com.menthoros.services.helper.PaceValidator;
 import com.menthoros.services.helper.RegraGeracaoTreino;
 import com.menthoros.services.helper.TreinoHistoricoProvider;
+import com.menthoros.services.helper.ZonaTreinoService;
+import com.menthoros.services.helper.ZonaTreinoService.ZonaFC;
 import com.menthoros.services.prompt.PaceHistoricoFormatter;
 import com.menthoros.services.prompt.PlanoTreinoPromptBuilder;
 import lombok.extern.slf4j.Slf4j;
@@ -53,12 +55,14 @@ public class IaServiceImpl implements IaService {
     private final TreinoHistoricoProvider treinoHistoricoProvider;
     private final PaceHistoricoFormatter paceHistoricoFormatter;
     private final PaceValidator paceValidator;
+    private final ZonaTreinoService zonaTreinoService;
 
     public IaServiceImpl(ChatClient chatClient, PlanoTreinoPromptBuilder promptBuilder,
                          AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
                          TreinoHistoricoProvider treinoHistoricoProvider,
                          PaceHistoricoFormatter paceHistoricoFormatter,
-                         PaceValidator paceValidator) {
+                         PaceValidator paceValidator,
+                         ZonaTreinoService zonaTreinoService) {
         this.chatClient = chatClient;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
@@ -66,6 +70,7 @@ public class IaServiceImpl implements IaService {
         this.treinoHistoricoProvider = treinoHistoricoProvider;
         this.paceHistoricoFormatter = paceHistoricoFormatter;
         this.paceValidator = paceValidator;
+        this.zonaTreinoService = zonaTreinoService;
     }
 
     private OpenAiChatOptions defaultJsonSchemaOptions() {
@@ -202,10 +207,10 @@ public class IaServiceImpl implements IaService {
                             desc.put("maxLength", 120);
                         }
 
-                        // Pattern FC: "60-70% FCmax"
+                        // Pattern FC: "140-160 bpm" (range absoluto em bpm, alinhado com LTHR)
                         Map<String, Object> fc = (Map<String, Object>) etapaProps.get("fcAlvoEtapa");
                         if (fc != null) {
-                            fc.put("pattern", "^[0-9]{1,3}-[0-9]{1,3}% FCmax$");
+                            fc.put("pattern", "^[0-9]{2,3}-[0-9]{2,3} bpm$");
                         }
                     }
 
@@ -305,6 +310,15 @@ public class IaServiceImpl implements IaService {
         // Pré-computar tetos de pace para validação (Fase 4)
         var ctx = treinoHistoricoProvider.prepararContexto(atleta);
         Map<TipoTreino, BigDecimal> tetoPorTipo = paceHistoricoFormatter.calcularTetoPorTipo(ctx.treinosUltimas4Semanas());
+
+        // Pré-computar zonas de FC para validação de etapas (LTHR) — null se sem dados fisiológicos
+        final List<ZonaFC> zonasParaValidacao;
+        if (atleta.getFcLimiar() != null || atleta.getFcMaxima() != null) {
+            zonasParaValidacao = zonaTreinoService.calcularZonasFC(
+                    atleta.getFcMaximaCalculada(), atleta.getFcLimiarCalculada());
+        } else {
+            zonasParaValidacao = null;
+        }
 
         List<TreinoPlanejadoLlmDto> treinosNormalizados = plano.treinosPlanejados().stream().map(treino -> {
             String tipoTreino = treino.tipoTreino();
