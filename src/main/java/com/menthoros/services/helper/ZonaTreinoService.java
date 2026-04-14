@@ -10,16 +10,22 @@ import java.util.List;
 /**
  * Serviço dedicado ao cálculo de zonas de treino (FC e Pace).
  *
- * <p>Centraliza a lógica de cálculo das 6 zonas de intensidade,
- * baseadas nos limiares fisiológicos do atleta:</p>
- * <ul>
- *   <li>Z1 (Recuperação): 60-70% FCmax | 115-125% pace limiar</li>
- *   <li>Z2 (Aeróbico): 70-80% FCmax | 105-115% pace limiar</li>
- *   <li>Z3 (Tempo): 80-88% FCmax | 98-105% pace limiar</li>
- *   <li>Z4 (Limiar): 88-95% FCmax | 95-100% pace limiar</li>
- *   <li>Z5 (VO2max): 95-100% FCmax | 90-97% pace limiar</li>
- *   <li>Z6 (Sprint): N/A para FC | &lt;90% pace limiar</li>
- * </ul>
+ * <p>Centraliza a lógica de cálculo das 6 zonas de intensidade baseadas nos
+ * limiares fisiológicos do atleta. As zonas de FC usam o modelo LTHR (Lactate
+ * Threshold Heart Rate) de Friel, onde a <strong>FC Limiar</strong> é a única
+ * âncora de todas as zonas:</p>
+ *
+ * <table border="1">
+ *   <caption>Zonas de FC — modelo LTHR (Friel)</caption>
+ *   <tr><th>Zona</th><th>% FC Limiar</th><th>Descrição</th></tr>
+ *   <tr><td>Z1 (Recuperação)</td><td>75–85%</td><td>Recuperação ativa</td></tr>
+ *   <tr><td>Z2 (Aeróbico)</td><td>85–89%</td><td>Base aeróbica</td></tr>
+ *   <tr><td>Z3 (Tempo)</td><td>89–94%</td><td>Tempo moderado / SubLimiar</td></tr>
+ *   <tr><td>Z4 (Limiar)</td><td>94–100%</td><td>Limiar anaeróbico</td></tr>
+ *   <tr><td>Z5 (VO2max)</td><td>100–106%</td><td>VO2max / supralimiar</td></tr>
+ * </table>
+ *
+ * <p>Zonas de pace usam {@code paceLimiar} como referência (já era correto).</p>
  *
  * <p>Z6 existe apenas para pace. Em esforços anaeróbicos curtos (&lt;1 min),
  * a FC não estabiliza a tempo (cardiac lag), tornando a medição por FC
@@ -34,17 +40,14 @@ public class ZonaTreinoService {
 
     public record ZonaCompleta(int numero, String nome, ZonaFC fc, ZonaPace pace) {}
 
-    // FC: 5 zonas (Z6 não se aplica por cardiac lag)
-    private static final double[][] FC_PERCENTUAIS = {
-            {0.60, 0.70}, // Z1
-            {0.70, 0.80}, // Z2
-            {0.80, 0.88}, // Z3
-            {0.88, 0.95}, // Z4
-            {0.95, 1.00}, // Z5
+    // FC: 5 zonas — modelo LTHR (Friel), todas baseadas em % do FC Limiar
+    private static final double[][] FC_LIMIAR_PERCENTUAIS = {
+            {0.75, 0.85}, // Z1: Recuperação
+            {0.85, 0.89}, // Z2: Aeróbico
+            {0.89, 0.94}, // Z3: Tempo
+            {0.94, 1.00}, // Z4: Limiar
+            {1.00, 1.06}, // Z5: VO2max (supralimiar — cap prático de 106%)
     };
-
-    // Para Z4 baseado em FC limiar (não FCmax)
-    private static final double[] Z4_FC_LIMIAR_PERCENTUAIS = {0.95, 1.00};
 
     // Pace: 6 zonas (Z6 = sprint/anaeróbico)
     private static final double[][] PACE_FATORES = {
@@ -83,17 +86,17 @@ public class ZonaTreinoService {
     }
 
     /**
-     * Calcula as 5 zonas de FC baseadas na FC máxima e FC limiar.
-     * Z4 usa FC limiar como base; demais usam FCmax.
+     * Calcula as 5 zonas de FC usando {@code fcLimiar} (LTHR) como base em todas as zonas.
+     * O parâmetro {@code fcMaxima} é mantido para compatibilidade de chamada, mas não é usado.
      * Apenas 5 zonas — Z6 não se aplica a FC (cardiac lag em sprints).
      */
     public List<ZonaFC> calcularZonasFC(Integer fcMaxima, Integer fcLimiar) {
         return List.of(
-                calcularZonaFC(1, fcMaxima, FC_PERCENTUAIS[0]),
-                calcularZonaFC(2, fcMaxima, FC_PERCENTUAIS[1]),
-                calcularZonaFC(3, fcMaxima, FC_PERCENTUAIS[2]),
-                calcularZonaFC(4, fcLimiar, Z4_FC_LIMIAR_PERCENTUAIS),
-                calcularZonaFC(5, fcMaxima, FC_PERCENTUAIS[4])
+                calcularZonaFC(1, fcLimiar, FC_LIMIAR_PERCENTUAIS[0]),
+                calcularZonaFC(2, fcLimiar, FC_LIMIAR_PERCENTUAIS[1]),
+                calcularZonaFC(3, fcLimiar, FC_LIMIAR_PERCENTUAIS[2]),
+                calcularZonaFC(4, fcLimiar, FC_LIMIAR_PERCENTUAIS[3]),
+                calcularZonaFC(5, fcLimiar, FC_LIMIAR_PERCENTUAIS[4])
         );
     }
 
