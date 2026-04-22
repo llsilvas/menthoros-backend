@@ -133,6 +133,19 @@ class TsbServiceImplDiasConsecutivosTest {
                         }
                         return Collections.emptyList();
                     }
+                    if ("findByAtletaIdAndDataTreinoBetween".equals(method.getName())
+                            && args != null && args.length == 3) {
+                        LocalDate inicio = (LocalDate) args[1];
+                        LocalDate fim = (LocalDate) args[2];
+                        return diasComTreino.stream()
+                                .filter(data -> !data.isBefore(inicio) && !data.isAfter(fim))
+                                .map(data -> {
+                                    TreinoRealizado treino = new TreinoRealizado();
+                                    treino.setDataTreino(data);
+                                    return treino;
+                                })
+                                .toList();
+                    }
                     if ("toString".equals(method.getName())) {
                         return "TreinoRealizadoRepositoryProxy";
                     }

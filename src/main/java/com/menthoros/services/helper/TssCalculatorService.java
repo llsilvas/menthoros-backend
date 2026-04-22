@@ -1,11 +1,13 @@
 package com.menthoros.services.helper;
 
 import com.menthoros.entity.Atleta;
+import com.menthoros.entity.EtapaRealizada;
 import com.menthoros.entity.TreinoRealizado;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.List;
 
 /**
@@ -24,9 +26,15 @@ import java.util.List;
 @Component
 public class TssCalculatorService {
 
+    private static final double MIN_IF_FC_PACE = 0.30;
+    private static final double MIN_IF_RPE = 0.45;
+    private static final double MAX_IF = 1.50;
+
     private enum MetodoCalculoTss {
         FC, PACE, RPE
     }
+
+    private record ResultadoCalculo(int tssBase, MetodoCalculoTss metodo, boolean calculadoPorEtapas) {}
 
     /**
      * Calcula TSS total do dia (soma de todos os treinos)
@@ -42,27 +50,14 @@ public class TssCalculatorService {
      * Aplica fator de impacto por tipo de treino.
      */
     public int calcularTss(TreinoRealizado treino) {
-        int tssBase;
-        MetodoCalculoTss metodo;
+        if (treino == null) {
+            return 0;
+        }
 
-        // Se tem dados de FC, usar método de FC
-        if (treino.getFcMedia() != null && treino.getFcMedia() > 0) {
-            tssBase = calcularTssFrequenciaCardiaca(treino);
-            metodo = MetodoCalculoTss.FC;
-        }
-        // Se tem dados de pace, usar método de pace
-        else if (treino.getPaceMedia() != null) {
-            tssBase = calcularTssPace(treino);
-            metodo = MetodoCalculoTss.PACE;
-        }
-        // Fallback: usar RPE (menos preciso mas melhor que nada)
-        else {
-            tssBase = calcularTssRpe(treino);
-            metodo = MetodoCalculoTss.RPE;
-        }
+        ResultadoCalculo resultado = calcularTssBase(treino);
 
         // Aplicar fator de impacto por tipo de treino
-        return aplicarFatorImpactoTreino(tssBase, treino, metodo);
+        return aplicarFatorImpactoTreino(resultado.tssBase(), treino, resultado.metodo(), resultado.calculadoPorEtapas());
     }
 
     /**
@@ -79,7 +74,11 @@ public class TssCalculatorService {
      * @param treino Treino com tipo definido
      * @return TSS ajustado pelo fator de impacto
      */
-    private int aplicarFatorImpactoTreino(int tssBase, TreinoRealizado treino, MetodoCalculoTss metodo) {
+    private int aplicarFatorImpactoTreino(int tssBase, TreinoRealizado treino, MetodoCalculoTss metodo, boolean calculadoPorEtapas) {
+        if (tssBase <= 0) {
+            return 0;
+        }
+
         if (treino.getTipoTreino() == null) {
             log.debug("Treino {} sem tipo definido. Usando TSS base: {}", treino.getId(), tssBase);
             return tssBase;
@@ -89,7 +88,7 @@ public class TssCalculatorService {
 
         // ISSUE-04: evitar dupla contagem no cálculo por FC.
         // A FC já captura boa parte da intensidade; aplicar apenas parte do "componente extra" do fator.
-        if (metodo == MetodoCalculoTss.FC && fator > 1.0) {
+        if ((metodo == MetodoCalculoTss.FC || calculadoPorEtapas) && fator > 1.0) {
             double componenteExtra = fator - 1.0;
             fator = 1.0 + (componenteExtra * 0.5);
         }
@@ -107,24 +106,40 @@ public class TssCalculatorService {
      * Método mais preciso quando disponível
      */
     private int calcularTssFrequenciaCardiaca(TreinoRealizado treino) {
+        return calcularTssFrequenciaCardiaca(treino, treino.getFcMedia(), treino.getPaceMedia(),
+                treino.getPercepcaoEsforco(), treino.getDuracaoMin(), true);
+    }
+
+    private int calcularTssFrequenciaCardiaca(TreinoRealizado treino, Integer fcMediaValor, Duration paceMedia,
+                                              Integer rpe, Duration duracao, boolean permitirFallback) {
         Atleta atleta = treino.getAtleta();
+        if (atleta == null) {
+            log.warn("Treino {} sem atleta associado para cálculo por FC", treino.getId());
+            return permitirFallback ? calcularTssSemFc(treino, duracao, paceMedia, rpe) : 0;
+        }
 
         // Validar dados necessários
         if (atleta.getFcMaximaCalculada() == null || atleta.getFcRepouso() == null) {
             log.warn("Atleta {} sem FC máxima/repouso configurada", atleta.getId());
-            return calcularTssRpe(treino);
+            return permitirFallback ? calcularTssSemFc(treino, duracao, paceMedia, rpe) : 0;
         }
 
         Integer fcMax = atleta.getFcMaximaCalculada();
         Integer fcRepouso = atleta.getFcRepouso();
-        Integer fcLimiar = atleta.getFcLimiar() != null
-                ? atleta.getFcLimiar()
-                : (int) (fcRepouso + (fcMax - fcRepouso) * 0.85); // Estimativa 85%
+        Integer fcLimiar = atleta.getFcLimiarCalculada();
 
-        double fcMedia = treino.getFcMedia();
-        double duracaoHoras = treino.getDuracaoMin() != null
-            ? treino.getDuracaoMin().toMinutes() / 60.0
-            : 0.0;
+        double fcMedia = fcMediaValor != null ? fcMediaValor : 0.0;
+        double duracaoHoras = obterDuracaoHoras(duracao);
+
+        if (duracaoHoras <= 0) {
+            return 0;
+        }
+
+        if (fcMax <= fcRepouso || fcLimiar <= fcRepouso || fcMedia <= fcRepouso) {
+            log.warn("Dados de FC inconsistentes para treino {}: fcMax={}, fcRepouso={}, fcLimiar={}, fcMedia={}",
+                    treino.getId(), fcMax, fcRepouso, fcLimiar, fcMedia);
+            return permitirFallback ? calcularTssSemFc(treino, duracao, paceMedia, rpe) : 0;
+        }
 
         // Calcular HR Reserve %
         double hrReserve = fcMax - fcRepouso;
@@ -136,7 +151,12 @@ public class TssCalculatorService {
         double intensityFactor = hrReservePercent / thresholdPercent;
 
         // Limitar IF entre 0.5 e 1.5 (valores realistas)
-        intensityFactor = Math.max(0.5, Math.min(1.5, intensityFactor));
+        if (!Double.isFinite(intensityFactor) || intensityFactor <= 0) {
+            log.warn("IF inválido no cálculo por FC para treino {}: {}", treino.getId(), intensityFactor);
+            return permitirFallback ? calcularTssSemFc(treino, duracao, paceMedia, rpe) : 0;
+        }
+
+        intensityFactor = Math.clamp(intensityFactor, MIN_IF_FC_PACE, MAX_IF);
 
         // TSS = duração_horas × IF × 100 × IF
         double tss = duracaoHoras * intensityFactor * 100 * intensityFactor;
@@ -149,33 +169,42 @@ public class TssCalculatorService {
      * Útil quando não há dados de FC
      */
     private int calcularTssPace(TreinoRealizado treino) {
+        return calcularTssPace(treino, treino.getPaceMedia(), treino.getDuracaoMin(), true);
+    }
+
+    private int calcularTssPace(TreinoRealizado treino, Duration paceMediaDuracao, Duration duracao, boolean permitirFallback) {
         Atleta atleta = treino.getAtleta();
+        if (atleta == null) {
+            log.warn("Treino {} sem atleta associado para cálculo por pace", treino.getId());
+            return permitirFallback ? calcularTssRpe(treino, duracao, treino.getPercepcaoEsforco()) : 0;
+        }
 
         if (atleta.getPaceLimiar() == null) {
             log.warn("Atleta {} sem pace limiar configurado", atleta.getId());
-            return calcularTssRpe(treino);
+            return permitirFallback ? calcularTssRpe(treino, duracao, treino.getPercepcaoEsforco()) : 0;
         }
 
         // Converter Duration (pace) para minutos decimais (5:30 → 5.5)
-        double paceMedia = treino.getPaceMedia() != null
-            ? treino.getPaceMedia().toMillis() / 60000.0 // millis → minutos
+        double paceMedia = paceMediaDuracao != null
+            ? paceMediaDuracao.toMillis() / 60000.0 // millis → minutos
             : 0.0;
 
         if (paceMedia == 0) {
             log.warn("Treino {} sem pace válido", treino.getId());
-            return calcularTssRpe(treino);
+            return permitirFallback ? calcularTssRpe(treino, duracao, treino.getPercepcaoEsforco()) : 0;
         }
 
         double paceLimiar = atleta.getPaceLimiar().doubleValue(); // min/km
-        double duracaoHoras = treino.getDuracaoMin() != null
-            ? treino.getDuracaoMin().toMinutes() / 60.0
-            : 0.0;
+        double duracaoHoras = obterDuracaoHoras(duracao);
+        if (duracaoHoras <= 0) {
+            return 0;
+        }
 
         // IF = pace_limiar / pace_media (quanto menor o pace, maior o IF)
         double intensityFactor = paceLimiar / paceMedia;
 
         // Limitar IF entre 0.5 e 1.5
-        intensityFactor = Math.max(0.5, Math.min(1.5, intensityFactor));
+        intensityFactor = Math.clamp(intensityFactor, MIN_IF_FC_PACE, MAX_IF);
 
         // Aplicar fator de elevação (terreno)
         double fatorElevacao = calcularFatorElevacao(treino);
@@ -256,15 +285,20 @@ public class TssCalculatorService {
      * Método menos preciso, usado como fallback
      */
     private int calcularTssRpe(TreinoRealizado treino) {
-        if (treino.getPercepcaoEsforco() == null) {
-            log.warn("Treino {} sem dados para calcular TSS", treino.getId());
+        return calcularTssRpe(treino, treino.getDuracaoMin(), treino.getPercepcaoEsforco());
+    }
+
+    private int calcularTssRpe(TreinoRealizado treino, Duration duracao, Integer rpeValor) {
+        double duracaoHoras = obterDuracaoHoras(duracao);
+        if (duracaoHoras <= 0) {
             return 0;
         }
 
-        double duracaoHoras = treino.getDuracaoMin() != null
-            ? treino.getDuracaoMin().toMinutes() / 60.0
-            : 0.0;
-        double rpe = treino.getPercepcaoEsforco(); // Escala 1-10
+        if (rpeValor == null) {
+            return calcularTssEstimado(treino, duracaoHoras);
+        }
+
+        double rpe = rpeValor; // Escala 1-10
 
         // Converter RPE para IF com mapeamento fisiológico (ISSUE-02)
         // Referências aproximadas:
@@ -277,11 +311,35 @@ public class TssCalculatorService {
         double intensityFactor = converterRpeParaIf(rpe);
 
         // Limitar IF entre 0.5 e 1.5 (consistente com outros métodos)
-        intensityFactor = Math.max(0.5, Math.min(1.5, intensityFactor));
+        intensityFactor = Math.max(MIN_IF_RPE, Math.min(MAX_IF, intensityFactor));
 
         double tss = duracaoHoras * intensityFactor * 100 * intensityFactor;
 
         return (int) Math.round(tss);
+    }
+
+    private int calcularTssRpeOuTipoEtapa(TreinoRealizado treino, EtapaRealizada etapa) {
+        double duracaoHoras = obterDuracaoHoras(etapa.getDuracao());
+        if (duracaoHoras <= 0) {
+            return 0;
+        }
+
+        if (etapa.getPercepcaoEsforco() != null) {
+            return calcularTssRpe(treino, etapa.getDuracao(), etapa.getPercepcaoEsforco());
+        }
+
+        Double intensityFactorEtapa = obterIfPorTipoEtapa(treino, etapa);
+        if (intensityFactorEtapa != null) {
+            double tss = duracaoHoras * intensityFactorEtapa * 100 * intensityFactorEtapa;
+            int tssEstimado = (int) Math.round(tss);
+
+            log.debug("TSS estimado por tipo de etapa para treino {} etapa {} ({}): {}",
+                    treino.getId(), etapa.getOrdem(), etapa.getTipoEtapa(), tssEstimado);
+
+            return tssEstimado;
+        }
+
+        return calcularTssEstimado(treino, duracaoHoras);
     }
 
     private double converterRpeParaIf(double rpe) {
@@ -290,5 +348,153 @@ public class TssCalculatorService {
         if (rpe <= 6) return 0.60 + (rpe - 3) * 0.067; // 3→0.60, 6→0.80
         if (rpe <= 8) return 0.80 + (rpe - 6) * 0.10;  // 6→0.80, 8→1.00
         return 1.00 + (rpe - 8) * 0.125;               // 8→1.00, 10→1.25
+    }
+
+    private int calcularTssSemFc(TreinoRealizado treino) {
+        return calcularTssSemFc(treino, treino.getDuracaoMin(), treino.getPaceMedia(), treino.getPercepcaoEsforco());
+    }
+
+    private int calcularTssSemFc(TreinoRealizado treino, Duration duracao, Duration paceMedia, Integer rpe) {
+        if (paceMedia != null) {
+            return calcularTssPace(treino, paceMedia, duracao, false);
+        }
+        return calcularTssRpe(treino, duracao, rpe);
+    }
+
+    private double obterDuracaoHoras(TreinoRealizado treino) {
+        return treino.getDuracaoMin() != null ? treino.getDuracaoMin().toMinutes() / 60.0 : 0.0;
+    }
+
+    private double obterDuracaoHoras(Duration duracao) {
+        return duracao != null ? duracao.toMinutes() / 60.0 : 0.0;
+    }
+
+    private int calcularTssEstimado(TreinoRealizado treino, double duracaoHoras) {
+        if (treino.getTipoTreino() == null) {
+            log.warn("Treino {} sem FC, pace, RPE e tipo para estimar TSS", treino.getId());
+            return 0;
+        }
+
+        double intensityFactor = switch (treino.getTipoTreino()) {
+            case REGENERATIVO -> 0.50;
+            case FACIL -> 0.65;
+            case CONTINUO, LONGO -> 0.75;
+            case FARTLEK -> 0.85;
+            case TEMPO_RUN -> 0.95;
+            case INTERVALADO, SUBIDA -> 1.00;
+            case TIRO, PROVA -> 1.05;
+        };
+
+        double tss = duracaoHoras * intensityFactor * 100 * intensityFactor;
+        int tssEstimado = (int) Math.round(tss);
+
+        log.warn("Treino {} sem FC, pace ou RPE. Estimando TSS por tipo {}: {}",
+                treino.getId(), treino.getTipoTreino(), tssEstimado);
+
+        return tssEstimado;
+    }
+
+    private Double obterIfPorTipoEtapa(TreinoRealizado treino, EtapaRealizada etapa) {
+        if (etapa == null || etapa.getTipoEtapa() == null || etapa.getTipoEtapa().isBlank()) {
+            return null;
+        }
+
+        String tipoEtapa = etapa.getTipoEtapa().trim().toUpperCase();
+
+        return switch (tipoEtapa) {
+            case "AQUECIMENTO" -> 0.55;
+            case "RECUPERACAO" -> 0.45;
+            case "DESAQUECIMENTO" -> 0.50;
+            case "PRINCIPAL" -> 0.80;
+            case "INTERVALADO" -> obterIfIntervaladoPorTipoTreino(treino);
+            default -> null;
+        };
+    }
+
+    private double obterIfIntervaladoPorTipoTreino(TreinoRealizado treino) {
+        if (treino == null || treino.getTipoTreino() == null) {
+            return 0.95;
+        }
+
+        return switch (treino.getTipoTreino()) {
+            case TIRO -> 1.10;
+            case INTERVALADO, SUBIDA -> 1.00;
+            case TEMPO_RUN -> 0.95;
+            case FARTLEK -> 0.90;
+            default -> 0.95;
+        };
+    }
+
+    private ResultadoCalculo calcularTssBase(TreinoRealizado treino) {
+        ResultadoCalculo porEtapas = calcularTssPorEtapas(treino);
+        if (porEtapas != null) {
+            return porEtapas;
+        }
+
+        if (treino.getFcMedia() != null && treino.getFcMedia() > 0) {
+            return new ResultadoCalculo(calcularTssFrequenciaCardiaca(treino), MetodoCalculoTss.FC, false);
+        }
+        if (treino.getPaceMedia() != null) {
+            return new ResultadoCalculo(calcularTssPace(treino), MetodoCalculoTss.PACE, false);
+        }
+        return new ResultadoCalculo(calcularTssRpe(treino), MetodoCalculoTss.RPE, false);
+    }
+
+    private ResultadoCalculo calcularTssPorEtapas(TreinoRealizado treino) {
+        if (treino.getEtapasRealizadas() == null || treino.getEtapasRealizadas().isEmpty()) {
+            return null;
+        }
+
+        int tssTotal = 0;
+        int etapasValidas = 0;
+        int etapasComFc = 0;
+        int etapasComPace = 0;
+
+        for (EtapaRealizada etapa : treino.getEtapasRealizadas()) {
+            if (etapa == null || etapa.getDuracao() == null || etapa.getDuracao().isZero() || etapa.getDuracao().isNegative()) {
+                continue;
+            }
+
+            int tssEtapa;
+            if (etapa.getFcMedia() != null && etapa.getFcMedia() > 0) {
+                tssEtapa = calcularTssFrequenciaCardiaca(treino, etapa.getFcMedia(), etapa.getPaceMedia(),
+                        etapa.getPercepcaoEsforco(), etapa.getDuracao(), true);
+                if (tssEtapa > 0) {
+                    etapasComFc++;
+                }
+            } else if (etapa.getPaceMedia() != null) {
+                tssEtapa = calcularTssPace(treino, etapa.getPaceMedia(), etapa.getDuracao(), false);
+                if (tssEtapa > 0) {
+                    etapasComPace++;
+                }
+            } else {
+                tssEtapa = calcularTssRpeOuTipoEtapa(treino, etapa);
+            }
+
+            if (tssEtapa <= 0) {
+                continue;
+            }
+
+            etapasValidas++;
+            tssTotal += tssEtapa;
+        }
+
+        if (etapasValidas == 0) {
+            return null;
+        }
+
+        MetodoCalculoTss metodoPredominante;
+        if (etapasComFc > 0) {
+            metodoPredominante = MetodoCalculoTss.FC;
+        } else if (etapasComPace > 0) {
+            metodoPredominante = MetodoCalculoTss.PACE;
+        } else {
+            metodoPredominante = MetodoCalculoTss.RPE;
+        }
+
+        log.debug("TSS calculado por etapas para treino {}: {} pontos em {} etapas válidas",
+                treino.getId(), tssTotal, etapasValidas);
+
+        return new ResultadoCalculo(tssTotal, metodoPredominante, true);
     }
 }

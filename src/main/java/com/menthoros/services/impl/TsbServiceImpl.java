@@ -10,7 +10,6 @@ import com.menthoros.repository.PlanoMetadadosRepository;
 import com.menthoros.repository.TreinoRealizadoRepository;
 import com.menthoros.services.TsbService;
 import com.menthoros.services.helper.TssCalculatorService;
-import com.menthoros.services.prompt.MetricasPromptFormatter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,14 +35,18 @@ public class TsbServiceImpl implements TsbService {
     private final AtletaRepository atletaRepository;
     private final TssCalculatorService tssCalculatorService;
     private final MetricasAlertaService metricasAlertaService;
-    private MetricasPromptFormatter metricasPromptFormatter;
 
     private static final int CTL_TIME_CONSTANT = 42;
     private static final int ATL_TIME_CONSTANT = 7;
 
+    private record IntervaloRecalculo(LocalDate inicio, LocalDate fim) {}
 
     @Transactional
     public void atualizarTsbDia(UUID atletaId, LocalDate data) {
+        atualizarTsbDia(atletaId, data, true);
+    }
+
+    private void atualizarTsbDia(UUID atletaId, LocalDate data, boolean atualizarMetaDadosHoje) {
         validarEntrada(atletaId, data);
 
         log.info("Atualizando TSB para atleta {} no dia {}", atletaId, data);
@@ -59,7 +62,9 @@ public class TsbServiceImpl implements TsbService {
         calcularEAtualizarMetricas(metricasHoje, metricasOntem, tssHoje, atletaId, data);
 
         metricasDiariasRepository.save(metricasHoje);
-        atualizarMetaDados(atletaId, metricasHoje);
+        if (atualizarMetaDadosHoje) {
+            atualizarMetaDados(atletaId, metricasHoje);
+        }
 
         logResultado(data, metricasHoje);
     }
@@ -253,13 +258,18 @@ public class TsbServiceImpl implements TsbService {
             return 0;
         }
 
+        LocalDate janela = data.minusDays(14);
+        List<TreinoRealizado> historico = treinoRealizadoRepository
+                .findByAtletaIdAndDataTreinoBetween(atletaId, janela, data.minusDays(1));
+
+        java.util.Set<LocalDate> diasComTreino = historico.stream()
+                .map(TreinoRealizado::getDataTreino)
+                .collect(java.util.stream.Collectors.toSet());
+
         int consecutivos = 1; // hoje conta
         LocalDate dia = data.minusDays(1);
-
         for (int i = 0; i < 14; i++) {
-            List<TreinoRealizado> treinos = treinoRealizadoRepository
-                    .findByAtletaIdAndDataTreino(atletaId, dia);
-            if (treinos.isEmpty()) break;
+            if (!diasComTreino.contains(dia)) break;
             consecutivos++;
             dia = dia.minusDays(1);
         }
@@ -324,11 +334,21 @@ public class TsbServiceImpl implements TsbService {
             log.info("🗑️ Métricas antigas deletadas");
 
             // 3. Determinar período a recalcular
-            LocalDate dataInicio = determinarDataInicio(atletaId);
-            LocalDate dataFim = LocalDate.now();
+            IntervaloRecalculo intervalo = determinarIntervaloRecalculo(atletaId, backup);
+            if (intervalo == null) {
+                zerarMetaDadosSemHistorico(atletaId);
+                log.info("ℹ️ Nenhum histórico relevante encontrado para atleta {}. MetaDados zerados.", atletaId);
+                return;
+            }
 
             // 4. Recalcular período com tracking de progresso
-            recalcularPeriodoComProgresso(atletaId, dataInicio, dataFim);
+            recalcularPeriodoComProgresso(atletaId, intervalo.inicio(), intervalo.fim());
+
+            MetricasDiarias ultimaMetrica = metricasDiariasRepository
+                    .findByAtletaIdAndData(atletaId, intervalo.fim())
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Última métrica não encontrada após recálculo para atleta " + atletaId));
+            atualizarMetaDados(atletaId, ultimaMetrica);
 
             // 5. Recalcular progressão contínua de semanas com base nos treinos realizados
             recalcularSemanasProgressao(atletaId);
@@ -336,20 +356,12 @@ public class TsbServiceImpl implements TsbService {
             log.info("✅ Histórico recalculado com sucesso para atleta {}", atletaId);
 
         } catch (Exception e) {
-            log.error("❌ Erro ao recalcular histórico. Restaurando backup de {} registros...",
-                    backup.size(), e);
-
-            try {
-                metricasDiariasRepository.saveAll(backup);
-                metricasDiariasRepository.flush();
-                log.info("♻️ Backup restaurado com sucesso");
-            } catch (Exception restoreError) {
-                log.error("🚨 CRÍTICO: Falha ao restaurar backup!", restoreError);
-            }
+            log.error("❌ Erro ao recalcular histórico para atleta {}. A transação será revertida e o banco voltará ao estado anterior.",
+                    atletaId, e);
 
             throw new RuntimeException(
                     "Falha ao recalcular histórico para atleta " + atletaId +
-                    ". Dados foram restaurados do backup.", e);
+                    ". A transação foi revertida.", e);
         }
     }
 
@@ -368,15 +380,34 @@ public class TsbServiceImpl implements TsbService {
     /**
      * Determina data de início para recálculo (data do primeiro treino ou 3 meses atrás)
      */
-    private LocalDate determinarDataInicio(UUID atletaId) {
-        LocalDate dataInicio = treinoRealizadoRepository.findDataPrimeiroTreino(atletaId);
-        if (dataInicio == null) {
-            log.warn("⚠️ Nenhum treino encontrado. Usando 3 meses atrás como data inicial");
-            dataInicio = LocalDate.now().minusMonths(3);
-        } else {
-            log.info("📅 Data do primeiro treino: {}", dataInicio);
+    private IntervaloRecalculo determinarIntervaloRecalculo(UUID atletaId, List<MetricasDiarias> backup) {
+        LocalDate primeiroTreino = treinoRealizadoRepository.findDataPrimeiroTreino(atletaId);
+        List<TreinoRealizado> treinosDesc = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId);
+        LocalDate ultimoTreino = treinosDesc.isEmpty() ? null : treinosDesc.getFirst().getDataTreino();
+
+        LocalDate primeiraMetrica = backup.isEmpty() ? null : backup.getFirst().getData();
+        LocalDate ultimaMetrica = backup.isEmpty() ? null : backup.get(backup.size() - 1).getData();
+
+        LocalDate dataInicio = menorData(primeiroTreino, primeiraMetrica);
+        LocalDate dataFim = maiorData(ultimoTreino, ultimaMetrica);
+
+        if (dataInicio == null && dataFim == null) {
+            return null;
         }
-        return dataInicio;
+
+        if (dataInicio == null) {
+            dataInicio = dataFim;
+        }
+        if (dataFim == null) {
+            dataFim = dataInicio;
+        }
+
+        if (dataFim.isAfter(LocalDate.now())) {
+            dataFim = LocalDate.now();
+        }
+
+        log.info("📅 Intervalo de recálculo: {} até {}", dataInicio, dataFim);
+        return new IntervaloRecalculo(dataInicio, dataFim);
     }
 
     /**
@@ -391,7 +422,7 @@ public class TsbServiceImpl implements TsbService {
         long intervaloLog = Math.max(1, totalDias / 10); // Log a cada 10%
 
         while (!dataAtual.isAfter(dataFim)) {
-            atualizarTsbDia(atletaId, dataAtual);
+            atualizarTsbDia(atletaId, dataAtual, false);
             diasProcessados++;
 
             // Log de progresso a cada 10% ou no último dia
@@ -403,6 +434,35 @@ public class TsbServiceImpl implements TsbService {
 
             dataAtual = dataAtual.plusDays(1);
         }
+    }
+
+    private void zerarMetaDadosSemHistorico(UUID atletaId) {
+        PlanoMetaDados metaDados = planoMetaDadosRepository
+                .findByAtletaId(atletaId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "MetaDados não encontrado para atleta: " + atletaId));
+
+        metaDados.setCtlAtual(0.0);
+        metaDados.setAtlAtual(0.0);
+        metaDados.setTsbAtual(0.0);
+        metaDados.setRampRateAtual(0.0);
+        metaDados.setDiasConsecutivosTreino(0);
+        metaDados.setSemanasProgressaoContinua(0);
+        metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados, metaDados.getAtleta().getNivelExperiencia()));
+
+        planoMetaDadosRepository.save(metaDados);
+    }
+
+    private LocalDate menorData(LocalDate a, LocalDate b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.isBefore(b) ? a : b;
+    }
+
+    private LocalDate maiorData(LocalDate a, LocalDate b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        return a.isAfter(b) ? a : b;
     }
 
     /**
@@ -552,4 +612,3 @@ public class TsbServiceImpl implements TsbService {
     }
 
 }
-
