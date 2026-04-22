@@ -62,3 +62,16 @@
 - [ ] 10.1 Executar `./mvnw clean verify` e garantir que todos os testes unitários e de integração passam
 - [ ] 10.2 Verificar no Swagger UI que os DTOs de saída expõem os novos campos com documentação clara
 - [ ] 10.3 Revisar prompts gerados pela IA para confirmar que a semântica de TSB está explícita no texto
+
+## 11. Validação estrutural por `TipoTreino` (ex-BACKLOG P3-A)
+
+- [ ] 11.1 Documentar em `TipoTreino` (ou enum auxiliar) as características estruturais esperadas de `REGENERATIVO`, `CONTINUO`, `TEMPO_RUN`: faixa típica de IF alvo, proporção entre segmentos de alta/baixa intensidade e duração mínima/máxima recomendada
+- [ ] 11.2 Criar `TipoTreinoConsistenciaValidator` com método `validarEstrutura(TreinoRealizado)` que compara o `TipoTreino` declarado com a estrutura observada (distribuição de IF ao longo das etapas, duração total, variação de FC média entre etapas)
+- [ ] 11.3 Implementar regras iniciais:
+  - `REGENERATIVO` → IF médio esperado ≤ 0.70 e nenhuma etapa com IF > 0.80
+  - `CONTINUO` → IF médio em `[0.70, 0.90]` e variação intra-treino < 20% (sem picos estruturais)
+  - `TEMPO_RUN` → IF médio em `[0.85, 0.95]` com segmento central dominante acima de 0.85
+- [ ] 11.4 Se `TipoTreino` declarado divergir da estrutura observada, `TipoTreinoConsistenciaValidator` SHALL retornar `SugestaoReclassificacao { tipoSugerido, confianca, motivo }` sem bloquear ingestão
+- [ ] 11.5 Integrar o validator ao fluxo de `TreinoRealizadoService.criar()` e `atualizar()` — registra log INFO quando houver sugestão de reclassificação; não altera o tipo automaticamente
+- [ ] 11.6 Expor `sugestaoReclassificacao` em `TreinoRealizadoOutputDto` (opcional/nullable) para que o frontend possa exibir e permitir ao treinador ajustar manualmente
+- [ ] 11.7 Adicionar testes em `TipoTreinoConsistenciaValidatorTest.java`: regenerativo coerente, regenerativo com picos (sugere contínuo/tempo), contínuo coerente, tempo_run coerente, tempo_run com base fraca (sugere contínuo)

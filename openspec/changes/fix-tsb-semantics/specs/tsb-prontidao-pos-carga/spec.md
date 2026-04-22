@@ -99,3 +99,26 @@ O sistema SHALL adicionar as novas colunas de métricas (`ctlInicioDia`, `atlIni
 - **WHEN** a migration precisa ser revertida
 - **THEN** apenas as novas colunas são removidas
 - **THEN** o sistema funciona normalmente com os campos legados
+
+### Requirement: Validação estrutural de `TipoTreino` declarado
+O sistema SHALL comparar o `TipoTreino` declarado no `TreinoRealizado` com a estrutura observada (IF médio, variação intra-treino, duração) e sugerir reclassificação sem bloquear a ingestão quando houver divergência.
+
+#### Scenario: REGENERATIVO coerente
+- **WHEN** o treino for declarado `REGENERATIVO` e a estrutura observada apresentar IF médio ≤ 0.70 e nenhuma etapa com IF > 0.80
+- **THEN** o validator SHALL considerar o tipo coerente e não emitir sugestão
+
+#### Scenario: REGENERATIVO com picos de intensidade
+- **WHEN** o treino for declarado `REGENERATIVO` mas tiver etapas com IF > 0.80
+- **THEN** o validator SHALL retornar `SugestaoReclassificacao` com `tipoSugerido` coerente com a estrutura (p.ex. `CONTINUO` ou `TEMPO_RUN`), `confianca` entre 0 e 1, e `motivo` textual
+
+#### Scenario: CONTINUO coerente
+- **WHEN** o treino for declarado `CONTINUO` e tiver IF médio em `[0.70, 0.90]` com variação intra-treino < 20%
+- **THEN** o validator SHALL considerar o tipo coerente
+
+#### Scenario: TEMPO_RUN coerente
+- **WHEN** o treino for declarado `TEMPO_RUN` e tiver IF médio em `[0.85, 0.95]` com segmento central dominante acima de 0.85
+- **THEN** o validator SHALL considerar o tipo coerente
+
+#### Scenario: Sugestão não bloqueia ingestão
+- **WHEN** o validator emitir `SugestaoReclassificacao`
+- **THEN** o sistema SHALL persistir o treino com o tipo originalmente declarado e expor `sugestaoReclassificacao` em `TreinoRealizadoOutputDto` (nullable) para decisão do treinador
