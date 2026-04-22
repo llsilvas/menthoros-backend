@@ -6,6 +6,7 @@ import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
 import com.menthoros.dto.output.MetricasSemanaisMedias;
 import com.menthoros.dto.output.PadroesTreino;
 import com.menthoros.dto.output.ResultadoAnalise;
+import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.Atleta;
 import com.menthoros.entity.PlanoMetaDados;
 import com.menthoros.entity.PlanoSemanal;
@@ -203,7 +204,7 @@ class PlanoServiceImplTest {
                 any(), any(), any())).thenReturn(Optional.empty());
 
         when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao))).thenReturn(planoDto);
-        when(redistribuicaoHelper.redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao)))
+        when(redistribuicaoHelper.redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao), any()))
                 .thenReturn(Collections.emptyList());
 
         try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
@@ -216,7 +217,7 @@ class PlanoServiceImplTest {
             assertTrue(exception.getMessage().contains("Não foi possível gerar treinos"));
 
             verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao));
-            verify(redistribuicaoHelper).redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao));
+            verify(redistribuicaoHelper).redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao), any());
         }
     }
 
@@ -295,7 +296,7 @@ class PlanoServiceImplTest {
                 any(), any(), any())).thenReturn(Optional.empty());
 
         when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao))).thenReturn(planoDto);
-        when(redistribuicaoHelper.redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao)))
+        when(redistribuicaoHelper.redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao), any()))
                 .thenReturn(treinosRedistribuidos);
         when(planoMetadadosRepository.findById(any())).thenReturn(Optional.of(metaDados));
 
@@ -314,7 +315,64 @@ class PlanoServiceImplTest {
             assertNotNull(resultado);
             assertEquals(planoSalvo, resultado);
 
-            verify(redistribuicaoHelper).redistribuirTreinos(any(), any(), any(), any(), any(), eq(ModoGeracaoPlano.SEMANA_ATUAL));
+            verify(redistribuicaoHelper).redistribuirTreinos(any(), any(), any(), any(), any(), eq(ModoGeracaoPlano.SEMANA_ATUAL), any());
+        }
+    }
+
+    @Test
+    @DisplayName("Deve priorizar LONGO com base no histórico recente do atleta")
+    void deveUsarHistoricoParaDefinirDiaDoLongo() {
+        UUID atletaId = UUID.randomUUID();
+        ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.SEMANA_ATUAL;
+
+        Atleta atleta = criarAtletaMock(atletaId);
+        atleta.setDiaPreferidoLongo(DiaSemana.SABADO);
+        atleta.setDiasDisponiveis(List.of(DiaSemana.QUARTA, DiaSemana.DOMINGO));
+
+        PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
+        PlanoSemanalLlmDto planoDto = criarPlanoSemanalLlmDto();
+        List<TreinoPlanejadoLlmDto> treinosRedistribuidos = criarTreinosRedistribuidosMock();
+        PlanoSemanal planoSalvo = criarPlanoSemanalMock();
+        TreinoPlanejado treinoPlanejado = criarTreinoPlanejadoMock();
+
+        TreinoRealizado longo1 = new TreinoRealizado();
+        longo1.setDataTreino(LocalDate.of(2026, 4, 13));
+        longo1.setDiaSemana(DiaSemana.DOMINGO);
+        longo1.setTipoTreino(TipoTreino.LONGO);
+
+        TreinoRealizado longo2 = new TreinoRealizado();
+        longo2.setDataTreino(LocalDate.of(2026, 4, 6));
+        longo2.setDiaSemana(DiaSemana.DOMINGO);
+        longo2.setTipoTreino(TipoTreino.LONGO);
+
+        mockMetricasAgregadasEAlertas(metaDados);
+
+        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
+        when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(List.of(longo1, longo2));
+        when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
+        when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
+                any(), any(), any())).thenReturn(Optional.empty());
+
+        when(treinoMapper.toOutputDto(longo1)).thenReturn(treinoRealizadoOutput(longo1));
+        when(treinoMapper.toOutputDto(longo2)).thenReturn(treinoRealizadoOutput(longo2));
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao))).thenReturn(planoDto);
+        when(redistribuicaoHelper.redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao), eq(DiaSemana.DOMINGO)))
+                .thenReturn(treinosRedistribuidos);
+        when(planoMetadadosRepository.findById(any())).thenReturn(Optional.of(metaDados));
+
+        when(planoSemanalMapper.toEntity(planoDto)).thenReturn(planoSalvo);
+        when(treinoMapper.toEntity(any(TreinoPlanejadoLlmDto.class))).thenReturn(treinoPlanejado);
+        when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenReturn(planoSalvo);
+        when(planoMetadadosRepository.save(any(PlanoMetaDados.class))).thenReturn(metaDados);
+
+        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+
+            PlanoSemanal resultado = planoService.gerarPlanoTreino(atletaId, modoGeracao);
+
+            assertNotNull(resultado);
+            verify(redistribuicaoHelper).redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao), eq(DiaSemana.DOMINGO));
         }
     }
 
@@ -521,6 +579,40 @@ class PlanoServiceImplTest {
         plano.setVolumePlanejadoKm(BigDecimal.valueOf(50.0));
         plano.setVolumeAlvoKm(BigDecimal.valueOf(50.0));
         return plano;
+    }
+
+    private TreinoRealizadoOutputDto treinoRealizadoOutput(TreinoRealizado treino) {
+        return new TreinoRealizadoOutputDto(
+                UUID.randomUUID(),
+                treino.getDataTreino(),
+                treino.getDiaSemana(),
+                treino.getTipoTreino(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
     }
 
     private TreinoPlanejado criarTreinoPlanejadoMock() {

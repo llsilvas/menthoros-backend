@@ -29,6 +29,9 @@ public class PaceHistoricoFormatter {
     /** Fator aplicado ao melhor pace recente para definir o teto (2% mais rápido). */
     private static final double FATOR_TETO = 0.98;
 
+    /** Fator aplicado ao pace médio recente para definir o piso (25% mais lento). */
+    private static final double FATOR_PISO = 1.25;
+
     /** Ordem de exibição dos tipos de treino na tabela. */
     private static final List<TipoTreino> ORDEM_EXIBICAO = List.of(
             TipoTreino.REGENERATIVO, TipoTreino.FACIL, TipoTreino.CONTINUO,
@@ -116,6 +119,37 @@ public class PaceHistoricoFormatter {
         });
 
         return Collections.unmodifiableMap(tetos);
+    }
+
+    /**
+     * Calcula o piso de pace por tipo de treino (25% mais lento que a média recente).
+     *
+     * <p>Um pace mais lento que o piso indica uma prescrição irreal para aquele tipo de treino.
+     * Retorna apenas os tipos com pelo menos 1 treino com pace registrado nas últimas 4 semanas.
+     * O piso está em decimal minutos (ex: 6.25 = 6:15/km).</p>
+     */
+    public Map<TipoTreino, BigDecimal> calcularPisoPorTipo(List<TreinoRealizado> treinosUltimas4Semanas) {
+        List<TreinoRealizado> comPace = filtrarComPace(treinosUltimas4Semanas);
+        if (comPace.isEmpty()) return Map.of();
+
+        Map<TipoTreino, BigDecimal> pisos = new EnumMap<>(TipoTreino.class);
+
+        agruparPorTipo(comPace).forEach((tipo, grupo) -> {
+            OptionalDouble mediaSeg = grupo.stream()
+                    .mapToLong(t -> t.getPaceMedia().getSeconds())
+                    .filter(s -> s > 0)
+                    .average();
+
+            mediaSeg.ifPresent(seg -> {
+                BigDecimal mediaDecimal = segundosParaDecimalMinutos((long) seg);
+                BigDecimal piso = mediaDecimal
+                        .multiply(BigDecimal.valueOf(FATOR_PISO))
+                        .setScale(4, RoundingMode.HALF_UP);
+                pisos.put(tipo, piso);
+            });
+        });
+
+        return Collections.unmodifiableMap(pisos);
     }
 
     /**

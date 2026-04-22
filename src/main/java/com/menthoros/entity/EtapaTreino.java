@@ -43,6 +43,9 @@ public class EtapaTreino {
     private String fcAlvoEtapa;
 
     @Column(name = "repeticoes")
-    private Integer repeticoes; // Se a etapa deve ser repetida (ex: 3x)
+    private Integer repeticoes;
+
+    @Column(name = "ritmo_alvo", length = 20)
+    private String ritmoAlvo;
 
 }

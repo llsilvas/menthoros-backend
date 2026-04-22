@@ -18,6 +18,8 @@ public record EtapaTreinoLlmDto(
 
         String fcAlvoEtapa,
 
-        Integer repeticoes
+        Integer repeticoes,
+
+        String ritmoAlvo
 ) {}
 

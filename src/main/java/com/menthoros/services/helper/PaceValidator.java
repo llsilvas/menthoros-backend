@@ -30,17 +30,21 @@ public class PaceValidator {
     private record PaceRange(BigDecimal paceMin, BigDecimal paceMax) {}
 
     /**
-     * Valida o ritmoAlvo contra o teto calculado.
+     * Valida o ritmoAlvo contra teto e piso calculados.
      *
-     * <p>Se paceMin for mais rápido que o teto (valor decimal menor),
-     * corrige o intervalo deslocando-o para iniciar em {@code teto}.</p>
+     * <ul>
+     *   <li>Se paceMin &lt; teto (mais rápido que o permitido): desloca o intervalo para cima (mais lento)</li>
+     *   <li>Se paceMax &gt; piso (mais lento que o permitido): desloca o intervalo para baixo (mais rápido)</li>
+     * </ul>
+     * Ambas as correções preservam a amplitude original. As checagens são independentes e aplicadas em sequência.
      *
      * @param ritmoAlvo formato "5:00-5:30/km"
-     * @param teto      pace máximo permitido em decimal minutos (ex: 4.75 = 4:45/km); null = sem validação
+     * @param teto      pace mais rápido permitido em decimal minutos; null = sem validação de teto
+     * @param piso      pace mais lento permitido em decimal minutos; null = sem validação de piso
      * @return ritmoAlvo original ou corrigido
      */
-    public String validar(String ritmoAlvo, BigDecimal teto) {
-        if (ritmoAlvo == null || ritmoAlvo.isBlank() || teto == null) {
+    public String validar(String ritmoAlvo, BigDecimal teto, BigDecimal piso) {
+        if (ritmoAlvo == null || ritmoAlvo.isBlank()) {
             return ritmoAlvo;
         }
 
@@ -50,21 +54,64 @@ public class PaceValidator {
             return ritmoAlvo;
         }
 
-        // paceMin < teto significa ritmo mais rápido que o teto → violação
-        if (range.paceMin().compareTo(teto) < 0) {
-            BigDecimal diferenca = teto.subtract(range.paceMin());
-            BigDecimal novoMin = teto;
-            BigDecimal novoMax = range.paceMax().add(diferenca).setScale(4, RoundingMode.HALF_UP);
-            String corrigido = formatar(novoMin, novoMax);
-            log.warn("ritmoAlvo corrigido: '{}' → '{}' (paceMin mais rápido que teto {})",
-                    ritmoAlvo, corrigido, formatarDecimalMinutos(teto));
-            return corrigido;
+        BigDecimal curMin = range.paceMin();
+        BigDecimal curMax = range.paceMax();
+
+        // 1) Teto: paceMin não pode ser mais rápido que o teto
+        if (teto != null && curMin.compareTo(teto) < 0) {
+            BigDecimal diferenca = teto.subtract(curMin);
+            curMin = teto;
+            curMax = curMax.add(diferenca).setScale(4, RoundingMode.HALF_UP);
+            log.warn("ritmoAlvo corrigido (teto): '{}' → '{}' (paceMin mais rápido que teto {})",
+                    ritmoAlvo, formatar(curMin, curMax), formatarDecimalMinutos(teto));
         }
 
-        return ritmoAlvo;
+        // 2) Piso: paceMax não pode ser mais lento que o piso
+        if (piso != null && curMax.compareTo(piso) > 0) {
+            BigDecimal amplitude = curMax.subtract(curMin);
+            BigDecimal novoMax = piso;
+            BigDecimal novoMin = piso.subtract(amplitude).setScale(4, RoundingMode.HALF_UP);
+            if (novoMin.compareTo(BigDecimal.ZERO) <= 0) {
+                novoMin = BigDecimal.valueOf(0.5); // piso absoluto de 0:30/km
+            }
+            String original = ritmoAlvo;
+            String corrigido = formatar(novoMin, novoMax);
+            log.warn("ritmoAlvo corrigido (piso): '{}' → '{}' (paceMax mais lento que piso {})",
+                    original, corrigido, formatarDecimalMinutos(piso));
+            curMin = novoMin;
+            curMax = novoMax;
+        }
+
+        String resultado = formatar(curMin, curMax);
+        return resultado.equals(formatar(range.paceMin(), range.paceMax())) ? ritmoAlvo : resultado;
+    }
+
+    /**
+     * Valida o ritmoAlvo apenas contra o teto (sem piso). Equivalente a {@code validar(ritmoAlvo, teto, null)}.
+     *
+     * @param ritmoAlvo formato "5:00-5:30/km"
+     * @param teto      pace máximo permitido em decimal minutos; null = sem validação
+     * @return ritmoAlvo original ou corrigido
+     */
+    public String validar(String ritmoAlvo, BigDecimal teto) {
+        return validar(ritmoAlvo, teto, null);
     }
 
     // ===== Helpers =====
+
+    /**
+     * Retorna a média aritmética do intervalo de pace em decimal minutos.
+     * Usado externamente para validações que precisam de uma estimativa pontual de pace.
+     *
+     * @return empty se o formato não for reconhecido ou o valor for nulo
+     */
+    public java.util.OptionalDouble calcularPaceMedia(String ritmoAlvo) {
+        PaceRange range = parsear(ritmoAlvo);
+        if (range == null) return java.util.OptionalDouble.empty();
+        return java.util.OptionalDouble.of(
+                (range.paceMin().doubleValue() + range.paceMax().doubleValue()) / 2.0
+        );
+    }
 
     PaceRange parsear(String ritmoAlvo) {
         if (ritmoAlvo == null) return null;

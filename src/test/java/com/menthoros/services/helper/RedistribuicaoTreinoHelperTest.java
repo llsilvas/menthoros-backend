@@ -29,7 +29,7 @@ class RedistribuicaoTreinoHelperTest {
     private RedistribuicaoTreinoHelper redistribuicaoTreinoHelper;
 
     @Test
-    @DisplayName("Deve descartar LONGO por adjacência com INTERVALADO, mantendo os demais treinos")
+    @DisplayName("Deve manter LONGO quando não houver dia preferido informado e evitar intensivos consecutivos nos demais")
     void deveFiltrarTreinosIncompativeisNoMeioDaSemana() {
         LocalDate quarta = LocalDate.of(2025, 10, 8);
         LocalDate semanaInicio = quarta.with(DayOfWeek.MONDAY);
@@ -37,8 +37,8 @@ class RedistribuicaoTreinoHelperTest {
 
         when(regraGeracaoTreinoMock.isMeioSemana(quarta)).thenReturn(true);
 
-        // LONGO e INTERVALADO são ambos alta intensidade.
-        // Placement: REGEN→QUI, CONTINUO→SEX, INTERVALADO→SAB (OK), LONGO→DOM (consecutivo com SAB=INTERVALADO → descartado)
+        // Sem dia preferido do longão informado, o helper preserva o comportamento compatível:
+        // LONGO entra primeiro, e os demais são distribuídos evitando adjacência entre intensivos.
         List<TreinoPlanejadoLlmDto> treinos = List.of(
                 criarTreinoMock("QUINTA", "LONGO"),
                 criarTreinoMock("SEXTA", "INTERVALADO"),
@@ -55,10 +55,9 @@ class RedistribuicaoTreinoHelperTest {
                 ModoGeracaoPlano.SEMANA_ATUAL
         );
 
-        // REGEN, CONTINUO e INTERVALADO alocados; LONGO descartado por adjacência com INTERVALADO
-        assertEquals(3, resultado.size());
-        assertTrue(resultado.stream().noneMatch(t -> t.tipoTreino().equals("LONGO")),
-                "LONGO deve ser descartado pois ficaria em dia consecutivo ao INTERVALADO");
+        assertEquals(4, resultado.size());
+        assertTrue(resultado.stream().anyMatch(t -> t.tipoTreino().equals("LONGO")),
+                "LONGO deve ser mantido quando não há dia preferido explícito");
         assertTrue(resultado.stream().anyMatch(t -> t.tipoTreino().equals("INTERVALADO")),
                 "INTERVALADO tem slot válido e deve ser mantido");
     }
@@ -293,6 +292,57 @@ class RedistribuicaoTreinoHelperTest {
 
         // Deve distribuir máximo de 2 treinos
         assertTrue(resultado.size() <= 2);
+    }
+
+    @Test
+    @DisplayName("Deve priorizar LONGO no dia preferido e redistribuir os demais ao redor")
+    void devePriorizarLongoNoDiaPreferido() {
+        LocalDate segunda = LocalDate.of(2025, 10, 6);
+        LocalDate semanaInicio = segunda;
+        LocalDate semanaFim = semanaInicio.plusDays(6);
+
+        List<TreinoPlanejadoLlmDto> treinos = List.of(
+                criarTreinoMock("TERCA", "CONTINUO"),
+                criarTreinoMock("QUARTA", "INTERVALADO"),
+                criarTreinoMock("SABADO", "LONGO")
+        );
+
+        List<DiaSemana> diasDisponiveis = List.of(
+                DiaSemana.TERCA, DiaSemana.QUINTA, DiaSemana.DOMINGO
+        );
+
+        var resultado = redistribuicaoTreinoHelper.redistribuirTreinos(
+                treinos, diasDisponiveis, segunda, semanaInicio, semanaFim,
+                ModoGeracaoPlano.PROXIMA_SEMANA, DiaSemana.DOMINGO
+        );
+
+        assertTrue(resultado.stream().anyMatch(t ->
+                        "LONGO".equals(t.tipoTreino()) && "DOMINGO".equals(t.diaSemana())),
+                "LONGO deve ser fixado no dia preferido");
+        assertTrue(resultado.stream().anyMatch(t -> "CONTINUO".equals(t.tipoTreino())));
+    }
+
+    @Test
+    @DisplayName("Deve descartar LONGO quando o dia preferido não estiver disponível")
+    void deveDescartarLongoQuandoDiaPreferidoNaoEstiverDisponivel() {
+        LocalDate segunda = LocalDate.of(2025, 10, 6);
+        LocalDate semanaInicio = segunda;
+        LocalDate semanaFim = semanaInicio.plusDays(6);
+
+        List<TreinoPlanejadoLlmDto> treinos = List.of(
+                criarTreinoMock("SABADO", "LONGO"),
+                criarTreinoMock("TERCA", "CONTINUO")
+        );
+
+        List<DiaSemana> diasDisponiveis = List.of(DiaSemana.TERCA, DiaSemana.QUINTA);
+
+        var resultado = redistribuicaoTreinoHelper.redistribuirTreinos(
+                treinos, diasDisponiveis, segunda, semanaInicio, semanaFim,
+                ModoGeracaoPlano.PROXIMA_SEMANA, DiaSemana.DOMINGO
+        );
+
+        assertTrue(resultado.stream().noneMatch(t -> "LONGO".equals(t.tipoTreino())));
+        assertTrue(resultado.stream().anyMatch(t -> "CONTINUO".equals(t.tipoTreino())));
     }
 
 

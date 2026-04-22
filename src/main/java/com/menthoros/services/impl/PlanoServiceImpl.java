@@ -6,6 +6,7 @@ import com.menthoros.dto.llm.TreinoPlanejadoLlmDto;
 import com.menthoros.dto.output.PadroesTreino;
 import com.menthoros.dto.output.PlanoSemanalOutputDto;
 import com.menthoros.dto.output.TreinoRealizadoOutputDto;
+import com.menthoros.dto.output.TreinoRealizadoOutputDto;
 import com.menthoros.entity.*;
 import com.menthoros.enums.DiaSemana;
 import com.menthoros.enums.ModoGeracaoPlano;
@@ -167,11 +168,13 @@ public class PlanoServiceImpl implements PlanoService {
                 periodo.inicio(), periodo.fim(), modoGeracao, planoDto.treinosPlanejados().size());
 
         // 2. Obter treinos (com ou sem redistribuição conforme o modo)
+        DiaSemana diaPrioritarioLongo = inferirDiaPrioritarioLongo(dadosPlano);
         List<TreinoPlanejadoLlmDto> treinos = obterTreinosParaPlano(
                 planoDto.treinosPlanejados(),
                 atleta,
                 periodo,
-                modoGeracao
+                modoGeracao,
+                diaPrioritarioLongo
         );
 
         // 3. Preparar metadados
@@ -244,7 +247,8 @@ public class PlanoServiceImpl implements PlanoService {
             List<TreinoPlanejadoLlmDto> treinosLlm,
             Atleta atleta,
             PeriodoPlano periodo,
-            ModoGeracaoPlano modoGeracao) {
+            ModoGeracaoPlano modoGeracao,
+            DiaSemana diaPrioritarioLongo) {
 
         List<TreinoPlanejadoLlmDto> treinos = ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracao)
                 ? redistribuicaoHelper.redistribuirTreinos(
@@ -253,12 +257,48 @@ public class PlanoServiceImpl implements PlanoService {
                         LocalDate.now(),
                         periodo.inicio(),
                         periodo.fim(),
-                        modoGeracao
+                        modoGeracao,
+                        diaPrioritarioLongo
                 )
                 : treinosLlm;
 
         validarTreinosGerados(treinos);
         return treinos;
+    }
+
+    private DiaSemana inferirDiaPrioritarioLongo(DadosPlanoDto dadosPlano) {
+        List<TreinoRealizadoOutputDto> ultimosTreinos = dadosPlano.ultimosTreinos();
+        if (ultimosTreinos != null && !ultimosTreinos.isEmpty()) {
+            Map<DiaSemana, Long> frequenciaPorDia = ultimosTreinos.stream()
+                    .filter(t -> com.menthoros.enums.TipoTreino.LONGO.equals(t.tipoTreino()))
+                    .map(TreinoRealizadoOutputDto::diaSemana)
+                    .filter(Objects::nonNull)
+                    .collect(java.util.stream.Collectors.groupingBy(
+                            dia -> dia,
+                            java.util.stream.Collectors.counting()
+                    ));
+
+            if (!frequenciaPorDia.isEmpty()) {
+                List<Map.Entry<DiaSemana, Long>> ranking = frequenciaPorDia.entrySet().stream()
+                        .sorted(Map.Entry.<DiaSemana, Long>comparingByValue().reversed())
+                        .toList();
+
+                Map.Entry<DiaSemana, Long> primeiro = ranking.getFirst();
+                long segundoLugar = ranking.size() > 1 ? ranking.get(1).getValue() : 0;
+
+                if (primeiro.getValue() >= 2 && primeiro.getValue() > segundoLugar) {
+                    log.info("Dia prioritário do LONGO inferido pelo histórico: {} ({} ocorrências recentes)",
+                            primeiro.getKey(), primeiro.getValue());
+                    return primeiro.getKey();
+                }
+            }
+        }
+
+        DiaSemana fallback = dadosPlano.atleta().getDiaPreferidoLongo();
+        if (fallback != null) {
+            log.info("Usando diaPreferidoLongo configurado como fallback para LONGO: {}", fallback);
+        }
+        return fallback;
     }
 
     /**

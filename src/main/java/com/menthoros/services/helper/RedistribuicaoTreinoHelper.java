@@ -50,6 +50,26 @@ public class RedistribuicaoTreinoHelper {
             LocalDate semanaFim,
             ModoGeracaoPlano modoGeracao
     ) {
+        return redistribuirTreinos(
+                treinosLlm,
+                diasDisponiveisAtleta,
+                hoje,
+                semanaInicio,
+                semanaFim,
+                modoGeracao,
+                null
+        );
+    }
+
+    public List<TreinoPlanejadoLlmDto> redistribuirTreinos(
+            List<TreinoPlanejadoLlmDto> treinosLlm,
+            List<DiaSemana> diasDisponiveisAtleta,
+            LocalDate hoje,
+            LocalDate semanaInicio,
+            LocalDate semanaFim,
+            ModoGeracaoPlano modoGeracao,
+            DiaSemana diaPreferidoLongo
+    ) {
 
         log.info("Iniciando redistribuição - {} treinos da LLM, modo: {}",
                 treinosLlm.size(), modoGeracao);
@@ -84,7 +104,8 @@ public class RedistribuicaoTreinoHelper {
         List<TreinoPlanejadoLlmDto> treinosRedistribuidos = redistribuir(
                 treinosFiltrados,
                 diasValidos,
-                semanaInicio
+                semanaInicio,
+                diaPreferidoLongo
         );
 
         log.info("Redistribuição concluída: {} treinos redistribuídos em {} dias",
@@ -150,7 +171,8 @@ public class RedistribuicaoTreinoHelper {
     private List<TreinoPlanejadoLlmDto> redistribuir(
             List<TreinoPlanejadoLlmDto> treinos,
             List<DiaSemana> diasValidos,
-            LocalDate semanaInicio) {
+            LocalDate semanaInicio,
+            DiaSemana diaPreferidoLongo) {
 
         List<TreinoPlanejadoLlmDto> treinosOrdenados = ordenarPorPrioridade(treinos);
         List<DiaSemana> diasOrdenados = ordenarDiasSemana(diasValidos);
@@ -158,9 +180,29 @@ public class RedistribuicaoTreinoHelper {
         // Mapa: dia → treino alocado (preserva ordem de inserção)
         Map<DiaSemana, TreinoPlanejadoLlmDto> atribuicoes = new LinkedHashMap<>();
 
+        TreinoPlanejadoLlmDto treinoLongo = treinosOrdenados.stream()
+                .filter(t -> TipoTreino.LONGO.name().equals(t.tipoTreino()))
+                .findFirst()
+                .orElse(null);
+
+        if (treinoLongo != null) {
+            if (diaPreferidoLongo != null && diasOrdenados.contains(diaPreferidoLongo)) {
+                atribuicoes.put(diaPreferidoLongo, treinoLongo);
+                log.debug("Treino LONGO priorizado no dia preferido {} ({})",
+                        diaPreferidoLongo, calcularDataDia(semanaInicio, diaPreferidoLongo));
+            } else if (diaPreferidoLongo != null) {
+                log.warn("Treino LONGO descartado — dia preferido {} não está disponível na semana.",
+                        diaPreferidoLongo);
+            }
+        }
+
         for (TreinoPlanejadoLlmDto treino : treinosOrdenados) {
             TipoTreino tipo = TipoTreino.valueOf(treino.tipoTreino());
             boolean isIntensivo = TIPOS_ALTA_INTENSIDADE.contains(tipo);
+
+            if (tipo == TipoTreino.LONGO && diaPreferidoLongo != null) {
+                continue;
+            }
 
             DiaSemana diaEscolhido = null;
             for (DiaSemana dia : diasOrdenados) {
@@ -216,13 +258,13 @@ public class RedistribuicaoTreinoHelper {
      */
     private List<TreinoPlanejadoLlmDto> ordenarPorPrioridade(List<TreinoPlanejadoLlmDto> treinos) {
         Map<TipoTreino, Integer> prioridades = Map.of(
+                TipoTreino.LONGO, 0,
                 TipoTreino.REGENERATIVO, 1,
                 TipoTreino.CONTINUO, 2,
                 TipoTreino.FARTLEK, 3,
                 TipoTreino.INTERVALADO, 4,
                 TipoTreino.TEMPO_RUN, 5,
-                TipoTreino.TIRO, 6,
-                TipoTreino.LONGO, 7
+                TipoTreino.TIRO, 6
         );
 
         return treinos.stream()
