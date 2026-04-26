@@ -92,6 +92,24 @@ workoutType = 0 (padrão)            → inferir por duração e FC: FACIL, CONT
 
 **Rationale:** Padrão já estabelecido no projeto. Sem isso, atletas de diferentes assessorias poderiam, em teoria, acessar tokens de outros tenants.
 
+---
+
+### D13: Semáforo de risco — duas camadas semânticas (Option B)
+
+**Decisão:** O semáforo de risco de atletas usa **duas camadas semânticas distintas**, não uma única representação colapsada:
+
+- **Camada interna (processamento):** `NivelAlerta` com 4 níveis (CRITICO, ALTO, ATENCAO, INFO) via `AlertaMetricas` — usada para lógica programática, rastreamento de alertas individuais e feed de dados para o LLM.
+- **Camada de apresentação (dashboard do coach):** Semáforo tricolor (🔴 vermelho / 🟡 amarelo / 🟢 verde) derivado da pior `NivelAlerta` ativa do atleta:
+  - 🔴 Vermelho → CRITICO ou ALTO ativo (intervenção necessária)
+  - 🟡 Amarelo → ATENCAO ativa (monitorar)
+  - 🟢 Verde → apenas INFO ou sem alertas (na linha)
+
+**Rationale:** O coach que gerencia 20–50 atletas precisa de uma leitura imediata (3 estados). O sistema interno precisa de granularidade (4 níveis) para decisões programáticas e análise LLM. Colapsar as duas camadas forçaria escolher entre legibilidade humana e precisão programática. A separação permite que cada camada evolua independentemente.
+
+**Alternativa descartada (Option A):** Expor `NivelAlerta` diretamente na UI do dashboard — descartado porque 4 níveis são cognitivamente custosos para triagem rápida de muitos atletas.
+
+---
+
 ## Risks / Trade-offs
 
 **[Risco] Tokens OAuth em texto plano no banco** → Tokens de acesso e refresh do Strava ficarão armazenados sem criptografia em repouso na coluna TEXT de `tb_integracao_externa`. Mitigação de curto prazo: restringir acesso ao banco via roles PostgreSQL e garantir que logs não exponham tokens. Mitigação futura: criptografia com `@Convert` JPA + chave simétrica.
@@ -113,10 +131,49 @@ workoutType = 0 (padrão)            → inferir por duração e FC: FACIL, CONT
 5. Registrar webhook no Strava apenas após deploy com URL pública acessível (produção/staging)
 6. Para rollback: as migrations são aditivas (ADD COLUMN IF NOT EXISTS, CREATE TABLE IF NOT EXISTS) — reverter aplicação sem desfazer migrations é seguro; as novas colunas ficarão com NULL sem causar erros
 
-## Open Questions
+### D8: Sequência de migrations
 
-- **Sequência de migrations:** Verificar qual é o próximo número disponível após V25 (já existe `V25__Add_external_id_to_treino_realizado.sql` como untracked)
-- **Criptografia de tokens:** Decidir se implementa na fase 1 ou como issue técnica separada
-- **Processamento assíncrono:** Usar `@Async` com `ThreadPoolTaskExecutor` configurado, ou `ApplicationEventPublisher` + listener? Depende da necessidade de rastreamento de falhas
-- **URL pública para webhook:** Definir estratégia de staging/desenvolvimento (ngrok? túnel?) para testar webhooks localmente
-- **Histórico retroativo:** Definir se o sync inicial importa todas as atividades dos últimos N dias ou apenas as futuras
+**Decisão:** A última migration existente é V11. As migrations da integração Strava seguirão a numeração V12, V13, V14:
+- V12 → cria `tb_integracao_externa`
+- V13 → adiciona campos Strava em `tb_treino_realizado` (ex: `suffer_score`)
+- V14 → adiciona campos em `tb_etapa_realizada` (se necessário após análise)
+
+**Rationale:** O design.md original referenciava V25 baseado em numeração descontinuada. A migration V8 já consolidou os campos de sincronização externa (`external_id` UNIQUE em `tb_treino_realizado`, `tb_sync_log`). A numeração real parte de V12.
+
+---
+
+### D9: Criptografia de tokens OAuth em repouso
+
+**Decisão:** **Não implementar na fase 1.** O risco de tokens em texto plano já está documentado na seção Risks com mitigações de curto prazo (restrição de acesso via roles PostgreSQL, garantia de que logs não exponham tokens). Criar issue técnica separada para fase de segurança com `@Convert` JPA + chave simétrica.
+
+**Rationale:** MVP precisa ir rápido. A criptografia em repouso é um hardening de segurança legítimo mas não bloqueia a funcionalidade. O risco é aceitável com as mitigações documentadas para a fase inicial.
+
+---
+
+### D10: Mecanismo de processamento assíncrono de webhooks
+
+**Decisão:** Usar `@Async` com `ThreadPoolTaskExecutor` configurado explicitamente (pool dedicado `strava-webhook-executor`). Não usar `ApplicationEventPublisher` + listener nesta fase.
+
+**Rationale:** `@Async` é suficiente para o caso de uso único (processar um evento Strava por vez). `ApplicationEventPublisher` adiciona indireção útil apenas quando há múltiplos consumidores do mesmo evento — não é o caso no MVP. O pool dedicado permite configurar limites de thread sem afetar o executor padrão da aplicação.
+
+---
+
+### D11: Estratégia de URL pública para desenvolvimento local de webhooks
+
+**Decisão:** Usar **ngrok** para desenvolvimento local. O comando de setup deve ser documentado no `tasks.md`. Em staging/produção, usar a URL pública da aplicação diretamente.
+
+**Rationale:** ngrok é a ferramenta padrão da indústria para este caso. Gratuito para desenvolvimento, sem configuração adicional no projeto. Não requer infraestrutura de túnel própria.
+
+**Comando de referência:**
+```bash
+ngrok http 8080
+# Usar a URL gerada (ex: https://abc123.ngrok.io) ao registrar o webhook no Strava
+```
+
+---
+
+### D12: Escopo do sync histórico inicial
+
+**Decisão:** O sync inicial importa as atividades dos **últimos 90 dias**. Configurável via variável de ambiente `STRAVA_SYNC_DAYS_BACK` (padrão: 90). Atividades anteriores a esse período não são importadas automaticamente — o técnico pode acionar re-sync manual no futuro.
+
+**Rationale:** 90 dias é suficiente para dar contexto histórico relevante à IA (TSS, CTL, ATL) sem sobrecarregar o rate limit da API Strava (100 req/15min). Tornar configurável permite ajuste por assessoria sem deploy.
