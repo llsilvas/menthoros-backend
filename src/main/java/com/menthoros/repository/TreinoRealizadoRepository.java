@@ -25,6 +25,8 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
 
     Optional<TreinoRealizado> findByFonteDadosAndExternalId(FonteDados fonte, String externalId);
 
+    Optional<TreinoRealizado> findByExternalIdAndAtletaId(String externalId, UUID atletaId);
+
     @Query("select coalesce(sum(t.distanciaKm),0) from TreinoRealizado t where t.planoSemanal.id = :planoSemanalId")
     double sumDistanciaByPlanoSemanalId(@Param("planoSemanalId") UUID planoSemanalId);
 
