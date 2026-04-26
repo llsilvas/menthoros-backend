@@ -49,6 +49,11 @@ O projeto segue uma arquitetura em camadas padrão, com controladores para expor
    OPENAI_API_KEY=sua_chave_de_api_da_openai
    KC_ADMIN_USER=admin
    KC_ADMIN_PASSWORD=admin123
+   STRAVA_CLIENT_ID=seu_client_id_strava
+   STRAVA_CLIENT_SECRET=seu_client_secret_strava
+   STRAVA_REDIRECT_URI=http://localhost:8080/api/strava/callback
+   STRAVA_WEBHOOK_TOKEN=token_aleatorio_webhook
+   STRAVA_SYNC_DAYS_BACK=90
    ```
 
 3. **Inicie os serviços com Docker Compose:**
