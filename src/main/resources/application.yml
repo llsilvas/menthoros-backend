@@ -140,6 +140,19 @@ app:
     service:
       strategy: original  # enhanced | fixed | original
 
+  # ----------------------------------------
+  # STRAVA INTEGRATION CONFIGURATION
+  # ----------------------------------------
+  strava:
+    client-id: ${STRAVA_CLIENT_ID:}
+    client-secret: ${STRAVA_CLIENT_SECRET:}
+    redirect-uri: ${STRAVA_REDIRECT_URI:http://localhost:8080/api/strava/callback}
+    authorization-uri: https://www.strava.com/oauth/authorize
+    token-uri: https://www.strava.com/oauth/token
+    api-base-url: https://www.strava.com/api/v3
+    webhook-verify-token: ${STRAVA_WEBHOOK_TOKEN:}
+    sync-days-back: ${STRAVA_SYNC_DAYS_BACK:90}
+
 # ========================================
 # LOGGING CONFIGURATION
 # ========================================
