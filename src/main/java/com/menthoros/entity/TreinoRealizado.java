@@ -1,6 +1,7 @@
 package com.menthoros.entity;
 
 import com.menthoros.enums.FonteDados;
+import com.menthoros.enums.StatusSincronizacao;
 import com.menthoros.enums.TreinoExecucaoStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -11,6 +12,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -94,6 +96,33 @@ public class TreinoRealizado extends TreinoBase{
 
     @Column(name = "external_id")
     private String externalId;
+
+    // ===== CAMPOS STRAVA (V13) =====
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status_sincronizacao", length = 50)
+    private StatusSincronizacao statusSincronizacao;
+
+    @Column(name = "sincronizado_em")
+    private Instant sincronizadoEm;
+
+    @Column(name = "url_externo", length = 500)
+    private String urlExterno;
+
+    @Column(name = "metadados_sincronizacao", columnDefinition = "TEXT")
+    private String metadadosSincronizacao;
+
+    @Column(name = "elapsed_time_seg")
+    private Integer elapsedTimeSeg;
+
+    @Column(name = "suffer_score")
+    private Integer sufferScore;
+
+    @Column(name = "device_name", length = 200)
+    private String deviceName;
+
+    @Column(name = "gear_name", length = 200)
+    private String gearName;
 
     /**
      * Verifica se treino foi mais difícil que esperado

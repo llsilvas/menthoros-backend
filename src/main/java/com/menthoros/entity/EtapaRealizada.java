@@ -77,4 +77,15 @@ public class EtapaRealizada {
     @Column(name = "observacao", length = 500)
     private String observacao;
 
+    // ===== CAMPOS STRAVA (V14) =====
+
+    @Column(name = "split_index")
+    private Integer splitIndex;
+
+    @Column(name = "elevacao_ganho_metros")
+    private Integer elevacaoGanhoMetros;
+
+    @Column(name = "elevacao_perda_metros")
+    private Integer elevacaoPerdaMetros;
+
 }
