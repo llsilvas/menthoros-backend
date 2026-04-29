@@ -36,18 +36,19 @@ public class StravaActivityController {
     @Operation(summary = "Dispara sincronização manual de atividades do atleta")
     public ResponseEntity<Map<String, Object>> sync(@PathVariable UUID atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
-
-        IntegracaoExterna integracao = integracaoExternaRepository
-                .findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId)
-                .orElseThrow(() -> new IllegalStateException("Atleta sem integração Strava ativa"));
-
-        if (isRecentlySynced(integracao)) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                    "error", "Sincronização já em progresso. Aguarde conclusão."
-            ));
-        }
+        IntegracaoExterna integracao = null;
 
         try {
+            integracao = integracaoExternaRepository
+                    .findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Atleta sem integração Strava ativa"));
+
+            if (isRecentlySynced(integracao)) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                        "error", "Sincronização já em progresso. Aguarde conclusão."
+                ));
+            }
+
             int imported = stravaActivityService.syncActivities(atletaId);
             integracao.setSyncActivityCount(imported);
             integracao.setUltimaSincronizacao(Instant.now());
@@ -63,10 +64,16 @@ public class StravaActivityController {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
                     "error", "Limite de requisições Strava atingido. Tente novamente em alguns minutos."
             ));
+        } catch (ResourceNotFoundException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "error", e.getMessage()
+            ));
         } catch (Exception e) {
-            integracao.setAtivo(false);
-            integracao.setLastSyncError(e.getMessage());
-            integracaoExternaRepository.save(integracao);
+            if (integracao != null) {
+                integracao.setAtivo(false);
+                integracao.setLastSyncError(truncateErrorMessage(e.getMessage()));
+                integracaoExternaRepository.save(integracao);
+            }
 
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
                     "error", "Falha ao sincronizar: " + e.getMessage()
@@ -119,5 +126,12 @@ public class StravaActivityController {
 
         Instant thirtySecondsAgo = Instant.now().minus(Duration.ofSeconds(30));
         return thirtySecondsAgo.isBefore(integracao.getUltimaSincronizacao());
+    }
+
+    private String truncateErrorMessage(String message) {
+        if (message == null) {
+            return "Erro desconhecido";
+        }
+        return message.length() <= 500 ? message : message.substring(0, 500);
     }
 }
