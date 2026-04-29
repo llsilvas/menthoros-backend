@@ -34,11 +34,10 @@ public class AtletaServiceImpl implements AtletaService {
     private final PlanoMetadadosRepository planoMetaDadosRepository;
     private final TsbService tsbService;
 
-    // TODO(tenant-isolation): reativar quando autenticação estiver habilitada no frontend
-    // private static final String HAS_TENANT =
-    //         "T(com.menthoros.multitenancy.TenantContext).hasTenant()";
-    // private static final String TENANT_KEY =
-    //         "T(com.menthoros.multitenancy.TenantContext).getTenantId()";
+    private static final String HAS_TENANT =
+            "T(com.menthoros.multitenancy.TenantContext).hasTenant()";
+    private static final String TENANT_KEY =
+            "T(com.menthoros.multitenancy.TenantContext).getTenantId()";
 
     // TODO(tenant-isolation): substituir resolveTenantId() por TenantContext.getRequiredTenantId()
     //   quando autenticação estiver habilitada no frontend.
@@ -104,8 +103,7 @@ public class AtletaServiceImpl implements AtletaService {
     }
 
     @Override
-    // TODO(tenant-isolation): @Cacheable(value = "atletas", key = "#id + '_' + TENANT_KEY, condition = HAS_TENANT)
-    @Cacheable(value = "atletas", key = "#id")
+    @Cacheable(value = "atletas", key = "#id + '_' + " + TENANT_KEY, condition = HAS_TENANT)
     @Transactional(readOnly = true)
     public AtletaOutputDto getAtletaById(UUID id) {
         UUID tenantId = resolveTenantId();
@@ -119,8 +117,7 @@ public class AtletaServiceImpl implements AtletaService {
     }
 
     @Override
-    // TODO(tenant-isolation): @Cacheable(value = "atletas-list", key = TENANT_KEY, condition = HAS_TENANT)
-    @Cacheable(value = "atletas-list")
+    @Cacheable(value = "atletas-list", key = TENANT_KEY, condition = HAS_TENANT)
     @Transactional(readOnly = true)
     public List<AtletaOutputDto> getAllAtletas() {
         UUID tenantId = resolveTenantId();
