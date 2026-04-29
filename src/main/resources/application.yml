@@ -105,6 +105,8 @@ springdoc:
 # APPLICATION SPECIFIC CONFIGURATION
 # ========================================
 app:
+  frontend:
+    url: ${FRONTEND_URL:http://localhost:5174}
   # ----------------------------------------
   # CACHE CONFIGURATION
   # ----------------------------------------
@@ -146,7 +148,7 @@ app:
   strava:
     client-id: ${STRAVA_CLIENT_ID:}
     client-secret: ${STRAVA_CLIENT_SECRET:}
-    redirect-uri: ${STRAVA_REDIRECT_URI:http://localhost:8080/api/strava/callback}
+    redirect-uri: ${STRAVA_REDIRECT_URI:http://localhost:8099/api/strava/callback}
     authorization-uri: https://www.strava.com/oauth/authorize
     token-uri: https://www.strava.com/oauth/token
     api-base-url: https://www.strava.com/api/v3
