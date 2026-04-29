@@ -17,6 +17,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Collection;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -42,8 +44,8 @@ public class JwtTenantFilter extends OncePerRequestFilter {
             // Só processa se for um JWT válido
             if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
 
-                // Extrai tenant_id do JWT (claim configurado no Keycloak)
-                String tenantIdStr = jwt.getClaimAsString("tenant_id");
+                // Extrai tenant_id do JWT (suporta claim direta e estrutura organization.<group>.tenant_id)
+                String tenantIdStr = extractTenantId(jwt);
 
                 if (tenantIdStr == null || tenantIdStr.isBlank()) {
                     log.error("JWT sem tenant_id - REJEITADO: subject={}, uri={}",
@@ -90,5 +92,37 @@ public class JwtTenantFilter extends OncePerRequestFilter {
             // CRÍTICO: Sempre limpa o contexto ao final (evita vazamento entre requests)
             TenantContext.clear();
         }
+    }
+
+    private String extractTenantId(Jwt jwt) {
+        String directTenantId = jwt.getClaimAsString("tenant_id");
+        if (directTenantId != null && !directTenantId.isBlank()) {
+            return directTenantId;
+        }
+
+        Object organizationClaim = jwt.getClaim("organization");
+        if (!(organizationClaim instanceof Map<?, ?> organizationMap)) {
+            return null;
+        }
+
+        for (Object groupDataObj : organizationMap.values()) {
+            if (!(groupDataObj instanceof Map<?, ?> groupData)) {
+                continue;
+            }
+
+            Object tenantIdObj = groupData.get("tenant_id");
+            if (tenantIdObj instanceof String tenantId && !tenantId.isBlank()) {
+                return tenantId;
+            }
+
+            if (tenantIdObj instanceof Collection<?> tenantIds && !tenantIds.isEmpty()) {
+                Object first = tenantIds.iterator().next();
+                if (first instanceof String tenantId && !tenantId.isBlank()) {
+                    return tenantId;
+                }
+            }
+        }
+
+        return null;
     }
 }
