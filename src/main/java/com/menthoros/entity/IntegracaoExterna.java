@@ -64,6 +64,12 @@ public class IntegracaoExterna {
     @Column(name = "ultima_sincronizacao")
     private Instant ultimaSincronizacao;
 
+    @Column(name = "sync_activity_count")
+    private Integer syncActivityCount;
+
+    @Column(name = "last_sync_error", length = 500)
+    private String lastSyncError;
+
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
