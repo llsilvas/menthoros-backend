@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -19,11 +20,13 @@ import java.util.UUID;
 @Slf4j
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/strava")
+@RequestMapping({"/strava", "/api/strava"})
 @Tag(name = "Strava OAuth", description = "Fluxo OAuth2 de conexão com Strava")
 public class StravaAuthController {
 
     private final StravaOAuthService stravaOAuthService;
+    @Value("${app.frontend.url:http://localhost:5174}")
+    private String frontendUrl;
 
     @GetMapping("/auth")
     @Operation(summary = "Inicia autorização OAuth2 com Strava")
@@ -32,6 +35,13 @@ public class StravaAuthController {
         return ResponseEntity.status(HttpStatus.FOUND)
                 .header(HttpHeaders.LOCATION, authorizationUrl)
                 .build();
+    }
+
+    @GetMapping("/auth/url/{atletaId}")
+    @Operation(summary = "Retorna URL de autorização OAuth2 do Strava")
+    public ResponseEntity<Map<String, String>> getAuthorizationUrl(@PathVariable UUID atletaId) {
+        String authorizationUrl = stravaOAuthService.getAuthorizationUrl(atletaId);
+        return ResponseEntity.ok(Map.of("authorizationUrl", authorizationUrl));
     }
 
     @GetMapping("/callback")
@@ -77,8 +87,9 @@ public class StravaAuthController {
 
     private ResponseEntity<Void> redirectToFrontend(String status) {
         URI redirectUri = UriComponentsBuilder
-                .fromPath("/?strava={status}")
-                .buildAndExpand(status)
+                .fromUriString(frontendUrl)
+                .queryParam("strava", status)
+                .build()
                 .toUri();
 
         return ResponseEntity.status(HttpStatus.FOUND)
