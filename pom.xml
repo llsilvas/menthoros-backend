@@ -309,7 +309,9 @@
                 <configuration>
                     <argLine>${argLine} -javaagent:${project.build.directory}/byte-buddy-agent.jar -XX:+EnableDynamicAgentLoading -Djdk.attach.allowAttachSelf=true</argLine>
                     <includes>
-                        <include>**/unit/**/*.java</include>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*TestCase.java</include>
                     </includes>
                 </configuration>
             </plugin>
@@ -338,7 +340,8 @@
                 <configuration>
                     <argLine>${argLine} -javaagent:${project.build.directory}/byte-buddy-agent.jar -XX:+EnableDynamicAgentLoading -Djdk.attach.allowAttachSelf=true</argLine>
                     <includes>
-                        <include>**/integration/*IT.java</include>
+                        <include>**/*IT.java</include>
+                        <include>**/*ITCase.java</include>
                     </includes>
                     <systemPropertyVariables>
                         <spring.profiles.active>test</spring.profiles.active>
