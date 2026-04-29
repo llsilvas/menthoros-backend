@@ -25,7 +25,7 @@ import java.util.UUID;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/strava")
+@RequestMapping("/api/strava")
 @Tag(name = "Strava Sync", description = "Sincronização de atividades do Strava")
 public class StravaActivityController {
 
