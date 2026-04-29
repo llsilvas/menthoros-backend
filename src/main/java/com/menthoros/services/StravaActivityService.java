@@ -12,6 +12,7 @@ import com.menthoros.enums.StatusSincronizacao;
 import com.menthoros.enums.TipoTreino;
 import com.menthoros.enums.TreinoExecucaoStatus;
 import com.menthoros.exception.ResourceNotFoundException;
+import com.menthoros.exception.StravaRateLimitException;
 import com.menthoros.multitenancy.TenantContext;
 import com.menthoros.repository.AtletaRepository;
 import com.menthoros.repository.IntegracaoExternaRepository;
@@ -86,7 +87,7 @@ public class StravaActivityService {
         etapa.setFcMedia(toNullableInt(split.averageHeartrate()));
         etapa.setFcMax(toNullableInt(split.maxHeartrate()));
         etapa.setVelocidadeMedia(toKmh(split.averageSpeed(), 2));
-        etapa.setCadenciaMedia(convertCadence(split.averageCadence()));
+        etapa.setCadenciaMedia(sanitizeCadence(convertCadence(split.averageCadence())));
         etapa.setPotenciaMedia(toNullableInt(split.averageWatts()));
 
         double elevationDiff = split.elevationDifference() == null ? 0.0 : split.elevationDifference();
@@ -251,10 +252,10 @@ public class StravaActivityService {
         treino.setDeviceName(activity.deviceName());
         treino.setGearName(activity.gear() != null ? activity.gear().name() : null);
 
-        treino.setFcMedia(defaultInt(activity.averageHeartrate()));
-        treino.setFcMax(defaultInt(activity.maxHeartrate()));
+        treino.setFcMedia(sanitizeHeartRate(toNullableInt(activity.averageHeartrate()), 40, 250));
+        treino.setFcMax(sanitizeHeartRate(toNullableInt(activity.maxHeartrate()), 80, 250));
         treino.setVelocidadeMedia(toKmh(activity.averageSpeed(), 2) != null ? toKmh(activity.averageSpeed(), 2).doubleValue() : 0d);
-        treino.setCadenciaMedia(convertCadence(activity.averageCadence()));
+        treino.setCadenciaMedia(sanitizeCadence(convertCadence(activity.averageCadence())));
         treino.setPercepcaoEsforco(activity.perceivedExertion() != null ? (int) Math.round(activity.perceivedExertion()) : null);
         treino.setPaceMedia(calculatePace(activity.movingTime(), activity.distance()));
         treino.setElevacaoGanhoMetros(activity.totalElevationGain() != null ? (int) Math.round(activity.totalElevationGain()) : null);
@@ -405,12 +406,21 @@ public class StravaActivityService {
         return (int) Math.round(averageCadence * 2d);
     }
 
+    private Integer sanitizeCadence(int cadence) {
+        if (cadence < 60 || cadence > 200) {
+            return null;
+        }
+        return cadence;
+    }
+
+    private Integer sanitizeHeartRate(Integer hr, int min, int max) {
+        if (hr == null || hr < min || hr > max) {
+            return null;
+        }
+        return hr;
+    }
+
     private record ActivitiesPage(List<StravaActivityDto> activities, HttpHeaders headers) {
     }
 
-    private static class StravaRateLimitException extends RuntimeException {
-        StravaRateLimitException(String message) {
-            super(message);
-        }
-    }
 }
