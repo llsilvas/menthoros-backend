@@ -9,10 +9,9 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.menthoros</groupId>
-    <artifactId>menthoros</artifactId>
+    <artifactId>menthoros-backend</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>menthoros-services</name>
-    <description>menthoros-services</description>
+    <name>menthoros-backend</name>
 
     <properties>
         <java.version>21</java.version>
