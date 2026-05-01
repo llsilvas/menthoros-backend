@@ -3,6 +3,12 @@ package br.com.menthoros.backend.enums;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * Ações de reconciliação entre atividade realizada e treino planejado.
+ *
+ * Define o tipo de operação realizada para reconciliar uma atividade
+ * com treino planejado, incluindo ações automáticas e manuais do coach.
+ */
 @Getter
 @RequiredArgsConstructor
 public enum ReconciliationActionType {

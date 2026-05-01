@@ -3,6 +3,12 @@ package br.com.menthoros.backend.enums;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
+/**
+ * Status de reconciliação entre atividade realizada e treino planejado.
+ *
+ * Define o resultado do processo de vinculação automática ou manual
+ * entre uma atividade capturada (ex: Strava) e um treino planejado.
+ */
 @Getter
 @RequiredArgsConstructor
 public enum ReconciliationStatus {
