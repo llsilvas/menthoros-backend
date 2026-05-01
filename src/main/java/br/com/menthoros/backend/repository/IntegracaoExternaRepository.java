@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -50,6 +51,15 @@ public interface IntegracaoExternaRepository extends JpaRepository<IntegracaoExt
     """)
     Optional<IntegracaoExterna> findActiveByExternalAthleteIdAndPlataforma(
             @Param("externalAthleteId") String externalAthleteId,
+            @Param("plataforma") FonteDados plataforma
+    );
+
+    @Query("""
+    select i from IntegracaoExterna i
+    where i.plataforma = :plataforma
+      and i.ativo = true
+    """)
+    List<IntegracaoExterna> findAllActiveByPlataforma(
             @Param("plataforma") FonteDados plataforma
     );
 }
