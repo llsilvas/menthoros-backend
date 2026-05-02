@@ -74,4 +74,15 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     where atl.id = :id
     """)
     Optional<Atleta> findByIdForUpdate(@Param("id") UUID id);
+
+    @Query("""
+    select distinct atl from Atleta atl
+    join IntegracaoExterna ie on ie.atleta.id = atl.id
+    where ie.plataforma = 'STRAVA'
+      and ie.ativo = true
+      and ie.accessToken is not null
+      and atl.ativo = 'ATIVO'
+    order by atl.nome ASC
+    """)
+    List<Atleta> findAllWithStravaConnected();
 }

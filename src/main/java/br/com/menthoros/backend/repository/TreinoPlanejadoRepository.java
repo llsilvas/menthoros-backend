@@ -24,4 +24,14 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
     Optional<TreinoPlanejado> matchByAtletaAndDateAndType(@Param("atletaId") UUID atletaId,
                                                           @Param("data") LocalDate data,
                                                           @Param("tipoTreino") TipoTreino tipoTreino);
+
+    @Query("""
+       select tp from TreinoPlanejado tp
+       where tp.atleta.id = :atletaId
+         and tp.dataTreino between :dataInicio and :dataFim
+       order by tp.dataTreino ASC
+       """)
+    List<TreinoPlanejado> findByAtletaIdAndDataBetween(@Param("atletaId") UUID atletaId,
+                                                        @Param("dataInicio") LocalDate dataInicio,
+                                                        @Param("dataFim") LocalDate dataFim);
 }

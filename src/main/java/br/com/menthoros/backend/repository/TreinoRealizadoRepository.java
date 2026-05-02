@@ -5,6 +5,7 @@ import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.enums.ReconciliationStatus;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.PagingAndSortingRepository;
@@ -61,4 +62,16 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     @Query("UPDATE TreinoRealizado t SET t.treinoPlanejado = null WHERE t.treinoPlanejado.id IN " +
            "(SELECT tp.id FROM TreinoPlanejado tp WHERE tp.planoSemanal.id = :planoSemanalId)")
     void desvinculardeTreinosPlanejados(@Param("planoSemanalId") UUID planoSemanalId);
+
+    @Query("""
+       select t from TreinoRealizado t
+       where t.atleta.id = :atletaId
+         and t.dataTreino = :dataTreino
+         and t.reconciliationStatus = :status
+       order by t.dataTreino ASC
+       """)
+    List<TreinoRealizado> findByAtletaIdAndDataTreinoAndReconciliationStatus(
+            @Param("atletaId") UUID atletaId,
+            @Param("dataTreino") LocalDate dataTreino,
+            @Param("status") ReconciliationStatus status);
 }
