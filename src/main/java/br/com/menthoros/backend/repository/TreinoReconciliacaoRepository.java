@@ -27,7 +27,7 @@ public interface TreinoReconciliacaoRepository extends JpaRepository<TreinoRecon
             """)
     List<TreinoReconciliacao> findByTreinoRealizadoId(
             @Param("tenantId") String tenantId,
-            @Param("treinoRealizadoId") Long treinoRealizadoId
+            @Param("treinoRealizadoId") UUID treinoRealizadoId
     );
 
     /**
@@ -73,7 +73,7 @@ public interface TreinoReconciliacaoRepository extends JpaRepository<TreinoRecon
             """)
     List<TreinoReconciliacao> findByTreinoRealizadoIdAndDateRange(
             @Param("tenantId") String tenantId,
-            @Param("treinoRealizadoId") Long treinoRealizadoId,
+            @Param("treinoRealizadoId") UUID treinoRealizadoId,
             @Param("startTime") Instant startTime,
             @Param("endTime") Instant endTime
     );
