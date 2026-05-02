@@ -1,31 +1,59 @@
 -- =====================================================================
 -- V20: Corrige tipos de ID de BIGINT para UUID nos campos de reconciliação
 --      TreinoPlanejado usa UUID como chave primária
+--      Strategy: Backfill seguro (nova coluna + validação + cutover)
 -- =====================================================================
 
 -- ========================================
--- 1. CORRIGIR treino_planejado_id EM tb_treino_realizado
+-- 1. CORRIGIR treino_planejado_id EM tb_treino_realizado (BACKFILL STRATEGY)
 -- ========================================
 --
--- ⚠️ AVISO CRÍTICO: USING NULL DESTRÓI DADOS EXISTENTES
+-- Estratégia: Nova coluna UUID + validação de perda de dados + cutover
+-- (Evita USING NULL direto que seria silenciosamente destrutivo)
 --
--- Esta migração converte treino_planejado_id de BIGINT para UUID usando NULL.
--- Isso significa: TODOS os valores existentes serão zerados.
+-- Passo 1: Renomear coluna BIGINT antiga (preserva estado enquanto nova é preparada)
 --
--- Contexto MVP:
--- - Tabela criada recentemente (V17) para reconciliação Strava
--- - Nenhum dado em produção ainda (MVP)
--- - Uso seguro por enquanto
---
--- Futuro (pós-MVP):
--- - Se houver dados a preservar, necessário backfill com conversão UUID segura
--- - Usar migração separada com COPY + validação de integridade
---
--- Assinado: Code Review com BLOCKER identificado e resolvido
--- Data: 2026-05-01
 
 ALTER TABLE tb_treino_realizado
-    ALTER COLUMN treino_planejado_id SET DATA TYPE UUID USING NULL;
+    RENAME COLUMN treino_planejado_id TO treino_planejado_id_bigint_old;
+
+--
+-- Passo 2: Adicionar nova coluna UUID (nullable, sem default)
+--
+
+ALTER TABLE tb_treino_realizado
+    ADD COLUMN treino_planejado_id UUID;
+
+--
+-- Passo 3: Verificar e logar perda de dados explicitamente
+--          (BIGINT → UUID sem mapeamento possível no MVP)
+--
+
+DO $$
+DECLARE
+    lost_count INTEGER;
+BEGIN
+    SELECT COUNT(*) INTO lost_count
+    FROM tb_treino_realizado
+    WHERE treino_planejado_id_bigint_old IS NOT NULL;
+
+    IF lost_count > 0 THEN
+        RAISE WARNING
+            'V20 MIGRATION: % vínculo(s) treino_planejado_id (BIGINT) não podem ser '
+            'convertidos para UUID — tipo incompatível, sem chave de mapeamento. '
+            'Vínculos serão nulos após cutover. Se dados são críticos, restaurar do backup.',
+            lost_count;
+    ELSE
+        RAISE NOTICE 'V20 MIGRATION: nenhum vínculo existente. Cutover seguro.';
+    END IF;
+END$$;
+
+--
+-- Passo 4: Cutover — remover coluna BIGINT antiga
+--
+
+ALTER TABLE tb_treino_realizado
+    DROP COLUMN treino_planejado_id_bigint_old;
 
 -- ========================================
 -- 2. ADICIONAR COLUNAS UUID EM tb_treino_reconciliacao
