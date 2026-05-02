@@ -235,9 +235,9 @@ public class DailyActivitySyncScheduler {
 
     /**
      * Filtra candidatos por compatibilidade de tipo de treino (pré-filtro obrigatório).
-     * Regra: tipo de atividade Strava deve ser compatível com tipo de treino planejado.
-     * Por enquanto, todos os tipos de corrida são compatíveis entre si.
-     * Pode ser refinado com matriz de compatibilidade mais granular.
+     * Usa matriz de compatibilidade real que implementa regra MVP:
+     * todos os tipos de corrida (TipoTreino) são compatíveis entre si.
+     * Atividades sem tipo definido são compatíveis com qualquer planejado.
      */
     private List<TreinoPlanejado> filterCompatibleCandidatos(
             TreinoRealizado activity,
@@ -246,21 +246,13 @@ public class DailyActivitySyncScheduler {
             return candidates;
         }
 
-        // Se a atividade não tem tipo definido, aceita todos os candidatos
-        if (activity.getTipoTreino() == null) {
-            return candidates;
-        }
-
         return candidates.stream()
-                .filter(planned -> {
-                    // Se o planejado não tem tipo, é compatível
-                    if (planned.getTipoTreino() == null) {
-                        return true;
-                    }
-                    // Por enquanto, todos os tipos de treino são compatíveis
-                    // (podem ser refinados com matriz de compatibilidade futura)
-                    return true;
-                })
+                .filter(planned ->
+                    ActivityTypeCompatibilityMatrix.isCompatible(
+                        activity.getTipoTreino(),
+                        planned.getTipoTreino()
+                    )
+                )
                 .toList();
     }
 
