@@ -8,8 +8,40 @@
 -- 1. CORRIGIR treino_planejado_id EM tb_treino_realizado (BACKFILL STRATEGY)
 -- ========================================
 --
--- Estratégia: Nova coluna UUID + validação de perda de dados + cutover
+-- Estratégia: Validar ambiente vazio → Nova coluna UUID → Cutover
 -- (Evita USING NULL direto que seria silenciosamente destrutivo)
+--
+-- BLOQUEADOR AMBIENTAL: Falha se houver dados existentes
+-- Razão: BIGINT → UUID sem mapeamento seguro. Requer ação manual:
+-- - Backup antes de executar
+-- - OU esperar confirmação formal que ambiente está vazio
+--
+
+DO $$
+DECLARE
+    existing_count INTEGER;
+BEGIN
+    -- Verificar se há dados a perder ANTES de alterar estrutura
+    SELECT COUNT(*) INTO existing_count
+    FROM tb_treino_realizado
+    WHERE treino_planejado_id IS NOT NULL;
+
+    IF existing_count > 0 THEN
+        RAISE EXCEPTION
+            'V20 MIGRATION BLOCKED: % registro(s) com treino_planejado_id existente(s) '
+            'não podem ser convertidos de BIGINT para UUID (tipos incompatíveis). '
+            'Ação necessária: '
+            '1) Fazer backup completo do banco '
+            '2) Validar que é ambiente descartável/vazio '
+            '3) Ou implementar estratégia de backfill com mapping table '
+            '4) Contactar DevOps antes de retentar.',
+            existing_count;
+    END IF;
+
+    -- Se chegou aqui, ambiente está vazio - seguro prosseguir
+    RAISE NOTICE 'V20 MIGRATION: Ambiente vazio confirmado. Prosseguindo com conversão segura.';
+END$$;
+
 --
 -- Passo 1: Renomear coluna BIGINT antiga (preserva estado enquanto nova é preparada)
 --
@@ -25,31 +57,7 @@ ALTER TABLE tb_treino_realizado
     ADD COLUMN treino_planejado_id UUID;
 
 --
--- Passo 3: Verificar e logar perda de dados explicitamente
---          (BIGINT → UUID sem mapeamento possível no MVP)
---
-
-DO $$
-DECLARE
-    lost_count INTEGER;
-BEGIN
-    SELECT COUNT(*) INTO lost_count
-    FROM tb_treino_realizado
-    WHERE treino_planejado_id_bigint_old IS NOT NULL;
-
-    IF lost_count > 0 THEN
-        RAISE WARNING
-            'V20 MIGRATION: % vínculo(s) treino_planejado_id (BIGINT) não podem ser '
-            'convertidos para UUID — tipo incompatível, sem chave de mapeamento. '
-            'Vínculos serão nulos após cutover. Se dados são críticos, restaurar do backup.',
-            lost_count;
-    ELSE
-        RAISE NOTICE 'V20 MIGRATION: nenhum vínculo existente. Cutover seguro.';
-    END IF;
-END$$;
-
---
--- Passo 4: Cutover — remover coluna BIGINT antiga
+-- Passo 3: Cutover — remover coluna BIGINT antiga (agora seguro, ambiente validado)
 --
 
 ALTER TABLE tb_treino_realizado
