@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Entity
 @Table(name = "tb_treino_realizado",
@@ -133,7 +134,7 @@ public class TreinoRealizado extends TreinoBase{
     private ReconciliationStatus reconciliationStatus;
 
     @Column(name = "treino_planejado_id", insertable = false, updatable = false)
-    private Long treinoPlanejadoId;
+    private UUID treinoPlanejadoId;
 
     @Column(name = "reconciliation_score", precision = 3, scale = 2)
     private BigDecimal reconciliationScore;

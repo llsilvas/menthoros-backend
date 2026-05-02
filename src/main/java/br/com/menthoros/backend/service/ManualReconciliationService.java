@@ -54,7 +54,7 @@ public class ManualReconciliationService {
         }
 
         ReconciliationStatus beforeStatus = realizado.getReconciliationStatus();
-        Long beforePlannedId = realizado.getTreinoPlanejadoId();
+        UUID beforePlannedId = realizado.getTreinoPlanejadoId();
 
         // Carregar e validar TreinoPlanejado
         TreinoPlanejado planejado = treinoPlanejadoRepository
@@ -79,7 +79,8 @@ public class ManualReconciliationService {
                 beforeStatus,
                 ReconciliationStatus.VINCULADO_MANUAL,
                 beforePlannedId,
-                uuidToLong(treinoPlanejadoId),
+                null,
+                treinoPlanejadoId,
                 "MANUAL_LINK",
                 "Vínculo manual executado pelo treinador",
                 actorId,
@@ -102,9 +103,9 @@ public class ManualReconciliationService {
         TreinoRealizado realizado = findAndValidate(treinoRealizadoId, tenantId);
 
         ReconciliationStatus beforeStatus = realizado.getReconciliationStatus();
-        Long beforePlannedId = realizado.getTreinoPlanejadoId();
+        UUID beforePlannedId = realizado.getTreinoPlanejadoId();
 
-        realizado.setTreinoPlanejadoId(null);
+        realizado.setTreinoPlanejado(null);
         realizado.setReconciliationStatus(ReconciliationStatus.NAO_PLANEJADO);
         realizado.setReconciledAt(Instant.now());
         realizado.setReconciledBy(actorId);
@@ -117,6 +118,7 @@ public class ManualReconciliationService {
                 beforeStatus,
                 ReconciliationStatus.NAO_PLANEJADO,
                 beforePlannedId,
+                null,
                 null,
                 "MARKED_NOT_PLANNED",
                 "Marcado como atividade não planejada",
@@ -140,9 +142,9 @@ public class ManualReconciliationService {
         TreinoRealizado realizado = findAndValidate(treinoRealizadoId, tenantId);
 
         ReconciliationStatus beforeStatus = realizado.getReconciliationStatus();
-        Long beforePlannedId = realizado.getTreinoPlanejadoId();
+        UUID beforePlannedId = realizado.getTreinoPlanejadoId();
 
-        realizado.setTreinoPlanejadoId(null);
+        realizado.setTreinoPlanejado(null);
         realizado.setReconciliationStatus(ReconciliationStatus.PENDENTE);
         realizado.setReconciledAt(Instant.now());
         realizado.setReconciledBy(actorId);
@@ -155,6 +157,7 @@ public class ManualReconciliationService {
                 beforeStatus,
                 ReconciliationStatus.PENDENTE,
                 beforePlannedId,
+                null,
                 null,
                 "UNLINKED",
                 "Vínculo desfeito pelo treinador",
@@ -191,8 +194,9 @@ public class ManualReconciliationService {
             ReconciliationActionType actionType,
             ReconciliationStatus beforeStatus,
             ReconciliationStatus afterStatus,
-            Long beforePlannedId,
-            Long afterPlannedId,
+            UUID beforePlannedId,
+            UUID afterPlannedId,
+            UUID afterPlannedIdUuid,
             String reasonCode,
             String reasonText,
             String actorId,
@@ -203,8 +207,8 @@ public class ManualReconciliationService {
         event.setActionType(actionType);
         event.setBeforeStatus(beforeStatus);
         event.setAfterStatus(afterStatus);
-        event.setBeforePlannedId(beforePlannedId);
-        event.setAfterPlannedId(afterPlannedId);
+        event.setBeforePlannedIdUuid(beforePlannedId);
+        event.setAfterPlannedIdUuid(afterPlannedId != null ? afterPlannedId : afterPlannedIdUuid);
         event.setReasonCode(reasonCode);
         event.setReasonText(reasonText);
         event.setActorId(actorId);
@@ -214,8 +218,4 @@ public class ManualReconciliationService {
         treinoReconciliacaoRepository.save(event);
     }
 
-    private Long uuidToLong(UUID uuid) {
-        if (uuid == null) return null;
-        return uuid.getLeastSignificantBits();
-    }
 }

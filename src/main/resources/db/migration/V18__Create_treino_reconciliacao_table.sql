@@ -10,7 +10,7 @@
 CREATE TABLE IF NOT EXISTS tb_treino_reconciliacao (
     id                      BIGSERIAL PRIMARY KEY,
     tenant_id               VARCHAR(255) NOT NULL,
-    treino_realizado_id     BIGINT NOT NULL,
+    treino_realizado_id     UUID NOT NULL,
     action_type             VARCHAR(50) NOT NULL,
     before_status           VARCHAR(50),
     after_status            VARCHAR(50),

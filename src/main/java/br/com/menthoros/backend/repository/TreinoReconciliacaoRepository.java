@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @Repository
 public interface TreinoReconciliacaoRepository extends JpaRepository<TreinoReconciliacao, Long> {
@@ -35,7 +36,7 @@ public interface TreinoReconciliacaoRepository extends JpaRepository<TreinoRecon
      */
     TreinoReconciliacao findTop1ByTenantIdAndTreinoRealizadoIdOrderByOccurredAtDesc(
             String tenantId,
-            Long treinoRealizadoId
+            UUID treinoRealizadoId
     );
 
     /**

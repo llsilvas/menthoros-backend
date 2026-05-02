@@ -10,6 +10,7 @@ import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Entidade JPA para registro append-only de eventos de reconciliação Strava.
@@ -92,9 +93,18 @@ public class TreinoReconciliacao {
      * Planned workout ID before reconciliation.
      * Nullable: may be null if activity was unplanned before.
      * FK reference (logical, not enforced) to tb_treino_planejado.id
+     * DEPRECATED: Use beforePlannedIdUuid instead for UUID traceability
      */
     @Column(name = "before_planned_id")
     private Long beforePlannedId;
+
+    /**
+     * Planned workout UUID before reconciliation.
+     * Nullable: may be null if activity was unplanned before.
+     * FK reference (logical, not enforced) to tb_treino_planejado.id (as UUID)
+     */
+    @Column(name = "before_planned_id_uuid", columnDefinition = "UUID")
+    private UUID beforePlannedIdUuid;
 
     /**
      * Planned workout ID after reconciliation.
@@ -103,6 +113,14 @@ public class TreinoReconciliacao {
      */
     @Column(name = "after_planned_id")
     private Long afterPlannedId;
+
+    /**
+     * Planned workout UUID after reconciliation.
+     * Nullable: may be null if activity marked as unplanned.
+     * FK reference (logical, not enforced) to tb_treino_planejado.id (as UUID)
+     */
+    @Column(name = "after_planned_id_uuid", columnDefinition = "UUID")
+    private UUID afterPlannedIdUuid;
 
     /**
      * Reconciliation compatibility score between 0.0 and 1.0.
