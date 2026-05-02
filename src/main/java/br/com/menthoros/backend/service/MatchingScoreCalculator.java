@@ -1,13 +1,14 @@
 package br.com.menthoros.backend.service;
 
 import br.com.menthoros.backend.dto.MatchingScoreResult;
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
+import java.time.*;
 import java.time.temporal.ChronoUnit;
 
 /**
@@ -31,20 +32,28 @@ public class MatchingScoreCalculator {
 
     /**
      * Calcula o score de correspondência entre uma atividade realizada e um treino planejado.
+     * Normaliza datas usando timezone do atleta (design D13) antes do scoring temporal.
      *
      * @param realizado atividade realizada (do Strava)
      * @param planejado treino planejado
+     * @param athlete atleta para resolução de timezone
      * @return resultado com scores detalhados (0-1)
      */
     public MatchingScoreResult calculate(
             TreinoRealizado realizado,
-            TreinoPlanejado planejado) {
+            TreinoPlanejado planejado,
+            Atleta athlete) {
 
         if (realizado == null || planejado == null) {
             return new MatchingScoreResult(ZERO, ZERO, ZERO, ZERO);
         }
 
-        BigDecimal temporalScore = calculateTemporalScore(realizado, planejado);
+        // Resolve timezone do atleta (fallback padrão)
+        String timeZoneId = athlete != null && athlete.getTimezone() != null
+                ? athlete.getTimezone()
+                : "America/Sao_Paulo";
+
+        BigDecimal temporalScore = calculateTemporalScore(realizado, planejado, timeZoneId);
         BigDecimal durationScore = calculateDurationScore(realizado, planejado);
         BigDecimal distanceScore = calculateDistanceScore(realizado, planejado);
 
@@ -57,17 +66,31 @@ public class MatchingScoreCalculator {
     }
 
     /**
-     * Calcula score de correspondência temporal.
+     * Calcula score temporal usando timezone do atleta para normalização.
+     * Design D13: "Antes do cálculo de score, normalizar start_date e data_treino_planejado
+     * para a timezone de referência (timezone do atleta)".
      * Janela ideal: mesma data (score 1.0)
      * Degradação: -0.5 por dia de diferença (máx -1 para >2 dias)
      */
     private BigDecimal calculateTemporalScore(
             TreinoRealizado realizado,
-            TreinoPlanejado planejado) {
+            TreinoPlanejado planejado,
+            String timeZoneId) {
 
         try {
-            LocalDate realizadoDate = realizado.getDataTreino();
-            LocalDate planejadoDate = planejado.getDataTreino();
+            ZoneId zone = ZoneId.of(timeZoneId);
+
+            // Converter LocalDate para LocalDateTime no timezone do atleta
+            LocalDateTime realizadoLDT = realizado.getDataTreino()
+                    .atStartOfDay(zone)
+                    .toLocalDateTime();
+            LocalDateTime planejadoLDT = planejado.getDataTreino()
+                    .atStartOfDay(zone)
+                    .toLocalDateTime();
+
+            // Comparar datas no mesmo timezone
+            LocalDate realizadoDate = realizadoLDT.toLocalDate();
+            LocalDate planejadoDate = planejadoLDT.toLocalDate();
 
             long daysDiff = Math.abs(ChronoUnit.DAYS.between(realizadoDate, planejadoDate));
 

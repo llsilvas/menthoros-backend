@@ -165,7 +165,7 @@ public class DailyActivitySyncScheduler {
             List<MatchingCandidate> scoredCandidates = new ArrayList<>();
             int rank = 1;
             for (TreinoPlanejado candidato : compatibleCandidatos) {
-                MatchingScoreResult scoreResult = matchingScoreCalculator.calculate(activity, candidato);
+                MatchingScoreResult scoreResult = matchingScoreCalculator.calculate(activity, candidato, atleta);
                 MatchingCandidate candidate = new MatchingCandidate(candidato, scoreResult, rank++);
                 scoredCandidates.add(candidate);
             }

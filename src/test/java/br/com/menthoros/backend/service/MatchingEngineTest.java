@@ -3,6 +3,7 @@ package br.com.menthoros.backend.service;
 import br.com.menthoros.backend.dto.MatchingCandidate;
 import br.com.menthoros.backend.dto.MatchingDecision;
 import br.com.menthoros.backend.dto.MatchingScoreResult;
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
@@ -48,7 +49,7 @@ class MatchingEngineTest {
                 new BigDecimal("10.0")
         );
 
-        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado);
+        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado, null);
 
         assertThat(result.getOverallScore()).isGreaterThan(new BigDecimal("0.95"));
         assertThat(result.getTemporalScore()).isEqualByComparingTo(BigDecimal.ONE);
@@ -62,7 +63,7 @@ class MatchingEngineTest {
         TreinoRealizado realizado = createRealizado(LocalDate.of(2026, 5, 1), null, null);
         TreinoPlanejado planejado = createPlanejado(LocalDate.of(2026, 5, 2), null, null);
 
-        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado);
+        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado, null);
 
         assertThat(result.getTemporalScore()).isEqualByComparingTo(new BigDecimal("0.75"));
     }
@@ -73,7 +74,7 @@ class MatchingEngineTest {
         TreinoRealizado realizado = createRealizado(LocalDate.of(2026, 5, 1), null, null);
         TreinoPlanejado planejado = createPlanejado(LocalDate.of(2026, 5, 4), null, null);
 
-        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado);
+        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado, null);
 
         assertThat(result.getTemporalScore()).isEqualByComparingTo(BigDecimal.ZERO);
     }
@@ -93,7 +94,7 @@ class MatchingEngineTest {
                 null
         );
 
-        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado);
+        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado, null);
 
         assertThat(result.getDurationScore()).isGreaterThanOrEqualTo(new BigDecimal("0.90"));
     }
@@ -113,7 +114,7 @@ class MatchingEngineTest {
                 null
         );
 
-        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado);
+        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado, null);
 
         assertThat(result.getDurationScore()).isEqualByComparingTo(BigDecimal.ZERO);
     }
@@ -133,7 +134,7 @@ class MatchingEngineTest {
                 new BigDecimal("11.0")
         );
 
-        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado);
+        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado, null);
 
         assertThat(result.getDistanceScore()).isGreaterThanOrEqualTo(new BigDecimal("0.90"));
     }
@@ -144,7 +145,7 @@ class MatchingEngineTest {
         TreinoRealizado realizado = createRealizado(LocalDate.of(2026, 5, 1), null, null);
         TreinoPlanejado planejado = createPlanejado(LocalDate.of(2026, 5, 1), null, null);
 
-        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado);
+        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado, null);
 
         assertThat(result.getDurationScore()).isEqualByComparingTo(new BigDecimal("0.5"));
     }
@@ -155,7 +156,7 @@ class MatchingEngineTest {
         TreinoRealizado realizado = createRealizado(LocalDate.of(2026, 5, 1), null, null);
         TreinoPlanejado planejado = createPlanejado(LocalDate.of(2026, 5, 1), null, null);
 
-        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado);
+        MatchingScoreResult result = scoreCalculator.calculate(realizado, planejado, null);
 
         assertThat(result.getDistanceScore()).isEqualByComparingTo(new BigDecimal("0.5"));
     }
