@@ -35,14 +35,23 @@ public class ActivityTypeCompatibilityMatrix {
         }
 
         // Compatível se ambos pertencem ao mesmo esporte (modalidade)
-        return mesmoEsporte(activityType, plannedType);
+        return getEsporte(activityType).equals(getEsporte(plannedType));
     }
 
     /**
-     * Verifica se dois tipos pertencem ao mesmo esporte.
-     * MVP: ambos precisam estar em TIPOS_CORRIDA.
+     * Retorna a modalidade (esporte) associada a um TipoTreino.
+     * MVP: todos os TipoTreino são CORRIDA.
+     * Futuro: adicionar NATACAO, CICLISMO, etc quando enum for expandido.
+     *
+     * Nota: Retorna esporte explícito (não apenas boolean de pertença a set).
+     * Isso previne o bug: false==false (dois tipos não-corrida sendo compatíveis).
      */
-    private static boolean mesmoEsporte(TipoTreino a, TipoTreino b) {
-        return TIPOS_CORRIDA.contains(a) == TIPOS_CORRIDA.contains(b);
+    private static String getEsporte(TipoTreino tipo) {
+        if (tipo != null && TIPOS_CORRIDA.contains(tipo)) {
+            return "CORRIDA";
+        }
+        // Tipo desconhecido ou fora de todos os conjuntos conhecidos
+        // Retorna esporte único para cada tipo desconhecido (previne compatibilidade falsa)
+        return tipo != null ? tipo.name() + "_DESCONHECIDO" : "NULL";
     }
 }
