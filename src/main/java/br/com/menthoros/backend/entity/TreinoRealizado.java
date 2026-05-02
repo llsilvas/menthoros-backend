@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.enums.ReconciliationStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import jakarta.persistence.*;
@@ -11,6 +12,7 @@ import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -123,6 +125,27 @@ public class TreinoRealizado extends TreinoBase{
 
     @Column(name = "gear_name", length = 200)
     private String gearName;
+
+    // ===== CAMPOS RECONCILIAÇÃO =====
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reconciliation_status")
+    private ReconciliationStatus reconciliationStatus;
+
+    @Column(name = "treino_planejado_id")
+    private Long treinoPlanejadoId;
+
+    @Column(name = "reconciliation_score", precision = 3, scale = 2)
+    private BigDecimal reconciliationScore;
+
+    @Column(name = "reconciliation_reason_code")
+    private String reconciliationReasonCode;
+
+    @Column(name = "reconciled_at")
+    private Instant reconciledAt;
+
+    @Column(name = "reconciled_by")
+    private String reconciledBy;
 
     /**
      * Verifica se treino foi mais difícil que esperado
