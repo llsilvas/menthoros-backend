@@ -2,10 +2,12 @@ package br.com.menthoros.backend.service;
 
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.entity.TreinoReconciliacao;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.ReconciliationActionType;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.TreinoReconciliacaoRepository;
+import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,31 +24,49 @@ public class ManualReconciliationService {
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoReconciliacaoRepository treinoReconciliacaoRepository;
+    private final TreinoPlanejadoRepository treinoPlanejadoRepository;
 
     public ManualReconciliationService(
             TreinoRealizadoRepository treinoRealizadoRepository,
-            TreinoReconciliacaoRepository treinoReconciliacaoRepository) {
+            TreinoReconciliacaoRepository treinoReconciliacaoRepository,
+            TreinoPlanejadoRepository treinoPlanejadoRepository) {
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.treinoReconciliacaoRepository = treinoReconciliacaoRepository;
+        this.treinoPlanejadoRepository = treinoPlanejadoRepository;
     }
 
     /**
      * Vincula manualmente uma atividade realizada a um treino planejado.
+     * Valida existência do TreinoPlanejado (tenant + atleta) antes de vincular.
      * Registra evento de auditoria e persiste estado.
      */
     @Transactional
     public TreinoRealizado linkManually(
             UUID treinoRealizadoId,
-            Long treinoPlanejadoId,
+            UUID treinoPlanejadoId,
             UUID tenantId,
             String actorId) {
 
         TreinoRealizado realizado = findAndValidate(treinoRealizadoId, tenantId);
 
+        if (treinoPlanejadoId == null) {
+            throw new IllegalArgumentException("treinoPlanejadoId não pode ser nulo");
+        }
+
         ReconciliationStatus beforeStatus = realizado.getReconciliationStatus();
         Long beforePlannedId = realizado.getTreinoPlanejadoId();
 
-        realizado.setTreinoPlanejadoId(treinoPlanejadoId);
+        // Carregar e validar TreinoPlanejado
+        TreinoPlanejado planejado = treinoPlanejadoRepository
+                .findById(treinoPlanejadoId)
+                .orElseThrow(() -> new IllegalArgumentException("TreinoPlanejado não encontrado: " + treinoPlanejadoId));
+
+        if (!planejado.getAtleta().getId().equals(realizado.getAtleta().getId())) {
+            throw new IllegalArgumentException("TreinoPlanejado deve ser do mesmo atleta");
+        }
+
+        // Vincular via relacionamento JPA (não via campo read-only)
+        realizado.setTreinoPlanejado(planejado);
         realizado.setReconciliationStatus(ReconciliationStatus.VINCULADO_MANUAL);
         realizado.setReconciledAt(Instant.now());
         realizado.setReconciledBy(actorId);
@@ -59,7 +79,7 @@ public class ManualReconciliationService {
                 beforeStatus,
                 ReconciliationStatus.VINCULADO_MANUAL,
                 beforePlannedId,
-                treinoPlanejadoId,
+                uuidToLong(treinoPlanejadoId),
                 "MANUAL_LINK",
                 "Vínculo manual executado pelo treinador",
                 actorId,
@@ -192,5 +212,10 @@ public class ManualReconciliationService {
         event.setOccurredAt(Instant.now());
 
         treinoReconciliacaoRepository.save(event);
+    }
+
+    private Long uuidToLong(UUID uuid) {
+        if (uuid == null) return null;
+        return uuid.getLeastSignificantBits();
     }
 }

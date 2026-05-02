@@ -50,7 +50,7 @@ public class ManualReconciliationController {
     @PostMapping("/{treinoRealizadoId}/link")
     public ResponseEntity<TreinoRealizadoOutputDto> linkManually(
             @PathVariable UUID treinoRealizadoId,
-            @RequestParam Long treinoPlanejadoId,
+            @RequestParam UUID treinoPlanejadoId,
             @RequestHeader("X-Tenant-ID") UUID tenantId,
             Authentication authentication) {
 

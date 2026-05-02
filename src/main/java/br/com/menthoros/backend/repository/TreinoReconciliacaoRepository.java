@@ -10,7 +10,6 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.UUID;
 
 @Repository
 public interface TreinoReconciliacaoRepository extends JpaRepository<TreinoReconciliacao, Long> {
@@ -26,7 +25,7 @@ public interface TreinoReconciliacaoRepository extends JpaRepository<TreinoRecon
             ORDER BY tr.occurredAt DESC
             """)
     List<TreinoReconciliacao> findByTreinoRealizadoId(
-            @Param("tenantId") UUID tenantId,
+            @Param("tenantId") String tenantId,
             @Param("treinoRealizadoId") Long treinoRealizadoId
     );
 
@@ -34,16 +33,9 @@ public interface TreinoReconciliacaoRepository extends JpaRepository<TreinoRecon
      * Encontra o evento de reconciliação mais recente para uma atividade realizada.
      * Útil para obter o estado atual de reconciliação.
      */
-    @Query(value = """
-            SELECT tr FROM TreinoReconciliacao tr
-            WHERE tr.tenantId = :tenantId
-              AND tr.treinoRealizado.id = :treinoRealizadoId
-            ORDER BY tr.occurredAt DESC
-            LIMIT 1
-            """, nativeQuery = false)
-    TreinoReconciliacao findLatestByTreinoRealizadoId(
-            @Param("tenantId") UUID tenantId,
-            @Param("treinoRealizadoId") Long treinoRealizadoId
+    TreinoReconciliacao findTop1ByTenantIdAndTreinoRealizadoIdOrderByOccurredAtDesc(
+            String tenantId,
+            Long treinoRealizadoId
     );
 
     /**
@@ -59,7 +51,7 @@ public interface TreinoReconciliacaoRepository extends JpaRepository<TreinoRecon
             ORDER BY tr.occurredAt DESC
             """)
     Page<TreinoReconciliacao> findByActorIdAndDateRange(
-            @Param("tenantId") UUID tenantId,
+            @Param("tenantId") String tenantId,
             @Param("actorId") String actorId,
             @Param("startTime") Instant startTime,
             @Param("endTime") Instant endTime,
@@ -79,7 +71,7 @@ public interface TreinoReconciliacaoRepository extends JpaRepository<TreinoRecon
             ORDER BY tr.occurredAt DESC
             """)
     List<TreinoReconciliacao> findByTreinoRealizadoIdAndDateRange(
-            @Param("tenantId") UUID tenantId,
+            @Param("tenantId") String tenantId,
             @Param("treinoRealizadoId") Long treinoRealizadoId,
             @Param("startTime") Instant startTime,
             @Param("endTime") Instant endTime
@@ -98,7 +90,7 @@ public interface TreinoReconciliacaoRepository extends JpaRepository<TreinoRecon
               AND tr.occurredAt < :endTime
             """)
     long countByActionTypeAndDateRange(
-            @Param("tenantId") UUID tenantId,
+            @Param("tenantId") String tenantId,
             @Param("actionType") String actionType,
             @Param("startTime") Instant startTime,
             @Param("endTime") Instant endTime

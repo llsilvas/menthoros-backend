@@ -67,6 +67,7 @@ public class DailyActivitySyncScheduler {
     /**
      * Executa sincronização diária de atividades Strava.
      * Cron: 2 da manhã, todo dia (horário UTC)
+     * Formato: segundo minuto hora dia-do-mês mês dia-da-semana
      *
      * Observação: Implementação base. Versão final requer:
      * - Integração com Strava API para buscar atividades
@@ -74,7 +75,7 @@ public class DailyActivitySyncScheduler {
      * - Transações e retry logic
      * - Observabilidade (métricas de sucesso/erro)
      */
-    @Scheduled(cron = "0 2 * * *", zone = "UTC")
+    @Scheduled(cron = "0 0 2 * * *", zone = "UTC")
     @Transactional
     public void executeDailySync() {
         long startTime = System.currentTimeMillis();
