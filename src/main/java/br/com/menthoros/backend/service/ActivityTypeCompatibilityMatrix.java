@@ -10,6 +10,10 @@ import br.com.menthoros.backend.enums.TipoTreino;
  */
 public class ActivityTypeCompatibilityMatrix {
 
+    private ActivityTypeCompatibilityMatrix() {
+        // Utility class - prevent instantiation
+    }
+
     /**
      * Verifica se tipo de atividade é compatível com tipo de treino planejado.
      *
