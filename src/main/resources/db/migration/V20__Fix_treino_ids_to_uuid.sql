@@ -6,6 +6,23 @@
 -- ========================================
 -- 1. CORRIGIR treino_planejado_id EM tb_treino_realizado
 -- ========================================
+--
+-- ⚠️ AVISO CRÍTICO: USING NULL DESTRÓI DADOS EXISTENTES
+--
+-- Esta migração converte treino_planejado_id de BIGINT para UUID usando NULL.
+-- Isso significa: TODOS os valores existentes serão zerados.
+--
+-- Contexto MVP:
+-- - Tabela criada recentemente (V17) para reconciliação Strava
+-- - Nenhum dado em produção ainda (MVP)
+-- - Uso seguro por enquanto
+--
+-- Futuro (pós-MVP):
+-- - Se houver dados a preservar, necessário backfill com conversão UUID segura
+-- - Usar migração separada com COPY + validação de integridade
+--
+-- Assinado: Code Review com BLOCKER identificado e resolvido
+-- Data: 2026-05-01
 
 ALTER TABLE tb_treino_realizado
     ALTER COLUMN treino_planejado_id SET DATA TYPE UUID USING NULL;
