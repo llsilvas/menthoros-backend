@@ -143,6 +143,12 @@ public class Atleta {
     @Column(name = "historico_lesoes", columnDefinition = "TEXT")
     private String historicoLesoes;
 
+    // ===== TIMEZONE (para reconciliação e agendamento) =====
+
+    @Builder.Default
+    @Column(name = "timezone", length = 50)
+    private String timezone = "America/Sao_Paulo";
+
     @Enumerated(EnumType.STRING)
     @Column(name = "ativo")
     private AtletaStatus ativo;

@@ -79,7 +79,6 @@ public class ManualReconciliationService {
                 beforeStatus,
                 ReconciliationStatus.VINCULADO_MANUAL,
                 beforePlannedId,
-                null,
                 treinoPlanejadoId,
                 "MANUAL_LINK",
                 "Vínculo manual executado pelo treinador",
@@ -119,7 +118,6 @@ public class ManualReconciliationService {
                 ReconciliationStatus.NAO_PLANEJADO,
                 beforePlannedId,
                 null,
-                null,
                 "MARKED_NOT_PLANNED",
                 "Marcado como atividade não planejada",
                 actorId,
@@ -158,7 +156,6 @@ public class ManualReconciliationService {
                 ReconciliationStatus.PENDENTE,
                 beforePlannedId,
                 null,
-                null,
                 "UNLINKED",
                 "Vínculo desfeito pelo treinador",
                 actorId,
@@ -194,8 +191,7 @@ public class ManualReconciliationService {
             ReconciliationActionType actionType,
             ReconciliationStatus beforeStatus,
             ReconciliationStatus afterStatus,
-            UUID beforePlannedId,
-            UUID afterPlannedId,
+            UUID beforePlannedIdUuid,
             UUID afterPlannedIdUuid,
             String reasonCode,
             String reasonText,
@@ -207,8 +203,8 @@ public class ManualReconciliationService {
         event.setActionType(actionType);
         event.setBeforeStatus(beforeStatus);
         event.setAfterStatus(afterStatus);
-        event.setBeforePlannedIdUuid(beforePlannedId);
-        event.setAfterPlannedIdUuid(afterPlannedId != null ? afterPlannedId : afterPlannedIdUuid);
+        event.setBeforePlannedIdUuid(beforePlannedIdUuid);
+        event.setAfterPlannedIdUuid(afterPlannedIdUuid);
         event.setReasonCode(reasonCode);
         event.setReasonText(reasonText);
         event.setActorId(actorId);
