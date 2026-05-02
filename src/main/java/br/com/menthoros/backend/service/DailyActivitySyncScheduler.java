@@ -36,6 +36,15 @@ import java.util.UUID;
  * 4. Marca ambíguas/orfãs para revisão do treinador
  *
  * Cron: "0 2 * * *" = 2:00 AM UTC diariamente
+ *
+ * Multi-Tenancy:
+ * - Este scheduler é um job de sistema sem contexto de requisição HTTP
+ * - Processa todos os tenants (assessorias) simultaneamente
+ * - Isolamento garantido por:
+ *   1. Queries filtram por atletaId (implicitamente por tenantId via athlete->assessoria)
+ *   2. Validação explícita: verifica tenantId de cada atividade/candidato antes de processar
+ *   3. Auditoria: cada evento registra explicitamente o tenantId
+ * - Se detectado tenant mismatch (erro crítico), atividade é pulada com log de segurança
  */
 @Service
 public class DailyActivitySyncScheduler {
@@ -119,14 +128,24 @@ public class DailyActivitySyncScheduler {
      * Processa atividades de um atleta específico.
      * Busca candidatos TreinoPlanejado na janela de ±1 dia, calcula scores
      * e aplica decisão automática ou marca para revisão manual.
+     *
+     * Multi-tenancy: Todas as queries filtram por atletaId (implicitamente por tenantId
+     * através da relação athlete->assessoria). Validação adicional garante integridade.
      */
     @Transactional
     private SyncResult syncAtletaActivities(Atleta atleta) {
         SyncResult result = new SyncResult();
 
+        // Garantir que atleta tem tenantId válido (multi-tenant isolation)
+        if (atleta.getAssessoria() == null || atleta.getAssessoria().getId() == null) {
+            logger.warn("Skipping athlete {} - no valid tenant association", atleta.getId());
+            return result;
+        }
+
         LocalDate yesterday = LocalDate.now().minusDays(1);
         LocalDate windowStart = yesterday.minusDays(1);
         LocalDate windowEnd = yesterday.plusDays(1);
+        UUID tenantId = atleta.getAssessoria().getId();
 
         // Busca atividades pendentes de reconciliação do dia anterior
         List<TreinoRealizado> pendingActivities = treinoRealizadoRepository
@@ -136,10 +155,19 @@ public class DailyActivitySyncScheduler {
                         ReconciliationStatus.PENDENTE
                 );
 
-        logger.debug("Found {} pending activities for atleta {} on {}",
-                pendingActivities.size(), atleta.getId(), yesterday);
+        logger.debug("Found {} pending activities for atleta {} (tenant {}) on {}",
+                pendingActivities.size(), atleta.getId(), tenantId, yesterday);
 
         for (TreinoRealizado activity : pendingActivities) {
+            // Multi-tenant validation: verify activity belongs to correct tenant
+            if (!activity.getAtleta().getAssessoria().getId().equals(tenantId)) {
+                logger.error(
+                    "SECURITY: Activity {} belongs to different tenant than expected. Expected: {}, Found: {}",
+                    activity.getId(), tenantId, activity.getAtleta().getAssessoria().getId()
+                );
+                continue; // Skip this activity due to tenant mismatch
+            }
+
             result.processedCount++;
 
             // Busca candidatos TreinoPlanejado na janela de tempo (D-1 a D+1)
@@ -150,11 +178,26 @@ public class DailyActivitySyncScheduler {
                             windowEnd
                     );
 
-            logger.debug("Found {} planned workout candidates for activity {} in window [{}, {}]",
-                    candidatos.size(), activity.getId(), windowStart, windowEnd);
+            logger.debug("Found {} planned workout candidates for activity {} (tenant {}) in window [{}, {}]",
+                    candidatos.size(), activity.getId(), tenantId, windowStart, windowEnd);
 
             // Aplica pré-filtro: compatibilidade de tipo de treino
             List<TreinoPlanejado> compatibleCandidatos = filterCompatibleCandidatos(activity, candidatos);
+
+            // Multi-tenant validation: verify all candidates belong to same tenant
+            for (TreinoPlanejado candidato : compatibleCandidatos) {
+                if (!candidato.getAtleta().getAssessoria().getId().equals(tenantId)) {
+                    logger.error(
+                        "SECURITY: Candidate {} belongs to different tenant. Expected: {}, Found: {}",
+                        candidato.getId(), tenantId, candidato.getAtleta().getAssessoria().getId()
+                    );
+                    // Don't process this candidate - it violates multi-tenant isolation
+                    compatibleCandidatos = compatibleCandidatos.stream()
+                            .filter(c -> c.getAtleta().getAssessoria().getId().equals(tenantId))
+                            .toList();
+                    break;
+                }
+            }
 
             if (compatibleCandidatos.size() < candidatos.size()) {
                 logger.debug("Filtered {} -> {} compatible candidates after type check",
