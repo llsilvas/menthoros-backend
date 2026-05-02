@@ -153,10 +153,18 @@ public class DailyActivitySyncScheduler {
             logger.debug("Found {} planned workout candidates for activity {} in window [{}, {}]",
                     candidatos.size(), activity.getId(), windowStart, windowEnd);
 
+            // Aplica pré-filtro: compatibilidade de tipo de treino
+            List<TreinoPlanejado> compatibleCandidatos = filterCompatibleCandidatos(activity, candidatos);
+
+            if (compatibleCandidatos.size() < candidatos.size()) {
+                logger.debug("Filtered {} -> {} compatible candidates after type check",
+                        candidatos.size(), compatibleCandidatos.size());
+            }
+
             // Calcula scores para cada candidato
             List<MatchingCandidate> scoredCandidates = new ArrayList<>();
             int rank = 1;
-            for (TreinoPlanejado candidato : candidatos) {
+            for (TreinoPlanejado candidato : compatibleCandidatos) {
                 MatchingScoreResult scoreResult = matchingScoreCalculator.calculate(activity, candidato);
                 MatchingCandidate candidate = new MatchingCandidate(candidato, scoreResult, rank++);
                 scoredCandidates.add(candidate);
@@ -223,6 +231,37 @@ public class DailyActivitySyncScheduler {
         auditEvent.setOccurredAt(Instant.now());
 
         treinoReconciliacaoRepository.save(auditEvent);
+    }
+
+    /**
+     * Filtra candidatos por compatibilidade de tipo de treino (pré-filtro obrigatório).
+     * Regra: tipo de atividade Strava deve ser compatível com tipo de treino planejado.
+     * Por enquanto, todos os tipos de corrida são compatíveis entre si.
+     * Pode ser refinado com matriz de compatibilidade mais granular.
+     */
+    private List<TreinoPlanejado> filterCompatibleCandidatos(
+            TreinoRealizado activity,
+            List<TreinoPlanejado> candidates) {
+        if (candidates == null || candidates.isEmpty()) {
+            return candidates;
+        }
+
+        // Se a atividade não tem tipo definido, aceita todos os candidatos
+        if (activity.getTipoTreino() == null) {
+            return candidates;
+        }
+
+        return candidates.stream()
+                .filter(planned -> {
+                    // Se o planejado não tem tipo, é compatível
+                    if (planned.getTipoTreino() == null) {
+                        return true;
+                    }
+                    // Por enquanto, todos os tipos de treino são compatíveis
+                    // (podem ser refinados com matriz de compatibilidade futura)
+                    return true;
+                })
+                .toList();
     }
 
     /**
