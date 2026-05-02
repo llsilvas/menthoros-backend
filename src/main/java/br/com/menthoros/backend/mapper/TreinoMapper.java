@@ -110,6 +110,7 @@ public interface TreinoMapper {
     @Mapping(target = "atleta.id", source = "atletaId")
     @Mapping(target = "planoSemanal", ignore = true)
     @Mapping(target = "treinoPlanejado.id", source = "treinoPlanejadoId")
+    @Mapping(target = "treinoPlanejadoId", ignore = true)
     @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "stringToDuration")
     @Mapping(target = "paceMedia", source = "ritmoMedio", qualifiedByName = "stringToDuration")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "doubleToBigDecimal")
