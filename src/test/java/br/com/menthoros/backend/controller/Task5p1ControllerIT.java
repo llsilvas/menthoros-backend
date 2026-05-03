@@ -207,16 +207,15 @@ class Task5p1ControllerIT {
         }
 
         @Test
-        @DisplayName("Missing X-Tenant-ID header returns error (500 from GlobalExceptionHandler)")
+        @DisplayName("Missing X-Tenant-ID header returns 400 Bad Request")
         @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldHandleWhenTenantHeaderMissing() throws Exception {
-            // Missing X-Tenant-ID header triggers MissingRequestHeaderException, caught by GlobalExceptionHandler → 500
-            // TODO: Consider hardening to return 400 Bad Request for invalid/missing required headers
+            // Missing X-Tenant-ID header triggers MissingRequestHeaderException → GlobalExceptionHandler returns 400
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
                     .param("page", "0")
                     .param("size", "20")
                     .contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().is5xxServerError());
+                    .andExpect(status().isBadRequest());
         }
 
         @Test
@@ -368,13 +367,12 @@ class Task5p1ControllerIT {
     class SecurityAndMultiTenancy {
 
         @Test
-        @DisplayName("X-Tenant-ID header is required (missing header returns 500)")
+        @DisplayName("X-Tenant-ID header is required (missing header returns 400)")
         @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldEnforceTenantHeaderRequirement() throws Exception {
-            // Without X-Tenant-ID header, MissingRequestHeaderException caught by GlobalExceptionHandler → 500
-            // TODO: Consider hardening to return 400 Bad Request for invalid/missing required headers
+            // Without X-Tenant-ID header, MissingRequestHeaderException caught by GlobalExceptionHandler → 400 Bad Request
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId))
-                    .andExpect(status().is5xxServerError());
+                    .andExpect(status().isBadRequest());
         }
 
         @Test
