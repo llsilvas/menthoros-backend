@@ -14,10 +14,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
-import br.com.menthoros.backend.TestcontainersConfiguration;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -33,9 +31,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * added in V23 migration to prevent duplicate activity ingestion.
  */
 @SpringBootTest
-@ActiveProfiles("test")
+@ActiveProfiles("integration")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import(TestcontainersConfiguration.class)
 class DeduplicationConstraintTest {
 
     @Autowired

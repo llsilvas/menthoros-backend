@@ -35,9 +35,9 @@ public class AtletaServiceImpl implements AtletaService {
     private final TsbService tsbService;
 
     private static final String HAS_TENANT =
-            "T(com.menthoros.multitenancy.TenantContext).hasTenant()";
+            "T(br.com.menthoros.backend.multitenancy.TenantContext).hasTenant()";
     private static final String TENANT_KEY =
-            "T(com.menthoros.multitenancy.TenantContext).getTenantId()";
+            "T(br.com.menthoros.backend.multitenancy.TenantContext).getTenantId()";
 
     // TODO(tenant-isolation): substituir resolveTenantId() por TenantContext.getRequiredTenantId()
     //   quando autenticação estiver habilitada no frontend.
