@@ -207,11 +207,11 @@ class Task5p1ControllerIT {
         }
 
         @Test
-        @DisplayName("Missing X-Tenant-ID header returns error (checked by GlobalExceptionHandler)")
+        @DisplayName("Missing X-Tenant-ID header returns error (500 from GlobalExceptionHandler)")
         @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldHandleWhenTenantHeaderMissing() throws Exception {
-            // Note: Missing X-Tenant-ID header will trigger an error (500 from GlobalExceptionHandler)
-            // This verifies the header is enforced by the controller contract
+            // Missing X-Tenant-ID header triggers MissingRequestHeaderException, caught by GlobalExceptionHandler → 500
+            // TODO: Consider hardening to return 400 Bad Request for invalid/missing required headers
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
                     .param("page", "0")
                     .param("size", "20")
@@ -368,11 +368,11 @@ class Task5p1ControllerIT {
     class SecurityAndMultiTenancy {
 
         @Test
-        @DisplayName("X-Tenant-ID header is required (missing header causes error)")
+        @DisplayName("X-Tenant-ID header is required (missing header returns 500)")
         @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldEnforceTenantHeaderRequirement() throws Exception {
-            // Without X-Tenant-ID header, requests will error (global exception handler converts to 500)
-            // This validates the header is actually required in the contract
+            // Without X-Tenant-ID header, MissingRequestHeaderException caught by GlobalExceptionHandler → 500
+            // TODO: Consider hardening to return 400 Bad Request for invalid/missing required headers
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId))
                     .andExpect(status().is5xxServerError());
         }
