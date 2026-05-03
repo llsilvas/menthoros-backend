@@ -129,7 +129,8 @@ public class ManualReconciliationController {
 
     /**
      * GET /api/v1/reconciliation/atletas/{atletaId}/pendentes
-     * Lista atividades pendentes de reconciliação por atleta com paginação.
+     * Lista atividades pendentes de reconciliação (AMBIGUO/NAO_PLANEJADO) por atleta com paginação.
+     * Query param 'statuses' é opcional (default: AMBIGUO,NAO_PLANEJADO) e restrito a valores pendentes.
      */
     @GetMapping("/atletas/{atletaId}/pendentes")
     public ResponseEntity<Page<TreinoRealizadoPendenteOutputDto>> listarPendentes(
@@ -141,11 +142,23 @@ public class ManualReconciliationController {
             @RequestParam(defaultValue = "20") int size,
             @RequestHeader("X-Tenant-ID") UUID tenantId) {
 
-        List<ReconciliationStatus> statusList = statuses != null
-                ? statuses.stream()
-                        .map(ReconciliationStatus::valueOf)
-                        .collect(Collectors.toList())
-                : null;
+        List<ReconciliationStatus> statusList = null;
+        if (statuses != null && !statuses.isEmpty()) {
+            statusList = statuses.stream()
+                    .map(s -> {
+                        try {
+                            return ReconciliationStatus.valueOf(s);
+                        } catch (IllegalArgumentException e) {
+                            throw new IllegalArgumentException("Status inválido: " + s);
+                        }
+                    })
+                    .peek(status -> {
+                        if (status != ReconciliationStatus.AMBIGUO && status != ReconciliationStatus.NAO_PLANEJADO) {
+                            throw new IllegalArgumentException("Status não permitido para pendentes: " + status + ". Apenas AMBIGUO e NAO_PLANEJADO são permitidos.");
+                        }
+                    })
+                    .collect(Collectors.toList());
+        }
 
         Pageable pageable = PageRequest.of(page, size, Sort.by("dataTreino").descending());
         Page<TreinoRealizadoPendenteOutputDto> dtos = pendentesService.listarPendentes(

@@ -56,8 +56,8 @@ public class ReconciliacaoPendentesService {
         Page<TreinoRealizado> page = treinoRealizadoRepository.findPendentesParaRevisao(
                 tenantId, atletaId, statuses, dataInicio, dataFim, pageable);
 
-        Atleta atleta = atletaRepository.findById(atletaId)
-                .orElseThrow(() -> new IllegalArgumentException("Atleta não encontrado: " + atletaId));
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                .orElseThrow(() -> new IllegalArgumentException("Atleta não encontrado ou não pertence a este tenant"));
 
         List<TreinoRealizadoPendenteOutputDto> dtos = page.getContent().stream()
                 .map(tr -> toDto(tr, atleta.getNome()))
