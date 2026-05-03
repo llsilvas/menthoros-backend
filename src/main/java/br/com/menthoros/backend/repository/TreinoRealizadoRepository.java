@@ -15,6 +15,8 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 public interface TreinoRealizadoRepository extends PagingAndSortingRepository<TreinoRealizado, UUID> {
 
@@ -74,4 +76,21 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
             @Param("atletaId") UUID atletaId,
             @Param("dataTreino") LocalDate dataTreino,
             @Param("status") ReconciliationStatus status);
+
+    @Query("""
+        select tr from TreinoRealizado tr
+        where tr.tenantId = :tenantId
+          and tr.atleta.id = :atletaId
+          and tr.reconciliationStatus in :statuses
+          and (:dataInicio is null or tr.dataTreino >= :dataInicio)
+          and (:dataFim is null or tr.dataTreino <= :dataFim)
+        order by tr.dataTreino desc
+        """)
+    Page<TreinoRealizado> findPendentesParaRevisao(
+            @Param("tenantId") UUID tenantId,
+            @Param("atletaId") UUID atletaId,
+            @Param("statuses") List<ReconciliationStatus> statuses,
+            @Param("dataInicio") LocalDate dataInicio,
+            @Param("dataFim") LocalDate dataFim,
+            Pageable pageable);
 }
