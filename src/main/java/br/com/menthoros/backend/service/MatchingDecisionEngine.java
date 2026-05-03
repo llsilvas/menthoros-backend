@@ -53,7 +53,7 @@ public class MatchingDecisionEngine {
         List<MatchingCandidate> sorted = new ArrayList<>(candidates);
         Collections.sort(sorted);
 
-        MatchingCandidate top = sorted.get(0);
+        MatchingCandidate top = sorted.getFirst();
         BigDecimal topScore = top.getOverallScore();
 
         if (topScore.compareTo(AMBIGUOUS_THRESHOLD) < 0) {

@@ -82,8 +82,8 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
         where tr.tenantId = :tenantId
           and tr.atleta.id = :atletaId
           and tr.reconciliationStatus in :statuses
-          and (:dataInicio is null or tr.dataTreino >= :dataInicio)
-          and (:dataFim is null or tr.dataTreino <= :dataFim)
+          and tr.dataTreino >= coalesce(cast(:dataInicio as java.time.LocalDate), tr.dataTreino)
+          and tr.dataTreino <= coalesce(cast(:dataFim as java.time.LocalDate), tr.dataTreino)
         order by tr.dataTreino desc
         """)
     Page<TreinoRealizado> findPendentesParaRevisao(
@@ -93,4 +93,15 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
             @Param("dataInicio") LocalDate dataInicio,
             @Param("dataFim") LocalDate dataFim,
             Pageable pageable);
+
+    /**
+     * Busca uma TreinoRealizado com eager fetch de etapasRealizadas.
+     * Use quando precisar serializar a entidade (evita LazyInitializationException).
+     */
+    @Query("""
+        select distinct tr from TreinoRealizado tr
+        left join fetch tr.etapasRealizadas
+        where tr.id = :id
+        """)
+    Optional<TreinoRealizado> findByIdWithEtapas(@Param("id") UUID id);
 }

@@ -5,6 +5,8 @@ import br.com.menthoros.backend.entity.TreinoReconciliacao;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.ReconciliationActionType;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
+import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.TreinoReconciliacaoRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
@@ -66,6 +68,8 @@ public class ManualReconciliationService {
         }
 
         // Vincular via relacionamento JPA (não via campo read-only)
+        planejado.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
+        planejado.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
         realizado.setTreinoPlanejado(planejado);
         realizado.setReconciliationStatus(ReconciliationStatus.VINCULADO_MANUAL);
         realizado.setReconciledAt(Instant.now());
@@ -86,7 +90,7 @@ public class ManualReconciliationService {
                 tenantId
         );
 
-        return saved;
+        return findByIdWithEtapas(saved.getId(), tenantId);
     }
 
     /**
@@ -124,7 +128,7 @@ public class ManualReconciliationService {
                 tenantId
         );
 
-        return saved;
+        return findByIdWithEtapas(saved.getId(), tenantId);
     }
 
     /**
@@ -162,7 +166,7 @@ public class ManualReconciliationService {
                 tenantId
         );
 
-        return saved;
+        return findByIdWithEtapas(saved.getId(), tenantId);
     }
 
     /**
@@ -177,6 +181,17 @@ public class ManualReconciliationService {
 
     private TreinoRealizado findAndValidate(UUID id, UUID tenantId) {
         TreinoRealizado realizado = treinoRealizadoRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("TreinoRealizado não encontrado: " + id));
+
+        if (!realizado.getTenantId().equals(tenantId)) {
+            throw new IllegalArgumentException("Tenant mismatch para TreinoRealizado");
+        }
+
+        return realizado;
+    }
+
+    private TreinoRealizado findByIdWithEtapas(UUID id, UUID tenantId) {
+        TreinoRealizado realizado = treinoRealizadoRepository.findByIdWithEtapas(id)
                 .orElseThrow(() -> new IllegalArgumentException("TreinoRealizado não encontrado: " + id));
 
         if (!realizado.getTenantId().equals(tenantId)) {

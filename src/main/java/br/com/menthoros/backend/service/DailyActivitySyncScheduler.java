@@ -9,6 +9,8 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.entity.TreinoReconciliacao;
 import br.com.menthoros.backend.enums.ReconciliationActionType;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
+import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
@@ -241,6 +243,8 @@ public class DailyActivitySyncScheduler {
         if (decision.getStatus() == ReconciliationStatus.VINCULADO_AUTOMATICO) {
             TreinoPlanejado planned = decision.getSelectedPlanned();
             if (planned != null) {
+                planned.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
+                planned.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
                 activity.setTreinoPlanejado(planned);
             }
             result.autoMatchedCount++;
