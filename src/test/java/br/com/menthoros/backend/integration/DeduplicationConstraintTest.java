@@ -3,19 +3,25 @@ package br.com.menthoros.backend.integration;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.AtletaStatus;
+import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.PlanoAssessoria;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
+import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import jakarta.persistence.EntityManager;
+import org.hibernate.exception.ConstraintViolationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -54,14 +60,17 @@ class DeduplicationConstraintTest {
     void setup() {
         // Create tenant (assessoria)
         assessoria = new Assessoria();
-        assessoria.setId(UUID.randomUUID());
         assessoria.setNome("Test Assessoria");
+        assessoria.setDominio("test-assessoria-" + UUID.randomUUID());
+        assessoria.setPlano(PlanoAssessoria.BASIC);
         assessoria = assessoriaRepository.save(assessoria);
 
         // Create athlete
         atleta = new Atleta();
-        atleta.setId(UUID.randomUUID());
         atleta.setNome("Test Athlete");
+        atleta.setObjetivo("Objetivo de teste");
+        atleta.setNivelExperiencia(NivelExperiencia.INICIANTE);
+        atleta.setAtivo(AtletaStatus.ATIVO);
         atleta.setAssessoria(assessoria);
         atleta = atletaRepository.save(atleta);
     }
@@ -77,6 +86,7 @@ class DeduplicationConstraintTest {
     }
 
     @Test
+    @Transactional
     @DisplayName("1.2.2: Should reject duplicate (externalId, atletaId) pair")
     void shouldRejectDuplicateExternalIdAtletaIdPair() {
         String externalId = "strava_99999";
@@ -90,7 +100,7 @@ class DeduplicationConstraintTest {
 
         // Should raise UNIQUE constraint violation on flush
         assertThrows(
-            DataIntegrityViolationException.class,
+            ConstraintViolationException.class,
             () -> {
                 treinoRealizadoRepository.save(activity2);
                 // Force flush to execute constraint check
@@ -107,8 +117,10 @@ class DeduplicationConstraintTest {
 
         // Create second athlete in same tenant
         Atleta atleta2 = new Atleta();
-        atleta2.setId(UUID.randomUUID());
         atleta2.setNome("Test Athlete 2");
+        atleta2.setObjetivo("Objetivo de teste 2");
+        atleta2.setNivelExperiencia(NivelExperiencia.INICIANTE);
+        atleta2.setAtivo(AtletaStatus.ATIVO);
         atleta2.setAssessoria(assessoria);
         atleta2 = atletaRepository.save(atleta2);
 
@@ -130,18 +142,20 @@ class DeduplicationConstraintTest {
     void shouldAllowNullExternalIdMultipleTimes() {
         // Create multiple activities without externalId - should not violate constraint
         TreinoRealizado activity1 = new TreinoRealizado();
-        activity1.setId(UUID.randomUUID());
         activity1.setAtleta(atleta);
         activity1.setDataTreino(LocalDate.now());
+        activity1.setDiaSemana(DiaSemana.SEGUNDA);
+        activity1.setTipoTreino(TipoTreino.FACIL);
         activity1.setDuracaoMin(Duration.ofMinutes(60));
         activity1.setDistanciaKm(new BigDecimal("10.00"));
         activity1.setExternalId(null); // NULL externalId
         treinoRealizadoRepository.save(activity1);
 
         TreinoRealizado activity2 = new TreinoRealizado();
-        activity2.setId(UUID.randomUUID());
         activity2.setAtleta(atleta);
         activity2.setDataTreino(LocalDate.now().plusDays(1));
+        activity2.setDiaSemana(DiaSemana.TERCA);
+        activity2.setTipoTreino(TipoTreino.FACIL);
         activity2.setDuracaoMin(Duration.ofMinutes(45));
         activity2.setDistanciaKm(new BigDecimal("8.00"));
         activity2.setExternalId(null); // NULL externalId
@@ -152,6 +166,7 @@ class DeduplicationConstraintTest {
     }
 
     @Test
+    @Transactional
     @DisplayName("1.2.5: Should prevent duplicate via findByExternalIdAndAtletaId query")
     void shouldPreventDuplicateViaQuery() {
         String externalId = "strava_detect_dup";
@@ -170,7 +185,7 @@ class DeduplicationConstraintTest {
         // Try to save duplicate (application should prevent via upsert, DB constraint enforces)
         TreinoRealizado activity2 = createActivity(externalId, atleta);
         assertThrows(
-            DataIntegrityViolationException.class,
+            ConstraintViolationException.class,
             () -> {
                 treinoRealizadoRepository.save(activity2);
                 entityManager.flush();
@@ -181,10 +196,11 @@ class DeduplicationConstraintTest {
 
     private TreinoRealizado createActivity(String externalId, Atleta atleta) {
         TreinoRealizado activity = new TreinoRealizado();
-        activity.setId(UUID.randomUUID());
         activity.setAtleta(atleta);
         activity.setExternalId(externalId);
         activity.setDataTreino(LocalDate.now());
+        activity.setDiaSemana(DiaSemana.SEGUNDA);
+        activity.setTipoTreino(TipoTreino.FACIL);
         activity.setDuracaoMin(Duration.ofMinutes(60));
         activity.setDistanciaKm(new BigDecimal("10.00"));
         activity.setReconciliationStatus(ReconciliationStatus.PENDENTE);

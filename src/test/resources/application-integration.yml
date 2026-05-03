@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://192.168.15.24:5432/menthoros_test
-    username: postgres
-    password: postgres
+    url: jdbc:postgresql://${POSTGRES_DB:localhost}:${DB_PORT:5432}/${DB_NAME:menthoros_test}
+    username: ${POSTGRES_USER:menthoros}
+    password: ${POSTGRES_PASSWORD:menthoros123}
   jpa:
     hibernate:
       ddl-auto: validate

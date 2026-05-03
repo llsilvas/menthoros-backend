@@ -3,7 +3,12 @@ package br.com.menthoros.backend.integration;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.AtletaStatus;
+import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.PlanoAssessoria;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
+import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
@@ -52,32 +57,40 @@ class MultiTenantIsolationTest {
     void setup() {
         // Create two separate tenants (assessorias)
         tenant1 = new Assessoria();
-        tenant1.setId(UUID.randomUUID());
         tenant1.setNome("Assessoria Tenant 1");
+        tenant1.setDominio("tenant1-" + UUID.randomUUID());
+        tenant1.setPlano(PlanoAssessoria.BASIC);
         tenant1 = assessoriaRepository.save(tenant1);
 
         tenant2 = new Assessoria();
-        tenant2.setId(UUID.randomUUID());
         tenant2.setNome("Assessoria Tenant 2");
+        tenant2.setDominio("tenant2-" + UUID.randomUUID());
+        tenant2.setPlano(PlanoAssessoria.BASIC);
         tenant2 = assessoriaRepository.save(tenant2);
 
         // Create athletes in tenant 1
         athlete1_tenant1 = new Atleta();
-        athlete1_tenant1.setId(UUID.randomUUID());
         athlete1_tenant1.setNome("Athlete 1 - Tenant 1");
+        athlete1_tenant1.setObjetivo("Objetivo athlete1 tenant1");
+        athlete1_tenant1.setNivelExperiencia(NivelExperiencia.INICIANTE);
+        athlete1_tenant1.setAtivo(AtletaStatus.ATIVO);
         athlete1_tenant1.setAssessoria(tenant1);
         athlete1_tenant1 = atletaRepository.save(athlete1_tenant1);
 
         athlete2_tenant1 = new Atleta();
-        athlete2_tenant1.setId(UUID.randomUUID());
         athlete2_tenant1.setNome("Athlete 2 - Tenant 1");
+        athlete2_tenant1.setObjetivo("Objetivo athlete2 tenant1");
+        athlete2_tenant1.setNivelExperiencia(NivelExperiencia.INICIANTE);
+        athlete2_tenant1.setAtivo(AtletaStatus.ATIVO);
         athlete2_tenant1.setAssessoria(tenant1);
         athlete2_tenant1 = atletaRepository.save(athlete2_tenant1);
 
         // Create athlete in tenant 2
         athlete1_tenant2 = new Atleta();
-        athlete1_tenant2.setId(UUID.randomUUID());
         athlete1_tenant2.setNome("Athlete 1 - Tenant 2");
+        athlete1_tenant2.setObjetivo("Objetivo athlete1 tenant2");
+        athlete1_tenant2.setNivelExperiencia(NivelExperiencia.INICIANTE);
+        athlete1_tenant2.setAtivo(AtletaStatus.ATIVO);
         athlete1_tenant2.setAssessoria(tenant2);
         athlete1_tenant2 = atletaRepository.save(athlete1_tenant2);
     }
@@ -208,10 +221,11 @@ class MultiTenantIsolationTest {
 
     private TreinoRealizado createActivity(String externalId, Atleta atleta, LocalDate data) {
         TreinoRealizado activity = new TreinoRealizado();
-        activity.setId(UUID.randomUUID());
         activity.setAtleta(atleta);
         activity.setExternalId(externalId);
         activity.setDataTreino(data);
+        activity.setDiaSemana(DiaSemana.SEGUNDA);
+        activity.setTipoTreino(TipoTreino.FACIL);
         activity.setDuracaoMin(Duration.ofMinutes(60));
         activity.setDistanciaKm(new BigDecimal("10.00"));
         activity.setReconciliationStatus(ReconciliationStatus.PENDENTE);
