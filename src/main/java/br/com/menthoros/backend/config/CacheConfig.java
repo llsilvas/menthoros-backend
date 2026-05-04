@@ -1,7 +1,8 @@
 package br.com.menthoros.backend.config;
 
+import br.com.menthoros.backend.config.core.CacheProperties;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
@@ -9,28 +10,24 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
-import java.time.Duration;
 import java.util.List;
 
 @Configuration
 @EnableCaching
+@RequiredArgsConstructor
 public class CacheConfig {
 
-    @Value("${app.cache.default-ttl:PT30M}")
-    private Duration defaultTtl;
-
-    @Value("${app.cache.maximum-size:1000}")
-    private long maximumSize;
+    private final CacheProperties cacheProperties;
 
     @Bean
     @Primary
     public CacheManager cacheManager() {
         CaffeineCacheManager cacheManager = new CaffeineCacheManager();
-        
+
         // Configuração padrão para todos os caches
         cacheManager.setCaffeine(Caffeine.newBuilder()
-                .maximumSize(maximumSize)
-                .expireAfterWrite(defaultTtl)
+                .maximumSize(cacheProperties.getMaximumSize())
+                .expireAfterWrite(cacheProperties.getDefaultTtl())
                 .recordStats());
 
         // Configurar caches específicos
@@ -45,8 +42,4 @@ public class CacheConfig {
 
         return cacheManager;
     }
-
-
-
-
 }
