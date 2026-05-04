@@ -107,6 +107,16 @@ springdoc:
 app:
   frontend:
     url: ${FRONTEND_URL:http://localhost:5174}
+
+  # ----------------------------------------
+  # OPENAPI DOCUMENTATION CONFIGURATION
+  # ----------------------------------------
+  openapi:
+    title: Menthoros API
+    description: API para gerenciar atletas, treinos e planejamento
+    contact-name: Menthoros Team
+    contact-email: contact@menthoros.com
+    environment: ${SPRING_PROFILES_ACTIVE:dev}
   # ----------------------------------------
   # CACHE CONFIGURATION
   # ----------------------------------------
