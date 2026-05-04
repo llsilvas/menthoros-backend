@@ -102,7 +102,7 @@ public class AtletaController {
         return ResponseEntity.ok(atleta);
     }
     
-    @GetMapping("/{id}/recalcular-metricas")
+    @PostMapping("/{id}/recalcular-metricas")
     @Operation(summary = "Recalcular métricas do atleta", description = "Recalcula as métricas de um atleta específico")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "204", description = "Métricas recalculadas com sucesso"),
