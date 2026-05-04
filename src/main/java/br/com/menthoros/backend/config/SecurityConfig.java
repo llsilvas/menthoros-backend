@@ -33,9 +33,10 @@ public class SecurityConfig {
                                 "/api/public/**",
                                 "/swagger-ui/**",
                                 "/api-docs/**",
+                                "/api-docs.yaml",
                                 "/actuator/health",
-                                "/api/strava/webhook",
-                                "/api/strava/callback"
+                                "/api/v1/strava/webhook",
+                                "/api/v1/strava/callback"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
