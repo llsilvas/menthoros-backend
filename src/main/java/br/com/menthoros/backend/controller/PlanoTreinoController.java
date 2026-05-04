@@ -46,24 +46,6 @@ public class PlanoTreinoController {
         return ResponseEntity.ok(planoSemanalOutputDto);
     }
 
-    @Operation(summary = "Gerar plano de treino aprimorado", description = "Gera um plano de treino semanal aprimorado usando IA avançada")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Plano aprimorado gerado com sucesso",
-                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = PlanoSemanalOutputDto.class))),
-            @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
-                    content = @Content(mediaType = "application/json")),
-            @ApiResponse(responseCode = "500", description = "Erro ao gerar plano",
-                    content = @Content(mediaType = "application/json"))
-    })
-    @PostMapping("/atletas/{atletaId}/gerar-enhanced")
-    public ResponseEntity<PlanoSemanalOutputDto> gerarPlanoTreinoEnhanced(
-            @Parameter(description = "ID do atleta para o qual gerar o plano aprimorado") @PathVariable UUID atletaId, ModoGeracaoPlano modoGeracaoPlano) {
-        PlanoSemanal planoSemanal = planoService.gerarPlanoTreino(atletaId, modoGeracaoPlano);
-        PlanoSemanalOutputDto planoSemanalOutputDto = planoSemanalMapper.toOutputDto(planoSemanal);
-
-        return ResponseEntity.ok(planoSemanalOutputDto);
-    }
-
     @Operation(summary = "Deletar plano semanal", description = "Remove um plano semanal do sistema")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Plano deletado com sucesso"),
