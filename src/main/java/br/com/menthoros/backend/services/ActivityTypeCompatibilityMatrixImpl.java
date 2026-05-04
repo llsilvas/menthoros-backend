@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.enums.TipoTreino;
+import org.springframework.stereotype.Service;
 import java.util.EnumSet;
 
 /**
@@ -10,6 +11,7 @@ import java.util.EnumSet;
  * MVP: Todos os TipoTreino (10 tipos) são modalidade corrida → todos compatíveis entre si.
  * Futuro: Quando natação/ciclismo/etc forem adicionados ao enum, expandir TIPOS_CORRIDA.
  */
+@Service
 public class ActivityTypeCompatibilityMatrixImpl implements ActivityTypeCompatibilityMatrix {
 
     // MVP: todos os 10 TipoTreino (REGENERATIVO, INTERVALADO, etc) são corrida

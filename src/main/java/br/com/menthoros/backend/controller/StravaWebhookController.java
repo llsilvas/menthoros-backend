@@ -18,7 +18,7 @@ import java.util.Map;
 @Slf4j
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/strava/webhook")
+@RequestMapping("/api/v1/strava/webhook")
 @Tag(name = "Strava Webhook", description = "Recebimento de eventos do webhook do Strava")
 public class StravaWebhookController {
 

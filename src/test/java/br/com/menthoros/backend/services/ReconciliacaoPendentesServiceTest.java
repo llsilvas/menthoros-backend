@@ -12,6 +12,7 @@ import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.impl.ReconciliacaoPendentesServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -56,7 +57,7 @@ class ReconciliacaoPendentesServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ReconciliacaoPendentesService(
+        service = new ReconciliacaoPendentesServiceImpl(
                 treinoRealizadoRepository,
                 treinoPlanejadoRepository,
                 atletaRepository,

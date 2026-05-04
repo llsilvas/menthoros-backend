@@ -22,7 +22,7 @@ import java.util.UUID;
 @Slf4j
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/api/strava")
+@RequestMapping("/api/v1/strava")
 @Tag(name = "Strava OAuth", description = "Fluxo OAuth2 de conexão com Strava")
 public class StravaAuthController {
 

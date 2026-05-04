@@ -21,7 +21,7 @@ import java.util.UUID;
 @Tag(name = "Planos de Treino", description = "Operações relacionadas ao gerenciamento de planos de treino")
 @RequiredArgsConstructor
 @RestController
-@RequestMapping("/planos")
+@RequestMapping("/api/v1/planos")
 public class PlanoTreinoController {
 
     private final PlanoService planoService;

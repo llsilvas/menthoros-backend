@@ -8,6 +8,7 @@ import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.impl.StravaWebhookServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,7 +44,7 @@ class StravaWebhookServiceTest {
         when(integracaoExternaRepository.findActiveByExternalAthleteIdAndPlataforma("12345", FonteDados.STRAVA))
                 .thenReturn(Optional.empty());
 
-        StravaWebhookService service = new StravaWebhookService(
+        StravaWebhookService service = new StravaWebhookServiceImpl(
                 integracaoExternaRepository,
                 treinoRealizadoRepository,
                 stravaActivityService
@@ -70,7 +71,7 @@ class StravaWebhookServiceTest {
         when(integracaoExternaRepository.findActiveByExternalAthleteIdAndPlataforma("777", FonteDados.STRAVA))
                 .thenReturn(Optional.of(integracao));
 
-        StravaWebhookService service = new StravaWebhookService(
+        StravaWebhookService service = new StravaWebhookServiceImpl(
                 integracaoExternaRepository,
                 treinoRealizadoRepository,
                 stravaActivityService
@@ -95,7 +96,7 @@ class StravaWebhookServiceTest {
         when(treinoRealizadoRepository.findByExternalIdAndAtletaId("4242", integracao.getAtleta().getId()))
                 .thenReturn(Optional.of(treino));
 
-        StravaWebhookService service = new StravaWebhookService(
+        StravaWebhookService service = new StravaWebhookServiceImpl(
                 integracaoExternaRepository,
                 treinoRealizadoRepository,
                 stravaActivityService

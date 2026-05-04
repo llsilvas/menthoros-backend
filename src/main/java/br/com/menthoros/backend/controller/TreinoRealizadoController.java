@@ -26,7 +26,7 @@ import static org.springframework.http.ResponseEntity.*;
 
 @Tag(name = "Treinos Realizados", description = "Operações relacionadas ao registro de treinos realizados")
 @RestController
-@RequestMapping("/treinos")
+@RequestMapping("/api/v1/treinos")
 public class TreinoRealizadoController {
 
     private final TreinoService treinoService;

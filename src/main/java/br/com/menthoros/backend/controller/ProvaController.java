@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/atleta/{atletaId}/provas")
+@RequestMapping("/api/v1/atletas/{atletaId}/provas")
 @Tag(name = "Provas", description = "Operações relacionadas ao cadastro de provas do atleta")
 public class ProvaController {
 

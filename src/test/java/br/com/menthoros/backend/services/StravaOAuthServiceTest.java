@@ -8,6 +8,7 @@ import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
+import br.com.menthoros.backend.services.impl.StravaOAuthServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -63,7 +64,7 @@ class StravaOAuthServiceTest {
         UUID atletaId = UUID.randomUUID();
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(mockAtleta(atletaId, tenantId)));
 
-        StravaOAuthService service = new StravaOAuthService(
+        StravaOAuthService service = new StravaOAuthServiceImpl(
                 stravaProperties,
                 atletaRepository,
                 integracaoExternaRepository,
@@ -91,7 +92,7 @@ class StravaOAuthServiceTest {
         when(integracaoExternaRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
                 .thenReturn(Optional.of(integracao));
 
-        StravaOAuthService service = spy(new StravaOAuthService(
+        StravaOAuthService service = spy(new StravaOAuthServiceImpl(
                 stravaProperties,
                 atletaRepository,
                 integracaoExternaRepository,
@@ -116,7 +117,7 @@ class StravaOAuthServiceTest {
         when(integracaoExternaRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
                 .thenReturn(Optional.of(integracao));
 
-        StravaOAuthService service = spy(new StravaOAuthService(
+        StravaOAuthService service = spy(new StravaOAuthServiceImpl(
                 stravaProperties,
                 atletaRepository,
                 integracaoExternaRepository,
@@ -143,7 +144,7 @@ class StravaOAuthServiceTest {
         when(integracaoExternaRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
                 .thenReturn(Optional.of(integracao));
 
-        StravaOAuthService service = new StravaOAuthService(
+        StravaOAuthService service = new StravaOAuthServiceImpl(
                 stravaProperties,
                 atletaRepository,
                 integracaoExternaRepository,
