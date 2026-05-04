@@ -1,12 +1,10 @@
 package br.com.menthoros.backend.controller;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
-import br.com.menthoros.backend.services.impl.PlanoServiceImpl;
-import br.com.menthoros.backend.services.IaService;
+import br.com.menthoros.backend.services.PlanoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -15,8 +13,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
-import org.hibernate.Hibernate;
-import org.springframework.data.repository.query.Param;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,7 +24,7 @@ import java.util.UUID;
 @RequestMapping("/planos")
 public class PlanoTreinoController {
 
-    private final PlanoServiceImpl planoServiceImpl;
+    private final PlanoService planoService;
     private final PlanoSemanalMapper planoSemanalMapper;
 
     @Operation(summary = "Gerar plano de treino", description = "Gera um novo plano de treino semanal para o atleta especificado usando IA")
@@ -44,7 +40,7 @@ public class PlanoTreinoController {
     public ResponseEntity<PlanoSemanalOutputDto> gerarPlanoTreino(
             @Parameter(description = "ID do atleta para o qual gerar o plano") @PathVariable UUID atletaId,
             @Parameter(description = "Modo de geração do plano (SEMANA_ATUAL ou PROXIMA_SEMAMA)") @RequestParam(required = false, defaultValue = "PROXIMA_SEMANA") ModoGeracaoPlano modoGeracaoPlano) {
-        PlanoSemanal planoSemanal = planoServiceImpl.gerarPlanoTreino(atletaId, modoGeracaoPlano);
+        PlanoSemanal planoSemanal = planoService.gerarPlanoTreino(atletaId, modoGeracaoPlano);
         PlanoSemanalOutputDto planoSemanalOutputDto = planoSemanalMapper.toOutputDto(planoSemanal);
 
         return ResponseEntity.ok(planoSemanalOutputDto);
@@ -62,7 +58,7 @@ public class PlanoTreinoController {
     @PostMapping("/atletas/{atletaId}/gerar-enhanced")
     public ResponseEntity<PlanoSemanalOutputDto> gerarPlanoTreinoEnhanced(
             @Parameter(description = "ID do atleta para o qual gerar o plano aprimorado") @PathVariable UUID atletaId, ModoGeracaoPlano modoGeracaoPlano) {
-        PlanoSemanal planoSemanal = planoServiceImpl.gerarPlanoTreino(atletaId, modoGeracaoPlano);
+        PlanoSemanal planoSemanal = planoService.gerarPlanoTreino(atletaId, modoGeracaoPlano);
         PlanoSemanalOutputDto planoSemanalOutputDto = planoSemanalMapper.toOutputDto(planoSemanal);
 
         return ResponseEntity.ok(planoSemanalOutputDto);
@@ -77,7 +73,7 @@ public class PlanoTreinoController {
     @DeleteMapping("/{planoSemanalId}")
     public ResponseEntity<Void> deletePlanoSemanal(
             @Parameter(description = "ID do plano semanal a ser deletado") @PathVariable UUID planoSemanalId) {
-        planoServiceImpl.deletePlanoSemanal(planoSemanalId);
+        planoService.deletePlanoSemanal(planoSemanalId);
         return ResponseEntity.noContent().build();
     }
 
@@ -91,7 +87,7 @@ public class PlanoTreinoController {
     @GetMapping("/{id}")
     public ResponseEntity<PlanoSemanalOutputDto> buscarPlanoSemanal(
             @Parameter(description = "ID do atleta") @PathVariable UUID id) {
-        PlanoSemanalOutputDto planoSemanalOutputDto = planoServiceImpl.buscarPlanoPorAtleta(id);
+        PlanoSemanalOutputDto planoSemanalOutputDto = planoService.buscarPlanoPorAtleta(id);
 
         return ResponseEntity.ok(planoSemanalOutputDto);
     }

@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services;
 
 
+import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import jakarta.transaction.Transactional;
@@ -12,4 +13,6 @@ public interface PlanoService {
     PlanoSemanal gerarPlanoTreino(UUID atletaId, ModoGeracaoPlano modoGeracao);
 
     void deletePlanoSemanal(UUID planoSemanalId);
+
+    PlanoSemanalOutputDto buscarPlanoPorAtleta(UUID atletaId);
 }
