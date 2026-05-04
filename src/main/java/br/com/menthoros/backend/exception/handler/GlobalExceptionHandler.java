@@ -1,9 +1,12 @@
 package br.com.menthoros.backend.exception.handler;
 
 
+import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
 import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
+import br.com.menthoros.backend.exception.StravaRateLimitException;
 import jakarta.persistence.OptimisticLockException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -129,6 +132,39 @@ public class GlobalExceptionHandler {
                 "message", "Recurso não encontrado: " + ex.getResourcePath()
         );
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    }
+
+    @ExceptionHandler(DomainNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleDomainNotFound(DomainNotFoundException ex) {
+        log.warn("Domínio não encontrado: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 404,
+                "error", "Not Found",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    }
+
+    @ExceptionHandler(DomainRuleViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDomainRuleViolation(DomainRuleViolationException ex) {
+        log.warn("Violação de regra de domínio: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 422,
+                "error", "Unprocessable Entity",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
+    }
+
+    @ExceptionHandler(StravaRateLimitException.class)
+    public ResponseEntity<Map<String, Object>> handleStravaRateLimit(StravaRateLimitException ex) {
+        log.warn("Limite de taxa da API Strava excedido: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 429,
+                "error", "Too Many Requests",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
     }
 
     @ExceptionHandler(Exception.class)
