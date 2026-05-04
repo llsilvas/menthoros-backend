@@ -41,7 +41,7 @@ class StravaActivityServiceTest {
     @Test
     @DisplayName("Deve mapear atividade Strava para TreinoRealizado com conversões corretas")
     void shouldMapActivityToTreinoRealizado() {
-        StravaActivityService service = new StravaActivityService(
+        StravaActivityServiceImpl service = new StravaActivityServiceImpl(
                 atletaRepository,
                 treinoRealizadoRepository,
                 integracaoExternaRepository,
@@ -91,7 +91,7 @@ class StravaActivityServiceTest {
     @Test
     @DisplayName("Deve mapear lap com conversão de cadência e elevação")
     void shouldMapSplitToEtapaRealizada() {
-        StravaActivityService service = new StravaActivityService(
+        StravaActivityServiceImpl service = new StravaActivityServiceImpl(
                 atletaRepository,
                 treinoRealizadoRepository,
                 integracaoExternaRepository,

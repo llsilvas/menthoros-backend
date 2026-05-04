@@ -1,11 +1,11 @@
 package br.com.menthoros.backend.controller;
 
-import br.com.menthoros.backend.entity.IntegracaoExterna;
-import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.dto.output.StravaSyncResponseDto;
+import br.com.menthoros.backend.dto.output.StravaSyncStatusDto;
+import br.com.menthoros.backend.exception.DuplicateResourceException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.exception.StravaRateLimitException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
-import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.services.StravaActivityService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,9 +19,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -34,32 +31,16 @@ class StravaActivityControllerTest {
     @Mock
     private StravaActivityService stravaActivityService;
 
-    @Mock
-    private IntegracaoExternaRepository integracaoExternaRepository;
-
     @InjectMocks
     private StravaActivityController controller;
 
     private UUID tenantId;
     private UUID atletaId;
-    private IntegracaoExterna integracao;
 
     @BeforeEach
     void setUp() {
         tenantId = UUID.randomUUID();
         atletaId = UUID.randomUUID();
-
-        integracao = new IntegracaoExterna();
-        integracao.setId(UUID.randomUUID());
-        integracao.setExternalAthleteId("123456789");
-        integracao.setPlataforma(FonteDados.STRAVA);
-        integracao.setAtivo(true);
-        integracao.setTenantId(tenantId);
-        integracao.setUltimaSincronizacao(null);
-        integracao.setSyncActivityCount(0);
-        integracao.setLastSyncError(null);
-        integracao.setCriadoEm(LocalDateTime.now());
-
         TenantContext.setTenantId(tenantId);
     }
 
@@ -69,32 +50,30 @@ class StravaActivityControllerTest {
     }
 
     @Test
-    @DisplayName("getSyncStatus deve retornar dados corretos quando integração existe")
-    void getSyncStatusShouldReturnCorrectFormatWhenIntegrationExists() {
-        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId))
-                .thenReturn(Optional.of(integracao));
+    @DisplayName("getSyncStatus deve retornar StravaSyncStatusDto quando integração existe")
+    void getSyncStatusShouldReturnStatusDtoWhenIntegrationExists() {
+        StravaSyncStatusDto statusDto = new StravaSyncStatusDto(
+                true, false, 0, null, null, "123456789"
+        );
 
-        ResponseEntity<Map<String, Object>> response = controller.getSyncStatus(atletaId);
+        when(stravaActivityService.getSyncStatus(atletaId, tenantId))
+                .thenReturn(statusDto);
+
+        ResponseEntity<StravaSyncStatusDto> response = controller.getSyncStatus(atletaId);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
-
-        assertNotNull(body);
-        assertEquals(true, body.get("connected"));
-        assertEquals(false, body.get("syncing"));
-        assertEquals(0, body.get("imported"));
-        assertFalse(body.containsKey("lastError"));
-        assertFalse(body.containsKey("lastSync"));
-        assertEquals("123456789", body.get("externalAthleteId"));
+        assertNotNull(response.getBody());
+        assertEquals(true, response.getBody().connected());
+        assertEquals(false, response.getBody().syncing());
+        assertEquals(0, response.getBody().imported());
+        assertEquals("123456789", response.getBody().externalAthleteId());
     }
 
     @Test
-    @DisplayName("getSyncStatus deve retornar 404 quando integração não existe")
+    @DisplayName("getSyncStatus deve lançar ResourceNotFoundException quando integração não existe")
     void getSyncStatusShouldThrowNotFoundWhenIntegrationDoesNotExist() {
-        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId))
-                .thenReturn(Optional.empty());
+        when(stravaActivityService.getSyncStatus(atletaId, tenantId))
+                .thenThrow(new ResourceNotFoundException("Integração Strava não encontrada"));
 
         assertThrows(ResourceNotFoundException.class, () -> {
             controller.getSyncStatus(atletaId);
@@ -102,186 +81,114 @@ class StravaActivityControllerTest {
     }
 
     @Test
-    @DisplayName("sync deve rejeitar chamadas duplicadas (< 30 segundos)")
-    void syncShouldRejectDuplicateCallsWithin30Seconds() {
-        integracao.setUltimaSincronizacao(Instant.now().minusSeconds(15));
+    @DisplayName("sync deve retornar StravaSyncResponseDto quando sincronização sucede")
+    void syncShouldReturnResponseDtoOnSuccess() {
+        StravaSyncResponseDto responseDto = new StravaSyncResponseDto(45, "45 atividades importadas com sucesso");
 
-        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId))
-                .thenReturn(Optional.of(integracao));
+        when(stravaActivityService.syncActivitiesForAtleta(atletaId, tenantId))
+                .thenReturn(responseDto);
 
-        ResponseEntity<Map<String, Object>> response = controller.sync(atletaId);
-
-        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
-        assertNotNull(body);
-        assertEquals("Sincronização já em progresso. Aguarde conclusão.", body.get("error"));
-        verify(stravaActivityService, never()).syncActivities(any());
-    }
-
-    @Test
-    @DisplayName("sync deve permitir chamada quando > 30 segundos desde última sincronização")
-    void syncShouldAllowCallWhen30SecondsHavePassed() {
-        integracao.setUltimaSincronizacao(Instant.now().minusSeconds(31));
-
-        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId))
-                .thenReturn(Optional.of(integracao));
-
-        when(stravaActivityService.syncActivities(atletaId))
-                .thenReturn(45);
-
-        when(integracaoExternaRepository.save(any(IntegracaoExterna.class)))
-                .thenReturn(integracao);
-
-        ResponseEntity<Map<String, Object>> response = controller.sync(atletaId);
+        ResponseEntity<StravaSyncResponseDto> response = controller.sync(atletaId);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
-        assertNotNull(body);
-        assertEquals(true, body.get("success"));
-        assertEquals(45, body.get("imported"));
-        assertEquals("45 atividades importadas com sucesso", body.get("message"));
+        assertNotNull(response.getBody());
+        assertEquals(45, response.getBody().imported());
+        assertEquals("45 atividades importadas com sucesso", response.getBody().message());
     }
 
     @Test
-    @DisplayName("sync deve retornar 429 quando atinge rate limit do Strava")
-    void syncShouldReturn429OnRateLimit() {
-        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId))
-                .thenReturn(Optional.of(integracao));
+    @DisplayName("sync deve lançar DuplicateResourceException quando sincronização já em progresso")
+    void syncShouldThrowDuplicateWhenAlreadyInProgress() {
+        when(stravaActivityService.syncActivitiesForAtleta(atletaId, tenantId))
+                .thenThrow(new DuplicateResourceException("Sincronização já em progresso. Aguarde conclusão."));
 
-        when(stravaActivityService.syncActivities(atletaId))
-                .thenThrow(new StravaRateLimitException("Rate limit exceeded"));
-
-        ResponseEntity<Map<String, Object>> response = controller.sync(atletaId);
-
-        assertEquals(HttpStatus.TOO_MANY_REQUESTS, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
-        assertNotNull(body);
-        assertEquals("Limite de requisições Strava atingido. Tente novamente em alguns minutos.",
-                body.get("error"));
-        verify(integracaoExternaRepository, never()).save(any());
+        assertThrows(DuplicateResourceException.class, () -> {
+            controller.sync(atletaId);
+        });
     }
 
     @Test
-    @DisplayName("sync deve marcar ativo=false quando ocorre erro")
-    @SuppressWarnings("null")
-    void syncShouldMarkInactiveOnError() {
-        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId))
-                .thenReturn(Optional.of(integracao));
+    @DisplayName("sync deve lançar StravaRateLimitException quando atinge rate limit")
+    void syncShouldThrowRateLimitException() {
+        when(stravaActivityService.syncActivitiesForAtleta(atletaId, tenantId))
+                .thenThrow(new StravaRateLimitException("Limite de requisições Strava atingido"));
 
-        when(stravaActivityService.syncActivities(atletaId))
-                .thenThrow(new RuntimeException("Connection timeout"));
-
-        when(integracaoExternaRepository.save(any(IntegracaoExterna.class)))
-                .thenReturn(integracao);
-
-        ResponseEntity<Map<String, Object>> response = controller.sync(atletaId);
-
-        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
-        assertNotNull(body);
-        assertTrue(body.get("error").toString().contains("Falha ao sincronizar"));
-
-        verify(integracaoExternaRepository).save(argThat(arg ->
-                !arg.isAtivo() && arg.getLastSyncError() != null));
+        assertThrows(StravaRateLimitException.class, () -> {
+            controller.sync(atletaId);
+        });
     }
 
     @Test
-    @DisplayName("sync deve atualizar syncActivityCount e ultimaSincronizacao após sucesso")
-    @SuppressWarnings("null")
-    void syncShouldUpdateCountAndTimestampOnSuccess() {
-        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId))
-                .thenReturn(Optional.of(integracao));
+    @DisplayName("sync deve lançar ResourceNotFoundException quando atleta sem integração")
+    void syncShouldThrowNotFoundWhenNoIntegration() {
+        when(stravaActivityService.syncActivitiesForAtleta(atletaId, tenantId))
+                .thenThrow(new ResourceNotFoundException("Atleta sem integração Strava ativa"));
 
-        when(stravaActivityService.syncActivities(atletaId))
-                .thenReturn(90);
+        assertThrows(ResourceNotFoundException.class, () -> {
+            controller.sync(atletaId);
+        });
+    }
 
-        when(integracaoExternaRepository.save(any(IntegracaoExterna.class)))
-                .thenReturn(integracao);
+    @Test
+    @DisplayName("getSyncStatus deve indicar syncing=true quando sincronização em progresso")
+    void getSyncStatusShouldIndicateSyncingWhenInProgress() {
+        StravaSyncStatusDto statusDto = new StravaSyncStatusDto(
+                false, true, 0, null, Instant.now().minusSeconds(30), "123456789"
+        );
 
-        ResponseEntity<Map<String, Object>> response = controller.sync(atletaId);
+        when(stravaActivityService.getSyncStatus(atletaId, tenantId))
+                .thenReturn(statusDto);
+
+        ResponseEntity<StravaSyncStatusDto> response = controller.getSyncStatus(atletaId);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-
-        verify(integracaoExternaRepository).save(argThat(arg ->
-                arg.getSyncActivityCount() == 90 &&
-                arg.getUltimaSincronizacao() != null &&
-                arg.getLastSyncError() == null));
+        assertNotNull(response.getBody());
+        assertEquals(false, response.getBody().connected());
+        assertEquals(true, response.getBody().syncing());
     }
 
     @Test
-    @DisplayName("getSyncStatus deve indicar syncing=true quando última sync < 1 minuto e ativo=false")
-    void getSyncStatusShouldIndicateSyncingWhenRecentAndInactive() {
-        integracao.setAtivo(false);
-        integracao.setUltimaSincronizacao(Instant.now().minusSeconds(30));
-
-        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId))
-                .thenReturn(Optional.of(integracao));
-
-        ResponseEntity<Map<String, Object>> response = controller.getSyncStatus(atletaId);
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
-        assertNotNull(body);
-        assertEquals(false, body.get("connected"));
-        assertEquals(true, body.get("syncing"));
-    }
-
-    @Test
-    @DisplayName("getSyncStatus deve incluir syncActivityCount quando > 0")
-    void getSyncStatusShouldIncludeSyncActivityCount() {
-        integracao.setSyncActivityCount(45);
-
-        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId))
-                .thenReturn(Optional.of(integracao));
-
-        ResponseEntity<Map<String, Object>> response = controller.getSyncStatus(atletaId);
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
-        assertNotNull(body);
-        assertEquals(45, body.get("imported"));
-    }
-
-    @Test
-    @DisplayName("getSyncStatus deve retornar lastError quando houver erro")
+    @DisplayName("getSyncStatus deve incluir lastError quando houver erro")
     void getSyncStatusShouldIncludeLastErrorWhenPresent() {
-        integracao.setLastSyncError("Connection timeout");
+        StravaSyncStatusDto statusDto = new StravaSyncStatusDto(
+                true, false, 10, "Connection timeout", Instant.now(), "123456789"
+        );
 
-        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId))
-                .thenReturn(Optional.of(integracao));
+        when(stravaActivityService.getSyncStatus(atletaId, tenantId))
+                .thenReturn(statusDto);
 
-        ResponseEntity<Map<String, Object>> response = controller.getSyncStatus(atletaId);
+        ResponseEntity<StravaSyncStatusDto> response = controller.getSyncStatus(atletaId);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
-        Map<String, Object> body = response.getBody();
-        assertNotNull(body);
-        assertEquals("Connection timeout", body.get("lastError"));
+        assertNotNull(response.getBody());
+        assertEquals("Connection timeout", response.getBody().lastError());
     }
 
     @Test
     @DisplayName("sync deve aplicar filtro multi-tenant (TenantContext)")
     void syncShouldApplyMultiTenantFilter() {
-        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId))
-                .thenReturn(Optional.of(integracao));
+        StravaSyncResponseDto responseDto = new StravaSyncResponseDto(50, "50 atividades importadas com sucesso");
 
-        when(stravaActivityService.syncActivities(atletaId))
-                .thenReturn(50);
-
-        when(integracaoExternaRepository.save(any(IntegracaoExterna.class)))
-                .thenReturn(integracao);
+        when(stravaActivityService.syncActivitiesForAtleta(atletaId, tenantId))
+                .thenReturn(responseDto);
 
         controller.sync(atletaId);
 
-        verify(integracaoExternaRepository).findByAtletaIdAndPlataformaAndTenantId(
-                atletaId, FonteDados.STRAVA, tenantId);
+        verify(stravaActivityService).syncActivitiesForAtleta(atletaId, tenantId);
+    }
+
+    @Test
+    @DisplayName("getSyncStatus deve aplicar filtro multi-tenant (TenantContext)")
+    void getSyncStatusShouldApplyMultiTenantFilter() {
+        StravaSyncStatusDto statusDto = new StravaSyncStatusDto(
+                true, false, 5, null, Instant.now(), "123456789"
+        );
+
+        when(stravaActivityService.getSyncStatus(atletaId, tenantId))
+                .thenReturn(statusDto);
+
+        controller.getSyncStatus(atletaId);
+
+        verify(stravaActivityService).getSyncStatus(atletaId, tenantId);
     }
 }
