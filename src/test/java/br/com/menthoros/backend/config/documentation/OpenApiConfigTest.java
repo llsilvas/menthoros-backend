@@ -10,7 +10,7 @@ import org.springframework.test.context.TestPropertySource;
 
 @SpringBootTest
 @TestPropertySource(properties = {
-    "project.version=1.0.0",
+    "build.version=1.0.0",
     "app.openapi.environment=test",
     "app.openapi.title=Test API",
     "app.openapi.description=Test Description",
@@ -31,7 +31,7 @@ class OpenApiConfigTest {
     @Test
     void should_include_environment_in_description() {
         assertThat(openAPI.getInfo().getDescription())
-            .contains("test");
+            .contains("Environment: test");
     }
 
     @Test

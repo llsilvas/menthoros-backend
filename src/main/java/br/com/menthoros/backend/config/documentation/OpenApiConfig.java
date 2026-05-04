@@ -14,7 +14,7 @@ public class OpenApiConfig {
 
     private final OpenApiProperties openApiProperties;
 
-    @Value("${project.version:1.0.0}")
+    @Value("${build.version:1.0.0}")
     private String projectVersion;
 
     @Bean
