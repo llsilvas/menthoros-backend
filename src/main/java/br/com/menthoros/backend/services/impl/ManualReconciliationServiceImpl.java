@@ -1,5 +1,6 @@
-package br.com.menthoros.backend.service;
+package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.services.ManualReconciliationService;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.entity.TreinoReconciliacao;
 import br.com.menthoros.backend.entity.TreinoPlanejado;

@@ -1,5 +1,9 @@
-package br.com.menthoros.backend.service;
+package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.services.DailyActivitySyncScheduler;
+import br.com.menthoros.backend.services.MatchingScoreCalculator;
+import br.com.menthoros.backend.services.MatchingDecisionEngine;
+import br.com.menthoros.backend.services.ActivityTypeCompatibilityMatrix;
 import br.com.menthoros.backend.dto.MatchingCandidate;
 import br.com.menthoros.backend.dto.MatchingDecision;
 import br.com.menthoros.backend.dto.MatchingScoreResult;
@@ -49,9 +53,9 @@ import java.util.UUID;
  * - Se detectado tenant mismatch (erro crítico), atividade é pulada com log de segurança
  */
 @Service
-public class DailyActivitySyncScheduler {
+public class DailyActivitySyncSchedulerImpl implements DailyActivitySyncScheduler {
 
-    private static final Logger logger = LoggerFactory.getLogger(DailyActivitySyncScheduler.class);
+    private static final Logger logger = LoggerFactory.getLogger(DailyActivitySyncSchedulerImpl.class);
 
     private final AtletaRepository atletaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
@@ -59,20 +63,23 @@ public class DailyActivitySyncScheduler {
     private final TreinoReconciliacaoRepository treinoReconciliacaoRepository;
     private final MatchingScoreCalculator matchingScoreCalculator;
     private final MatchingDecisionEngine matchingDecisionEngine;
+    private final ActivityTypeCompatibilityMatrix activityTypeCompatibilityMatrix;
 
-    public DailyActivitySyncScheduler(
+    public DailyActivitySyncSchedulerImpl(
             AtletaRepository atletaRepository,
             TreinoRealizadoRepository treinoRealizadoRepository,
             TreinoPlanejadoRepository treinoPlanejadoRepository,
             TreinoReconciliacaoRepository treinoReconciliacaoRepository,
             MatchingScoreCalculator matchingScoreCalculator,
-            MatchingDecisionEngine matchingDecisionEngine) {
+            MatchingDecisionEngine matchingDecisionEngine,
+            ActivityTypeCompatibilityMatrix activityTypeCompatibilityMatrix) {
         this.atletaRepository = atletaRepository;
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.treinoPlanejadoRepository = treinoPlanejadoRepository;
         this.treinoReconciliacaoRepository = treinoReconciliacaoRepository;
         this.matchingScoreCalculator = matchingScoreCalculator;
         this.matchingDecisionEngine = matchingDecisionEngine;
+        this.activityTypeCompatibilityMatrix = activityTypeCompatibilityMatrix;
     }
 
     /**
@@ -295,7 +302,7 @@ public class DailyActivitySyncScheduler {
 
         return candidates.stream()
                 .filter(planned ->
-                    ActivityTypeCompatibilityMatrix.isCompatible(
+                    activityTypeCompatibilityMatrix.isCompatible(
                         activity.getTipoTreino(),
                         planned.getTipoTreino()
                     )

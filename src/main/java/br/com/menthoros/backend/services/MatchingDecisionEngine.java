@@ -1,4 +1,4 @@
-package br.com.menthoros.backend.service;
+package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.MatchingCandidate;
 import br.com.menthoros.backend.dto.MatchingDecision;

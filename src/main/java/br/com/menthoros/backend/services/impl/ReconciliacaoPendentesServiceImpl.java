@@ -1,5 +1,7 @@
-package br.com.menthoros.backend.service;
+package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.services.ReconciliacaoPendentesService;
+import br.com.menthoros.backend.services.MatchingScoreCalculator;
 import br.com.menthoros.backend.dto.output.CandidateMatchDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoPendenteOutputDto;
 import br.com.menthoros.backend.dto.MatchingScoreResult;
@@ -22,14 +24,14 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
-public class ReconciliacaoPendentesService {
+public class ReconciliacaoPendentesServiceImpl implements ReconciliacaoPendentesService {
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final AtletaRepository atletaRepository;
     private final MatchingScoreCalculator matchingScoreCalculator;
 
-    public ReconciliacaoPendentesService(
+    public ReconciliacaoPendentesServiceImpl(
             TreinoRealizadoRepository treinoRealizadoRepository,
             TreinoPlanejadoRepository treinoPlanejadoRepository,
             AtletaRepository atletaRepository,

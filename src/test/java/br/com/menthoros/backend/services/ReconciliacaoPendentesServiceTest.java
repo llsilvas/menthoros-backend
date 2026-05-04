@@ -1,4 +1,4 @@
-package br.com.menthoros.backend.service;
+package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.output.TreinoRealizadoPendenteOutputDto;
 import br.com.menthoros.backend.dto.output.CandidateMatchDto;

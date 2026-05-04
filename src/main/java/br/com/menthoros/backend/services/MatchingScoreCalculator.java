@@ -1,4 +1,4 @@
-package br.com.menthoros.backend.service;
+package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.MatchingScoreResult;
 import br.com.menthoros.backend.entity.Atleta;

@@ -1,4 +1,4 @@
-package br.com.menthoros.backend.service;
+package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.enums.TipoTreino;
 import java.util.EnumSet;
@@ -10,14 +10,19 @@ import java.util.EnumSet;
  * MVP: Todos os TipoTreino (10 tipos) são modalidade corrida → todos compatíveis entre si.
  * Futuro: Quando natação/ciclismo/etc forem adicionados ao enum, expandir TIPOS_CORRIDA.
  */
-public class ActivityTypeCompatibilityMatrix {
+public class ActivityTypeCompatibilityMatrixImpl implements ActivityTypeCompatibilityMatrix {
 
     // MVP: todos os 10 TipoTreino (REGENERATIVO, INTERVALADO, etc) são corrida
     // Quando natação/ciclismo/etc forem adicionados ao enum, adicionar novo Set/método
     private static final EnumSet<TipoTreino> TIPOS_CORRIDA = EnumSet.allOf(TipoTreino.class);
 
-    private ActivityTypeCompatibilityMatrix() {
-        // Utility class - prevent instantiation
+    // Instance constructor for Spring DI and interface implementation
+    public ActivityTypeCompatibilityMatrixImpl() {
+    }
+
+    // Static constructor for utility pattern (backward compatibility)
+    private ActivityTypeCompatibilityMatrixImpl(boolean utility) {
+        // Utility class - prevent direct instantiation
     }
 
     /**
@@ -28,7 +33,17 @@ public class ActivityTypeCompatibilityMatrix {
      * @param plannedType tipo do treino planejado (pode ser null)
      * @return true se compatível (mesmo esporte), false se incompatível
      */
-    public static boolean isCompatible(TipoTreino activityType, TipoTreino plannedType) {
+    @Override
+    public boolean isCompatible(TipoTreino activityType, TipoTreino plannedType) {
+        return isCompatibleStatic(activityType, plannedType);
+    }
+
+    /**
+     * Static variant for backward compatibility.
+     * @deprecated Use the instance method instead via Spring DI.
+     */
+    @Deprecated(since = "2.0", forRemoval = false)
+    public static boolean isCompatibleStatic(TipoTreino activityType, TipoTreino plannedType) {
         // Se algum for null, compatível por padrão (sem restrição de tipo)
         if (activityType == null || plannedType == null) {
             return true;
