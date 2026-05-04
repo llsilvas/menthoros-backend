@@ -82,8 +82,8 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
         where tr.tenantId = :tenantId
           and tr.atleta.id = :atletaId
           and tr.reconciliationStatus in :statuses
-          and tr.dataTreino >= coalesce(cast(:dataInicio as java.time.LocalDate), tr.dataTreino)
-          and tr.dataTreino <= coalesce(cast(:dataFim as java.time.LocalDate), tr.dataTreino)
+          and (:dataInicio is null or tr.dataTreino >= :dataInicio)
+          and (:dataFim is null or tr.dataTreino <= :dataFim)
         order by tr.dataTreino desc
         """)
     Page<TreinoRealizado> findPendentesParaRevisao(
