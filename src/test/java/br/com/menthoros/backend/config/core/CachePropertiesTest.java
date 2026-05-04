@@ -93,4 +93,32 @@ class CachePropertiesTest {
 
         assertThat(violations).isEmpty();
     }
+
+    @Test
+    void should_validate_cache_profile_ttl() {
+        CacheProperties.CacheProfile invalid = new CacheProperties.CacheProfile();
+        invalid.setTtl(Duration.ZERO);
+        invalid.setMaxSize(50);
+
+        Set<ConstraintViolation<CacheProperties.CacheProfile>> violations =
+            validator.validate(invalid);
+
+        assertThat(violations)
+            .isNotEmpty()
+            .anyMatch(v -> v.getPropertyPath().toString().contains("ttl"));
+    }
+
+    @Test
+    void should_validate_cache_profile_max_size_minimum() {
+        CacheProperties.CacheProfile invalid = new CacheProperties.CacheProfile();
+        invalid.setTtl(Duration.ofMinutes(30));
+        invalid.setMaxSize(0);
+
+        Set<ConstraintViolation<CacheProperties.CacheProfile>> violations =
+            validator.validate(invalid);
+
+        assertThat(violations)
+            .isNotEmpty()
+            .anyMatch(v -> v.getPropertyPath().toString().contains("maxSize"));
+    }
 }

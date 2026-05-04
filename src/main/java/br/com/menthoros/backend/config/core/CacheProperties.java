@@ -49,7 +49,7 @@ public class CacheProperties {
         }
 
         @Min(value = 1, message = "maxSize minimum is 1")
-        private long maxSize;
+        private long maxSize = 100;
 
         public CacheProfile() {}
 

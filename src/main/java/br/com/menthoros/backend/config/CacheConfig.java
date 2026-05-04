@@ -30,14 +30,14 @@ public class CacheConfig {
                 .expireAfterWrite(cacheProperties.getDefaultTtl())
                 .recordStats());
 
-        // Configurar caches específicos
+        // Configurar caches específicos (todos usam o mesmo defaultTtl; TTL por cache não implementado)
         cacheManager.setCacheNames(List.of(
-                "atletas",           // Cache para atletas - TTL: 30min
-                "atletas-list",      // Cache para lista de atletas - TTL: 30min
-                "planos-semanais",   // Cache para planos semanais - TTL: 30min
-                "metadados-atleta",  // Cache para metadados de plano por atleta - TTL: 30min
-                "embeddings",        // Cache para embeddings - TTL: 2h
-                "ia-responses"       // Cache para respostas da IA - TTL: 1h
+                "atletas",
+                "atletas-list",
+                "planos-semanais",
+                "metadados-atleta",
+                "embeddings",
+                "ia-responses"
         ));
 
         return cacheManager;
