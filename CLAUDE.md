@@ -47,6 +47,50 @@ Never start implementation directly in code.
 - For domain or persistence changes, prefer adding code over risky refactors.
 - Do not introduce new dependencies without clear technical justification.
 
+## Controller Standards
+
+Rules enforced across all controllers. Violations must be corrected in the same PR that introduces new controller code.
+
+### Layered Architecture (mandatory)
+- Controllers must NOT inject `Repository` beans — only `Service` interfaces.
+- Controllers must NOT inject concrete service implementations (e.g. `PlanoServiceImpl`) — only the interface.
+- Business logic belongs in the service layer, not in controller methods.
+
+### Exception Handling (mandatory)
+- Controllers must NOT have try/catch blocks for HTTP error mapping.
+- All exception-to-HTTP-status mappings live in `GlobalExceptionHandler` (`@RestControllerAdvice`).
+- When adding a new custom exception, add a corresponding `@ExceptionHandler` method in `GlobalExceptionHandler` in the same commit.
+
+### URL Convention (mandatory)
+- All endpoints use prefix `/api/v1/` followed by plural resource name.
+- Example: `/api/v1/atletas`, `/api/v1/treinos`, `/api/v1/planos`.
+- Strava integration endpoints: `/api/v1/strava/**`.
+
+### Response Types (mandatory)
+- All controller methods return `ResponseEntity<XxxOutputDto>`, `ResponseEntity<List<XxxOutputDto>>`, `ResponseEntity<Page<XxxOutputDto>>`, or `ResponseEntity<Void>`.
+- Raw `Map<String, Object>` returns are NOT allowed — create a typed DTO record instead.
+
+### Swagger / OpenAPI Documentation (mandatory)
+- Every controller class must have `@Tag(name = "...", description = "...")`.
+- Every public method must have `@Operation(summary = "...")`.
+- Every public method must have `@ApiResponses` listing all possible HTTP status codes.
+- Use `@Parameter` for path/query parameters that need description.
+
+### HTTP Semantics (mandatory)
+- GET: read-only, no side effects.
+- POST: create or trigger action (including operations that mutate state like recalculate/sync).
+- PUT: full update of existing resource.
+- PATCH: partial update of existing resource.
+- DELETE: remove resource (return 204 No Content).
+
+### Dependency Injection (recommended)
+- Prefer `@RequiredArgsConstructor` (Lombok) for constructor injection.
+- All injected fields declared `private final`.
+
+### Tenant Resolution (mandatory)
+- Use `TenantContext.getRequiredTenantId()` to resolve tenant inside controller methods.
+- Do NOT read `@RequestHeader("X-Tenant-ID")` manually in controllers — this bypasses the tenant filter.
+
 ## Multi-tenancy and Security Guardrails
 
 - Never bypass tenant isolation rules.
@@ -104,4 +148,4 @@ When finishing a backend task, report:
 3. Validation commands executed and results.
 4. Risks, assumptions, or follow-up items.
 
-Last reviewed on: 2026-04-30
+Last reviewed on: 2026-05-04
