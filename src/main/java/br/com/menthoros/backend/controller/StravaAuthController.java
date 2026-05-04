@@ -3,6 +3,8 @@ package br.com.menthoros.backend.controller;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.services.StravaOAuthService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +32,9 @@ public class StravaAuthController {
 
     @GetMapping("/auth")
     @Operation(summary = "Inicia autorização OAuth2 com Strava")
+    @ApiResponses({
+        @ApiResponse(responseCode = "302", description = "Redirecionamento para Strava OAuth")
+    })
     public ResponseEntity<Void> startAuth(@RequestParam("atletaId") UUID atletaId) {
         String authorizationUrl = stravaOAuthService.getAuthorizationUrl(atletaId);
         return ResponseEntity.status(HttpStatus.FOUND)
@@ -39,6 +44,9 @@ public class StravaAuthController {
 
     @GetMapping("/auth/url/{atletaId}")
     @Operation(summary = "Retorna URL de autorização OAuth2 do Strava")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "URL de autorização retornada com sucesso")
+    })
     public ResponseEntity<Map<String, String>> getAuthorizationUrl(@PathVariable UUID atletaId) {
         String authorizationUrl = stravaOAuthService.getAuthorizationUrl(atletaId);
         return ResponseEntity.ok(Map.of("authorizationUrl", authorizationUrl));
@@ -46,6 +54,11 @@ public class StravaAuthController {
 
     @GetMapping("/callback")
     @Operation(summary = "Processa callback OAuth2 do Strava")
+    @ApiResponses({
+        @ApiResponse(responseCode = "302", description = "Redirecionamento para frontend com status"),
+        @ApiResponse(responseCode = "400", description = "Parâmetros inválidos no callback"),
+        @ApiResponse(responseCode = "401", description = "Falha na autenticação com Strava")
+    })
     public ResponseEntity<Void> callback(
             @RequestParam(value = "code", required = false) String code,
             @RequestParam(value = "state", required = false) String state,
@@ -74,12 +87,20 @@ public class StravaAuthController {
 
     @GetMapping("/status/{atletaId}")
     @Operation(summary = "Consulta status de conexão Strava do atleta")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Status de conexão retornado com sucesso"),
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado")
+    })
     public ResponseEntity<Map<String, Object>> status(@PathVariable UUID atletaId) {
         return ResponseEntity.ok(stravaOAuthService.getStatus(atletaId));
     }
 
     @DeleteMapping("/disconnect/{atletaId}")
     @Operation(summary = "Desconecta integração Strava do atleta")
+    @ApiResponses({
+        @ApiResponse(responseCode = "204", description = "Desconexão executada com sucesso"),
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado")
+    })
     public ResponseEntity<Void> disconnect(@PathVariable UUID atletaId) {
         stravaOAuthService.disconnect(atletaId);
         return ResponseEntity.noContent().build();

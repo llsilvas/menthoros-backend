@@ -4,6 +4,8 @@ import br.com.menthoros.backend.config.StravaProperties;
 import br.com.menthoros.backend.dto.strava.StravaWebhookEventDto;
 import br.com.menthoros.backend.services.StravaWebhookService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +27,11 @@ public class StravaWebhookController {
 
     @GetMapping
     @Operation(summary = "Valida subscription do webhook Strava")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Subscription validada com sucesso"),
+        @ApiResponse(responseCode = "400", description = "Mode inválido"),
+        @ApiResponse(responseCode = "403", description = "Verify token inválido")
+    })
     public ResponseEntity<Map<String, String>> validateSubscription(
             @RequestParam("hub.mode") String mode,
             @RequestParam("hub.verify_token") String verifyToken,
@@ -43,6 +50,9 @@ public class StravaWebhookController {
 
     @PostMapping
     @Operation(summary = "Recebe eventos do webhook Strava")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Evento recebido com sucesso")
+    })
     public ResponseEntity<Void> receiveEvent(@RequestBody StravaWebhookEventDto event) {
         stravaWebhookService.handleEventAsync(event);
         return ResponseEntity.ok().build();
