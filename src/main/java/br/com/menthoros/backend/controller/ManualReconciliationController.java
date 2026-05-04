@@ -8,6 +8,10 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.service.ManualReconciliationService;
 import br.com.menthoros.backend.service.ReconciliacaoPendentesService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -29,6 +33,7 @@ import br.com.menthoros.backend.enums.ReconciliationStatus;
  */
 @RestController
 @RequestMapping("/api/v1/reconciliation")
+@Tag(name = "Reconciliação Manual", description = "Operações de reconciliação entre treinos realizados e planejados")
 public class ManualReconciliationController {
 
     private final ManualReconciliationService reconciliationService;
@@ -49,6 +54,11 @@ public class ManualReconciliationController {
      * Recupera o estado de reconciliação de uma atividade.
      */
     @GetMapping("/{treinoRealizadoId}")
+    @Operation(summary = "Retorna o estado de reconciliação de uma atividade")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Estado de reconciliação retornado com sucesso"),
+        @ApiResponse(responseCode = "404", description = "Atividade não encontrada")
+    })
     public ResponseEntity<TreinoRealizadoOutputDto> getReconciliationState(
             @PathVariable UUID treinoRealizadoId,
             @RequestHeader("X-Tenant-ID") UUID tenantId) {
@@ -64,6 +74,13 @@ public class ManualReconciliationController {
      * Vincula manualmente uma atividade realizada a um treino planejado.
      */
     @PostMapping("/{treinoRealizadoId}/link")
+    @Operation(summary = "Vincula manualmente uma atividade realizada a um treino planejado")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Vínculo criado com sucesso"),
+        @ApiResponse(responseCode = "400", description = "Parâmetros inválidos"),
+        @ApiResponse(responseCode = "404", description = "Atividade ou treino planejado não encontrado"),
+        @ApiResponse(responseCode = "409", description = "Conflito na operação (estado inválido ou vínculo existente)")
+    })
     public ResponseEntity<TreinoRealizadoOutputDto> linkManually(
             @PathVariable UUID treinoRealizadoId,
             @RequestParam UUID treinoPlanejadoId,
@@ -88,6 +105,12 @@ public class ManualReconciliationController {
      * Marca uma atividade realizada como não planejada (orfã).
      */
     @PostMapping("/{treinoRealizadoId}/mark-not-planned")
+    @Operation(summary = "Marca uma atividade realizada como não planejada")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Atividade marcada como não planejada com sucesso"),
+        @ApiResponse(responseCode = "404", description = "Atividade não encontrada"),
+        @ApiResponse(responseCode = "409", description = "Conflito na operação (estado inválido)")
+    })
     public ResponseEntity<TreinoRealizadoOutputDto> markAsNotPlanned(
             @PathVariable UUID treinoRealizadoId,
             @RequestHeader("X-Tenant-ID") UUID tenantId,
@@ -110,6 +133,12 @@ public class ManualReconciliationController {
      * Desfaz o vínculo de uma atividade realizada com um treino planejado.
      */
     @PostMapping("/{treinoRealizadoId}/unlink")
+    @Operation(summary = "Desfaz o vínculo de uma atividade realizada com um treino planejado")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Vínculo desfeito com sucesso"),
+        @ApiResponse(responseCode = "404", description = "Atividade não encontrada"),
+        @ApiResponse(responseCode = "409", description = "Conflito na operação (estado inválido ou sem vínculo existente)")
+    })
     public ResponseEntity<TreinoRealizadoOutputDto> unlinkManually(
             @PathVariable UUID treinoRealizadoId,
             @RequestHeader("X-Tenant-ID") UUID tenantId,
@@ -133,6 +162,12 @@ public class ManualReconciliationController {
      * Query param 'statuses' é opcional (default: AMBIGUO,NAO_PLANEJADO) e restrito a valores pendentes.
      */
     @GetMapping("/atletas/{atletaId}/pendentes")
+    @Operation(summary = "Lista atividades pendentes de reconciliação por atleta")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Lista de atividades pendentes retornada com sucesso"),
+        @ApiResponse(responseCode = "400", description = "Parâmetros de filtro inválidos"),
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado")
+    })
     public ResponseEntity<Page<TreinoRealizadoPendenteOutputDto>> listarPendentes(
             @PathVariable UUID atletaId,
             @RequestParam(required = false) List<String> statuses,
@@ -171,6 +206,11 @@ public class ManualReconciliationController {
      * Lista candidatos de vínculo rankeados por score de compatibilidade.
      */
     @GetMapping("/{treinoRealizadoId}/candidatos")
+    @Operation(summary = "Lista candidatos para vínculo rankeados por compatibilidade")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Lista de candidatos retornada com sucesso"),
+        @ApiResponse(responseCode = "404", description = "Atividade não encontrada")
+    })
     public ResponseEntity<List<CandidateMatchDto>> listarCandidatos(
             @PathVariable UUID treinoRealizadoId,
             @RequestHeader("X-Tenant-ID") UUID tenantId) {
@@ -185,6 +225,14 @@ public class ManualReconciliationController {
      * Executa uma ação de reconciliação unificada (vincular/marcar/desfazer).
      */
     @PostMapping("/{treinoRealizadoId}/acao")
+    @Operation(summary = "Executa uma ação de reconciliação (vincular, marcar como não planejado ou desfazer)")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Ação executada com sucesso"),
+        @ApiResponse(responseCode = "400", description = "Parâmetros inválidos ou ação inválida"),
+        @ApiResponse(responseCode = "404", description = "Atividade ou treino planejado não encontrado"),
+        @ApiResponse(responseCode = "409", description = "Conflito na operação (estado inválido)"),
+        @ApiResponse(responseCode = "422", description = "Entidade não processável (dados inválidos ou inconsistentes)")
+    })
     public ResponseEntity<TreinoRealizadoOutputDto> executarAcao(
             @PathVariable UUID treinoRealizadoId,
             @RequestBody @Valid ReconciliacaoAcaoRequestDto request,
