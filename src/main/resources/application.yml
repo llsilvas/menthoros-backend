@@ -143,6 +143,20 @@ app:
       strategy: original  # enhanced | fixed | original
 
   # ----------------------------------------
+  # SECURITY CONFIGURATION
+  # ----------------------------------------
+  security:
+    public-paths:
+      - "/api/public/**"
+      - "/swagger-ui/**"
+      - "/api-docs/**"
+      - "/v3/api-docs/**"
+      - "/actuator/health"
+    strava-paths:
+      - "/api/v1/strava/webhook"
+      - "/api/v1/strava/callback"
+
+  # ----------------------------------------
   # STRAVA INTEGRATION CONFIGURATION
   # ----------------------------------------
   strava:
