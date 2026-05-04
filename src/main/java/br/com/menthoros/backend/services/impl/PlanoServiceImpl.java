@@ -62,7 +62,7 @@ public class PlanoServiceImpl implements PlanoService {
     private final RedistribuicaoTreinoHelper redistribuicaoHelper;
     private final RegraGeracaoTreino regraGeracaoTreino;
     private final MetricasAlertaService metricasAlertaService;
-    private final MetricasAgregadasServiceImpl metricasAgregadasService;
+    private final MetricasAgregadasService metricasAgregadasService;
 
     private final ProvaRepository provaRepository;
 

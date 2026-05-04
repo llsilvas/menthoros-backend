@@ -13,6 +13,7 @@ import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.repository.*;
 import br.com.menthoros.backend.services.TreinoService;
+import br.com.menthoros.backend.services.TsbService;
 import jakarta.transaction.Transactional;
 
 import java.math.BigDecimal;
@@ -38,7 +39,7 @@ public class TreinoServiceImpl implements TreinoService {
     private final PlanoSemanalRepository planoSemanalRepository;
     private final PlanoSemanalMapper planoSemanalMapper;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
-    private final TsbServiceImpl tsbService;
+    private final TsbService tsbService;
     private final PlanoMetadadosRepository planoMetaDadosRepository;
 
     @Transactional
