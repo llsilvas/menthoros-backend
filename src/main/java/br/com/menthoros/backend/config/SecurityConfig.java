@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.config;
 
+import br.com.menthoros.backend.config.core.CoreSecurityProperties;
 import br.com.menthoros.backend.security.JwtTenantFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -21,6 +22,7 @@ import org.springframework.security.web.SecurityFilterChain;
 public class SecurityConfig {
 
     private final JwtTenantFilter jwtTenantFilter;
+    private final CoreSecurityProperties securityProperties;
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
@@ -29,15 +31,10 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/api/public/**",
-                                "/swagger-ui/**",
-                                "/api-docs/**",
-                                "/api-docs.yaml",
-                                "/actuator/health",
-                                "/api/v1/strava/webhook",
-                                "/api/v1/strava/callback"
-                        ).permitAll()
+                        .requestMatchers(securityProperties.getPublicPaths().toArray(new String[0]))
+                            .permitAll()
+                        .requestMatchers(securityProperties.getStravaPaths().toArray(new String[0]))
+                            .permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
