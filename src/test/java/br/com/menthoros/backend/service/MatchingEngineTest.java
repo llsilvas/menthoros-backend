@@ -28,8 +28,8 @@ class MatchingEngineTest {
 
     @BeforeEach
     void setUp() {
-        scoreCalculator = new MatchingScoreCalculator();
-        decisionEngine = new MatchingDecisionEngine();
+        scoreCalculator = new MatchingScoreCalculatorImpl();
+        decisionEngine = new MatchingDecisionEngineImpl();
     }
 
     // ===== MatchingScoreCalculator Tests =====

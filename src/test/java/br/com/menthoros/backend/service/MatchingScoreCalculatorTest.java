@@ -24,7 +24,7 @@ class MatchingScoreCalculatorTest {
 
     @BeforeEach
     void setUp() {
-        calculator = new MatchingScoreCalculator();
+        calculator = new MatchingScoreCalculatorImpl();
     }
 
     @Test
