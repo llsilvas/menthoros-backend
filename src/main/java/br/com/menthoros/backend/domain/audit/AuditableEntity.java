@@ -28,10 +28,10 @@ public abstract class AuditableEntity {
     private LocalDateTime updatedAt;
 
     @CreatedBy
-    @Column(nullable = false, updatable = false, length = 255)
+    @Column(nullable = true, updatable = false, length = 255)
     private String createdBy;
 
     @LastModifiedBy
-    @Column(nullable = false, length = 255)
+    @Column(nullable = true, length = 255)
     private String updatedBy;
 }
