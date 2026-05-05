@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.repository.custom.AtletaRepositoryCustom;
 import br.com.menthoros.backend.repository.projection.AtletaListProjection;
 import br.com.menthoros.backend.repository.projection.AtletaProjection;
 import jakarta.persistence.LockModeType;
@@ -14,7 +15,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUID>, JpaSpecificationExecutor<Atleta> {
+public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUID>, JpaSpecificationExecutor<Atleta>, AtletaRepositoryCustom {
     Optional<Atleta> findById(UUID id);
 
     Atleta save(Atleta entity);
