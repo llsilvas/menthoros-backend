@@ -7,7 +7,7 @@ import org.springframework.cache.CacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-@Configuration
+@Configuration(proxyBeanMethods = false)
 @RequiredArgsConstructor
 public class HealthConfig {
 
@@ -37,6 +37,11 @@ public class HealthConfig {
         };
     }
 
+    /**
+     * Custom cache health indicator that specifically checks the "atletas" cache.
+     * Note: This bean overrides Spring Boot's default cacheHealthIndicator to provide
+     * application-specific cache health checks beyond the default all-caches probe.
+     */
     @Bean
     public HealthIndicator cacheHealthIndicator() {
         return () -> {

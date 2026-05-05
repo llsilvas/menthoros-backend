@@ -6,6 +6,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.actuate.health.CompositeHealth;
 import org.springframework.boot.actuate.health.HealthEndpoint;
+import org.springframework.boot.actuate.health.Status;
 
 @SpringBootTest(properties = {
     "management.endpoints.web.exposure.include=health",
@@ -24,15 +25,21 @@ class HealthConfigTest {
 
     @Test
     void should_have_strava_health_indicator() {
-        var health = (CompositeHealth) healthEndpoint.health();
-        assertThat(health.getComponents())
-            .containsKey("strava");
+        var health = healthEndpoint.health();
+        assertThat(health).isInstanceOf(CompositeHealth.class);
+        var composite = (CompositeHealth) health;
+        assertThat(composite.getComponents()).containsKey("strava");
+        assertThat(composite.getComponents().get("strava").getStatus())
+            .isEqualTo(Status.UP);
     }
 
     @Test
     void should_have_cache_health_indicator() {
-        var health = (CompositeHealth) healthEndpoint.health();
-        assertThat(health.getComponents())
-            .containsKey("cache");
+        var health = healthEndpoint.health();
+        assertThat(health).isInstanceOf(CompositeHealth.class);
+        var composite = (CompositeHealth) health;
+        assertThat(composite.getComponents()).containsKey("cache");
+        assertThat(composite.getComponents().get("cache").getStatus())
+            .isEqualTo(Status.UP);
     }
 }
