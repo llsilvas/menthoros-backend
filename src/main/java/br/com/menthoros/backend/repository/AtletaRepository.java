@@ -1,6 +1,8 @@
 package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.repository.projection.AtletaListProjection;
+import br.com.menthoros.backend.repository.projection.AtletaProjection;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
@@ -86,4 +88,10 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     order by atl.nome ASC
     """)
     List<Atleta> findAllWithStravaConnected();
+
+    @Query("SELECT a FROM Atleta a ORDER BY a.nome ASC")
+    List<AtletaListProjection> findProjectedAtletas();
+
+    @Query("SELECT a FROM Atleta a WHERE a.assessoria.id = :tenantId ORDER BY a.nome ASC")
+    List<AtletaProjection> findProjectedByTenant(@Param("tenantId") UUID tenantId);
 }
