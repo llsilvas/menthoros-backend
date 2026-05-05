@@ -2,6 +2,7 @@ package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.entity.Atleta;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.PagingAndSortingRepository;
@@ -11,7 +12,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUID> {
+public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUID>, JpaSpecificationExecutor<Atleta> {
     Optional<Atleta> findById(UUID id);
 
     Atleta save(Atleta entity);
