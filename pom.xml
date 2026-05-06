@@ -268,7 +268,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>com.menthoros.MenthorosServicesApplication</mainClass>
+                    <mainClass>br.com.menthoros.backend.MenthorosServicesApplication</mainClass>
                     <layers>
                         <enabled>true</enabled>
                     </layers>
