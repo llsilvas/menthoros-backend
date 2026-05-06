@@ -1,6 +1,5 @@
-package br.com.menthoros.backend.config;
+package br.com.menthoros.backend.config.core;
 
-import br.com.menthoros.backend.config.core.CoreSecurityProperties;
 import br.com.menthoros.backend.security.JwtTenantFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -19,7 +18,7 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
-public class SecurityConfig {
+public class CoreSecurityConfig {
 
     private final JwtTenantFilter jwtTenantFilter;
     private final CoreSecurityProperties securityProperties;

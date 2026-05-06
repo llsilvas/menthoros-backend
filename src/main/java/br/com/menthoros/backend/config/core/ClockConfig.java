@@ -1,4 +1,4 @@
-package br.com.menthoros.backend.config;
+package br.com.menthoros.backend.config.core;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

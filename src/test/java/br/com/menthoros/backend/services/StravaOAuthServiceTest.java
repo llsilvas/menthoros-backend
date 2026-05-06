@@ -1,6 +1,6 @@
 package br.com.menthoros.backend.services;
 
-import br.com.menthoros.backend.config.StravaProperties;
+import br.com.menthoros.backend.config.external.StravaProperties;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.IntegracaoExterna;

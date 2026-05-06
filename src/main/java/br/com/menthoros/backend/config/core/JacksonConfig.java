@@ -1,11 +1,10 @@
-package br.com.menthoros.backend.config;
+package br.com.menthoros.backend.config.core;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.cfg.CoercionAction;
 import com.fasterxml.jackson.databind.cfg.CoercionInputShape;
-import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationContext;
@@ -29,7 +28,7 @@ public class JacksonConfig {
 
         // Registrar módulo JavaTime para LocalDate, LocalDateTime, etc.
         mapper.registerModule(new JavaTimeModule());
-        
+
         // Desabilitar serialização de datas como arrays
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
@@ -44,15 +43,15 @@ public class JacksonConfig {
 
     public static class UUIDDeserializer extends JsonDeserializer<UUID> {
         @Override
-        public UUID deserialize(JsonParser p, DeserializationContext ctxt) 
+        public UUID deserialize(JsonParser p, DeserializationContext ctxt)
                 throws IOException, JsonProcessingException {
             String value = p.getValueAsString();
-            
+
             // Remove aspas extras se existirem
             if (value != null && value.startsWith("\"") && value.endsWith("\"")) {
                 value = value.substring(1, value.length() - 1);
             }
-            
+
             return value != null && !value.trim().isEmpty() ? UUID.fromString(value) : null;
         }
     }

@@ -2,7 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.services.StravaOAuthService;
 
-import br.com.menthoros.backend.config.StravaProperties;
+import br.com.menthoros.backend.config.external.StravaProperties;
 import br.com.menthoros.backend.dto.strava.StravaTokenResponse;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.IntegracaoExterna;

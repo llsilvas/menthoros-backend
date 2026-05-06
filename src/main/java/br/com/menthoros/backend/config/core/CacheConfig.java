@@ -1,6 +1,5 @@
-package br.com.menthoros.backend.config;
+package br.com.menthoros.backend.config.core;
 
-import br.com.menthoros.backend.config.core.CacheProperties;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.CacheManager;

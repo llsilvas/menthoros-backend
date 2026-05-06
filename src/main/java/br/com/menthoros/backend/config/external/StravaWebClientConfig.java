@@ -1,4 +1,4 @@
-package br.com.menthoros.backend.config;
+package br.com.menthoros.backend.config.external;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;

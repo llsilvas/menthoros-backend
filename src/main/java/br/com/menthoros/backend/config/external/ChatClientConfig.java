@@ -1,4 +1,4 @@
-package br.com.menthoros.backend.config;
+package br.com.menthoros.backend.config.external;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.context.annotation.Bean;

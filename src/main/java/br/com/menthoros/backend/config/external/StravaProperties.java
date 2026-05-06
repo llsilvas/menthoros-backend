@@ -1,4 +1,4 @@
-package br.com.menthoros.backend.config;
+package br.com.menthoros.backend.config.external;
 
 import lombok.Getter;
 import lombok.Setter;

@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.config;
 
+import br.com.menthoros.backend.config.external.StravaProperties;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;

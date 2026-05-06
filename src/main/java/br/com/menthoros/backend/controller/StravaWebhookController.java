@@ -1,6 +1,6 @@
 package br.com.menthoros.backend.controller;
 
-import br.com.menthoros.backend.config.StravaProperties;
+import br.com.menthoros.backend.config.external.StravaProperties;
 import br.com.menthoros.backend.dto.strava.StravaWebhookEventDto;
 import br.com.menthoros.backend.services.StravaWebhookService;
 import io.swagger.v3.oas.annotations.Operation;

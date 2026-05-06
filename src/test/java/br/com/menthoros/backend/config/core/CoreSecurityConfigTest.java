@@ -1,4 +1,4 @@
-package br.com.menthoros.backend.config;
+package br.com.menthoros.backend.config.core;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,7 +18,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "app.security.strava-paths[0]=/api/v1/strava/webhook",
     "app.strava.webhook-verify-token=test-webhook-token"
 })
-class SecurityConfigTest {
+class CoreSecurityConfigTest {
 
     @Autowired
     private MockMvc mockMvc;
