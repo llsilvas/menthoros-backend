@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.entity;
 
+import br.com.menthoros.backend.domain.audit.AuditableEntity;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
@@ -22,7 +23,7 @@ indexes = {
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder(toBuilder = true)
-public class Atleta {
+public class Atleta extends AuditableEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
