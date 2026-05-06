@@ -9,10 +9,9 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.menthoros</groupId>
-    <artifactId>menthoros</artifactId>
+    <artifactId>menthoros-backend</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>menthoros-services</name>
-    <description>menthoros-services</description>
+    <name>menthoros-backend</name>
 
     <properties>
         <java.version>21</java.version>
@@ -27,6 +26,11 @@
         <docker.dockerfile.path>${project.basedir}/docker/Dockerfile.dev</docker.dockerfile.path>
         <build.helper.plugin.version>3.4.0</build.helper.plugin.version>
         <keycloak.version>25.0.3</keycloak.version>
+        <springdoc-openapi.version>2.8.5</springdoc-openapi.version>
+        <project.version>1.0.0</project.version>
+        <server.port>8080</server.port>
+        <openapi.docs.port>${server.port}</openapi.docs.port>
+        <openapi.docs.path>/api-docs</openapi.docs.path>
     </properties>
     <dependencies>
         <dependency>
@@ -144,7 +148,7 @@
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>2.8.5</version>
+            <version>${springdoc-openapi.version}</version>
         </dependency>
 
         <!-- Cache -->
@@ -180,6 +184,16 @@
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
         </dependency>
 
+        <!-- Strava Integration -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
     </dependencies>
 
     <repositories>
@@ -200,6 +214,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
                     <release>${java.version}</release>
+                    <parameters>true</parameters>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>
@@ -264,6 +279,14 @@
                         </exclude>
                     </excludes>
                 </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                            <goal>build-info</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- Injeta git.properties com info do commit atual -->
@@ -299,7 +322,9 @@
                 <configuration>
                     <argLine>${argLine} -javaagent:${project.build.directory}/byte-buddy-agent.jar -XX:+EnableDynamicAgentLoading -Djdk.attach.allowAttachSelf=true</argLine>
                     <includes>
-                        <include>**/unit/**/*.java</include>
+                        <include>**/*Test.java</include>
+                        <include>**/*Tests.java</include>
+                        <include>**/*TestCase.java</include>
                     </includes>
                 </configuration>
             </plugin>
@@ -328,7 +353,8 @@
                 <configuration>
                     <argLine>${argLine} -javaagent:${project.build.directory}/byte-buddy-agent.jar -XX:+EnableDynamicAgentLoading -Djdk.attach.allowAttachSelf=true</argLine>
                     <includes>
-                        <include>**/integration/*IT.java</include>
+                        <include>**/*IT.java</include>
+                        <include>**/*ITCase.java</include>
                     </includes>
                     <systemPropertyVariables>
                         <spring.profiles.active>test</spring.profiles.active>
@@ -422,6 +448,26 @@
                 <artifactId>kubernetes-maven-plugin</artifactId>
                 <version>${jkube.version}</version>
             </plugin>
+
+            <plugin>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-maven-plugin</artifactId>
+                <version>1.5</version>
+                <executions>
+                    <execution>
+                        <id>integration-test</id>
+                        <phase>integration-test</phase>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <apiDocsUrl>http://localhost:${openapi.docs.port}${openapi.docs.path}</apiDocsUrl>
+                    <outputFileName>openapi.json</outputFileName>
+                    <outputDir>${project.basedir}/docs/api</outputDir>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 
@@ -495,6 +541,19 @@
                     </plugin>
                 </plugins>
             </build>
+        </profile>
+
+        <!-- Profile para gerar documentação OpenAPI dinâmica -->
+        <profile>
+            <id>openapi-docs</id>
+            <activation>
+                <property>
+                    <name>generate-docs</name>
+                </property>
+            </activation>
+            <properties>
+                <openapi.docs.port>${server.port}</openapi.docs.port>
+            </properties>
         </profile>
     </profiles>
 

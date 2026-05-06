@@ -1,0 +1,15 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_DB:localhost}:${DB_PORT:5432}/${DB_NAME:menthoros_test}
+    username: ${POSTGRES_USER:menthoros}
+    password: ${POSTGRES_PASSWORD:menthoros123}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+
+logging:
+  level:
+    org.flywaydb: WARN
+    org.hibernate.SQL: WARN

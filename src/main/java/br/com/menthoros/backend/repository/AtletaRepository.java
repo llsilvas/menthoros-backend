@@ -1,0 +1,128 @@
+package br.com.menthoros.backend.repository;
+
+import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.repository.custom.AtletaRepositoryCustom;
+import br.com.menthoros.backend.repository.projection.AtletaListProjection;
+import br.com.menthoros.backend.repository.projection.AtletaProjection;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.PagingAndSortingRepository;
+import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUID>, JpaSpecificationExecutor<Atleta>, AtletaRepositoryCustom {
+    Optional<Atleta> findById(UUID id);
+
+    Atleta save(Atleta entity);
+
+    @Transactional(readOnly = true)
+    @Query("""
+    select distinct atl from Atleta atl
+    left join fetch atl.diasDisponiveis
+    where atl.assessoria.id = :tenantId
+      and atl.ativo = 'ATIVO'
+    order by atl.nome ASC
+    """)
+    List<Atleta> findAllAtletasWithDias(@Param("tenantId") UUID tenantId);
+
+    @Transactional(readOnly = true)
+    @Query("""
+    select distinct atl from Atleta atl
+    left join fetch atl.provas
+    where atl.assessoria.id = :tenantId
+      and atl.ativo = 'ATIVO'
+    order by atl.nome ASC
+    """)
+    List<Atleta> findAllAtletasWithProvas(@Param("tenantId") UUID tenantId);
+
+    @Transactional(readOnly = true)
+    @Query("""
+    select atl from Atleta atl
+    where atl.assessoria.id = :tenantId
+      and atl.ativo = 'ATIVO'
+    order by atl.nome ASC
+    """)
+    List<Atleta> findAllAtletasWithBasicInfo(@Param("tenantId") UUID tenantId);
+
+    @Transactional(readOnly = true)
+    @Query("""
+    select atl from Atleta atl
+    where atl.assessoria.id = :tenantId
+      and atl.ativo = 'ATIVO'
+    order by atl.nome ASC
+    """)
+    List<Atleta> findAllAtletas(@Param("tenantId") UUID tenantId);
+
+    @Transactional(readOnly = true)
+    @Query("""
+    select atl from Atleta atl
+    where atl.assessoria.id = :tenantId
+    order by atl.nome ASC
+    """)
+    List<Atleta> findAllByTenantIdOrderByNome(@Param("tenantId") UUID tenantId);
+
+    /**
+     * Busca atleta por ID garantindo que pertence ao tenant correto.
+     * Retorna vazio se o ID existir mas for de outro tenant (evita vazamento de dados).
+     */
+    @Transactional(readOnly = true)
+    @Query("""
+    select atl from Atleta atl
+    where atl.id = :id
+      and atl.assessoria.id = :tenantId
+    """)
+    Optional<Atleta> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+
+    // Mantido para uso interno (services que já validam ownership por outros meios)
+    @Transactional(readOnly = true)
+    @Query("""
+    select atl from Atleta atl
+    where atl.id = :id
+    """)
+    Optional<Atleta> findByIdBasic(@Param("id") UUID id);
+
+    @Transactional
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+    select atl from Atleta atl
+    where atl.id = :id
+    """)
+    Optional<Atleta> findByIdForUpdate(@Param("id") UUID id);
+
+    @Transactional(readOnly = true)
+    @Query("""
+    select distinct atl from Atleta atl
+    join IntegracaoExterna ie on ie.atleta.id = atl.id
+    where ie.plataforma = 'STRAVA'
+      and ie.ativo = true
+      and ie.accessToken is not null
+      and atl.ativo = 'ATIVO'
+    order by atl.nome ASC
+    """)
+    List<Atleta> findAllWithStravaConnected();
+
+    @Transactional(readOnly = true)
+    @Query("SELECT a FROM Atleta a ORDER BY a.nome ASC")
+    List<AtletaListProjection> findProjectedAtletas();
+
+    @Transactional(readOnly = true)
+    @Query("SELECT a FROM Atleta a WHERE a.assessoria.id = :tenantId ORDER BY a.nome ASC")
+    List<AtletaProjection> findProjectedByTenant(@Param("tenantId") UUID tenantId);
+
+    @Transactional
+    @Modifying
+    @Query("UPDATE Atleta a SET a.ativo = br.com.menthoros.backend.enums.AtletaStatus.INATIVO WHERE a.id = :id")
+    int deactivateAthlete(@Param("id") UUID id);
+
+    @Transactional
+    @Modifying
+    @Query("UPDATE Atleta a SET a.ativo = br.com.menthoros.backend.enums.AtletaStatus.ATIVO WHERE a.id = :id")
+    int activateAthlete(@Param("id") UUID id);
+}
