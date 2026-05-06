@@ -465,7 +465,7 @@
                 <configuration>
                     <apiDocsUrl>http://localhost:${openapi.docs.port}${openapi.docs.path}</apiDocsUrl>
                     <outputFileName>openapi.json</outputFileName>
-                    <outputDir>${project.build.directory}/docs/api</outputDir>
+                    <outputDir>${project.basedir}/docs/api</outputDir>
                 </configuration>
             </plugin>
         </plugins>
