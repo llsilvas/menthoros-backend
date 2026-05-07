@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.input.TreinoRealizadoInputDto;
+import br.com.menthoros.backend.dto.output.ResumoSemanalTreinoDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.mapper.TreinoMapper;
@@ -20,6 +21,7 @@ import static org.springframework.http.ResponseEntity.noContent;
 
 import jakarta.validation.Valid;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.springframework.http.ResponseEntity.*;
@@ -90,5 +92,23 @@ public class TreinoRealizadoController {
             @Valid @RequestBody TreinoRealizadoInputDto treinoRealizadoInputDto) {
         TreinoRealizadoOutputDto treinoRealizadoOutputDto = treinoService.lancarTreino(atletaId, treinoRealizadoInputDto);
         return status(HttpStatus.CREATED).body(treinoRealizadoOutputDto);
+    }
+
+    @Operation(summary = "Obter resumo semanal de treinos",
+               description = "Retorna um resumo agregado dos treinos realizados em uma semana, incluindo volume total, TSS, duração e breakdown por dia")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Resumo semanal obtido com sucesso",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ResumoSemanalTreinoDto.class))),
+            @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                    content = @Content(mediaType = "application/json"))
+    })
+    @GetMapping("/realizados/resumo-semana")
+    public ResponseEntity<ResumoSemanalTreinoDto> getResumoSemanal(
+            @Parameter(description = "ID do atleta", required = true)
+            @RequestParam UUID atletaId,
+            @Parameter(description = "Data para calcular a semana (padrão: data atual)")
+            @RequestParam(required = false) LocalDate semana) {
+        ResumoSemanalTreinoDto resumo = treinoService.getResumoSemanal(atletaId, semana);
+        return ResponseEntity.ok(resumo);
     }
 }

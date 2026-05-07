@@ -2,6 +2,8 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.input.TreinoRealizadoInputDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
+import br.com.menthoros.backend.dto.output.ResumoDetalhesDto;
+import br.com.menthoros.backend.dto.output.ResumoSemanalTreinoDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.FonteDados;
@@ -24,9 +26,11 @@ import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
+import java.time.DayOfWeek;
+import java.time.temporal.IsoFields;
+import java.time.temporal.WeekFields;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -312,5 +316,83 @@ public class TreinoServiceImpl implements TreinoService {
     @Transactional
     public void gravarTreino(List<PlanoSemanal> planoSemanalList) {
         planoSemanalRepository.saveAll(planoSemanalList);
+    }
+
+    @Override
+    public ResumoSemanalTreinoDto getResumoSemanal(UUID atletaId, LocalDate targetDate) {
+        Atleta atleta = atletaRepository.findById(atletaId)
+                .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
+
+        if (targetDate == null) {
+            targetDate = LocalDate.now();
+        }
+
+        LocalDate startOfWeek = targetDate.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1);
+        LocalDate endOfWeek = startOfWeek.plusDays(6);
+
+        List<TreinoRealizado> treinos = treinoRealizadoRepository.findRealizedTrainingsByWeek(atletaId, startOfWeek);
+
+        Map<String, ResumoDetalhesDto> diasDaSemana = new HashMap<>();
+        for (DayOfWeek day : DayOfWeek.values()) {
+            diasDaSemana.put(day.toString(), new ResumoDetalhesDto(0, 0.0, 0.0));
+        }
+
+        double totalKm = 0;
+        double totalTss = 0;
+        double totalMinutos = 0;
+        LocalDate ultimoTreino = null;
+        int diasComTreino = 0;
+
+        Map<LocalDate, List<TreinoRealizado>> treinosPorDia = treinos.stream()
+                .collect(Collectors.groupingBy(TreinoRealizado::getDataTreino));
+
+        for (Map.Entry<LocalDate, List<TreinoRealizado>> entry : treinosPorDia.entrySet()) {
+            diasComTreino++;
+            double km = entry.getValue().stream()
+                    .mapToDouble(t -> t.getDistanciaKm() != null ? t.getDistanciaKm().doubleValue() : 0)
+                    .sum();
+            double tss = entry.getValue().stream()
+                    .mapToDouble(t -> t.getTssCalculado() != null ? t.getTssCalculado() : 0)
+                    .sum();
+            double minutos = entry.getValue().stream()
+                    .mapToDouble(t -> t.getDuracaoMin() != null ? t.getDuracaoMin().toMinutes() : 0)
+                    .sum();
+
+            totalKm += km;
+            totalTss += tss;
+            totalMinutos += minutos;
+
+            String dayName = entry.getKey().getDayOfWeek().toString();
+            diasDaSemana.put(dayName, new ResumoDetalhesDto(entry.getValue().size(), km, tss));
+
+            if (ultimoTreino == null || entry.getKey().isAfter(ultimoTreino)) {
+                ultimoTreino = entry.getKey();
+            }
+        }
+
+        int week = targetDate.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+        int year = targetDate.get(IsoFields.WEEK_BASED_YEAR);
+
+        ResumoSemanalTreinoDto.Resumo resumo = new ResumoSemanalTreinoDto.Resumo(
+                treinos.size(),
+                totalKm,
+                totalTss,
+                totalMinutos,
+                diasComTreino,
+                7 - diasComTreino,
+                ultimoTreino != null ? ultimoTreino.toString() : null,
+                diasDaSemana
+        );
+
+        ResumoSemanalTreinoDto response = new ResumoSemanalTreinoDto(
+                atletaId,
+                atleta.getNome(),
+                String.format("%04d-W%02d", year, week),
+                startOfWeek.toString(),
+                endOfWeek.toString(),
+                resumo
+        );
+
+        return response;
     }
 }
