@@ -62,4 +62,7 @@ public interface IntegracaoExternaRepository extends JpaRepository<IntegracaoExt
     List<IntegracaoExterna> findAllActiveByPlataforma(
             @Param("plataforma") FonteDados plataforma
     );
+
+    @Query("SELECT COUNT(DISTINCT ie.atleta.id) FROM IntegracaoExterna ie WHERE ie.plataforma = 'STRAVA' AND ie.ativo = true")
+    Integer countAthletesWithActiveStrava();
 }

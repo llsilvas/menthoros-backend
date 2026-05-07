@@ -125,4 +125,8 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     @Modifying
     @Query("UPDATE Atleta a SET a.ativo = br.com.menthoros.backend.enums.AtletaStatus.ATIVO WHERE a.id = :id")
     int activateAthlete(@Param("id") UUID id);
+
+    @Transactional(readOnly = true)
+    @Query("SELECT COUNT(a) FROM Atleta a")
+    Integer countAllAthletes();
 }
