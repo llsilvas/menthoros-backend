@@ -104,4 +104,10 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
         where tr.id = :id
         """)
     Optional<TreinoRealizado> findByIdWithEtapas(@Param("id") UUID id);
+
+    @Query("SELECT COUNT(tr) FROM TreinoRealizado tr WHERE tr.atleta.id = :atletaId AND WEEK(tr.dataTreino) = WEEK(:startDate) AND YEAR(tr.dataTreino) = YEAR(:startDate)")
+    Integer countRealizedTrainings(@Param("atletaId") UUID atletaId, @Param("startDate") LocalDate startDate);
+
+    @Query("SELECT tr FROM TreinoRealizado tr WHERE tr.atleta.id = :atletaId AND WEEK(tr.dataTreino) = WEEK(:startDate) AND YEAR(tr.dataTreino) = YEAR(:startDate) ORDER BY tr.dataTreino ASC")
+    List<TreinoRealizado> findRealizedTrainingsByWeek(@Param("atletaId") UUID atletaId, @Param("startDate") LocalDate startDate);
 }
