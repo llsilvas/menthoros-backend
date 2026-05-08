@@ -9,6 +9,7 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.multitenancy.TenantContext;
 import org.springframework.stereotype.Service;
 import java.time.LocalDate;
 import java.time.temporal.IsoFields;
@@ -20,6 +21,7 @@ import java.util.Map;
 import java.util.HashMap;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import java.util.UUID;
 
 @Service
 public class MetricasAdesaoService {
@@ -140,6 +142,83 @@ public class MetricasAdesaoService {
         return new AdesaoDiariaDto(
             atleta.getId().toString(),
             atleta.getNome(),
+            semanas
+        );
+    }
+
+    public AdesaoDiariaDto getAdesaoDiariaAssessoria() {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        LocalDate hoje = LocalDate.now();
+        List<Atleta> atletas = atletaRepository.findAllByTenantIdOrderByNome(tenantId);
+
+        if (atletas.isEmpty()) {
+            return new AdesaoDiariaDto(tenantId.toString(), "Assessoria", new ArrayList<>());
+        }
+
+        List<SemanaAdesaoDiariaDto> semanas = new ArrayList<>();
+
+        for (int i = 4; i >= 0; i--) {
+            LocalDate semanaData = hoje.minusWeeks(i);
+            LocalDate startOfWeek = semanaData.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1);
+            LocalDate endOfWeek = startOfWeek.plusDays(6);
+
+            int week = semanaData.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+            int year = semanaData.get(IsoFields.WEEK_BASED_YEAR);
+
+            List<DiaAdesaoDto> dias = new ArrayList<>();
+
+            for (int j = 0; j < 7; j++) {
+                LocalDate data = startOfWeek.plusDays(j);
+
+                double totalPercentual = 0.0;
+                int atletasComDados = 0;
+
+                for (Atleta atleta : atletas) {
+                    int planejadosNoDia = treinoPlanejadoRepository
+                        .findByAtletaIdAndDataBetween(atleta.getId(), data, data)
+                        .size();
+                    int realizadosNoDia = treinoRealizadoRepository
+                        .findByAtletaIdAndDataTreinoBetween(atleta.getId(), data, data)
+                        .size();
+
+                    if (planejadosNoDia > 0) {
+                        double percentualAtleta = (realizadosNoDia * 100.0 / planejadosNoDia);
+                        totalPercentual += percentualAtleta;
+                        atletasComDados++;
+                    }
+                }
+
+                double percentualMedio = atletasComDados > 0 ? (totalPercentual / atletasComDados) : 0.0;
+
+                String[] diasSemana = {"DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"};
+                String diaSemanaStr = diasSemana[data.getDayOfWeek().getValue() % 7];
+
+                dias.add(new DiaAdesaoDto(
+                    data.toString(),
+                    diaSemanaStr,
+                    0,
+                    0,
+                    percentualMedio
+                ));
+            }
+
+            double percentualGeralSemana = dias.stream()
+                .mapToDouble(DiaAdesaoDto::percentual)
+                .average()
+                .orElse(0.0);
+
+            semanas.add(new SemanaAdesaoDiariaDto(
+                String.format("%04d-W%02d", year, week),
+                startOfWeek.toString(),
+                endOfWeek.toString(),
+                percentualGeralSemana,
+                dias
+            ));
+        }
+
+        return new AdesaoDiariaDto(
+            tenantId.toString(),
+            "Assessoria",
             semanas
         );
     }
