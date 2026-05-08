@@ -4,6 +4,7 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -34,6 +35,6 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
      * Busca todas as provas de todos os atletas nos próximos 15 dias,
      * ordenadas pela data ascendente (mais próximas primeiro)
      */
-    @Query("SELECT p FROM Prova p WHERE p.dataProva >= CURRENT_DATE AND p.dataProva <= CURRENT_DATE + 15 ORDER BY p.dataProva ASC")
-    List<Prova> findUpcomingProvasNext15Days();
+    @Query("SELECT p FROM Prova p WHERE p.dataProva >= CURRENT_DATE AND p.dataProva <= :endDate ORDER BY p.dataProva ASC")
+    List<Prova> findUpcomingProvasNext15Days(@Param("endDate") LocalDate endDate);
 }

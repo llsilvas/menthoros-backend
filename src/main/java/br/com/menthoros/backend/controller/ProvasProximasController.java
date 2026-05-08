@@ -42,7 +42,8 @@ public class ProvasProximasController {
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<ProvasProximasResponseDto> getProvasProximas() {
-        List<Prova> provas = provaRepository.findUpcomingProvasNext15Days();
+        LocalDate endDate = LocalDate.now().plusDays(15);
+        List<Prova> provas = provaRepository.findUpcomingProvasNext15Days(endDate);
 
         List<ProvaProximaDto> dtoList = provas.stream()
             .map(p -> {
