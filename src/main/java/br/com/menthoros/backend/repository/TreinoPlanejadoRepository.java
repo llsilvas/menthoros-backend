@@ -35,6 +35,6 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
                                                         @Param("dataInicio") LocalDate dataInicio,
                                                         @Param("dataFim") LocalDate dataFim);
 
-    @Query("SELECT COUNT(tp) FROM TreinoPlanejado tp WHERE tp.atleta.id = :atletaId AND WEEK(tp.dataPlanejada) = WEEK(:startDate) AND YEAR(tp.dataPlanejada) = YEAR(:startDate)")
+    @Query("SELECT COUNT(tp) FROM TreinoPlanejado tp WHERE tp.atleta.id = :atletaId AND WEEK(tp.dataTreino) = WEEK(:startDate) AND YEAR(tp.dataTreino) = YEAR(:startDate)")
     Integer countPlannedTrainings(@Param("atletaId") UUID atletaId, @Param("startDate") LocalDate startDate);
 }
