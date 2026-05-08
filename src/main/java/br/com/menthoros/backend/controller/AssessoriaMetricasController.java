@@ -1,6 +1,6 @@
 package br.com.menthoros.backend.controller;
 
-import com.menthoros.api.dtos.AdesaoDiariaDto;
+import br.com.menthoros.backend.dto.output.AdesaoDiariaDto;
 import br.com.menthoros.backend.services.MetricasAdesaoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;

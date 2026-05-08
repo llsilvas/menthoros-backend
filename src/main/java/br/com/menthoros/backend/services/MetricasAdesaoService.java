@@ -1,10 +1,10 @@
 package br.com.menthoros.backend.services;
 
-import com.menthoros.api.dtos.AdesaoSemanalDto;
-import com.menthoros.api.dtos.SemanaAdesaoDto;
-import com.menthoros.api.dtos.AdesaoDiariaDto;
-import com.menthoros.api.dtos.SemanaAdesaoDiariaDto;
-import com.menthoros.api.dtos.DiaAdesaoDto;
+import br.com.menthoros.backend.dto.output.AdesaoSemanalDto;
+import br.com.menthoros.backend.dto.output.SemanaAdesaoDto;
+import br.com.menthoros.backend.dto.output.AdesaoDiariaDto;
+import br.com.menthoros.backend.dto.output.SemanaAdesaoDiariaDto;
+import br.com.menthoros.backend.dto.output.DiaAdesaoDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;

@@ -1,6 +1,6 @@
 package br.com.menthoros.backend.services;
 
-import com.menthoros.api.dtos.StravaStatusGlobalDto;
+import br.com.menthoros.backend.dto.output.StravaStatusGlobalDto;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import org.springframework.stereotype.Service;
