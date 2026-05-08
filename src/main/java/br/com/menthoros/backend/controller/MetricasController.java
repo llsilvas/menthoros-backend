@@ -57,15 +57,4 @@ public class MetricasController {
         return ResponseEntity.ok(adesao);
     }
 
-    @GetMapping("/adesao-diaria-assessoria")
-    @Operation(summary = "Obter adesão diária consolidada da assessoria",
-               description = "Retorna a média de adesão de todos os atletas por dia da semana para a semana atual e 4 últimas semanas")
-    @ApiResponses({
-        @ApiResponse(responseCode = "200", description = "Adesão diária da assessoria obtida com sucesso",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = AdesaoDiariaDto.class)))
-    })
-    public ResponseEntity<AdesaoDiariaDto> getAdesaoDiariaAssessoria() {
-        AdesaoDiariaDto adesao = metricasAdesaoService.getAdesaoDiariaAssessoria();
-        return ResponseEntity.ok(adesao);
-    }
 }
