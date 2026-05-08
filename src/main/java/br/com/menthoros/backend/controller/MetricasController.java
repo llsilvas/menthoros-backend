@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.controller;
 
 import com.menthoros.api.dtos.AdesaoSemanalDto;
+import com.menthoros.api.dtos.AdesaoDiariaDto;
 import br.com.menthoros.backend.services.MetricasAdesaoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -37,6 +38,22 @@ public class MetricasController {
             @Parameter(description = "ID do atleta", required = true)
             @PathVariable String atletaId) {
         AdesaoSemanalDto adesao = metricasAdesaoService.getAdesaoSemanal(atletaId);
+        return ResponseEntity.ok(adesao);
+    }
+
+    @GetMapping("/adesao-diaria")
+    @Operation(summary = "Obter adesão diária de atleta",
+               description = "Retorna a taxa de adesão por dia da semana para a semana atual e 4 últimas semanas")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Adesão diária obtida com sucesso",
+                content = @Content(mediaType = "application/json", schema = @Schema(implementation = AdesaoDiariaDto.class))),
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                content = @Content(mediaType = "application/json"))
+    })
+    public ResponseEntity<AdesaoDiariaDto> getAdesaoDiaria(
+            @Parameter(description = "ID do atleta", required = true)
+            @PathVariable String atletaId) {
+        AdesaoDiariaDto adesao = metricasAdesaoService.getAdesaoDiaria(atletaId);
         return ResponseEntity.ok(adesao);
     }
 }

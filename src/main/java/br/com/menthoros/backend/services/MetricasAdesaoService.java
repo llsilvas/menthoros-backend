@@ -2,6 +2,9 @@ package br.com.menthoros.backend.services;
 
 import com.menthoros.api.dtos.AdesaoSemanalDto;
 import com.menthoros.api.dtos.SemanaAdesaoDto;
+import com.menthoros.api.dtos.AdesaoDiariaDto;
+import com.menthoros.api.dtos.SemanaAdesaoDiariaDto;
+import com.menthoros.api.dtos.DiaAdesaoDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
@@ -13,6 +16,10 @@ import java.time.temporal.WeekFields;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.HashMap;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.entity.TreinoRealizado;
 
 @Service
 public class MetricasAdesaoService {
@@ -57,6 +64,83 @@ public class MetricasAdesaoService {
             semanaAtual,
             ultimas4Semanas,
             mediaUltimas4Semanas
+        );
+    }
+
+    public AdesaoDiariaDto getAdesaoDiaria(String atletaId) {
+        Atleta atleta = atletaRepository.findById(java.util.UUID.fromString(atletaId))
+            .orElseThrow(() -> new RuntimeException("Atleta not found: " + atletaId));
+
+        LocalDate hoje = LocalDate.now();
+        LocalDate inicioJanela = hoje.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1).minusWeeks(4);
+        LocalDate fimJanela = hoje.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1).plusDays(6);
+
+        List<TreinoPlanejado> planejados = treinoPlanejadoRepository
+            .findByAtletaIdAndDataBetween(atleta.getId(), inicioJanela, fimJanela);
+        List<TreinoRealizado> realizados = treinoRealizadoRepository
+            .findByAtletaIdAndDataTreinoBetween(atleta.getId(), inicioJanela, fimJanela);
+
+        Map<LocalDate, Integer> planejadosPorDia = new HashMap<>();
+        Map<LocalDate, Integer> realizadosPorDia = new HashMap<>();
+
+        for (TreinoPlanejado tp : planejados) {
+            planejadosPorDia.merge(tp.getDataTreino(), 1, Integer::sum);
+        }
+
+        for (TreinoRealizado tr : realizados) {
+            realizadosPorDia.merge(tr.getDataTreino(), 1, Integer::sum);
+        }
+
+        List<SemanaAdesaoDiariaDto> semanas = new ArrayList<>();
+
+        for (int i = 4; i >= 0; i--) {
+            LocalDate semanaData = hoje.minusWeeks(i);
+            LocalDate startOfWeek = semanaData.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1);
+            LocalDate endOfWeek = startOfWeek.plusDays(6);
+
+            int week = semanaData.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
+            int year = semanaData.get(IsoFields.WEEK_BASED_YEAR);
+
+            List<DiaAdesaoDto> dias = new ArrayList<>();
+            int totalPlanejados = 0;
+            int totalRealizados = 0;
+
+            for (int j = 0; j < 7; j++) {
+                LocalDate data = startOfWeek.plusDays(j);
+                int planejadosNoDia = planejadosPorDia.getOrDefault(data, 0);
+                int realizadosNoDia = realizadosPorDia.getOrDefault(data, 0);
+                double percentual = planejadosNoDia > 0 ? (realizadosNoDia * 100.0 / planejadosNoDia) : 0.0;
+
+                String[] diasSemana = {"DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"};
+                String diaSemanaStr = diasSemana[data.getDayOfWeek().getValue() % 7];
+
+                dias.add(new DiaAdesaoDto(
+                    data.toString(),
+                    diaSemanaStr,
+                    planejadosNoDia,
+                    realizadosNoDia,
+                    percentual
+                ));
+
+                totalPlanejados += planejadosNoDia;
+                totalRealizados += realizadosNoDia;
+            }
+
+            double percentualGeral = totalPlanejados > 0 ? (totalRealizados * 100.0 / totalPlanejados) : 0.0;
+
+            semanas.add(new SemanaAdesaoDiariaDto(
+                String.format("%04d-W%02d", year, week),
+                startOfWeek.toString(),
+                endOfWeek.toString(),
+                percentualGeral,
+                dias
+            ));
+        }
+
+        return new AdesaoDiariaDto(
+            atleta.getId().toString(),
+            atleta.getNome(),
+            semanas
         );
     }
 

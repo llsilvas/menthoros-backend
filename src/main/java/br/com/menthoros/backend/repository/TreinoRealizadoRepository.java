@@ -105,9 +105,20 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
         """)
     Optional<TreinoRealizado> findByIdWithEtapas(@Param("id") UUID id);
 
-    @Query("SELECT COUNT(tr) FROM TreinoRealizado tr WHERE tr.atleta.id = :atletaId AND WEEK(tr.dataTreino) = WEEK(:startDate) AND YEAR(tr.dataTreino) = YEAR(:startDate)")
+    @Query("""
+       SELECT COUNT(tr) FROM TreinoRealizado tr
+       WHERE tr.atleta.id = :atletaId
+         AND FUNCTION('iso_year', tr.dataTreino) = FUNCTION('iso_year', :startDate)
+         AND FUNCTION('iso_week', tr.dataTreino) = FUNCTION('iso_week', :startDate)
+       """)
     Integer countRealizedTrainings(@Param("atletaId") UUID atletaId, @Param("startDate") LocalDate startDate);
 
-    @Query("SELECT tr FROM TreinoRealizado tr WHERE tr.atleta.id = :atletaId AND WEEK(tr.dataTreino) = WEEK(:startDate) AND YEAR(tr.dataTreino) = YEAR(:startDate) ORDER BY tr.dataTreino ASC")
+    @Query("""
+       SELECT tr FROM TreinoRealizado tr
+       WHERE tr.atleta.id = :atletaId
+         AND FUNCTION('iso_year', tr.dataTreino) = FUNCTION('iso_year', :startDate)
+         AND FUNCTION('iso_week', tr.dataTreino) = FUNCTION('iso_week', :startDate)
+       ORDER BY tr.dataTreino ASC
+       """)
     List<TreinoRealizado> findRealizedTrainingsByWeek(@Param("atletaId") UUID atletaId, @Param("startDate") LocalDate startDate);
 }
