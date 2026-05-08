@@ -330,7 +330,7 @@ public class TreinoServiceImpl implements TreinoService {
         LocalDate startOfWeek = targetDate.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1);
         LocalDate endOfWeek = startOfWeek.plusDays(6);
 
-        List<TreinoRealizado> treinos = treinoRealizadoRepository.findRealizedTrainingsByWeek(atletaId, startOfWeek);
+        List<TreinoRealizado> treinos = treinoRealizadoRepository.findRealizedTrainingsByWeek(atletaId, startOfWeek, endOfWeek);
 
         Map<String, ResumoDetalhesDto> diasDaSemana = new HashMap<>();
         for (DayOfWeek day : DayOfWeek.values()) {

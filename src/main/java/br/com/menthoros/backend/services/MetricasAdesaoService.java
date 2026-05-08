@@ -151,8 +151,8 @@ public class MetricasAdesaoService {
         int week = data.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
         int year = data.get(IsoFields.WEEK_BASED_YEAR);
 
-        Integer planejados = treinoPlanejadoRepository.countPlannedTrainings(atleta.getId(), startOfWeek);
-        Integer realizados = treinoRealizadoRepository.countRealizedTrainings(atleta.getId(), startOfWeek);
+        Integer planejados = treinoPlanejadoRepository.countPlannedTrainings(atleta.getId(), startOfWeek, endOfWeek);
+        Integer realizados = treinoRealizadoRepository.countRealizedTrainings(atleta.getId(), startOfWeek, endOfWeek);
 
         double percentual = planejados > 0 ? (realizados.doubleValue() / planejados) * 100 : 0.0;
 
@@ -163,7 +163,7 @@ public class MetricasAdesaoService {
             planejados,
             realizados,
             percentual,
-            Math.toIntExact(treinoRealizadoRepository.findRealizedTrainingsByWeek(atleta.getId(), startOfWeek)
+            Math.toIntExact(treinoRealizadoRepository.findRealizedTrainingsByWeek(atleta.getId(), startOfWeek, endOfWeek)
                 .stream()
                 .map(tr -> tr.getDataTreino().getDayOfWeek())
                 .distinct()
