@@ -52,6 +52,16 @@ spring:
   cache:
     type: caffeine
 
+  # ----------------------------------------
+  # OAUTH2 / SECURITY — Keycloak Railway
+  # ----------------------------------------
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://menthoros-keycloak-develop.up.railway.app/realms/menthoros
+          jwk-set-uri: https://menthoros-keycloak-develop.up.railway.app/realms/menthoros/protocol/openid-connect/certs
+
 # ========================================
 # LOGGING
 # ========================================

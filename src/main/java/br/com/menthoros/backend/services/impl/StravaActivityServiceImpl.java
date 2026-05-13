@@ -17,6 +17,7 @@ import br.com.menthoros.backend.exception.DuplicateResourceException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.exception.StravaRateLimitException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.services.TsbService;
 import org.springframework.dao.DataIntegrityViolationException;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
@@ -52,6 +53,7 @@ public class StravaActivityServiceImpl implements StravaActivityService {
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final IntegracaoExternaRepository integracaoExternaRepository;
     private final StravaOAuthService stravaOAuthService;
+    private final TsbService tsbService;
 
     @Qualifier("stravaWebClient")
     private final WebClient stravaWebClient;
@@ -198,7 +200,13 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         // Task 1.2: Idempotent save handles concurrent deduplication (constraint violation retry)
         saveIdempotent(treino, String.valueOf(activity.id()), atleta.getId());
         integracao.setUltimaSincronizacao(Instant.now());
+        atualizarTsbDia(atleta.getId(), treino.getDataTreino());
         integracaoExternaRepository.save(integracao);
+    }
+
+    private void atualizarTsbDia(UUID atletaId, LocalDate dataTreino) {
+        log.info("Atualizando métricas TSB para atleta {} na data {}", atletaId, dataTreino);
+        tsbService.atualizarTsbDia(atletaId, dataTreino);
     }
 
     @Transactional
@@ -357,6 +365,7 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         treino.setElapsedTimeSeg(activity.elapsedTime());
         treino.setSufferScore(activity.sufferScore());
         treino.setDeviceName(activity.deviceName());
+        treino.setStatusSincronizacao(StatusSincronizacao.PENDENTE);
         treino.setGearName(activity.gear() != null ? activity.gear().name() : null);
 
         treino.setFcMedia(sanitizeHeartRate(toNullableInt(activity.averageHeartrate()), 40, 250));

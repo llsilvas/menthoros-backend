@@ -93,7 +93,7 @@ public class DailyActivitySyncSchedulerImpl implements DailyActivitySyncSchedule
      * - Transações e retry logic
      * - Observabilidade (métricas de sucesso/erro)
      */
-    @Scheduled(cron = "0 0 2 * * *", zone = "UTC")
+    @Scheduled(fixedDelay = 10000, initialDelay = 5000)  // TEST: executa a cada 10s, primeira em 5s
     @Transactional
     public void executeDailySync() {
         long startTime = System.currentTimeMillis();

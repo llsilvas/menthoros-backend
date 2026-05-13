@@ -39,6 +39,9 @@ class StravaActivityServiceTest {
     @Mock
     private WebClient stravaWebClient;
 
+    @Mock
+    private TsbService tsbService;
+
     @Test
     @DisplayName("Deve mapear atividade Strava para TreinoRealizado com conversões corretas")
     void shouldMapActivityToTreinoRealizado() {
@@ -47,6 +50,7 @@ class StravaActivityServiceTest {
                 treinoRealizadoRepository,
                 integracaoExternaRepository,
                 stravaOAuthService,
+                tsbService,
                 stravaWebClient
         );
 
@@ -97,6 +101,7 @@ class StravaActivityServiceTest {
                 treinoRealizadoRepository,
                 integracaoExternaRepository,
                 stravaOAuthService,
+                tsbService,
                 stravaWebClient
         );
 

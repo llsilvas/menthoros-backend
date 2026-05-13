@@ -19,10 +19,20 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:8443/realms/menthoros-app}
-          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:8443/realms/menthoros-app/protocol/openid-connect/certs}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI}
+          jwk-set-uri: ${KEYCLOAK_JWK_URI}
+  # ========================================
+  # TASK SCHEDULING CONFIGURATION
+  # ========================================
 
-
+  task:
+    scheduling:
+      pool:
+        size: 5  # Number of scheduler threads
+      thread-name-prefix: "menthoros-scheduler-"
+      shutdown:
+        await-termination: true
+        await-termination-period: 60s
   # ----------------------------------------
   # DATABASE CONFIGURATION
   # ----------------------------------------
@@ -181,6 +191,8 @@ app:
     api-base-url: https://www.strava.com/api/v3
     webhook-verify-token: ${STRAVA_WEBHOOK_TOKEN:}
     sync-days-back: ${STRAVA_SYNC_DAYS_BACK:90}
+
+
 
 # ========================================
 # LOGGING CONFIGURATION
