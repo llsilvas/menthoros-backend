@@ -2,6 +2,8 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.input.ProvaInputDto;
 import br.com.menthoros.backend.dto.output.ProvaOutputDto;
+import br.com.menthoros.backend.dto.output.ProvaProximaDto;
+import br.com.menthoros.backend.dto.output.ProvasProximasResponseDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
@@ -16,6 +18,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -100,5 +105,39 @@ public class ProvaServiceImpl implements ProvaService {
         Atleta atleta = resolveAtleta(atletaId);
         Prova prova = resolveProva(atleta, provaId);
         provaRepository.delete(prova);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ProvasProximasResponseDto getProvasProximas() {
+        LocalDate endDate = LocalDate.now().plusDays(15);
+        List<Prova> provas = provaRepository.findUpcomingProvasNext15Days(endDate);
+
+        List<ProvaProximaDto> dtoList = provas.stream()
+            .map(p -> {
+                LocalDate dataProva = p.getDataProva();
+                long diasFaltando = ChronoUnit.DAYS.between(LocalDate.now(), dataProva);
+
+                return new ProvaProximaDto(
+                    p.getId(),
+                    p.getAtleta().getId(),
+                    p.getAtleta().getNome(),
+                    p.getNomeProva(),
+                    p.getDataProva().toString(),
+                    p.getTipoProva().toString(),
+                    p.getDistancia().toString(),
+                    p.getDistanciaKm() != null ? p.getDistanciaKm().doubleValue() : null,
+                    p.getTempoObjetivo() != null ? p.getTempoObjetivo().toString() : null,
+                    p.getStatusProva().toString(),
+                    Math.toIntExact(diasFaltando)
+                );
+            })
+            .toList();
+
+        return new ProvasProximasResponseDto(
+            dtoList,
+            dtoList.size(),
+            LocalDateTime.now().toString()
+        );
     }
 }

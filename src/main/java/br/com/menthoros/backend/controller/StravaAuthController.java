@@ -74,15 +74,10 @@ public class StravaAuthController {
             return redirectToFrontend("error");
         }
 
-        try {
-            UUID atletaId = UUID.fromString(state);
-            Atleta atleta = stravaOAuthService.findAtletaForCallback(atletaId);
-            stravaOAuthService.exchangeCodeForToken(code, atleta);
-            return redirectToFrontend("success");
-        } catch (Exception ex) {
-            log.error("Falha ao processar callback Strava: {}", ex.getMessage(), ex);
-            return redirectToFrontend("error");
-        }
+        UUID atletaId = UUID.fromString(state);
+        Atleta atleta = stravaOAuthService.findAtletaForCallback(atletaId);
+        stravaOAuthService.exchangeCodeForToken(code, atleta);
+        return redirectToFrontend("success");
     }
 
     @GetMapping("/status/{atletaId}")

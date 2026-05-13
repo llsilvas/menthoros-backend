@@ -19,6 +19,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -34,6 +35,7 @@ import br.com.menthoros.backend.enums.ReconciliationStatus;
 @RestController
 @RequestMapping("/api/v1/reconciliation")
 @Tag(name = "Reconciliação Manual", description = "Operações de reconciliação entre treinos realizados e planejados")
+@Validated
 public class ManualReconciliationController {
 
     private final ManualReconciliationService reconciliationService;
