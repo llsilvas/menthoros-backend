@@ -91,6 +91,85 @@ Rules enforced across all controllers. Violations must be corrected in the same 
 - Use `TenantContext.getRequiredTenantId()` to resolve tenant inside controller methods.
 - Do NOT read `@RequestHeader("X-Tenant-ID")` manually in controllers — this bypasses the tenant filter.
 
+## DTO & Records Standards
+
+Rules for Data Transfer Objects. All new DTOs must follow these patterns.
+
+### Use Records (mandatory, Java 17+)
+- ALL DTOs must be `public record` declarations, not classes.
+- Records are immutable by default, provide auto-generated `equals()`, `hashCode()`, `toString()`, and accessors.
+- Never use `@Data`, `@NoArgsConstructor`, `@AllArgsConstructor` (Lombok annotations) on DTOs.
+
+**Correct:**
+```java
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@Schema(description = "Athlete data for API response")
+public record AtletaOutputDto(
+    @Schema(description = "Unique athlete ID")
+    UUID id,
+    
+    @NotBlank(message = "Name is required")
+    @Size(max = 100)
+    String nome,
+    
+    @Positive(message = "Weight must be positive")
+    BigDecimal pesoKg
+) {}
+```
+
+**Incorrect:**
+```java
+@Data  // ❌ Generates mutable setters
+@NoArgsConstructor
+@AllArgsConstructor
+public class AtletaOutputDto {
+    private UUID id;
+    private String nome;
+    private BigDecimal pesoKg;
+}
+```
+
+### Input vs Output DTOs
+- **Input DTOs** (in `dto/input/`): Contain Bean Validation annotations (`@NotNull`, `@NotBlank`, `@Size`, etc.).
+  - Example: `AtletaInputDto` with `@Valid` validation.
+- **Output DTOs** (in `dto/output/`): Used for responses, include `@JsonInclude(NON_NULL)` to exclude null fields.
+  - Example: `AtletaOutputDto`, `PlanoSemanalOutputDto`.
+
+### Nested Records (when needed)
+Use nested record declarations for related DTOs:
+```java
+public record ResumoSemanalTreinoDto(
+    UUID atletaId,
+    String nomeAtleta,
+    Resumo resumo
+) {
+    public record Resumo(
+        Integer totalTreinos,
+        Double volumeTotalKm,
+        String ultimoTreino
+    ) {}
+}
+```
+
+### Swagger Documentation (mandatory)
+- Every record must have `@Schema(description = "...")` on the class.
+- Every field should have `@Schema(description = "...", example = "...")` for API documentation.
+
+### Record Accessor Names
+- Records auto-generate accessors using field name directly (e.g., `id()`, `nome()`, `pesoKg()`).
+- Do NOT call Lombok-style getters (e.g., `getId()`) — use record field accessors.
+- When refactoring classes to records, update all `getFieldName()` calls to `fieldName()`.
+
+### Type Safety
+- Always declare generic types fully. Avoid raw types.
+- Example: `List<ProvaOutputDto>` (✓) not `List` (✗).
+- Use bounded generics for reusable components.
+
+### Immutability Guarantee
+- Records are `final` and all fields are `final` by default.
+- Never attempt to reassign record fields (compile error, which is good).
+- Collections in records should be defensively copied if they come from untrusted sources (rare in DTOs).
+
 ## Multi-tenancy and Security Guardrails
 
 - Never bypass tenant isolation rules.
@@ -148,4 +227,4 @@ When finishing a backend task, report:
 3. Validation commands executed and results.
 4. Risks, assumptions, or follow-up items.
 
-Last reviewed on: 2026-05-04
+Last reviewed on: 2026-05-14
