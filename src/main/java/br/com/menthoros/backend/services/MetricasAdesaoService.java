@@ -56,7 +56,7 @@ public class MetricasAdesaoService {
 
         // Calculate average
         double mediaUltimas4Semanas = ultimas4Semanas.stream()
-            .mapToDouble(s -> s.getPercentualRealizacao() != null ? s.getPercentualRealizacao() : 0.0)
+            .mapToDouble(s -> s.percentualRealizacao() != null ? s.percentualRealizacao() : 0.0)
             .average()
             .orElse(0.0);
 
