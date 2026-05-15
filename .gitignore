@@ -49,3 +49,5 @@ scripts/
 .env
 
 src/main/resources/db/Arquivo.zip
+
+logs/
