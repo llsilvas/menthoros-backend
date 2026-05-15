@@ -40,4 +40,14 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
                         and ps.status != 'CONCLUIDO'
             """)
     Optional<PlanoSemanal> findByAtletaId(UUID atletaId);
+
+    /**
+     * Valida se um PlanoSemanal pertence a um tenant específico.
+     * Usado pelo TenantValidationAspect para validação de isolamento.
+     */
+    @Query("""
+       SELECT CASE WHEN COUNT(ps) > 0 THEN true ELSE false END FROM PlanoSemanal ps
+       WHERE ps.id = :id AND ps.atleta.assessoria.id = :tenantId
+       """)
+    boolean existsByIdAndAtleta_TenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 }

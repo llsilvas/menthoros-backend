@@ -125,4 +125,14 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     List<TreinoRealizado> findRealizedTrainingsByWeek(@Param("atletaId") UUID atletaId,
                                                        @Param("weekStart") LocalDate weekStart,
                                                        @Param("weekEnd") LocalDate weekEnd);
+
+    /**
+     * Valida se um TreinoRealizado pertence a um tenant específico.
+     * Usado pelo TenantValidationAspect para validação de isolamento.
+     */
+    @Query("""
+       SELECT CASE WHEN COUNT(tr) > 0 THEN true ELSE false END FROM TreinoRealizado tr
+       WHERE tr.id = :id AND tr.atleta.assessoria.id = :tenantId
+       """)
+    boolean existsByIdAndAtleta_TenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 }

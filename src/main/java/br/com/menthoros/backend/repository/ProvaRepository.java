@@ -38,4 +38,14 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
      */
     @Query("SELECT DISTINCT p FROM Prova p JOIN FETCH p.atleta WHERE p.dataProva >= CURRENT_DATE AND p.dataProva <= :endDate ORDER BY p.dataProva ASC")
     List<Prova> findUpcomingProvasNext15Days(@Param("endDate") LocalDate endDate);
+
+    /**
+     * Valida se uma Prova pertence a um tenant específico.
+     * Usado pelo TenantValidationAspect para validação de isolamento.
+     */
+    @Query("""
+       SELECT CASE WHEN COUNT(p) > 0 THEN true ELSE false END FROM Prova p
+       WHERE p.id = :id AND p.atleta.assessoria.id = :tenantId
+       """)
+    boolean existsByIdAndAtleta_TenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 }

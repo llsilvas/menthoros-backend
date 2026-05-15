@@ -44,4 +44,19 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
     Integer countPlannedTrainings(@Param("atletaId") UUID atletaId,
                                   @Param("weekStart") LocalDate weekStart,
                                   @Param("weekEnd") LocalDate weekEnd);
+
+    /**
+     * Valida se um TreinoPlanejado pertence a um tenant específico.
+     * Usado pelo TenantValidationAspect para validação de isolamento.
+     *
+     * Porquê usar query customizada?
+     * - Evita N+1 queries
+     * - Usa índices do banco
+     * - Retorna apenas booleano (leve)
+     */
+    @Query("""
+       SELECT CASE WHEN COUNT(tp) > 0 THEN true ELSE false END FROM TreinoPlanejado tp
+       WHERE tp.id = :id AND tp.atleta.assessoria.id = :tenantId
+       """)
+    boolean existsByIdAndAtleta_TenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 }

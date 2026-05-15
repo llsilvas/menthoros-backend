@@ -96,4 +96,16 @@ public interface TreinoReconciliacaoRepository extends JpaRepository<TreinoRecon
             @Param("startTime") Instant startTime,
             @Param("endTime") Instant endTime
     );
+
+    /**
+     * Valida se uma TreinoReconciliacao pertence a um tenant específico.
+     * Usado pelo TenantValidationAspect para validação de isolamento.
+     *
+     * Nota: TreinoReconciliacao tem tenantId direto, então a query é mais simples.
+     */
+    @Query("""
+       SELECT CASE WHEN COUNT(tr) > 0 THEN true ELSE false END FROM TreinoReconciliacao tr
+       WHERE tr.id = :id AND tr.treinoRealizado.atleta.assessoria.id = :tenantId
+       """)
+    boolean existsByIdAndTreinoRealizado_Atleta_TenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 }
