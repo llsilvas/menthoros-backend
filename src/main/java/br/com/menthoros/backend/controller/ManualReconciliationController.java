@@ -6,6 +6,8 @@ import br.com.menthoros.backend.dto.output.CandidateMatchDto;
 import br.com.menthoros.backend.dto.input.ReconciliacaoAcaoRequestDto;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.mapper.TreinoMapper;
+import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.security.RequireTenant;
 import br.com.menthoros.backend.services.ManualReconciliationService;
 import br.com.menthoros.backend.services.ReconciliacaoPendentesService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -59,6 +61,7 @@ public class ManualReconciliationController {
      */
     @GetMapping("/{treinoRealizadoId}")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Retorna o estado de reconciliação de uma atividade")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Estado de reconciliação retornado com sucesso"),
@@ -66,9 +69,9 @@ public class ManualReconciliationController {
         @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem acessar reconciliações")
     })
     public ResponseEntity<TreinoRealizadoOutputDto> getReconciliationState(
-            @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
-            @RequestHeader("X-Tenant-ID") UUID tenantId) {
+            @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId) {
 
+        UUID tenantId = TenantContext.getRequiredTenantId();
         TreinoRealizado realizado = reconciliationService.getReconciliationState(treinoRealizadoId, tenantId);
         TreinoRealizadoOutputDto dto = treinoMapper.toOutputDto(realizado);
 
@@ -81,6 +84,7 @@ public class ManualReconciliationController {
      */
     @PostMapping("/{treinoRealizadoId}/link")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Vincula manualmente uma atividade realizada a um treino planejado")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Vínculo criado com sucesso"),
@@ -92,9 +96,9 @@ public class ManualReconciliationController {
     public ResponseEntity<TreinoRealizadoOutputDto> linkManually(
             @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
             @Parameter(description = "ID único do treino planejado a vincular") @RequestParam UUID treinoPlanejadoId,
-            @RequestHeader("X-Tenant-ID") UUID tenantId,
             Authentication authentication) {
 
+        UUID tenantId = TenantContext.getRequiredTenantId();
         String actorId = authentication.getName();
 
         TreinoRealizado realizado = reconciliationService.linkManually(
@@ -114,6 +118,7 @@ public class ManualReconciliationController {
      */
     @PostMapping("/{treinoRealizadoId}/mark-not-planned")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Marca uma atividade realizada como não planejada")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Atividade marcada como não planejada com sucesso"),
@@ -123,9 +128,9 @@ public class ManualReconciliationController {
     })
     public ResponseEntity<TreinoRealizadoOutputDto> markAsNotPlanned(
             @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
-            @RequestHeader("X-Tenant-ID") UUID tenantId,
             Authentication authentication) {
 
+        UUID tenantId = TenantContext.getRequiredTenantId();
         String actorId = authentication.getName();
 
         TreinoRealizado realizado = reconciliationService.markAsNotPlanned(
@@ -144,6 +149,7 @@ public class ManualReconciliationController {
      */
     @PostMapping("/{treinoRealizadoId}/unlink")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Desfaz o vínculo de uma atividade realizada com um treino planejado")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Vínculo desfeito com sucesso"),
@@ -153,9 +159,9 @@ public class ManualReconciliationController {
     })
     public ResponseEntity<TreinoRealizadoOutputDto> unlinkManually(
             @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
-            @RequestHeader("X-Tenant-ID") UUID tenantId,
             Authentication authentication) {
 
+        UUID tenantId = TenantContext.getRequiredTenantId();
         String actorId = authentication.getName();
 
         TreinoRealizado realizado = reconciliationService.unlinkManually(
@@ -175,6 +181,7 @@ public class ManualReconciliationController {
      */
     @GetMapping("/atletas/{atletaId}/pendentes")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Lista atividades pendentes de reconciliação por atleta")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Lista de atividades pendentes retornada com sucesso"),
@@ -188,9 +195,9 @@ public class ManualReconciliationController {
             @Parameter(description = "Data de início do período de filtro (ISO format: YYYY-MM-DD)") @RequestParam(required = false) LocalDate dataInicio,
             @Parameter(description = "Data de fim do período de filtro (ISO format: YYYY-MM-DD)") @RequestParam(required = false) LocalDate dataFim,
             @Parameter(description = "Número da página (zero-indexed, padrão: 0)") @RequestParam(defaultValue = "0") int page,
-            @Parameter(description = "Tamanho da página (padrão: 20)") @RequestParam(defaultValue = "20") int size,
-            @RequestHeader("X-Tenant-ID") UUID tenantId) {
+            @Parameter(description = "Tamanho da página (padrão: 20)") @RequestParam(defaultValue = "20") int size) {
 
+        UUID tenantId = TenantContext.getRequiredTenantId();
         List<ReconciliationStatus> statusList = null;
         if (statuses != null && !statuses.isEmpty()) {
             statusList = statuses.stream()
@@ -221,6 +228,7 @@ public class ManualReconciliationController {
      */
     @GetMapping("/{treinoRealizadoId}/candidatos")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Lista candidatos para vínculo rankeados por compatibilidade")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Lista de candidatos retornada com sucesso"),
@@ -228,9 +236,9 @@ public class ManualReconciliationController {
         @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem listar")
     })
     public ResponseEntity<List<CandidateMatchDto>> listarCandidatos(
-            @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
-            @RequestHeader("X-Tenant-ID") UUID tenantId) {
+            @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId) {
 
+        UUID tenantId = TenantContext.getRequiredTenantId();
         List<CandidateMatchDto> candidatos = pendentesService.listarCandidatos(
                 treinoRealizadoId, tenantId);
         return ResponseEntity.ok(candidatos);
@@ -242,6 +250,7 @@ public class ManualReconciliationController {
      */
     @PostMapping("/{treinoRealizadoId}/acao")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Executa uma ação de reconciliação (vincular, marcar como não planejado ou desfazer)")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Ação executada com sucesso"),
@@ -254,9 +263,9 @@ public class ManualReconciliationController {
     public ResponseEntity<TreinoRealizadoOutputDto> executarAcao(
             @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
             @RequestBody @Valid ReconciliacaoAcaoRequestDto request,
-            @RequestHeader("X-Tenant-ID") UUID tenantId,
             Authentication authentication) {
 
+        UUID tenantId = TenantContext.getRequiredTenantId();
         String actorId = authentication.getName();
 
         TreinoRealizado realizado = switch (request.action()) {
