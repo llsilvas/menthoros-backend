@@ -90,6 +90,54 @@ Rules enforced across all controllers. Violations must be corrected in the same 
 ### Tenant Resolution (mandatory)
 - Use `TenantContext.getRequiredTenantId()` to resolve tenant inside controller methods.
 - Do NOT read `@RequestHeader("X-Tenant-ID")` manually in controllers — this bypasses the tenant filter.
+- **All controllers that use TenantContext MUST be marked with `@RequireTenant`** annotation to enforce tenant isolation at compile-time.
+  ```java
+  @RestController
+  @RequireTenant  // ✅ Enforces tenant awareness
+  public class AtletaController { ... }
+  ```
+
+## Mapper Standards
+
+Rules for conversion between entities, DTOs, and domain objects.
+
+### Null Handling (mandatory)
+- Every mapper method MUST validate null inputs explicitly.
+- Throw `IllegalArgumentException` with a clear message if null is detected.
+- Do NOT silently return null or allow NPE.
+
+**Correct:**
+```java
+public AtletaOutputDto toOutputDto(Atleta entity) {
+    if (entity == null) {
+        throw new IllegalArgumentException("Atleta entity cannot be null");
+    }
+    return new AtletaOutputDto(
+        entity.getId(),
+        entity.getNome(),
+        entity.getPesoKg(),
+        entity.getCriadoEm(),
+        entity.getAtualizadoEm()
+    );
+}
+```
+
+**Incorrect:**
+```java
+public AtletaOutputDto toOutputDto(Atleta entity) {
+    // ❌ What if entity is null? NPE later!
+    return new AtletaOutputDto(
+        entity.getId(),
+        entity.getNome(),
+        entity.getPesoKg()
+    );
+}
+```
+
+### Record Conversion
+- Use constructor-based conversion (not setters — records don't have them).
+- Preserve field names exactly as defined in records.
+- If conversion logic is complex, extract to private helper methods.
 
 ## DTO & Records Standards
 
@@ -170,6 +218,106 @@ public record ResumoSemanalTreinoDto(
 - Never attempt to reassign record fields (compile error, which is good).
 - Collections in records should be defensively copied if they come from untrusted sources (rare in DTOs).
 
+## Service Standards
+
+Rules for service layer classes that contain business logic.
+
+### Idempotency & Side Effects Documentation (mandatory)
+- Every public method MUST document whether it is idempotent and what side effects it has.
+- This documentation prevents IA from generating unsafe retry logic or state corruption.
+
+**Format:** Add this JavaDoc to every public method:
+
+```java
+/**
+ * Brief description of what this method does.
+ * 
+ * **Idempotent:** YES/NO
+ *   - YES: Safe to call multiple times without unexpected state changes
+ *   - NO: Calling multiple times produces different results or corrupts state
+ * 
+ * **Side Effects:** NONE / Database mutation / External API call / etc.
+ * 
+ * **Tenant-aware:** YES/NO
+ *   - Uses TenantContext.getRequiredTenantId() or validates tenant parameter
+ * 
+ * @param atletaId the athlete ID
+ * @return result of operation
+ * @throws EntityNotFoundException if athlete not found
+ */
+public void recalcularMetricasAtleta(UUID atletaId) { ... }
+```
+
+**Examples:**
+
+```java
+/**
+ * Idempotent: YES — Read-only operation, no state changes.
+ * Side Effects: NONE
+ * Tenant-aware: YES
+ */
+@Transactional(readOnly = true)
+public AtletaOutputDto getAtletaById(UUID id) { ... }
+
+/**
+ * Idempotent: NO — Creates new entity each time.
+ * Side Effects: Database insert (new entity created)
+ * Tenant-aware: YES
+ */
+public Atleta createAtleta(AtletaInputDto input) { ... }
+
+/**
+ * Idempotent: YES — Deleting twice is safe (already deleted).
+ * Side Effects: Database update (soft delete)
+ * Tenant-aware: YES
+ */
+public void deleteAtleta(UUID id) { ... }
+
+/**
+ * Idempotent: NO — Updates metrics each time, data changes.
+ * Side Effects: Database update (multiple fields)
+ * Tenant-aware: YES
+ */
+public void recalcularMetricasAtleta(UUID atletaId) { ... }
+```
+
+### Input Validation (mandatory)
+- Services MUST NOT trust input DTOs — even though they have `@Valid` on controller side.
+- Validate again in service layer for critical business rules.
+
+```java
+public Atleta createAtleta(AtletaInputDto input) {
+    // Defensive validation (beyond DTO annotations)
+    if (input.nome() == null || input.nome().isBlank()) {
+        throw new InvalidArgumentException("Nome cannot be blank");
+    }
+    if (input.pesoKg() != null && input.pesoKg().compareTo(BigDecimal.ZERO) <= 0) {
+        throw new InvalidArgumentException("Peso must be positive");
+    }
+    // ... rest of logic
+}
+```
+
+### Logging (mandatory)
+- Log entry point and exit with relevant context (ID, tenant, operation result).
+- Use structured logging with SLF4J + MDC when available.
+
+```java
+@Slf4j
+public class AtletaService {
+    public Atleta createAtleta(AtletaInputDto input) {
+        log.info("Creating atleta: nome={}", input.nome());
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        
+        Atleta entity = mapper.toDomain(input);
+        entity = repository.save(entity);
+        
+        log.info("Atleta created: id={}, tenantId={}", entity.getId(), tenantId);
+        return entity;
+    }
+}
+```
+
 ## Multi-tenancy and Security Guardrails
 
 - Never bypass tenant isolation rules.
@@ -227,4 +375,125 @@ When finishing a backend task, report:
 3. Validation commands executed and results.
 4. Risks, assumptions, or follow-up items.
 
-Last reviewed on: 2026-05-14
+## AI-Assisted Code Generation Guidelines
+
+Guidelines for requesting and validating code generated by Claude or other AI models.
+
+### Before Requesting AI-Generated Code
+
+Provide the AI with this context:
+
+```
+You are generating code for the Menthoros Backend.
+
+MANDATORY: Follow these rules from apps/menthoros-backend/CLAUDE.md:
+
+1. **Controller Standards**
+   - Inject only Service (never Repository)
+   - All write endpoints (@PostMapping, @PutMapping, @DeleteMapping) have @PreAuthorize
+   - All endpoints have @Operation + @ApiResponses
+   - Use ResponseEntity<OutputDto> (never Map<String, Object>)
+   - All DTOs are validated with @Valid
+
+2. **DTO & Records Standards**
+   - ALL DTOs must be records (not classes)
+   - Input DTOs have validation annotations (@NotNull, @Size, etc.)
+   - Output DTOs have @JsonInclude(NON_NULL)
+
+3. **Service Standards**
+   - EVERY public method documents: Idempotent: YES/NO
+   - EVERY public method documents: Side Effects: NONE/Database/External API
+   - EVERY public method documents: Tenant-aware: YES/NO
+   - Validate inputs (don't trust DTOs)
+   - Add logging for entry/exit
+
+4. **Mapper Standards**
+   - NULL CHECK: If input is null, throw IllegalArgumentException
+   - Never allow silent null returns
+
+5. **Tenant Resolution**
+   - Use TenantContext.getRequiredTenantId() for tenant resolution
+   - Never read @RequestHeader("X-Tenant-ID") directly
+   - Mark controller with @RequireTenant annotation
+
+Test generated code with: ./mvnw clean test
+```
+
+### Validating AI-Generated Code
+
+**Before merging, verify these patterns:**
+
+```bash
+# 1. Check for Repository injection in controllers (❌ BAD)
+grep -r "@Autowired.*Repository\|private.*Repository" \
+  src/main/java/br/com/menthoros/backend/controller/
+
+# 2. Check for class-based DTOs (❌ BAD - should be records)
+grep -r "public class.*OutputDto\|public class.*InputDto" \
+  src/main/java/br/com/menthoros/backend/dto/
+
+# 3. Check for missing @PreAuthorize on write endpoints (⚠️ WARNING)
+grep -B2 "@PostMapping\|@PutMapping\|@DeleteMapping" \
+  src/main/java/br/com/menthoros/backend/controller/*.java \
+  | grep -v "@PreAuthorize"
+
+# 4. Check for null-unsafe mappers (❌ BAD)
+grep -A5 "public.*toOutputDto\|public.*toDomain" \
+  src/main/java/br/com/menthoros/backend/mapper/*.java \
+  | grep -v "if.*null\|throw.*Illegal"
+
+# 5. Run full test suite (required for all generated code)
+./mvnw clean test
+```
+
+### Code Review Checklist for AI-Generated Code
+
+Use this checklist when reviewing AI-generated code:
+
+- [ ] **Controllers**
+  - [ ] Only Service injected (no Repository)
+  - [ ] All write endpoints (@POST/@PUT/@DELETE) have `@PreAuthorize`
+  - [ ] Every method has `@Operation` + `@ApiResponses`
+  - [ ] Returns `ResponseEntity<OutputDto>` (never raw types)
+  - [ ] Input DTOs have `@Valid` annotation
+
+- [ ] **Services**
+  - [ ] Every public method has full JavaDoc with:
+    - [ ] Brief description
+    - [ ] `Idempotent: YES/NO`
+    - [ ] `Side Effects: ...`
+    - [ ] `Tenant-aware: YES/NO`
+  - [ ] Validates inputs (not just DTOs)
+  - [ ] Logs entry/exit with context
+
+- [ ] **DTOs**
+  - [ ] All are `record` (not `class`)
+  - [ ] Input DTOs have validation annotations
+  - [ ] Output DTOs have `@JsonInclude(NON_NULL)`
+  - [ ] Every field has `@Schema(description = "...")`
+
+- [ ] **Mappers**
+  - [ ] Null checks on inputs (throws `IllegalArgumentException`)
+  - [ ] No silent null returns
+
+- [ ] **Tests**
+  - [ ] `./mvnw clean test` passes (100% success)
+  - [ ] No test failures or errors
+
+### Red Flags in AI-Generated Code
+
+Reject code if it has:
+
+```
+❌ Controllers injecting Repository directly
+❌ DTOs as mutable classes (not records)
+❌ Missing @PreAuthorize on write endpoints
+❌ Raw Map<String, Object> returns
+❌ Try/catch blocks for HTTP error handling (should be GlobalExceptionHandler)
+❌ Mappers without null checks
+❌ Services without Idempotency documentation
+❌ Services using TenantContext without @RequireTenant on controller
+❌ Test failures or compilation errors
+```
+
+Last reviewed on: 2026-05-15
