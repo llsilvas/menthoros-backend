@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!--
+    Configuração de Logback com suporte a MDC (Mapped Diagnostic Context).
+
+    O que é MDC?
+    - MDC permite adicionar contexto (request_id, tenant_id, user_id) aos logs
+    - Ferramentas de observabilidade capturam MDC automaticamente
+    - Permite correlacionar logs em sistemas distribuídos
+
+    Padrão de log:
+    - %d{ISO8601} = data/hora em ISO8601
+    - %thread = thread que gerou o log
+    - %logger{36} = nome da classe
+    - %mdc = conteúdo do MDC (request_id, tenant_id, duration_ms)
+    - %msg = mensagem de log
+    - %n = quebra de linha
+
+    Porquê?
+    - request_id permite rastrear uma request por toda stack
+    - tenant_id permite buscar logs por tenant específico
+    - duration_ms permite identificar requests lentas
+    -->
+
+    <!-- Importa configuração padrão do Spring Boot -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <!-- Padrão estruturado com MDC -->
+    <property name="LOG_FILE_PATTERN" value="%d{ISO8601} %thread %-5level %logger{36} [%mdc{request_id}] [%mdc{tenant_id}] - %msg%n"/>
+
+    <!-- Console (desenvolvimento) -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_FILE_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Arquivo (produção) com rotação -->
+    <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/menthoros.log</file>
+        <encoder>
+            <pattern>${LOG_FILE_PATTERN}</pattern>
+        </encoder>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <!-- Rota para arquivo com data -->
+            <fileNamePattern>logs/menthoros-%d{yyyy-MM-dd}.%i.log</fileNamePattern>
+            <!-- Máximo de 10MB por arquivo -->
+            <maxFileSize>10MB</maxFileSize>
+            <!-- Máximo de 30 dias de retenção -->
+            <maxHistory>30</maxHistory>
+        </rollingPolicy>
+    </appender>
+
+    <!-- Loggers específicos -->
+    <!--
+    Porquê configurar loggers específicos?
+    - Reduz ruído de logs de bibliotecas
+    - Permite debug granular
+    - Economiza espaço em armazenamento
+    -->
+
+    <!-- Segurança: logar todos os avisos -->
+    <logger name="br.com.menthoros.backend.security" level="DEBUG"/>
+    <logger name="br.com.menthoros.backend.multitenancy" level="DEBUG"/>
+
+    <!-- Aspecto de validação: logar tudo -->
+    <logger name="br.com.menthoros.backend.security.TenantValidationAspect" level="INFO"/>
+
+    <!-- Spring Data JPA: reduzir ruído -->
+    <logger name="org.springframework.data" level="WARN"/>
+    <logger name="org.hibernate" level="WARN"/>
+
+    <!-- Silence bibliotecas verbose -->
+    <logger name="org.springframework.boot.actuate" level="WARN"/>
+    <logger name="org.springframework.security" level="WARN"/>
+
+    <!-- Logger raiz -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="FILE"/>
+    </root>
+
+    <!-- Perfis específicos -->
+    <springProfile name="dev">
+        <root level="DEBUG">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="prod">
+        <root level="INFO">
+            <appender-ref ref="FILE"/>
+        </root>
+    </springProfile>
+</configuration>
