@@ -29,16 +29,21 @@ public class PlanoTreinoController {
     private final PlanoService planoService;
     private final PlanoSemanalMapper planoSemanalMapper;
 
+    @PostMapping("/atletas/{atletaId}/gerar")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Gerar plano de treino", description = "Gera um novo plano de treino semanal para o atleta especificado usando IA")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Plano gerado com sucesso",
                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = PlanoSemanalOutputDto.class))),
+            @ApiResponse(responseCode = "400", description = "Dados inválidos fornecidos",
+                    content = @Content(mediaType = "application/json")),
             @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem gerar planos",
                     content = @Content(mediaType = "application/json")),
             @ApiResponse(responseCode = "500", description = "Erro ao gerar plano",
                     content = @Content(mediaType = "application/json"))
     })
-    @PostMapping("/atletas/{atletaId}/gerar")
     public ResponseEntity<PlanoSemanalOutputDto> gerarPlanoTreino(
             @Parameter(description = "ID do atleta para o qual gerar o plano") @PathVariable UUID atletaId,
             @Parameter(description = "Modo de geração do plano (SEMANA_ATUAL ou PROXIMA_SEMAMA)") @RequestParam(required = false, defaultValue = "PROXIMA_SEMANA") ModoGeracaoPlano modoGeracaoPlano) {

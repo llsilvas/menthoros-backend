@@ -5,11 +5,13 @@ import br.com.menthoros.backend.dto.output.StravaSyncStatusDto;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.services.StravaActivityService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,9 +45,10 @@ public class StravaActivityController {
     @Operation(summary = "Retorna status da última/atual sincronização")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Status retornado com sucesso"),
-        @ApiResponse(responseCode = "404", description = "Integração Strava não encontrada")
+        @ApiResponse(responseCode = "404", description = "Integração Strava não encontrada"),
+        @ApiResponse(responseCode = "401", description = "Não autenticado")
     })
-    public ResponseEntity<StravaSyncStatusDto> getSyncStatus(@PathVariable UUID atletaId) {
+    public ResponseEntity<StravaSyncStatusDto> getSyncStatus(@Parameter(description = "ID único do atleta") @PathVariable UUID atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         return ResponseEntity.ok(stravaActivityService.getSyncStatus(atletaId, tenantId));
     }

@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -36,6 +37,7 @@ public class AtletaController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Cadastrar novo atleta", description = "Cria um novo atleta no sistema")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "201", description = "Atleta criado com sucesso",
@@ -52,6 +54,7 @@ public class AtletaController {
     }
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Atualizar atleta", description = "Atualiza os dados de um atleta existente")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Atleta atualizado com sucesso",

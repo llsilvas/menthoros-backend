@@ -9,6 +9,7 @@ import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.services.ManualReconciliationService;
 import br.com.menthoros.backend.services.ReconciliacaoPendentesService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -56,13 +57,15 @@ public class ManualReconciliationController {
      * Recupera o estado de reconciliação de uma atividade.
      */
     @GetMapping("/{treinoRealizadoId}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Retorna o estado de reconciliação de uma atividade")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Estado de reconciliação retornado com sucesso"),
-        @ApiResponse(responseCode = "404", description = "Atividade não encontrada")
+        @ApiResponse(responseCode = "404", description = "Atividade não encontrada"),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem acessar reconciliações")
     })
     public ResponseEntity<TreinoRealizadoOutputDto> getReconciliationState(
-            @PathVariable UUID treinoRealizadoId,
+            @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
             @RequestHeader("X-Tenant-ID") UUID tenantId) {
 
         TreinoRealizado realizado = reconciliationService.getReconciliationState(treinoRealizadoId, tenantId);
@@ -107,14 +110,16 @@ public class ManualReconciliationController {
      * Marca uma atividade realizada como não planejada (orfã).
      */
     @PostMapping("/{treinoRealizadoId}/mark-not-planned")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Marca uma atividade realizada como não planejada")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Atividade marcada como não planejada com sucesso"),
         @ApiResponse(responseCode = "404", description = "Atividade não encontrada"),
-        @ApiResponse(responseCode = "409", description = "Conflito na operação (estado inválido)")
+        @ApiResponse(responseCode = "409", description = "Conflito na operação (estado inválido)"),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem marcar")
     })
     public ResponseEntity<TreinoRealizadoOutputDto> markAsNotPlanned(
-            @PathVariable UUID treinoRealizadoId,
+            @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
             @RequestHeader("X-Tenant-ID") UUID tenantId,
             Authentication authentication) {
 
@@ -164,19 +169,21 @@ public class ManualReconciliationController {
      * Query param 'statuses' é opcional (default: AMBIGUO,NAO_PLANEJADO) e restrito a valores pendentes.
      */
     @GetMapping("/atletas/{atletaId}/pendentes")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Lista atividades pendentes de reconciliação por atleta")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Lista de atividades pendentes retornada com sucesso"),
         @ApiResponse(responseCode = "400", description = "Parâmetros de filtro inválidos"),
-        @ApiResponse(responseCode = "404", description = "Atleta não encontrado")
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado"),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem listar")
     })
     public ResponseEntity<Page<TreinoRealizadoPendenteOutputDto>> listarPendentes(
-            @PathVariable UUID atletaId,
-            @RequestParam(required = false) List<String> statuses,
-            @RequestParam(required = false) LocalDate dataInicio,
-            @RequestParam(required = false) LocalDate dataFim,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @Parameter(description = "ID único do atleta") @PathVariable UUID atletaId,
+            @Parameter(description = "Filtro de status: AMBIGUO ou NAO_PLANEJADO (comma-separated)") @RequestParam(required = false) List<String> statuses,
+            @Parameter(description = "Data de início do período de filtro (ISO format: YYYY-MM-DD)") @RequestParam(required = false) LocalDate dataInicio,
+            @Parameter(description = "Data de fim do período de filtro (ISO format: YYYY-MM-DD)") @RequestParam(required = false) LocalDate dataFim,
+            @Parameter(description = "Número da página (zero-indexed, padrão: 0)") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Tamanho da página (padrão: 20)") @RequestParam(defaultValue = "20") int size,
             @RequestHeader("X-Tenant-ID") UUID tenantId) {
 
         List<ReconciliationStatus> statusList = null;
@@ -227,16 +234,18 @@ public class ManualReconciliationController {
      * Executa uma ação de reconciliação unificada (vincular/marcar/desfazer).
      */
     @PostMapping("/{treinoRealizadoId}/acao")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Executa uma ação de reconciliação (vincular, marcar como não planejado ou desfazer)")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Ação executada com sucesso"),
         @ApiResponse(responseCode = "400", description = "Parâmetros inválidos ou ação inválida"),
         @ApiResponse(responseCode = "404", description = "Atividade ou treino planejado não encontrado"),
         @ApiResponse(responseCode = "409", description = "Conflito na operação (estado inválido)"),
-        @ApiResponse(responseCode = "422", description = "Entidade não processável (dados inválidos ou inconsistentes)")
+        @ApiResponse(responseCode = "422", description = "Entidade não processável (dados inválidos ou inconsistentes)"),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem executar")
     })
     public ResponseEntity<TreinoRealizadoOutputDto> executarAcao(
-            @PathVariable UUID treinoRealizadoId,
+            @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
             @RequestBody @Valid ReconciliacaoAcaoRequestDto request,
             @RequestHeader("X-Tenant-ID") UUID tenantId,
             Authentication authentication) {

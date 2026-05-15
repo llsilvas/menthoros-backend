@@ -32,6 +32,7 @@ public class ProvaController {
     }
 
     @PostMapping
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Cadastrar prova", description = "Cria uma nova prova para o atleta")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "201", description = "Prova criada com sucesso",
@@ -75,6 +76,7 @@ public class ProvaController {
     }
 
     @PutMapping("/{provaId}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Atualizar prova", description = "Atualiza os dados de uma prova do atleta")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Prova atualizada com sucesso",

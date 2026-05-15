@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -77,6 +78,8 @@ public class TreinoRealizadoController {
         return noContent().build();
     }
 
+    @PostMapping("{atletaId}/lancar-treino")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Lançar treinos manualmente para o atleta",
                description = "Lança um treino manualmente para o atleta, registrando os dados da execução")
     @ApiResponses(value = {
