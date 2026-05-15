@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.exception.handler;
 
 
+import br.com.menthoros.backend.exception.AccessDeniedException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
@@ -165,6 +166,28 @@ public class GlobalExceptionHandler {
                 "message", ex.getMessage()
         );
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
+    }
+
+    /**
+     * Handler para AccessDeniedException.
+     *
+     * Mapeamento: 403 Forbidden
+     * Gerada por: TenantValidationAspect quando acesso cross-tenant é detectado
+     *
+     * Porquê logs WARN?
+     * - Tentativa de acesso cross-tenant é suspeita
+     * - Pode indicar ataque ou bug no frontend
+     * - Precisa ser auditado
+     */
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAccessDenied(AccessDeniedException ex) {
+        log.warn("SECURITY: Acesso negado - {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 403,
+                "error", "Forbidden",
+                "message", "Acesso negado. Você não possui permissão para acessar este recurso."
+        );
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 
     @ExceptionHandler(Exception.class)
