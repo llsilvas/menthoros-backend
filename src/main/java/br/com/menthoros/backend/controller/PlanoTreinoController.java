@@ -53,13 +53,16 @@ public class PlanoTreinoController {
         return ResponseEntity.ok(planoSemanalOutputDto);
     }
 
+    @DeleteMapping("/{planoSemanalId}")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Deletar plano semanal", description = "Remove um plano semanal do sistema")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "204", description = "Plano deletado com sucesso"),
             @ApiResponse(responseCode = "404", description = "Plano não encontrado",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "403", description = "Acesso negado - apenas ADMIN pode deletar planos",
                     content = @Content(mediaType = "application/json"))
     })
-    @DeleteMapping("/{planoSemanalId}")
     public ResponseEntity<Void> deletePlanoSemanal(
             @Parameter(description = "ID do plano semanal a ser deletado") @PathVariable UUID planoSemanalId) {
         planoService.deletePlanoSemanal(planoSemanalId);

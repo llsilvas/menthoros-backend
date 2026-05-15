@@ -19,6 +19,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -79,16 +80,18 @@ public class ManualReconciliationController {
      * Vincula manualmente uma atividade realizada a um treino planejado.
      */
     @PostMapping("/{treinoRealizadoId}/link")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Vincula manualmente uma atividade realizada a um treino planejado")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Vínculo criado com sucesso"),
         @ApiResponse(responseCode = "400", description = "Parâmetros inválidos"),
         @ApiResponse(responseCode = "404", description = "Atividade ou treino planejado não encontrado"),
-        @ApiResponse(responseCode = "409", description = "Conflito na operação (estado inválido ou vínculo existente)")
+        @ApiResponse(responseCode = "409", description = "Conflito na operação (estado inválido ou vínculo existente)"),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem vincular")
     })
     public ResponseEntity<TreinoRealizadoOutputDto> linkManually(
-            @PathVariable UUID treinoRealizadoId,
-            @RequestParam UUID treinoPlanejadoId,
+            @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
+            @Parameter(description = "ID único do treino planejado a vincular") @RequestParam UUID treinoPlanejadoId,
             @RequestHeader("X-Tenant-ID") UUID tenantId,
             Authentication authentication) {
 
@@ -140,14 +143,16 @@ public class ManualReconciliationController {
      * Desfaz o vínculo de uma atividade realizada com um treino planejado.
      */
     @PostMapping("/{treinoRealizadoId}/unlink")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Desfaz o vínculo de uma atividade realizada com um treino planejado")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Vínculo desfeito com sucesso"),
         @ApiResponse(responseCode = "404", description = "Atividade não encontrada"),
-        @ApiResponse(responseCode = "409", description = "Conflito na operação (estado inválido ou sem vínculo existente)")
+        @ApiResponse(responseCode = "409", description = "Conflito na operação (estado inválido ou sem vínculo existente)"),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem desfazer")
     })
     public ResponseEntity<TreinoRealizadoOutputDto> unlinkManually(
-            @PathVariable UUID treinoRealizadoId,
+            @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
             @RequestHeader("X-Tenant-ID") UUID tenantId,
             Authentication authentication) {
 
@@ -215,13 +220,15 @@ public class ManualReconciliationController {
      * Lista candidatos de vínculo rankeados por score de compatibilidade.
      */
     @GetMapping("/{treinoRealizadoId}/candidatos")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Lista candidatos para vínculo rankeados por compatibilidade")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Lista de candidatos retornada com sucesso"),
-        @ApiResponse(responseCode = "404", description = "Atividade não encontrada")
+        @ApiResponse(responseCode = "404", description = "Atividade não encontrada"),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem listar")
     })
     public ResponseEntity<List<CandidateMatchDto>> listarCandidatos(
-            @PathVariable UUID treinoRealizadoId,
+            @Parameter(description = "ID único do treino realizado") @PathVariable UUID treinoRealizadoId,
             @RequestHeader("X-Tenant-ID") UUID tenantId) {
 
         List<CandidateMatchDto> candidatos = pendentesService.listarCandidatos(

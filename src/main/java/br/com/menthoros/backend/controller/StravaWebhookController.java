@@ -4,6 +4,7 @@ import br.com.menthoros.backend.config.external.StravaProperties;
 import br.com.menthoros.backend.dto.strava.StravaWebhookEventDto;
 import br.com.menthoros.backend.services.StravaWebhookService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -33,9 +34,9 @@ public class StravaWebhookController {
         @ApiResponse(responseCode = "403", description = "Verify token inválido")
     })
     public ResponseEntity<Map<String, String>> validateSubscription(
-            @RequestParam("hub.mode") String mode,
-            @RequestParam("hub.verify_token") String verifyToken,
-            @RequestParam("hub.challenge") String challenge
+            @Parameter(description = "Modo de subscript (deve ser 'subscribe')") @RequestParam("hub.mode") String mode,
+            @Parameter(description = "Token de verificação fornecido por Strava") @RequestParam("hub.verify_token") String verifyToken,
+            @Parameter(description = "Desafio que deve ser retornado para confirmar subscript") @RequestParam("hub.challenge") String challenge
     ) {
         if (!"subscribe".equalsIgnoreCase(mode)) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).build();

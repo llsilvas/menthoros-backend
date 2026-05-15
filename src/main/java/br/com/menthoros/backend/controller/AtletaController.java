@@ -45,6 +45,8 @@ public class AtletaController {
         @ApiResponse(responseCode = "400", description = "Dados inválidos fornecidos",
                 content = @Content(mediaType = "application/json")),
         @ApiResponse(responseCode = "409", description = "Atleta já existe no sistema",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem criar atletas",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<AtletaOutputDto> cadastraAtleta(
@@ -62,6 +64,8 @@ public class AtletaController {
         @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
                 content = @Content(mediaType = "application/json")),
         @ApiResponse(responseCode = "400", description = "Dados inválidos fornecidos",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem atualizar atletas",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<AtletaOutputDto> atualizarAtleta(
@@ -72,10 +76,13 @@ public class AtletaController {
     }
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Deletar atleta", description = "Remove um atleta do sistema (soft delete)")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "204", description = "Atleta removido com sucesso"),
         @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas ADMIN pode deletar atletas",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<Void> deletarAtleta(
@@ -108,10 +115,13 @@ public class AtletaController {
     }
     
     @PostMapping("/{id}/recalcular-metricas")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Recalcular métricas do atleta", description = "Recalcula as métricas de um atleta específico")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "204", description = "Métricas recalculadas com sucesso"),
         @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem recalcular métricas",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<Void> recalcularMetricasAtleta(@Parameter(description = "ID do atleta") @PathVariable UUID id){

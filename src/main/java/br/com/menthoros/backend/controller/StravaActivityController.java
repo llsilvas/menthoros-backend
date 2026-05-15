@@ -34,9 +34,10 @@ public class StravaActivityController {
         @ApiResponse(responseCode = "200", description = "Sincronização concluída"),
         @ApiResponse(responseCode = "404", description = "Integração Strava não encontrada para o atleta"),
         @ApiResponse(responseCode = "409", description = "Sincronização já em progresso"),
-        @ApiResponse(responseCode = "429", description = "Limite de requisições Strava atingido")
+        @ApiResponse(responseCode = "429", description = "Limite de requisições Strava atingido"),
+        @ApiResponse(responseCode = "401", description = "Não autenticado")
     })
-    public ResponseEntity<StravaSyncResponseDto> sync(@PathVariable UUID atletaId) {
+    public ResponseEntity<StravaSyncResponseDto> sync(@Parameter(description = "ID único do atleta") @PathVariable UUID atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         return ResponseEntity.ok(stravaActivityService.syncActivitiesForAtleta(atletaId, tenantId));
     }

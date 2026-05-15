@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -40,6 +41,8 @@ public class ProvaController {
         @ApiResponse(responseCode = "400", description = "Dados inválidos",
                 content = @Content(mediaType = "application/json")),
         @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem criar provas",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<ProvaOutputDto> criarProva(
@@ -84,6 +87,8 @@ public class ProvaController {
         @ApiResponse(responseCode = "400", description = "Dados inválidos",
                 content = @Content(mediaType = "application/json")),
         @ApiResponse(responseCode = "404", description = "Prova ou atleta não encontrado",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem atualizar provas",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<ProvaOutputDto> atualizarProva(
@@ -94,10 +99,13 @@ public class ProvaController {
     }
 
     @DeleteMapping("/{provaId}")
+    @PreAuthorize("hasRole('ADMIN')")
     @Operation(summary = "Deletar prova", description = "Remove uma prova do atleta")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "204", description = "Prova removida com sucesso"),
         @ApiResponse(responseCode = "404", description = "Prova ou atleta não encontrado",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas ADMIN pode deletar provas",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<Void> deletarProva(

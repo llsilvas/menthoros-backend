@@ -32,7 +32,8 @@ public class MetricasController {
         @ApiResponse(responseCode = "200", description = "Adesão semanal obtida com sucesso",
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = AdesaoSemanalDto.class))),
         @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
-                content = @Content(mediaType = "application/json"))
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "401", description = "Não autenticado")
     })
     public ResponseEntity<AdesaoSemanalDto> getAdesaoSemanal(
             @Parameter(description = "ID do atleta", required = true)
@@ -48,7 +49,8 @@ public class MetricasController {
         @ApiResponse(responseCode = "200", description = "Adesão diária obtida com sucesso",
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = AdesaoDiariaDto.class))),
         @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
-                content = @Content(mediaType = "application/json"))
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "401", description = "Não autenticado")
     })
     public ResponseEntity<AdesaoDiariaDto> getAdesaoDiaria(
             @Parameter(description = "ID do atleta", required = true)

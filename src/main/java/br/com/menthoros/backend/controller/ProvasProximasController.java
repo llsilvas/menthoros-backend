@@ -30,7 +30,8 @@ public class ProvasProximasController {
         @ApiResponse(responseCode = "200", description = "Lista de provas próximas retornada com sucesso",
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ProvasProximasResponseDto.class))),
         @ApiResponse(responseCode = "500", description = "Erro ao buscar provas",
-                content = @Content(mediaType = "application/json"))
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "401", description = "Não autenticado")
     })
     public ResponseEntity<ProvasProximasResponseDto> getProvasProximas() {
         ProvasProximasResponseDto response = provaService.getProvasProximas();

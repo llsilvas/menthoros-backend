@@ -88,9 +88,10 @@ public class TreinoRealizadoController {
             @ApiResponse(responseCode = "400", description = "Dados inválidos fornecidos",
                     content = @Content(mediaType = "application/json")),
             @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem lançar treinos",
                     content = @Content(mediaType = "application/json"))
     })
-    @PostMapping("{atletaId}/lancar-treino")
     public ResponseEntity<TreinoRealizadoOutputDto> lancarTreino(
             @Parameter(description = "ID do atleta que está realizando o treino")
             @PathVariable("atletaId") UUID atletaId,
