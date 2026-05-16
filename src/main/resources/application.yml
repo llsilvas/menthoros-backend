@@ -11,6 +11,10 @@ spring:
   application:
     name: menthoros-app
 
+  mvc:
+    problemdetails:
+      enabled: true
+
   # ---------------------------------------
   # Security
   # ---------------------------------------
@@ -72,9 +76,11 @@ spring:
 
 
   # ----------------------------------------
-  # AI/OPENAI CONFIGURATION
+  # AI/OPENAI + ANTHROPIC CONFIGURATION
   # ----------------------------------------
   ai:
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY}
     openai:
       api-key: ${OPENAI_API_KEY}
       chat:

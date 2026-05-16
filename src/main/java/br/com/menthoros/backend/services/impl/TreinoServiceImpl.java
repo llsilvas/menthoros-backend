@@ -14,9 +14,11 @@ import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.repository.*;
+import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.services.TreinoService;
 import br.com.menthoros.backend.services.TsbService;
 import jakarta.transaction.Transactional;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 
@@ -45,6 +47,7 @@ public class TreinoServiceImpl implements TreinoService {
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final TsbService tsbService;
     private final PlanoMetadadosRepository planoMetaDadosRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     @Override
@@ -264,6 +267,7 @@ public class TreinoServiceImpl implements TreinoService {
 
         TreinoRealizado treinoSalvo = treinoRealizadoRepository.save(treinoRealizado);
         log.info("Treino salvo com sucesso. ID: {}", treinoSalvo.getId());
+        eventPublisher.publishEvent(new TreinoRegistradoEvent(treinoSalvo.getId(), treinoSalvo.getTenantId()));
 
         // Atualizar TSB/CTL/ATL após salvar o treino
         LocalDate dataTreino = treinoRealizadoInputDto.dataTreino() != null

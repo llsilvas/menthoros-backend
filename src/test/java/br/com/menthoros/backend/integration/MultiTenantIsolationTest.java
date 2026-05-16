@@ -16,9 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
+import br.com.menthoros.backend.AbstractIntegrationTest;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -33,10 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Tests that the scheduler and reconciliation logic properly isolate data
  * by tenant (assessoria) and prevent cross-tenant data leakage.
  */
-@SpringBootTest
-@ActiveProfiles("integration")
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class MultiTenantIsolationTest {
+class MultiTenantIsolationTest extends AbstractIntegrationTest {
 
     @Autowired
     private TreinoRealizadoRepository treinoRealizadoRepository;

@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.11</version>
+        <version>3.5.14</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.menthoros</groupId>
@@ -27,6 +27,7 @@
         <build.helper.plugin.version>3.4.0</build.helper.plugin.version>
         <keycloak.version>25.0.3</keycloak.version>
         <springdoc-openapi.version>2.8.5</springdoc-openapi.version>
+        <spring-ai.version>1.0.0-M6</spring-ai.version>
         <project.version>1.0.0</project.version>
         <server.port>8080</server.port>
         <openapi.docs.port>${server.port}</openapi.docs.port>
@@ -53,7 +54,12 @@
         <dependency>
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-openai-spring-boot-starter</artifactId>
-            <version>1.0.0-M6</version>
+            <version>${spring-ai.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-anthropic-spring-boot-starter</artifactId>
+            <version>${spring-ai.version}</version>
         </dependency>
 
         <dependency>

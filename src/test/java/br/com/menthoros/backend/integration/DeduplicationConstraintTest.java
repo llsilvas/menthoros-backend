@@ -18,9 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
+import br.com.menthoros.backend.AbstractIntegrationTest;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -36,10 +34,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * Tests the UNIQUE composite index uk_treino_realizado_external_id_atleta
  * added in V23 migration to prevent duplicate activity ingestion.
  */
-@SpringBootTest
-@ActiveProfiles("integration")
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class DeduplicationConstraintTest {
+class DeduplicationConstraintTest extends AbstractIntegrationTest {
 
     @Autowired
     private TreinoRealizadoRepository treinoRealizadoRepository;
