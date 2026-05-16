@@ -1,13 +1,16 @@
 spring:
-  datasource:
-    url: jdbc:postgresql://${POSTGRES_DB:localhost}:${DB_PORT:5432}/${DB_NAME:menthoros_test}
-    username: ${POSTGRES_USER:menthoros}
-    password: ${POSTGRES_PASSWORD:menthoros123}
   jpa:
     hibernate:
       ddl-auto: validate
   flyway:
     enabled: true
+  # Datasource URL is NOT set here — @ServiceConnection in TestcontainersConfiguration
+  # auto-wires the URL, username, and password from the running PostgreSQL container.
+  ai:
+    anthropic:
+      api-key: test-anthropic-key
+    openai:
+      api-key: test-openai-key
 
 logging:
   level:

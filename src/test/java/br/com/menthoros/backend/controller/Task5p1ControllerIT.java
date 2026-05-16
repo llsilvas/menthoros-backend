@@ -21,12 +21,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
+import br.com.menthoros.backend.AbstractIntegrationTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
@@ -49,12 +47,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Uses @SpringBootTest with MockMvc (not standalone) and real Spring context.
  * Tests HTTP contract validation, security, error handling, and status codes.
  */
-@SpringBootTest
 @AutoConfigureMockMvc
-@ActiveProfiles("integration")
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @DisplayName("Task 5.1 - Manual Reconciliation Endpoints")
-class Task5p1ControllerIT {
+class Task5p1ControllerIT extends AbstractIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;

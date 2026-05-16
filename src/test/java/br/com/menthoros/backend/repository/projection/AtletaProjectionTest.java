@@ -11,9 +11,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
+import br.com.menthoros.backend.AbstractIntegrationTest;
 
 import java.util.List;
 import java.util.UUID;
@@ -26,10 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Validates that the projection query methods in AtletaRepository return
  * the correct subset of fields and respect tenant isolation.
  */
-@SpringBootTest
-@ActiveProfiles("integration")
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class AtletaProjectionTest {
+class AtletaProjectionTest extends AbstractIntegrationTest {
 
     @Autowired
     private AtletaRepository atletaRepository;
