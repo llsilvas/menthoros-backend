@@ -22,6 +22,8 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
 
     Optional<TreinoRealizado> findById(UUID id);
 
+    Optional<TreinoRealizado> findByIdAndTenantId(UUID id, UUID tenantId);
+
     TreinoRealizado save(TreinoRealizado entity);
 
     List<TreinoRealizado> findByAtletaIdOrderByDataTreinoAsc(UUID atletaId);

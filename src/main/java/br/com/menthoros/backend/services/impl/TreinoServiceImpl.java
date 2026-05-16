@@ -15,6 +15,7 @@ import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.repository.*;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
+import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.services.TreinoService;
 import br.com.menthoros.backend.services.TsbService;
 import jakarta.transaction.Transactional;
@@ -225,9 +226,51 @@ public class TreinoServiceImpl implements TreinoService {
         return Optional.empty();
     }
 
+    /**
+     * Atualiza os campos observacionais de um treino realizado.
+     *
+     * Idempotent: NO — atualiza dados a cada chamada.
+     * Side Effects: Database update + TreinoRegistradoEvent quando percepcaoEsforco != null.
+     * Tenant-aware: YES — via TenantContext.getRequiredTenantId().
+     */
     @Override
-    public TreinoRealizado updateTreino(UUID id, TreinoRealizadoInputDto treinoRealizadoInputDto) {
-        return null;
+    @Transactional
+    public TreinoRealizadoOutputDto updateTreino(UUID id, TreinoRealizadoInputDto dto) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+
+        TreinoRealizado treino = treinoRealizadoRepository
+                .findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Treino não encontrado: " + id));
+
+        applyMutableFields(treino, dto);
+
+        TreinoRealizado salvo = treinoRealizadoRepository.save(treino);
+
+        if (salvo.getPercepcaoEsforco() != null) {
+            eventPublisher.publishEvent(new TreinoRegistradoEvent(salvo.getId(), salvo.getTenantId()));
+        }
+
+        return treinoMapper.toOutputDto(salvo);
+    }
+
+    private void applyMutableFields(TreinoRealizado treino, TreinoRealizadoInputDto dto) {
+        if (dto.percepcaoEsforco() != null)           treino.setPercepcaoEsforco(dto.percepcaoEsforco());
+        if (dto.feedbackAtleta() != null)             treino.setFeedbackAtleta(dto.feedbackAtleta());
+        if (dto.qualidadeSonoNoiteAnterior() != null) treino.setQualidadeSonoNoiteAnterior(dto.qualidadeSonoNoiteAnterior());
+        if (dto.nivelEstresse() != null)              treino.setNivelEstresse(dto.nivelEstresse());
+        if (dto.fcMedia() != null)                    treino.setFcMedia(dto.fcMedia());
+        if (dto.fcMax() != null)                      treino.setFcMax(dto.fcMax());
+        if (dto.cadenciaMedia() != null)              treino.setCadenciaMedia(dto.cadenciaMedia());
+        if (dto.potenciaMedia() != null)              treino.setPotenciaMedia(dto.potenciaMedia());
+        if (dto.velocidadeMedia() != null)            treino.setVelocidadeMedia(dto.velocidadeMedia());
+        if (dto.distanciaKm() != null)                treino.setDistanciaKm(new BigDecimal(dto.distanciaKm().toString()));
+        if (dto.elevacaoGanhoMetros() != null)        treino.setElevacaoGanhoMetros(dto.elevacaoGanhoMetros());
+        if (dto.elevacaoPerdaMetros() != null)        treino.setElevacaoPerdaMetros(dto.elevacaoPerdaMetros());
+        if (dto.descricao() != null)                  treino.setDescricao(dto.descricao());
+        if (dto.observacao() != null)                 treino.setObservacao(dto.observacao());
+        if (dto.zonaAlvo() != null)                   treino.setZonaAlvo(dto.zonaAlvo());
+        if (dto.ritmoAlvo() != null)                  treino.setRitmoAlvo(dto.ritmoAlvo());
+        if (dto.status() != null)                     treino.setStatus(dto.status());
     }
 
     @Override

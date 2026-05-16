@@ -100,6 +100,29 @@ public class TreinoRealizadoController {
         return status(HttpStatus.CREATED).body(treinoRealizadoOutputDto);
     }
 
+    @Operation(summary = "Atualizar treino realizado",
+               description = "Atualiza campos observacionais e de feedback de um treino já registrado. " +
+                             "Campos estruturais (atleta, data, tipo) são imutáveis. " +
+                             "Quando percepcaoEsforco for informado, dispara análise AI assíncrona.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Treino atualizado com sucesso",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = TreinoRealizadoOutputDto.class))),
+            @ApiResponse(responseCode = "400", description = "Dados inválidos",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "403", description = "Não autenticado ou sem permissão",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "404", description = "Treino não encontrado ou não pertence ao tenant",
+                    content = @Content(mediaType = "application/json"))
+    })
+    @PutMapping("/realizados/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TreinoRealizadoOutputDto> updateTreino(
+            @Parameter(description = "ID do treino realizado a ser atualizado")
+            @PathVariable UUID id,
+            @Valid @RequestBody TreinoRealizadoInputDto dto) {
+        return ok(treinoService.updateTreino(id, dto));
+    }
+
     @Operation(summary = "Obter resumo semanal de treinos",
                description = "Retorna um resumo agregado dos treinos realizados em uma semana, incluindo volume total, TSS, duração e breakdown por dia")
     @ApiResponses(value = {

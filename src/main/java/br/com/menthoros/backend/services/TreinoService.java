@@ -15,7 +15,7 @@ public interface TreinoService {
 
     TreinoRealizado addTreino(UUID treinoPlanejadoId, TreinoRealizadoInputDto treinoRealizadoInputDto);
 
-    TreinoRealizado updateTreino(UUID id, TreinoRealizadoInputDto treinoRealizadoInputDto);
+    TreinoRealizadoOutputDto updateTreino(UUID id, TreinoRealizadoInputDto treinoRealizadoInputDto);
 
     void deleteTreino(UUID id);
 
