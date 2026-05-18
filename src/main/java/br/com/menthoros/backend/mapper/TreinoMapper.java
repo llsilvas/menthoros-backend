@@ -94,6 +94,8 @@ public interface TreinoMapper {
 
     @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "durationToString")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "treinoRealizadoId", expression = "java(treinoPlanejado.getTreinoRealizado() != null ? treinoPlanejado.getTreinoRealizado().getId() : null)")
+    @Mapping(target = "percepcaoEsforcoRealizado", expression = "java(treinoPlanejado.getTreinoRealizado() != null ? treinoPlanejado.getTreinoRealizado().getPercepcaoEsforco() : null)")
     TreinoPlanejadoOutputDto toOutputDto(TreinoPlanejado treinoPlanejado);
 
     // Adicionado para conversão direta de DTO de saída para entidade

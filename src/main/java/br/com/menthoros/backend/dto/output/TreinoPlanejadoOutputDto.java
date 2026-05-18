@@ -84,5 +84,13 @@ public record TreinoPlanejadoOutputDto(
         FonteDados fonteDados,
 
         @Schema(description = "ID externo (referência em sistema de terceiros)", example = "garmin-12345678")
-        String externalId
+        String externalId,
+
+        // ===== TREINO REALIZADO VINCULADO =====
+
+        @Schema(description = "ID do treino realizado vinculado, se houver")
+        UUID treinoRealizadoId,
+
+        @Schema(description = "Percepção de esforço real do atleta (1-10)", example = "8")
+        Integer percepcaoEsforcoRealizado
 ) {}
