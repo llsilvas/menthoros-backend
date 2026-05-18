@@ -5,6 +5,8 @@ import br.com.menthoros.backend.dto.output.ResumoSemanalTreinoDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.mapper.TreinoMapper;
+import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.services.StravaActivityService;
 import br.com.menthoros.backend.services.TreinoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -36,10 +38,13 @@ public class TreinoRealizadoController {
 
     private final TreinoService treinoService;
     private final TreinoMapper treinoMapper;
+    private final StravaActivityService stravaActivityService;
 
-    public TreinoRealizadoController(TreinoService treinoService, TreinoMapper treinoMapper) {
+    public TreinoRealizadoController(TreinoService treinoService, TreinoMapper treinoMapper,
+                                     StravaActivityService stravaActivityService) {
         this.treinoService = treinoService;
         this.treinoMapper = treinoMapper;
+        this.stravaActivityService = stravaActivityService;
     }
 
     @Operation(summary = "Marcar treino como realizado",
@@ -121,6 +126,29 @@ public class TreinoRealizadoController {
             @PathVariable UUID id,
             @Valid @RequestBody TreinoRealizadoInputDto dto) {
         return ok(treinoService.updateTreino(id, dto));
+    }
+
+    @Operation(summary = "Enriquecer treino com detalhes do Strava",
+               description = "Busca o detalhe completo da atividade na API do Strava e enriquece o treino realizado. "
+                           + "Se o Garmin/Strava tiver registrado o perceived_exertion, preenche o RPE automaticamente "
+                           + "e dispara análise AI assíncrona.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Treino enriquecido com sucesso",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = TreinoRealizadoOutputDto.class))),
+            @ApiResponse(responseCode = "400", description = "Treino não é proveniente do Strava",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "403", description = "Não autenticado ou sem permissão",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "404", description = "Treino não encontrado",
+                    content = @Content(mediaType = "application/json"))
+    })
+    @PostMapping("/realizados/{id}/enriquecer-strava")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<TreinoRealizadoOutputDto> enriquecerComStrava(
+            @Parameter(description = "ID do treino realizado")
+            @PathVariable UUID id) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        return ok(stravaActivityService.enriquecerTreinoComStrava(id, tenantId));
     }
 
     @Operation(summary = "Obter resumo semanal de treinos",

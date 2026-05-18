@@ -2,6 +2,11 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.output.StravaSyncResponseDto;
 import br.com.menthoros.backend.dto.output.StravaSyncStatusDto;
+import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
+import br.com.menthoros.backend.events.TreinoRegistradoEvent;
+import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.dto.strava.StravaActivityDto;
 import br.com.menthoros.backend.dto.strava.StravaSplitDto;
 import br.com.menthoros.backend.entity.Atleta;
@@ -27,6 +32,7 @@ import br.com.menthoros.backend.services.StravaOAuthService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -54,6 +60,8 @@ public class StravaActivityServiceImpl implements StravaActivityService {
     private final IntegracaoExternaRepository integracaoExternaRepository;
     private final StravaOAuthService stravaOAuthService;
     private final TsbService tsbService;
+    private final TreinoMapper treinoMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Qualifier("stravaWebClient")
     private final WebClient stravaWebClient;
@@ -256,6 +264,55 @@ public class StravaActivityServiceImpl implements StravaActivityService {
                 integracao.getUltimaSincronizacao(),
                 integracao.getExternalAthleteId()
         );
+    }
+
+    @Override
+    @Transactional
+    public TreinoRealizadoOutputDto enriquecerTreinoComStrava(UUID treinoRealizadoId, UUID tenantId) {
+        TreinoRealizado treino = treinoRealizadoRepository
+                .findByIdAndTenantId(treinoRealizadoId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Treino não encontrado: " + treinoRealizadoId));
+
+        if (treino.getFonteDados() != STRAVA || treino.getExternalId() == null) {
+            throw new DomainRuleViolationException("Treino não é proveniente do Strava ou não tem ID externo");
+        }
+
+        Long activityId;
+        try {
+            activityId = Long.parseLong(treino.getExternalId());
+        } catch (NumberFormatException e) {
+            throw new DomainRuleViolationException("ID externo inválido: " + treino.getExternalId());
+        }
+
+        String accessToken = stravaOAuthService.getValidToken(treino.getAtleta().getId());
+
+        log.info("Enriquecendo treino {} com detalhes da atividade Strava {}", treinoRealizadoId, activityId);
+
+        StravaActivityDto detail = stravaWebClient.get()
+                .uri(uriBuilder -> uriBuilder.path("/activities/{id}").build(activityId))
+                .header("Authorization", "Bearer " + accessToken)
+                .retrieve()
+                .bodyToMono(StravaActivityDto.class)
+                .block();
+
+        if (detail == null) {
+            throw new DomainRuleViolationException("Strava não retornou dados para a atividade " + activityId);
+        }
+
+        boolean rpePreenchido = false;
+        if (detail.perceivedExertion() != null && treino.getPercepcaoEsforco() == null) {
+            treino.setPercepcaoEsforco((int) Math.round(detail.perceivedExertion()));
+            rpePreenchido = true;
+            log.info("RPE preenchido automaticamente: {} para treino {}", treino.getPercepcaoEsforco(), treinoRealizadoId);
+        }
+
+        TreinoRealizado salvo = treinoRealizadoRepository.save(treino);
+
+        if (rpePreenchido) {
+            eventPublisher.publishEvent(new TreinoRegistradoEvent(salvo.getId(), salvo.getTenantId()));
+        }
+
+        return treinoMapper.toOutputDto(salvo);
     }
 
     private int syncActivitiesInternal(Atleta atleta, IntegracaoExterna integracao, String accessToken, Instant after) {

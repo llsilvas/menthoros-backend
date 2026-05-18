@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.output.StravaSyncResponseDto;
 import br.com.menthoros.backend.dto.output.StravaSyncStatusDto;
+import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.dto.strava.StravaActivityDto;
 import br.com.menthoros.backend.dto.strava.StravaSplitDto;
 import br.com.menthoros.backend.entity.Atleta;
@@ -30,4 +31,10 @@ public interface StravaActivityService {
     StravaSyncResponseDto syncActivitiesForAtleta(UUID atletaId, UUID tenantId);
 
     StravaSyncStatusDto getSyncStatus(UUID atletaId, UUID tenantId);
+
+    /**
+     * Busca o detalhe completo de uma atividade Strava sob demanda e enriquece o TreinoRealizado.
+     * Preenche perceived_exertion → percepcaoEsforco se ainda não estiver definido.
+     */
+    TreinoRealizadoOutputDto enriquecerTreinoComStrava(UUID treinoRealizadoId, UUID tenantId);
 }
