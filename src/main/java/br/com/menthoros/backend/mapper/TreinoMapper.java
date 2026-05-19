@@ -15,6 +15,7 @@ import org.mapstruct.*;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
+import java.util.UUID;
 
 @Mapper(
         componentModel = "spring",
@@ -94,9 +95,29 @@ public interface TreinoMapper {
 
     @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "durationToString")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
-    @Mapping(target = "treinoRealizadoId", expression = "java(treinoPlanejado.getTreinoRealizado() != null ? treinoPlanejado.getTreinoRealizado().getId() : null)")
-    @Mapping(target = "percepcaoEsforcoRealizado", expression = "java(treinoPlanejado.getTreinoRealizado() != null ? treinoPlanejado.getTreinoRealizado().getPercepcaoEsforco() : null)")
+    @Mapping(target = "treinoRealizadoId", expression = "java(safeGetTreinoRealizadoId(treinoPlanejado))")
+    @Mapping(target = "percepcaoEsforcoRealizado", expression = "java(safeGetPercepcaoEsforcoRealizado(treinoPlanejado))")
     TreinoPlanejadoOutputDto toOutputDto(TreinoPlanejado treinoPlanejado);
+
+    // Hibernate.isInitialized é insuficiente para @OneToOne(mappedBy=...) fora de sessão.
+    // try-catch garante retorno null sem explodir quando a sessão já fechou.
+    default UUID safeGetTreinoRealizadoId(TreinoPlanejado tp) {
+        try {
+            TreinoRealizado tr = tp.getTreinoRealizado();
+            return tr != null ? tr.getId() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    default Integer safeGetPercepcaoEsforcoRealizado(TreinoPlanejado tp) {
+        try {
+            TreinoRealizado tr = tp.getTreinoRealizado();
+            return tr != null ? tr.getPercepcaoEsforco() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     // Adicionado para conversão direta de DTO de saída para entidade
     @Mapping(target = "id", ignore = true)
