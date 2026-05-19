@@ -438,6 +438,16 @@ public class StravaActivityServiceImpl implements StravaActivityService {
 
     private void checkRateLimit(HttpHeaders headers) {
         String remaining = headers.getFirst("X-RateLimit-Remaining");
+        String usage    = headers.getFirst("X-RateLimit-Usage");
+        String limit    = headers.getFirst("X-RateLimit-Limit");
+
+        // Loga consumo real para monitoramento antes de habilitar detail fetch por atividade.
+        // Formato Strava: "15min,daily"  ex.: Usage=12,345  Limit=100,1000  Remaining=88,655
+        if (usage != null && limit != null) {
+            log.info("strava_rate_limit usage={} limit={} remaining={}", usage, limit,
+                    remaining != null ? remaining : "n/a");
+        }
+
         if (remaining == null || remaining.isBlank()) {
             return;
         }

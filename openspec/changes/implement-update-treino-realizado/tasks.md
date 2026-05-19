@@ -70,5 +70,5 @@ O Strava cobra os seguintes limites por token OAuth (por atleta):
 - [ ] 6.3 Se confirmado que a lista não traz o campo: implementar `fetchDetailedActivity(accessToken, activityId)` em `StravaActivityServiceImpl` usando o endpoint existente `/activities/{id}` (linha 184 já tem uma chamada similar)
 - [ ] 6.4 Estratégia de chamada: buscar detail **somente para atividades novas** (primeira vez que o `externalId` aparece), nunca em re-syncs — preserva budget de rate limit
 - [ ] 6.5 Extrair `perceived_exertion` do `DetailedActivity` e aplicar em `mergeActivityIntoTreino` apenas se `perceivedExertion != null`
-- [ ] 6.6 Atualizar `checkRateLimit` para logar o `X-RateLimit-Usage` (atual + limite) em `INFO` durante sync — permite monitorar consumo antes de habilitar em produção
+- [x] 6.6 Atualizar `checkRateLimit` para logar o `X-RateLimit-Usage` (atual + limite) em `INFO` durante sync — permite monitorar consumo antes de habilitar em produção
 - [ ] 6.7 Teste de integração: verificar que detail só é chamado para atividades novas, não para re-syncs
