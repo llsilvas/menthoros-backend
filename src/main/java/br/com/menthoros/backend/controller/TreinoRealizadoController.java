@@ -6,6 +6,7 @@ import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.security.RequireTenant;
 import br.com.menthoros.backend.services.StravaActivityService;
 import br.com.menthoros.backend.services.TreinoService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -144,6 +145,7 @@ public class TreinoRealizadoController {
     })
     @PostMapping("/realizados/{id}/enriquecer-strava")
     @PreAuthorize("isAuthenticated()")
+    @RequireTenant
     public ResponseEntity<TreinoRealizadoOutputDto> enriquecerComStrava(
             @Parameter(description = "ID do treino realizado")
             @PathVariable UUID id) {
