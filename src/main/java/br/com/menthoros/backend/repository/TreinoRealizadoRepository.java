@@ -6,6 +6,7 @@ import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.PagingAndSortingRepository;
@@ -71,13 +72,13 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
        select t from TreinoRealizado t
        where t.atleta.id = :atletaId
          and t.dataTreino = :dataTreino
-         and t.reconciliationStatus = :status
+         and t.statusSincronizacao = :status
        order by t.dataTreino ASC
        """)
     List<TreinoRealizado> findByAtletaIdAndDataTreinoAndReconciliationStatus(
             @Param("atletaId") UUID atletaId,
             @Param("dataTreino") LocalDate dataTreino,
-            @Param("status") ReconciliationStatus status);
+            @Param("status") StatusSincronizacao status);
 
     @Query("""
         select tr from TreinoRealizado tr

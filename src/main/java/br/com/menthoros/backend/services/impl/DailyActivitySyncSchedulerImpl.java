@@ -162,7 +162,7 @@ public class DailyActivitySyncSchedulerImpl implements DailyActivitySyncSchedule
                 .findByAtletaIdAndDataTreinoAndReconciliationStatus(
                         atleta.getId(),
                         yesterday,
-                        ReconciliationStatus.PENDENTE
+                        StatusSincronizacao.PENDENTE
                 );
 
         logger.debug("Found {} pending activities for atleta {} (tenant {}) on {}",

@@ -101,7 +101,7 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         var activities1 = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
             athlete1_tenant1.getId(),
             LocalDate.now(),
-            ReconciliationStatus.PENDENTE
+            StatusSincronizacao.PENDENTE
         );
         assertEquals(1, activities1.size(), "Should find activity for tenant1 athlete");
 
@@ -109,7 +109,7 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         var activities2 = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
             athlete1_tenant2.getId(),
             LocalDate.now(),
-            ReconciliationStatus.PENDENTE
+                StatusSincronizacao.PENDENTE
         );
         assertEquals(0, activities2.size(), "Tenant2 athlete should not see tenant1 activities");
     }
@@ -129,7 +129,7 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         var athlete1Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
             athlete1_tenant1.getId(),
             LocalDate.now(),
-            ReconciliationStatus.PENDENTE
+                StatusSincronizacao.PENDENTE
         );
         assertEquals(1, athlete1Activities.size(), "Athlete1 should see only their activity");
         assertEquals("strava_201", athlete1Activities.get(0).getExternalId());
@@ -138,7 +138,7 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         var athlete2Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
             athlete2_tenant1.getId(),
             LocalDate.now(),
-            ReconciliationStatus.PENDENTE
+                StatusSincronizacao.PENDENTE
         );
         assertEquals(1, athlete2Activities.size(), "Athlete2 should see only their activity");
         assertEquals("strava_202", athlete2Activities.get(0).getExternalId());
@@ -178,14 +178,14 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         var tenant1Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
             athlete1_tenant1.getId(),
             LocalDate.now(),
-            ReconciliationStatus.PENDENTE
+                StatusSincronizacao.PENDENTE
         );
         assertEquals(1, tenant1Activities.size(), "Tenant1 athlete should see 1 activity");
 
         var tenant2Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
             athlete1_tenant2.getId(),
             LocalDate.now(),
-            ReconciliationStatus.PENDENTE
+                StatusSincronizacao.PENDENTE
         );
         assertEquals(1, tenant2Activities.size(), "Tenant2 athlete should see 1 activity");
     }
@@ -206,7 +206,7 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         var tenant1ActivitiesDay1 = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
             athlete1_tenant1.getId(),
             LocalDate.of(2026, 5, 1),
-            ReconciliationStatus.PENDENTE
+                StatusSincronizacao.PENDENTE
         );
 
         // Should only find tenant1's activity on that day, not tenant2's
@@ -224,6 +224,7 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         activity.setDuracaoMin(Duration.ofMinutes(60));
         activity.setDistanciaKm(new BigDecimal("10.00"));
         activity.setReconciliationStatus(ReconciliationStatus.PENDENTE);
+        activity.setStatusSincronizacao(StatusSincronizacao.PENDENTE);
         return activity;
     }
 }
