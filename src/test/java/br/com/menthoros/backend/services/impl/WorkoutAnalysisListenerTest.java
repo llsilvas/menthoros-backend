@@ -112,6 +112,29 @@ class WorkoutAnalysisListenerTest {
     }
 
     @Test
+    void stripMarkdownCodeBlock_strips_json_fenced_block() {
+        String fenced = "```json\n{\"key\": \"value\"}\n```";
+        assertThat(WorkoutAnalysisListener.stripMarkdownCodeBlock(fenced)).isEqualTo("{\"key\": \"value\"}");
+    }
+
+    @Test
+    void stripMarkdownCodeBlock_strips_plain_fenced_block() {
+        String fenced = "```\n{\"key\": \"value\"}\n```";
+        assertThat(WorkoutAnalysisListener.stripMarkdownCodeBlock(fenced)).isEqualTo("{\"key\": \"value\"}");
+    }
+
+    @Test
+    void stripMarkdownCodeBlock_leaves_raw_json_unchanged() {
+        String raw = "{\"key\": \"value\"}";
+        assertThat(WorkoutAnalysisListener.stripMarkdownCodeBlock(raw)).isEqualTo(raw);
+    }
+
+    @Test
+    void stripMarkdownCodeBlock_handles_null() {
+        assertThat(WorkoutAnalysisListener.stripMarkdownCodeBlock(null)).isNull();
+    }
+
+    @Test
     void sets_failed_status_when_llm_call_throws() {
         TreinoRealizado treino = new TreinoRealizado();
         treino.setPercepcaoEsforco(7);

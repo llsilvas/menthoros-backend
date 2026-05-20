@@ -102,7 +102,7 @@ public class WorkoutAnalysisListener {
                     .call()
                     .content(), 3);
 
-            AnaliseWorkoutRawDto raw = objectMapper.readValue(rawJson, AnaliseWorkoutRawDto.class);
+            AnaliseWorkoutRawDto raw = objectMapper.readValue(stripMarkdownCodeBlock(rawJson), AnaliseWorkoutRawDto.class);
 
             AnaliseWorkoutRawDto translated;
             boolean translationFailed = false;
@@ -207,6 +207,16 @@ public class WorkoutAnalysisListener {
         analise.setTranslationFailed(translationFailed);
         analise.setAnalyzedAt(Instant.now());
         analiseRepository.save(analise);
+    }
+
+    static String stripMarkdownCodeBlock(String raw) {
+        if (raw == null) return null;
+        String stripped = raw.strip();
+        if (!stripped.startsWith("```")) return stripped;
+        int firstNewline = stripped.indexOf('\n');
+        if (firstNewline != -1) stripped = stripped.substring(firstNewline + 1);
+        if (stripped.endsWith("```")) stripped = stripped.substring(0, stripped.lastIndexOf("```"));
+        return stripped.strip();
     }
 
     // maxAttempts = total number of attempts (1 initial + (maxAttempts-1) retries)
