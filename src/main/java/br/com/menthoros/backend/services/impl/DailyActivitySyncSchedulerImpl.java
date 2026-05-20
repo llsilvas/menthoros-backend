@@ -93,8 +93,8 @@ public class DailyActivitySyncSchedulerImpl implements DailyActivitySyncSchedule
      * - Transações e retry logic
      * - Observabilidade (métricas de sucesso/erro)
      */
-//    @Scheduled(fixedDelay = 10000, initialDelay = 5000)  // TEST: executa a cada 10s, primeira em 5s
-    @Scheduled(fixedDelay = 120000)
+    @Scheduled(fixedDelay = 10000, initialDelay = 5000)  // TEST: executa a cada 10s, primeira em 5s
+//    @Scheduled(cron = "0 0 11 * * *")
     @Transactional
     public void executeDailySync() {
         long startTime = System.currentTimeMillis();
@@ -152,7 +152,8 @@ public class DailyActivitySyncSchedulerImpl implements DailyActivitySyncSchedule
             return result;
         }
 
-        LocalDate yesterday = LocalDate.now().minusDays(1);
+//        LocalDate yesterday = LocalDate.now().minusDays(1);
+        LocalDate yesterday = LocalDate.now();
         LocalDate windowStart = yesterday.minusDays(1);
         LocalDate windowEnd = yesterday.plusDays(1);
         UUID tenantId = atleta.getAssessoria().getId();
