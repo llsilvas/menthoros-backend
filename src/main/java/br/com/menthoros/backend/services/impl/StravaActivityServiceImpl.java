@@ -43,14 +43,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.*;
 import java.time.format.DateTimeParseException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class StravaActivityServiceImpl implements StravaActivityService {
 
     private static final FonteDados STRAVA = FonteDados.STRAVA;
@@ -62,9 +58,18 @@ public class StravaActivityServiceImpl implements StravaActivityService {
     private final TsbService tsbService;
     private final TreinoMapper treinoMapper;
     private final ApplicationEventPublisher eventPublisher;
-
-    @Qualifier("stravaWebClient")
     private final WebClient stravaWebClient;
+
+    public StravaActivityServiceImpl(AtletaRepository atletaRepository, TreinoRealizadoRepository treinoRealizadoRepository, IntegracaoExternaRepository integracaoExternaRepository, StravaOAuthService stravaOAuthService, TsbService tsbService, TreinoMapper treinoMapper, ApplicationEventPublisher eventPublisher, @Qualifier("stravaWebClient")WebClient stravaWebClient) {
+        this.atletaRepository = atletaRepository;
+        this.treinoRealizadoRepository = treinoRealizadoRepository;
+        this.integracaoExternaRepository = integracaoExternaRepository;
+        this.stravaOAuthService = stravaOAuthService;
+        this.tsbService = tsbService;
+        this.treinoMapper = treinoMapper;
+        this.eventPublisher = eventPublisher;
+        this.stravaWebClient = stravaWebClient;
+    }
 
     /**
      * Idempotent save for TreinoRealizado with deduplication handling.
@@ -334,7 +339,7 @@ public class StravaActivityServiceImpl implements StravaActivityService {
 
                     TreinoRealizado treino = treinoRealizadoRepository
                             .findByExternalIdAndAtletaId(String.valueOf(activity.id()), atleta.getId())
-                            .orElseGet(() -> new TreinoRealizado());
+                            .orElseGet(TreinoRealizado::new);
 
                     mergeActivityIntoTreino(treino, activity, atleta);
                     attachLaps(treino, accessToken, activity.id());
@@ -394,7 +399,12 @@ public class StravaActivityServiceImpl implements StravaActivityService {
             return new ActivitiesPage(Collections.emptyList(), HttpHeaders.EMPTY);
         }
         checkRateLimit(response.getHeaders());
-        return new ActivitiesPage(response.getBody() == null ? Collections.emptyList() : response.getBody(), response.getHeaders());
+
+        List<StravaActivityDto> runs = Objects.requireNonNull(response.getBody()).stream()
+                .filter(activity -> "RUN".equalsIgnoreCase(activity.sportType()))
+                .toList();
+
+        return new ActivitiesPage(runs == null ? Collections.emptyList() : response.getBody(), response.getHeaders());
     }
 
     private void mergeActivityIntoTreino(TreinoRealizado treino, StravaActivityDto activity, Atleta atleta) {
