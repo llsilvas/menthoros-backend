@@ -50,6 +50,7 @@ import java.util.*;
 public class StravaActivityServiceImpl implements StravaActivityService {
 
     private static final FonteDados STRAVA = FonteDados.STRAVA;
+    private static final Set<String> RUN_SPORT_TYPES = Set.of("Run", "TrailRun", "VirtualRun");
 
     private final AtletaRepository atletaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
@@ -206,7 +207,7 @@ public class StravaActivityServiceImpl implements StravaActivityService {
 
         TreinoRealizado treino = treinoRealizadoRepository
                 .findByExternalIdAndAtletaId(String.valueOf(activity.id()), atleta.getId())
-                .orElseGet(() -> new TreinoRealizado());
+                .orElseGet(TreinoRealizado::new);
 
         mergeActivityIntoTreino(treino, activity, atleta);
         attachLaps(treino, accessToken, activity.id());
@@ -401,10 +402,10 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         checkRateLimit(response.getHeaders());
 
         List<StravaActivityDto> runs = Objects.requireNonNull(response.getBody()).stream()
-                .filter(activity -> "RUN".equalsIgnoreCase(activity.sportType()))
+                .filter(activity -> RUN_SPORT_TYPES.contains(activity.sportType()))
                 .toList();
 
-        return new ActivitiesPage(runs == null ? Collections.emptyList() : response.getBody(), response.getHeaders());
+        return new ActivitiesPage(runs, response.getHeaders());
     }
 
     private void mergeActivityIntoTreino(TreinoRealizado treino, StravaActivityDto activity, Atleta atleta) {
