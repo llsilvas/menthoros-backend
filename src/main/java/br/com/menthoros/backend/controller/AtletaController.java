@@ -3,6 +3,7 @@ package br.com.menthoros.backend.controller;
 import br.com.menthoros.backend.dto.input.AtletaInputDto;
 import br.com.menthoros.backend.dto.output.AtletaOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.mapper.AtletaMapper;
 import br.com.menthoros.backend.services.AtletaService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -92,12 +93,18 @@ public class AtletaController {
     }
 
     @GetMapping
-    @Operation(summary = "Listar atletas", description = "Retorna a lista de todos os atletas ativos")
+    @Operation(summary = "Listar atletas", description = "Retorna atletas ativos com filtros opcionais por nome, nível e lesão")
     @ApiResponse(responseCode = "200", description = "Lista de atletas retornada com sucesso",
             content = @Content(mediaType = "application/json", schema = @Schema(implementation = AtletaOutputDto.class)))
-    public ResponseEntity<List<AtletaOutputDto>> listarAtletas(){
-        List<AtletaOutputDto> allAtletas = atletaService.getAllAtletas();
-        return ResponseEntity.ok(allAtletas);
+    public ResponseEntity<List<AtletaOutputDto>> listarAtletas(
+            @Parameter(description = "Filtrar por nome (busca parcial, case-insensitive)")
+            @RequestParam(required = false) String nome,
+            @Parameter(description = "Filtrar por nível de experiência")
+            @RequestParam(required = false) NivelExperiencia nivelExperiencia,
+            @Parameter(description = "Filtrar por presença de lesão")
+            @RequestParam(required = false) Boolean temLesao) {
+        List<AtletaOutputDto> atletas = atletaService.getAllAtletas(nome, nivelExperiencia, temLesao);
+        return ResponseEntity.ok(atletas);
     }
 
     @GetMapping("/{id}")
