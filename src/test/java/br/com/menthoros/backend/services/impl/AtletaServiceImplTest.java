@@ -14,6 +14,7 @@ import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.services.TsbService;
+import org.springframework.data.jpa.domain.Specification;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -238,32 +239,28 @@ class AtletaServiceImplTest {
     }
 
     @Test
-    @DisplayName("getAllAtletas deve retornar lista de atletas do tenant")
+    @DisplayName("getAllAtletas deve retornar lista de atletas do tenant sem filtros")
     void testGetAllAtletasSuccess() {
-        List<Atleta> atletas = List.of(atletaEntity);
-        List<AtletaOutputDto> dtos = List.of(atletaOutputDto);
-
-        when(atletaRepository.findAllAtletasWithBasicInfo(tenantId)).thenReturn(atletas);
+        when(atletaRepository.findAll(any(Specification.class))).thenReturn(List.of(atletaEntity));
         when(atletaMapper.toOutputDto(any(Atleta.class))).thenReturn(atletaOutputDto);
 
-        List<AtletaOutputDto> result = atletaService.getAllAtletas();
+        List<AtletaOutputDto> result = atletaService.getAllAtletas(null, null, null);
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).id()).isEqualTo(atletaId);
-
-        verify(atletaRepository).findAllAtletasWithBasicInfo(tenantId);
+        verify(atletaRepository).findAll(any(Specification.class));
         verify(atletaMapper).toOutputDto(atletaEntity);
     }
 
     @Test
     @DisplayName("getAllAtletas deve retornar lista vazia quando não há atletas")
     void testGetAllAtletasEmpty() {
-        when(atletaRepository.findAllAtletasWithBasicInfo(tenantId)).thenReturn(List.of());
+        when(atletaRepository.findAll(any(Specification.class))).thenReturn(List.of());
 
-        List<AtletaOutputDto> result = atletaService.getAllAtletas();
+        List<AtletaOutputDto> result = atletaService.getAllAtletas(null, null, null);
 
         assertThat(result).isEmpty();
-        verify(atletaRepository).findAllAtletasWithBasicInfo(tenantId);
+        verify(atletaRepository).findAll(any(Specification.class));
     }
 
     @Test
