@@ -4,6 +4,7 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.enums.NivelExperiencia;
 import jakarta.persistence.criteria.Subquery;
 import org.springframework.data.jpa.domain.Specification;
 
@@ -63,5 +64,13 @@ public class AtletaSpecification {
             var nomeExpression = root.<String>get("nome");
             return cb.like(cb.lower(nomeExpression), "%" + name.toLowerCase() + "%");
         };
+    }
+
+    public static Specification<Atleta> withNivelExperiencia(NivelExperiencia nivel) {
+        return (root, query, cb) -> cb.equal(root.get("nivelExperiencia"), nivel);
+    }
+
+    public static Specification<Atleta> withTemLesao(Boolean temLesao) {
+        return (root, query, cb) -> cb.equal(root.get("temLesao"), temLesao);
     }
 }
