@@ -5,14 +5,17 @@ import br.com.menthoros.backend.dto.output.AtletaOutputDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.AtletaStatus;
+import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.mapper.AtletaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.specification.AtletaSpecification;
 import br.com.menthoros.backend.services.AtletaService;
 import br.com.menthoros.backend.services.TsbService;
+import org.springframework.data.jpa.domain.Specification;
 import lombok.RequiredArgsConstructor;
 import org.hibernate.Hibernate;
 import org.springframework.cache.annotation.CacheEvict;
@@ -117,14 +120,30 @@ public class AtletaServiceImpl implements AtletaService {
     }
 
     @Override
-    @Cacheable(value = "atletas-list", key = TENANT_KEY, condition = HAS_TENANT)
+    @Cacheable(
+        value = "atletas-list",
+        key = TENANT_KEY,
+        condition = HAS_TENANT + " and #nome == null and #nivelExperiencia == null and #temLesao == null"
+    )
     @Transactional(readOnly = true)
-    public List<AtletaOutputDto> getAllAtletas() {
+    public List<AtletaOutputDto> getAllAtletas(String nome, NivelExperiencia nivelExperiencia, Boolean temLesao) {
         UUID tenantId = resolveTenantId();
 
-        List<Atleta> allAtletas = atletaRepository.findAllAtletasWithBasicInfo(tenantId);
+        Specification<Atleta> spec = Specification
+                .where(AtletaSpecification.byTenant(tenantId))
+                .and(AtletaSpecification.active());
 
-        return allAtletas.stream().map(atleta -> {
+        if (nome != null && !nome.isBlank()) {
+            spec = spec.and(AtletaSpecification.withNameContaining(nome));
+        }
+        if (nivelExperiencia != null) {
+            spec = spec.and(AtletaSpecification.withNivelExperiencia(nivelExperiencia));
+        }
+        if (temLesao != null) {
+            spec = spec.and(AtletaSpecification.withTemLesao(temLesao));
+        }
+
+        return atletaRepository.findAll(spec).stream().map(atleta -> {
             Hibernate.initialize(atleta.getDiasDisponiveis());
             Hibernate.initialize(atleta.getProvas());
             return atletaMapper.toOutputDto(atleta);

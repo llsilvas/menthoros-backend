@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services;
 import br.com.menthoros.backend.dto.input.AtletaInputDto;
 import br.com.menthoros.backend.dto.output.AtletaOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.enums.NivelExperiencia;
 
 import java.util.List;
 import java.util.UUID;
@@ -17,7 +18,7 @@ public interface AtletaService {
 
     AtletaOutputDto getAtletaById(UUID id);
 
-    List<AtletaOutputDto> getAllAtletas();
+    List<AtletaOutputDto> getAllAtletas(String nome, NivelExperiencia nivelExperiencia, Boolean temLesao);
 
     void recalcularMetricasAtleta(UUID id);
 }
