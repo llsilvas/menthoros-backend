@@ -27,14 +27,25 @@ When instructions conflict, follow this order:
 Never start implementation directly in code.
 
 1. Identify active change in `menthoros-product/openspec/changes/<change-id>`.
-2. Read in order:
+2. Create a feature branch from `develop` following the pattern `feature/<change-id>` **in each affected repository** (never in the workspace root):
+   ```bash
+   # Backend (apps/menthoros-backend)
+   git -C apps/menthoros-backend pull origin develop
+   git -C apps/menthoros-backend checkout -b feature/<change-id>
+
+   # Frontend (apps/menthoros-front) — only if the change touches UI
+   git -C apps/menthoros-front pull origin develop
+   git -C apps/menthoros-front checkout -b feature/<change-id>
+   ```
+   The workspace root (`menthoros`) is a coordinator repo — never branch there for feature work.
+3. Read in order:
    - `proposal.md`
    - `design.md` (if present)
    - `tasks.md`
    - affected `specs/**/spec.md`
-3. Execute one `tasks.md` item at a time.
-4. If behavior changes, update OpenSpec in the same work.
-5. Keep changes minimal and in-scope.
+4. Execute one `tasks.md` item at a time.
+5. If behavior changes, update OpenSpec in the same work.
+6. Keep changes minimal and in-scope.
 
 ## Coding Rules (Backend)
 
@@ -318,6 +329,66 @@ public class AtletaService {
 }
 ```
 
+## Skills Architecture Standards
+
+Rules for domain skills in `br.com.menthoros.backend.skills.*`.
+
+### JPA entities must not cross into skill logic (mandatory)
+
+Skills are domain components — they must not receive or depend on JPA entities (`@Entity` classes).
+
+**Why:**
+- JPA entities have lazy-loaded collections that throw `LazyInitializationException` outside an active transaction — skills are often invoked outside the transactional boundary that loaded the entity.
+- Skills become coupled to the ORM lifecycle, breaking portability (batch, async, future module extraction).
+- Unit testing the skill requires constructing a full JPA entity instead of a simple record.
+
+**Rule:** The service layer that calls a skill is responsible for mapping JPA entities to the skill's input record types before invoking `skill.execute(input)`.
+
+```java
+// ✅ Correct — dedicated mapper converts entity to skill input record
+// br.com.menthoros.backend.mapper.AthleteProfileMapper
+@Component
+public class AthleteProfileMapper {
+    public AthleteProfile from(Atleta atleta) {
+        if (atleta == null) throw new IllegalArgumentException("Atleta cannot be null");
+        return new AthleteProfile(
+            atleta.getId(),
+            atleta.getNome(),
+            atleta.getSobrenome(),
+            atleta.getFcMaxima(),
+            atleta.getFcLimiar(),
+            atleta.getVo2maxEstimado(),
+            atleta.getNivelExperiencia()
+        );
+    }
+}
+
+// Service injects mapper and calls skill
+public RaceProjectionOutput generateProjection(UUID atletaId, ...) {
+    Atleta atleta = atletaRepository.findById(atletaId)...;
+    AthleteProfile profile = athleteProfileMapper.from(atleta);
+    return raceProjectionSkill.execute(new RaceProjectionInput(profile, ...));
+}
+
+// ❌ Wrong — positional constructor call spread across callers (fragile, not reusable)
+AthleteProfile profile = new AthleteProfile(
+    atleta.getId(), atleta.getNome(), atleta.getSobrenome(), ...  // breaks silently if field order changes
+);
+
+// ❌ Wrong — JPA entity passed directly into skill
+public RaceProjectionOutput generateProjection(Atleta atleta, ...) {
+    return raceProjectionSkill.execute(new RaceProjectionInput(atleta, ...));
+}
+```
+
+### Skill input/output types must be records (mandatory)
+
+All types that form the skill's input and output contract (`*Input`, `*Output`, and their nested types) must be `public record` declarations — same rule as DTOs (see **DTO & Records Standards**).
+
+### Skill input record fields should be minimal (mandatory)
+
+Include only the fields the skill actually reads. Do not pass full entity graphs "just in case". If the skill needs 6 fields from `Atleta`, define a record with those 6 fields — nothing more.
+
 ## Multi-tenancy and Security Guardrails
 
 - Never bypass tenant isolation rules.
@@ -330,6 +401,53 @@ public class AtletaService {
 - All schema changes must go through Flyway (`src/main/resources/db/migration`).
 - Never edit an already applied migration; create a new versioned migration.
 - Keep migration names deterministic and descriptive.
+
+### Table Design Standards (mandatory)
+
+Before proposing or writing any `CREATE TABLE`, read the existing migrations to understand and follow the established patterns. All new tables must conform to:
+
+**Naming**
+- Prefix: `tb_` + snake_case (e.g. `tb_race_projection_snapshot`).
+- Column names: snake_case throughout.
+
+**Primary Key**
+- Always `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`.
+- Never use `BIGSERIAL`, `SERIAL`, or `AUTO_INCREMENT`.
+
+**Foreign Keys**
+- Type: `UUID [NOT NULL] REFERENCES tb_xxx(id) ON DELETE CASCADE` (or `ON DELETE SET NULL` for optional).
+- `tenant_id UUID NOT NULL` — no FK constraint, managed by the application layer.
+
+**Timestamps**
+- Use `TIMESTAMPTZ NOT NULL DEFAULT NOW()` for creation timestamp.
+- Use `TIMESTAMPTZ` (nullable) for optional event timestamps (e.g. `reviewed_at`, `synced_at`).
+- Do not mix `TIMESTAMP` (without timezone) in new tables.
+
+**Constraints**
+- Always name constraints explicitly: `CONSTRAINT uk_<table>_<cols> UNIQUE (...)`.
+- Use `CHECK` constraints inline on the column when the rule is simple.
+
+**Indexes**
+- `CREATE INDEX IF NOT EXISTS idx_<table>_<column> ON tb_xxx(col);`
+- Add a composite index on `(tenant_id, <main_lookup_column>)` for all tenant-scoped tables.
+
+**Migration file structure**
+```sql
+-- =====================================================================
+-- Vxx: Short description of what this migration does
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS tb_xxx ( ... );
+
+CREATE INDEX IF NOT EXISTS idx_xxx_col ON tb_xxx(col);
+
+DO $$
+BEGIN
+    RAISE NOTICE '✅ Vxx - tb_xxx criada com sucesso';
+END$$;
+```
+
+**Version number**: always check the latest file in `db/migration/` and increment by 1 (`V26` → `V27`).
 
 ## Testing and Validation
 
