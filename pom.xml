@@ -10,7 +10,7 @@
     </parent>
     <groupId>com.menthoros</groupId>
     <artifactId>menthoros-backend</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
+    <version>1.0.0</version>
     <name>menthoros-backend</name>
 
     <properties>
@@ -29,9 +29,9 @@
         <springdoc-openapi.version>2.8.5</springdoc-openapi.version>
         <spring-ai.version>1.1.6</spring-ai.version>
         <project.version>1.0.0</project.version>
-        <server.port>8080</server.port>
         <openapi.docs.port>${server.port}</openapi.docs.port>
         <openapi.docs.path>/api-docs</openapi.docs.path>
+        <server.port>8080</server.port>
     </properties>
     <dependencies>
         <dependency>
@@ -128,6 +128,12 @@
             <groupId>com.pgvector</groupId>
             <artifactId>pgvector</artifactId>
             <version>0.1.6</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-math3</artifactId>
+            <version>3.6.1</version>
         </dependency>
 
         <dependency>

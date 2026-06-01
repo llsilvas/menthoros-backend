@@ -11,6 +11,9 @@ import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
 import org.springframework.stereotype.Component;
 
+import org.aspectj.lang.reflect.MethodSignature;
+
+import java.lang.reflect.Method;
 import java.util.UUID;
 
 /**
@@ -126,21 +129,20 @@ public class TenantValidationAspect {
 
     /**
      * Extrai a anotação @RequireTenant do método.
+     *
+     * Usa MethodSignature para obter os tipos declarados dos parâmetros, não os tipos
+     * em tempo de execução. Isso evita NoSuchMethodException quando o Spring passa
+     * uma implementação concreta (ex: JwtAuthenticationToken) para um parâmetro
+     * declarado como interface (ex: Authentication).
      */
-    private RequireTenant getAnnotation(ProceedingJoinPoint joinPoint) throws NoSuchMethodException {
-        String methodName = joinPoint.getSignature().getName();
-        Class<?>[] parameterTypes = new Class[joinPoint.getArgs().length];
-        for (int i = 0; i < joinPoint.getArgs().length; i++) {
-            parameterTypes[i] = joinPoint.getArgs()[i].getClass();
-        }
-
-        var method = joinPoint.getTarget().getClass()
-                .getMethod(methodName, parameterTypes);
+    private RequireTenant getAnnotation(ProceedingJoinPoint joinPoint) {
+        MethodSignature signature = (MethodSignature) joinPoint.getSignature();
+        Method method = signature.getMethod();
         RequireTenant annotation = method.getAnnotation(RequireTenant.class);
 
         if (annotation == null) {
             throw new IllegalStateException(
-                    "RequireTenant anotação não encontrada em " + methodName
+                    "RequireTenant anotação não encontrada em " + method.getName()
             );
         }
 
