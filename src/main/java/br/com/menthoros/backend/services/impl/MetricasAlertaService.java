@@ -7,11 +7,19 @@ import br.com.menthoros.backend.enums.FaixaTsb;
 import br.com.menthoros.backend.enums.MetricasThresholds;
 import br.com.menthoros.backend.enums.NivelAlerta;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.skills.core.SkillContext;
+import br.com.menthoros.backend.skills.core.SkillResult;
+import br.com.menthoros.backend.skills.recovery.RecoveryCargaInput;
+import br.com.menthoros.backend.skills.recovery.RecoveryCargaPayload;
+import br.com.menthoros.backend.skills.recovery.RecoveryCargaSkill;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Serviço responsável por analisar métricas de treino e gerar alertas, status e recomendações.
@@ -21,10 +29,21 @@ import java.util.List;
  * {@code atualizarRecomendacao}, {@code getAlertasAtivos}).
  *
  * <p>Deve ser chamado explicitamente antes de persistir o {@link PlanoMetaDados}.
+ *
+ * <p><b>D6 — Delegação para RecoveryCargaSkill:</b> a skill é invocada em paralelo
+ * para validação e rastreabilidade. A lógica existente não é removida nesta fase.
  */
 @Slf4j
 @Service
 public class MetricasAlertaService {
+
+    /**
+     * Skill de domínio para classificação do estado de recuperação/carga.
+     * Injetada opcionalmente para não quebrar testes unitários que instanciam
+     * este serviço diretamente via {@code new MetricasAlertaService()}.
+     */
+    @Autowired(required = false)
+    private RecoveryCargaSkill recoveryCargaSkill;
 
     private record RampRateInfo(Double pontosSemana, Double percentualSemana) {
         static RampRateInfo from(Double ctlAtual, Double rampRatePontosSemana) {
@@ -51,6 +70,16 @@ public class MetricasAlertaService {
     /**
      * Analisa as métricas atuais do PlanoMetaDados e retorna o resultado completo.
      *
+     * <p><b>Idempotente:</b> YES — análise determinística, sem estado mutável.</p>
+     * <p><b>Side Effects:</b> NONE — não escreve em banco nem chama APIs externas.</p>
+     * <p><b>Tenant-aware:</b> NÃO — tenantId não disponível nesta assinatura; use a
+     * assinatura com {@code NivelExperiencia} quando o atleta estiver disponível.</p>
+     *
+     * <p><b>D6 — Delegação RecoveryCargaSkill:</b> se a skill estiver disponível
+     * (context Spring ativo), invoca em paralelo para classificação estruturada.
+     * O resultado é logado para fins de observabilidade e validação da skill.
+     * A lógica legada retorna o {@link ResultadoAnalise} normalmente.</p>
+     *
      * @param metaDados entidade com métricas atuais (CTL, ATL, TSB, etc.)
      * @return resultado com status, recomendação, alertas e booleans
      */
@@ -60,6 +89,9 @@ public class MetricasAlertaService {
         Double rampRateAtual = metaDados.getRampRateAtual();
         Integer diasConsecutivosTreino = metaDados.getDiasConsecutivosTreino();
         Integer semanasProgressaoContinua = metaDados.getSemanasProgressaoContinua();
+
+        // D6 — Delegação em paralelo para RecoveryCargaSkill (não substitui lógica legada)
+        delegarParaRecoveryCargaSkill(metaDados, null);
 
         RampRateInfo rampInfo = RampRateInfo.from(ctlAtual, rampRateAtual);
 
@@ -217,6 +249,9 @@ public class MetricasAlertaService {
         Integer diasConsecutivosTreino = metaDados.getDiasConsecutivosTreino();
         Integer semanasProgressaoContinua = metaDados.getSemanasProgressaoContinua();
 
+        // D6 — Delegação em paralelo para RecoveryCargaSkill (não substitui lógica legada)
+        delegarParaRecoveryCargaSkill(metaDados, null);
+
         RampRateInfo rampInfo = RampRateInfo.from(ctlAtual, rampRateAtual);
 
         // Thresholds adaptados ao nível
@@ -262,6 +297,53 @@ public class MetricasAlertaService {
                 sobrecarga, rampCritico, diasConsecutivosFlag, necessitaDescanso,
                 alertas
         );
+    }
+
+    // ===== D6 — Delegação para RecoveryCargaSkill =====
+
+    /**
+     * Delega a análise para a {@link RecoveryCargaSkill} em paralelo com a lógica legada.
+     *
+     * <p>Esta chamada é puramente observacional nesta fase (D6): o resultado da skill
+     * é logado para validação, mas NÃO altera o retorno do serviço legado.
+     * Remoção da lógica legada está planejada para fase posterior.</p>
+     *
+     * @param metaDados dados de métricas do atleta
+     * @param atletaId  ID do atleta (nullable — usado no contexto da skill; usa UUID sentinel se null)
+     */
+    private void delegarParaRecoveryCargaSkill(PlanoMetaDados metaDados, UUID atletaId) {
+        if (recoveryCargaSkill == null) {
+            // Skill não disponível (contexto fora do Spring — testes unitários legados)
+            return;
+        }
+        try {
+            boolean temLesao = metaDados.getAtleta() != null
+                    && Boolean.TRUE.equals(metaDados.getAtleta().getTemLesao());
+
+            RecoveryCargaInput input = new RecoveryCargaInput(
+                    metaDados.getCtlAtual() != null ? metaDados.getCtlAtual() : 0.0,
+                    metaDados.getAtlAtual() != null ? metaDados.getAtlAtual() : 0.0,
+                    metaDados.getTsbProntidaoAtual() != null ? metaDados.getTsbProntidaoAtual() : 0.0,
+                    metaDados.getRampRateAtual() != null ? metaDados.getRampRateAtual() : 0.0,
+                    metaDados.getDiasConsecutivosTreino(),
+                    temLesao
+            );
+
+            UUID resolvedAtletaId = (atletaId != null) ? atletaId : UUID.randomUUID();
+            SkillContext context = SkillContext.of(resolvedAtletaId, UUID.randomUUID(), LocalDate.now());
+
+            SkillResult<RecoveryCargaPayload> skillResult = recoveryCargaSkill.execute(input, context);
+
+            log.debug("[D6-RecoveryCargaSkill] atletaId={}, classificacao={}, severity={}, requerDescanso={}",
+                    resolvedAtletaId,
+                    skillResult.payload().classificacao(),
+                    skillResult.severity(),
+                    skillResult.payload().requerDescanso());
+
+        } catch (Exception e) {
+            // Skill é observacional — nunca bloqueia o fluxo legado
+            log.warn("[D6-RecoveryCargaSkill] Falha na delegação (não afeta fluxo principal): {}", e.getMessage());
+        }
     }
 
     // ===== Helpers de threshold por nível =====

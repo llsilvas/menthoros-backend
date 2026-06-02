@@ -5,6 +5,7 @@ import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FasePeriodizacao;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.skills.eligibility.IntervaladoElegibilidadeSkill;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,8 @@ class IntervaladoElegibilidadeSemanticaTest {
 
     @BeforeEach
     void setUp() {
-        service = new IntervaladoElegibilidadeService();
+        // Injeta a skill real — ela é stateless e determinística, não precisa de mock
+        service = new IntervaladoElegibilidadeService(new IntervaladoElegibilidadeSkill());
     }
 
     private Atleta atletaSaudavel(NivelExperiencia nivel) {
