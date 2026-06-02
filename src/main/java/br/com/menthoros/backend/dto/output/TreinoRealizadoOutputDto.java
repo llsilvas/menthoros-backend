@@ -11,6 +11,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+
 @Schema(description = "Dados de saída de um treino realizado")
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record TreinoRealizadoOutputDto(
@@ -107,5 +108,11 @@ public record TreinoRealizadoOutputDto(
         // ===== ETAPAS REALIZADAS =====
 
         @Schema(description = "Etapas detalhadas do treino realizado")
-        List<EtapaRealizadaOutputDto> etapasRealizadas
+        List<EtapaRealizadaOutputDto> etapasRealizadas,
+
+        // ===== ANÁLISE ESTRUTURAL =====
+
+        @Schema(description = "Sugestão de reclassificação do tipo de treino gerada por análise estrutural das etapas (opcional, apenas quando houver divergência detectada)")
+        @JsonInclude(JsonInclude.Include.NON_NULL)
+        SugestaoReclassificacaoDto sugestaoReclassificacao
 ) {}

@@ -262,7 +262,8 @@ class EnriquecerStravaServiceTest {
                 null, null, null, null, null, null,
                 null, null, null, null, null, null,
                 null, null, null, null, null, null,
-                null, null, null, null
+                null, null, null, null,
+                null
         );
     }
 }

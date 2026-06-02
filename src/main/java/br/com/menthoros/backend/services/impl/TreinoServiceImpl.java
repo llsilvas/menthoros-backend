@@ -18,6 +18,7 @@ import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.services.TreinoService;
 import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
 import jakarta.transaction.Transactional;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -49,6 +50,7 @@ public class TreinoServiceImpl implements TreinoService {
     private final TsbService tsbService;
     private final PlanoMetadadosRepository planoMetaDadosRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
 
     @Transactional
     @Override
@@ -262,6 +264,12 @@ public class TreinoServiceImpl implements TreinoService {
             eventPublisher.publishEvent(new TreinoRegistradoEvent(salvo.getId(), salvo.getTenantId()));
         }
 
+        // Validação estrutural informativa — nunca altera o tipo automaticamente
+        tipoTreinoConsistenciaValidator.validarEstrutura(salvo).ifPresent(sug ->
+            log.info("Sugestão de reclassificação para treino {}: {} → {} (confiança: {})",
+                salvo.getId(), salvo.getTipoTreino(), sug.tipoSugerido(), sug.confianca())
+        );
+
         return treinoMapper.toOutputDto(salvo);
     }
 
@@ -324,6 +332,12 @@ public class TreinoServiceImpl implements TreinoService {
         TreinoRealizado treinoSalvo = treinoRealizadoRepository.save(treinoRealizado);
         log.info("Treino salvo com sucesso. ID: {}", treinoSalvo.getId());
         eventPublisher.publishEvent(new TreinoRegistradoEvent(treinoSalvo.getId(), treinoSalvo.getTenantId()));
+
+        // Validação estrutural informativa — nunca altera o tipo automaticamente
+        tipoTreinoConsistenciaValidator.validarEstrutura(treinoSalvo).ifPresent(sug ->
+            log.info("Sugestão de reclassificação para treino {}: {} → {} (confiança: {})",
+                treinoSalvo.getId(), treinoSalvo.getTipoTreino(), sug.tipoSugerido(), sug.confianca())
+        );
 
         // Atualizar TSB/CTL/ATL após salvar o treino
         LocalDate dataTreino = treinoRealizadoInputDto.dataTreino() != null
