@@ -22,6 +22,7 @@ import br.com.menthoros.backend.repository.*;
 import br.com.menthoros.backend.services.*;
 import br.com.menthoros.backend.services.helper.RedistribuicaoTreinoHelper;
 import br.com.menthoros.backend.services.helper.RegraGeracaoTreino;
+import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.util.Utils;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -455,7 +456,9 @@ public class PlanoServiceImpl implements PlanoService {
         // Re-busca do banco para obter entidade managed no contexto de persistência atual.
         // O @Cacheable em buscarOuCriarMetadados pode retornar entidade detached,
         // causando StaleObjectStateException no merge.
-        PlanoMetaDados metaDados = planoMetadadosRepository.findById(metaDadosCached.getId())
+        // tenant-aware: garante que os metadados pertencem ao tenant do contexto.
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        PlanoMetaDados metaDados = planoMetadadosRepository.findByIdAndTenantId(metaDadosCached.getId(), tenantId)
                 .orElseThrow(() -> new DomainNotFoundException(
                         "Metadados não encontrados: " + metaDadosCached.getId()));
 
@@ -518,7 +521,9 @@ public class PlanoServiceImpl implements PlanoService {
     }
 
     private DadosPlanoDto getPreparaDadosPlano(UUID atletaId) {
-        Atleta atleta = atletaRepository.findById(atletaId)
+        // tenant-aware: garante que o atleta pertence ao tenant do contexto
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
         // Validações de negócio do atleta
@@ -615,7 +620,9 @@ public class PlanoServiceImpl implements PlanoService {
     @Override
     @Transactional
     public void deletePlanoSemanal(UUID planoSemanalId) {
-        PlanoSemanal plano = planoSemanalRepository.findById(planoSemanalId)
+        // tenant-aware: garante que o plano pertence ao tenant do contexto
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        PlanoSemanal plano = planoSemanalRepository.findByIdAndTenantId(planoSemanalId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Plano não encontrado: " + planoSemanalId));
 
         if (plano.getStatus() != PlanoStatus.PLANEJADO) {
