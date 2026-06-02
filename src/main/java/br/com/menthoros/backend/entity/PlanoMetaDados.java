@@ -34,6 +34,14 @@ public class PlanoMetaDados {
     @JoinColumn(name = "atleta_id", nullable = false, unique = true)
     private Atleta atleta;
 
+    /**
+     * Tenant (Assessoria) ao qual estes metadados pertencem.
+     * Garante isolamento de dados entre tenants diferentes.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "tenant_id")
+    private Assessoria assessoria;
+
     @Column(name = "data_criacao", nullable = false)
     private LocalDateTime dataCriacao;
 
