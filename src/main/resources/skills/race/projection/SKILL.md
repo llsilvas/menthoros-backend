@@ -111,3 +111,20 @@ Input context: 3 sessions used, fallback_used=true, missing HR data
   "coach_note": "Priorize registrar treinos de Tempo Run e Longão com monitor cardíaco nas próximas semanas. Com mais dados, a próxima projeção será significativamente mais precisa."
 }
 ```
+
+### MEDIUM confidence — meta STRETCH com goal_gap_analysis
+
+Input context: R²=0.62, BUILD phase, TSB=-8, coach_goal_override provided (gap=6.3%, STRETCH)
+
+```json
+{
+  "progression_narrative": "Maria apresenta melhora consistente nos últimos 2 meses, mas ainda em fase de construção de base. A forma atual projeta um tempo próximo ao objetivo, porém com margem de incerteza relevante. A evolução nas próximas semanas será determinante.",
+  "key_assumptions": [
+    "Regressão baseada em dados de qualidade média (R²=0.62) — mais sessões melhorariam a precisão",
+    "Fase BUILD: atleta ainda acumulando carga, fator de ajuste neutro aplicado",
+    "TSB levemente negativo indica fadiga moderada — recuperação influencia o resultado",
+    "Meta de 1h45 exige 6.3% de melhora sobre a projeção atual (classificação: STRETCH)"
+  ],
+  "coach_note": "Projeção atual: 1h52. Meta: 1h45 (gap 6.3% — STRETCH). A meta é alcançável se o taper for bem executado e as últimas semanas de qualidade renderem. Não ajuste a meta agora — reavalie na projeção das 4 semanas finais."
+}
+```
