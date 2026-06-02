@@ -57,6 +57,21 @@ public class PlanoMetaDados {
     @Column(name = "tsb_atual")
     private Double tsbAtual = 0.0;
 
+    /**
+     * TSB de prontidão pré-treino: CTL_ontem - ATL_ontem.
+     * Representa a forma do atleta ANTES da carga do dia.
+     * Use este valor para decisões sobre intensidade/volume do treino.
+     */
+    @Column(name = "tsb_prontidao_atual")
+    private Double tsbProntidaoAtual = 0.0;
+
+    /**
+     * TSB pós-carga: CTL_hoje - ATL_hoje.
+     * Representa o estado do atleta APÓS absorver a carga do dia.
+     */
+    @Column(name = "tsb_pos_carga_atual")
+    private Double tsbPosCargaAtual = 0.0;
+
     @Column(name = "ramp_rate_atual")
     private Double rampRateAtual = 0.0;
 

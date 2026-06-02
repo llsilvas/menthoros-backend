@@ -67,6 +67,28 @@ public class MetricasDiarias {
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
+    // ===== SEMÂNTICA TSB: INÍCIO E FIM DE DIA =====
+    // tsbInicioDia = CTL_ontem - ATL_ontem (prontidão pré-treino)
+    // tsbFimDia    = CTL_hoje  - ATL_hoje  (estado pós-carga)
+
+    @Column(name = "ctl_inicio_dia")
+    private Double ctlInicioDia;
+
+    @Column(name = "atl_inicio_dia")
+    private Double atlInicioDia;
+
+    @Column(name = "tsb_inicio_dia")
+    private Double tsbInicioDia;
+
+    @Column(name = "ctl_fim_dia")
+    private Double ctlFimDia;
+
+    @Column(name = "atl_fim_dia")
+    private Double atlFimDia;
+
+    @Column(name = "tsb_fim_dia")
+    private Double tsbFimDia;
+
     @PrePersist
     @PreUpdate
     private void calcularDerivativos() {
