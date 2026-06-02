@@ -142,6 +142,7 @@ public interface TreinoMapper {
     @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "durationToString")
     @Mapping(target = "paceMedia", source = "paceMedia", qualifiedByName = "durationToString")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "sugestaoReclassificacao", ignore = true)
     TreinoRealizadoOutputDto toOutputDto(TreinoRealizado treinoRealizado);
 
     // ===== EtapaRealizada: Input -> Entity =====

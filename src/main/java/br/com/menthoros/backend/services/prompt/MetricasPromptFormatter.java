@@ -43,6 +43,20 @@ public class MetricasPromptFormatter {
                 ? metaDados.getRecomendacaoTreino()
                 : "Continuar treinamento normalmente, respeitando os princípios de progressão.";
 
+        // TSB de prontidão (pré-treino): representa o estado do atleta ANTES da carga do dia.
+        // É a métrica correta para decisões de prescrição de treino.
+        double tsbProntidao = metaDados.getTsbProntidaoAtual() != null ? metaDados.getTsbProntidaoAtual() : 0.0;
+        String interpretacaoTsb = metaDados.getInterpretacaoTsb();
+
+        // TSB pós-carga: representa o estado APÓS absorver a carga do dia.
+        // Exibido como informação complementar quando disponível.
+        String linhaPosCarga = "";
+        if (metaDados.getTsbPosCargaAtual() != null) {
+            linhaPosCarga = String.format(
+                    "        - **TSB (Pós-carga):** %.1f pontos - Estado após carga do dia%n",
+                    metaDados.getTsbPosCargaAtual());
+        }
+
         return String.format("""
                         ## MÉTRICAS DE CARGA E FADIGA
 
@@ -52,8 +66,8 @@ public class MetricasPromptFormatter {
                         ### Métricas Principais
                         - **CTL (Fitness):** %.1f pontos - Forma física acumulada (6 semanas)
                         - **ATL (Fadiga):** %.1f pontos - Fadiga recente (última semana)
-                        - **TSB (Prontidão):** %.1f pontos - %s
-                        - **Ramp Rate:** %s - %s
+                        - **TSB (Prontidão hoje):** %.1f pontos - %s
+                        %s- **Ramp Rate:** %s - %s
 
                         ### Médias Semanais
                         - Volume: %.1f km | TSS: %d pts | Treinos: %.1f sessões
@@ -68,8 +82,9 @@ public class MetricasPromptFormatter {
                 recomendacao,
                 metaDados.getCtlAtual() != null ? metaDados.getCtlAtual() : 0.0,
                 metaDados.getAtlAtual() != null ? metaDados.getAtlAtual() : 0.0,
-                metaDados.getTsbAtual() != null ? metaDados.getTsbAtual() : 0.0,
-                metaDados.getInterpretacaoTsb(),
+                tsbProntidao,
+                interpretacaoTsb,
+                linhaPosCarga,
                 formatarRampRateResumo(metaDados.getCtlAtual(), metaDados.getRampRateAtual()),
                 interpretarRampRate(metaDados.getCtlAtual(), metaDados.getRampRateAtual()),
                 metaDados.getVolumeSemanalMedio() != null ? metaDados.getVolumeSemanalMedio().doubleValue() : 0.0,
@@ -198,7 +213,9 @@ public class MetricasPromptFormatter {
             return "DADOS INSUFICIENTES - Aguardando coleta de métricas";
         }
 
-        Double tsb = metaDados.getTsbAtual();
+        // Usa tsbProntidaoAtual (pré-treino) para avaliação de status.
+        // É a métrica correta para decisões sobre o estado do atleta antes da carga.
+        Double tsb = metaDados.getTsbProntidaoAtual();
         Double rampRate = metaDados.getRampRateAtual();
         Integer diasConsecutivos = metaDados.getDiasConsecutivosTreino();
 

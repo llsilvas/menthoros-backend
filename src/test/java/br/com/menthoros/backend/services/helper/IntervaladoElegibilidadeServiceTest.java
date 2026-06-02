@@ -46,6 +46,9 @@ class IntervaladoElegibilidadeServiceTest {
     private PlanoMetaDados metaDadosPadrao(Double tsb, Double ctl, FasePeriodizacao fase) {
         return PlanoMetaDados.builder()
                 .tsbAtual(tsb)
+                // Gate fisiológico usa tsbProntidaoAtual (pré-treino).
+                // Nos testes existentes, prontidão = tsbAtual (cenário simplificado).
+                .tsbProntidaoAtual(tsb)
                 .ctlAtual(ctl)
                 .atlAtual(20.0)
                 .rampRateAtual(5.0)
@@ -140,6 +143,7 @@ class IntervaladoElegibilidadeServiceTest {
         Atleta atleta = atletaSaudavel(NivelExperiencia.INTERMEDIARIO);
         PlanoMetaDados meta = PlanoMetaDados.builder()
                 .tsbAtual(-5.0)
+                .tsbProntidaoAtual(-5.0)
                 .ctlAtual(30.0)
                 .atlAtual(20.0)
                 .rampRateAtual(5.0)
