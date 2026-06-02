@@ -42,6 +42,17 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
     Optional<PlanoSemanal> findByAtletaId(UUID atletaId);
 
     /**
+     * Busca um PlanoSemanal filtrando por id e tenantId (assessoria.id).
+     * Previne cross-tenant data leakage garantindo que o plano pertence ao tenant.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     */
+    @Query("SELECT ps FROM PlanoSemanal ps WHERE ps.id = :id AND ps.assessoria.id = :tenantId")
+    Optional<PlanoSemanal> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+
+    /**
      * Valida se um PlanoSemanal pertence a um tenant específico.
      * Usado pelo TenantValidationAspect para validação de isolamento.
      */
