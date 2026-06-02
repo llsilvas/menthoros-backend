@@ -15,18 +15,20 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.specification.AtletaSpecification;
 import br.com.menthoros.backend.services.AtletaService;
 import br.com.menthoros.backend.services.TsbService;
-import org.springframework.data.jpa.domain.Specification;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AtletaServiceImpl implements AtletaService {
@@ -42,23 +44,22 @@ public class AtletaServiceImpl implements AtletaService {
     private static final String TENANT_KEY =
             "T(br.com.menthoros.backend.multitenancy.TenantContext).getTenantId()";
 
-    // TODO(tenant-isolation): substituir resolveTenantId() por TenantContext.getRequiredTenantId()
-    //   quando autenticação estiver habilitada no frontend.
-    //   O fallback para a primeira assessoria ativa é apenas para dev local sem JWT.
-    private UUID resolveTenantId() {
-        if (TenantContext.hasTenant()) {
-            return TenantContext.getTenantId();
-        }
-        return assessoriaRepository.findFirstByAtivoTrue()
-                .map(Assessoria::getId)
-                .orElseThrow(() -> new ResourceNotFoundException("Nenhuma assessoria cadastrada no banco"));
-    }
-
+    /**
+     * Cria um novo atleta vinculado ao tenant da requisição atual.
+     *
+     * Idempotent: NO — Cria nova entidade a cada chamada.
+     * Side Effects: Database insert (novo Atleta criado)
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId()
+     *
+     * @param atletaInputDto dados do atleta a ser criado
+     * @return Atleta entidade persistida
+     * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
+     * @throws ResourceNotFoundException se a assessoria do tenant não for encontrada
+     */
     @Override
-    // TODO(tenant-isolation): @CacheEvict(value = "atletas-list", key = TENANT_KEY, condition = HAS_TENANT)
-    @CacheEvict(value = "atletas-list", allEntries = true)
+    @CacheEvict(value = "atletas-list", key = TENANT_KEY, condition = HAS_TENANT)
     public Atleta createAtleta(AtletaInputDto atletaInputDto) {
-        UUID tenantId = resolveTenantId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
 
         Assessoria assessoria = assessoriaRepository.findById(tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Assessoria não encontrada para tenant: " + tenantId));
@@ -69,16 +70,28 @@ public class AtletaServiceImpl implements AtletaService {
         return atletaRepository.save(entity);
     }
 
+    /**
+     * Atualiza um atleta existente do tenant da requisição atual.
+     *
+     * Idempotent: YES — Atualizar com os mesmos dados produz o mesmo resultado.
+     * Side Effects: Database update (Atleta atualizado)
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId()
+     *
+     * @param id UUID do atleta a ser atualizado
+     * @param atletaInputDto novos dados do atleta
+     * @return AtletaOutputDto com os dados atualizados
+     * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
+     * @throws ResourceNotFoundException se o atleta não for encontrado no tenant
+     */
     @Transactional
     @Override
-    // TODO(tenant-isolation): restaurar @Caching com chaves tenant-aware e condition = HAS_TENANT
     @Caching(evict = {
-            @CacheEvict(value = "atletas", key = "#id"),
-            @CacheEvict(value = "atletas-list", allEntries = true),
-            @CacheEvict(value = "metadados-atleta", key = "#id")
+            @CacheEvict(value = "atletas", key = "#id + '_' + " + TENANT_KEY, condition = HAS_TENANT),
+            @CacheEvict(value = "atletas-list", key = TENANT_KEY, condition = HAS_TENANT),
+            @CacheEvict(value = "metadados-atleta", key = "#id + '_' + " + TENANT_KEY, condition = HAS_TENANT)
     })
     public AtletaOutputDto updateAtleta(UUID id, AtletaInputDto atletaInputDto) {
-        UUID tenantId = resolveTenantId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
 
         Atleta atleta = atletaRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + id));
@@ -88,15 +101,25 @@ public class AtletaServiceImpl implements AtletaService {
         return atletaMapper.toOutputDto(saved);
     }
 
+    /**
+     * Remove (soft delete) um atleta do tenant da requisição atual.
+     *
+     * Idempotent: YES — Deletar duas vezes é seguro (já está inativo).
+     * Side Effects: Database update (Atleta marcado como INATIVO)
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId()
+     *
+     * @param id UUID do atleta a ser removido
+     * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
+     * @throws ResourceNotFoundException se o atleta não for encontrado no tenant
+     */
     @Override
-    // TODO(tenant-isolation): restaurar @Caching com chaves tenant-aware e condition = HAS_TENANT
     @Caching(evict = {
-            @CacheEvict(value = "atletas", key = "#id"),
-            @CacheEvict(value = "atletas-list", allEntries = true),
-            @CacheEvict(value = "metadados-atleta", key = "#id")
+            @CacheEvict(value = "atletas", key = "#id + '_' + " + TENANT_KEY, condition = HAS_TENANT),
+            @CacheEvict(value = "atletas-list", key = TENANT_KEY, condition = HAS_TENANT),
+            @CacheEvict(value = "metadados-atleta", key = "#id + '_' + " + TENANT_KEY, condition = HAS_TENANT)
     })
     public void deleteAtleta(UUID id) {
-        UUID tenantId = resolveTenantId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
 
         Atleta atleta = atletaRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + id));
@@ -105,11 +128,23 @@ public class AtletaServiceImpl implements AtletaService {
         atletaRepository.save(atleta);
     }
 
+    /**
+     * Busca um atleta por ID dentro do tenant da requisição atual.
+     *
+     * Idempotent: YES — Operação de leitura, sem alteração de estado.
+     * Side Effects: NONE
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId()
+     *
+     * @param id UUID do atleta a ser buscado
+     * @return AtletaOutputDto com os dados do atleta
+     * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
+     * @throws ResourceNotFoundException se o atleta não for encontrado no tenant
+     */
     @Override
     @Cacheable(value = "atletas", key = "#id + '_' + " + TENANT_KEY, condition = HAS_TENANT)
     @Transactional(readOnly = true)
     public AtletaOutputDto getAtletaById(UUID id) {
-        UUID tenantId = resolveTenantId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
 
         Atleta atleta = atletaRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + id));
@@ -119,6 +154,19 @@ public class AtletaServiceImpl implements AtletaService {
         return atletaMapper.toOutputDto(atleta);
     }
 
+    /**
+     * Lista todos os atletas ativos do tenant da requisição atual, com filtros opcionais.
+     *
+     * Idempotent: YES — Operação de leitura, sem alteração de estado.
+     * Side Effects: NONE
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId()
+     *
+     * @param nome filtro opcional por nome (busca parcial)
+     * @param nivelExperiencia filtro opcional por nível de experiência
+     * @param temLesao filtro opcional por presença de lesão
+     * @return lista de AtletaOutputDto com atletas ativos do tenant
+     * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
+     */
     @Override
     @Cacheable(
         value = "atletas-list",
@@ -127,7 +175,7 @@ public class AtletaServiceImpl implements AtletaService {
     )
     @Transactional(readOnly = true)
     public List<AtletaOutputDto> getAllAtletas(String nome, NivelExperiencia nivelExperiencia, Boolean temLesao) {
-        UUID tenantId = resolveTenantId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
 
         Specification<Atleta> spec = Specification
                 .where(AtletaSpecification.byTenant(tenantId))
@@ -150,6 +198,15 @@ public class AtletaServiceImpl implements AtletaService {
         }).toList();
     }
 
+    /**
+     * Dispara o recálculo completo do histórico de métricas TSB do atleta.
+     *
+     * Idempotent: NO — Atualiza métricas a cada chamada; dados mudam com o tempo.
+     * Side Effects: Database update (múltiplos registros de TSB atualizados)
+     * Tenant-aware: NO — operação interna acionada via ID; tenant já validado no momento da criação do atleta.
+     *
+     * @param id UUID do atleta cujas métricas serão recalculadas
+     */
     @Override
     public void recalcularMetricasAtleta(UUID id) {
         tsbService.recalcularHistoricoCompleto(id);

@@ -14,13 +14,13 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
@@ -60,6 +60,8 @@ class ProvaServiceImplTest {
     @BeforeEach
     void setUp() {
         tenantId = UUID.randomUUID();
+        TenantContext.setTenantId(tenantId);
+
         atletaId = UUID.randomUUID();
         provaId = UUID.randomUUID();
 
@@ -98,129 +100,99 @@ class ProvaServiceImplTest {
         );
     }
 
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
+    }
+
     @Test
     @DisplayName("criarProva deve criar e retornar prova quando atleta pertence ao tenant")
     void criarProva_deveRetornarProvaOutputDto_quandoAtletaPertenceAoTenant() {
-        try (MockedStatic<TenantContext> tenantCtx = mockStatic(TenantContext.class)) {
-            tenantCtx.when(TenantContext::hasTenant).thenReturn(true);
-            tenantCtx.when(TenantContext::getTenantId).thenReturn(tenantId);
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(provaMapper.toEntity(inputDto)).thenReturn(prova);
+        when(provaRepository.save(prova)).thenReturn(prova);
+        when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
 
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaMapper.toEntity(inputDto)).thenReturn(prova);
-            when(provaRepository.save(prova)).thenReturn(prova);
-            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+        ProvaOutputDto result = provaService.criarProva(atletaId, inputDto);
 
-            ProvaOutputDto result = provaService.criarProva(atletaId, inputDto);
-
-            assertThat(result).isNotNull();
-            assertThat(result.nomeProva()).isEqualTo("Maratona SP");
-            verify(provaRepository).save(prova);
-        }
+        assertThat(result).isNotNull();
+        assertThat(result.nomeProva()).isEqualTo("Maratona SP");
+        verify(provaRepository).save(prova);
     }
 
     @Test
     @DisplayName("listarProvas deve retornar lista de provas do atleta ordenada por data")
     void listarProvas_deveRetornarLista_quandoAtletaValido() {
-        try (MockedStatic<TenantContext> tenantCtx = mockStatic(TenantContext.class)) {
-            tenantCtx.when(TenantContext::hasTenant).thenReturn(true);
-            tenantCtx.when(TenantContext::getTenantId).thenReturn(tenantId);
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(provaRepository.findByAtletaOrderByDataProvaAsc(atleta)).thenReturn(List.of(prova));
+        when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
 
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findByAtletaOrderByDataProvaAsc(atleta)).thenReturn(List.of(prova));
-            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+        List<ProvaOutputDto> result = provaService.listarProvas(atletaId);
 
-            List<ProvaOutputDto> result = provaService.listarProvas(atletaId);
-
-            assertThat(result).hasSize(1);
-            assertThat(result.get(0).nomeProva()).isEqualTo("Maratona SP");
-        }
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).nomeProva()).isEqualTo("Maratona SP");
     }
 
     @Test
     @DisplayName("listarProvas deve retornar lista vazia quando atleta não tem provas")
     void listarProvas_deveRetornarListaVazia_quandoAtletaSemProvas() {
-        try (MockedStatic<TenantContext> tenantCtx = mockStatic(TenantContext.class)) {
-            tenantCtx.when(TenantContext::hasTenant).thenReturn(true);
-            tenantCtx.when(TenantContext::getTenantId).thenReturn(tenantId);
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(provaRepository.findByAtletaOrderByDataProvaAsc(atleta)).thenReturn(List.of());
 
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findByAtletaOrderByDataProvaAsc(atleta)).thenReturn(List.of());
+        List<ProvaOutputDto> result = provaService.listarProvas(atletaId);
 
-            List<ProvaOutputDto> result = provaService.listarProvas(atletaId);
-
-            assertThat(result).isEmpty();
-        }
+        assertThat(result).isEmpty();
     }
 
     @Test
     @DisplayName("buscarProvaPorId deve retornar prova quando pertence ao atleta")
     void buscarProvaPorId_deveRetornarProva_quandoProvaDoAtleta() {
-        try (MockedStatic<TenantContext> tenantCtx = mockStatic(TenantContext.class)) {
-            tenantCtx.when(TenantContext::hasTenant).thenReturn(true);
-            tenantCtx.when(TenantContext::getTenantId).thenReturn(tenantId);
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+        when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
 
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findById(provaId)).thenReturn(Optional.of(prova));
-            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+        ProvaOutputDto result = provaService.buscarProvaPorId(atletaId, provaId);
 
-            ProvaOutputDto result = provaService.buscarProvaPorId(atletaId, provaId);
-
-            assertThat(result).isNotNull();
-            assertThat(result.id()).isEqualTo(provaId);
-        }
+        assertThat(result).isNotNull();
+        assertThat(result.id()).isEqualTo(provaId);
     }
 
     @Test
     @DisplayName("atualizarProva deve atualizar e retornar prova atualizada")
     void atualizarProva_deveRetornarProvaAtualizada() {
-        try (MockedStatic<TenantContext> tenantCtx = mockStatic(TenantContext.class)) {
-            tenantCtx.when(TenantContext::hasTenant).thenReturn(true);
-            tenantCtx.when(TenantContext::getTenantId).thenReturn(tenantId);
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+        when(provaRepository.save(prova)).thenReturn(prova);
+        when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
 
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findById(provaId)).thenReturn(Optional.of(prova));
-            when(provaRepository.save(prova)).thenReturn(prova);
-            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+        ProvaOutputDto result = provaService.atualizarProva(atletaId, provaId, inputDto);
 
-            ProvaOutputDto result = provaService.atualizarProva(atletaId, provaId, inputDto);
-
-            assertThat(result).isNotNull();
-            verify(provaMapper).updateEntity(inputDto, prova);
-            verify(provaRepository).save(prova);
-        }
+        assertThat(result).isNotNull();
+        verify(provaMapper).updateEntity(inputDto, prova);
+        verify(provaRepository).save(prova);
     }
 
     @Test
     @DisplayName("deletarProva deve deletar prova quando pertence ao atleta")
     void deletarProva_deveDeletar_quandoProvaDoAtleta() {
-        try (MockedStatic<TenantContext> tenantCtx = mockStatic(TenantContext.class)) {
-            tenantCtx.when(TenantContext::hasTenant).thenReturn(true);
-            tenantCtx.when(TenantContext::getTenantId).thenReturn(tenantId);
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
 
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findById(provaId)).thenReturn(Optional.of(prova));
+        provaService.deletarProva(atletaId, provaId);
 
-            provaService.deletarProva(atletaId, provaId);
-
-            verify(provaRepository).delete(prova);
-        }
+        verify(provaRepository).delete(prova);
     }
 
     @Test
     @DisplayName("criarProva deve lançar ResourceNotFoundException quando atleta é de outro tenant")
     void criarProva_deveLancarException_quandoAtletaDeOutroTenant() {
-        try (MockedStatic<TenantContext> tenantCtx = mockStatic(TenantContext.class)) {
-            tenantCtx.when(TenantContext::hasTenant).thenReturn(true);
-            tenantCtx.when(TenantContext::getTenantId).thenReturn(tenantId);
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
 
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+        assertThatThrownBy(() -> provaService.criarProva(atletaId, inputDto))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(atletaId.toString());
 
-            assertThatThrownBy(() -> provaService.criarProva(atletaId, inputDto))
-                    .isInstanceOf(ResourceNotFoundException.class)
-                    .hasMessageContaining(atletaId.toString());
-
-            verify(provaRepository, never()).save(any());
-        }
+        verify(provaRepository, never()).save(any());
     }
 
     @Test
@@ -233,16 +205,12 @@ class ProvaServiceImplTest {
                 .atleta(outroAtleta)
                 .build();
 
-        try (MockedStatic<TenantContext> tenantCtx = mockStatic(TenantContext.class)) {
-            tenantCtx.when(TenantContext::hasTenant).thenReturn(true);
-            tenantCtx.when(TenantContext::getTenantId).thenReturn(tenantId);
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        // prova existe para o mesmo tenant mas pertence a outro atleta — filter vai excluir
+        when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(provaDeOutroAtleta));
 
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findById(provaId)).thenReturn(Optional.of(provaDeOutroAtleta));
-
-            assertThatThrownBy(() -> provaService.buscarProvaPorId(atletaId, provaId))
-                    .isInstanceOf(ResourceNotFoundException.class)
-                    .hasMessageContaining(provaId.toString());
-        }
+        assertThatThrownBy(() -> provaService.buscarProvaPorId(atletaId, provaId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(provaId.toString());
     }
 }

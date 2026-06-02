@@ -4,7 +4,6 @@ import br.com.menthoros.backend.dto.input.ProvaInputDto;
 import br.com.menthoros.backend.dto.output.ProvaOutputDto;
 import br.com.menthoros.backend.dto.output.ProvaProximaDto;
 import br.com.menthoros.backend.dto.output.ProvasProximasResponseDto;
-import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
@@ -15,6 +14,7 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.services.ProvaService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +24,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ProvaServiceImpl implements ProvaService {
@@ -33,33 +34,46 @@ public class ProvaServiceImpl implements ProvaService {
     private final AssessoriaRepository assessoriaRepository;
     private final ProvaMapper provaMapper;
 
-    // TODO(tenant-isolation): substituir resolveTenantId() por TenantContext.getRequiredTenantId()
-    //   quando autenticação estiver habilitada no frontend.
-    //   O fallback para a primeira assessoria ativa é apenas para dev local sem JWT.
-    private UUID resolveTenantId() {
-        if (TenantContext.hasTenant()) {
-            return TenantContext.getTenantId();
-        }
-        return assessoriaRepository.findFirstByAtivoTrue()
-                .map(Assessoria::getId)
-                .orElseThrow(() -> new ResourceNotFoundException("Nenhuma assessoria cadastrada no banco"));
-    }
-
+    /**
+     * Resolve o atleta pelo ID garantindo isolamento por tenant.
+     * Usa TenantContext.getRequiredTenantId() — lança IllegalStateException se tenant ausente.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId()
+     *
+     * @param atletaId ID do atleta
+     * @return Atleta pertencente ao tenant atual
+     * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
+     * @throws ResourceNotFoundException se o atleta não for encontrado no tenant
+     */
     private Atleta resolveAtleta(UUID atletaId) {
-        UUID tenantId = resolveTenantId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
         return atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + atletaId));
     }
 
     private Prova resolveProva(Atleta atleta, UUID provaId) {
-        Prova prova = provaRepository.findById(provaId)
+        // tenant-aware: usa assessoria do atleta como tenant para garantir isolamento cross-tenant
+        UUID tenantId = atleta.getAssessoria().getId();
+        return provaRepository.findByIdAndTenantId(provaId, tenantId)
+                .filter(p -> p.getAtleta().getId().equals(atleta.getId()))
                 .orElseThrow(() -> new ResourceNotFoundException("Prova não encontrada: " + provaId));
-        if (!prova.getAtleta().getId().equals(atleta.getId())) {
-            throw new ResourceNotFoundException("Prova não encontrada: " + provaId);
-        }
-        return prova;
     }
 
+    /**
+     * Cria uma prova para o atleta dentro do tenant da requisição atual.
+     *
+     * Idempotent: NO — Cria nova entidade a cada chamada.
+     * Side Effects: Database insert (nova Prova criada)
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId() via resolveAtleta()
+     *
+     * @param atletaId ID do atleta para quem a prova será criada
+     * @param dto dados da prova
+     * @return ProvaOutputDto com os dados da prova criada
+     * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
+     * @throws ResourceNotFoundException se o atleta não for encontrado no tenant
+     */
     @Override
     @Transactional
     public ProvaOutputDto criarProva(UUID atletaId, ProvaInputDto dto) {
@@ -73,6 +87,18 @@ public class ProvaServiceImpl implements ProvaService {
         return provaMapper.toOutputDto(provaRepository.save(prova));
     }
 
+    /**
+     * Lista as provas de um atleta dentro do tenant da requisição atual.
+     *
+     * Idempotent: YES — Operação de leitura, sem alteração de estado.
+     * Side Effects: NONE
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId() via resolveAtleta()
+     *
+     * @param atletaId ID do atleta cujas provas serão listadas
+     * @return lista de ProvaOutputDto com as provas do atleta
+     * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
+     * @throws ResourceNotFoundException se o atleta não for encontrado no tenant
+     */
     @Override
     @Transactional(readOnly = true)
     public List<ProvaOutputDto> listarProvas(UUID atletaId) {
@@ -83,6 +109,19 @@ public class ProvaServiceImpl implements ProvaService {
                 .toList();
     }
 
+    /**
+     * Busca uma prova específica de um atleta dentro do tenant da requisição atual.
+     *
+     * Idempotent: YES — Operação de leitura, sem alteração de estado.
+     * Side Effects: NONE
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId() via resolveAtleta()
+     *
+     * @param atletaId ID do atleta proprietário da prova
+     * @param provaId ID da prova a ser buscada
+     * @return ProvaOutputDto com os dados da prova
+     * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
+     * @throws ResourceNotFoundException se atleta ou prova não forem encontrados no tenant
+     */
     @Override
     @Transactional(readOnly = true)
     public ProvaOutputDto buscarProvaPorId(UUID atletaId, UUID provaId) {
@@ -90,6 +129,20 @@ public class ProvaServiceImpl implements ProvaService {
         return provaMapper.toOutputDto(resolveProva(atleta, provaId));
     }
 
+    /**
+     * Atualiza uma prova de um atleta dentro do tenant da requisição atual.
+     *
+     * Idempotent: YES — Atualizar com os mesmos dados produz o mesmo resultado.
+     * Side Effects: Database update (Prova atualizada)
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId() via resolveAtleta()
+     *
+     * @param atletaId ID do atleta proprietário da prova
+     * @param provaId ID da prova a ser atualizada
+     * @param dto novos dados da prova
+     * @return ProvaOutputDto com os dados atualizados
+     * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
+     * @throws ResourceNotFoundException se atleta ou prova não forem encontrados no tenant
+     */
     @Override
     @Transactional
     public ProvaOutputDto atualizarProva(UUID atletaId, UUID provaId, ProvaInputDto dto) {
@@ -99,6 +152,18 @@ public class ProvaServiceImpl implements ProvaService {
         return provaMapper.toOutputDto(provaRepository.save(prova));
     }
 
+    /**
+     * Remove uma prova de um atleta dentro do tenant da requisição atual.
+     *
+     * Idempotent: YES — Deletar uma prova já removida é seguro (já não existe).
+     * Side Effects: Database delete (Prova removida)
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId() via resolveAtleta()
+     *
+     * @param atletaId ID do atleta proprietário da prova
+     * @param provaId ID da prova a ser removida
+     * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
+     * @throws ResourceNotFoundException se atleta ou prova não forem encontrados no tenant
+     */
     @Override
     @Transactional
     public void deletarProva(UUID atletaId, UUID provaId) {
@@ -107,6 +172,16 @@ public class ProvaServiceImpl implements ProvaService {
         provaRepository.delete(prova);
     }
 
+    /**
+     * Retorna as provas próximas dos próximos 15 dias de todos os atletas.
+     * Operação global — não filtra por tenant, pois é usada para monitoramento de assessoria.
+     *
+     * Idempotent: YES — Operação de leitura, sem alteração de estado.
+     * Side Effects: NONE
+     * Tenant-aware: NO — retorna provas de todos os tenants para dashboard global.
+     *
+     * @return ProvasProximasResponseDto com provas dos próximos 15 dias
+     */
     @Override
     @Transactional(readOnly = true)
     public ProvasProximasResponseDto getProvasProximas() {
