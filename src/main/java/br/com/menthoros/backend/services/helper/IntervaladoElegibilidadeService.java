@@ -7,6 +7,11 @@ import br.com.menthoros.backend.enums.CategoriaIntervalado;
 import br.com.menthoros.backend.enums.FasePeriodizacao;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.skills.core.SkillContext;
+import br.com.menthoros.backend.skills.core.SkillResult;
+import br.com.menthoros.backend.skills.eligibility.IntervaladoElegibilidadeInput;
+import br.com.menthoros.backend.skills.eligibility.IntervaladoElegibilidadePayload;
+import br.com.menthoros.backend.skills.eligibility.IntervaladoElegibilidadeSkill;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -16,6 +21,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalLong;
+import java.util.UUID;
 
 /**
  * Motor de elegibilidade determinístico para treinos INTERVALADOS.
@@ -43,6 +50,16 @@ import java.util.Optional;
 @Slf4j
 @Component
 public class IntervaladoElegibilidadeService {
+
+    /**
+     * Skill de elegibilidade formalizada — invocada em paralelo para logging e rastreabilidade.
+     * A lógica principal do serviço permanece inalterada (delegação sem remoção — D6).
+     */
+    private final IntervaladoElegibilidadeSkill eligibilidadeSkill;
+
+    public IntervaladoElegibilidadeService(IntervaladoElegibilidadeSkill eligibilidadeSkill) {
+        this.eligibilidadeSkill = eligibilidadeSkill;
+    }
 
     // ── Portão 2: limiares de TSB por nível ──────────────────────────────────
     private static final Map<NivelExperiencia, Double> TSB_THRESHOLD = Map.of(
@@ -99,6 +116,29 @@ public class IntervaladoElegibilidadeService {
         Double ctl      = metaDados != null ? metaDados.getCtlAtual()  : null;
         Boolean alertaDias = metaDados != null ? metaDados.getAlertaDiasConsecutivos() : null;
         FasePeriodizacao fase = metaDados != null ? metaDados.getFasePeriodizacao() : null;
+
+        // ── DELEGAÇÃO PARALELA para IntervaladoElegibilidadeSkill (D6) ───────
+        // A skill é invocada em paralelo à lógica legada para rastreabilidade e transição
+        // gradual. NÃO altera o resultado do método — apenas loga o resultado da skill.
+        try {
+            IntervaladoElegibilidadeInput skillInput = buildSkillInput(
+                    atleta, metaDados, treinosUltimas4Semanas, dataReferencia);
+            SkillContext skillContext = SkillContext.of(
+                    UUID.randomUUID(),  // atletaId anônimo — Atleta não expõe UUID aqui
+                    UUID.randomUUID(),  // tenantId anônimo — não disponível neste contexto legado
+                    dataReferencia);
+            SkillResult<IntervaladoElegibilidadePayload> skillResult =
+                    eligibilidadeSkill.execute(skillInput, skillContext);
+            log.debug("IntervaladoElegibilidadeSkill (delegação paralela): severity={} elegivel={} — {}",
+                    skillResult.severity(),
+                    skillResult.payload().elegivel(),
+                    skillResult.payload().motivo());
+        } catch (Exception ex) {
+            // Nunca propagar exceção da skill — a lógica legada é a fonte de verdade
+            log.warn("IntervaladoElegibilidadeSkill (delegação paralela) falhou — ignorando: {}",
+                    ex.getMessage());
+        }
+        // ── FIM DA DELEGAÇÃO PARALELA ─────────────────────────────────────────
 
         // ── PORTÃO 1: Contraindicações absolutas ─────────────────────────────
 
@@ -202,6 +242,46 @@ public class IntervaladoElegibilidadeService {
                 categoria, tsb, ctl, fase);
 
         return new RecomendacaoIntervalado.Elegivel(categoria, motivo, instrucao);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Delegação para skill — builder de input
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private IntervaladoElegibilidadeInput buildSkillInput(
+            Atleta atleta,
+            PlanoMetaDados metaDados,
+            List<TreinoRealizado> treinos,
+            LocalDate dataReferencia) {
+
+        double tsb        = metaDados != null && metaDados.getTsbProntidaoAtual() != null
+                ? metaDados.getTsbProntidaoAtual() : 0.0;
+        double ctlVal     = metaDados != null && metaDados.getCtlAtual() != null
+                ? metaDados.getCtlAtual() : 0.0;
+        double rampRate   = metaDados != null && metaDados.getRampRateAtual() != null
+                ? metaDados.getRampRateAtual() : 0.0;
+        boolean temLesao  = atleta != null && Boolean.TRUE.equals(atleta.getTemLesao());
+        String faseStr    = metaDados != null && metaDados.getFasePeriodizacao() != null
+                ? metaDados.getFasePeriodizacao().name() : "";
+
+        // Calcula dias desde o último treino intensivo para a skill
+        int diasDesdeUltimo = calcularDiasDesdeUltimoIntervalado(treinos, dataReferencia);
+
+        return new IntervaladoElegibilidadeInput(tsb, ctlVal, rampRate, temLesao, diasDesdeUltimo, faseStr);
+    }
+
+    private int calcularDiasDesdeUltimoIntervalado(
+            List<TreinoRealizado> treinos, LocalDate dataReferencia) {
+        if (treinos == null || treinos.isEmpty()) return Integer.MAX_VALUE;
+        OptionalLong minDias = treinos.stream()
+                .filter(t -> t.getTipoTreino() != null
+                        && (t.getTipoTreino() == TipoTreino.INTERVALADO
+                            || t.getTipoTreino() == TipoTreino.TIRO))
+                .filter(t -> t.getDataTreino() != null
+                        && t.getDataTreino().isBefore(dataReferencia))
+                .mapToLong(t -> ChronoUnit.DAYS.between(t.getDataTreino(), dataReferencia))
+                .min();
+        return minDias.isPresent() ? (int) minDias.getAsLong() : Integer.MAX_VALUE;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
