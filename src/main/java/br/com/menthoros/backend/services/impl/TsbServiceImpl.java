@@ -114,15 +114,33 @@ public class TsbServiceImpl implements TsbService {
         double ctlAnterior = obterCtlAnterior(metricasOntem);
         double atlAnterior = obterAtlAnterior(metricasOntem);
 
-        double novoCtl = calcularCtlCorreto(ctlAnterior, tssHoje, atleta);
-        double novoAtl = calcularAtlCorreto(atlAnterior, tssHoje, atleta);
-        double novoTsb = novoCtl - novoAtl;
-        double rampRate = calcularRampRate(atletaId, data, novoCtl);
+        // === SEMÂNTICA CORRETA: início do dia = estado de ontem (pré-treino) ===
+        double ctlInicio = ctlAnterior;
+        double atlInicio = atlAnterior;
+        double tsbInicio = ctlInicio - atlInicio;
 
+        // === Fim do dia = estado após absorver carga de hoje ===
+        double ctlFim = calcularCtlCorreto(ctlAnterior, tssHoje, atleta);
+        double atlFim = calcularAtlCorreto(atlAnterior, tssHoje, atleta);
+        double tsbFim = ctlFim - atlFim;
+
+        double rampRate = calcularRampRate(atletaId, data, ctlFim);
+
+        // Campos de início de dia (prontidão pré-treino)
+        metricasHoje.setCtlInicioDia(round(ctlInicio, 2));
+        metricasHoje.setAtlInicioDia(round(atlInicio, 2));
+        metricasHoje.setTsbInicioDia(round(tsbInicio, 2));
+
+        // Campos de fim de dia (estado pós-carga)
+        metricasHoje.setCtlFimDia(round(ctlFim, 2));
+        metricasHoje.setAtlFimDia(round(atlFim, 2));
+        metricasHoje.setTsbFimDia(round(tsbFim, 2));
+
+        // Campos legados — mantidos para compatibilidade, mapeados para fim de dia
         metricasHoje.setTss(tssHoje);
-        metricasHoje.setCtl(round(novoCtl, 2));
-        metricasHoje.setAtl(round(novoAtl, 2));
-        metricasHoje.setTsb(round(novoTsb, 2));
+        metricasHoje.setCtl(round(ctlFim, 2));
+        metricasHoje.setAtl(round(atlFim, 2));
+        metricasHoje.setTsb(round(tsbFim, 2));
         metricasHoje.setRampRate(round(rampRate, 2));
     }
 
@@ -226,9 +244,16 @@ public class TsbServiceImpl implements TsbService {
 
         metaDados.setCtlAtual(metricas.getCtl());
         metaDados.setAtlAtual(metricas.getAtl());
-        metaDados.setTsbAtual(metricas.getTsb());
         metaDados.setRampRateAtual(metricas.getRampRate());
         metaDados.setDataUltimaAtualizacao(LocalDate.now());
+
+        // Semântica correta: tsbProntidaoAtual = pré-treino (início do dia)
+        Double tsbProntidao = metricas.getTsbInicioDia();
+        Double tsbPosCarga  = metricas.getTsbFimDia();
+        metaDados.setTsbProntidaoAtual(tsbProntidao != null ? tsbProntidao : 0.0);
+        metaDados.setTsbPosCargaAtual(tsbPosCarga   != null ? tsbPosCarga  : 0.0);
+        // Compatibilidade legada: tsbAtual aponta para tsbProntidaoAtual
+        metaDados.setTsbAtual(tsbProntidao != null ? tsbProntidao : 0.0);
 
         // Atualizar dias consecutivos ANTES da análise (ISSUE-06)
         boolean hojeTemTreino = metricas.getTreinosRealizados() != null && metricas.getTreinosRealizados() > 0;
