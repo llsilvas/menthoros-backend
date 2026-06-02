@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ProvaRepository extends JpaRepository<Prova, UUID> {
@@ -38,6 +39,17 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
      */
     @Query("SELECT DISTINCT p FROM Prova p JOIN FETCH p.atleta WHERE p.dataProva >= CURRENT_DATE AND p.dataProva <= :endDate ORDER BY p.dataProva ASC")
     List<Prova> findUpcomingProvasNext15Days(@Param("endDate") LocalDate endDate);
+
+    /**
+     * Busca uma Prova filtrando por id e tenantId (assessoria.id).
+     * Previne cross-tenant data leakage garantindo que a prova pertence ao tenant.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     */
+    @Query("SELECT p FROM Prova p WHERE p.id = :id AND p.assessoria.id = :tenantId")
+    Optional<Prova> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 
     /**
      * Valida se uma Prova pertence a um tenant específico.

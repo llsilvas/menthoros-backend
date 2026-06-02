@@ -113,6 +113,26 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
 
+    /**
+     * Handler para IllegalStateException gerada por TenantContext.getRequiredTenantId()
+     * quando o tenant não está configurado na thread (ausência de JWT válido).
+     *
+     * Mapeamento: 403 Forbidden
+     * Por quê 403 e não 401?
+     * - 401 = não autenticado (sem credenciais)
+     * - 403 = autenticado mas sem permissão / contexto inválido
+     * - Neste caso o JWT pode ter sido apresentado mas o filtro de tenant não configurou o contexto.
+     *
+     * SEGURANÇA: A mensagem de resposta é genérica e não expõe detalhes internos
+     * (como "Tenant não configurado para a requisição atual").
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, String>> handleIllegalState(IllegalStateException ex) {
+        log.warn("SECURITY: Contexto de tenant ausente ou inválido: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of("error", "Acesso não autorizado: contexto de tenant ausente"));
+    }
+
     @ExceptionHandler(MissingRequestHeaderException.class)
     public ResponseEntity<Map<String, Object>> handleMissingHeader(MissingRequestHeaderException ex) {
         log.warn("Header obrigatório ausente: {}", ex.getHeaderName());

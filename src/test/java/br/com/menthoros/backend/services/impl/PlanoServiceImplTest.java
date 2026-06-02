@@ -26,7 +26,11 @@ import br.com.menthoros.backend.services.EmbeddingService;
 import br.com.menthoros.backend.services.IaService;
 import br.com.menthoros.backend.services.helper.RedistribuicaoTreinoHelper;
 import br.com.menthoros.backend.services.helper.RegraGeracaoTreino;
+import br.com.menthoros.backend.entity.Assessoria;
+import br.com.menthoros.backend.multitenancy.TenantContext;
 import org.hibernate.Hibernate;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -87,6 +91,19 @@ class PlanoServiceImplTest {
     @InjectMocks
     private PlanoServiceImpl planoService;
 
+    private UUID tenantId;
+
+    @BeforeEach
+    void setUpTenant() {
+        tenantId = UUID.randomUUID();
+        TenantContext.setTenantId(tenantId);
+    }
+
+    @AfterEach
+    void tearDownTenant() {
+        TenantContext.clear();
+    }
+
     private void mockMetricasAgregadasEAlertas(PlanoMetaDados metaDados) {
         when(metricasAgregadasService.calcularMetricasSemanais(any(), anyInt()))
                 .thenReturn(new MetricasSemanaisMedias(BigDecimal.valueOf(30.0), 300, 4.0));
@@ -122,7 +139,7 @@ class PlanoServiceImplTest {
         mockMetricasAgregadasEAlertas(metaDados);
 
         // Mock dependencies
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
         when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
@@ -130,7 +147,7 @@ class PlanoServiceImplTest {
                 any(), any(), any())).thenReturn(Optional.empty());
 
         when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao))).thenReturn(planoDto);
-        when(planoMetadadosRepository.findById(any())).thenReturn(Optional.of(metaDados));
+        when(planoMetadadosRepository.findByIdAndTenantId(any(), any())).thenReturn(Optional.of(metaDados));
 
         when(planoSemanalMapper.toEntity(planoDto)).thenReturn(planoSalvo);
         when(treinoMapper.toEntity(any(TreinoPlanejadoLlmDto.class))).thenReturn(treinoPlanejado);
@@ -147,7 +164,7 @@ class PlanoServiceImplTest {
             assertNotNull(resultado);
             assertEquals(planoSalvo, resultado);
 
-            verify(atletaRepository).findById(atletaId);
+            verify(atletaRepository).findByIdAndTenantId(atletaId, tenantId);
             verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao));
             verify(planoSemanalRepository).save(any(PlanoSemanal.class));
             verify(planoMetadadosRepository, times(1)).save(any(PlanoMetaDados.class));
@@ -164,7 +181,7 @@ class PlanoServiceImplTest {
         Atleta atleta = criarAtletaMock(atletaId);
         PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
 
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
         when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
@@ -196,7 +213,7 @@ class PlanoServiceImplTest {
         PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
         PlanoSemanalLlmDto planoDto = criarPlanoSemanalLlmDto();
 
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
         when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
@@ -228,13 +245,13 @@ class PlanoServiceImplTest {
         UUID atletaId = UUID.randomUUID();
         ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
 
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.empty());
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
 
         // When & Then
         assertThrows(RuntimeException.class, () ->
                 planoService.gerarPlanoTreino(atletaId, modoGeracao));
 
-        verify(atletaRepository).findById(atletaId);
+        verify(atletaRepository).findByIdAndTenantId(atletaId, tenantId);
         verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any(), eq(modoGeracao));
     }
 
@@ -248,7 +265,7 @@ class PlanoServiceImplTest {
         Atleta atleta = criarAtletaMock(atletaId);
         PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
 
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
         when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
@@ -288,7 +305,7 @@ class PlanoServiceImplTest {
 
         mockMetricasAgregadasEAlertas(metaDados);
 
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
         when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
@@ -298,7 +315,7 @@ class PlanoServiceImplTest {
         when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao))).thenReturn(planoDto);
         when(redistribuicaoHelper.redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao), any()))
                 .thenReturn(treinosRedistribuidos);
-        when(planoMetadadosRepository.findById(any())).thenReturn(Optional.of(metaDados));
+        when(planoMetadadosRepository.findByIdAndTenantId(any(), any())).thenReturn(Optional.of(metaDados));
 
         when(planoSemanalMapper.toEntity(planoDto)).thenReturn(planoSalvo);
         when(treinoMapper.toEntity(any(TreinoPlanejadoLlmDto.class))).thenReturn(treinoPlanejado);
@@ -347,7 +364,7 @@ class PlanoServiceImplTest {
 
         mockMetricasAgregadasEAlertas(metaDados);
 
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
         when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(List.of(longo1, longo2));
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
@@ -359,7 +376,7 @@ class PlanoServiceImplTest {
         when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao))).thenReturn(planoDto);
         when(redistribuicaoHelper.redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao), eq(DiaSemana.DOMINGO)))
                 .thenReturn(treinosRedistribuidos);
-        when(planoMetadadosRepository.findById(any())).thenReturn(Optional.of(metaDados));
+        when(planoMetadadosRepository.findByIdAndTenantId(any(), any())).thenReturn(Optional.of(metaDados));
 
         when(planoSemanalMapper.toEntity(planoDto)).thenReturn(planoSalvo);
         when(treinoMapper.toEntity(any(TreinoPlanejadoLlmDto.class))).thenReturn(treinoPlanejado);
@@ -389,7 +406,7 @@ class PlanoServiceImplTest {
                 22, 22, 50.0, 60.0, PlanoStatus.PLANEJADO.getValue(), "Teste Plano", Collections.emptyList()
         );
 
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
         when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
@@ -420,7 +437,7 @@ class PlanoServiceImplTest {
         Atleta atleta = criarAtletaMock(atletaId);
         atleta.setDiasDisponiveis(Collections.emptyList()); // Sem dias disponíveis
 
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
 
         // When & Then
         DomainRuleViolationException exception = assertThrows(DomainRuleViolationException.class, () ->
@@ -430,7 +447,7 @@ class PlanoServiceImplTest {
         assertTrue(exception.getMessage().contains("sem dias disponíveis"));
 
         // Verifica que a validação falhou antes de chamar serviços de IA ou redistribuição
-        verify(atletaRepository).findById(atletaId);
+        verify(atletaRepository).findByIdAndTenantId(atletaId, tenantId);
         verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any(), eq(modoGeracao));
         verify(redistribuicaoHelper, never()).redistribuirTreinos(any(), any(), any(), any(), any(), any());
     }
@@ -445,7 +462,7 @@ class PlanoServiceImplTest {
         Atleta atleta = criarAtletaMock(atletaId);
         atleta.setAtivo(AtletaStatus.INATIVO); // Atleta inativo
 
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
 
         // When & Then
         DomainRuleViolationException exception = assertThrows(DomainRuleViolationException.class, () ->
@@ -455,7 +472,7 @@ class PlanoServiceImplTest {
         assertTrue(exception.getMessage().contains("atleta inativo"));
 
         // Verifica que a validação falhou antes de chamar serviços de IA
-        verify(atletaRepository).findById(atletaId);
+        verify(atletaRepository).findByIdAndTenantId(atletaId, tenantId);
         verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any(), eq(modoGeracao));
     }
 
@@ -469,7 +486,7 @@ class PlanoServiceImplTest {
         Atleta atleta = criarAtletaMock(atletaId);
         atleta.setObjetivo(null); // Sem objetivo
 
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
 
         // When & Then
         DomainRuleViolationException exception = assertThrows(DomainRuleViolationException.class, () ->
@@ -479,7 +496,7 @@ class PlanoServiceImplTest {
         assertTrue(exception.getMessage().contains("sem objetivo definido"));
 
         // Verifica que a validação falhou antes de chamar serviços de IA
-        verify(atletaRepository).findById(atletaId);
+        verify(atletaRepository).findByIdAndTenantId(atletaId, tenantId);
         verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any(), eq(modoGeracao));
     }
 
@@ -493,7 +510,7 @@ class PlanoServiceImplTest {
         Atleta atleta = criarAtletaMock(atletaId);
         atleta.setNivelExperiencia(null); // Sem nível de experiência
 
-        when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
 
         // When & Then
         DomainRuleViolationException exception = assertThrows(DomainRuleViolationException.class, () ->
@@ -503,12 +520,15 @@ class PlanoServiceImplTest {
         assertTrue(exception.getMessage().contains("sem nível de experiência"));
 
         // Verifica que a validação falhou antes de chamar serviços de IA
-        verify(atletaRepository).findById(atletaId);
+        verify(atletaRepository).findByIdAndTenantId(atletaId, tenantId);
         verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any(), eq(modoGeracao));
     }
 
     // Helper methods to create mock objects
     private Atleta criarAtletaMock(UUID atletaId) {
+        Assessoria assessoria = new Assessoria();
+        assessoria.setId(tenantId);
+
         Atleta atleta = new Atleta();
         atleta.setId(atletaId);
         atleta.setNome("João Silva");
@@ -518,6 +538,7 @@ class PlanoServiceImplTest {
         atleta.setAtivo(AtletaStatus.ATIVO);
         atleta.setObjetivo("Teste objetivo");
         atleta.setNivelExperiencia(NivelExperiencia.INICIANTE);
+        atleta.setAssessoria(assessoria);
         return atleta;
     }
 

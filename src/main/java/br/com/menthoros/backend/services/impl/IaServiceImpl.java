@@ -15,6 +15,7 @@ import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.LLMException;
+import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.services.IaService;
 import br.com.menthoros.backend.services.helper.PaceValidator;
@@ -311,7 +312,10 @@ public class IaServiceImpl implements IaService {
      */
     private PlanoSemanalLlmDto validarENormalizarPlanoGerado(PlanoSemanalLlmDto plano, UUID atletaId) {
 
-        Atleta atleta = atletaRepository.findById(atletaId).orElseThrow(() -> new LLMException("Atleta não encontrado"));
+        // tenant-aware: garante que o atleta pertence ao tenant do contexto
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                .orElseThrow(() -> new LLMException("Atleta não encontrado"));
 
         if (plano == null || plano.treinosPlanejados() == null) {
             throw new LLMException("Plano gerado está nulo ou sem treinos");

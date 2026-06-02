@@ -53,15 +53,16 @@ public class TreinoServiceImpl implements TreinoService {
     @Transactional
     @Override
     public TreinoRealizado addTreino(UUID treinoPlanejadoId, TreinoRealizadoInputDto treinoRealizado) {
-        // 1) Duplicidade
+        // 1) Duplicidade — usa externalId + atletaId para isolamento por tenant
         Optional<TreinoRealizado> duplicado = buscarTreinoDuplicado(treinoRealizado);
         if (duplicado.isPresent()) {
             log.warn("Treino já registrado: fonte={}, externalId={}", treinoRealizado.fonteDados(), treinoRealizado.externalId());
-            return duplicado.get(); //
+            return duplicado.get();
         }
 
-        // 2) Carrega atleta
-        Atleta atleta = atletaRepository.findById(treinoRealizado.atletaId())
+        // 2) Carrega atleta — tenant-aware para prevenir cross-tenant data leak
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(treinoRealizado.atletaId(), tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
         // 3) Resolve planejado (id explícito OU conciliação automática)
@@ -163,7 +164,9 @@ public class TreinoServiceImpl implements TreinoService {
 
     private Optional<TreinoPlanejado> resolveTreinoPlanejado(UUID treinoPlanejadoId, TreinoRealizadoInputDto treinoRealizadoInputDto) {
         if (treinoPlanejadoId != null) {
-            TreinoPlanejado planejado = treinoPlanejadoRepository.findById(treinoPlanejadoId)
+            // tenant-aware: garante que o treino planejado pertence ao tenant do contexto
+            UUID tenantId = TenantContext.getRequiredTenantId();
+            TreinoPlanejado planejado = treinoPlanejadoRepository.findByIdAndTenantId(treinoPlanejadoId, tenantId)
                     .orElseThrow(() -> new DomainNotFoundException("Treino planejado não encontrado"));
             if (!planejado.getAtleta().getId().equals(treinoRealizadoInputDto.atletaId())) {
                 throw new DomainRuleViolationException("Treino planejado não pertence ao atleta.");
@@ -218,10 +221,19 @@ public class TreinoServiceImpl implements TreinoService {
     }
 
 
+    /**
+     * Busca treino duplicado usando externalId + atletaId para isolamento por tenant.
+     * Cada atleta pertence a exatamente um tenant, portanto filtrar por atletaId
+     * garante isolamento de dados entre tenants diferentes.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES — via atletaId (proxy de tenant)
+     */
     private Optional<TreinoRealizado> buscarTreinoDuplicado(TreinoRealizadoInputDto treinoRealizadoInputDto) {
-        if (treinoRealizadoInputDto.fonteDados() != null && treinoRealizadoInputDto.externalId() != null) {
+        if (treinoRealizadoInputDto.externalId() != null && treinoRealizadoInputDto.atletaId() != null) {
             return treinoRealizadoRepository
-                    .findByFonteDadosAndExternalId(treinoRealizadoInputDto.fonteDados(), treinoRealizadoInputDto.externalId());
+                    .findByExternalIdAndAtletaId(treinoRealizadoInputDto.externalId(), treinoRealizadoInputDto.atletaId());
         }
         return Optional.empty();
     }
@@ -298,7 +310,8 @@ public class TreinoServiceImpl implements TreinoService {
     public TreinoRealizadoOutputDto lancarTreino(UUID atletaId, TreinoRealizadoInputDto treinoRealizadoInputDto) {
         log.debug("Criando treino realizado: {}", treinoRealizadoInputDto);
 
-        Atleta atleta = atletaRepository.findById(atletaId)
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
         TreinoRealizado treinoRealizado = treinoMapper.toEntity(treinoRealizadoInputDto);
@@ -338,7 +351,8 @@ public class TreinoServiceImpl implements TreinoService {
     @Override
     @Transactional
     public void marcarTreinoPerdido(UUID treinoPlanejadoId) {
-        TreinoPlanejado planejado = treinoPlanejadoRepository.findById(treinoPlanejadoId)
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        TreinoPlanejado planejado = treinoPlanejadoRepository.findByIdAndTenantId(treinoPlanejadoId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Treino planejado não encontrado"));
 
         if (planejado.getStatusTreino() == TreinoExecucaoStatus.REALIZADO) {
@@ -367,7 +381,8 @@ public class TreinoServiceImpl implements TreinoService {
 
     @Override
     public ResumoSemanalTreinoDto getResumoSemanal(UUID atletaId, LocalDate targetDate) {
-        Atleta atleta = atletaRepository.findById(atletaId)
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
         if (targetDate == null) {

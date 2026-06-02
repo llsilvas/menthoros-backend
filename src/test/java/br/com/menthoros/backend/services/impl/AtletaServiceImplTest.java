@@ -272,30 +272,15 @@ class AtletaServiceImplTest {
     }
 
     @Test
-    @DisplayName("createAtleta com fallback para assessoria quando TenantContext vazio")
-    void testCreateAtletaWithFallbackAssessoria() {
+    @DisplayName("createAtleta lança IllegalStateException quando TenantContext vazio (sem fallback)")
+    void testCreateAtletaWithoutTenantThrowsIllegalState() {
         TenantContext.clear();
-
-        when(assessoriaRepository.findFirstByAtivoTrue()).thenReturn(Optional.of(assessoria));
-        when(atletaMapper.toEntity(atletaInputDto)).thenReturn(new Atleta());
-        when(atletaRepository.save(any(Atleta.class))).thenReturn(atletaEntity);
-        when(assessoriaRepository.findById(tenantId)).thenReturn(Optional.of(assessoria));
-
-        Atleta result = atletaService.createAtleta(atletaInputDto);
-
-        assertThat(result).isNotNull();
-        verify(assessoriaRepository).findFirstByAtivoTrue();
-    }
-
-    @Test
-    @DisplayName("createAtleta com fallback deve lançar exceção quando nenhuma assessoria existe")
-    void testCreateAtletaWithFallbackAssessoriaNotFound() {
-        TenantContext.clear();
-
-        when(assessoriaRepository.findFirstByAtivoTrue()).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> atletaService.createAtleta(atletaInputDto))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining("Nenhuma assessoria cadastrada");
+                .isInstanceOf(IllegalStateException.class);
+
+        // Garante que o fallback para a primeira assessoria NÃO é mais chamado
+        verify(assessoriaRepository, never()).findFirstByAtivoTrue();
+        verify(atletaRepository, never()).save(any());
     }
 }
