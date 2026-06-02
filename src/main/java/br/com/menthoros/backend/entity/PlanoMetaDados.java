@@ -170,33 +170,60 @@ public class PlanoMetaDados {
         this.alertaNecessitaDescanso = analise.alertaNecessitaDescanso();
     }
 
+    /**
+     * Retorna true se o atleta está em forma ideal com base na prontidão pré-treino.
+     *
+     * <p>Usa {@code tsbProntidaoAtual} (CTL_ontem - ATL_ontem) — o TSB correto para
+     * avaliar o estado do atleta ANTES da carga do dia.
+     */
     @Transient
     public boolean estaEmFormaIdeal() {
-        FaixaTsb faixa = FaixaTsb.classificar(tsbAtual);
+        FaixaTsb faixa = FaixaTsb.classificar(tsbProntidaoAtual);
         return faixa != null && faixa.isFormaIdeal();
     }
 
+    /**
+     * Retorna true se o atleta está com fadiga crítica com base na prontidão pré-treino.
+     *
+     * <p>Usa {@code tsbProntidaoAtual} (CTL_ontem - ATL_ontem) — o TSB correto para
+     * avaliar o estado do atleta ANTES da carga do dia.
+     */
     @Transient
     public boolean estaMuitoFatigado() {
-        FaixaTsb faixa = FaixaTsb.classificar(tsbAtual);
+        FaixaTsb faixa = FaixaTsb.classificar(tsbProntidaoAtual);
         return faixa != null && faixa.isFadigaCritica();
     }
 
+    /**
+     * Retorna a interpretação textual do TSB de prontidão (pré-treino).
+     *
+     * <p>Usa {@code tsbProntidaoAtual} para refletir o estado do atleta antes da carga.
+     */
     @Transient
     public String getInterpretacaoTsb() {
-        FaixaTsb faixa = FaixaTsb.classificar(tsbAtual);
+        FaixaTsb faixa = FaixaTsb.classificar(tsbProntidaoAtual);
         return faixa != null ? faixa.getInterpretacao() : "Sem dados";
     }
 
+    /**
+     * Retorna o status textual do TSB de prontidão (pré-treino).
+     *
+     * <p>Usa {@code tsbProntidaoAtual} para refletir o estado do atleta antes da carga.
+     */
     @Transient
     public String interpretarTsb() {
-        FaixaTsb faixa = FaixaTsb.classificar(tsbAtual);
+        FaixaTsb faixa = FaixaTsb.classificar(tsbProntidaoAtual);
         return faixa != null ? faixa.getStatus() : "Sem dados suficientes";
     }
 
+    /**
+     * Retorna a recomendação de treino baseada no TSB de prontidão (pré-treino).
+     *
+     * <p>Usa {@code tsbProntidaoAtual} para dar a recomendação correta antes da carga.
+     */
     @Transient
     public String getRecomendacaoTsb() {
-        FaixaTsb faixa = FaixaTsb.classificar(tsbAtual);
+        FaixaTsb faixa = FaixaTsb.classificar(tsbProntidaoAtual);
         return faixa != null ? faixa.getRecomendacao() : "";
     }
 
@@ -205,7 +232,7 @@ public class PlanoMetaDados {
         if (statusGeral != null && !statusGeral.isBlank()) {
             return statusGeral;
         }
-        FaixaTsb faixa = FaixaTsb.classificar(tsbAtual);
+        FaixaTsb faixa = FaixaTsb.classificar(tsbProntidaoAtual);
         if (faixa == null) {
             return "COLETANDO DADOS - Aguardando histórico de treinos para análise";
         }

@@ -61,10 +61,68 @@ public class PaceZoneCalculator {
     }
 
     /**
+     * Calcula as zonas de pace com ajuste baseado no TSB de prontidão (pré-treino).
+     *
+     * <p>Use este método para decisões de prescrição de treino — o TSB de prontidão
+     * representa o estado do atleta ANTES da carga do dia, sendo a medida correta
+     * para ajustar o pace prescrito.</p>
+     *
+     * @param paceLimiar       pace limiar do atleta em decimal minutos (ex: 5.00 = 5:00/km)
+     * @param tsbProntidaoAtual TSB de prontidão pré-treino (pode ser null)
+     * @return zonas ajustadas e o ajuste aplicado em seg/km (0 se nulo ou positivo)
+     */
+    public ZonasAjustadas calcularZonasAjustadasPorTsbProntidao(BigDecimal paceLimiar, Double tsbProntidaoAtual) {
+        List<ZonaPace> zonasBase = zonaTreinoService.calcularZonasPace(paceLimiar);
+        int ajusteSegundos = calcularAjusteSegundos(tsbProntidaoAtual);
+
+        if (ajusteSegundos == 0) {
+            return new ZonasAjustadas(zonasBase, 0);
+        }
+
+        BigDecimal ajusteMinutos = BigDecimal.valueOf(ajusteSegundos)
+                .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
+
+        List<ZonaPace> zonasAjustadas = zonasBase.stream()
+                .map(zona -> new ZonaPace(
+                        zona.numero(),
+                        zona.nome(),
+                        zona.paceMin().add(ajusteMinutos).setScale(2, RoundingMode.HALF_UP),
+                        zona.paceMax().add(ajusteMinutos).setScale(2, RoundingMode.HALF_UP)
+                ))
+                .toList();
+
+        return new ZonasAjustadas(zonasAjustadas, ajusteSegundos);
+    }
+
+    /**
+     * Formata a nota de ajuste baseada no TSB de prontidão para inclusão no prompt.
+     *
+     * <p>Use este método para informar o LLM sobre a penalidade de pace baseada na
+     * prontidão pré-treino. Retorna string vazia se não há penalidade.</p>
+     *
+     * @param tsbProntidaoAtual TSB de prontidão pré-treino (pode ser null)
+     * @return string de aviso formatada, ou vazia se sem penalidade
+     */
+    public String formatarAvisoAjusteProntidao(Double tsbProntidaoAtual) {
+        int ajusteSegundos = calcularAjusteSegundos(tsbProntidaoAtual);
+        if (ajusteSegundos == 0) return "";
+
+        return String.format(
+                "⚠️ **Ajuste por fadiga:** TSB de Prontidão = %.1f → paces com penalidade de **+%d seg/km** " +
+                "nas zonas acima. Prescrever dentro das faixas indicadas.\n",
+                tsbProntidaoAtual, ajusteSegundos
+        );
+    }
+
+    /**
      * Formata a nota de ajuste de TSB para inclusão no prompt.
      *
      * <p>Retorna string vazia se não há penalidade (TSB nulo ou &ge; 0).</p>
+     *
+     * @deprecated Use {@link #formatarAvisoAjusteProntidao(Double)} com o TSB de prontidão
+     *             pré-treino. Este método usa o TSB genérico que pode ser o pós-carga.
      */
+    @Deprecated
     public String formatarAvisoAjuste(Double tsb) {
         int ajusteSegundos = calcularAjusteSegundos(tsb);
         if (ajusteSegundos == 0) return "";

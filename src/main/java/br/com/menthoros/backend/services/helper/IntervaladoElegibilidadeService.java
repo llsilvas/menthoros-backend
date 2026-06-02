@@ -75,7 +75,8 @@ public class IntervaladoElegibilidadeService {
      * Ponto de entrada. Avalia os 5 portões sequencialmente e retorna a recomendação.
      *
      * @param atleta                   entidade do atleta ({@code temLesao}, {@code nivelExperiencia})
-     * @param metaDados                metadados de treino ({@code tsbAtual}, {@code ctlAtual},
+     * @param metaDados                metadados de treino ({@code tsbProntidaoAtual} — TSB pré-treino usado
+     *                                 nos gates fisiológicos, {@code ctlAtual},
      *                                 {@code alertaDiasConsecutivos}, {@code fasePeriodizacao})
      * @param treinosUltimas4Semanas   treinos pré-carregados via {@code ContextoTreino}
      * @param dataReferencia           data de referência da semana (ex: {@code ctx.dataReferencia()})
@@ -91,7 +92,10 @@ public class IntervaladoElegibilidadeService {
                 ? atleta.getNivelExperiencia()
                 : NivelExperiencia.INTERMEDIARIO;
 
-        Double tsb      = metaDados != null ? metaDados.getTsbAtual()  : null;
+        // Usa tsbProntidaoAtual (pré-treino) para decisões fisiológicas.
+        // Este valor representa o estado do atleta ANTES da carga do dia —
+        // é a métrica correta para decidir se o atleta está apto a treinar.
+        Double tsb      = metaDados != null ? metaDados.getTsbProntidaoAtual() : null;
         Double ctl      = metaDados != null ? metaDados.getCtlAtual()  : null;
         Boolean alertaDias = metaDados != null ? metaDados.getAlertaDiasConsecutivos() : null;
         FasePeriodizacao fase = metaDados != null ? metaDados.getFasePeriodizacao() : null;
