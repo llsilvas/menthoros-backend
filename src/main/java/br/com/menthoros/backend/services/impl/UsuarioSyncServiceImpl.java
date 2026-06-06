@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -99,21 +100,33 @@ public class UsuarioSyncServiceImpl implements UsuarioSyncService {
     }
 
     /**
-     * Extrai roles do JWT
-     * Pode vir como lista ou string única, dependendo da configuração do mapper
+     * Extrai roles do JWT no formato padrão do Keycloak.
+     *
+     * Ordem de busca:
+     *   1. realm_access.roles — estrutura padrão emitida pelo Keycloak
+     *   2. roles              — claim flat para mappers customizados
      */
     @SuppressWarnings("unchecked")
     private List<String> extractRoles(Jwt jwt) {
-        Object rolesClaim = jwt.getClaim("roles");
+        // 1. realm_access.roles (padrão Keycloak)
+        Map<String, Object> realmAccess = jwt.getClaim("realm_access");
+        if (realmAccess != null) {
+            Object realmRoles = realmAccess.get("roles");
+            if (realmRoles instanceof List) {
+                return (List<String>) realmRoles;
+            }
+        }
 
+        // 2. claim flat "roles" (mapper customizado)
+        Object rolesClaim = jwt.getClaim("roles");
         if (rolesClaim instanceof List) {
             return (List<String>) rolesClaim;
         } else if (rolesClaim instanceof String) {
             return List.of((String) rolesClaim);
-        } else {
-            log.warn("JWT sem claim 'roles': {}", jwt.getSubject());
-            return List.of();
         }
+
+        log.warn("JWT sem claim 'roles' ou 'realm_access.roles': {}", jwt.getSubject());
+        return List.of();
     }
 
     /**
