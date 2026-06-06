@@ -6,6 +6,14 @@ spring:
     enabled: true
   # Datasource URL is NOT set here — @ServiceConnection in TestcontainersConfiguration
   # auto-wires the URL, username, and password from the running PostgreSQL container.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Valores dummy — NimbusJwtDecoder carrega JWKS de forma lazy (apenas ao decodificar
+          # tokens reais), então uma URL fake não quebra testes que não autenticam via JWT.
+          issuer-uri: http://localhost:9999/realms/menthoros
+          jwk-set-uri: http://localhost:9999/realms/menthoros/protocol/openid-connect/certs
   ai:
     anthropic:
       api-key: test-anthropic-key

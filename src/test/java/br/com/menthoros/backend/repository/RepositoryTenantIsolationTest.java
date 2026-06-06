@@ -243,6 +243,7 @@ class RepositoryTenantIsolationTest extends AbstractIntegrationTest {
     private PlanoMetaDados buildMetaDados(Atleta atleta) {
         PlanoMetaDados m = new PlanoMetaDados();
         m.setAtleta(atleta);
+        m.setAssessoria(atleta.getAssessoria());
         m.setDiaPreferidoLongo(DiaSemana.SABADO);
         return m;
     }

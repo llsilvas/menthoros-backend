@@ -23,8 +23,8 @@ spring:
     oauth2:
       resourceserver:
         jwt:
-          issuer-uri: ${KEYCLOAK_ISSUER_URI}
-          jwk-set-uri: ${KEYCLOAK_JWK_URI}
+          issuer-uri: ${KEYCLOAK_ISSUER_URI:http://localhost:9999/realms/menthoros}
+          jwk-set-uri: ${KEYCLOAK_JWK_URI:http://localhost:9999/realms/menthoros/protocol/openid-connect/certs}
   # ========================================
   # TASK SCHEDULING CONFIGURATION
   # ========================================

@@ -99,6 +99,7 @@ public class Assessoria {
     @Column(name = "data_expiracao")
     private LocalDateTime dataExpiracao;
 
+    @Builder.Default
     @Column(name = "trial", nullable = false)
     private Boolean trial = false;
 
@@ -106,6 +107,7 @@ public class Assessoria {
     private LocalDateTime dataFimTrial;
 
     // ===== CONTROLE =====
+    @Builder.Default
     @Column(name = "ativo", nullable = false)
     private Boolean ativo = true;
 
