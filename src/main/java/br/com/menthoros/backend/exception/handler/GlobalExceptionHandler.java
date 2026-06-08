@@ -12,6 +12,7 @@ import jakarta.persistence.OptimisticLockException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.validation.FieldError;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -206,6 +207,22 @@ public class GlobalExceptionHandler {
                 "status", 403,
                 "error", "Forbidden",
                 "message", "Acesso negado. Você não possui permissão para acessar este recurso."
+        );
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+    }
+
+    /**
+     * Handler para AuthorizationDeniedException do Spring Security 6+.
+     * Lançada por @PreAuthorize quando o usuário não tem a role necessária.
+     * Mapeamento: 403 Forbidden (não 500 — é uma negação de acesso esperada).
+     */
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    public ResponseEntity<Map<String, Object>> handleAuthorizationDenied(AuthorizationDeniedException ex) {
+        log.warn("Acesso negado por @PreAuthorize: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 403,
+                "error", "Forbidden",
+                "message", "Acesso negado. Você não possui permissão para realizar esta operação."
         );
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
