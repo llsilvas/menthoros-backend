@@ -11,9 +11,14 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Configuration(proxyBeanMethods = false)
 @EnableWebSecurity
@@ -50,12 +55,17 @@ public class CoreSecurityConfig {
 
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
-        JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
-        grantedAuthoritiesConverter.setAuthoritiesClaimName("roles");
-        grantedAuthoritiesConverter.setAuthorityPrefix("ROLE_");
-
-        JwtAuthenticationConverter jwtAuthenticationConverter = new JwtAuthenticationConverter();
-        jwtAuthenticationConverter.setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter);
-        return jwtAuthenticationConverter;
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        // Keycloak emite roles em realm_access.roles; mapeia para ROLE_* para hasAnyRole()
+        converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+            Map<String, Object> realmAccess = jwt.getClaim("realm_access");
+            if (realmAccess == null) return List.of();
+            Object rolesObj = realmAccess.get("roles");
+            if (!(rolesObj instanceof Collection)) return List.of();
+            return ((Collection<String>) rolesObj).stream()
+                    .map(role -> new SimpleGrantedAuthority("ROLE_" + role))
+                    .collect(Collectors.toList());
+        });
+        return converter;
     }
 }
