@@ -97,20 +97,31 @@ public class JwtTenantFilter extends OncePerRequestFilter {
     private String extractTenantId(Jwt jwt) {
         String directTenantId = jwt.getClaimAsString("tenant_id");
         if (directTenantId != null && !directTenantId.isBlank()) {
+            log.debug("tenant_id extraído via claim direto: {}", directTenantId);
             return directTenantId;
         }
 
         Object organizationClaim = jwt.getClaim("organization");
+        if (organizationClaim == null) {
+            log.warn("JWT sem claim 'organization': sub={}", jwt.getSubject());
+            return null;
+        }
         if (!(organizationClaim instanceof Map<?, ?> organizationMap)) {
+            log.warn("Claim 'organization' não é Map ({}): sub={}", organizationClaim.getClass().getName(), jwt.getSubject());
             return null;
         }
 
-        for (Object groupDataObj : organizationMap.values()) {
+        for (Map.Entry<?, ?> entry : organizationMap.entrySet()) {
+            Object groupDataObj = entry.getValue();
             if (!(groupDataObj instanceof Map<?, ?> groupData)) {
+                log.debug("Grupo '{}' não é Map, ignorando", entry.getKey());
                 continue;
             }
 
             Object tenantIdObj = groupData.get("tenant_id");
+            log.debug("Grupo '{}' tenant_id raw: {} ({})", entry.getKey(), tenantIdObj,
+                    tenantIdObj == null ? "null" : tenantIdObj.getClass().getName());
+
             if (tenantIdObj instanceof String tenantId && !tenantId.isBlank()) {
                 return tenantId;
             }
@@ -118,11 +129,14 @@ public class JwtTenantFilter extends OncePerRequestFilter {
             if (tenantIdObj instanceof Collection<?> tenantIds && !tenantIds.isEmpty()) {
                 Object first = tenantIds.iterator().next();
                 if (first instanceof String tenantId && !tenantId.isBlank()) {
+                    log.debug("tenant_id extraído via organization.{}.tenant_id[0]: {}", entry.getKey(), tenantId);
                     return tenantId;
                 }
             }
         }
 
+        log.warn("tenant_id não encontrado em nenhum grupo organization: sub={}, grupos={}",
+                jwt.getSubject(), organizationMap.keySet());
         return null;
     }
 }
