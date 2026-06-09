@@ -6,6 +6,7 @@ import br.com.menthoros.backend.dto.output.AdesaoDiariaDto;
 import br.com.menthoros.backend.dto.output.SemanaAdesaoDiariaDto;
 import br.com.menthoros.backend.dto.output.DiaAdesaoDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
@@ -39,8 +40,9 @@ public class MetricasAdesaoService {
     }
 
     public AdesaoSemanalDto getAdesaoSemanal(String atletaId) {
-        Atleta atleta = atletaRepository.findById(java.util.UUID.fromString(atletaId))
-            .orElseThrow(() -> new RuntimeException("Atleta not found: " + atletaId));
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(UUID.fromString(atletaId), tenantId)
+            .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + atletaId));
 
         LocalDate hoje = LocalDate.now();
 
@@ -70,8 +72,9 @@ public class MetricasAdesaoService {
     }
 
     public AdesaoDiariaDto getAdesaoDiaria(String atletaId) {
-        Atleta atleta = atletaRepository.findById(java.util.UUID.fromString(atletaId))
-            .orElseThrow(() -> new RuntimeException("Atleta not found: " + atletaId));
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(UUID.fromString(atletaId), tenantId)
+            .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + atletaId));
 
         LocalDate hoje = LocalDate.now();
         LocalDate inicioJanela = hoje.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1).minusWeeks(4);
@@ -155,6 +158,29 @@ public class MetricasAdesaoService {
             return new AdesaoDiariaDto(tenantId.toString(), "Assessoria", new ArrayList<>());
         }
 
+        // Janela das 5 semanas exibidas (domingo da semana mais antiga até sábado da semana atual).
+        LocalDate inicioJanela = hoje.minusWeeks(4).with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1);
+        LocalDate fimJanela = hoje.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1).plusDays(6);
+
+        // Duas consultas por atleta para a janela inteira (evita N+1 por dia).
+        Map<UUID, Map<LocalDate, Integer>> planejadosPorAtleta = new HashMap<>();
+        Map<UUID, Map<LocalDate, Integer>> realizadosPorAtleta = new HashMap<>();
+        for (Atleta atleta : atletas) {
+            Map<LocalDate, Integer> planejados = new HashMap<>();
+            for (TreinoPlanejado tp : treinoPlanejadoRepository
+                    .findByAtletaIdAndDataBetween(atleta.getId(), inicioJanela, fimJanela)) {
+                planejados.merge(tp.getDataTreino(), 1, Integer::sum);
+            }
+            planejadosPorAtleta.put(atleta.getId(), planejados);
+
+            Map<LocalDate, Integer> realizados = new HashMap<>();
+            for (TreinoRealizado tr : treinoRealizadoRepository
+                    .findByAtletaIdAndDataTreinoBetween(atleta.getId(), inicioJanela, fimJanela)) {
+                realizados.merge(tr.getDataTreino(), 1, Integer::sum);
+            }
+            realizadosPorAtleta.put(atleta.getId(), realizados);
+        }
+
         List<SemanaAdesaoDiariaDto> semanas = new ArrayList<>();
 
         for (int i = 4; i >= 0; i--) {
@@ -166,6 +192,7 @@ public class MetricasAdesaoService {
             int year = semanaData.get(IsoFields.WEEK_BASED_YEAR);
 
             List<DiaAdesaoDto> dias = new ArrayList<>();
+            List<Double> percentuaisDiasAtivos = new ArrayList<>();
 
             for (int j = 0; j < 7; j++) {
                 LocalDate data = startOfWeek.plusDays(j);
@@ -174,12 +201,8 @@ public class MetricasAdesaoService {
                 int atletasComDados = 0;
 
                 for (Atleta atleta : atletas) {
-                    int planejadosNoDia = treinoPlanejadoRepository
-                        .findByAtletaIdAndDataBetween(atleta.getId(), data, data)
-                        .size();
-                    int realizadosNoDia = treinoRealizadoRepository
-                        .findByAtletaIdAndDataTreinoBetween(atleta.getId(), data, data)
-                        .size();
+                    int planejadosNoDia = planejadosPorAtleta.get(atleta.getId()).getOrDefault(data, 0);
+                    int realizadosNoDia = realizadosPorAtleta.get(atleta.getId()).getOrDefault(data, 0);
 
                     if (planejadosNoDia > 0) {
                         double percentualAtleta = (realizadosNoDia * 100.0 / planejadosNoDia);
@@ -189,6 +212,9 @@ public class MetricasAdesaoService {
                 }
 
                 double percentualMedio = atletasComDados > 0 ? (totalPercentual / atletasComDados) : 0.0;
+                if (atletasComDados > 0) {
+                    percentuaisDiasAtivos.add(percentualMedio);
+                }
 
                 String[] diasSemana = {"DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"};
                 String diaSemanaStr = diasSemana[data.getDayOfWeek().getValue() % 7];
@@ -202,8 +228,9 @@ public class MetricasAdesaoService {
                 ));
             }
 
-            double percentualGeralSemana = dias.stream()
-                .mapToDouble(DiaAdesaoDto::percentual)
+            // Média apenas sobre os dias com treino planejado, evitando diluição por dias sem dados.
+            double percentualGeralSemana = percentuaisDiasAtivos.stream()
+                .mapToDouble(Double::doubleValue)
                 .average()
                 .orElse(0.0);
 
