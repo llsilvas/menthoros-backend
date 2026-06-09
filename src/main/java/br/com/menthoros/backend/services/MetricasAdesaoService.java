@@ -13,7 +13,6 @@ import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import org.springframework.stereotype.Service;
 import java.time.LocalDate;
-import java.time.temporal.IsoFields;
 import java.time.temporal.WeekFields;
 import java.util.ArrayList;
 import java.util.List;
@@ -103,8 +102,8 @@ public class MetricasAdesaoService {
             LocalDate startOfWeek = semanaData.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1);
             LocalDate endOfWeek = startOfWeek.plusDays(6);
 
-            int week = semanaData.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
-            int year = semanaData.get(IsoFields.WEEK_BASED_YEAR);
+            int week = semanaData.get(WeekFields.of(Locale.ENGLISH).weekOfWeekBasedYear());
+            int year = semanaData.get(WeekFields.of(Locale.ENGLISH).weekBasedYear());
 
             List<DiaAdesaoDto> dias = new ArrayList<>();
             int totalPlanejados = 0;
@@ -114,7 +113,7 @@ public class MetricasAdesaoService {
                 LocalDate data = startOfWeek.plusDays(j);
                 int planejadosNoDia = planejadosPorDia.getOrDefault(data, 0);
                 int realizadosNoDia = realizadosPorDia.getOrDefault(data, 0);
-                double percentual = planejadosNoDia > 0 ? (realizadosNoDia * 100.0 / planejadosNoDia) : 0.0;
+                double percentual = planejadosNoDia > 0 ? Math.min(100.0, realizadosNoDia * 100.0 / planejadosNoDia) : 0.0;
 
                 String[] diasSemana = {"DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"};
                 String diaSemanaStr = diasSemana[data.getDayOfWeek().getValue() % 7];
@@ -131,7 +130,7 @@ public class MetricasAdesaoService {
                 totalRealizados += realizadosNoDia;
             }
 
-            double percentualGeral = totalPlanejados > 0 ? (totalRealizados * 100.0 / totalPlanejados) : 0.0;
+            double percentualGeral = totalPlanejados > 0 ? Math.min(100.0, totalRealizados * 100.0 / totalPlanejados) : 0.0;
 
             semanas.add(new SemanaAdesaoDiariaDto(
                 String.format("%04d-W%02d", year, week),
@@ -188,8 +187,8 @@ public class MetricasAdesaoService {
             LocalDate startOfWeek = semanaData.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1);
             LocalDate endOfWeek = startOfWeek.plusDays(6);
 
-            int week = semanaData.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
-            int year = semanaData.get(IsoFields.WEEK_BASED_YEAR);
+            int week = semanaData.get(WeekFields.of(Locale.ENGLISH).weekOfWeekBasedYear());
+            int year = semanaData.get(WeekFields.of(Locale.ENGLISH).weekBasedYear());
 
             List<DiaAdesaoDto> dias = new ArrayList<>();
             List<Double> percentuaisDiasAtivos = new ArrayList<>();
@@ -205,7 +204,7 @@ public class MetricasAdesaoService {
                     int realizadosNoDia = realizadosPorAtleta.get(atleta.getId()).getOrDefault(data, 0);
 
                     if (planejadosNoDia > 0) {
-                        double percentualAtleta = (realizadosNoDia * 100.0 / planejadosNoDia);
+                        double percentualAtleta = Math.min(100.0, realizadosNoDia * 100.0 / planejadosNoDia);
                         totalPercentual += percentualAtleta;
                         atletasComDados++;
                     }
@@ -254,13 +253,13 @@ public class MetricasAdesaoService {
         LocalDate startOfWeek = data.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1);
         LocalDate endOfWeek = startOfWeek.plusDays(6);
 
-        int week = data.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR);
-        int year = data.get(IsoFields.WEEK_BASED_YEAR);
+        int week = data.get(WeekFields.of(Locale.ENGLISH).weekOfWeekBasedYear());
+        int year = data.get(WeekFields.of(Locale.ENGLISH).weekBasedYear());
 
         Integer planejados = treinoPlanejadoRepository.countPlannedTrainings(atleta.getId(), startOfWeek, endOfWeek);
         Integer realizados = treinoRealizadoRepository.countRealizedTrainings(atleta.getId(), startOfWeek, endOfWeek);
 
-        double percentual = planejados > 0 ? (realizados.doubleValue() / planejados) * 100 : 0.0;
+        double percentual = planejados > 0 ? Math.min(100.0, (realizados.doubleValue() / planejados) * 100) : 0.0;
 
         return new SemanaAdesaoDto(
             String.format("%04d-W%02d", year, week),
