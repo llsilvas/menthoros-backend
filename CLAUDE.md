@@ -474,6 +474,120 @@ docker compose config
 docker compose up -d
 ```
 
+## Test Standards
+
+Rules for unit tests. All new tests must follow these patterns. Reference implementation: `TreinoServiceImplTest`, `PlanoServiceImplTest`.
+
+### Nested Structure (mandatory)
+
+- Group test cases by the method under test using `@Nested` inner classes — one nested class per public method.
+- The nested class name is the method under test in PascalCase (e.g. `marcarTreinoPerdido` → `class MarcarTreinoPerdido`).
+- Annotate each `@Nested` class with `@DisplayName("<methodName>")`; inner `@Test` methods describe ONLY the scenario, not the method name.
+- This produces a readable hierarchical output (`MyServiceTest$MethodName > scenario`).
+
+```java
+@ExtendWith(MockitoExtension.class)
+class TreinoServiceImplTest {
+
+    @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
+    @InjectMocks private TreinoServiceImpl treinoService;
+
+    private UUID tenantId;
+
+    @BeforeEach
+    void setUpTenant() {
+        tenantId = UUID.randomUUID();
+        TenantContext.setTenantId(tenantId);
+    }
+
+    @AfterEach
+    void tearDownTenant() {
+        TenantContext.clear();
+    }
+
+    @Nested
+    @DisplayName("marcarTreinoPerdido")
+    class MarcarTreinoPerdido {
+
+        @Test
+        @DisplayName("rejeita treino já REALIZADO")
+        void rejeitaRealizado() { ... }
+    }
+}
+```
+
+- Mocks (`@Mock`), the subject (`@InjectMocks`), shared state, lifecycle hooks (`@BeforeEach`/`@AfterEach`), and helper methods live in the OUTER class — nested classes inherit them. Do NOT redeclare mocks inside `@Nested` classes.
+
+### Framework & Naming (mandatory)
+
+- JUnit 5 (`org.junit.jupiter`) + Mockito only. Use `@ExtendWith(MockitoExtension.class)`.
+- Test class name: `<ClassUnderTest>Test` (e.g. `TreinoServiceImplTest`).
+- `@DisplayName` text in PT-BR, describing the observable behavior (e.g. "publica evento quando percepcaoEsforco está presente").
+- Method names in lowerCamelCase summarizing the scenario (e.g. `publicaEventoComPercepcao`).
+
+### Structure of a Test (mandatory)
+
+- Follow Arrange-Act-Assert (or Given-When-Then). Keep the three phases visually separated.
+- One behavior per test method — do not assert unrelated outcomes in the same test.
+- Tests must be independent and order-agnostic; never share mutable state between tests through fields populated in a previous test.
+
+### Tenant-aware Services (mandatory)
+
+- Any service that calls `TenantContext.getRequiredTenantId()` MUST set the tenant in `@BeforeEach` and clear it in `@AfterEach`:
+  ```java
+  @BeforeEach void setUp() { tenantId = UUID.randomUUID(); TenantContext.setTenantId(tenantId); }
+  @AfterEach  void tearDown() { TenantContext.clear(); }
+  ```
+- Failing to `clear()` leaks tenant state into other tests in the same JVM.
+
+### Mockito Best Practices (mandatory)
+
+- Default strict stubbing (`MockitoExtension`) is required — do NOT switch to `LENIENT` to silence warnings. An `UnnecessaryStubbingException` means the stub is dead code: remove it.
+- Mock only direct collaborators (repositories, mappers, other services, `ApplicationEventPublisher`). Never mock the class under test.
+- Do NOT mock records/DTOs/value objects — construct real instances (use a private helper for DTOs with many fields).
+- Stub return values with `when(...).thenReturn(...)`; verify interactions with `verify(...)`, `verify(..., never())`, `verify(..., times(n))`.
+- Use `ArgumentCaptor` to assert on the content of objects passed to collaborators (e.g. the payload of a published event).
+- For static calls inside the method under test (e.g. `Hibernate.initialize(...)`), use `try (MockedStatic<...> m = mockStatic(...))` scoped to the act phase.
+
+### Coverage Expectations (mandatory)
+
+For each public service method, cover at minimum:
+- The happy path (state mutated and/or collaborators invoked as expected).
+- Not-found / invalid-input branches (assert the exact exception type, e.g. `DomainNotFoundException`, `DomainRuleViolationException`).
+- Idempotency / no-op branches when the method documents them (assert NO persistence/side effect occurred).
+- Conditional side effects (e.g. event published only when a field is present — test both presence and absence).
+
+#### Maximizing Coverage (market best practices)
+
+Aim for **branch (decision) coverage, not just line coverage** — every `if`/`else`, every `switch`/`case`, every ternary, every `catch`, and both outcomes of every boolean condition must be exercised. Apply the techniques below to get there without writing redundant tests.
+
+- **Boundary Value Analysis (BVA):** for any numeric/range/length rule, test the exact edges and their neighbors — `min-1, min, min+1` and `max-1, max, max+1`, plus `0`, negative, and the largest realistic value. Off-by-one errors live at the boundary, not the middle.
+- **Equivalence Partitioning:** pick one representative per input class (valid, invalid-too-low, invalid-too-high, null) instead of many values from the same class — keeps the suite small while covering each branch.
+- **Null / empty / blank matrix:** for every nullable parameter and DTO field that drives a branch, test `null`, empty (`""`, `List.of()`), and blank (`"  "`) explicitly. The service layer re-validates input (see *Input Validation*) — assert that defensive validation fires.
+- **Collection cardinality:** exercise `0`, `1`, and `N` elements, plus collections containing a `null` element when the code iterates/streams over them.
+- **Full enum coverage:** when behavior branches on an enum (e.g. `TreinoExecucaoStatus`, `PlanoStatus`), cover every relevant value. Use `@ParameterizedTest` + `@EnumSource` so adding an enum constant later forces a test decision.
+- **State-transition coverage:** for stateful entities, test every documented transition AND the illegal ones (e.g. `REALIZADO → PERDIDO` must throw; `PERDIDO → PERDIDO` is a no-op). One test per edge of the state machine.
+- **Parameterized tests to scale inputs:** replace copy-pasted near-identical tests with `@ParameterizedTest` + `@ValueSource` / `@CsvSource` / `@MethodSource` / `@NullAndEmptySource`. This raises input coverage cheaply and keeps tests DRY.
+- **Tenant isolation (negative):** assert that a cross-tenant id (entity exists but in another tenant) resolves to not-found — protects the multi-tenancy guardrail, not just the happy lookup.
+- **Date/time & numeric edges:** test `null`-date defaulting to `LocalDate.now()`, week/month boundaries (`getResumoSemanal`), and `BigDecimal` scale/rounding and `Double` precision where money/volume/metrics are computed.
+- **Exhaustive side-effect verification:** assert both that expected collaborators are called AND that nothing else happens — use `verify(mock, never())`, `verifyNoInteractions(mock)`, and `verifyNoMoreInteractions(mock)` to catch accidental extra writes/events.
+- **Interaction order:** when ordering matters (persist before publishing an event, save parent before child), assert it with `InOrder`.
+- **Argument precision:** prefer `eq(value)` over `any()` once the exact argument is known — a test that only checks `any()` passes even when the wrong value is sent.
+
+#### Quality gate over the number
+
+Coverage % is necessary but not sufficient — a line can be covered by a test with weak or no assertions.
+
+- **No assertion-free tests.** Every test must assert observable behavior (return value, mutated state, or verified interaction). Calling the method "to cover the line" is forbidden.
+- **Validate assertion strength with mutation testing** (PIT / `pitest`) on critical business logic: if a mutant survives, the lines are covered but under-asserted — add the missing assertion.
+- **Don't chase 100% on trivial code** — getters/setters, `record` accessors, generated mappers, and pure DTOs don't need dedicated tests. Concentrate effort on `service`/business logic and on branches that encode domain rules.
+
+### Assertions
+
+- Prefer explicit assertions: `assertEquals`, `assertSame`, `assertNull`, `assertThrows`, `assertTrue` (JUnit 5) — match the style already present in the test package.
+- When asserting an exception message, use `assertTrue(ex.getMessage().contains("..."))` rather than full-string equality, to stay resilient to wording tweaks.
+- Helper factory methods (`criarAtleta`, `novoInput`, `outputStub`, ...) belong at the bottom of the outer class, after the `@Nested` blocks.
+
 ## Definition of Done (Backend Task)
 
 A backend task is done only if:
