@@ -23,7 +23,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.temporal.WeekFields;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -109,6 +111,40 @@ class MetricasAdesaoServiceTest {
         }
 
         @Test
+        @DisplayName("limita o percentual a 100% quando há mais realizados que planejados")
+        void limitaPercentualEm100() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(treinoPlanejadoRepository.countPlannedTrainings(eq(atletaId), any(), any())).thenReturn(10);
+            when(treinoRealizadoRepository.countRealizedTrainings(eq(atletaId), any(), any())).thenReturn(15);
+            when(treinoRealizadoRepository.findRealizedTrainingsByWeek(eq(atletaId), any(), any()))
+                    .thenReturn(List.of());
+
+            AdesaoSemanalDto dto = service.getAdesaoSemanal(atletaId.toString());
+
+            assertEquals(100.0, dto.semanaAtual().percentualRealizacao());   // 15/10 → limitado a 100
+            assertEquals(100.0, dto.mediaUltimas4Semanas());
+        }
+
+        @Test
+        @DisplayName("rótulo da semana é consistente com o início (domingo) da janela exibida")
+        void rotuloSemanaConsistente() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(treinoPlanejadoRepository.countPlannedTrainings(eq(atletaId), any(), any())).thenReturn(0);
+            when(treinoRealizadoRepository.countRealizedTrainings(eq(atletaId), any(), any())).thenReturn(0);
+            when(treinoRealizadoRepository.findRealizedTrainingsByWeek(eq(atletaId), any(), any()))
+                    .thenReturn(List.of());
+
+            AdesaoSemanalDto dto = service.getAdesaoSemanal(atletaId.toString());
+
+            String label = dto.semanaAtual().semana();              // "YYYY-Www"
+            LocalDate inicio = LocalDate.parse(dto.semanaAtual().dataInicio());
+            assertEquals(DayOfWeek.SUNDAY, inicio.getDayOfWeek());
+            int semanaLabel = Integer.parseInt(label.substring(label.indexOf("-W") + 2));
+            int semanaEsperada = inicio.get(WeekFields.of(Locale.ENGLISH).weekOfWeekBasedYear());
+            assertEquals(semanaEsperada, semanaLabel);
+        }
+
+        @Test
         @DisplayName("lança ResourceNotFoundException quando o atleta não existe no tenant")
         void atletaInexistente() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
@@ -159,6 +195,24 @@ class MetricasAdesaoServiceTest {
                     .flatMap(s -> s.dias().stream())
                     .allMatch(d -> d.percentual() == 0.0);
             assertTrue(todosZero);
+        }
+
+        @Test
+        @DisplayName("limita o percentual diário a 100% quando há mais realizados que planejados")
+        void limitaPercentualDiarioEm100() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            LocalDate hoje = LocalDate.now();
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any()))
+                    .thenReturn(List.of(treinoPlanejado(hoje)));
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(), any()))
+                    .thenReturn(List.of(treinoRealizado(hoje), treinoRealizado(hoje))); // 2 realizados / 1 planejado
+
+            AdesaoDiariaDto dto = service.getAdesaoDiaria(atletaId.toString());
+
+            DiaAdesaoDto diaHoje = encontrarDia(dto, hoje);
+            assertNotNull(diaHoje);
+            assertEquals(2, diaHoje.treinosRealizados());
+            assertEquals(100.0, diaHoje.percentual());   // 200% → limitado a 100
         }
 
         @Test
