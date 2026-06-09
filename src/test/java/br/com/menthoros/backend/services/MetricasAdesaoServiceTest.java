@@ -7,6 +7,7 @@ import br.com.menthoros.backend.dto.output.SemanaAdesaoDiariaDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
@@ -22,9 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.temporal.WeekFields;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -49,6 +48,7 @@ class MetricasAdesaoServiceTest {
     private MetricasAdesaoService service;
 
     private UUID atletaId;
+    private UUID tenantId;
     private Atleta atleta;
 
     @BeforeEach
@@ -56,7 +56,9 @@ class MetricasAdesaoServiceTest {
         service = new MetricasAdesaoService(
                 atletaRepository, treinoPlanejadoRepository, treinoRealizadoRepository);
         atletaId = UUID.randomUUID();
+        tenantId = UUID.randomUUID();
         atleta = Atleta.builder().id(atletaId).nome("João").build();
+        TenantContext.setTenantId(tenantId);
     }
 
     @AfterEach
@@ -71,7 +73,7 @@ class MetricasAdesaoServiceTest {
         @Test
         @DisplayName("calcula percentual da semana atual, médias das últimas 4 e dias com treino")
         void calculaAdesaoSemanal() {
-            when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoPlanejadoRepository.countPlannedTrainings(eq(atletaId), any(), any())).thenReturn(10);
             when(treinoRealizadoRepository.countRealizedTrainings(eq(atletaId), any(), any())).thenReturn(5);
             when(treinoRealizadoRepository.findRealizedTrainingsByWeek(eq(atletaId), any(), any()))
@@ -93,7 +95,7 @@ class MetricasAdesaoServiceTest {
         @Test
         @DisplayName("retorna 0% quando não há treinos planejados")
         void semPlanejados() {
-            when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoPlanejadoRepository.countPlannedTrainings(eq(atletaId), any(), any())).thenReturn(0);
             when(treinoRealizadoRepository.countRealizedTrainings(eq(atletaId), any(), any())).thenReturn(0);
             when(treinoRealizadoRepository.findRealizedTrainingsByWeek(eq(atletaId), any(), any()))
@@ -107,11 +109,11 @@ class MetricasAdesaoServiceTest {
         }
 
         @Test
-        @DisplayName("lança exceção quando o atleta não existe")
+        @DisplayName("lança ResourceNotFoundException quando o atleta não existe no tenant")
         void atletaInexistente() {
-            when(atletaRepository.findById(atletaId)).thenReturn(Optional.empty());
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
 
-            assertThrows(RuntimeException.class, () -> service.getAdesaoSemanal(atletaId.toString()));
+            assertThrows(ResourceNotFoundException.class, () -> service.getAdesaoSemanal(atletaId.toString()));
         }
     }
 
@@ -122,7 +124,7 @@ class MetricasAdesaoServiceTest {
         @Test
         @DisplayName("agrupa em 5 semanas de 7 dias e calcula 100% no dia com treino planejado e realizado")
         void agrupaPorSemanaEDia() {
-            when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             LocalDate hoje = LocalDate.now();
             when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any()))
                     .thenReturn(List.of(treinoPlanejado(hoje)));
@@ -144,7 +146,7 @@ class MetricasAdesaoServiceTest {
         @Test
         @DisplayName("retorna 0% em todos os dias quando não há treinos")
         void semTreinos() {
-            when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any()))
                     .thenReturn(List.of());
             when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(), any()))
@@ -162,7 +164,7 @@ class MetricasAdesaoServiceTest {
         @Test
         @DisplayName("mapeia o rótulo do dia da semana corretamente (domingo)")
         void mapeiaDiaSemana() {
-            when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any()))
                     .thenReturn(List.of());
             when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(), any()))
@@ -177,6 +179,14 @@ class MetricasAdesaoServiceTest {
             assertEquals(DayOfWeek.SUNDAY, dataPrimeiroDia.getDayOfWeek());
             assertEquals("DOM", primeiroDia.diaSemana());
         }
+
+        @Test
+        @DisplayName("lança ResourceNotFoundException quando o atleta não existe no tenant")
+        void atletaInexistente() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThrows(ResourceNotFoundException.class, () -> service.getAdesaoDiaria(atletaId.toString()));
+        }
     }
 
     @Nested
@@ -184,30 +194,35 @@ class MetricasAdesaoServiceTest {
     class GetAdesaoDiariaAssessoria {
 
         @Test
-        @DisplayName("calcula a média de adesão dos atletas do tenant")
+        @DisplayName("calcula a média de adesão dos atletas do tenant na semana com dados")
         void calculaMediaDoTenant() {
-            UUID tenantId = UUID.randomUUID();
-            TenantContext.setTenantId(tenantId);
+            LocalDate hoje = LocalDate.now();
             when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(atleta));
-            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
-                    .thenReturn(List.of(treinoPlanejado(LocalDate.now())));
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(any(), any(), any()))
-                    .thenReturn(List.of(treinoRealizado(LocalDate.now())));
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any()))
+                    .thenReturn(List.of(treinoPlanejado(hoje)));
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(), any()))
+                    .thenReturn(List.of(treinoRealizado(hoje)));
 
             AdesaoDiariaDto dto = service.getAdesaoDiariaAssessoria();
 
             assertEquals(tenantId.toString(), dto.atletaId());
             assertEquals("Assessoria", dto.nomeAtleta());
             assertEquals(5, dto.semanas().size());
-            // Cada atleta tem planejado=realizado em todos os dias → 100% por dia e na semana
-            assertEquals(100.0, dto.semanas().get(0).percentualGeral());
+
+            // A semana que contém hoje tem 100% (único dia ativo, planejado=realizado).
+            SemanaAdesaoDiariaDto semanaHoje = dto.semanas().stream()
+                    .filter(s -> s.dias().stream().anyMatch(d -> d.data().equals(hoje.toString())))
+                    .findFirst().orElseThrow();
+            assertEquals(100.0, semanaHoje.percentualGeral());
+
+            // Uma semana sem dados não dilui: percentual geral 0 (sem dias ativos).
+            SemanaAdesaoDiariaDto semanaAntiga = dto.semanas().get(0);
+            assertEquals(0.0, semanaAntiga.percentualGeral());
         }
 
         @Test
         @DisplayName("retorna estrutura vazia quando o tenant não tem atletas")
         void tenantSemAtletas() {
-            UUID tenantId = UUID.randomUUID();
-            TenantContext.setTenantId(tenantId);
             when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of());
 
             AdesaoDiariaDto dto = service.getAdesaoDiariaAssessoria();
@@ -220,6 +235,8 @@ class MetricasAdesaoServiceTest {
         @Test
         @DisplayName("lança exceção quando não há tenant no contexto")
         void semTenant() {
+            TenantContext.clear();
+
             assertThrows(RuntimeException.class, () -> service.getAdesaoDiariaAssessoria());
         }
     }
