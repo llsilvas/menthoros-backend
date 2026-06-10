@@ -14,12 +14,14 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.temporal.ChronoField;
-import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -36,6 +38,9 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class MetricasAgregadasServiceImpl implements MetricasAgregadasService {
+
+    private static final int DIAS_ANALISE_PADROES = 14;
+    private static final int SEMANAS_PADRAO = 4;
 
     private final MetricasDiariasRepository metricasDiariasRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
@@ -56,8 +61,8 @@ public class MetricasAgregadasServiceImpl implements MetricasAgregadasService {
         validarAtletaExiste(atletaId);
 
         if (numSemanas < 1) {
-            log.warn("numSemanas inválido ({}), usando padrão de 4 semanas", numSemanas);
-            numSemanas = 4;
+            log.warn("numSemanas inválido ({}), usando padrão de {} semanas", numSemanas, SEMANAS_PADRAO);
+            numSemanas = SEMANAS_PADRAO;
         }
 
         log.debug("Calculando métricas semanais médias para atleta {} (últimas {} semanas)",
@@ -74,10 +79,11 @@ public class MetricasAgregadasServiceImpl implements MetricasAgregadasService {
             return new MetricasSemanaisMedias(BigDecimal.ZERO, 0, 0.0);
         }
 
-        // Agrupar métricas por semana
-        Map<Integer, List<MetricasDiarias>> metricasPorSemana = metricas.stream()
+        // Agrupar por semana ISO (segunda-feira da semana) — robusto a virada de ano,
+        // ao contrário de ALIGNED_WEEK_OF_YEAR, que reinicia em 1º de janeiro.
+        Map<LocalDate, List<MetricasDiarias>> metricasPorSemana = metricas.stream()
             .collect(Collectors.groupingBy(
-                m -> m.getData().get(ChronoField.ALIGNED_WEEK_OF_YEAR)
+                m -> m.getData().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
             ));
 
         // Calcular totais por semana
@@ -109,9 +115,8 @@ public class MetricasAgregadasServiceImpl implements MetricasAgregadasService {
             .reduce(BigDecimal.ZERO, BigDecimal::add)
             .divide(BigDecimal.valueOf(semanas), 2, RoundingMode.HALF_UP);
 
-        Integer tssMedio = tssPorSemana.stream()
-            .mapToInt(Integer::intValue)
-            .sum() / semanas;
+        int somaTss = tssPorSemana.stream().mapToInt(Integer::intValue).sum();
+        Integer tssMedio = (int) Math.round((double) somaTss / semanas);
 
         Double treinosPorSemanaMedio = treinosPorSemana.stream()
             .mapToDouble(Integer::doubleValue)
@@ -131,8 +136,12 @@ public class MetricasAgregadasServiceImpl implements MetricasAgregadasService {
     /**
      * Calcula padrões de treino baseados em dias consecutivos e recuperação.
      *
+     * <p>Une as datas com treino de ambas as fontes (métricas diárias e treinos
+     * realizados) na janela dos últimos {@value #DIAS_ANALISE_PADROES} dias. Isso
+     * evita zerar a sequência quando a métrica diária de hoje ainda não foi gerada.
+     *
      * @param atletaId ID do atleta
-     * @return {@link PadroesTreino} com padrões identificados
+     * @return {@link PadroesTreino} com a sequência atual e os dias desde o último descanso
      */
     @Override
     public PadroesTreino calcularPadroesTreino(UUID atletaId) {
@@ -140,50 +149,13 @@ public class MetricasAgregadasServiceImpl implements MetricasAgregadasService {
 
         log.debug("Calculando padrões de treino para atleta {}", atletaId);
 
-        // Buscar últimos 14 dias de métricas
-        LocalDate dataLimite = LocalDate.now().minusDays(14);
-        List<MetricasDiarias> metricas = metricasDiariasRepository
-            .findByAtletaIdAndDataGreaterThanEqualOrderByDataAsc(atletaId, dataLimite);
+        LocalDate hoje = LocalDate.now();
+        LocalDate inicio = hoje.minusDays(DIAS_ANALISE_PADROES - 1L);
 
-        if (metricas.isEmpty()) {
-            log.warn("Nenhuma métrica encontrada para atleta {} nos últimos 14 dias", atletaId);
-            List<TreinoRealizado> treinosRealizados = treinoRealizadoRepository.findTreinoRealizadosByAtletaId(atletaId).stream()
-                    .filter(p -> p.dataTreino.isAfter(LocalDate.now().minusDays(14)))
-                    .toList();
-            var diasConsecutivos = contarDiasConsecutivos(treinosRealizados);
-            var diasDescanso = contarDiasDeDescansoNoPeriodo(treinosRealizados);
+        SortedSet<LocalDate> diasComTreino = coletarDiasComTreino(atletaId, inicio, hoje);
 
-            return new PadroesTreino(diasConsecutivos, diasDescanso);
-        }
-
-        // Ordenar do mais recente para o mais antigo
-        List<MetricasDiarias> metricasDesc = new ArrayList<>(metricas);
-        metricasDesc.sort((m1, m2) -> m2.getData().compareTo(m1.getData()));
-
-        // Calcular dias consecutivos (sequência de hoje para trás)
-        int diasConsecutivos = 0;
-        LocalDate dataEsperada = LocalDate.now();
-
-        for (MetricasDiarias metrica : metricasDesc) {
-            if (!metrica.getData().equals(dataEsperada)) {
-                break;
-            }
-            if (metrica.getTreinosRealizados() != null && metrica.getTreinosRealizados() > 0) {
-                diasConsecutivos++;
-                dataEsperada = dataEsperada.minusDays(1);
-            } else {
-                break;
-            }
-        }
-
-        // Calcular dias desde último descanso
-        int diasDesdeDescanso = 0;
-        for (MetricasDiarias metrica : metricasDesc) {
-            if (metrica.getTreinosRealizados() == null || metrica.getTreinosRealizados() == 0) {
-                break;
-            }
-            diasDesdeDescanso++;
-        }
+        int diasConsecutivos = calcularSequenciaAtual(diasComTreino);
+        int diasDesdeDescanso = calcularDiasDesdeUltimoDescanso(diasComTreino, hoje);
 
         log.info("Padrões de treino calculados - Dias consecutivos: {}, Dias desde descanso: {}",
             diasConsecutivos, diasDesdeDescanso);
@@ -191,47 +163,56 @@ public class MetricasAgregadasServiceImpl implements MetricasAgregadasService {
         return new PadroesTreino(diasConsecutivos, diasDesdeDescanso);
     }
 
-    public static int contarDiasConsecutivos(List<TreinoRealizado> treinoRealizadosByAtletaId) {
-        List<LocalDate> dateList = treinoRealizadosByAtletaId.stream()
-                .map(TreinoRealizado::getDataTreino)
-                .distinct()
-                .sorted()
-                .toList();
+    /**
+     * Reúne, sem duplicatas, as datas em que houve treino na janela [inicio, hoje],
+     * combinando métricas diárias (treinosRealizados &gt; 0) e treinos realizados.
+     */
+    private SortedSet<LocalDate> coletarDiasComTreino(UUID atletaId, LocalDate inicio, LocalDate hoje) {
+        SortedSet<LocalDate> dias = new TreeSet<>();
 
-        if (dateList.isEmpty()) {
-            return 0;
-        }
+        metricasDiariasRepository.findByAtletaIdAndDataGreaterThanEqualOrderByDataAsc(atletaId, inicio).stream()
+            .filter(m -> m.getTreinosRealizados() != null && m.getTreinosRealizados() > 0)
+            .map(MetricasDiarias::getData)
+            .filter(d -> d != null && !d.isBefore(inicio) && !d.isAfter(hoje))
+            .forEach(dias::add);
 
-        int maiorSequencia = 1;
-        int sequenciaAtual = 1;
+        treinoRealizadoRepository.findTreinoRealizadosByAtletaId(atletaId).stream()
+            .map(TreinoRealizado::getDataTreino)
+            .filter(d -> d != null && !d.isBefore(inicio) && !d.isAfter(hoje))
+            .forEach(dias::add);
 
-        for (int i = 1; i < dateList.size(); i++) {
-            if (dateList.get(i).equals(dateList.get(i - 1).plusDays(1))) {
-                sequenciaAtual++;
-                maiorSequencia = Math.max(maiorSequencia, sequenciaAtual);
-            } else {
-                sequenciaAtual = 1;
-            }
-        }
-        return maiorSequencia;
+        return dias;
     }
 
-    public static int contarDiasDeDescansoNoPeriodo(List<TreinoRealizado> treinos) {
-        var datas = treinos.stream()
-                .map(TreinoRealizado::getDataTreino)
-                .distinct()
-                .sorted()
-                .toList();
+    /**
+     * Sequência de dias consecutivos de treino terminando no treino mais recente.
+     * Robusto à ausência de dado para hoje (achado B): ancora no último treino, não em {@code now()}.
+     */
+    private int calcularSequenciaAtual(SortedSet<LocalDate> diasComTreino) {
+        if (diasComTreino.isEmpty()) {
+            return 0;
+        }
+        LocalDate dia = diasComTreino.last();
+        int sequencia = 1;
+        while (diasComTreino.contains(dia.minusDays(1))) {
+            sequencia++;
+            dia = dia.minusDays(1);
+        }
+        return sequencia;
+    }
 
-        if (datas.isEmpty()) return 0;
-
-        LocalDate inicio = datas.get(0);
-        LocalDate fim = datas.get(datas.size() - 1);
-
-        int totalDiasNoIntervalo = (int) (ChronoUnit.DAYS.between(inicio, fim) + 1);
-        int diasComTreino = datas.size();
-
-        return totalDiasNoIntervalo - diasComTreino;
+    /**
+     * Dias consecutivos de treino contados a partir de hoje para trás (0 se não houve treino hoje).
+     * Equivale a "dias desde o último dia de descanso".
+     */
+    private int calcularDiasDesdeUltimoDescanso(SortedSet<LocalDate> diasComTreino, LocalDate hoje) {
+        int dias = 0;
+        LocalDate dia = hoje;
+        while (diasComTreino.contains(dia)) {
+            dias++;
+            dia = dia.minusDays(1);
+        }
+        return dias;
     }
 
     private void validarAtletaExiste(UUID atletaId) {

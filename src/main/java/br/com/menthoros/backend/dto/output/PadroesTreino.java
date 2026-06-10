@@ -10,8 +10,8 @@ package br.com.menthoros.backend.dto.output;
  * significativamente o risco de overtraining e lesões. Monitorar esses padrões
  * permite ajustar o plano para incluir descanso obrigatório.
  *
- * @param diasConsecutivos Número de dias consecutivos com treino (até hoje)
- * @param diasDesdeDescanso Número de dias desde o último dia sem treino
+ * @param diasConsecutivos Sequência atual de dias consecutivos com treino (terminando no treino mais recente)
+ * @param diasDesdeDescanso Dias consecutivos com treino contados a partir de hoje (0 se houve descanso hoje)
  */
 public record PadroesTreino(
         Integer diasConsecutivos,
