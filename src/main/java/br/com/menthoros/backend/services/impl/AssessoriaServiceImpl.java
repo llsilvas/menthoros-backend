@@ -35,7 +35,7 @@ public class AssessoriaServiceImpl implements AssessoriaService {
      * @throws DuplicateResourceException se já existir assessoria com o domínio informado
      */
     @Override
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public AssessoriaOutputDto criarAssessoria(AssessoriaInputDto input) {
         if (input == null) {
             throw new IllegalArgumentException("AssessoriaInputDto cannot be null");

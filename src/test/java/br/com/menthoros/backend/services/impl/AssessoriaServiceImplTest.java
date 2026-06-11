@@ -99,4 +99,36 @@ class AssessoriaServiceImplTest {
         verify(keycloakOrganizationGateway, never()).criarOrganization(any(), any(), any());
         verify(assessoriaRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("propaga erro do gateway e não persiste orgId")
+    void propagaErroDoGatewayENaoPersisteOrgId() {
+        AssessoriaInputDto input = new AssessoriaInputDto(
+                "Corridas Serra", "corridasserra", PlanoAssessoria.PRO,
+                "contato@corridasserra.com", 100, 10);
+
+        Assessoria entity = Assessoria.builder()
+                .nome("Corridas Serra")
+                .dominio("corridasserra")
+                .plano(PlanoAssessoria.PRO)
+                .build();
+
+        when(assessoriaRepository.existsByDominio("corridasserra")).thenReturn(false);
+        when(assessoriaMapper.toEntity(input)).thenReturn(entity);
+        when(assessoriaRepository.save(any(Assessoria.class))).thenAnswer(invocation -> {
+            Assessoria a = invocation.getArgument(0);
+            if (a.getId() == null) {
+                a.setId(UUID.randomUUID());
+            }
+            return a;
+        });
+        when(keycloakOrganizationGateway.criarOrganization(eq("Corridas Serra"), eq("corridasserra"), any(UUID.class)))
+                .thenThrow(new RuntimeException("kc down"));
+
+        assertThatThrownBy(() -> assessoriaService.criarAssessoria(input))
+                .isInstanceOf(RuntimeException.class);
+
+        verify(assessoriaRepository, times(1)).save(any(Assessoria.class));
+        verify(assessoriaMapper, never()).toOutputDto(any());
+    }
 }

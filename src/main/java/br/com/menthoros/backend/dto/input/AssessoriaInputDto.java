@@ -2,8 +2,10 @@ package br.com.menthoros.backend.dto.input;
 
 import br.com.menthoros.backend.enums.PlanoAssessoria;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
@@ -18,6 +20,7 @@ public record AssessoriaInputDto(
         @Schema(description = "Domínio único da assessoria", example = "corridasserra", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank(message = "Domínio é obrigatório")
         @Size(max = 100, message = "Domínio deve ter no máximo 100 caracteres")
+        @Pattern(regexp = "^[a-z0-9-]+$", message = "Domínio deve conter apenas letras minúsculas, números e hífen")
         String dominio,
 
         @Schema(description = "Plano contratado", example = "PRO", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -25,6 +28,7 @@ public record AssessoriaInputDto(
         PlanoAssessoria plano,
 
         @Schema(description = "E-mail de contato da assessoria", example = "contato@corridasserra.com")
+        @Email(message = "E-mail de contato inválido")
         @Size(max = 100, message = "E-mail de contato deve ter no máximo 100 caracteres")
         String emailContato,
 

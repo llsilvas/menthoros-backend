@@ -30,7 +30,9 @@ class AssessoriaMapperTest {
         assertThat(entity.getNome()).isEqualTo("Corridas Serra");
         assertThat(entity.getDominio()).isEqualTo("corridasserra");
         assertThat(entity.getPlano()).isEqualTo(PlanoAssessoria.PRO);
+        assertThat(entity.getEmailContato()).isEqualTo("contato@corridasserra.com");
         assertThat(entity.getMaxAtletas()).isEqualTo(100);
+        assertThat(entity.getMaxTecnicos()).isEqualTo(10);
     }
 
     @Test
@@ -44,6 +46,7 @@ class AssessoriaMapperTest {
     @DisplayName("toOutputDto mapeia id, keycloakOrganizationId e ativo")
     void toOutputDtoMapeiaCampos() {
         UUID id = UUID.randomUUID();
+        LocalDateTime createdAt = LocalDateTime.now();
         Assessoria entity = Assessoria.builder()
                 .id(id)
                 .nome("Corridas Serra")
@@ -53,14 +56,20 @@ class AssessoriaMapperTest {
                 .maxAtletas(100)
                 .maxTecnicos(10)
                 .ativo(true)
-                .createdAt(LocalDateTime.now())
+                .createdAt(createdAt)
                 .build();
 
         AssessoriaOutputDto dto = mapper.toOutputDto(entity);
 
         assertThat(dto.id()).isEqualTo(id);
+        assertThat(dto.nome()).isEqualTo("Corridas Serra");
+        assertThat(dto.dominio()).isEqualTo("corridasserra");
+        assertThat(dto.plano()).isEqualTo(PlanoAssessoria.PRO);
         assertThat(dto.keycloakOrganizationId()).isEqualTo("org-123");
+        assertThat(dto.maxAtletas()).isEqualTo(100);
+        assertThat(dto.maxTecnicos()).isEqualTo(10);
         assertThat(dto.ativo()).isTrue();
+        assertThat(dto.createdAt()).isEqualTo(createdAt);
     }
 
     @Test
