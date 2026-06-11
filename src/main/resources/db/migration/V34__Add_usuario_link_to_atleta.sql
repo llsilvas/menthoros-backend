@@ -11,7 +11,7 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.table_constraints
-        WHERE constraint_name = 'fk_atleta_usuario'
+        WHERE table_name = 'tb_atleta' AND constraint_name = 'fk_atleta_usuario'
     ) THEN
         ALTER TABLE tb_atleta
             ADD CONSTRAINT fk_atleta_usuario
