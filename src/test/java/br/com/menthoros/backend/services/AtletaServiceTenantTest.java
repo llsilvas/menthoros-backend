@@ -40,6 +40,7 @@ class AtletaServiceTenantTest {
     @Mock private AtletaMapper atletaMapper;
     @Mock private PlanoMetadadosRepository planoMetaDadosRepository;
     @Mock private TsbService tsbService;
+    @Mock private KeycloakOrganizationGateway keycloakOrganizationGateway;
 
     private AtletaServiceImpl atletaService;
 
@@ -50,7 +51,8 @@ class AtletaServiceTenantTest {
                 assessoriaRepository,
                 atletaMapper,
                 planoMetaDadosRepository,
-                tsbService
+                tsbService,
+                keycloakOrganizationGateway
         );
         // CRÍTICO: TenantContext vazio — simula chamada sem JWT
         TenantContext.clear();

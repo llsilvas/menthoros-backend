@@ -13,6 +13,7 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.services.KeycloakOrganizationGateway;
 import br.com.menthoros.backend.services.TsbService;
 import org.springframework.data.jpa.domain.Specification;
 import org.junit.jupiter.api.AfterEach;
@@ -54,6 +55,9 @@ class AtletaServiceImplTest {
 
     @Mock
     private TsbService tsbService;
+
+    @Mock
+    private KeycloakOrganizationGateway keycloakOrganizationGateway;
 
     @InjectMocks
     private AtletaServiceImpl atletaService;
