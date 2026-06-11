@@ -188,6 +188,10 @@ public class Atleta extends AuditableEntity {
     @JoinColumn(name = "tenant_id", nullable = false)
     private Assessoria assessoria;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "usuario_id")
+    private Usuario usuario;
+
     public Integer getFcMaximaCalculada() {
         Integer idade = getIdade();
         if (idade == null) {
