@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.config.keycloak.KeycloakAdminProperties;
 import br.com.menthoros.backend.exception.KeycloakIntegrationException;
 import br.com.menthoros.backend.services.KeycloakOrganizationGateway;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -31,9 +32,9 @@ public class KeycloakOrganizationGatewayImpl implements KeycloakOrganizationGate
     private final RestClient restClient;
     private final KeycloakAdminProperties props;
 
-    public KeycloakOrganizationGatewayImpl(RestClient.Builder builder, KeycloakAdminProperties props) {
+    public KeycloakOrganizationGatewayImpl(RestClient keycloakAdminRestClient, KeycloakAdminProperties props) {
+        this.restClient = keycloakAdminRestClient;
         this.props = props;
-        this.restClient = builder.baseUrl(props.getServerUrl()).build();
     }
 
     /**
@@ -158,6 +159,6 @@ public class KeycloakOrganizationGatewayImpl implements KeycloakOrganizationGate
     }
 
     private record TokenResponse(
-            @com.fasterxml.jackson.annotation.JsonProperty("access_token") String accessToken) {
+            @JsonProperty("access_token") String accessToken) {
     }
 }

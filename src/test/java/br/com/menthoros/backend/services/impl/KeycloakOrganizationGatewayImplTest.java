@@ -35,8 +35,9 @@ class KeycloakOrganizationGatewayImplTest {
 
     @BeforeEach
     void setUp() {
-        RestClient.Builder builder = RestClient.builder();
+        RestClient.Builder builder = RestClient.builder().baseUrl(SERVER_URL);
         server = MockRestServiceServer.bindTo(builder).build();
+        RestClient restClient = builder.build();
 
         KeycloakAdminProperties props = new KeycloakAdminProperties();
         props.setServerUrl(SERVER_URL);
@@ -46,7 +47,7 @@ class KeycloakOrganizationGatewayImplTest {
         props.setUsername("admin");
         props.setPassword("pw");
 
-        gateway = new KeycloakOrganizationGatewayImpl(builder, props);
+        gateway = new KeycloakOrganizationGatewayImpl(restClient, props);
     }
 
     @Test
@@ -86,6 +87,22 @@ class KeycloakOrganizationGatewayImplTest {
         server.expect(requestTo(ORGANIZATIONS_ENDPOINT))
                 .andExpect(method(POST))
                 .andRespond(withStatus(HttpStatus.INTERNAL_SERVER_ERROR));
+
+        assertThatThrownBy(() -> gateway.criarOrganization("Acme Run", "acme-run", tenantId))
+                .isInstanceOf(KeycloakIntegrationException.class);
+    }
+
+    @Test
+    void criarOrganizationLancaQuandoSemLocation() {
+        UUID tenantId = UUID.randomUUID();
+
+        server.expect(requestTo(TOKEN_ENDPOINT))
+                .andExpect(method(POST))
+                .andRespond(withSuccess("{\"access_token\":\"tkn\"}", MediaType.APPLICATION_JSON));
+
+        server.expect(requestTo(ORGANIZATIONS_ENDPOINT))
+                .andExpect(method(POST))
+                .andRespond(withStatus(HttpStatus.CREATED));
 
         assertThatThrownBy(() -> gateway.criarOrganization("Acme Run", "acme-run", tenantId))
                 .isInstanceOf(KeycloakIntegrationException.class);

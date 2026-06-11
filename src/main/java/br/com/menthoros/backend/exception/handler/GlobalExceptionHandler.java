@@ -128,8 +128,7 @@ public class GlobalExceptionHandler {
      * Handler para UnsupportedOperationException.
      *
      * Mapeamento: 501 Not Implemented
-     * Gerada por: gateways/placeholders ainda não implementados
-     * (ex.: KeycloakOrganizationGatewayImpl, cujo provisionamento foi adiado).
+     * Gerada por: operação ainda não implementada / não suportada.
      *
      * Retorna 501 para sinalizar claramente que a operação existe no contrato
      * mas ainda não foi implementada, em vez de mascarar como 500 genérico.
