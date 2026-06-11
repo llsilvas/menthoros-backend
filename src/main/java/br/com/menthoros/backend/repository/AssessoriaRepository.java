@@ -31,6 +31,16 @@ public interface AssessoriaRepository extends JpaRepository<Assessoria, UUID> {
     boolean existsByCnpj(String cnpj);
 
     /**
+     * Verifica se existe assessoria com o domínio
+     */
+    boolean existsByDominio(String dominio);
+
+    /**
+     * Busca assessoria pelo domínio
+     */
+    Optional<Assessoria> findByDominio(String dominio);
+
+    /**
      * Retorna a primeira assessoria ativa — usada como fallback em ambiente sem autenticação
      */
     Optional<Assessoria> findFirstByAtivoTrue();
