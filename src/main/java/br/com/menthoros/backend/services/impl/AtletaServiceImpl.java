@@ -219,15 +219,16 @@ public class AtletaServiceImpl implements AtletaService {
     /**
      * Gera ou reenvia o convite de acesso para o atleta via Keycloak Organization.
      *
-     * Idempotent: YES — reenviar o convite não duplica o atleta nem cria estado divergente.
-     * Side Effects: External API (Keycloak — envio de convite).
-     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId().
+     * Idempotent: NO — cada chamada (re)envia o convite (efeito externo observável); não duplica Atleta/Usuario.
+     * Side Effects: External API call (Keycloak)
+     * Tenant-aware: YES
      *
      * @param atletaId UUID do atleta a ser convidado
      * @throws DomainNotFoundException se o atleta não pertencer ao tenant atual
-     * @throws DomainRuleViolationException se o atleta não possuir email
+     * @throws DomainRuleViolationException se o atleta não possuir email ou a assessoria não tiver keycloakOrganizationId
      */
     @Override
+    @Transactional(readOnly = true)
     public void gerarConvite(UUID atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         log.info("Gerando convite de atleta: atletaId={}, tenantId={}", atletaId, tenantId);
@@ -240,6 +241,10 @@ public class AtletaServiceImpl implements AtletaService {
         }
 
         String orgId = atleta.getAssessoria().getKeycloakOrganizationId();
+        if (orgId == null || orgId.isBlank()) {
+            throw new DomainRuleViolationException(
+                "Assessoria sem keycloakOrganizationId — execute o onboarding da assessoria primeiro");
+        }
         keycloakOrganizationGateway.enviarConviteAtleta(orgId, atleta.getEmail(), atletaId);
 
         log.info("Convite de atleta enviado: atletaId={}, email={}, orgId={}",

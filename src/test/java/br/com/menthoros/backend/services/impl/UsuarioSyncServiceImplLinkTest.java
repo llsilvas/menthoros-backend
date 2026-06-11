@@ -79,6 +79,7 @@ class UsuarioSyncServiceImplLinkTest {
         ArgumentCaptor<Atleta> captor = ArgumentCaptor.forClass(Atleta.class);
         verify(atletaRepository).save(captor.capture());
         assertThat(captor.getValue().getUsuario()).isNotNull();
+        assertThat(captor.getValue().getUsuario().getEmail()).isEqualTo("ana@teste.com");
     }
 
     @Test

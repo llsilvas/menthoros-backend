@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.AtletaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
@@ -82,6 +83,20 @@ class AtletaServiceImplConviteTest {
         atletaService.gerarConvite(atletaId);
 
         verify(keycloakOrganizationGateway).enviarConviteAtleta("org-123", "ana@teste.com", atletaId);
+    }
+
+    @Test
+    void gerarConviteRejeitaAtletaSemEmail() {
+        Atleta atleta = new Atleta();
+        atleta.setId(atletaId);
+        atleta.setEmail(null);
+
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+
+        assertThatThrownBy(() -> atletaService.gerarConvite(atletaId))
+                .isInstanceOf(DomainRuleViolationException.class);
+
+        verify(keycloakOrganizationGateway, never()).enviarConviteAtleta(any(), any(), any());
     }
 
     @Test
