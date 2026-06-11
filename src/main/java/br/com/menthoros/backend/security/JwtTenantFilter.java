@@ -36,6 +36,11 @@ public class JwtTenantFilter extends OncePerRequestFilter {
     private final UsuarioSyncService usuarioSyncService;
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return request.getRequestURI().startsWith("/api/admin/");
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         try {

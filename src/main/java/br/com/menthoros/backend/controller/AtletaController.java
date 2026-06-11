@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.output.AtletaOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.mapper.AtletaMapper;
+import br.com.menthoros.backend.security.RequireTenant;
 import br.com.menthoros.backend.services.AtletaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -134,5 +135,21 @@ public class AtletaController {
     public ResponseEntity<Void> recalcularMetricasAtleta(@Parameter(description = "ID do atleta") @PathVariable UUID id){
         atletaService.recalcularMetricasAtleta(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/convite")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
+    @Operation(summary = "Convidar atleta", description = "Gera ou reenvia o convite de acesso para o atleta")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "202", description = "Convite gerado/reenviado", content = @Content),
+            @ApiResponse(responseCode = "403", description = "Acesso negado", content = @Content),
+            @ApiResponse(responseCode = "404", description = "Atleta não encontrado", content = @Content),
+            @ApiResponse(responseCode = "422", description = "Atleta sem email", content = @Content)
+    })
+    public ResponseEntity<Void> convidarAtleta(
+            @Parameter(description = "ID do atleta") @PathVariable UUID id) {
+        atletaService.gerarConvite(id);
+        return ResponseEntity.accepted().build();
     }
 }

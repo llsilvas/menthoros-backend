@@ -5,6 +5,7 @@ import br.com.menthoros.backend.exception.AccessDeniedException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
+import br.com.menthoros.backend.exception.KeycloakIntegrationException;
 import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.exception.StravaRateLimitException;
@@ -89,6 +90,26 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
+    /**
+     * Handler para falhas na integração com o Keycloak Admin REST API.
+     *
+     * Mapeamento: 502 Bad Gateway
+     * Gerada por: KeycloakOrganizationGatewayImpl (token, criar Organization, convite).
+     *
+     * O Keycloak é um serviço externo; uma falha sua não é erro interno (500),
+     * e sim falha de gateway a montante.
+     */
+    @ExceptionHandler(KeycloakIntegrationException.class)
+    public ResponseEntity<Map<String, Object>> handleKeycloakIntegration(KeycloakIntegrationException ex) {
+        log.error("Falha na integração com o Keycloak: {}", ex.getMessage(), ex);
+        Map<String, Object> body = Map.of(
+                "status", 502,
+                "error", "Bad Gateway",
+                "message", "Falha na integração com o servidor de identidade. Tente novamente em alguns instantes."
+        );
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
+    }
+
     @ExceptionHandler(RuntimeException.class)
     public ResponseEntity<Map<String, Object>> handleRuntimeException(RuntimeException ex) {
         if (ex.getMessage() != null && ex.getMessage().contains("OpenAI")) {
@@ -101,6 +122,28 @@ public class GlobalExceptionHandler {
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
         }
         return handleGeneric(ex);
+    }
+
+    /**
+     * Handler para UnsupportedOperationException.
+     *
+     * Mapeamento: 501 Not Implemented
+     * Gerada por: operação ainda não implementada / não suportada.
+     *
+     * Retorna 501 para sinalizar claramente que a operação existe no contrato
+     * mas ainda não foi implementada, em vez de mascarar como 500 genérico.
+     */
+    @ExceptionHandler(UnsupportedOperationException.class)
+    public ResponseEntity<Map<String, Object>> handleUnsupportedOperation(UnsupportedOperationException ex) {
+        log.warn("Operação não implementada: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 501,
+                "error", "Not Implemented",
+                "message", ex.getMessage() != null
+                        ? ex.getMessage()
+                        : "Operação ainda não implementada."
+        );
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(body);
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

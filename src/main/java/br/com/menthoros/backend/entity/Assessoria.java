@@ -38,6 +38,9 @@ public class Assessoria {
     @Column(name = "keycloak_realm", length = 100)
     private String keycloakRealm = "menthoros-app"; // Nome do realm no Keycloak
 
+    @Column(name = "keycloak_organization_id", length = 100)
+    private String keycloakOrganizationId;
+
     @Column(name = "razao_social", length = 200)
     private String razaoSocial;
 
