@@ -100,6 +100,25 @@ class AtletaServiceImplConviteTest {
     }
 
     @Test
+    void gerarConviteRejeitaAssessoriaSemOrganizationId() {
+        Assessoria assessoria = new Assessoria();
+        assessoria.setId(tenantId);
+        assessoria.setKeycloakOrganizationId(null);
+
+        Atleta atleta = new Atleta();
+        atleta.setId(atletaId);
+        atleta.setEmail("ana@teste.com");
+        atleta.setAssessoria(assessoria);
+
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+
+        assertThatThrownBy(() -> atletaService.gerarConvite(atletaId))
+                .isInstanceOf(DomainRuleViolationException.class);
+
+        verify(keycloakOrganizationGateway, never()).enviarConviteAtleta(any(), any(), any());
+    }
+
+    @Test
     void gerarConviteRejeitaAtletaDeOutroTenant() {
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
 

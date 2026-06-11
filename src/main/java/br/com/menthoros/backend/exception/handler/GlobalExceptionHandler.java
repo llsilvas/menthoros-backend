@@ -103,6 +103,29 @@ public class GlobalExceptionHandler {
         return handleGeneric(ex);
     }
 
+    /**
+     * Handler para UnsupportedOperationException.
+     *
+     * Mapeamento: 501 Not Implemented
+     * Gerada por: gateways/placeholders ainda não implementados
+     * (ex.: KeycloakOrganizationGatewayImpl, cujo provisionamento foi adiado).
+     *
+     * Retorna 501 para sinalizar claramente que a operação existe no contrato
+     * mas ainda não foi implementada, em vez de mascarar como 500 genérico.
+     */
+    @ExceptionHandler(UnsupportedOperationException.class)
+    public ResponseEntity<Map<String, Object>> handleUnsupportedOperation(UnsupportedOperationException ex) {
+        log.warn("Operação não implementada: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 501,
+                "error", "Not Implemented",
+                "message", ex.getMessage() != null
+                        ? ex.getMessage()
+                        : "Operação ainda não implementada."
+        );
+        return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(body);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
         log.warn("Argumento inválido: {}", ex.getMessage());
