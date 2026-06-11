@@ -5,6 +5,7 @@ import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
+import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class UsuarioSyncServiceImpl implements UsuarioSyncService {
 
     private final UsuarioRepository usuarioRepository;
     private final AssessoriaRepository assessoriaRepository;
+    private final AtletaRepository atletaRepository;
 
     /**
      * Sincroniza usuário a partir do JWT do Keycloak
@@ -72,7 +74,29 @@ public class UsuarioSyncServiceImpl implements UsuarioSyncService {
         log.info("Usuário sincronizado: id={}, email={}, role={}, tenant={}",
                 usuario.getId(), usuario.getEmail(), usuario.getRole(), tenantId);
 
+        if (usuario.getRole() == UserRole.ATLETA) {
+            vincularAtletaSeNecessario(usuario, tenantId);
+        }
+
         return usuario;
+    }
+
+    /**
+     * Vincula o Atleta correspondente ao Usuario no primeiro acesso de um ATLETA.
+     * O vínculo só ocorre quando há um Atleta com o mesmo email no tenant e que ainda não possui usuário.
+     */
+    private void vincularAtletaSeNecessario(Usuario usuario, UUID tenantId) {
+        if (usuario.getEmail() == null) {
+            return;
+        }
+        atletaRepository.findByEmailAndAssessoria_Id(usuario.getEmail(), tenantId)
+                .filter(atleta -> atleta.getUsuario() == null)
+                .ifPresent(atleta -> {
+                    atleta.setUsuario(usuario);
+                    atletaRepository.save(atleta);
+                    log.info("Atleta vinculado ao usuário: atletaId={}, usuarioId={}, tenant={}",
+                            atleta.getId(), usuario.getId(), tenantId);
+                });
     }
 
     /**
