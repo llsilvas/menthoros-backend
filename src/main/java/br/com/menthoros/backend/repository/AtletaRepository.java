@@ -80,6 +80,16 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     """)
     Optional<Atleta> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 
+    /**
+     * Busca atleta por email dentro do tenant (usado no vínculo Usuario↔Atleta e no convite).
+     */
+    Optional<Atleta> findByEmailAndAssessoria_Id(String email, UUID tenantId);
+
+    /**
+     * Busca atleta já vinculado a um usuário dentro do tenant.
+     */
+    Optional<Atleta> findByUsuario_IdAndAssessoria_Id(UUID usuarioId, UUID tenantId);
+
     // Mantido para uso interno (services que já validam ownership por outros meios)
     @Transactional(readOnly = true)
     @Query("""
