@@ -131,13 +131,15 @@ public class UsuarioSyncServiceImpl implements UsuarioSyncService {
 
     /**
      * Mapeia roles do Keycloak para enum UserRole local
-     * Prioridade: ADMIN > TECNICO > VISUALIZADOR
+     * Prioridade: ADMIN > TECNICO > ATLETA > VISUALIZADOR
      */
     private UserRole mapToUserRole(List<String> roles) {
         if (roles.contains("ADMIN")) {
             return UserRole.ADMIN;
         } else if (roles.contains("TECNICO")) {
             return UserRole.TECNICO;
+        } else if (roles.contains("ATLETA")) {
+            return UserRole.ATLETA;
         } else if (roles.contains("VISUALIZADOR")) {
             return UserRole.VISUALIZADOR;
         } else {

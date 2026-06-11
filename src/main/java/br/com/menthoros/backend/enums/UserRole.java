@@ -28,5 +28,12 @@ public enum UserRole {
      * - Não pode criar ou modificar nada
      * - Útil para estagiários, assistentes, etc.
      */
-    VISUALIZADOR
+    VISUALIZADOR,
+
+    /**
+     * Atleta vinculado à assessoria
+     * - Acessa apenas seus próprios dados (treinos, planos, métricas)
+     * - Conta criada via convite e efetivada no aceite
+     */
+    ATLETA
 }
