@@ -92,7 +92,7 @@ public class Usuario {
     // ===== METADADOS LOCAIS =====
 
     /**
-     * Role do usuário (ADMIN, TECNICO, VISUALIZADOR)
+     * Role do usuário (ADMIN, TECNICO, ATLETA, VISUALIZADOR)
      * Sincronizado do Keycloak (client roles)
      */
     @Enumerated(EnumType.STRING)
