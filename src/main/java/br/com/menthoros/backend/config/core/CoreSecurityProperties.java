@@ -23,7 +23,8 @@ public class CoreSecurityProperties {
         "/swagger-ui/**",
         "/api-docs/**",
         "/v3/api-docs/**",
-        "/actuator/health"
+        "/actuator/health",
+        "/api/v1/status"
     ));
 
     @NotEmpty(message = "stravaPaths cannot be empty")
