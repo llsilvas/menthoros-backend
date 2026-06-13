@@ -22,30 +22,15 @@ When instructions conflict, follow this order:
 - Integration: Keycloak (JWT), OpenAI via Spring AI.
 - Build/Test: Maven Wrapper (`./mvnw`).
 
-## Mandatory Workflow (OpenSpec-first)
+## Mandatory Workflow
 
-Never start implementation directly in code.
+Segue o fluxo **OpenSpec-first** e as diretrizes de **branch/commit** definidos no
+`CLAUDE.md` da raiz (seções "Mandatory Workflow (OpenSpec-first)" e "Diretrizes de
+Git"). A raiz é a fonte canônica — não duplicar o fluxo aqui.
 
-1. Identify active change in `menthoros-product/openspec/changes/<change-id>`.
-2. Create a feature branch from `develop` following the pattern `feature/<change-id>` **in each affected repository** (never in the workspace root):
-   ```bash
-   # Backend (apps/menthoros-backend)
-   git -C apps/menthoros-backend pull origin develop
-   git -C apps/menthoros-backend checkout -b feature/<change-id>
-
-   # Frontend (apps/menthoros-front) — only if the change touches UI
-   git -C apps/menthoros-front pull origin develop
-   git -C apps/menthoros-front checkout -b feature/<change-id>
-   ```
-   The workspace root (`menthoros`) is a coordinator repo — never branch there for feature work.
-3. Read in order:
-   - `proposal.md`
-   - `design.md` (if present)
-   - `tasks.md`
-   - affected `specs/**/spec.md`
-4. Execute one `tasks.md` item at a time.
-5. If behavior changes, update OpenSpec in the same work.
-6. Keep changes minimal and in-scope.
+Específico deste módulo:
+- Branch no repo `apps/menthoros-backend`.
+- Validar antes de entregar: `./mvnw clean test` (ver "Testing and Validation").
 
 ## Coding Rules (Backend)
 
@@ -329,6 +314,18 @@ public class AtletaService {
 }
 ```
 
+### Service Size & Decomposition (guideline)
+
+A service that mixes orchestration, LLM/IO, schema building, validation and persistence in one class becomes untestable and unsafe to change. Watch for these smells and extract collaborators **when you are already touching such a class** (do not do opportunistic refactors out of scope):
+
+- A single `*ServiceImpl` well over ~400 lines, or a method over ~80 lines.
+- Distinct concerns living together: building a request payload / JSON schema, calling an external model, validating/normalizing the response, and persisting it — these are four collaborators, not one method.
+- Pure transformation/validation logic (no Spring, no IO) that could be a `services/helper` validator or a `DomainSkill` (see **Skills Architecture Standards**).
+
+Keep the `*ServiceImpl` as a thin orchestrator and move focused logic into `services/helper`, `services/prompt`, or `skills/`.
+
+**Known debt — do not grow:** `IaServiceImpl` (~1500 lines: JSON-schema building + plan generation + FC/interval/load validation), `PlanoServiceImpl` (~740), `StravaActivityServiceImpl` (~650), `TsbServiceImpl` (~640). Decomposition of `IaServiceImpl` is tracked in OpenSpec change `refactor-iaservice-decomposition`.
+
 ## Skills Architecture Standards
 
 Rules for domain skills in `br.com.menthoros.backend.skills.*`.
@@ -389,12 +386,33 @@ All types that form the skill's input and output contract (`*Input`, `*Output`, 
 
 Include only the fields the skill actually reads. Do not pass full entity graphs "just in case". If the skill needs 6 fields from `Atleta`, define a record with those 6 fields — nothing more.
 
+### Skill Testing Standards (mandatory)
+
+Skills are pure, deterministic domain logic — the easiest and most important code to unit-test. Reference tests: `DomainSkillContractTest`, `IntervalWorkoutAnalysisSkillTest`, `WeeklyDistributionSkillTest`, `RecoveryCargaSkillTest`.
+
+- Every `DomainSkill` implementation has a dedicated `*SkillTest` following the patterns in **Test Standards** (JUnit 5, `@Nested`, Arrange-Act-Assert).
+- Build inputs as the skill's **record types** — never construct a JPA entity in a skill test. Skills receive records by contract (see above), and tests must too.
+- Skills are deterministic and have no injected collaborators: assert exact outputs (zones, paces, flags, messages) for representative inputs; do NOT mock anything inside a skill test.
+- Cover the decision branches: eligibility yes/no, every `SkillResult` status, and boundary inputs — apply BVA / equivalence partitioning from **Maximizing Coverage**.
+- The cross-cutting contract (every registered skill has a non-blank `skillKey`, `skillVersion`, `category`, and reports invalid input through `SkillResult` rather than throwing) is enforced by `DomainSkillContractTest`. A new skill registered as `@Component` is picked up automatically — do not write a bespoke contract test, just make the skill conform.
+
 ## Multi-tenancy and Security Guardrails
 
 - Never bypass tenant isolation rules.
 - Never remove tenant-aware filters/checks in request flow.
 - Preserve authN/authZ behavior unless change scope explicitly requires update.
 - Do not hardcode secrets or credentials.
+
+## External Call Resilience
+
+Every call that leaves the process (LLM via OpenAI/Anthropic, Keycloak, Strava) must be defended against latency and cascading failure. Current state: `@EnableRetry` on the LLM layer; connect/read timeouts on the Keycloak admin client (`KeycloakAdminRestClientConfig`, 5s/10s). Gaps: no response timeout on LLM calls, no timeout on the Strava `WebClient`, no circuit breaker anywhere.
+
+Standards for new or modified external integrations:
+
+- **Timeouts are mandatory.** Every external client sets both a connect and a read/response timeout — no call may block indefinitely. Keycloak is the reference; the Strava `WebClient` must set `responseTimeout`; LLM calls must bound response time.
+- **Retry transient failures only** (timeouts, 5xx, 429) with capped attempts and backoff — never blindly retry non-idempotent writes. Reuse the existing retry mechanism.
+- **Circuit breaker (recommended)** around LLM, Keycloak and Strava to fail fast and isolate a failing dependency, mapped to the existing `LLMException` / `KeycloakIntegrationException` / `StravaRateLimitException` in `GlobalExceptionHandler`. Adding a circuit-breaker library (e.g. Resilience4j) is a dependency decision — do it under the OpenSpec change `add-external-call-resilience`, not ad hoc.
+- **Expose metrics.** Resilience events (timeouts, retries, open circuits) should surface through the existing Micrometer/Prometheus registry.
 
 ## Database and Migration Rules
 
@@ -728,4 +746,4 @@ Reject code if it has:
 ❌ Test failures or compilation errors
 ```
 
-Last reviewed on: 2026-05-15
+Last reviewed on: 2026-06-13
