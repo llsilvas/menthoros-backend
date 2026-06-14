@@ -600,10 +600,20 @@ Coverage % is necessary but not sufficient — a line can be covered by a test w
 - **Validate assertion strength with mutation testing** (PIT / `pitest`) on critical business logic: if a mutant survives, the lines are covered but under-asserted — add the missing assertion.
 - **Don't chase 100% on trivial code** — getters/setters, `record` accessors, generated mappers, and pure DTOs don't need dedicated tests. Concentrate effort on `service`/business logic and on branches that encode domain rules.
 
+### Test Layers (sliced vs integration)
+
+Use the lightest test that covers the behavior (the `springboot-tdd` skill from everything-claude-code provides the templates):
+
+- **Service / business rule:** Mockito unit test (`@ExtendWith(MockitoExtension.class)`, `@Nested`) — the dominant pattern in this module.
+- **Controller:** `@WebMvcTest(XxxController.class)` + `MockMvc` + `@MockBean` on the service — validates route/status/JSON without booting the full context. (Not yet used here; prefer it over a full `@SpringBootTest` for controller-only checks.)
+- **Repository / JPA query:** `@DataJpaTest` + Testcontainers (wire via `@DynamicPropertySource`).
+- **End-to-end integration:** `@SpringBootTest` + `@AutoConfigureMockMvc` + `@ActiveProfiles("test")` — reserve for flows that need the real context.
+
 ### Assertions
 
-- Prefer explicit assertions: `assertEquals`, `assertSame`, `assertNull`, `assertThrows`, `assertTrue` (JUnit 5) — match the style already present in the test package.
-- When asserting an exception message, use `assertTrue(ex.getMessage().contains("..."))` rather than full-string equality, to stay resilient to wording tweaks.
+- Prefer **AssertJ** (`assertThat(...)`, `assertThatThrownBy(...)`) for readability — it is the dominant style in this module. For JSON in `MockMvc`, use `jsonPath`.
+- JUnit assertions (`assertThrows`, `assertEquals`) remain acceptable in legacy tests; do not mix both styles within a single test.
+- When asserting an exception message, check that it **contains** the snippet (`assertThat(ex).hasMessageContaining("...")`) rather than full-string equality, to stay resilient to wording tweaks.
 - Helper factory methods (`criarAtleta`, `novoInput`, `outputStub`, ...) belong at the bottom of the outer class, after the `@Nested` blocks.
 
 ## Definition of Done (Backend Task)
