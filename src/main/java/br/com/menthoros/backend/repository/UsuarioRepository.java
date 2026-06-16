@@ -22,15 +22,15 @@ import java.util.UUID;
 public interface UsuarioRepository extends JpaRepository<Usuario, UUID> {
 
     /**
-     * Busca usuário pelo Keycloak ID (subject do JWT)
-     * Usado na sincronização automática durante o login
+     * Busca usuário pelo Keycloak ID (subject do JWT).
+     *
+     * <p>Sem filtro de tenant por design: {@code keycloak_id} é único global (índice único) e É a
+     * identidade do usuário — retorna no máximo um registro, sem ambiguidade cross-tenant. Usado na
+     * sincronização automática do login (resolve o usuário existente antes de conhecer/validar o
+     * tenant) e no fail-safe do {@code JwtTenantFilter}. NÃO escopar por tenant aqui: quebraria o
+     * sync (tentaria recriar um keycloak_id já existente, violando a constraint única).
      */
     Optional<Usuario> findByKeycloakId(String keycloakId);
-
-    /**
-     * Busca usuário por email
-     */
-    Optional<Usuario> findByEmail(String email);
 
     /**
      * Busca usuário por email dentro de um tenant específico

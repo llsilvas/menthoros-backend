@@ -4,9 +4,7 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.repository.custom.AtletaRepositoryCustom;
 import br.com.menthoros.backend.repository.projection.AtletaListProjection;
 import br.com.menthoros.backend.repository.projection.AtletaProjection;
-import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.PagingAndSortingRepository;
@@ -90,21 +88,21 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
      */
     Optional<Atleta> findByUsuario_IdAndAssessoria_Id(UUID usuarioId, UUID tenantId);
 
-    // Mantido para uso interno (services que já validam ownership por outros meios)
+    /**
+     * Busca atleta por id SEM filtro de tenant.
+     *
+     * <p><b>USO RESTRITO:</b> só pode ser chamado em fluxos sem {@code TenantContext} disponível,
+     * onde o {@code atletaId} provém de uma fonte confiável emitida pela própria aplicação — hoje,
+     * exclusivamente o callback OAuth do Strava (o {@code state}/atletaId é gerado em
+     * {@code getAuthorizationUrl}). Em qualquer fluxo com tenant no contexto, use
+     * {@link #findByIdAndTenantId(UUID, UUID)} para garantir isolamento.
+     */
     @Transactional(readOnly = true)
     @Query("""
     select atl from Atleta atl
     where atl.id = :id
     """)
     Optional<Atleta> findByIdBasic(@Param("id") UUID id);
-
-    @Transactional
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("""
-    select atl from Atleta atl
-    where atl.id = :id
-    """)
-    Optional<Atleta> findByIdForUpdate(@Param("id") UUID id);
 
     @Transactional(readOnly = true)
     @Query("""
