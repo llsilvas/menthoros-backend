@@ -2,6 +2,7 @@ package br.com.menthoros.backend.security;
 
 import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.services.UsuarioSyncService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -34,6 +35,7 @@ import java.util.UUID;
 public class JwtTenantFilter extends OncePerRequestFilter {
 
     private final UsuarioSyncService usuarioSyncService;
+    private final UsuarioRepository usuarioRepository;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -55,9 +57,8 @@ public class JwtTenantFilter extends OncePerRequestFilter {
                 if (tenantIdStr == null || tenantIdStr.isBlank()) {
                     log.error("JWT sem tenant_id - REJEITADO: subject={}, uri={}",
                             jwt.getSubject(), request.getRequestURI());
-                    response.setStatus(HttpStatus.FORBIDDEN.value());
-                    response.setContentType("application/json");
-                    response.getWriter().write("{\"error\":\"JWT sem tenant_id. Verifique a configuração do Keycloak Group.\"}");
+                    writeJsonError(response, HttpStatus.FORBIDDEN,
+                            "JWT sem tenant_id. Verifique a configuração do Keycloak Group.");
                     return; // Não continua o processamento
                 }
 
@@ -66,9 +67,7 @@ public class JwtTenantFilter extends OncePerRequestFilter {
                     tenantId = UUID.fromString(tenantIdStr);
                 } catch (IllegalArgumentException e) {
                     log.error("tenant_id inválido no JWT: '{}' - subject={}", tenantIdStr, jwt.getSubject());
-                    response.setStatus(HttpStatus.FORBIDDEN.value());
-                    response.setContentType("application/json");
-                    response.getWriter().write("{\"error\":\"tenant_id inválido no JWT\"}");
+                    writeJsonError(response, HttpStatus.FORBIDDEN, "tenant_id inválido no JWT");
                     return;
                 }
 
@@ -79,14 +78,39 @@ public class JwtTenantFilter extends OncePerRequestFilter {
                         tenantId, request.getRequestURI(), jwt.getSubject());
 
                 // Sincroniza usuário do Keycloak com tb_usuario
+                Usuario usuario = null;
+                boolean syncFalhou = false;
                 try {
-                    Usuario usuario = usuarioSyncService.syncUsuarioFromJwt(jwt, tenantId);
+                    usuario = usuarioSyncService.syncUsuarioFromJwt(jwt, tenantId);
                     log.debug("Usuário sincronizado: id={}, email={}", usuario.getId(), usuario.getEmail());
                 } catch (Exception e) {
                     log.error("Erro ao sincronizar usuário do Keycloak: subject={}, tenant={}",
                             jwt.getSubject(), tenantId, e);
-                    // Continua mesmo se sync falhar (pode ser problema temporário)
-                    // Mas registra o erro para investigação
+                    syncFalhou = true;
+                }
+
+                // Fail-safe: o sync alimenta a decisão de acesso (ativo). Se ele falhar, faz uma
+                // leitura direta do status para não deixar um usuário inativo passar. Se nem a leitura
+                // direta for possível (ex.: banco fora), responde 503 — não decide acesso "no escuro".
+                if (syncFalhou) {
+                    try {
+                        usuario = usuarioRepository.findByKeycloakId(jwt.getSubject()).orElse(null);
+                    } catch (Exception e) {
+                        log.error("Não foi possível verificar o status da conta (leitura direta): subject={}",
+                                jwt.getSubject(), e);
+                        writeJsonError(response, HttpStatus.SERVICE_UNAVAILABLE,
+                                "Não foi possível verificar o status da conta");
+                        return;
+                    }
+                }
+
+                // Rejeita usuário desativado localmente (ativo=false): conta autenticada, mas bloqueada.
+                // Só alcança aqui requisições com JWT — rotas públicas sem autenticação não passam por isto.
+                if (usuario != null && Boolean.FALSE.equals(usuario.getAtivo())) {
+                    log.warn("Usuário inativo - REJEITADO: id={}, tenant={}, uri={}",
+                            usuario.getId(), tenantId, request.getRequestURI());
+                    writeJsonError(response, HttpStatus.LOCKED, "Usuário inativo");
+                    return;
                 }
             }
 
@@ -97,6 +121,13 @@ public class JwtTenantFilter extends OncePerRequestFilter {
             // CRÍTICO: Sempre limpa o contexto ao final (evita vazamento entre requests)
             TenantContext.clear();
         }
+    }
+
+    private void writeJsonError(HttpServletResponse response, HttpStatus status, String message)
+            throws IOException {
+        response.setStatus(status.value());
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"error\":\"" + message + "\"}");
     }
 
     private String extractTenantId(Jwt jwt) {
