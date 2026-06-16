@@ -33,6 +33,12 @@ public interface UsuarioRepository extends JpaRepository<Usuario, UUID> {
     Optional<Usuario> findByKeycloakId(String keycloakId);
 
     /**
+     * Busca usuário pelo Keycloak ID (subject do JWT) dentro de um tenant específico.
+     * Resolução tenant-aware do usuário atual (GET /api/v1/users/me).
+     */
+    Optional<Usuario> findByKeycloakIdAndAssessoria_Id(String keycloakId, UUID tenantId);
+
+    /**
      * Busca usuário por email dentro de um tenant específico
      */
     Optional<Usuario> findByEmailAndAssessoriaId(String email, UUID tenantId);

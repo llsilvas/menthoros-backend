@@ -8,8 +8,9 @@ import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.UsuarioMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
-import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
+import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
+import br.com.menthoros.backend.services.AtletaService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,10 +20,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.core.context.SecurityContext;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -39,26 +36,26 @@ import static org.mockito.Mockito.when;
 class UsuarioServiceImplTest {
 
     @Mock private UsuarioRepository usuarioRepository;
-    @Mock private AtletaRepository atletaRepository;
+    @Mock private AtletaService atletaService;
     @Mock private UsuarioMapper usuarioMapper;
+    @Mock private AuthenticatedPrincipalResolver principalResolver;
 
     @InjectMocks private UsuarioServiceImpl usuarioService;
 
     private UUID tenantId;
-    private UUID sub;
+    private String sub;
 
     @BeforeEach
     void setUp() {
         tenantId = UUID.randomUUID();
-        sub = UUID.randomUUID();
+        sub = UUID.randomUUID().toString();
         TenantContext.setTenantId(tenantId);
-        autenticarComoSub(sub);
+        when(principalResolver.getCurrentSubject()).thenReturn(sub);
     }
 
     @AfterEach
     void tearDown() {
         TenantContext.clear();
-        SecurityContextHolder.clearContext();
     }
 
     @Nested
@@ -70,14 +67,14 @@ class UsuarioServiceImplTest {
         void tecnicoSemAtleta() {
             Usuario usuario = usuario(UserRole.TECNICO);
             UsuarioMeOutputDto esperado = dtoStub();
-            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub.toString(), tenantId))
+            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId))
                     .thenReturn(Optional.of(usuario));
             when(usuarioMapper.toMeOutputDto(usuario, null)).thenReturn(esperado);
 
             UsuarioMeOutputDto resultado = usuarioService.getCurrentUser();
 
             assertThat(resultado).isEqualTo(esperado);
-            verifyNoInteractions(atletaRepository);
+            verifyNoInteractions(atletaService);
         }
 
         @Test
@@ -86,25 +83,25 @@ class UsuarioServiceImplTest {
             Usuario usuario = usuario(UserRole.ATLETA);
             Atleta atleta = Atleta.builder().id(UUID.randomUUID()).nome("Atleta").build();
             UsuarioMeOutputDto esperado = dtoStub();
-            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub.toString(), tenantId))
+            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId))
                     .thenReturn(Optional.of(usuario));
-            when(atletaRepository.findByUsuario_IdAndAssessoria_Id(usuario.getId(), tenantId))
+            when(atletaService.findVinculadoAoUsuario(usuario.getId()))
                     .thenReturn(Optional.of(atleta));
             when(usuarioMapper.toMeOutputDto(usuario, atleta)).thenReturn(esperado);
 
             UsuarioMeOutputDto resultado = usuarioService.getCurrentUser();
 
             assertThat(resultado).isEqualTo(esperado);
-            verify(atletaRepository).findByUsuario_IdAndAssessoria_Id(usuario.getId(), tenantId);
+            verify(atletaService).findVinculadoAoUsuario(usuario.getId());
         }
 
         @Test
         @DisplayName("ATLETA sem vínculo mapeia com atleta null")
         void atletaSemVinculo() {
             Usuario usuario = usuario(UserRole.ATLETA);
-            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub.toString(), tenantId))
+            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId))
                     .thenReturn(Optional.of(usuario));
-            when(atletaRepository.findByUsuario_IdAndAssessoria_Id(usuario.getId(), tenantId))
+            when(atletaService.findVinculadoAoUsuario(usuario.getId()))
                     .thenReturn(Optional.empty());
             when(usuarioMapper.toMeOutputDto(usuario, null)).thenReturn(dtoStub());
 
@@ -116,15 +113,15 @@ class UsuarioServiceImplTest {
         @Test
         @DisplayName("lança DomainNotFoundException quando usuário não existe no tenant")
         void usuarioInexistenteNoTenant() {
-            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub.toString(), tenantId))
+            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId))
                     .thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> usuarioService.getCurrentUser())
                     .isInstanceOf(DomainNotFoundException.class)
                     .hasMessageContaining("não encontrado")
-                    .hasMessageNotContaining(sub.toString());
+                    .hasMessageNotContaining(sub);
 
-            verifyNoInteractions(atletaRepository);
+            verifyNoInteractions(atletaService);
             verifyNoInteractions(usuarioMapper);
         }
 
@@ -132,10 +129,9 @@ class UsuarioServiceImplTest {
         @DisplayName("isolamento de tenant: Atleta de outro tenant não é resolvido (atleta null)")
         void isolamentoTenant() {
             Usuario usuario = usuario(UserRole.ATLETA);
-            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub.toString(), tenantId))
+            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId))
                     .thenReturn(Optional.of(usuario));
-            // Atleta vinculado pertence a outro tenant → query tenant-scoped retorna vazio
-            when(atletaRepository.findByUsuario_IdAndAssessoria_Id(usuario.getId(), tenantId))
+            when(atletaService.findVinculadoAoUsuario(usuario.getId()))
                     .thenReturn(Optional.empty());
             when(usuarioMapper.toMeOutputDto(usuario, null)).thenReturn(dtoStub());
 
@@ -146,21 +142,10 @@ class UsuarioServiceImplTest {
         }
     }
 
-    private void autenticarComoSub(UUID subject) {
-        Jwt jwt = Jwt.withTokenValue("token")
-                .header("alg", "none")
-                .subject(subject.toString())
-                .claim("sub", subject.toString())
-                .build();
-        SecurityContext context = SecurityContextHolder.createEmptyContext();
-        context.setAuthentication(new JwtAuthenticationToken(jwt));
-        SecurityContextHolder.setContext(context);
-    }
-
     private Usuario usuario(UserRole role) {
         return Usuario.builder()
-                .id(sub)
-                .keycloakId(sub.toString())
+                .id(UUID.fromString(sub))
+                .keycloakId(sub)
                 .nome("Usuário")
                 .email("usuario@exemplo.com")
                 .role(role)
@@ -169,6 +154,7 @@ class UsuarioServiceImplTest {
     }
 
     private UsuarioMeOutputDto dtoStub() {
-        return new UsuarioMeOutputDto(sub, "Usuário", "usuario@exemplo.com", UserRole.TECNICO, null, null);
+        return new UsuarioMeOutputDto(UUID.fromString(sub), "Usuário", "usuario@exemplo.com",
+                UserRole.TECNICO, null, null);
     }
 }

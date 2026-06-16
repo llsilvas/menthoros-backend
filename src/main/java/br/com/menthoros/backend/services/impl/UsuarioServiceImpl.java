@@ -7,14 +7,12 @@ import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.UsuarioMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
-import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
+import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
+import br.com.menthoros.backend.services.AtletaService;
 import br.com.menthoros.backend.services.UsuarioService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,8 +24,9 @@ import java.util.UUID;
 public class UsuarioServiceImpl implements UsuarioService {
 
     private final UsuarioRepository usuarioRepository;
-    private final AtletaRepository atletaRepository;
+    private final AtletaService atletaService;
     private final UsuarioMapper usuarioMapper;
+    private final AuthenticatedPrincipalResolver principalResolver;
 
     /**
      * Resolve o usuário atual pelo {@code sub} do JWT no tenant corrente. Quando a role for
@@ -44,7 +43,7 @@ public class UsuarioServiceImpl implements UsuarioService {
     @Transactional(readOnly = true)
     public UsuarioMeOutputDto getCurrentUser() {
         UUID tenantId = TenantContext.getRequiredTenantId();
-        String sub = resolveSubject();
+        String sub = principalResolver.getCurrentSubject();
         log.info("Resolvendo usuário atual: sub={}, tenantId={}", sub, tenantId);
 
         Usuario usuario = usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId)
@@ -56,21 +55,11 @@ public class UsuarioServiceImpl implements UsuarioService {
 
         Atleta atleta = null;
         if (usuario.getRole() == UserRole.ATLETA) {
-            atleta = atletaRepository
-                    .findByUsuario_IdAndAssessoria_Id(usuario.getId(), tenantId)
-                    .orElse(null);
+            atleta = atletaService.findVinculadoAoUsuario(usuario.getId()).orElse(null);
         }
 
         log.info("Usuário atual resolvido: id={}, role={}, atletaVinculado={}",
                 usuario.getId(), usuario.getRole(), atleta != null);
         return usuarioMapper.toMeOutputDto(usuario, atleta);
-    }
-
-    private String resolveSubject() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null && authentication.getPrincipal() instanceof Jwt jwt) {
-            return jwt.getSubject();
-        }
-        throw new IllegalStateException("Nenhum usuário autenticado na requisição atual");
     }
 }
