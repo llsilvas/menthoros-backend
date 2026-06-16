@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.security;
 
+import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.services.UsuarioSyncService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.DisplayName;
@@ -12,7 +13,8 @@ import static org.mockito.Mockito.when;
 @DisplayName("JwtTenantFilter.shouldNotFilter - Testes unitários")
 class JwtTenantFilterShouldNotFilterTest {
 
-    private final JwtTenantFilter filter = new JwtTenantFilter(mock(UsuarioSyncService.class));
+    private final JwtTenantFilter filter =
+            new JwtTenantFilter(mock(UsuarioSyncService.class), mock(UsuarioRepository.class));
 
     @Test
     @DisplayName("endpoints /api/admin/** são ignorados pelo filtro de tenant")
