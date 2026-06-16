@@ -79,14 +79,26 @@ public class JwtTenantFilter extends OncePerRequestFilter {
                         tenantId, request.getRequestURI(), jwt.getSubject());
 
                 // Sincroniza usuário do Keycloak com tb_usuario
+                Usuario usuario = null;
                 try {
-                    Usuario usuario = usuarioSyncService.syncUsuarioFromJwt(jwt, tenantId);
+                    usuario = usuarioSyncService.syncUsuarioFromJwt(jwt, tenantId);
                     log.debug("Usuário sincronizado: id={}, email={}", usuario.getId(), usuario.getEmail());
                 } catch (Exception e) {
                     log.error("Erro ao sincronizar usuário do Keycloak: subject={}, tenant={}",
                             jwt.getSubject(), tenantId, e);
                     // Continua mesmo se sync falhar (pode ser problema temporário)
                     // Mas registra o erro para investigação
+                }
+
+                // Rejeita usuário desativado localmente (ativo=false): conta autenticada, mas bloqueada.
+                // Só alcança aqui requisições com JWT — rotas públicas sem autenticação não passam por isto.
+                if (usuario != null && Boolean.FALSE.equals(usuario.getAtivo())) {
+                    log.warn("Usuário inativo - REJEITADO: id={}, tenant={}, uri={}",
+                            usuario.getId(), tenantId, request.getRequestURI());
+                    response.setStatus(HttpStatus.LOCKED.value());
+                    response.setContentType("application/json");
+                    response.getWriter().write("{\"error\":\"Usuário inativo\"}");
+                    return;
                 }
             }
 
