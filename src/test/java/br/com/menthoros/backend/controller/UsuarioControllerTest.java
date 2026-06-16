@@ -19,6 +19,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.UUID;
 
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -61,6 +62,7 @@ class UsuarioControllerTest {
                     .andExpect(jsonPath("$.role").value("ATLETA"))
                     .andExpect(jsonPath("$.assessoria.dominio").value("corridasserra"))
                     .andExpect(jsonPath("$.atletaId").value(atletaId.toString()));
+            verify(usuarioService).getCurrentUser();
         }
 
         @Test
@@ -72,6 +74,7 @@ class UsuarioControllerTest {
             mockMvc.perform(get("/api/v1/users/me"))
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.status").value(404));
+            verify(usuarioService).getCurrentUser();
         }
     }
 }
