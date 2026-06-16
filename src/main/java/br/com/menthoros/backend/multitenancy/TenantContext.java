@@ -7,7 +7,10 @@ import java.util.UUID;
 @Slf4j
 public class TenantContext {
 
-    private static final ThreadLocal<UUID> CURRENT_TENANT = new InheritableThreadLocal<>();
+    // ThreadLocal simples (não InheritableThreadLocal): evita que threads filhas/de pool
+    // herdem o tenant da requisição que as criou — vazamento cross-tenant. Código assíncrono
+    // deve setar o tenant explicitamente (ver StravaWebhookServiceImpl / schedulers).
+    private static final ThreadLocal<UUID> CURRENT_TENANT = new ThreadLocal<>();
 
     /**
      * Define o tenant_id para a thread atual
