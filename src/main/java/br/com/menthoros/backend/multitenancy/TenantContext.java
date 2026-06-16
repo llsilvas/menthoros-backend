@@ -22,13 +22,15 @@ public class TenantContext {
     }
 
     /**
-     * Retorna o tenant_id da thread atual
-     * @return UUID do tenant ou null se não configurado
+     * Retorna o tenant_id da thread atual, ou {@code null} se não configurado.
+     *
+     * <p>Accessor nullable: ausência de tenant é legítima em fluxos sem contexto (callback OAuth,
+     * schedulers). Quem exige tenant deve usar {@link #getRequiredTenantId()} (que falha alto).
      */
     public static UUID getTenantId() {
         UUID tenantId = CURRENT_TENANT.get();
         if(tenantId == null) {
-            log.warn("Nenhum tenant configurado para a requisição");
+            log.debug("Nenhum tenant configurado na thread atual");
         }
         return tenantId;
     }

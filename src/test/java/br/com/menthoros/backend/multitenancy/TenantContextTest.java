@@ -11,6 +11,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TenantContextTest {
 
@@ -54,10 +55,18 @@ class TenantContextTest {
                     }
                 }).get();
 
+                long threadTarefa1 = pool.submit(() -> Thread.currentThread().threadId()).get();
+
                 // Tarefa 2: mesma thread do pool — não pode enxergar o tenant da tarefa anterior
                 AtomicReference<UUID> visto = new AtomicReference<>(tenantA);
-                pool.submit(() -> visto.set(TenantContext.getTenantId())).get();
+                long threadTarefa2 = pool.submit(() -> {
+                    visto.set(TenantContext.getTenantId());
+                    return Thread.currentThread().threadId();
+                }).get();
 
+                assertThat(threadTarefa2)
+                        .as("o cenário exige reuso da mesma thread do pool")
+                        .isEqualTo(threadTarefa1);
                 assertThat(visto.get())
                         .as("tarefa seguinte na mesma thread de pool não deve ver tenant vazado")
                         .isNull();
@@ -83,6 +92,14 @@ class TenantContextTest {
             TenantContext.clear();
             assertThat(TenantContext.getTenantId()).isNull();
             assertThat(TenantContext.hasTenant()).isFalse();
+        }
+
+        @Test
+        @DisplayName("getRequiredTenantId lança IllegalStateException quando não há tenant")
+        void getRequiredSemTenantLanca() {
+            assertThatThrownBy(TenantContext::getRequiredTenantId)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("Tenant não configurado");
         }
     }
 }

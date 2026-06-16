@@ -96,6 +96,10 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
      * exclusivamente o callback OAuth do Strava (o {@code state}/atletaId é gerado em
      * {@code getAuthorizationUrl}). Em qualquer fluxo com tenant no contexto, use
      * {@link #findByIdAndTenantId(UUID, UUID)} para garantir isolamento.
+     *
+     * <p><b>Débito conhecido:</b> hoje o {@code state} do OAuth é o atletaId em texto plano (sem
+     * nonce/HMAC vinculado à sessão) — vetor CSRF/IDOR no callback. Endurecimento rastreado em
+     * change dedicada (deferido junto da família Strava).
      */
     @Transactional(readOnly = true)
     @Query("""
