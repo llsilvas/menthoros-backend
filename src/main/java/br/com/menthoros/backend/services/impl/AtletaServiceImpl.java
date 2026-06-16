@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -47,6 +48,27 @@ public class AtletaServiceImpl implements AtletaService {
             "T(br.com.menthoros.backend.multitenancy.TenantContext).hasTenant()";
     private static final String TENANT_KEY =
             "T(br.com.menthoros.backend.multitenancy.TenantContext).getTenantId()";
+
+    /**
+     * Resolve o atleta vinculado a um usuário dentro do tenant da requisição atual.
+     *
+     * Idempotent: YES — Read-only, sem mutação de estado.
+     * Side Effects: NONE
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId() e query tenant-scoped.
+     *
+     * @param usuarioId UUID do usuário (Usuario.id)
+     * @return o Atleta vinculado, ou vazio se não houver vínculo no tenant
+     * @throws IllegalArgumentException se usuarioId for null
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<Atleta> findVinculadoAoUsuario(UUID usuarioId) {
+        if (usuarioId == null) {
+            throw new IllegalArgumentException("usuarioId cannot be null");
+        }
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        return atletaRepository.findByUsuario_IdAndAssessoria_Id(usuarioId, tenantId);
+    }
 
     /**
      * Cria um novo atleta vinculado ao tenant da requisição atual.

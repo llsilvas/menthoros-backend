@@ -86,12 +86,22 @@ Rules enforced across all controllers. Violations must be corrected in the same 
 ### Tenant Resolution (mandatory)
 - Use `TenantContext.getRequiredTenantId()` to resolve tenant inside controller methods.
 - Do NOT read `@RequestHeader("X-Tenant-ID")` manually in controllers — this bypasses the tenant filter.
-- **All controllers that use TenantContext MUST be marked with `@RequireTenant`** annotation to enforce tenant isolation at compile-time.
+- Tenant isolation is enforced in layers: `JwtTenantFilter` populates `TenantContext` per request,
+  `getRequiredTenantId()` fails fast when absent, and repository queries are tenant-scoped.
+- **`@RequireTenant` is a METHOD-level annotation** (`@Target(METHOD)`), not class-level. It is
+  handled by `TenantValidationAspect` and validates that a **resource-ID parameter** (by
+  `resourceParamIndex`, default `0`) belongs to the current tenant. Apply it to handler methods that
+  receive a resource `UUID`:
   ```java
-  @RestController
-  @RequireTenant  // ✅ Enforces tenant awareness
-  public class AtletaController { ... }
+  @GetMapping("/{id}")
+  @RequireTenant(resourceParamIndex = 0)  // ✅ validates that {id} belongs to the current tenant
+  public ResponseEntity<AtletaOutputDto> getAtleta(@PathVariable UUID id) { ... }
   ```
+  Do NOT place it on a method with no resource-ID parameter: the aspect throws
+  `IllegalArgumentException` when `resourceParamIndex >= args.length`. Self-resolving endpoints
+  (e.g. `GET /me`, which resolves the caller from the JWT `sub`) must NOT use `@RequireTenant`; they
+  rely on `TenantContext` + tenant-scoped queries, and should document the omission in a comment
+  (see `StatusController` for the public-endpoint variant).
 
 ## Mapper Standards
 

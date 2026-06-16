@@ -8,11 +8,24 @@ import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface AtletaService {
 
     Atleta createAtleta(AtletaInputDto atletaInputDto);
+
+    /**
+     * Resolve o atleta vinculado a um usuário dentro do tenant da requisição atual.
+     *
+     * Idempotent: YES — Read-only, sem mutação de estado.
+     * Side Effects: NONE
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId() e query tenant-scoped.
+     *
+     * @param usuarioId UUID do usuário (Usuario.id)
+     * @return o {@link Atleta} vinculado, ou vazio se não houver vínculo no tenant
+     */
+    Optional<Atleta> findVinculadoAoUsuario(UUID usuarioId);
 
     AtletaOutputDto updateAtleta(UUID id, AtletaInputDto atletaInputDto);
 

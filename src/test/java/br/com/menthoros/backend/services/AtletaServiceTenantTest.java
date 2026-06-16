@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.input.AtletaInputDto;
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.mapper.AtletaMapper;
@@ -18,11 +19,17 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * Testa que AtletaServiceImpl exige TenantContext configurado — sem fallback para a primeira assessoria ativa.
@@ -127,5 +134,41 @@ class AtletaServiceTenantTest {
                 () -> atletaService.getAllAtletas(null, null, null));
 
         verify(assessoriaRepository, never()).findFirstByAtivoTrue();
+    }
+
+    @Test
+    @DisplayName("findVinculadoAoUsuario repassa o tenant atual ao repositório (tenant-scoped) e retorna o resultado")
+    void findVinculado_passaTenantCorreto() {
+        UUID tenantId = UUID.randomUUID();
+        UUID usuarioId = UUID.randomUUID();
+        TenantContext.setTenantId(tenantId);
+        Atleta atleta = Atleta.builder().id(UUID.randomUUID()).build();
+        when(atletaRepository.findByUsuario_IdAndAssessoria_Id(usuarioId, tenantId))
+                .thenReturn(Optional.of(atleta));
+
+        Optional<Atleta> result = atletaService.findVinculadoAoUsuario(usuarioId);
+
+        assertSame(atleta, result.orElseThrow());
+        verify(atletaRepository).findByUsuario_IdAndAssessoria_Id(usuarioId, tenantId);
+    }
+
+    @Test
+    @DisplayName("findVinculadoAoUsuario lança IllegalStateException quando TenantContext vazio")
+    void findVinculado_semTenant_lancaIllegalState() {
+        assertThrows(IllegalStateException.class,
+                () -> atletaService.findVinculadoAoUsuario(UUID.randomUUID()));
+
+        verify(atletaRepository, never()).findByUsuario_IdAndAssessoria_Id(any(), any());
+    }
+
+    @Test
+    @DisplayName("findVinculadoAoUsuario lança IllegalArgumentException quando usuarioId é null")
+    void findVinculado_usuarioNull_lancaIllegalArgument() {
+        TenantContext.setTenantId(UUID.randomUUID());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> atletaService.findVinculadoAoUsuario(null));
+
+        verifyNoInteractions(atletaRepository);
     }
 }

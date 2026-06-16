@@ -8,6 +8,7 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -27,6 +28,15 @@ class CoreSecurityConfigTest {
     void should_permit_public_paths() throws Exception {
         mockMvc.perform(get("/actuator/health"))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    void should_hide_health_details_when_unauthenticated() throws Exception {
+        // show-details: when-authorized → anônimo recebe só o status, sem detalhes de componentes
+        mockMvc.perform(get("/actuator/health"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").exists())
+            .andExpect(jsonPath("$.components").doesNotExist());
     }
 
     @Test

@@ -37,6 +37,16 @@ public class JwtTenantFilter extends OncePerRequestFilter {
     private final UsuarioSyncService usuarioSyncService;
     private final UsuarioRepository usuarioRepository;
 
+    /**
+     * Isenta {@code /api/admin/**} do filtro de tenant. Contrato: rotas admin são
+     * <b>tenant-less por design</b> (operações de plataforma / provisionamento que atuam
+     * sobre múltiplos tenants), protegidas por role administrativa, não por isolamento de tenant.
+     *
+     * <p>Consequência: nessas rotas o {@code TenantContext} NÃO é populado. Uma rota admin que
+     * precise de tenant deve resolvê-lo <b>explicitamente</b> (ex.: por parâmetro), nunca via
+     * {@code TenantContext.getRequiredTenantId()} — que lançaria {@code IllegalStateException}
+     * (mapeada para 403) de forma difícil de diagnosticar.
+     */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return request.getRequestURI().startsWith("/api/admin/");

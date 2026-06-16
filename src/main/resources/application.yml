@@ -103,7 +103,9 @@ management:
         include: health
   endpoint:
     health:
-      show-details: always
+      # when-authorized: anônimos (probes do Railway) recebem só {"status":"UP"};
+      # detalhes de componentes (db, pool) só para requisições autenticadas.
+      show-details: when-authorized
 # ========================================
 # API DOCUMENTATION CONFIGURATION
 # ========================================
