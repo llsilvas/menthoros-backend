@@ -14,6 +14,7 @@ class ModelRouterTest {
     private ChatClient claudeHaikuClient;
     private ChatClient claudeSonnetClient;
     private ChatClient gpt4oClient;
+    private ChatClient gpt4oPlanoClient;
     private ModelRouter router;
 
     @BeforeEach
@@ -22,7 +23,8 @@ class ModelRouterTest {
         claudeHaikuClient = mock(ChatClient.class);
         claudeSonnetClient = mock(ChatClient.class);
         gpt4oClient = mock(ChatClient.class);
-        router = new ModelRouter(gpt4oMiniClient, claudeHaikuClient, claudeSonnetClient, gpt4oClient);
+        gpt4oPlanoClient = mock(ChatClient.class);
+        router = new ModelRouter(gpt4oMiniClient, claudeHaikuClient, claudeSonnetClient, gpt4oClient, gpt4oPlanoClient);
     }
 
     @Test
@@ -43,6 +45,11 @@ class ModelRouterTest {
     @Test
     void expert_routes_to_gpt4o() {
         assertThat(router.route(TaskComplexity.EXPERT)).isSameAs(gpt4oClient);
+    }
+
+    @Test
+    void plano_routes_to_gpt4oPlano() {
+        assertThat(router.route(TaskComplexity.PLANO)).isSameAs(gpt4oPlanoClient);
     }
 
     @Test

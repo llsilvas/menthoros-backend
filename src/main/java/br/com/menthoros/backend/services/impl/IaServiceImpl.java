@@ -27,6 +27,8 @@ import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
 import br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import br.com.menthoros.backend.routing.ModelRouter;
+import br.com.menthoros.backend.routing.TaskComplexity;
 import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.model.ModelOptionsUtils;
 import org.springframework.ai.openai.OpenAiChatOptions;
@@ -49,7 +51,7 @@ import java.util.stream.Collectors;
 @Primary
 public class IaServiceImpl implements IaService {
 
-    private final ChatClient chatClient;
+    private final ModelRouter modelRouter;
     private final PlanoTreinoPromptBuilder promptBuilder;
     private final AtletaRepository atletaRepository;
     private final RegraGeracaoTreino regraGeracaoTreino;
@@ -58,13 +60,13 @@ public class IaServiceImpl implements IaService {
     private final PaceValidator paceValidator;
     private final ZonaTreinoService zonaTreinoService;
 
-    public IaServiceImpl(ChatClient chatClient, PlanoTreinoPromptBuilder promptBuilder,
+    public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
                          TreinoHistoricoProvider treinoHistoricoProvider,
                          PaceHistoricoFormatter paceHistoricoFormatter,
                          PaceValidator paceValidator,
                          ZonaTreinoService zonaTreinoService) {
-        this.chatClient = chatClient;
+        this.modelRouter = modelRouter;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
         this.regraGeracaoTreino = regraGeracaoTreino;
@@ -248,6 +250,9 @@ public class IaServiceImpl implements IaService {
     public PlanoSemanalLlmDto gerarPlanoSemanal(AtletaOutputDto atletaOutputDto, List<TreinoRealizadoOutputDto> treinoRealizadoOutputDtoList, PlanoSemanalOutputDto planoSemanalOutputDto) {
         String prompt = promptBuilder.buildRequest(atletaOutputDto, treinoRealizadoOutputDtoList, planoSemanalOutputDto);
 
+        ChatClient chatClient = modelRouter.route(TaskComplexity.PLANO);
+        log.info("Geração de plano roteada via TaskComplexity.PLANO (bean gpt4oPlanoClient)");
+
         try {
             PlanoSemanalLlmDto plano = chatClient.prompt()
                     .user(prompt)
@@ -283,6 +288,9 @@ public class IaServiceImpl implements IaService {
                 : null;
 
         String prompt = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos);
+
+        ChatClient chatClient = modelRouter.route(TaskComplexity.PLANO);
+        log.info("Geração de plano (avançado) roteada via TaskComplexity.PLANO (bean gpt4oPlanoClient)");
 
         try {
             long startTime = System.currentTimeMillis(); // Captura o tempo de início

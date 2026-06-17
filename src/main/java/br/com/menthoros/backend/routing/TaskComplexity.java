@@ -8,6 +8,7 @@ package br.com.menthoros.backend.routing;
  * - STANDARD → Claude Haiku   (~R$ 0,025)
  * - COMPLEX  → Claude Sonnet  (~R$ 0,10)
  * - EXPERT   → GPT-4o         (~R$ 0,08)
+ * - PLANO    → GPT-4o         (geração de plano semanal — fluxo mais crítico)
  */
 public enum TaskComplexity {
 
@@ -21,5 +22,8 @@ public enum TaskComplexity {
     COMPLEX,
 
     /** Análise profunda de lesões, raciocínio especialista de longa cadeia. */
-    EXPERT
+    EXPERT,
+
+    /** Geração de plano semanal — modelo com alta capacidade de raciocínio estruturado. */
+    PLANO
 }

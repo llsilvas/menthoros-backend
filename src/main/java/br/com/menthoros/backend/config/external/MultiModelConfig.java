@@ -112,4 +112,23 @@ public class MultiModelConfig {
                         .build())
                 .build();
     }
+
+    /**
+     * GPT-4o (plano semanal) — geração de plano, o fluxo mais caro e crítico do sistema.
+     * Bean dedicado para tornar o modelo explícito e rastreável por feature (antes usava o
+     * ChatClient @Primary genérico). Mantém gpt-4o até decisão de migrar para outro modelo.
+     * Preço: $2,50/MTok input | $10,00/MTok output.
+     * Custo estimado: ~R$ 0,17/operação (3000 tokens input + 6000 output).
+     */
+    @Bean
+    @Qualifier("gpt4oPlanoClient")
+    public ChatClient gpt4oPlanoClient(OpenAiChatModel openAiChatModel) {
+        return ChatClient.builder(openAiChatModel)
+                .defaultOptions(OpenAiChatOptions.builder()
+                        .model("gpt-4o")
+                        .temperature(0.7)
+                        .maxTokens(6000)
+                        .build())
+                .build();
+    }
 }
