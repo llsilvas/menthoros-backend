@@ -1,0 +1,4 @@
+Translate the following text from English to Brazilian Portuguese.
+Return ONLY the translated text, no explanations or extra content.
+Preserve technical running/training terms naturally (e.g. TSB, CTL, RPE, pace).
+Text: %s

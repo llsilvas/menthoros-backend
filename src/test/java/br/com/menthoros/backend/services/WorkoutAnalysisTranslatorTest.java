@@ -4,6 +4,7 @@ import br.com.menthoros.backend.dto.llm.AnaliseWorkoutRawDto;
 import br.com.menthoros.backend.enums.PrimaryAnalysisCause;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
+import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.core.io.DefaultResourceLoader;
 
 import java.util.List;
 
@@ -40,7 +42,7 @@ class WorkoutAnalysisTranslatorTest {
 
     @BeforeEach
     void setUp() {
-        translator = new WorkoutAnalysisTranslator(modelRouter);
+        translator = new WorkoutAnalysisTranslator(modelRouter, new PromptTemplateLoader(new DefaultResourceLoader()));
         when(modelRouter.route(TaskComplexity.STANDARD)).thenReturn(haikuClient);
         when(haikuClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);

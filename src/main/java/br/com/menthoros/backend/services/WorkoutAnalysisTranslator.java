@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services;
 import br.com.menthoros.backend.dto.llm.AnaliseWorkoutRawDto;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
+import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -17,14 +18,10 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class WorkoutAnalysisTranslator {
 
-    private final ModelRouter modelRouter;
+    private static final String TRANSLATE_PROMPT_TEMPLATE = "translate-field-prompt.txt";
 
-    private static final String TRANSLATE_PROMPT = """
-            Translate the following text from English to Brazilian Portuguese.
-            Return ONLY the translated text, no explanations or extra content.
-            Preserve technical running/training terms naturally (e.g. TSB, CTL, RPE, pace).
-            Text: %s
-            """;
+    private final ModelRouter modelRouter;
+    private final PromptTemplateLoader templateLoader;
 
     /**
      * Traduz os campos textuais livres do AnaliseWorkoutRawDto para português.
@@ -68,7 +65,7 @@ public class WorkoutAnalysisTranslator {
             return text;
         }
         return client.prompt()
-                .user(TRANSLATE_PROMPT.formatted(text))
+                .user(templateLoader.loadTemplate(TRANSLATE_PROMPT_TEMPLATE).formatted(text))
                 .call()
                 .content();
     }
