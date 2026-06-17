@@ -1,0 +1,207 @@
+package br.com.menthoros.backend.services.impl;
+
+import br.com.menthoros.backend.dto.output.CoachAtletaResumoDto;
+import br.com.menthoros.backend.dto.output.CoachCalendarioDto;
+import br.com.menthoros.backend.dto.output.CoachInsightsDto;
+import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.MetricasDiarias;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.AtletaStatus;
+import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.MetricasDiariasRepository;
+import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
+import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.CoachDashboardService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.temporal.IsoFields;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Implementação read-only dos dashboards do coach. Agrega no escopo do tenant
+ * (via {@link TenantContext}); não recebe resource-id (por isso não usa {@code @RequireTenant}).
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class CoachDashboardServiceImpl implements CoachDashboardService {
+
+    private static final int SEMANAS_INSIGHTS = 12;
+    private static final int TOP_ATLETAS = 5;
+
+    /** Tipos que contam como "treino-chave" da semana. */
+    private static final java.util.Set<TipoTreino> TIPOS_CHAVE =
+            java.util.Set.of(TipoTreino.INTERVALADO, TipoTreino.TIRO, TipoTreino.LONGO, TipoTreino.TEMPO_RUN);
+
+    private final AtletaRepository atletaRepository;
+    private final MetricasDiariasRepository metricasDiariasRepository;
+    private final PlanoMetadadosRepository planoMetadadosRepository;
+    private final TreinoRealizadoRepository treinoRealizadoRepository;
+    private final TreinoPlanejadoRepository treinoPlanejadoRepository;
+    private final Clock clock;
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<CoachAtletaResumoDto> getRoster() {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        LocalDate hoje = LocalDate.now(clock);
+        LocalDate inicioSemana = hoje.with(DayOfWeek.MONDAY);
+        LocalDate fimSemana = inicioSemana.plusDays(6);
+
+        return atletaRepository.findAllByTenantIdOrderByNome(tenantId).stream()
+                .map(atleta -> montarResumo(atleta, hoje, inicioSemana, fimSemana))
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CoachCalendarioDto getCalendarioSemanal(LocalDate from) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        LocalDate base = (from != null) ? from : LocalDate.now(clock);
+        LocalDate inicio = base.with(DayOfWeek.MONDAY);
+        LocalDate fim = inicio.plusDays(6);
+
+        List<CoachCalendarioDto.TreinoAgendado> treinos =
+                treinoPlanejadoRepository.findByTenantAndDataBetween(tenantId, inicio, fim).stream()
+                        .map(this::montarTreinoAgendado)
+                        .toList();
+
+        return new CoachCalendarioDto(inicio, fim, treinos);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public CoachInsightsDto getInsights(LocalDate from, LocalDate to) {
+        LocalDate fim = (to != null) ? to : LocalDate.now(clock);
+        LocalDate inicio = (from != null) ? from : fim.minusWeeks(SEMANAS_INSIGHTS);
+
+        List<CoachAtletaResumoDto> roster = getRoster();
+        int totalAtletas = roster.size();
+        int pausados = (int) roster.stream().filter(r -> "paused".equals(r.status())).count();
+        int ativos = (int) roster.stream().filter(r -> "active".equals(r.status())).count();
+        int emAtencao = (int) roster.stream().filter(r -> "warning".equals(r.status()) || "danger".equals(r.status())).count();
+        int treinosPlanejadosSemana = getCalendarioSemanal(null).treinos().size();
+
+        CoachInsightsDto.Kpis kpis = new CoachInsightsDto.Kpis(
+                totalAtletas, ativos, emAtencao, pausados, treinosPlanejadosSemana);
+
+        // Agrega volume/TSS realizados por semana (ISO) e volume total por atleta no período.
+        Map<String, double[]> porSemana = new LinkedHashMap<>(); // semana -> [volumeKm, tss]
+        List<CoachInsightsDto.TopAtleta> volumePorAtleta = new ArrayList<>();
+
+        for (CoachAtletaResumoDto r : roster) {
+            double volumeAtleta = 0.0;
+            List<TreinoRealizado> treinos =
+                    treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(r.atletaId(), inicio, fim);
+            for (TreinoRealizado t : treinos) {
+                double km = t.getDistanciaKm() != null ? t.getDistanciaKm().doubleValue() : 0.0;
+                int tss = t.getTssCalculado() != null ? t.getTssCalculado() : 0;
+                volumeAtleta += km;
+                String semana = semanaIso(t.getDataTreino());
+                double[] acc = porSemana.computeIfAbsent(semana, k -> new double[2]);
+                acc[0] += km;
+                acc[1] += tss;
+            }
+            if (volumeAtleta > 0) {
+                volumePorAtleta.add(new CoachInsightsDto.TopAtleta(r.atletaId(), r.nome(), volumeAtleta));
+            }
+        }
+
+        List<CoachInsightsDto.PontoCargaSemanal> tendencia = porSemana.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(e -> new CoachInsightsDto.PontoCargaSemanal(e.getKey(), e.getValue()[0], (int) e.getValue()[1]))
+                .toList();
+
+        List<CoachInsightsDto.TopAtleta> top = volumePorAtleta.stream()
+                .sorted(Comparator.comparingDouble(CoachInsightsDto.TopAtleta::volumeKm).reversed())
+                .limit(TOP_ATLETAS)
+                .toList();
+
+        return new CoachInsightsDto(kpis, tendencia, top);
+    }
+
+    // ===== Helpers =====
+
+    private CoachAtletaResumoDto montarResumo(Atleta atleta, LocalDate hoje, LocalDate inicioSemana, LocalDate fimSemana) {
+        UUID atletaId = atleta.getId();
+        MetricasDiarias metrica = metricasDiariasRepository.findLatestByAtletaId(atletaId).orElse(null);
+
+        String fase = planoMetadadosRepository.findByAtletaId(atletaId)
+                .map(m -> m.getFasePeriodizacao() != null ? m.getFasePeriodizacao().name() : null)
+                .orElse(null);
+
+        LocalDate lastActivity = treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(atletaId)
+                .map(TreinoRealizado::getDataTreino).orElse(null);
+
+        BigDecimal weeklyVolume = treinoRealizadoRepository
+                .findByAtletaIdAndDataTreinoBetween(atletaId, inicioSemana, fimSemana).stream()
+                .map(TreinoRealizado::getDistanciaKm)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        Double ctl = metrica != null ? metrica.getCtl() : null;
+        Double atl = metrica != null ? metrica.getAtl() : null;
+        Double tsb = metrica != null ? metrica.getTsb() : null;
+
+        return new CoachAtletaResumoDto(atletaId, nomeCompleto(atleta), ctl, atl, tsb, fase,
+                deriveStatus(atleta, tsb, lastActivity, hoje), lastActivity, weeklyVolume);
+    }
+
+    private CoachCalendarioDto.TreinoAgendado montarTreinoAgendado(TreinoPlanejado tp) {
+        Atleta atleta = tp.getAtleta();
+        TipoTreino tipo = tp.getTipoTreino();
+        return new CoachCalendarioDto.TreinoAgendado(
+                atleta != null ? atleta.getId() : null,
+                atleta != null ? nomeCompleto(atleta) : null,
+                tp.getDataTreino(),
+                tipo != null ? tipo.name() : null,
+                tipo != null && TIPOS_CHAVE.contains(tipo),
+                false,  // hasAlert — fonte: add-coach-attention-queue (não entregue)
+                false); // hasPendingSuggestion — fonte: add-coach-suggestion-inbox (não entregue)
+    }
+
+    /**
+     * Deriva o status de atenção do coach (provisório até `add-coach-attention-queue`):
+     * paused (inativo) > danger (TSB ≤ -20 ou inativo ≥ 14d) > warning (TSB ≤ -10, sem atividade,
+     * ou inativo ≥ 7d) > active.
+     */
+    private String deriveStatus(Atleta atleta, Double tsb, LocalDate lastActivity, LocalDate hoje) {
+        if (atleta.getAtivo() == AtletaStatus.INATIVO) {
+            return "paused";
+        }
+        Long diasInativo = lastActivity != null ? java.time.temporal.ChronoUnit.DAYS.between(lastActivity, hoje) : null;
+
+        boolean danger = (tsb != null && tsb <= -20.0) || (diasInativo != null && diasInativo >= 14);
+        if (danger) return "danger";
+
+        boolean warning = (tsb != null && tsb <= -10.0) || lastActivity == null || diasInativo >= 7;
+        if (warning) return "warning";
+
+        return "active";
+    }
+
+    private String nomeCompleto(Atleta atleta) {
+        String nome = atleta.getNome() != null ? atleta.getNome() : "";
+        return atleta.getSobrenome() != null ? (nome + " " + atleta.getSobrenome()).trim() : nome;
+    }
+
+    private String semanaIso(LocalDate data) {
+        return String.format("%d-W%02d", data.get(IsoFields.WEEK_BASED_YEAR), data.get(IsoFields.WEEK_OF_WEEK_BASED_YEAR));
+    }
+}
