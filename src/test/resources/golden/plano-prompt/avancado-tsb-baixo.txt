@@ -82,7 +82,7 @@ ATENCAO: Esta decisao e deterministica e baseada em dados reais do atleta. Ela S
 
 **Pace/Velocidade:**
 - Pace Limiar: 3,50 min/km
-- Velocidade Limiar: nu km/h
+- Velocidade Limiar: 15,65 km/h
 - Última atualização: Nunca testado
 
 **Zonas de Treino Calculadas:**

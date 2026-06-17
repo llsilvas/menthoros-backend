@@ -5,10 +5,19 @@ import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.FasePeriodizacao;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.services.helper.IntervaladoElegibilidadeService;
+import br.com.menthoros.backend.services.helper.PaceZoneCalculator;
+import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.ContextoTreino;
+import br.com.menthoros.backend.services.helper.ZonaTreinoService;
+import br.com.menthoros.backend.services.impl.MetricasAlertaService;
+import br.com.menthoros.backend.skills.eligibility.IntervaladoElegibilidadeSkill;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.DefaultResourceLoader;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -18,7 +27,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Fixtures determinísticas de atletas para o golden-master de {@code buildOptimizedPrompt}.
+ * Fixtures determinísticas de atletas + montagem do {@link PlanoTreinoPromptBuilder} para o
+ * golden-master de {@code buildOptimizedPrompt}.
  *
  * <p>Todas as datas são fixas e relativas a {@link #HOJE} para que o prompt seja reprodutível.
  * O teste congela {@code LocalDate.now()} em {@link #HOJE} no escopo do build, então os campos
@@ -60,6 +70,34 @@ final class PlanoPromptArquetipos {
                 semDados());
     }
 
+    /**
+     * Monta o builder com todos os colaboradores reais (puros) e o {@code provider} fornecido
+     * (único colaborador com acesso a banco — mockado no teste).
+     *
+     * <p>Centralizar a fiação aqui evita que a adição de um novo formatter ao construtor de
+     * produção passe despercebida em vários testes — a migração formatters→skills vai mexer
+     * exatamente neste construtor.</p>
+     */
+    static PlanoTreinoPromptBuilder builder(TreinoHistoricoProvider provider) {
+        MetricasAlertaService metricas = new MetricasAlertaService();
+        ZonaTreinoService zona = new ZonaTreinoService();
+        return new PlanoTreinoPromptBuilder(
+                new ClassPathResource("prompts/plano-treino-prompt.txt"),
+                new PromptTemplateLoader(new DefaultResourceLoader()),
+                metricas,
+                zona,
+                provider,
+                new MetricasPromptFormatter(),
+                new AlertasPromptFormatter(metricas),
+                new RecuperacaoPromptFormatter(),
+                new PeriodizacaoPromptFormatter(),
+                new VariabilidadePromptFormatter(),
+                new DisponibilidadePromptFormatter(),
+                new IntervaladoElegibilidadeService(new IntervaladoElegibilidadeSkill()),
+                new PaceHistoricoFormatter(),
+                new PaceZoneCalculator(zona));
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Arquétipos
     // ─────────────────────────────────────────────────────────────────────────
@@ -70,15 +108,14 @@ final class PlanoPromptArquetipos {
                 .nivelExperiencia(NivelExperiencia.INICIANTE)
                 .objetivo("Completar a primeira 10k")
                 .fcMaxima(190).fcRepouso(65).fcLimiar(165)
-                .paceLimiar(new BigDecimal("6.30"))
+                .paceLimiar(new BigDecimal("6.30")).velocidadeLimiar(new BigDecimal("9.50"))
                 .build();
         PlanoMetaDados meta = metaBase(atleta)
                 .ctlAtual(20.0).atlAtual(18.0).tsbAtual(2.0).tsbProntidaoAtual(2.0)
                 .rampRateAtual(2.5).fasePeriodizacao(FasePeriodizacao.BASE)
                 .diasConsecutivosTreino(1).build();
-        List<TreinoRealizado> treinos = historicoLeve();
         return new Arquetipo("iniciante-sem-lesao", atleta, meta, null,
-                contexto(treinos), INICIO_SEMANA, diasUteis());
+                contexto(historicoLeve()), INICIO_SEMANA, diasUteis());
     }
 
     private static Arquetipo avancadoTsbBaixo() {
@@ -87,7 +124,7 @@ final class PlanoPromptArquetipos {
                 .nivelExperiencia(NivelExperiencia.AVANCADO)
                 .objetivo("Sub-3h na maratona")
                 .fcMaxima(186).fcRepouso(48).fcLimiar(172)
-                .paceLimiar(new BigDecimal("3.50"))
+                .paceLimiar(new BigDecimal("3.50")).velocidadeLimiar(new BigDecimal("15.65"))
                 .build();
         // TSB bem negativo → degrada elegibilidade de intervalado
         PlanoMetaDados meta = metaBase(atleta)
@@ -104,7 +141,7 @@ final class PlanoPromptArquetipos {
                 .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
                 .objetivo("Voltar a correr sem dor")
                 .fcMaxima(188).fcRepouso(58).fcLimiar(168)
-                .paceLimiar(new BigDecimal("5.10"))
+                .paceLimiar(new BigDecimal("5.10")).velocidadeLimiar(new BigDecimal("11.76"))
                 .temLesao(true)
                 .descricaoLesao("Tendinite no tendão de Aquiles direito")
                 .build();
@@ -122,7 +159,7 @@ final class PlanoPromptArquetipos {
                 .nivelExperiencia(NivelExperiencia.AVANCADO)
                 .objetivo("PR nos 21k")
                 .fcMaxima(185).fcRepouso(50).fcLimiar(171)
-                .paceLimiar(new BigDecimal("4.05"))
+                .paceLimiar(new BigDecimal("4.05")).velocidadeLimiar(new BigDecimal("14.81"))
                 .build();
         PlanoMetaDados meta = metaBase(atleta)
                 .ctlAtual(70.0).atlAtual(55.0).tsbAtual(15.0).tsbProntidaoAtual(15.0)
@@ -132,6 +169,7 @@ final class PlanoPromptArquetipos {
         Prova prova = new Prova();
         prova.setNomeProva("Meia Maratona da Cidade");
         prova.setDataProva(LocalDate.of(2026, 1, 25));
+        prova.setDistancia(DistanciaProva.KM_21);
         prova.setDistanciaKm(new BigDecimal("21.097"));
         prova.setPaceObjetivo(new BigDecimal("4.10"));
         prova.setTempoObjetivo(LocalTime.of(1, 28, 0));
@@ -142,7 +180,8 @@ final class PlanoPromptArquetipos {
     }
 
     private static Arquetipo semDados() {
-        // Exercita os fallbacks: métricas ausentes, sem histórico, sem prova.
+        // Exercita os fallbacks: métricas ausentes, sem histórico, sem prova, sem dados fisiológicos
+        // (idade/zonas/velocidade caem nos caminhos de "N/A"/valor padrão). Por isso NÃO usa atletaBase().
         Atleta atleta = Atleta.builder()
                 .nome("Eva SemDados")
                 .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
@@ -164,6 +203,8 @@ final class PlanoPromptArquetipos {
     // ─────────────────────────────────────────────────────────────────────────
 
     private static Atleta.AtletaBuilder atletaBase() {
+        // dataUltimoTestePace deixado nulo de propósito: mensagem de pace estável,
+        // sem depender de LocalDate.now() no caminho do PaceHistoricoFormatter.
         return Atleta.builder()
                 .dataNascimento(LocalDate.of(1990, 5, 20))
                 .sexo("M")
@@ -172,8 +213,6 @@ final class PlanoPromptArquetipos {
                 .diasDisponiveis(diasUteis())
                 .diaPreferidoLongo(DiaSemana.SABADO)
                 .temLesao(false);
-        // dataUltimoTestePace deixado nulo de propósito: mensagem de pace estável,
-        // sem depender de LocalDate.now() no caminho do PaceHistoricoFormatter.
     }
 
     private static PlanoMetaDados.PlanoMetaDadosBuilder metaBase(Atleta atleta) {
@@ -184,40 +223,45 @@ final class PlanoPromptArquetipos {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Históricos de treino (datas fixas, anteriores a HOJE)
+    // Históricos de treino (datas fixas, anteriores a HOJE; cada arquétipo autocontido)
     // ─────────────────────────────────────────────────────────────────────────
 
     private static List<TreinoRealizado> historicoLeve() {
         List<TreinoRealizado> t = new ArrayList<>();
-        t.add(treino(HOJE.minusDays(2), TipoTreino.CONTINUO, "6.0", 40, 45, 4, 360));
-        t.add(treino(HOJE.minusDays(5), TipoTreino.REGENERATIVO, "4.0", 28, 25, 3, 420));
-        t.add(treino(HOJE.minusDays(9), TipoTreino.CONTINUO, "7.0", 47, 52, 5, 355));
+        t.add(treino(HOJE.minusDays(2), TipoTreino.CONTINUO, 6.0, 40, 45, 4, 360));
+        t.add(treino(HOJE.minusDays(5), TipoTreino.REGENERATIVO, 4.0, 28, 25, 3, 420));
+        t.add(treino(HOJE.minusDays(9), TipoTreino.CONTINUO, 7.0, 47, 52, 5, 355));
         return t;
     }
 
     private static List<TreinoRealizado> historicoModerado() {
-        List<TreinoRealizado> t = new ArrayList<>(historicoLeve());
-        t.add(treino(HOJE.minusDays(12), TipoTreino.LONGO, "16.0", 95, 120, 6, 350));
-        t.add(treino(HOJE.minusDays(16), TipoTreino.INTERVALADO, "10.0", 55, 85, 7, 300));
+        // Mesmos 3 treinos de historicoLeve() + 2 sessões adicionais — listados explicitamente
+        // para que cada arquétipo seja autocontido (sem acoplar o golden de um ao outro).
+        List<TreinoRealizado> t = new ArrayList<>();
+        t.add(treino(HOJE.minusDays(2), TipoTreino.CONTINUO, 6.0, 40, 45, 4, 360));
+        t.add(treino(HOJE.minusDays(5), TipoTreino.REGENERATIVO, 4.0, 28, 25, 3, 420));
+        t.add(treino(HOJE.minusDays(9), TipoTreino.CONTINUO, 7.0, 47, 52, 5, 355));
+        t.add(treino(HOJE.minusDays(12), TipoTreino.LONGO, 16.0, 95, 120, 6, 350));
+        t.add(treino(HOJE.minusDays(16), TipoTreino.INTERVALADO, 10.0, 55, 85, 7, 300));
         return t;
     }
 
     private static List<TreinoRealizado> historicoPesado() {
         List<TreinoRealizado> t = new ArrayList<>();
-        t.add(treino(HOJE.minusDays(1), TipoTreino.INTERVALADO, "12.0", 60, 95, 8, 290));
-        t.add(treino(HOJE.minusDays(2), TipoTreino.CONTINUO, "10.0", 55, 70, 6, 330));
-        t.add(treino(HOJE.minusDays(3), TipoTreino.LONGO, "24.0", 130, 180, 7, 345));
-        t.add(treino(HOJE.minusDays(4), TipoTreino.TIRO, "8.0", 45, 75, 8, 280));
-        t.add(treino(HOJE.minusDays(5), TipoTreino.CONTINUO, "12.0", 65, 80, 6, 335));
+        t.add(treino(HOJE.minusDays(1), TipoTreino.INTERVALADO, 12.0, 60, 95, 8, 290));
+        t.add(treino(HOJE.minusDays(2), TipoTreino.CONTINUO, 10.0, 55, 70, 6, 330));
+        t.add(treino(HOJE.minusDays(3), TipoTreino.LONGO, 24.0, 130, 180, 7, 345));
+        t.add(treino(HOJE.minusDays(4), TipoTreino.TIRO, 8.0, 45, 75, 8, 280));
+        t.add(treino(HOJE.minusDays(5), TipoTreino.CONTINUO, 12.0, 65, 80, 6, 335));
         return t;
     }
 
-    private static TreinoRealizado treino(LocalDate data, TipoTreino tipo, String km,
+    private static TreinoRealizado treino(LocalDate data, TipoTreino tipo, double km,
                                           long durMin, int tss, int rpe, long paceSegPorKm) {
         TreinoRealizado tr = new TreinoRealizado();
         tr.setDataTreino(data);
         tr.setTipoTreino(tipo);
-        tr.setDistanciaKm(new BigDecimal(km));
+        tr.setDistanciaKm(BigDecimal.valueOf(km));
         tr.setDuracaoMin(Duration.ofMinutes(durMin));
         tr.setTssCalculado(tss);
         tr.setPercepcaoEsforco(rpe);

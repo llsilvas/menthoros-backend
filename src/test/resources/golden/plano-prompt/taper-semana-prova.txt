@@ -11,7 +11,7 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 - Dia preferido do longo: SABADO
 - Provas planejadas: **PROVA ALVO:** Meia Maratona da Cidade
 - Data: 25/01/2026 (10 dias / 1 semanas)
-- Distância: null (21,1 km)
+- Distância: KM_21 (21,1 km)
 - Objetivo: 01:28
 - Pace alvo: 4,10 min/km
 - TSB ideal na prova: 20,0
@@ -66,7 +66,7 @@ Nenhuma prova preparatória cadastrada.
 - Evento principal da semana: Meia Maratona da Cidade.
 - Tipo: PROVA_ALVO.
 - Data: 25/01/2026 (DOMINGO).
-- Distancia: null (21,1 km).
+- Distancia: KM_21 (21,1 km).
 - Papel na periodizacao: competicao principal da semana.
 - Dias entre o inicio da semana e a prova: 6.
 - Esta prova SUBSTITUI o treino-chave e o longo tradicional da semana, se houver conflito.
@@ -102,7 +102,7 @@ ATENCAO: Esta decisao e deterministica e baseada em dados reais do atleta. Ela S
 
 **Pace/Velocidade:**
 - Pace Limiar: 4,05 min/km
-- Velocidade Limiar: nu km/h
+- Velocidade Limiar: 14,81 km/h
 - Última atualização: Nunca testado
 
 **Zonas de Treino Calculadas:**
