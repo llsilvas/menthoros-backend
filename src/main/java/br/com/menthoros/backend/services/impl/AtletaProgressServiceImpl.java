@@ -1,0 +1,228 @@
+package br.com.menthoros.backend.services.impl;
+
+import br.com.menthoros.backend.dto.output.AtletaHomeDto;
+import br.com.menthoros.backend.dto.output.PmcPontoDto;
+import br.com.menthoros.backend.dto.output.ReadinessDto;
+import br.com.menthoros.backend.dto.output.RecordeDto;
+import br.com.menthoros.backend.dto.output.ZonaDistribuicaoDto;
+import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.EtapaRealizada;
+import br.com.menthoros.backend.entity.PlanoMetaDados;
+import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.entity.Usuario;
+import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.MetricasDiariasRepository;
+import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
+import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.repository.UsuarioRepository;
+import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
+import br.com.menthoros.backend.services.AtletaProgressService;
+import br.com.menthoros.backend.services.helper.ZonaTreinoService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class AtletaProgressServiceImpl implements AtletaProgressService {
+
+    private static final int DIAS_PADRAO = 90;
+
+    /** Bandas de distância (km) para detecção de PR por distância de referência. */
+    private static final List<Alvo> ALVOS_RECORDE = List.of(
+            new Alvo("5k", 4.85, 5.15),
+            new Alvo("10k", 9.70, 10.30),
+            new Alvo("21k", 20.50, 21.70)
+    );
+
+    private record Alvo(String label, double min, double max) {}
+
+    private final AtletaRepository atletaRepository;
+    private final UsuarioRepository usuarioRepository;
+    private final MetricasDiariasRepository metricasDiariasRepository;
+    private final TreinoRealizadoRepository treinoRealizadoRepository;
+    private final TreinoPlanejadoRepository treinoPlanejadoRepository;
+    private final PlanoMetadadosRepository planoMetadadosRepository;
+    private final ZonaTreinoService zonaTreinoService;
+    private final AuthenticatedPrincipalResolver principalResolver;
+
+    /**
+     * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<PmcPontoDto> getHistoricoPmc(UUID atletaId, LocalDate from, LocalDate to) {
+        validarAtletaNoTenant(atletaId);
+        Intervalo intervalo = resolverIntervalo(from, to);
+
+        return metricasDiariasRepository
+                .findByAtletaIdAndDataBetweenOrderByDataAsc(atletaId, intervalo.from(), intervalo.to())
+                .stream()
+                .map(m -> new PmcPontoDto(m.getData(), m.getCtl(), m.getAtl(), m.getTsb(), m.getTss()))
+                .toList();
+    }
+
+    /**
+     * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
+     * Tempo por zona derivado das etapas realizadas (FC média → zona). Etapas sem FC são ignoradas.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public ZonaDistribuicaoDto getDistribuicaoZonas(UUID atletaId, LocalDate from, LocalDate to) {
+        Atleta atleta = validarAtletaNoTenant(atletaId);
+        Intervalo intervalo = resolverIntervalo(from, to);
+
+        long[] z = new long[6]; // índices 1..5
+        List<TreinoRealizado> treinos =
+                treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(atletaId, intervalo.from(), intervalo.to());
+
+        for (TreinoRealizado treino : treinos) {
+            if (treino.getEtapasRealizadas() == null) continue;
+            for (EtapaRealizada etapa : treino.getEtapasRealizadas()) {
+                if (etapa.getFcMedia() == null || etapa.getDuracao() == null) continue;
+                int zona = zonaTreinoService.identificarZonaFC(etapa.getFcMedia(), atleta);
+                if (zona >= 1 && zona <= 5) {
+                    z[zona] += etapa.getDuracao().getSeconds();
+                }
+            }
+        }
+
+        long total = z[1] + z[2] + z[3] + z[4] + z[5];
+        return new ZonaDistribuicaoDto(z[1], z[2], z[3], z[4], z[5], total);
+    }
+
+    /**
+     * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<RecordeDto> getRecordes(UUID atletaId) {
+        validarAtletaNoTenant(atletaId);
+        List<TreinoRealizado> treinos = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId);
+
+        List<RecordeDto> recordes = new ArrayList<>();
+        for (Alvo alvo : ALVOS_RECORDE) {
+            treinos.stream()
+                    .filter(t -> t.getDistanciaKm() != null && t.getDuracaoMin() != null)
+                    .filter(t -> {
+                        double km = t.getDistanciaKm().doubleValue();
+                        return km >= alvo.min() && km <= alvo.max();
+                    })
+                    .min((a, b) -> a.getDuracaoMin().compareTo(b.getDuracaoMin()))
+                    .ifPresent(melhor -> recordes.add(new RecordeDto(
+                            alvo.label(), melhor.getDuracaoMin(), melhor.getDataTreino(), melhor.getId())));
+        }
+        return recordes;
+    }
+
+    /**
+     * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
+     * Heurística objetiva provisória (sem check-in subjetivo): score a partir do TSB de prontidão,
+     * ajustado pelo RPE do último treino. Degrada para score nulo quando não há sinais.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public ReadinessDto getReadinessAtual(UUID atletaId) {
+        validarAtletaNoTenant(atletaId);
+
+        PlanoMetaDados meta = planoMetadadosRepository.findByAtletaId(atletaId).orElse(null);
+        Integer ultimoRpe = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)
+                .stream().findFirst().map(TreinoRealizado::getPercepcaoEsforco).orElse(null);
+
+        Double tsbProntidao = meta != null ? meta.getTsbProntidaoAtual() : null;
+        Double ctl = meta != null ? meta.getCtlAtual() : null;
+        Double atl = meta != null ? meta.getAtlAtual() : null;
+        ReadinessDto.Fatores fatores = new ReadinessDto.Fatores(tsbProntidao, ctl, atl, ultimoRpe);
+
+        if (tsbProntidao == null) {
+            return new ReadinessDto(null, "INDISPONIVEL", fatores,
+                    "Dados insuficientes: sem métricas de prontidão e sem check-in subjetivo.");
+        }
+
+        int score = (int) Math.round(60 + 1.5 * tsbProntidao);
+        if (ultimoRpe != null && ultimoRpe >= 8) {
+            score -= 5; // último treino muito intenso reduz a prontidão
+        }
+        score = Math.max(0, Math.min(100, score));
+
+        return new ReadinessDto(score, classificar(score), fatores,
+                "Provisório: sem check-in subjetivo; baseado em TSB de prontidão e carga.");
+    }
+
+    /**
+     * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public AtletaHomeDto getHome(UUID atletaId) {
+        validarAtletaNoTenant(atletaId);
+
+        LocalDate hoje = LocalDate.now();
+        AtletaHomeDto.ProximoTreino proximo = treinoPlanejadoRepository
+                .findByAtletaIdAndDataBetween(atletaId, hoje, hoje.plusDays(14))
+                .stream().findFirst()
+                .map(tp -> new AtletaHomeDto.ProximoTreino(
+                        tp.getDataTreino(),
+                        tp.getTipoTreino() != null ? tp.getTipoTreino().name() : null,
+                        tp.getDescricao()))
+                .orElse(null);
+
+        AtletaHomeDto.MetricasChave metricas = metricasDiariasRepository.findLatestByAtletaId(atletaId)
+                .map(m -> new AtletaHomeDto.MetricasChave(m.getCtl(), m.getAtl(), m.getTsb(), m.getTss(), m.getVolumeKm()))
+                .orElse(new AtletaHomeDto.MetricasChave(null, null, null, null, null));
+
+        return new AtletaHomeDto(proximo, metricas);
+    }
+
+    /**
+     * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public UUID resolverAtletaIdAtual() {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        String sub = principalResolver.getCurrentSubject();
+        Usuario usuario = usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Usuário autenticado não encontrado no tenant"));
+        Atleta atleta = atletaRepository.findByUsuario_IdAndAssessoria_Id(usuario.getId(), tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Atleta vinculado ao usuário não encontrado"));
+        return atleta.getId();
+    }
+
+    // ===== Helpers =====
+
+    private Atleta validarAtletaNoTenant(UUID atletaId) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        return atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado: " + atletaId));
+    }
+
+    private Intervalo resolverIntervalo(LocalDate from, LocalDate to) {
+        LocalDate fim = (to != null) ? to : LocalDate.now();
+        LocalDate inicio = (from != null) ? from : fim.minusDays(DIAS_PADRAO);
+        if (inicio.isAfter(fim)) {
+            throw new DomainRuleViolationException("Intervalo inválido: 'from' não pode ser depois de 'to'");
+        }
+        return new Intervalo(inicio, fim);
+    }
+
+    private record Intervalo(LocalDate from, LocalDate to) {}
+
+    private String classificar(int score) {
+        if (score >= 80) return "OTIMO";
+        if (score >= 60) return "BOM";
+        if (score >= 40) return "MODERADO";
+        return "BAIXO";
+    }
+}
