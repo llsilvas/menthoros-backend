@@ -35,6 +35,18 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
                                                         @Param("dataInicio") LocalDate dataInicio,
                                                         @Param("dataFim") LocalDate dataFim);
 
+    /** Treinos planejados de todos os atletas de um tenant num intervalo (calendário do coach). */
+    @Query("""
+       select tp from TreinoPlanejado tp
+       join fetch tp.atleta a
+       where a.assessoria.id = :tenantId
+         and tp.dataTreino between :dataInicio and :dataFim
+       order by tp.dataTreino ASC
+       """)
+    List<TreinoPlanejado> findByTenantAndDataBetween(@Param("tenantId") UUID tenantId,
+                                                      @Param("dataInicio") LocalDate dataInicio,
+                                                      @Param("dataFim") LocalDate dataFim);
+
     @Query("""
        SELECT COUNT(tp) FROM TreinoPlanejado tp
        WHERE tp.atleta.id = :atletaId
