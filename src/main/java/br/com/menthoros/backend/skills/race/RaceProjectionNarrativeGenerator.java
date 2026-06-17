@@ -2,6 +2,8 @@ package br.com.menthoros.backend.skills.race;
 
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
+import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +22,8 @@ import java.util.Map;
  *
  * Usa o system prompt definido em SKILL.md (cacheado em @PostConstruct).
  * Fallback automático para Claude Sonnet 4.6 em caso de erro/timeout do Haiku.
+ * O parse da resposta usa output estruturado ({@code .entity()}); os limites de tamanho
+ * (premissas/narrativa/coach_note) são instruídos no próprio prompt, não no código.
  *
  * Idempotent: NO — chamada externa ao LLM; resultados podem variar.
  * Side Effects: External API call (Anthropic)
@@ -30,21 +34,24 @@ import java.util.Map;
 public class RaceProjectionNarrativeGenerator {
 
     private static final String SKILL_PATH = "classpath:skills/race/projection/SKILL.md";
-    private static final int MAX_KEY_ASSUMPTIONS = 5;
-    private static final int MAX_NARRATIVE_CHARS = 500;
-    private static final int MAX_COACH_NOTE_CHARS = 400;
+    private static final String USER_PROMPT_TEMPLATE = "race-projection-user-prompt.txt";
 
     private final ModelRouter modelRouter;
     private final ResourceLoader resourceLoader;
+    private final PromptTemplateLoader templateLoader;
+    // ObjectMapper mantido apenas para serializar o contexto no prompt (buildUserPrompt);
+    // o parse da resposta do LLM agora é feito por .entity().
     private final ObjectMapper objectMapper;
 
     private String cachedSkillContent;
 
     public RaceProjectionNarrativeGenerator(ModelRouter modelRouter,
                                              ResourceLoader resourceLoader,
+                                             PromptTemplateLoader templateLoader,
                                              ObjectMapper objectMapper) {
         this.modelRouter = modelRouter;
         this.resourceLoader = resourceLoader;
+        this.templateLoader = templateLoader;
         this.objectMapper = objectMapper;
     }
 
@@ -56,7 +63,7 @@ public class RaceProjectionNarrativeGenerator {
     /**
      * Gera os três campos textuais do output: progressionNarrative, keyAssumptions, coachNote.
      *
-     * @param input  contexto completo da projeção serializado como mapa
+     * @param context  contexto completo da projeção serializado como mapa
      * @return NarrativeOutput com os três campos gerados pelo LLM
      */
     public NarrativeOutput generate(Map<String, Object> context) {
@@ -67,15 +74,16 @@ public class RaceProjectionNarrativeGenerator {
         String userPrompt = buildUserPrompt(context);
 
         try {
-            String rawJson = callHaikuWithFallback(userPrompt);
-            return parseAndValidate(rawJson);
+            NarrativeOutputDto dto = callWithFallback(userPrompt);
+            List<String> assumptions = dto.keyAssumptions() != null ? dto.keyAssumptions() : List.of();
+            return new NarrativeOutput(dto.progressionNarrative(), assumptions, dto.coachNote());
         } catch (Exception e) {
             log.error("Falha na geração de narrativa LLM: {}", e.getMessage(), e);
             return fallbackNarrative();
         }
     }
 
-    private String callHaikuWithFallback(String userPrompt) {
+    private NarrativeOutputDto callWithFallback(String userPrompt) {
         ChatClient haiku = modelRouter.route(TaskComplexity.STANDARD);
         try {
             return haiku.prompt()
@@ -86,7 +94,7 @@ public class RaceProjectionNarrativeGenerator {
                     .system(cachedSkillContent)
                     .user(userPrompt)
                     .call()
-                    .content();
+                    .entity(NarrativeOutputDto.class);
         } catch (Exception haikuEx) {
             log.warn("Haiku falhou, usando Sonnet como fallback: {}", haikuEx.getMessage());
             ChatClient sonnet = modelRouter.route(TaskComplexity.COMPLEX);
@@ -98,29 +106,13 @@ public class RaceProjectionNarrativeGenerator {
                     .system(cachedSkillContent)
                     .user(userPrompt)
                     .call()
-                    .content();
+                    .entity(NarrativeOutputDto.class);
         }
-    }
-
-    @SuppressWarnings("unchecked")
-    private NarrativeOutput parseAndValidate(String rawJson) throws IOException {
-        String cleaned = stripMarkdownCodeBlock(rawJson);
-        Map<String, Object> parsed = objectMapper.readValue(cleaned, Map.class);
-
-        String narrative = truncate((String) parsed.get("progression_narrative"), MAX_NARRATIVE_CHARS);
-        String coachNote = truncate((String) parsed.get("coach_note"), MAX_COACH_NOTE_CHARS);
-        List<String> rawAssumptions = (List<String>) parsed.getOrDefault("key_assumptions", List.of());
-        List<String> assumptions = rawAssumptions.stream()
-                .limit(MAX_KEY_ASSUMPTIONS)
-                .toList();
-
-        return new NarrativeOutput(narrative, assumptions, coachNote);
     }
 
     private String buildUserPrompt(Map<String, Object> context) {
         try {
-            return "Generate the race projection narrative for this context. Respond with valid JSON only:\n"
-                    + objectMapper.writeValueAsString(context);
+            return templateLoader.loadAndFormat(USER_PROMPT_TEMPLATE, objectMapper.writeValueAsString(context));
         } catch (IOException e) {
             throw new IllegalStateException("Failed to serialize LLM context", e);
         }
@@ -135,24 +127,6 @@ public class RaceProjectionNarrativeGenerator {
         }
     }
 
-    private String stripMarkdownCodeBlock(String raw) {
-        if (raw == null) return "{}";
-        String trimmed = raw.strip();
-        if (trimmed.startsWith("```")) {
-            int first = trimmed.indexOf('\n');
-            int last = trimmed.lastIndexOf("```");
-            if (first >= 0 && last > first) {
-                return trimmed.substring(first + 1, last).strip();
-            }
-        }
-        return trimmed;
-    }
-
-    private String truncate(String value, int maxChars) {
-        if (value == null) return "";
-        return value.length() > maxChars ? value.substring(0, maxChars) : value;
-    }
-
     private NarrativeOutput fallbackNarrative() {
         return new NarrativeOutput(
                 "Projeção calculada com base no histórico de treinos disponível.",
@@ -160,6 +134,21 @@ public class RaceProjectionNarrativeGenerator {
                 "Consulte seu coach para orientações personalizadas."
         );
     }
+
+    /**
+     * Saída bruta do LLM (JSON em snake_case). Package-private para permitir que o teste
+     * construa instâncias ao stubar {@code .entity(NarrativeOutputDto.class)}.
+     */
+    record NarrativeOutputDto(
+            @JsonProperty("progression_narrative")
+            String progressionNarrative,
+
+            @JsonProperty("key_assumptions")
+            List<String> keyAssumptions,
+
+            @JsonProperty("coach_note")
+            String coachNote
+    ) {}
 
     /**
      * Saída estruturada do LLM para os três campos textuais do RaceProjectionOutput.
