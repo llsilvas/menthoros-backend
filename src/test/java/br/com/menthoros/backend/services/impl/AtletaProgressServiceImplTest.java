@@ -31,15 +31,15 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,9 +52,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("AtletaProgressServiceImpl")
 class AtletaProgressServiceImplTest {
+
+    private static final LocalDate HOJE = LocalDate.of(2026, 6, 17);
 
     @Mock private AtletaRepository atletaRepository;
     @Mock private UsuarioRepository usuarioRepository;
@@ -65,7 +66,7 @@ class AtletaProgressServiceImplTest {
     @Mock private ZonaTreinoService zonaTreinoService;
     @Mock private AuthenticatedPrincipalResolver principalResolver;
 
-    @InjectMocks private AtletaProgressServiceImpl service;
+    private AtletaProgressServiceImpl service;
 
     private UUID tenantId;
     private UUID atletaId;
@@ -77,7 +78,10 @@ class AtletaProgressServiceImplTest {
         atletaId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
         atleta = Atleta.builder().id(atletaId).nome("Teste").build();
-        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        Clock clock = Clock.fixed(Instant.parse("2026-06-17T12:00:00Z"), ZoneOffset.UTC);
+        service = new AtletaProgressServiceImpl(
+                atletaRepository, usuarioRepository, metricasDiariasRepository, treinoRealizadoRepository,
+                treinoPlanejadoRepository, planoMetadadosRepository, zonaTreinoService, principalResolver, clock);
     }
 
     @AfterEach
@@ -85,9 +89,19 @@ class AtletaProgressServiceImplTest {
         TenantContext.clear();
     }
 
+    /** Stub do gate de tenant — chamado pelos métodos que validam o atleta. */
+    private void atletaExisteNoTenant() {
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+    }
+
     @Nested
     @DisplayName("getHistoricoPmc")
     class GetHistoricoPmc {
+
+        @BeforeEach
+        void stubAtleta() {
+            atletaExisteNoTenant();
+        }
 
         @Test
         @DisplayName("mapeia a série PMC do intervalo")
@@ -114,8 +128,8 @@ class AtletaProgressServiceImplTest {
             ArgumentCaptor<LocalDate> fromCap = ArgumentCaptor.forClass(LocalDate.class);
             ArgumentCaptor<LocalDate> toCap = ArgumentCaptor.forClass(LocalDate.class);
             verify(metricasDiariasRepository).findByAtletaIdAndDataBetweenOrderByDataAsc(eq(atletaId), fromCap.capture(), toCap.capture());
-            assertThat(toCap.getValue()).isEqualTo(LocalDate.now());
-            assertThat(fromCap.getValue()).isEqualTo(LocalDate.now().minusDays(90));
+            assertThat(toCap.getValue()).isEqualTo(HOJE);
+            assertThat(fromCap.getValue()).isEqualTo(HOJE.minusDays(90));
         }
 
         @Test
@@ -146,6 +160,11 @@ class AtletaProgressServiceImplTest {
     @DisplayName("getDistribuicaoZonas")
     class GetDistribuicaoZonas {
 
+        @BeforeEach
+        void stubAtleta() {
+            atletaExisteNoTenant();
+        }
+
         @Test
         @DisplayName("soma das zonas = duração total")
         void somaIgualTotal() {
@@ -160,8 +179,8 @@ class AtletaProgressServiceImplTest {
 
             assertThat(z.z2()).isEqualTo(600);
             assertThat(z.z4()).isEqualTo(300);
-            assertThat(z.duracaoTotalSegundos()).isEqualTo(900);
             assertThat(z.z1() + z.z2() + z.z3() + z.z4() + z.z5()).isEqualTo(z.duracaoTotalSegundos());
+            assertThat(z.duracaoTotalSegundos()).isEqualTo(900);
         }
 
         @Test
@@ -171,7 +190,6 @@ class AtletaProgressServiceImplTest {
                     .thenReturn(List.of());
             ZonaDistribuicaoDto z = service.getDistribuicaoZonas(atletaId, null, null);
             assertThat(z.duracaoTotalSegundos()).isZero();
-            assertThat(z.z1()).isZero();
         }
 
         @Test
@@ -188,25 +206,39 @@ class AtletaProgressServiceImplTest {
             assertThat(z.z3()).isEqualTo(300);
             assertThat(z.duracaoTotalSegundos()).isEqualTo(300);
         }
+
+        @Test
+        @DisplayName("atleta de outro tenant → not found")
+        void crossTenantNotFound() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> service.getDistribuicaoZonas(atletaId, null, null))
+                    .isInstanceOf(DomainNotFoundException.class);
+        }
     }
 
     @Nested
     @DisplayName("getRecordes")
     class GetRecordes {
 
+        @BeforeEach
+        void stubAtleta() {
+            atletaExisteNoTenant();
+        }
+
         @Test
         @DisplayName("retorna o melhor tempo por distância (banda 10k)")
         void melhorTempoPorDistancia() {
             TreinoRealizado lento = treinoDist("10.0", Duration.ofMinutes(50), LocalDate.of(2026, 5, 1));
             TreinoRealizado rapido = treinoDist("10.1", Duration.ofMinutes(45), LocalDate.of(2026, 5, 8));
+            TreinoRealizado foraDaBanda = treinoDist("15.0", Duration.ofMinutes(40), LocalDate.of(2026, 5, 9));
             when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId))
-                    .thenReturn(List.of(lento, rapido));
+                    .thenReturn(List.of(lento, rapido, foraDaBanda));
 
             List<RecordeDto> recordes = service.getRecordes(atletaId);
 
-            assertThat(recordes).extracting(RecordeDto::distancia).contains("10k");
-            RecordeDto rec10k = recordes.stream().filter(r -> r.distancia().equals("10k")).findFirst().orElseThrow();
-            assertThat(rec10k.tempo()).isEqualTo(Duration.ofMinutes(45));
+            assertThat(recordes).extracting(RecordeDto::distancia).containsExactly("10k");
+            RecordeDto rec10k = recordes.get(0);
+            assertThat(rec10k.tempoSegundos()).isEqualTo(45 * 60);
             assertThat(rec10k.treinoRealizadoId()).isEqualTo(rapido.getId());
         }
 
@@ -222,15 +254,16 @@ class AtletaProgressServiceImplTest {
     @DisplayName("getReadinessAtual")
     class GetReadinessAtual {
 
+        @BeforeEach
+        void stubAtleta() {
+            atletaExisteNoTenant();
+        }
+
         @Test
-        @DisplayName("compõe score a partir do TSB de prontidão")
+        @DisplayName("compõe score a partir do TSB de prontidão (BOM)")
         void scoreComSinais() {
-            when(planoMetadadosRepository.findByAtletaId(atletaId)).thenReturn(Optional.of(meta(10.0, 50.0, 44.0)));
-            when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId))
-                    .thenReturn(List.of(treinoRpe(6)));
-
+            stubReadiness(10.0, 6);
             ReadinessDto r = service.getReadinessAtual(atletaId);
-
             assertThat(r.score()).isEqualTo(75); // 60 + 1.5*10
             assertThat(r.classificacao()).isEqualTo("BOM");
             assertThat(r.fatores().tsbProntidao()).isEqualTo(10.0);
@@ -238,20 +271,45 @@ class AtletaProgressServiceImplTest {
         }
 
         @Test
-        @DisplayName("RPE alto do último treino reduz o score")
-        void rpeAltoReduz() {
-            when(planoMetadadosRepository.findByAtletaId(atletaId)).thenReturn(Optional.of(meta(10.0, 50.0, 44.0)));
-            when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId))
-                    .thenReturn(List.of(treinoRpe(9)));
-
+        @DisplayName("RPE no limiar (==8) reduz o score")
+        void rpeLimiarReduz() {
+            stubReadiness(10.0, 8);
             assertThat(service.getReadinessAtual(atletaId).score()).isEqualTo(70); // 75 - 5
+        }
+
+        @Test
+        @DisplayName("RPE alto (>8) reduz o score")
+        void rpeAltoReduz() {
+            stubReadiness(10.0, 9);
+            assertThat(service.getReadinessAtual(atletaId).score()).isEqualTo(70);
+        }
+
+        @Test
+        @DisplayName("TSB alto → OTIMO")
+        void otimo() {
+            stubReadiness(14.0, 5);
+            assertThat(service.getReadinessAtual(atletaId).classificacao()).isEqualTo("OTIMO"); // 81
+        }
+
+        @Test
+        @DisplayName("TSB levemente negativo → MODERADO")
+        void moderado() {
+            stubReadiness(-10.0, 5);
+            assertThat(service.getReadinessAtual(atletaId).classificacao()).isEqualTo("MODERADO"); // 45
+        }
+
+        @Test
+        @DisplayName("TSB muito negativo → BAIXO")
+        void baixo() {
+            stubReadiness(-20.0, 5);
+            assertThat(service.getReadinessAtual(atletaId).classificacao()).isEqualTo("BAIXO"); // 30
         }
 
         @Test
         @DisplayName("sem sinais → score nulo, sem erro")
         void semSinaisDefault() {
             when(planoMetadadosRepository.findByAtletaId(atletaId)).thenReturn(Optional.empty());
-            when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(List.of());
+            when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Optional.empty());
 
             ReadinessDto r = service.getReadinessAtual(atletaId);
 
@@ -259,23 +317,33 @@ class AtletaProgressServiceImplTest {
             assertThat(r.classificacao()).isEqualTo("INDISPONIVEL");
             assertThat(r.nota()).isNotBlank();
         }
+
+        private void stubReadiness(Double tsbProntidao, Integer rpe) {
+            when(planoMetadadosRepository.findByAtletaId(atletaId)).thenReturn(Optional.of(meta(tsbProntidao, 50.0, 44.0)));
+            when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Optional.of(treinoRpe(rpe)));
+        }
     }
 
     @Nested
     @DisplayName("getHome")
     class GetHome {
 
+        @BeforeEach
+        void stubAtleta() {
+            atletaExisteNoTenant();
+        }
+
         @Test
-        @DisplayName("inclui próximo treino e métricas-chave")
+        @DisplayName("inclui próximo treino (janela hoje..+14) e métricas-chave")
         void comProximoTreino() {
             TreinoPlanejado tp = new TreinoPlanejado();
-            tp.setDataTreino(LocalDate.now().plusDays(1));
+            tp.setDataTreino(HOJE.plusDays(1));
             tp.setTipoTreino(TipoTreino.INTERVALADO);
             tp.setDescricao("6x800m");
-            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any()))
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
                     .thenReturn(List.of(tp));
             when(metricasDiariasRepository.findLatestByAtletaId(atletaId))
-                    .thenReturn(Optional.of(metrica(LocalDate.now(), 52.0, 44.0, 8.0, 0)));
+                    .thenReturn(Optional.of(metrica(HOJE, 52.0, 44.0, 8.0, 0)));
 
             AtletaHomeDto home = service.getHome(atletaId);
 
@@ -289,7 +357,7 @@ class AtletaProgressServiceImplTest {
         void semProximoTreino() {
             when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any())).thenReturn(List.of());
             when(metricasDiariasRepository.findLatestByAtletaId(atletaId))
-                    .thenReturn(Optional.of(metrica(LocalDate.now(), 52.0, 44.0, 8.0, 0)));
+                    .thenReturn(Optional.of(metrica(HOJE, 52.0, 44.0, 8.0, 0)));
 
             AtletaHomeDto home = service.getHome(atletaId);
 
@@ -313,6 +381,14 @@ class AtletaProgressServiceImplTest {
             when(atletaRepository.findByUsuario_IdAndAssessoria_Id(usuarioId, tenantId)).thenReturn(Optional.of(atleta));
 
             assertThat(service.resolverAtletaIdAtual()).isEqualTo(atletaId);
+        }
+
+        @Test
+        @DisplayName("usuário do token não encontrado no tenant → not found")
+        void usuarioNaoEncontrado() {
+            when(principalResolver.getCurrentSubject()).thenReturn("sub-x");
+            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id("sub-x", tenantId)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> service.resolverAtletaIdAtual()).isInstanceOf(DomainNotFoundException.class);
         }
 
         @Test

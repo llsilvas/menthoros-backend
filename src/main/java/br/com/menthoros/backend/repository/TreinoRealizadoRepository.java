@@ -38,6 +38,9 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
 
     List<TreinoRealizado> findByAtletaIdOrderByDataTreinoDesc(UUID atletaId);
 
+    /** Treino realizado mais recente do atleta (LIMIT 1 derivado por "Top"). */
+    Optional<TreinoRealizado> findTopByAtletaIdOrderByDataTreinoDesc(UUID atletaId);
+
     /**
      * Busca treinos realizados de um atleta a partir de uma data limite, ordenados pela data decrescente
      */

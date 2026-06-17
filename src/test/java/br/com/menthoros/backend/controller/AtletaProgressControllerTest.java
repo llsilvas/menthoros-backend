@@ -19,7 +19,6 @@ import org.springframework.context.annotation.FilterType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -94,7 +93,7 @@ class AtletaProgressControllerTest {
     @DisplayName("GET /{id}/recordes → 200")
     void recordes() throws Exception {
         when(service.getRecordes(atletaId))
-                .thenReturn(List.of(new RecordeDto("10k", Duration.ofMinutes(45), LocalDate.of(2026, 5, 8), UUID.randomUUID())));
+                .thenReturn(List.of(new RecordeDto("10k", 2730L, LocalDate.of(2026, 5, 8), UUID.randomUUID())));
 
         mockMvc.perform(get("/api/v1/atletas/{id}/recordes", atletaId))
                 .andExpect(status().isOk())
@@ -127,5 +126,23 @@ class AtletaProgressControllerTest {
         mockMvc.perform(get("/api/v1/atletas/me/home"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.proximoTreino.tipoTreino").value("INTERVALADO"));
+    }
+
+    @Test
+    @DisplayName("GET /me/readiness → 404 quando o atleta do token não é resolvido")
+    void readinessNotFound() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenThrow(new DomainNotFoundException("Atleta não encontrado"));
+
+        mockMvc.perform(get("/api/v1/atletas/me/readiness"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /me/home → 404 quando o atleta do token não é resolvido")
+    void homeNotFound() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenThrow(new DomainNotFoundException("Atleta não encontrado"));
+
+        mockMvc.perform(get("/api/v1/atletas/me/home"))
+                .andExpect(status().isNotFound());
     }
 }

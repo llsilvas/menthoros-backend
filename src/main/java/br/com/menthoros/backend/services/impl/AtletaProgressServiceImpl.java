@@ -27,11 +27,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Implementação read-only do progresso do atleta.
+ *
+ * <p><b>Isolamento de tenant:</b> todo método público chama {@link #validarAtletaNoTenant} como
+ * primeira instrução (consulta tenant-scoped). As leituras subsequentes usam só {@code atletaId} —
+ * elas assumem que esse gate já confirmou o tenant. Não reordenar/remover o gate.</p>
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -56,6 +64,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final ZonaTreinoService zonaTreinoService;
     private final AuthenticatedPrincipalResolver principalResolver;
+    private final Clock clock;
 
     /**
      * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
@@ -121,7 +130,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                     })
                     .min((a, b) -> a.getDuracaoMin().compareTo(b.getDuracaoMin()))
                     .ifPresent(melhor -> recordes.add(new RecordeDto(
-                            alvo.label(), melhor.getDuracaoMin(), melhor.getDataTreino(), melhor.getId())));
+                            alvo.label(), melhor.getDuracaoMin().getSeconds(), melhor.getDataTreino(), melhor.getId())));
         }
         return recordes;
     }
@@ -137,8 +146,8 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
         validarAtletaNoTenant(atletaId);
 
         PlanoMetaDados meta = planoMetadadosRepository.findByAtletaId(atletaId).orElse(null);
-        Integer ultimoRpe = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)
-                .stream().findFirst().map(TreinoRealizado::getPercepcaoEsforco).orElse(null);
+        Integer ultimoRpe = treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(atletaId)
+                .map(TreinoRealizado::getPercepcaoEsforco).orElse(null);
 
         Double tsbProntidao = meta != null ? meta.getTsbProntidaoAtual() : null;
         Double ctl = meta != null ? meta.getCtlAtual() : null;
@@ -168,7 +177,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     public AtletaHomeDto getHome(UUID atletaId) {
         validarAtletaNoTenant(atletaId);
 
-        LocalDate hoje = LocalDate.now();
+        LocalDate hoje = LocalDate.now(clock);
         AtletaHomeDto.ProximoTreino proximo = treinoPlanejadoRepository
                 .findByAtletaIdAndDataBetween(atletaId, hoje, hoje.plusDays(14))
                 .stream().findFirst()
@@ -205,11 +214,11 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     private Atleta validarAtletaNoTenant(UUID atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         return atletaRepository.findByIdAndTenantId(atletaId, tenantId)
-                .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado: " + atletaId));
+                .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
     }
 
     private Intervalo resolverIntervalo(LocalDate from, LocalDate to) {
-        LocalDate fim = (to != null) ? to : LocalDate.now();
+        LocalDate fim = (to != null) ? to : LocalDate.now(clock);
         LocalDate inicio = (from != null) ? from : fim.minusDays(DIAS_PADRAO);
         if (inicio.isAfter(fim)) {
             throw new DomainRuleViolationException("Intervalo inválido: 'from' não pode ser depois de 'to'");

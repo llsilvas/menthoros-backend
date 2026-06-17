@@ -48,6 +48,8 @@ public class AtletaProgressController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Série PMC retornada"),
             @ApiResponse(responseCode = "404", description = "Atleta não encontrado no tenant"),
+            @ApiResponse(responseCode = "422", description = "Intervalo inválido (from > to)"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)"),
             @ApiResponse(responseCode = "401", description = "Não autenticado")
     })
     public ResponseEntity<List<PmcPontoDto>> getHistoricoPmc(
@@ -66,6 +68,8 @@ public class AtletaProgressController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Distribuição de zonas retornada"),
             @ApiResponse(responseCode = "404", description = "Atleta não encontrado no tenant"),
+            @ApiResponse(responseCode = "422", description = "Intervalo inválido (from > to)"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)"),
             @ApiResponse(responseCode = "401", description = "Não autenticado")
     })
     public ResponseEntity<ZonaDistribuicaoDto> getDistribuicaoZonas(
@@ -82,6 +86,7 @@ public class AtletaProgressController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Recordes retornados"),
             @ApiResponse(responseCode = "404", description = "Atleta não encontrado no tenant"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)"),
             @ApiResponse(responseCode = "401", description = "Não autenticado")
     })
     public ResponseEntity<List<RecordeDto>> getRecordes(
@@ -96,6 +101,7 @@ public class AtletaProgressController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Readiness retornado (defaults quando sem sinais)"),
             @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer ATLETA)"),
             @ApiResponse(responseCode = "401", description = "Não autenticado")
     })
     public ResponseEntity<ReadinessDto> getReadinessAtual() {
@@ -110,6 +116,7 @@ public class AtletaProgressController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Resumo retornado"),
             @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer ATLETA)"),
             @ApiResponse(responseCode = "401", description = "Não autenticado")
     })
     public ResponseEntity<AtletaHomeDto> getHome() {

@@ -1,15 +1,13 @@
 package br.com.menthoros.backend.dto.output;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Distribuição de tempo por zona de FC (z1–z5) no período, em segundos.
  *
- * <p>{@code duracaoTotalSegundos} é a soma de z1..z5 (tempo classificável por FC).
- * Etapas sem FC média registrada não entram na distribuição nem no total.</p>
+ * <p>Campos {@code long} primitivos (sempre serializados, inclusive zero). {@code duracaoTotalSegundos}
+ * é a soma de z1..z5 (tempo classificável por FC); etapas sem FC média não entram na distribuição.</p>
  */
-@JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = "Distribuição de tempo por zona de FC (segundos) no período")
 public record ZonaDistribuicaoDto(
 

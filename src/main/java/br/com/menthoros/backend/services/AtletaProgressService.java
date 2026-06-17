@@ -16,21 +16,39 @@ import java.util.UUID;
  */
 public interface AtletaProgressService {
 
-    /** Série PMC diária no intervalo (default: últimos 90 dias quando {@code from}/{@code to} ausentes). */
+    /**
+     * Série PMC diária no intervalo (default: últimos 90 dias quando {@code from}/{@code to} ausentes).
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     */
     List<PmcPontoDto> getHistoricoPmc(UUID atletaId, LocalDate from, LocalDate to);
 
-    /** Distribuição de tempo por zona de FC (z1–z5) no intervalo (default: últimos 90 dias). */
+    /**
+     * Distribuição de tempo por zona de FC (z1–z5) no intervalo (default: últimos 90 dias).
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     */
     ZonaDistribuicaoDto getDistribuicaoZonas(UUID atletaId, LocalDate from, LocalDate to);
 
-    /** Recordes pessoais (5k/10k/21k) derivados dos treinos realizados. */
+    /**
+     * Recordes pessoais (5k/10k/21k) derivados dos treinos realizados.
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     */
     List<RecordeDto> getRecordes(UUID atletaId);
 
-    /** Readiness atual (heurística objetiva provisória — ver {@link ReadinessDto}). */
+    /**
+     * Readiness atual (heurística objetiva provisória — ver {@link ReadinessDto}).
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     */
     ReadinessDto getReadinessAtual(UUID atletaId);
 
-    /** Resumo "hoje": próximo treino planejado + métricas-chave. */
+    /**
+     * Resumo "hoje": próximo treino planejado + métricas-chave.
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     */
     AtletaHomeDto getHome(UUID atletaId);
 
-    /** Resolve o {@code atletaId} do usuário autenticado (endpoints {@code me/*}). */
+    /**
+     * Resolve o {@code atletaId} do usuário autenticado (endpoints {@code me/*}).
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     */
     UUID resolverAtletaIdAtual();
 }
