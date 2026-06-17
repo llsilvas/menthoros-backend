@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.client.ChatClient;
 
 import java.lang.reflect.Method;
 import java.util.List;
@@ -35,7 +34,7 @@ class IaServiceImplFcValidationTest {
     @BeforeEach
     void setUp() {
         service = new IaServiceImpl(
-                mock(ChatClient.class),
+                mock(br.com.menthoros.backend.routing.ModelRouter.class),
                 mock(br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder.class),
                 mock(br.com.menthoros.backend.repository.AtletaRepository.class),
                 mock(br.com.menthoros.backend.services.helper.RegraGeracaoTreino.class),

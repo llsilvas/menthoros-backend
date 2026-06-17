@@ -1,0 +1,9 @@
+Generate the race projection narrative for this context. Respond with valid JSON only.
+
+Constraints:
+- Return at most 5 key_assumptions.
+- Keep progression_narrative under 500 characters.
+- Keep coach_note under 400 characters.
+
+Context:
+%s

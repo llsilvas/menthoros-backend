@@ -18,16 +18,19 @@ public class ModelRouter {
     private final ChatClient claudeHaikuClient;
     private final ChatClient claudeSonnetClient;
     private final ChatClient gpt4oClient;
+    private final ChatClient gpt4oPlanoClient;
 
     public ModelRouter(
             @Qualifier("gpt4oMiniClient") ChatClient gpt4oMiniClient,
             @Qualifier("claudeHaikuClient") ChatClient claudeHaikuClient,
             @Qualifier("claudeSonnetClient") ChatClient claudeSonnetClient,
-            @Qualifier("gpt4oClient") ChatClient gpt4oClient) {
+            @Qualifier("gpt4oClient") ChatClient gpt4oClient,
+            @Qualifier("gpt4oPlanoClient") ChatClient gpt4oPlanoClient) {
         this.gpt4oMiniClient = gpt4oMiniClient;
         this.claudeHaikuClient = claudeHaikuClient;
         this.claudeSonnetClient = claudeSonnetClient;
         this.gpt4oClient = gpt4oClient;
+        this.gpt4oPlanoClient = gpt4oPlanoClient;
     }
 
     /**
@@ -50,6 +53,7 @@ public class ModelRouter {
             case STANDARD -> claudeHaikuClient;
             case COMPLEX -> claudeSonnetClient;
             case EXPERT -> gpt4oClient;
+            case PLANO -> gpt4oPlanoClient;
         };
     }
 }

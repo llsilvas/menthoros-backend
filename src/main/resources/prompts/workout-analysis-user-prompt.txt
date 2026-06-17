@@ -1,0 +1,2 @@
+Analyze this workout and respond with valid JSON only:
+%s

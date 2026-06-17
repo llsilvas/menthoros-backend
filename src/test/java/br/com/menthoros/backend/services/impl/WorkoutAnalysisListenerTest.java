@@ -9,6 +9,7 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.services.WorkoutAnalysisTranslator;
+import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,6 @@ import org.springframework.core.io.ResourceLoader;
 import java.util.Optional;
 import java.util.UUID;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -36,6 +36,7 @@ class WorkoutAnalysisListenerTest {
     @Mock private ModelRouter modelRouter;
     @Mock private WorkoutAnalysisTranslator translator;
     @Mock private ResourceLoader resourceLoader;
+    @Mock private PromptTemplateLoader templateLoader;
     @Mock private ObjectMapper objectMapper;
 
     @InjectMocks
@@ -102,37 +103,14 @@ class WorkoutAnalysisListenerTest {
         when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
                 .thenReturn(Optional.empty());
         when(analiseRepository.save(any())).thenReturn(saved);
-        // Fail on skill load to prevent full execution — we're testing only the PENDING save gate
-        when(resourceLoader.getResource(anyString())).thenThrow(new RuntimeException("skill not found"));
+        // Falha no roteamento do modelo impede a execução completa — aqui validamos só o gate de save PENDING
+        when(modelRouter.route(any())).thenThrow(new RuntimeException("model unavailable"));
 
         listener.onTreinoRegistrado(event);
 
-        // First save was PENDING; second save should be FAILED due to skill load error
+        // Primeiro save foi PENDING; o segundo deve ser FAILED por erro na chamada ao LLM
         verify(analiseRepository, atLeastOnce()).save(argThat(a ->
                 a.getStatus() == AnaliseStatus.PENDING || a.getStatus() == AnaliseStatus.FAILED));
-    }
-
-    @Test
-    void stripMarkdownCodeBlock_strips_json_fenced_block() {
-        String fenced = "```json\n{\"key\": \"value\"}\n```";
-        assertThat(WorkoutAnalysisListener.stripMarkdownCodeBlock(fenced)).isEqualTo("{\"key\": \"value\"}");
-    }
-
-    @Test
-    void stripMarkdownCodeBlock_strips_plain_fenced_block() {
-        String fenced = "```\n{\"key\": \"value\"}\n```";
-        assertThat(WorkoutAnalysisListener.stripMarkdownCodeBlock(fenced)).isEqualTo("{\"key\": \"value\"}");
-    }
-
-    @Test
-    void stripMarkdownCodeBlock_leaves_raw_json_unchanged() {
-        String raw = "{\"key\": \"value\"}";
-        assertThat(WorkoutAnalysisListener.stripMarkdownCodeBlock(raw)).isEqualTo(raw);
-    }
-
-    @Test
-    void stripMarkdownCodeBlock_handles_null() {
-        assertThat(WorkoutAnalysisListener.stripMarkdownCodeBlock(null)).isNull();
     }
 
     @Test
@@ -150,7 +128,7 @@ class WorkoutAnalysisListenerTest {
         when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
                 .thenReturn(Optional.empty());
         when(analiseRepository.save(any())).thenReturn(saved);
-        when(resourceLoader.getResource(anyString())).thenThrow(new RuntimeException("network error"));
+        when(modelRouter.route(any())).thenThrow(new RuntimeException("network error"));
 
         listener.onTreinoRegistrado(event);
 

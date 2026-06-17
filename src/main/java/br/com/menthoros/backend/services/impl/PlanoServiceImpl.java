@@ -57,7 +57,6 @@ public class PlanoServiceImpl implements PlanoService {
     private final PlanoMetadadosService planoMetadadosService;
     private final TsbService tsbService;
 
-    private final EmbeddingService embeddingService;
     private final PlanoSemanalRepository planoSemanalRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final RedistribuicaoTreinoHelper redistribuicaoHelper;

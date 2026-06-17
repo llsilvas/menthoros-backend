@@ -9,9 +9,9 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UnknownFormatConversionException;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Gerenciador de templates de prompts para IA.
@@ -32,7 +32,9 @@ public class PromptTemplateLoader {
 
     public PromptTemplateLoader(ResourceLoader resourceLoader) {
         this.resourceLoader = resourceLoader;
-        this.templateCache = new HashMap<>();
+        // ConcurrentHashMap: o loader é singleton e agora tem chamadores @Async
+        // (WorkoutAnalysisListener), então o cache precisa ser thread-safe.
+        this.templateCache = new ConcurrentHashMap<>();
         logger.info("PromptTemplateLoader inicializado");
     }
 
