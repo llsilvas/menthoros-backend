@@ -13,6 +13,7 @@ import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
 import br.com.menthoros.backend.services.WorkoutAnalysisTranslator;
+import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -48,6 +49,9 @@ public class WorkoutAnalysisListener {
     private final ModelRouter modelRouter;
     private final WorkoutAnalysisTranslator translator;
     private final ResourceLoader resourceLoader;
+    private final PromptTemplateLoader templateLoader;
+    // ObjectMapper mantido apenas para serializar os dados do treino no prompt (buildPromptData);
+    // o parse da resposta do LLM agora é feito por .entity().
     private final ObjectMapper objectMapper;
 
     private static final String SKILL_PATH = "classpath:skills/analise/workout-analyzer/SKILL.md";
@@ -94,15 +98,14 @@ public class WorkoutAnalysisListener {
         try {
             String skillContent = cachedSkillContent;
             String promptData = buildPromptData(treino);
+            String userPrompt = templateLoader.loadAndFormat("workout-analysis-user-prompt.txt", promptData);
 
             ChatClient sonnet = modelRouter.route(TaskComplexity.COMPLEX);
-            String rawJson = callWithRetry(() -> sonnet.prompt()
+            AnaliseWorkoutRawDto raw = sonnet.prompt()
                     .system(skillContent)
-                    .user("Analyze this workout and respond with valid JSON only:\n" + promptData)
+                    .user(userPrompt)
                     .call()
-                    .content(), 3);
-
-            AnaliseWorkoutRawDto raw = objectMapper.readValue(stripMarkdownCodeBlock(rawJson), AnaliseWorkoutRawDto.class);
+                    .entity(AnaliseWorkoutRawDto.class);
 
             AnaliseWorkoutRawDto translated;
             boolean translationFailed = false;
@@ -207,38 +210,5 @@ public class WorkoutAnalysisListener {
         analise.setTranslationFailed(translationFailed);
         analise.setAnalyzedAt(Instant.now());
         analiseRepository.save(analise);
-    }
-
-    static String stripMarkdownCodeBlock(String raw) {
-        if (raw == null) return null;
-        String stripped = raw.strip();
-        if (!stripped.startsWith("```")) return stripped;
-        int firstNewline = stripped.indexOf('\n');
-        if (firstNewline != -1) stripped = stripped.substring(firstNewline + 1);
-        if (stripped.endsWith("```")) stripped = stripped.substring(0, stripped.lastIndexOf("```"));
-        return stripped.strip();
-    }
-
-    // maxAttempts = total number of attempts (1 initial + (maxAttempts-1) retries)
-    private <T> T callWithRetry(java.util.function.Supplier<T> supplier, int maxAttempts) {
-        int attempts = 0;
-        while (true) {
-            try {
-                return supplier.get();
-            } catch (Exception ex) {
-                attempts++;
-                if (attempts >= maxAttempts) {
-                    throw ex;
-                }
-                long backoffMs = (long) Math.pow(2, attempts) * 500L;
-                log.warn("LLM call failed (attempt {}/{}), retrying in {}ms: {}", attempts, maxAttempts, backoffMs, ex.getMessage());
-                try {
-                    Thread.sleep(backoffMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    throw ex;
-                }
-            }
-        }
     }
 }
