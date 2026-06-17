@@ -22,7 +22,6 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.services.EmbeddingService;
 import br.com.menthoros.backend.services.IaService;
 import br.com.menthoros.backend.services.helper.RedistribuicaoTreinoHelper;
 import br.com.menthoros.backend.services.helper.RegraGeracaoTreino;
@@ -71,8 +70,6 @@ class PlanoServiceImplTest {
     private PlanoSemanalMapper planoSemanalMapper;
     @Mock
     private PlanoMetadadosRepository planoMetadadosRepository;
-    @Mock
-    private EmbeddingService embeddingService;
     @Mock
     private PlanoSemanalRepository planoSemanalRepository;
     @Mock
