@@ -9,6 +9,7 @@ import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
@@ -31,6 +32,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -46,8 +48,8 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     private static final int TOP_ATLETAS = 5;
 
     /** Tipos que contam como "treino-chave" da semana. */
-    private static final java.util.Set<TipoTreino> TIPOS_CHAVE =
-            java.util.Set.of(TipoTreino.INTERVALADO, TipoTreino.TIRO, TipoTreino.LONGO, TipoTreino.TEMPO_RUN);
+    private static final Set<TipoTreino> TIPOS_CHAVE =
+            Set.of(TipoTreino.INTERVALADO, TipoTreino.TIRO, TipoTreino.LONGO, TipoTreino.TEMPO_RUN);
 
     private final AtletaRepository atletaRepository;
     private final MetricasDiariasRepository metricasDiariasRepository;
@@ -90,19 +92,23 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     public CoachInsightsDto getInsights(LocalDate from, LocalDate to) {
         LocalDate fim = (to != null) ? to : LocalDate.now(clock);
         LocalDate inicio = (from != null) ? from : fim.minusWeeks(SEMANAS_INSIGHTS);
+        if (inicio.isAfter(fim)) {
+            throw new DomainRuleViolationException("Intervalo inválido: 'from' não pode ser depois de 'to'");
+        }
 
+        // Custo: O(N atletas) — reusa getRoster() (status/KPIs) + 1 query de realizados por atleta.
+        // Aceitável para o roster de um tenant; ver follow-up de batch-loading se crescer.
         List<CoachAtletaResumoDto> roster = getRoster();
-        int totalAtletas = roster.size();
-        int pausados = (int) roster.stream().filter(r -> "paused".equals(r.status())).count();
-        int ativos = (int) roster.stream().filter(r -> "active".equals(r.status())).count();
-        int emAtencao = (int) roster.stream().filter(r -> "warning".equals(r.status()) || "danger".equals(r.status())).count();
-        int treinosPlanejadosSemana = getCalendarioSemanal(null).treinos().size();
-
         CoachInsightsDto.Kpis kpis = new CoachInsightsDto.Kpis(
-                totalAtletas, ativos, emAtencao, pausados, treinosPlanejadosSemana);
+                roster.size(),
+                (int) roster.stream().filter(r -> "active".equals(r.status())).count(),
+                (int) roster.stream().filter(r -> "warning".equals(r.status()) || "danger".equals(r.status())).count(),
+                (int) roster.stream().filter(r -> "paused".equals(r.status())).count(),
+                getCalendarioSemanal(null).treinos().size());
 
         // Agrega volume/TSS realizados por semana (ISO) e volume total por atleta no período.
-        Map<String, double[]> porSemana = new LinkedHashMap<>(); // semana -> [volumeKm, tss]
+        Map<String, Double> volumePorSemana = new LinkedHashMap<>();
+        Map<String, Integer> tssPorSemana = new LinkedHashMap<>();
         List<CoachInsightsDto.TopAtleta> volumePorAtleta = new ArrayList<>();
 
         for (CoachAtletaResumoDto r : roster) {
@@ -114,18 +120,17 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
                 int tss = t.getTssCalculado() != null ? t.getTssCalculado() : 0;
                 volumeAtleta += km;
                 String semana = semanaIso(t.getDataTreino());
-                double[] acc = porSemana.computeIfAbsent(semana, k -> new double[2]);
-                acc[0] += km;
-                acc[1] += tss;
+                volumePorSemana.merge(semana, km, Double::sum);
+                tssPorSemana.merge(semana, tss, Integer::sum);
             }
             if (volumeAtleta > 0) {
                 volumePorAtleta.add(new CoachInsightsDto.TopAtleta(r.atletaId(), r.nome(), volumeAtleta));
             }
         }
 
-        List<CoachInsightsDto.PontoCargaSemanal> tendencia = porSemana.entrySet().stream()
+        List<CoachInsightsDto.PontoCargaSemanal> tendencia = volumePorSemana.entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
-                .map(e -> new CoachInsightsDto.PontoCargaSemanal(e.getKey(), e.getValue()[0], (int) e.getValue()[1]))
+                .map(e -> new CoachInsightsDto.PontoCargaSemanal(e.getKey(), e.getValue(), tssPorSemana.get(e.getKey())))
                 .toList();
 
         List<CoachInsightsDto.TopAtleta> top = volumePorAtleta.stream()
@@ -190,7 +195,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         boolean danger = (tsb != null && tsb <= -20.0) || (diasInativo != null && diasInativo >= 14);
         if (danger) return "danger";
 
-        boolean warning = (tsb != null && tsb <= -10.0) || lastActivity == null || diasInativo >= 7;
+        boolean warning = (tsb != null && tsb <= -10.0) || lastActivity == null || (diasInativo != null && diasInativo >= 7);
         if (warning) return "warning";
 
         return "active";

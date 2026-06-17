@@ -9,6 +9,7 @@ import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
@@ -23,8 +24,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -36,13 +35,13 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("CoachDashboardServiceImpl")
 class CoachDashboardServiceImplTest {
 
@@ -103,15 +102,28 @@ class CoachDashboardServiceImplTest {
         }
 
         @Test
+        @DisplayName("limiares exatos: TSB -10/-20 e inatividade 6/7/14 dias")
+        void statusBoundaries() {
+            Atleta active6 = atletaRoster("a6", AtletaStatus.ATIVO, 0.0, HOJE.minusDays(6));   // <7 → active
+            Atleta warn7 = atletaRoster("w7", AtletaStatus.ATIVO, 0.0, HOJE.minusDays(7));     // ==7 → warning
+            Atleta danger14 = atletaRoster("d14", AtletaStatus.ATIVO, 0.0, HOJE.minusDays(14));// ==14 → danger
+            Atleta warnTsb10 = atletaRoster("wt", AtletaStatus.ATIVO, -10.0, HOJE.minusDays(1));// ==-10 → warning
+            Atleta dangerTsb20 = atletaRoster("dt", AtletaStatus.ATIVO, -20.0, HOJE.minusDays(1));// ==-20 → danger
+            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId))
+                    .thenReturn(List.of(active6, warn7, danger14, warnTsb10, dangerTsb20));
+
+            assertThat(service.getRoster()).extracting(CoachAtletaResumoDto::status)
+                    .containsExactly("active", "warning", "danger", "warning", "danger");
+        }
+
+        @Test
         @DisplayName("atleta sem métricas degrada (nulls) e vira warning")
         void semMetricasDegrada() {
             Atleta semDados = Atleta.builder().id(UUID.randomUUID()).nome("Sem").sobrenome("Dados")
                     .ativo(AtletaStatus.ATIVO).build();
             when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(semDados));
             when(metricasDiariasRepository.findLatestByAtletaId(semDados.getId())).thenReturn(Optional.empty());
-            when(planoMetadadosRepository.findByAtletaId(semDados.getId())).thenReturn(Optional.empty());
             when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(semDados.getId())).thenReturn(Optional.empty());
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(semDados.getId()), any(), any())).thenReturn(List.of());
 
             CoachAtletaResumoDto dto = service.getRoster().get(0);
 
@@ -178,6 +190,7 @@ class CoachDashboardServiceImplTest {
             Atleta paused = atletaRoster("paused", AtletaStatus.INATIVO, 5.0, HOJE.minusDays(1));
             when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(active, paused));
             when(treinoPlanejadoRepository.findByTenantAndDataBetween(eq(tenantId), any(), any())).thenReturn(List.of());
+            // mesmo stub serve para a janela semanal (roster) e o período (insights)
             when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(active.getId()), any(), any()))
                     .thenReturn(List.of(treino(LocalDate.of(2026, 6, 16), "12.0", 90)));
             when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(paused.getId()), any(), any()))
@@ -205,11 +218,18 @@ class CoachDashboardServiceImplTest {
             assertThat(insights.tendenciaCargaSemanal()).isEmpty();
             assertThat(insights.topAtletas()).isEmpty();
         }
+
+        @Test
+        @DisplayName("from depois de to lança DomainRuleViolationException")
+        void fromDepoisDeTo() {
+            assertThatThrownBy(() -> service.getInsights(LocalDate.of(2026, 6, 10), LocalDate.of(2026, 6, 1)))
+                    .isInstanceOf(DomainRuleViolationException.class);
+        }
     }
 
     // ===== helpers =====
 
-    /** Atleta com métricas/atividade stubadas para o roster. */
+    /** Atleta com métrica (tsb) e última atividade stubadas; demais leituras usam defaults (vazias). */
     private Atleta atletaRoster(String nome, AtletaStatus status, Double tsb, LocalDate lastActivity) {
         Atleta a = Atleta.builder().id(UUID.randomUUID()).nome(nome).sobrenome("S").ativo(status).build();
         MetricasDiarias m = new MetricasDiarias();
@@ -217,11 +237,8 @@ class CoachDashboardServiceImplTest {
         m.setAtl(45.0);
         m.setTsb(tsb);
         when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.of(m));
-        when(planoMetadadosRepository.findByAtletaId(a.getId())).thenReturn(Optional.empty());
         when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId()))
                 .thenReturn(Optional.of(treino(lastActivity, "8.0", 60)));
-        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(a.getId()), eq(INICIO_SEMANA), eq(FIM_SEMANA)))
-                .thenReturn(List.of());
         return a;
     }
 

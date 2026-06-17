@@ -38,7 +38,8 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
     /** Treinos planejados de todos os atletas de um tenant num intervalo (calendário do coach). */
     @Query("""
        select tp from TreinoPlanejado tp
-       where tp.atleta.assessoria.id = :tenantId
+       join fetch tp.atleta a
+       where a.assessoria.id = :tenantId
          and tp.dataTreino between :dataInicio and :dataFim
        order by tp.dataTreino ASC
        """)
