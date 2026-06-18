@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/users")
 @RequiredArgsConstructor
-@Tag(name = "Usuários", description = "Identidade do usuário autenticado")
+@Tag(name = "usuarios", description = "Identidade do usuário autenticado")
 public class UsuarioController {
 
     private final UsuarioService usuarioService;

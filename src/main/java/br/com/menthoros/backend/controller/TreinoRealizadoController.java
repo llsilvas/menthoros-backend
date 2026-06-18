@@ -31,7 +31,7 @@ import java.util.UUID;
 
 import static org.springframework.http.ResponseEntity.*;
 
-@Tag(name = "Treinos Realizados", description = "Operações relacionadas ao registro de treinos realizados")
+@Tag(name = "treino", description = "Operações relacionadas ao registro de treinos realizados")
 @RestController
 @Validated
 @RequestMapping("/api/v1/treinos")

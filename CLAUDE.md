@@ -68,6 +68,10 @@ Rules enforced across all controllers. Violations must be corrected in the same 
 
 ### Swagger / OpenAPI Documentation (mandatory)
 - Every controller class must have `@Tag(name = "...", description = "...")`.
+  - **`name` must be ASCII kebab-case** (e.g. `coach-dashboard`, `race-projection`), sem acento/espaço:
+    o gerador de cliente do front (`openapi-typescript-codegen`) deriva o nome da classe de serviço do
+    `name` do tag — nomes PT-BR com acento geram serviços corrompidos (`AnLiseDeTreinoService`).
+    Coloque o texto PT-BR rico no `description` (a Swagger UI mostra ambos).
 - Every public method must have `@Operation(summary = "...")`.
 - Every public method must have `@ApiResponses` listing all possible HTTP status codes.
 - Use `@Parameter` for path/query parameters that need description.

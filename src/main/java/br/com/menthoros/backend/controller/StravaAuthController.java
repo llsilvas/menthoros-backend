@@ -25,7 +25,7 @@ import java.util.UUID;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/strava")
-@Tag(name = "Strava OAuth", description = "Fluxo OAuth2 de conexão com Strava")
+@Tag(name = "strava", description = "Fluxo OAuth2 de conexão com Strava")
 public class StravaAuthController {
 
     private final StravaOAuthService stravaOAuthService;

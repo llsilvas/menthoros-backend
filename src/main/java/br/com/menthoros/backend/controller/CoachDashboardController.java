@@ -32,7 +32,7 @@ import java.util.List;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/coach")
-@Tag(name = "Dashboards do Coach", description = "Roster, calendário semanal e insights agregados por tenant")
+@Tag(name = "coach-dashboard", description = "Roster, calendário semanal e insights agregados por tenant")
 public class CoachDashboardController {
 
     private final CoachDashboardService coachDashboardService;

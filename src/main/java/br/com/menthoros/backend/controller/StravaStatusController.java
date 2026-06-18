@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/strava")
-@Tag(name = "Strava Status", description = "Status global da integração Strava")
+@Tag(name = "strava", description = "Status global da integração Strava")
 public class StravaStatusController {
 
     private final StravaStatusService stravaStatusService;

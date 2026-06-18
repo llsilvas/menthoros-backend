@@ -28,7 +28,7 @@ import java.util.UUID;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/atletas/{atletaId}/projecoes-prova")
-@Tag(name = "Projeção de Prova", description = "Geração e consulta de projeções de tempo de prova por corrida")
+@Tag(name = "race-projection", description = "Geração e consulta de projeções de tempo de prova por corrida")
 @Validated
 public class RaceProjectionController {
 

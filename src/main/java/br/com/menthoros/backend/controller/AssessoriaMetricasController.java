@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/metricas")
-@Tag(name = "Métricas da Assessoria", description = "Operações relacionadas às métricas consolidadas da assessoria")
+@Tag(name = "assessoria-metricas", description = "Operações relacionadas às métricas consolidadas da assessoria")
 public class AssessoriaMetricasController {
 
     private final MetricasAdesaoService metricasAdesaoService;
