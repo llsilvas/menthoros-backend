@@ -20,6 +20,19 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 - Status: realizado/cancelado + percepção de esforço real
 
 **Dados:**
+## ⛔ REGRAS QUE VOCÊ NÃO PODE VIOLAR
+
+- INTENSIDADE só na versão segura — categoria D (Tempo Run / Fartlek suave). Fundamento: Apenas 24h desde ultimo intensivo (minimo: 48h para Avançado). INTERVALADO DEGRADADO para Categoria D — recuperacao insuficiente: 24h desde ultimo treino intensivo (minimo 48h para Avançado). Prescreva fartlek livre de 20-30 min em Z2-Z3 com acelerações espontâneas curtas.
+- O `ritmoAlvo` (paceMin) de cada treino NÃO pode ser mais rápido que o teto do seu tipo:
+- CONTINUO: não mais rápido que 5:23/km
+- LONGO: não mais rápido que 5:38/km
+- INTERVALADO: não mais rápido que 4:44/km
+- TIRO: não mais rápido que 4:34/km
+- Gere treinos EXCLUSIVAMENTE nos dias permitidos: Segunda-feira, Terça-feira, Quarta-feira, Quinta-feira, Sexta-feira, Sábado. NÃO inclua treinos em nenhum outro dia da semana.
+- No máximo 3 dias de treino consecutivos; intercale descanso completo ou regenerativo.
+
+(Estas regras são determinísticas, baseadas em dados reais do atleta, e SUBSTITUEM qualquer raciocínio independente. Não as viole.)
+
 ## ⛔ ALERTAS OBRIGATÓRIOS (PROCESSE PRIMEIRO)
 
 1. 🔴 Progressão rápida (10,3%/sem (7,0 pts)). → Manter volume atual sem aumentar. Monitorar sinais de fadiga.
@@ -60,17 +73,6 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 ## 🚨 RESTRIÇÕES E HISTÓRICO DE SAÚDE
 
 ✅ Nenhuma lesão ativa ou histórico de lesões reportado
-
-
-## DECISAO INTERVALADO - INSTRUCAO OBRIGATORIA
-
-[DEGRADADO] Versao segura de intensidade autorizada.
-Categoria segura: D — Tempo Run / Fartlek suave
-Fundamento: Apenas 24h desde ultimo intensivo (minimo: 48h para Avançado)
-Instrucao: INTERVALADO DEGRADADO para Categoria D — recuperacao insuficiente: 24h desde ultimo treino intensivo (minimo 48h para Avançado). Prescreva fartlek livre de 20-30 min em Z2-Z3 com acelerações espontâneas curtas.
-Descricao: Corrida contínua em Z3 ou fartlek leve.
-
-ATENCAO: Esta decisao e deterministica e baseada em dados reais do atleta. Ela SUBSTITUI qualquer raciocinio independente sobre intensidade. Nao inclua INTERVALADO se marcado [PROIBIDO].
 
 ## 📊 DADOS FISIOLÓGICOS E ZONAS DE TREINO
 
@@ -147,17 +149,6 @@ ATENCAO: Esta decisao e deterministica e baseada em dados reais do atleta. Ela S
 ⚠️ Tipos sem histórico recente: usar a zona calculada (Z correspondente) como referência.
 
 
-## ⛔ TETO DE PACE POR TIPO (NÃO ULTRAPASSAR)
-
-O `ritmoAlvo` (paceMin) de cada treino não pode ser mais rápido que:
-
-- **CONTINUO**: não mais rápido que 5:23/km
-- **LONGO**: não mais rápido que 5:38/km
-- **INTERVALADO**: não mais rápido que 4:44/km
-- **TIRO**: não mais rápido que 4:34/km
-
-
-
 ⚠️ **Pace limiar nunca testado formalmente.**
    Paces calculados com base no perfil. Margem ampliada em ±15 seg/km.
    Recomendado: realizar teste de Cooper ou corrida de 20 min para validar o limiar.
@@ -171,7 +162,6 @@ O `ritmoAlvo` (paceMin) de cada treino não pode ser mais rápido que:
 **Dias já passados não podem receber treinos.**
 **Dias restantes disponíveis para treino nesta semana:** Segunda-feira, Terça-feira, Quarta-feira, Quinta-feira, Sexta-feira, Sábado
 **Total de dias restantes:** 6
-**INSTRUÇÃO OBRIGATÓRIA:** Gere treinos EXCLUSIVAMENTE para os dias listados acima. NÃO inclua treinos em dias que já passaram.
 
 ### Disponibilidade Semanal
 **Dias disponíveis para treinar (configuração do atleta):** Segunda-feira, Quarta-feira, Sexta-feira, Sábado

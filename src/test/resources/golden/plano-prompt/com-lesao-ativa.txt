@@ -20,6 +20,17 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 - Status: realizado/cancelado + percepção de esforço real
 
 **Dados:**
+## ⛔ REGRAS QUE VOCÊ NÃO PODE VIOLAR
+
+- PROIBIDO qualquer treino intensivo (INTERVALADO/TIRO/SUBIDA/FARTLEK) esta semana. Tipo substituto obrigatório: Regenerativo. Fundamento: Lesao ativa: Tendinite no tendão de Aquiles direito. INTERVALADO PROIBIDO — atleta com lesao ativa (Tendinite no tendão de Aquiles direito). Prescrever apenas REGENERATIVO ou CONTINUO leve em Z1-Z2.
+- O `ritmoAlvo` (paceMin) de cada treino NÃO pode ser mais rápido que o teto do seu tipo:
+- REGENERATIVO: não mais rápido que 6:52/km
+- CONTINUO: não mais rápido que 5:48/km
+- Gere treinos EXCLUSIVAMENTE nos dias permitidos: Segunda-feira, Quarta-feira, Sexta-feira, Sábado. NÃO inclua treinos em nenhum outro dia da semana.
+- No máximo 5 dias de treino consecutivos; intercale descanso completo ou regenerativo.
+
+(Estas regras são determinísticas, baseadas em dados reais do atleta, e SUBSTITUEM qualquer raciocínio independente. Não as viole.)
+
 ## ⛔ ALERTAS OBRIGATÓRIOS (PROCESSE PRIMEIRO)
 
 1. 🔴 LESÃO ATIVA: Tendinite no tendão de Aquiles direito → Máximo Z2, sem intervalados
@@ -61,16 +72,6 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 **LESÃO ATIVA:**
 - Descrição: Tendinite no tendão de Aquiles direito
 - **REGRAS:** Máximo Z2, sem intervalados, sem longos >60min
-
-
-## DECISAO INTERVALADO - INSTRUCAO OBRIGATORIA
-
-[PROIBIDO] Nenhuma forma de treino intensivo esta semana.
-Tipo substituto obrigatorio: Regenerativo
-Fundamento: Lesao ativa: Tendinite no tendão de Aquiles direito
-Instrucao: INTERVALADO PROIBIDO — atleta com lesao ativa (Tendinite no tendão de Aquiles direito). Prescrever apenas REGENERATIVO ou CONTINUO leve em Z1-Z2.
-
-ATENCAO: Esta decisao e deterministica e baseada em dados reais do atleta. Ela SUBSTITUI qualquer raciocinio independente sobre intensidade. Nao inclua INTERVALADO se marcado [PROIBIDO].
 
 ## 📊 DADOS FISIOLÓGICOS E ZONAS DE TREINO
 
@@ -141,15 +142,6 @@ ATENCAO: Esta decisao e deterministica e baseada em dados reais do atleta. Ela S
 ⚠️ Tipos sem histórico recente: usar a zona calculada (Z correspondente) como referência.
 
 
-## ⛔ TETO DE PACE POR TIPO (NÃO ULTRAPASSAR)
-
-O `ritmoAlvo` (paceMin) de cada treino não pode ser mais rápido que:
-
-- **REGENERATIVO**: não mais rápido que 6:52/km
-- **CONTINUO**: não mais rápido que 5:48/km
-
-
-
 ⚠️ **Pace limiar nunca testado formalmente.**
    Paces calculados com base no perfil. Margem ampliada em ±15 seg/km.
    Recomendado: realizar teste de Cooper ou corrida de 20 min para validar o limiar.
@@ -163,7 +155,6 @@ O `ritmoAlvo` (paceMin) de cada treino não pode ser mais rápido que:
 **Dias já passados não podem receber treinos.**
 **Dias restantes disponíveis para treino nesta semana:** Segunda-feira, Quarta-feira, Sexta-feira, Sábado
 **Total de dias restantes:** 4
-**INSTRUÇÃO OBRIGATÓRIA:** Gere treinos EXCLUSIVAMENTE para os dias listados acima. NÃO inclua treinos em dias que já passaram.
 
 ### Disponibilidade Semanal
 **Dias disponíveis para treinar (configuração do atleta):** Segunda-feira, Quarta-feira, Sexta-feira, Sábado

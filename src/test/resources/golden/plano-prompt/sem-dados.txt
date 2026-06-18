@@ -20,6 +20,13 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 - Status: realizado/cancelado + percepção de esforço real
 
 **Dados:**
+## ⛔ REGRAS QUE VOCÊ NÃO PODE VIOLAR
+
+- Gere treinos EXCLUSIVAMENTE nos dias permitidos: Segunda-feira, Quarta-feira, Sexta-feira, Sábado. NÃO inclua treinos em nenhum outro dia da semana.
+- No máximo 5 dias de treino consecutivos; intercale descanso completo ou regenerativo.
+
+(Estas regras são determinísticas, baseadas em dados reais do atleta, e SUBSTITUEM qualquer raciocínio independente. Não as viole.)
+
 ## ⛔ ALERTAS OBRIGATÓRIOS (PROCESSE PRIMEIRO)
 
 1. 🟡 FARTLEK: NUNCA realizado → CONSIDERAR INCLUSÃO
@@ -58,17 +65,6 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 ## 🚨 RESTRIÇÕES E HISTÓRICO DE SAÚDE
 
 ✅ Nenhuma lesão ativa ou histórico de lesões reportado
-
-
-## DECISAO INTERVALADO - INSTRUCAO OBRIGATORIA
-
-[AUTORIZADO] Intervalado elegivel esta semana.
-Categoria: A — VO2max curto
-Fundamento: Todos os portoes passados. Fase: Desenvolvimento Geral. Categoria selecionada por periodizacao e historico.
-Instrucao: INTERVALADO AUTORIZADO — Categoria A (VO2max curto). Prescreva 6-10 tiros de 200-600m em Z5 com recuperação de 90-180s em Z1.
-Descricao: Tiros de 200-600m em Z5 (95-100% FCmax). Recuperação 1:3.
-
-ATENCAO: Esta decisao e deterministica e baseada em dados reais do atleta. Ela SUBSTITUI qualquer raciocinio independente sobre intensidade. Nao inclua INTERVALADO se marcado [PROIBIDO].
 
 ## 📊 DADOS FISIOLÓGICOS E ZONAS DE TREINO
 
@@ -130,7 +126,6 @@ Nenhum treino realizado nos últimos 14 dias.
 **Dias já passados não podem receber treinos.**
 **Dias restantes disponíveis para treino nesta semana:** Segunda-feira, Quarta-feira, Sexta-feira, Sábado
 **Total de dias restantes:** 4
-**INSTRUÇÃO OBRIGATÓRIA:** Gere treinos EXCLUSIVAMENTE para os dias listados acima. NÃO inclua treinos em dias que já passaram.
 
 ### Disponibilidade Semanal
 **Dias disponíveis para treinar (configuração do atleta):** Segunda-feira, Quarta-feira, Sexta-feira, Sábado

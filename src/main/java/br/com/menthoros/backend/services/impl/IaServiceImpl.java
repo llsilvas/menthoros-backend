@@ -25,6 +25,8 @@ import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
 import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
 import br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder;
+import br.com.menthoros.backend.services.quality.PlanQualityChecker;
+import br.com.menthoros.backend.services.quality.ViolacaoQualidade;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import br.com.menthoros.backend.routing.ModelRouter;
@@ -59,13 +61,15 @@ public class IaServiceImpl implements IaService {
     private final PaceHistoricoFormatter paceHistoricoFormatter;
     private final PaceValidator paceValidator;
     private final ZonaTreinoService zonaTreinoService;
+    private final PlanQualityChecker planQualityChecker;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
                          TreinoHistoricoProvider treinoHistoricoProvider,
                          PaceHistoricoFormatter paceHistoricoFormatter,
                          PaceValidator paceValidator,
-                         ZonaTreinoService zonaTreinoService) {
+                         ZonaTreinoService zonaTreinoService,
+                         PlanQualityChecker planQualityChecker) {
         this.modelRouter = modelRouter;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
@@ -74,6 +78,7 @@ public class IaServiceImpl implements IaService {
         this.paceHistoricoFormatter = paceHistoricoFormatter;
         this.paceValidator = paceValidator;
         this.zonaTreinoService = zonaTreinoService;
+        this.planQualityChecker = planQualityChecker;
     }
 
     private OpenAiChatOptions defaultJsonSchemaOptions() {
@@ -287,7 +292,8 @@ public class IaServiceImpl implements IaService {
                 ? regraGeracaoTreino.filtrarDiasDisponiveis(atleta.getDiasDisponiveis(), LocalDate.now(), modoGeracaoPlano)
                 : null;
 
-        String prompt = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos);
+        var promptGerado = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos);
+        String prompt = promptGerado.prompt();
 
         ChatClient chatClient = modelRouter.route(TaskComplexity.PLANO);
         log.info("Geração de plano (avançado) roteada via TaskComplexity.PLANO (bean gpt4oPlanoClient)");
@@ -303,6 +309,13 @@ public class IaServiceImpl implements IaService {
 
             // Validação pós-geração
             plano = validarENormalizarPlanoGerado(plano, atleta.getId());
+
+            // Verificação de aderência às Constraint declaradas (mede via Micrometer; ação fica para a harden)
+            List<ViolacaoQualidade> violacoes = planQualityChecker.check(plano, promptGerado.regras());
+            if (!violacoes.isEmpty()) {
+                log.warn("Plano do atleta {} com {} violação(ões) de constraint: {}",
+                        atleta.getId(), violacoes.size(), violacoes.stream().map(ViolacaoQualidade::key).toList());
+            }
 
             long endTime = System.currentTimeMillis(); // Captura o tempo de fim
             long totalTime = endTime - startTime; // Calcula o tempo total em milissegundos

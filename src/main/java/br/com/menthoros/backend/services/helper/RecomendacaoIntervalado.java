@@ -2,6 +2,9 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.enums.CategoriaIntervalado;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.services.prompt.constraint.Constraint;
+
+import java.util.Optional;
 
 /**
  * Resultado da avaliação determinística de elegibilidade para treino INTERVALADO.
@@ -22,6 +25,12 @@ public sealed interface RecomendacaoIntervalado
                 RecomendacaoIntervalado.Substituido {
 
     /**
+     * Converte a decisão na {@link Constraint} declarativa equivalente.
+     * {@code Elegivel} é mera permissão → emite zero constraints ({@code Optional.empty()}).
+     */
+    Optional<Constraint> toConstraint();
+
+    /**
      * Atleta passou todos os portões. O LLM pode incluir INTERVALADO na categoria indicada.
      *
      * @param categoria       categoria fisiologicamente adequada para esta semana (A–E)
@@ -32,7 +41,12 @@ public sealed interface RecomendacaoIntervalado
             CategoriaIntervalado categoria,
             String motivo,
             String instrucaoParaLlm
-    ) implements RecomendacaoIntervalado {}
+    ) implements RecomendacaoIntervalado {
+        @Override
+        public Optional<Constraint> toConstraint() {
+            return Optional.empty(); // permissão — não restringe
+        }
+    }
 
     /**
      * Atleta não está pronto para o intervalo ideal, mas pode fazer uma categoria segura.
@@ -46,7 +60,14 @@ public sealed interface RecomendacaoIntervalado
             CategoriaIntervalado categoriaSegura,
             String motivo,
             String instrucaoParaLlm
-    ) implements RecomendacaoIntervalado {}
+    ) implements RecomendacaoIntervalado {
+        @Override
+        public Optional<Constraint> toConstraint() {
+            String descricao = "INTENSIDADE só na versão segura — categoria " + categoriaSegura.name()
+                    + " (" + categoriaSegura.getNome() + "). Fundamento: " + motivo + ". " + instrucaoParaLlm;
+            return Optional.of(Constraint.intervaladoMaxCategoria(descricao, categoriaSegura));
+        }
+    }
 
     /**
      * Atleta não pode realizar nenhuma forma de intervalado.
@@ -60,5 +81,13 @@ public sealed interface RecomendacaoIntervalado
             TipoTreino tipoFallback,
             String motivo,
             String instrucaoParaLlm
-    ) implements RecomendacaoIntervalado {}
+    ) implements RecomendacaoIntervalado {
+        @Override
+        public Optional<Constraint> toConstraint() {
+            String descricao = "PROIBIDO qualquer treino intensivo (INTERVALADO/TIRO/SUBIDA/FARTLEK) esta semana. "
+                    + "Tipo substituto obrigatório: " + tipoFallback.getLabel() + ". Fundamento: " + motivo
+                    + ". " + instrucaoParaLlm;
+            return Optional.of(Constraint.intervaladoProibido(descricao));
+        }
+    }
 }
