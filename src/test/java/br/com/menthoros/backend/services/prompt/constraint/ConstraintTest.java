@@ -40,7 +40,14 @@ class ConstraintTest {
                     TipoTreino.LONGO, new BigDecimal("6.9167"));
             Constraint c = Constraint.paceTeto("Não ultrapassar o teto.", teto);
             assertThat(c.key()).isEqualTo(ConstraintKey.PACE_TETO);
-            assertThat(c.params()).containsKey(Constraint.PARAM_TETO);
+            assertThat(c.tetoPorTipo()).containsKeys(TipoTreino.CONTINUO, TipoTreino.LONGO);
+        }
+
+        @Test
+        @DisplayName("key nula é rejeitada")
+        void keyNula() {
+            assertThatThrownBy(() -> new Constraint(null, "x", java.util.Map.of()))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
@@ -80,7 +87,15 @@ class ConstraintTest {
             Constraint back = mapper.readValue(json, Constraint.class);
             assertThat(back.key()).isEqualTo(ConstraintKey.MAX_CONSECUTIVOS);
             assertThat(back.descricao()).isEqualTo("máx 4");
-            assertThat(back.params()).containsEntry(Constraint.PARAM_N, 4);
+            assertThat(back.maxConsecutivos()).isEqualTo(4);
+        }
+
+        @Test
+        @DisplayName("round-trip de PACE_TETO reconstrói o teto tipado (Number→BigDecimal)")
+        void roundTripPaceTeto() throws Exception {
+            Constraint original = Constraint.paceTeto("teto", Map.of(TipoTreino.CONTINUO, new BigDecimal("5.5")));
+            Constraint back = mapper.readValue(mapper.writeValueAsString(original), Constraint.class);
+            assertThat(back.tetoPorTipo().get(TipoTreino.CONTINUO)).isEqualByComparingTo("5.5");
         }
     }
 }

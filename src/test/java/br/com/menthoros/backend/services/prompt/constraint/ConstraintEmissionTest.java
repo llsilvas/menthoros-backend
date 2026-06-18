@@ -43,7 +43,7 @@ class ConstraintEmissionTest {
             Optional<Constraint> c = rec.toConstraint();
             assertThat(c).isPresent();
             assertThat(c.get().key()).isEqualTo(ConstraintKey.INTERVALADO_MAX_CATEGORIA);
-            assertThat(c.get().params()).containsEntry(Constraint.PARAM_CATEGORIA_SEGURA, "C");
+            assertThat(c.get().categoriaSegura()).isEqualTo(CategoriaIntervalado.C);
         }
 
         @Test

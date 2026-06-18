@@ -48,6 +48,37 @@ class PlanQualityCheckerTest {
 
             assertThat(checker.check(plano, regras)).isEmpty();
         }
+
+        @Test
+        @DisplayName("pace exatamente no teto não viola (teto não-inclusivo)")
+        void paceNoLimite() {
+            PlanoSemanalLlmDto plano = plano(treino("SEGUNDA", "CONTINUO", "5:30/km")); // 5.5 == teto
+            var regras = List.of(Constraint.paceTeto("Teto.", java.util.Map.of(TipoTreino.CONTINUO, new BigDecimal("5.5"))));
+            assertThat(checker.check(plano, regras)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("exatamente no máximo de consecutivos não viola")
+        void maxNoLimite() {
+            PlanoSemanalLlmDto plano = plano(
+                    treino("SEGUNDA", "CONTINUO", "6:00/km"), treino("TERCA", "FACIL", "6:00/km"),
+                    treino("QUARTA", "CONTINUO", "6:00/km"), treino("QUINTA", "FACIL", "6:00/km"));
+            assertThat(checker.check(plano, List.of(Constraint.maxConsecutivos("Máx 4.", 4)))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("plano nulo → sem violações")
+        void planoNulo() {
+            assertThat(checker.check(null, List.of(Constraint.intervaladoProibido("x")))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("tipo de treino desconhecido é ignorado (sem falso positivo)")
+        void tipoDesconhecido() {
+            PlanoSemanalLlmDto plano = plano(treino("SEGUNDA", "XPTO", "4:00/km"));
+            var regras = List.of(Constraint.paceTeto("Teto.", java.util.Map.of(TipoTreino.CONTINUO, new BigDecimal("5.5"))));
+            assertThat(checker.check(plano, regras)).isEmpty();
+        }
     }
 
     @Nested
@@ -61,6 +92,14 @@ class PlanQualityCheckerTest {
             var v = checker.check(plano, List.of(Constraint.intervaladoProibido("Sem intervalado.")));
             assertThat(v).extracting(ViolacaoQualidade::key).containsExactly(ConstraintKey.INTERVALADO_PROIBIDO);
             assertThat(registry.find("violacoes_plano").tag("key", "INTERVALADO_PROIBIDO").counter().count()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("TIRO também viola INTERVALADO_PROIBIDO (conjunto intensivo)")
+        void tiroProibido() {
+            PlanoSemanalLlmDto plano = plano(treino("QUINTA", "TIRO", "4:00/km"));
+            var v = checker.check(plano, List.of(Constraint.intervaladoProibido("Sem intensivo.")));
+            assertThat(v).extracting(ViolacaoQualidade::key).containsExactly(ConstraintKey.INTERVALADO_PROIBIDO);
         }
 
         @Test

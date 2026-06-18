@@ -6,6 +6,7 @@ import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.services.prompt.constraint.Constraint;
+import br.com.menthoros.backend.services.prompt.constraint.ConstraintKey;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +17,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,6 +40,10 @@ import java.util.regex.Pattern;
 public class PlanQualityChecker {
 
     private static final Pattern PACE_TOKEN = Pattern.compile("(\\d{1,2}):(\\d{2})");
+
+    /** Tipos intensivos proibidos sob INTERVALADO_PROIBIDO (a descrição da constraint lista todos). */
+    private static final Set<TipoTreino> INTENSIVOS_PROIBIDOS =
+            Set.of(TipoTreino.INTERVALADO, TipoTreino.TIRO, TipoTreino.SUBIDA, TipoTreino.FARTLEK);
 
     private final MeterRegistry meterRegistry;
 
@@ -69,10 +75,10 @@ public class PlanQualityChecker {
 
     private void verificarIntervaladoProibido(List<TreinoPlanejadoLlmDto> treinos, List<ViolacaoQualidade> out) {
         for (TreinoPlanejadoLlmDto t : treinos) {
-            if (TipoTreino.INTERVALADO.name().equalsIgnoreCase(t.tipoTreino())) {
-                out.add(new ViolacaoQualidade(
-                        br.com.menthoros.backend.services.prompt.constraint.ConstraintKey.INTERVALADO_PROIBIDO,
-                        "Treino INTERVALADO em " + t.diaSemana() + " sob INTERVALADO_PROIBIDO"));
+            TipoTreino tipo = parseTipo(t.tipoTreino());
+            if (tipo != null && INTENSIVOS_PROIBIDOS.contains(tipo)) {
+                out.add(new ViolacaoQualidade(ConstraintKey.INTERVALADO_PROIBIDO,
+                        "Treino intensivo " + tipo.name() + " em " + t.diaSemana() + " sob INTERVALADO_PROIBIDO"));
             }
         }
     }
@@ -162,7 +168,7 @@ public class PlanQualityChecker {
 
     /** Extrai o pace mais rápido (menor m:ss) de um ritmoAlvo como "5:30/km" ou "5:00-5:15/km". */
     private static Optional<BigDecimal> parsePaceMaisRapido(String ritmoAlvo) {
-        if (ritmoAlvo == null || ritmoAlvo.isBlank()) return Optional.empty();
+        if (ritmoAlvo == null || ritmoAlvo.isBlank() || ritmoAlvo.length() > 50) return Optional.empty();
         Matcher m = PACE_TOKEN.matcher(ritmoAlvo);
         BigDecimal maisRapido = null;
         while (m.find()) {

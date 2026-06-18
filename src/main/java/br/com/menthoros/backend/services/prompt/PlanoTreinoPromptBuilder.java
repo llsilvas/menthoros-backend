@@ -155,8 +155,8 @@ public class PlanoTreinoPromptBuilder {
 
     // ======================== MÉTODO OTIMIZADO (principal) ========================
 
-    public String buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo,
-                                       LocalDate inicioSemana, List<DiaSemana> diasEfetivos) {
+    public PromptGerado buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo,
+                                             LocalDate inicioSemana, List<DiaSemana> diasEfetivos) {
         var ctx = treinoHistoricoProvider.prepararContexto(atleta);
 
         // DECISÃO INTERVALADO — avaliação determinística pré-LLM (5 portões fisiológicos)
@@ -315,7 +315,7 @@ public class PlanoTreinoPromptBuilder {
         historicoFinal.append(String.format("  - ** Status geral: (%s)", metricasPromptFormatter.avaliarStatusGeral(metaDados)));
 
         // 10. Carregar e formatar o novo template otimizado
-        return templateLoader.loadAndFormat(
+        String prompt = templateLoader.loadAndFormat(
                 "plano-treino-otimizado-claude.txt",
                 atleta.getNome(),                                                                              // %s - Nome
                 atleta.getIdade(),                                                                             // %d - Idade
@@ -326,28 +326,20 @@ public class PlanoTreinoPromptBuilder {
                 provas,                                                                                        // %s - Provas
                 historicoFinal.toString()                                                                      // %s - Histórico completo (com alertas no topo)
         );
+        // Retorna o prompt + as Constraint já computadas (evita recomputar contexto pós-geração).
+        return new PromptGerado(prompt, regras);
     }
+
+    /** Prompt montado + as {@link Constraint} ativas usadas no bloco [1] e pelo {@code PlanQualityChecker}. */
+    public record PromptGerado(String prompt, List<Constraint> regras) {}
 
     // ======================== MÉTODOS AUXILIARES (mantidos) ========================
 
     /**
-     * Compõe o bloco mandatório [1] no topo do prompt a partir das {@link Constraint} ativas —
-     * regras determinísticas (decisão de intervalado, teto de pace, dias permitidos, máx. consecutivos)
-     * consolidadas num único lugar proeminente (lever anti-alucinação). Vazio se não há regras.
-     */
-    /**
      * Reúne as {@link Constraint} ativas do plano (intervalado, teto de pace, dias permitidos,
-     * máx. consecutivos). Mesma fonte usada para renderizar o bloco [1] e para verificar o plano
-     * gerado ({@code PlanQualityChecker}).
+     * máx. consecutivos). Fonte única usada para renderizar o bloco [1] e — via {@link PromptGerado} —
+     * para o {@code PlanQualityChecker} verificar o plano gerado (sem recomputar contexto).
      */
-    public List<Constraint> coletarRegras(Atleta atleta, PlanoMetaDados metaDados, List<DiaSemana> diasEfetivos) {
-        var ctx = treinoHistoricoProvider.prepararContexto(atleta);
-        RecomendacaoIntervalado recom = intervaladoElegibilidadeService.avaliar(
-                atleta, metaDados, ctx.treinosUltimas4Semanas(), ctx.dataReferencia());
-        Map<TipoTreino, BigDecimal> teto = paceHistoricoFormatter.calcularTetoPorTipo(ctx.treinosUltimas4Semanas());
-        return montarRegras(recom, teto, diasEfetivos, metaDados, atleta);
-    }
-
     private List<Constraint> montarRegras(RecomendacaoIntervalado recomIntervalado,
                                           Map<TipoTreino, BigDecimal> tetoPorTipo,
                                           List<DiaSemana> diasEfetivos,
@@ -360,6 +352,10 @@ public class PlanoTreinoPromptBuilder {
         return regras;
     }
 
+    /**
+     * Compõe o bloco mandatório [1] no topo do prompt a partir das {@link Constraint} ativas —
+     * consolidadas num único lugar proeminente (lever anti-alucinação). Vazio se não há regras.
+     */
     private String formatarBlocoRegras(List<Constraint> regras) {
         if (regras == null || regras.isEmpty()) {
             return "";

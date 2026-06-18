@@ -24,13 +24,13 @@ import java.util.Map;
 public record Constraint(ConstraintKey key, String descricao, Map<String, Object> params) {
 
     /** Chave de params: {@code Map<String(TipoTreino), BigDecimal>} (pace em minutos decimais). */
-    public static final String PARAM_TETO = "teto";
+    static final String PARAM_TETO = "teto";
     /** Chave de params: {@code List<String(DiaSemana)>}. */
-    public static final String PARAM_DIAS = "dias";
+    static final String PARAM_DIAS = "dias";
     /** Chave de params: {@code Integer} (máx. de dias consecutivos de treino). */
-    public static final String PARAM_N = "n";
+    static final String PARAM_N = "n";
     /** Chave de params: {@code String} (nome da {@link CategoriaIntervalado} segura). */
-    public static final String PARAM_CATEGORIA_SEGURA = "categoriaSegura";
+    static final String PARAM_CATEGORIA_SEGURA = "categoriaSegura";
 
     public Constraint {
         if (key == null) {
@@ -99,6 +99,12 @@ public record Constraint(ConstraintKey key, String descricao, Map<String, Object
     public Integer maxConsecutivos() {
         Object raw = params.get(PARAM_N);
         return (raw instanceof Number n) ? n.intValue() : null;
+    }
+
+    /** Categoria segura ({@code INTERVALADO_MAX_CATEGORIA}), ou {@code null} se não aplicável. */
+    public CategoriaIntervalado categoriaSegura() {
+        Object raw = params.get(PARAM_CATEGORIA_SEGURA);
+        return (raw instanceof String s) ? CategoriaIntervalado.valueOf(s) : null;
     }
 
     private static BigDecimal toBigDecimal(Object value) {
