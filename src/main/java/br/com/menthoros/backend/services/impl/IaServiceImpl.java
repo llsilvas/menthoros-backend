@@ -25,6 +25,8 @@ import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
 import br.com.menthoros.backend.services.helper.PlanoEstruturaReparador;
 import br.com.menthoros.backend.services.helper.PlanoResilienceService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
 import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
 import br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder;
@@ -67,6 +69,7 @@ public class IaServiceImpl implements IaService {
     private final PlanQualityChecker planQualityChecker;
     private final PlanoEstruturaReparador estruturaReparador;
     private final PlanoResilienceService planoResilienceService;
+    private final MeterRegistry meterRegistry;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
@@ -76,7 +79,8 @@ public class IaServiceImpl implements IaService {
                          ZonaTreinoService zonaTreinoService,
                          PlanQualityChecker planQualityChecker,
                          PlanoEstruturaReparador estruturaReparador,
-                         PlanoResilienceService planoResilienceService) {
+                         PlanoResilienceService planoResilienceService,
+                         MeterRegistry meterRegistry) {
         this.modelRouter = modelRouter;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
@@ -88,6 +92,7 @@ public class IaServiceImpl implements IaService {
         this.planQualityChecker = planQualityChecker;
         this.estruturaReparador = estruturaReparador;
         this.planoResilienceService = planoResilienceService;
+        this.meterRegistry = meterRegistry;
     }
 
     private OpenAiChatOptions defaultJsonSchemaOptions() {
@@ -1305,6 +1310,7 @@ public class IaServiceImpl implements IaService {
         if (etapas == null || etapas.size() != 3) {
             log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} tem {} etapas (esperado: 3)",
                     atletaId, tipo, etapas != null ? etapas.size() : 0);
+            contarViolacaoEstrutural(tipo);
             throw new LLMException(String.format(
                     "Treino %s inválido: gerou %d etapas (esperado 3: aquec, principal, desaq)",
                     tipo, etapas != null ? etapas.size() : 0));
@@ -1313,9 +1319,15 @@ public class IaServiceImpl implements IaService {
                 && (!"AQUECIMENTO".equals(etapas.get(0).tipoEtapa()) || !"DESAQUECIMENTO".equals(etapas.get(2).tipoEtapa()))) {
             log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} fora de ordem: [{}→{}→{}]",
                     atletaId, tipo, etapas.get(0).tipoEtapa(), etapas.get(1).tipoEtapa(), etapas.get(2).tipoEtapa());
+            contarViolacaoEstrutural(tipo);
             throw new LLMException(String.format(
                     "Treino %s inválido: deve ser AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO", tipo));
         }
+    }
+
+    /** Telemetria: violação estrutural residual (não reparada) por tipo de treino. */
+    private void contarViolacaoEstrutural(String tipo) {
+        Counter.builder("plano_violacao_estrutural").tag("tipo", tipo).register(meterRegistry).increment();
     }
 
     private void validarTreinoLongo(br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto treino, Object atletaId) {

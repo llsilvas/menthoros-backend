@@ -42,6 +42,7 @@ public class PlanoResilienceService {
     public PlanoSemanalLlmDto gerarComResiliencia(Function<String, PlanoSemanalLlmDto> gerar,
                                                   Function<PlanoSemanalLlmDto, PlanoSemanalLlmDto> validar,
                                                   String promptBase) {
+        Counter.builder("plano_geracao_total").register(meterRegistry).increment(); // denominador da taxa de sucesso
         String prompt = promptBase;
         LLMException ultimaFalha = null;
 

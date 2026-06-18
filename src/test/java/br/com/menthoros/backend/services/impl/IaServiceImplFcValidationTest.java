@@ -47,7 +47,8 @@ class IaServiceImplFcValidationTest {
                 mock(ZonaTreinoService.class),
                 mock(br.com.menthoros.backend.services.quality.PlanQualityChecker.class),
                 mock(br.com.menthoros.backend.services.helper.PlanoEstruturaReparador.class),
-                mock(br.com.menthoros.backend.services.helper.PlanoResilienceService.class)
+                mock(br.com.menthoros.backend.services.helper.PlanoResilienceService.class),
+                new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
         );
 
         zonasFC160 = List.of(
