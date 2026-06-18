@@ -300,11 +300,7 @@ public class PlanoTreinoPromptBuilder {
                 atleta.getDiaPreferidoLongo().toString() : "SABADO";
 
         // 9. BLOCO [1] — regras mandatórias consolidadas (declaradas como Constraint), no topo do prompt
-        List<Constraint> regras = new ArrayList<>();
-        recomIntervalado.toConstraint().ifPresent(regras::add);
-        paceHistoricoFormatter.tetoConstraint(tetoPorTipo).ifPresent(regras::add);
-        disponibilidadePromptFormatter.diasPermitidosConstraint(diasEfetivos).ifPresent(regras::add);
-        regras.add(disponibilidadePromptFormatter.maxConsecutivosConstraint(metaDados, atleta));
+        List<Constraint> regras = montarRegras(recomIntervalado, tetoPorTipo, diasEfetivos, metaDados, atleta);
 
         // 10. Montar histórico completo: regras no TOPO, depois alertas, depois dados
         StringBuilder historicoFinal = new StringBuilder();
@@ -339,6 +335,31 @@ public class PlanoTreinoPromptBuilder {
      * regras determinísticas (decisão de intervalado, teto de pace, dias permitidos, máx. consecutivos)
      * consolidadas num único lugar proeminente (lever anti-alucinação). Vazio se não há regras.
      */
+    /**
+     * Reúne as {@link Constraint} ativas do plano (intervalado, teto de pace, dias permitidos,
+     * máx. consecutivos). Mesma fonte usada para renderizar o bloco [1] e para verificar o plano
+     * gerado ({@code PlanQualityChecker}).
+     */
+    public List<Constraint> coletarRegras(Atleta atleta, PlanoMetaDados metaDados, List<DiaSemana> diasEfetivos) {
+        var ctx = treinoHistoricoProvider.prepararContexto(atleta);
+        RecomendacaoIntervalado recom = intervaladoElegibilidadeService.avaliar(
+                atleta, metaDados, ctx.treinosUltimas4Semanas(), ctx.dataReferencia());
+        Map<TipoTreino, BigDecimal> teto = paceHistoricoFormatter.calcularTetoPorTipo(ctx.treinosUltimas4Semanas());
+        return montarRegras(recom, teto, diasEfetivos, metaDados, atleta);
+    }
+
+    private List<Constraint> montarRegras(RecomendacaoIntervalado recomIntervalado,
+                                          Map<TipoTreino, BigDecimal> tetoPorTipo,
+                                          List<DiaSemana> diasEfetivos,
+                                          PlanoMetaDados metaDados, Atleta atleta) {
+        List<Constraint> regras = new ArrayList<>();
+        recomIntervalado.toConstraint().ifPresent(regras::add);
+        paceHistoricoFormatter.tetoConstraint(tetoPorTipo).ifPresent(regras::add);
+        disponibilidadePromptFormatter.diasPermitidosConstraint(diasEfetivos).ifPresent(regras::add);
+        regras.add(disponibilidadePromptFormatter.maxConsecutivosConstraint(metaDados, atleta));
+        return regras;
+    }
+
     private String formatarBlocoRegras(List<Constraint> regras) {
         if (regras == null || regras.isEmpty()) {
             return "";

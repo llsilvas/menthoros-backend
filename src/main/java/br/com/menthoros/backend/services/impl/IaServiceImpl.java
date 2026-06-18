@@ -25,6 +25,8 @@ import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
 import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
 import br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder;
+import br.com.menthoros.backend.services.prompt.constraint.Constraint;
+import br.com.menthoros.backend.services.quality.PlanQualityChecker;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import br.com.menthoros.backend.routing.ModelRouter;
@@ -59,13 +61,15 @@ public class IaServiceImpl implements IaService {
     private final PaceHistoricoFormatter paceHistoricoFormatter;
     private final PaceValidator paceValidator;
     private final ZonaTreinoService zonaTreinoService;
+    private final PlanQualityChecker planQualityChecker;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
                          TreinoHistoricoProvider treinoHistoricoProvider,
                          PaceHistoricoFormatter paceHistoricoFormatter,
                          PaceValidator paceValidator,
-                         ZonaTreinoService zonaTreinoService) {
+                         ZonaTreinoService zonaTreinoService,
+                         PlanQualityChecker planQualityChecker) {
         this.modelRouter = modelRouter;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
@@ -74,6 +78,7 @@ public class IaServiceImpl implements IaService {
         this.paceHistoricoFormatter = paceHistoricoFormatter;
         this.paceValidator = paceValidator;
         this.zonaTreinoService = zonaTreinoService;
+        this.planQualityChecker = planQualityChecker;
     }
 
     private OpenAiChatOptions defaultJsonSchemaOptions() {
@@ -303,6 +308,10 @@ public class IaServiceImpl implements IaService {
 
             // Validação pós-geração
             plano = validarENormalizarPlanoGerado(plano, atleta.getId());
+
+            // Verificação de aderência às Constraint declaradas (mede via Micrometer; não age — harden trata)
+            List<Constraint> regras = promptBuilder.coletarRegras(atleta, metaDados, diasEfetivos);
+            planQualityChecker.check(plano, regras);
 
             long endTime = System.currentTimeMillis(); // Captura o tempo de fim
             long totalTime = endTime - startTime; // Calcula o tempo total em milissegundos
