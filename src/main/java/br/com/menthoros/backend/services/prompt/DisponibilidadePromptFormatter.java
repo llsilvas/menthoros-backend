@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.prompt;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.services.prompt.constraint.Constraint;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -10,6 +11,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -140,6 +142,28 @@ public class DisponibilidadePromptFormatter {
      * Calcula o máximo de dias consecutivos que o atleta pode treinar com segurança.
      * Baseado em TSB, fadiga, experiência, ramp rate, CTL e histórico de lesões.
      */
+    /**
+     * Emite a {@link Constraint} de dias permitidos quando a semana está em andamento
+     * ({@code diasEfetivos != null}). Vazia para semana cheia (sem restrição de dia-passado).
+     */
+    public Optional<Constraint> diasPermitidosConstraint(List<DiaSemana> diasEfetivos) {
+        if (diasEfetivos == null || diasEfetivos.isEmpty()) {
+            return Optional.empty();
+        }
+        String labels = diasEfetivos.stream().map(DiaSemana::getLabel).collect(Collectors.joining(", "));
+        String descricao = "Gere treinos EXCLUSIVAMENTE nos dias permitidos: " + labels
+                + ". NÃO inclua treinos em nenhum outro dia da semana.";
+        return Optional.of(Constraint.diasPermitidos(descricao, diasEfetivos));
+    }
+
+    /** Emite a {@link Constraint} de máximo de dias consecutivos de treino na semana. */
+    public Constraint maxConsecutivosConstraint(PlanoMetaDados metaDados, Atleta atleta) {
+        int max = calcularMaxDiasConsecutivos(metaDados, atleta);
+        String descricao = "No máximo " + max
+                + " dias de treino consecutivos; intercale descanso completo ou regenerativo.";
+        return Constraint.maxConsecutivos(descricao, max);
+    }
+
     public int calcularMaxDiasConsecutivos(PlanoMetaDados metaDados, Atleta atleta) {
         if (metaDados == null || atleta == null) {
             return 5;

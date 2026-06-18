@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.prompt;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.services.prompt.constraint.Constraint;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -173,6 +174,24 @@ public class PaceHistoricoFormatter {
 
         sb.append("\n");
         return sb.toString();
+    }
+
+    /**
+     * Emite a {@link Constraint} declarativa do teto de pace (mesmo conteúdo de {@link #formatarTetoPace},
+     * sem o cabeçalho de seção — o bloco mandatório do topo provê o header). Vazia se não há tetos.
+     */
+    public Optional<Constraint> tetoConstraint(Map<TipoTreino, BigDecimal> tetoPorTipo) {
+        if (tetoPorTipo == null || tetoPorTipo.isEmpty()) {
+            return Optional.empty();
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("O `ritmoAlvo` (paceMin) de cada treino NÃO pode ser mais rápido que o teto do seu tipo:");
+        for (TipoTreino tipo : ORDEM_EXIBICAO) {
+            BigDecimal teto = tetoPorTipo.get(tipo);
+            if (teto == null) continue;
+            sb.append(String.format("%n- %s: não mais rápido que %s/km", tipo.getValue(), formatarDecimalMinutos(teto)));
+        }
+        return Optional.of(Constraint.paceTeto(sb.toString(), tetoPorTipo));
     }
 
     /**
