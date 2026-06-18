@@ -63,8 +63,8 @@ public sealed interface RecomendacaoIntervalado
     ) implements RecomendacaoIntervalado {
         @Override
         public Optional<Constraint> toConstraint() {
-            String descricao = "Intensidade permitida APENAS na versão segura (categoria "
-                    + categoriaSegura.name() + "). " + instrucaoParaLlm;
+            String descricao = "INTENSIDADE só na versão segura — categoria " + categoriaSegura.name()
+                    + " (" + categoriaSegura.getNome() + "). Fundamento: " + motivo + ". " + instrucaoParaLlm;
             return Optional.of(Constraint.intervaladoMaxCategoria(descricao, categoriaSegura));
         }
     }
@@ -84,8 +84,9 @@ public sealed interface RecomendacaoIntervalado
     ) implements RecomendacaoIntervalado {
         @Override
         public Optional<Constraint> toConstraint() {
-            String descricao = "PROIBIDO qualquer treino intensivo esta semana. Tipo substituto obrigatório: "
-                    + tipoFallback.getLabel() + ". " + instrucaoParaLlm;
+            String descricao = "PROIBIDO qualquer treino intensivo (INTERVALADO/TIRO/SUBIDA/FARTLEK) esta semana. "
+                    + "Tipo substituto obrigatório: " + tipoFallback.getLabel() + ". Fundamento: " + motivo
+                    + ". " + instrucaoParaLlm;
             return Optional.of(Constraint.intervaladoProibido(descricao));
         }
     }

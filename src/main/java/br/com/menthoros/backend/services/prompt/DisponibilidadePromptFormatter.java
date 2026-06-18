@@ -66,9 +66,7 @@ public class DisponibilidadePromptFormatter {
                         .map(DiaSemana::getLabel)
                         .collect(Collectors.joining(", ")));
                 sb.append("\n");
-                sb.append(String.format("**Total de dias restantes:** %d\n", diasEfetivos.size()));
-                sb.append("**INSTRUÇÃO OBRIGATÓRIA:** Gere treinos EXCLUSIVAMENTE para os dias listados acima. ");
-                sb.append("NÃO inclua treinos em dias que já passaram.\n\n");
+                sb.append(String.format("**Total de dias restantes:** %d\n\n", diasEfetivos.size()));
             }
         }
 

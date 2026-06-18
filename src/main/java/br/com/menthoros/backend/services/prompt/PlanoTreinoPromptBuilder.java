@@ -18,6 +18,7 @@ import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.Contexto
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaCompleta;
 import br.com.menthoros.backend.services.impl.MetricasAlertaService;
+import br.com.menthoros.backend.services.prompt.constraint.Constraint;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
@@ -27,6 +28,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -222,11 +224,9 @@ public class PlanoTreinoPromptBuilder {
         // ETAPA 3.5: Pace demonstrado por tipo nas últimas 4 semanas (Fase 1)
         historicoCompleto.append(paceHistoricoFormatter.formatarHistoricoPace(ctx.treinosUltimas4Semanas())).append("\n\n");
 
-        // ETAPA 3.6: Teto obrigatório de pace por tipo (Fase 3)
+        // ETAPA 3.6: Teto de pace por tipo — calculado aqui, mas renderizado como Constraint no
+        // bloco mandatório do topo (não mais disperso nesta posição).
         Map<TipoTreino, BigDecimal> tetoPorTipo = paceHistoricoFormatter.calcularTetoPorTipo(ctx.treinosUltimas4Semanas());
-        if (!tetoPorTipo.isEmpty()) {
-            historicoCompleto.append(paceHistoricoFormatter.formatarTetoPace(tetoPorTipo)).append("\n\n");
-        }
 
         // ETAPA 3.7: Aviso de paceLimiar desatualizado (Fase 5)
         String avisoPaceLimiar = paceHistoricoFormatter.verificarPaceLimiarAtualizado(atleta);
@@ -299,15 +299,20 @@ public class PlanoTreinoPromptBuilder {
         String diaPreferidoLongo = atleta.getDiaPreferidoLongo() != null ?
                 atleta.getDiaPreferidoLongo().toString() : "SABADO";
 
-        // 9. Montar histórico completo com todas as seções na ordem correta
-        StringBuilder historicoFinal = new StringBuilder();
+        // 9. BLOCO [1] — regras mandatórias consolidadas (declaradas como Constraint), no topo do prompt
+        List<Constraint> regras = new ArrayList<>();
+        recomIntervalado.toConstraint().ifPresent(regras::add);
+        paceHistoricoFormatter.tetoConstraint(tetoPorTipo).ifPresent(regras::add);
+        disponibilidadePromptFormatter.diasPermitidosConstraint(diasEfetivos).ifPresent(regras::add);
+        regras.add(disponibilidadePromptFormatter.maxConsecutivosConstraint(metaDados, atleta));
 
-        // Ordem prioritária: alertas primeiro, depois dados, depois regras
+        // 10. Montar histórico completo: regras no TOPO, depois alertas, depois dados
+        StringBuilder historicoFinal = new StringBuilder();
+        historicoFinal.append(formatarBlocoRegras(regras));
         historicoFinal.append(alertasObrigatorios);
         historicoFinal.append(hierarquiaDecisao);
         historicoFinal.append(eventoCompetitivoSemana);
         historicoFinal.append(restricoesLesoes);
-        historicoFinal.append(formatarDecisaoIntervalado(recomIntervalado));
         historicoFinal.append(historicoCompleto);
 
         historicoFinal.append(String.format("** STATUS GERAL ** \n"));
@@ -330,46 +335,21 @@ public class PlanoTreinoPromptBuilder {
     // ======================== MÉTODOS AUXILIARES (mantidos) ========================
 
     /**
-     * Converte o resultado do motor de elegibilidade em uma seção de texto estruturada
-     * que é injetada no prompt como instrução mandatória para o LLM.
-     *
-     * <p>Usa pattern matching switch sobre o sealed type para garantir exaustividade
-     * em tempo de compilação (Java 21). Texto em ASCII sem emojis para evitar problemas
-     * de encoding no {@code templateLoader}.</p>
+     * Compõe o bloco mandatório [1] no topo do prompt a partir das {@link Constraint} ativas —
+     * regras determinísticas (decisão de intervalado, teto de pace, dias permitidos, máx. consecutivos)
+     * consolidadas num único lugar proeminente (lever anti-alucinação). Vazio se não há regras.
      */
-    private String formatarDecisaoIntervalado(RecomendacaoIntervalado recomendacao) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("\n## DECISAO INTERVALADO - INSTRUCAO OBRIGATORIA\n\n");
-
-        switch (recomendacao) {
-            case RecomendacaoIntervalado.Substituido sub -> {
-                sb.append("[PROIBIDO] Nenhuma forma de treino intensivo esta semana.\n");
-                sb.append("Tipo substituto obrigatorio: ").append(sub.tipoFallback().getLabel()).append("\n");
-                sb.append("Fundamento: ").append(sub.motivo()).append("\n");
-                sb.append("Instrucao: ").append(sub.instrucaoParaLlm()).append("\n");
-            }
-            case RecomendacaoIntervalado.Degradado deg -> {
-                sb.append("[DEGRADADO] Versao segura de intensidade autorizada.\n");
-                sb.append("Categoria segura: ").append(deg.categoriaSegura().name())
-                  .append(" — ").append(deg.categoriaSegura().getNome()).append("\n");
-                sb.append("Fundamento: ").append(deg.motivo()).append("\n");
-                sb.append("Instrucao: ").append(deg.instrucaoParaLlm()).append("\n");
-                sb.append("Descricao: ").append(deg.categoriaSegura().getDescricao()).append("\n");
-            }
-            case RecomendacaoIntervalado.Elegivel el -> {
-                sb.append("[AUTORIZADO] Intervalado elegivel esta semana.\n");
-                sb.append("Categoria: ").append(el.categoria().name())
-                  .append(" — ").append(el.categoria().getNome()).append("\n");
-                sb.append("Fundamento: ").append(el.motivo()).append("\n");
-                sb.append("Instrucao: ").append(el.instrucaoParaLlm()).append("\n");
-                sb.append("Descricao: ").append(el.categoria().getDescricao()).append("\n");
-            }
+    private String formatarBlocoRegras(List<Constraint> regras) {
+        if (regras == null || regras.isEmpty()) {
+            return "";
         }
-
-        sb.append("\nATENCAO: Esta decisao e deterministica e baseada em dados reais do atleta. ");
-        sb.append("Ela SUBSTITUI qualquer raciocinio independente sobre intensidade. ");
-        sb.append("Nao inclua INTERVALADO se marcado [PROIBIDO].\n\n");
-
+        StringBuilder sb = new StringBuilder();
+        sb.append("## ⛔ REGRAS QUE VOCÊ NÃO PODE VIOLAR\n\n");
+        for (Constraint regra : regras) {
+            sb.append("- ").append(regra.descricao()).append("\n");
+        }
+        sb.append("\n(Estas regras são determinísticas, baseadas em dados reais do atleta, e ");
+        sb.append("SUBSTITUEM qualquer raciocínio independente. Não as viole.)\n\n");
         return sb.toString();
     }
 
