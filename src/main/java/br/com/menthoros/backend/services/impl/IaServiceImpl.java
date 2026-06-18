@@ -14,6 +14,7 @@ import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
@@ -22,6 +23,7 @@ import br.com.menthoros.backend.services.helper.PaceValidator;
 import br.com.menthoros.backend.services.helper.RegraGeracaoTreino;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
 import br.com.menthoros.backend.services.helper.PlanoEstruturaReparador;
+import br.com.menthoros.backend.services.helper.PlanoResilienceService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
 import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
@@ -64,6 +66,7 @@ public class IaServiceImpl implements IaService {
     private final ZonaTreinoService zonaTreinoService;
     private final PlanQualityChecker planQualityChecker;
     private final PlanoEstruturaReparador estruturaReparador;
+    private final PlanoResilienceService planoResilienceService;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
@@ -72,7 +75,8 @@ public class IaServiceImpl implements IaService {
                          PaceValidator paceValidator,
                          ZonaTreinoService zonaTreinoService,
                          PlanQualityChecker planQualityChecker,
-                         PlanoEstruturaReparador estruturaReparador) {
+                         PlanoEstruturaReparador estruturaReparador,
+                         PlanoResilienceService planoResilienceService) {
         this.modelRouter = modelRouter;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
@@ -83,6 +87,7 @@ public class IaServiceImpl implements IaService {
         this.zonaTreinoService = zonaTreinoService;
         this.planQualityChecker = planQualityChecker;
         this.estruturaReparador = estruturaReparador;
+        this.planoResilienceService = planoResilienceService;
     }
 
     private OpenAiChatOptions defaultJsonSchemaOptions() {
@@ -302,34 +307,32 @@ public class IaServiceImpl implements IaService {
         ChatClient chatClient = modelRouter.route(TaskComplexity.PLANO);
         log.info("Geração de plano (avançado) roteada via TaskComplexity.PLANO (bean gpt4oPlanoClient)");
 
+        long startTime = System.currentTimeMillis();
+        PlanoSemanalLlmDto plano;
         try {
-            long startTime = System.currentTimeMillis(); // Captura o tempo de início
-
-            PlanoSemanalLlmDto plano = chatClient.prompt()
-                    .user(prompt)
-                    .options(defaultJsonSchemaOptions())
-                    .call()
-                    .entity(PlanoSemanalLlmDto.class);
-
-            // Validação pós-geração
-            plano = validarENormalizarPlanoGerado(plano, atleta.getId());
-
-            // Verificação de aderência às Constraint declaradas (mede via Micrometer; ação fica para a harden)
-            List<ViolacaoQualidade> violacoes = planQualityChecker.check(plano, promptGerado.regras());
-            if (!violacoes.isEmpty()) {
-                log.warn("Plano do atleta {} com {} violação(ões) de constraint: {}",
-                        atleta.getId(), violacoes.size(), violacoes.stream().map(ViolacaoQualidade::key).toList());
-            }
-
-            long endTime = System.currentTimeMillis(); // Captura o tempo de fim
-            long totalTime = endTime - startTime; // Calcula o tempo total em milissegundos
-            log.info("Plano gerado com sucesso via structured output para atleta: {} - {} s", atleta.getId(), totalTime/1000.0);
-            return plano;
-
+            // Geração resiliente: reparo já aplicado no validar; aqui, retry único com feedback se a
+            // validação ainda falhar estruturalmente. Falha final → DomainRuleViolationException (4xx).
+            plano = planoResilienceService.gerarComResiliencia(
+                    p -> chatClient.prompt().user(p).options(defaultJsonSchemaOptions()).call().entity(PlanoSemanalLlmDto.class),
+                    p -> validarENormalizarPlanoGerado(p, atleta.getId()),
+                    prompt);
+        } catch (DomainRuleViolationException e) {
+            throw e; // falha estrutural final → mensagem ao treinador (não re-empacotar como 503)
         } catch (Exception e) {
             log.error("Erro ao gerar plano via structured output para atleta {}: {}", atleta.getId(), e.getMessage(), e);
             throw new LLMException("Falha na geração de plano via IA: " + e.getMessage(), e);
         }
+
+        // Verificação de aderência às Constraint declaradas (mede via Micrometer; ação fica para a harden)
+        List<ViolacaoQualidade> violacoes = planQualityChecker.check(plano, promptGerado.regras());
+        if (!violacoes.isEmpty()) {
+            log.warn("Plano do atleta {} com {} violação(ões) de constraint: {}",
+                    atleta.getId(), violacoes.size(), violacoes.stream().map(ViolacaoQualidade::key).toList());
+        }
+
+        long totalTime = System.currentTimeMillis() - startTime;
+        log.info("Plano gerado com sucesso via structured output para atleta: {} - {} s", atleta.getId(), totalTime / 1000.0);
+        return plano;
     }
 
     /**

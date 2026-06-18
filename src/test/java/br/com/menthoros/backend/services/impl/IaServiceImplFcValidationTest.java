@@ -46,7 +46,8 @@ class IaServiceImplFcValidationTest {
                 mock(br.com.menthoros.backend.services.helper.PaceValidator.class),
                 mock(ZonaTreinoService.class),
                 mock(br.com.menthoros.backend.services.quality.PlanQualityChecker.class),
-                mock(br.com.menthoros.backend.services.helper.PlanoEstruturaReparador.class)
+                mock(br.com.menthoros.backend.services.helper.PlanoEstruturaReparador.class),
+                mock(br.com.menthoros.backend.services.helper.PlanoResilienceService.class)
         );
 
         zonasFC160 = List.of(
