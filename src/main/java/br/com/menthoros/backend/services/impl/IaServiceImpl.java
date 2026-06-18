@@ -14,6 +14,7 @@ import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
@@ -21,7 +22,11 @@ import br.com.menthoros.backend.services.IaService;
 import br.com.menthoros.backend.services.helper.PaceValidator;
 import br.com.menthoros.backend.services.helper.RegraGeracaoTreino;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
+import br.com.menthoros.backend.services.helper.PlanoEstruturaReparador;
+import br.com.menthoros.backend.services.helper.PlanoResilienceService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
 import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
 import br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder;
@@ -62,6 +67,9 @@ public class IaServiceImpl implements IaService {
     private final PaceValidator paceValidator;
     private final ZonaTreinoService zonaTreinoService;
     private final PlanQualityChecker planQualityChecker;
+    private final PlanoEstruturaReparador estruturaReparador;
+    private final PlanoResilienceService planoResilienceService;
+    private final MeterRegistry meterRegistry;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
@@ -69,7 +77,10 @@ public class IaServiceImpl implements IaService {
                          PaceHistoricoFormatter paceHistoricoFormatter,
                          PaceValidator paceValidator,
                          ZonaTreinoService zonaTreinoService,
-                         PlanQualityChecker planQualityChecker) {
+                         PlanQualityChecker planQualityChecker,
+                         PlanoEstruturaReparador estruturaReparador,
+                         PlanoResilienceService planoResilienceService,
+                         MeterRegistry meterRegistry) {
         this.modelRouter = modelRouter;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
@@ -79,6 +90,9 @@ public class IaServiceImpl implements IaService {
         this.paceValidator = paceValidator;
         this.zonaTreinoService = zonaTreinoService;
         this.planQualityChecker = planQualityChecker;
+        this.estruturaReparador = estruturaReparador;
+        this.planoResilienceService = planoResilienceService;
+        this.meterRegistry = meterRegistry;
     }
 
     private OpenAiChatOptions defaultJsonSchemaOptions() {
@@ -298,34 +312,32 @@ public class IaServiceImpl implements IaService {
         ChatClient chatClient = modelRouter.route(TaskComplexity.PLANO);
         log.info("Geração de plano (avançado) roteada via TaskComplexity.PLANO (bean gpt4oPlanoClient)");
 
+        long startTime = System.currentTimeMillis();
+        PlanoSemanalLlmDto plano;
         try {
-            long startTime = System.currentTimeMillis(); // Captura o tempo de início
-
-            PlanoSemanalLlmDto plano = chatClient.prompt()
-                    .user(prompt)
-                    .options(defaultJsonSchemaOptions())
-                    .call()
-                    .entity(PlanoSemanalLlmDto.class);
-
-            // Validação pós-geração
-            plano = validarENormalizarPlanoGerado(plano, atleta.getId());
-
-            // Verificação de aderência às Constraint declaradas (mede via Micrometer; ação fica para a harden)
-            List<ViolacaoQualidade> violacoes = planQualityChecker.check(plano, promptGerado.regras());
-            if (!violacoes.isEmpty()) {
-                log.warn("Plano do atleta {} com {} violação(ões) de constraint: {}",
-                        atleta.getId(), violacoes.size(), violacoes.stream().map(ViolacaoQualidade::key).toList());
-            }
-
-            long endTime = System.currentTimeMillis(); // Captura o tempo de fim
-            long totalTime = endTime - startTime; // Calcula o tempo total em milissegundos
-            log.info("Plano gerado com sucesso via structured output para atleta: {} - {} s", atleta.getId(), totalTime/1000.0);
-            return plano;
-
+            // Geração resiliente: reparo já aplicado no validar; aqui, retry único com feedback se a
+            // validação ainda falhar estruturalmente. Falha final → DomainRuleViolationException (4xx).
+            plano = planoResilienceService.gerarComResiliencia(
+                    p -> chatClient.prompt().user(p).options(defaultJsonSchemaOptions()).call().entity(PlanoSemanalLlmDto.class),
+                    p -> validarENormalizarPlanoGerado(p, atleta.getId()),
+                    prompt);
+        } catch (DomainRuleViolationException e) {
+            throw e; // falha estrutural final → mensagem ao treinador (não re-empacotar como 503)
         } catch (Exception e) {
             log.error("Erro ao gerar plano via structured output para atleta {}: {}", atleta.getId(), e.getMessage(), e);
             throw new LLMException("Falha na geração de plano via IA: " + e.getMessage(), e);
         }
+
+        // Verificação de aderência às Constraint declaradas (mede via Micrometer; ação fica para a harden)
+        List<ViolacaoQualidade> violacoes = planQualityChecker.check(plano, promptGerado.regras());
+        if (!violacoes.isEmpty()) {
+            log.warn("Plano do atleta {} com {} violação(ões) de constraint: {}",
+                    atleta.getId(), violacoes.size(), violacoes.stream().map(ViolacaoQualidade::key).toList());
+        }
+
+        long totalTime = System.currentTimeMillis() - startTime;
+        log.info("Plano gerado com sucesso via structured output para atleta: {} - {} s", atleta.getId(), totalTime / 1000.0);
+        return plano;
     }
 
     /**
@@ -373,6 +385,11 @@ public class IaServiceImpl implements IaService {
                 treino = expandirEtapasAgregadas(treino, zonasParaValidacao);
                 treino = reconciliarDistanciaComEtapas(treino);
             }
+
+            // Reparo determinístico de estrutura "3 etapas" ANTES da validação (não-op p/ outros tipos):
+            // sintetiza aquecimento/desaquecimento faltante ou reordena, evitando derrubar o plano por
+            // violação trivial. Falta-PRINCIPAL/ambíguo não é reparado → cai na validação (retry).
+            treino = estruturaReparador.reparar(treino, tipoTreino);
 
             // Validar treino LONGO
             if ("LONGO".equals(tipoTreino)) {
@@ -1280,20 +1297,38 @@ public class IaServiceImpl implements IaService {
     }
 
     /**
-     * Valida treino longo: deve ter exatamente 3 etapas
+     * Validação estrutural compartilhada de treinos "3 etapas" (AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO).
+     * Hard-fail (lança {@link LLMException}) em: número de etapas ≠ 3 e — quando {@code validarOrdem} —
+     * AQUECIMENTO/DESAQUECIMENTO fora de posição. Unifica REGENERATIVO/CONTINUO/TEMPO_RUN/LONGO
+     * (LONGO valida só a contagem, por isso o flag). As regras não mudam — só deixam de ser copiadas.
      */
-    private void validarTreinoLongo(br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto treino, Object atletaId) {
+    void validarEstrutura3Etapas(TreinoPlanejadoLlmDto treino, String tipo, Object atletaId, boolean validarOrdem) {
         var etapas = treino.etapas();
-
         if (etapas == null || etapas.size() != 3) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino LONGO tem {} etapas (esperado: 3)",
-                    atletaId, etapas != null ? etapas.size() : 0);
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} tem {} etapas (esperado: 3)",
+                    atletaId, tipo, etapas != null ? etapas.size() : 0);
+            contarViolacaoEstrutural(tipo);
             throw new LLMException(String.format(
-                    "Treino LONGO inválido: gerou %d etapas (esperado exatamente 3: aquec, principal, desaq)",
-                    etapas != null ? etapas.size() : 0
-            ));
+                    "Treino %s inválido: gerou %d etapas (esperado 3: aquec, principal, desaq)",
+                    tipo, etapas != null ? etapas.size() : 0));
         }
+        if (validarOrdem
+                && (!"AQUECIMENTO".equals(etapas.get(0).tipoEtapa()) || !"DESAQUECIMENTO".equals(etapas.get(2).tipoEtapa()))) {
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} fora de ordem: [{}→{}→{}]",
+                    atletaId, tipo, etapas.get(0).tipoEtapa(), etapas.get(1).tipoEtapa(), etapas.get(2).tipoEtapa());
+            contarViolacaoEstrutural(tipo);
+            throw new LLMException(String.format(
+                    "Treino %s inválido: deve ser AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO", tipo));
+        }
+    }
 
+    /** Telemetria: violação estrutural residual (não reparada) por tipo de treino. */
+    private void contarViolacaoEstrutural(String tipo) {
+        Counter.builder("plano_violacao_estrutural").tag("tipo", tipo).register(meterRegistry).increment();
+    }
+
+    private void validarTreinoLongo(br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto treino, Object atletaId) {
+        validarEstrutura3Etapas(treino, "LONGO", atletaId, false);
         log.info("VALIDAÇÃO OK [Atleta {}]: Treino LONGO - 3 etapas conforme esperado", atletaId);
     }
 
@@ -1360,21 +1395,7 @@ public class IaServiceImpl implements IaService {
      * duração 20–45 min.
      */
     private void validarTreinoRegenerativo(TreinoPlanejadoLlmDto treino, Object atletaId) {
-        var etapas = treino.etapas();
-
-        if (etapas == null || etapas.size() != 3) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino REGENERATIVO tem {} etapas (esperado: 3)",
-                    atletaId, etapas != null ? etapas.size() : 0);
-            throw new LLMException(String.format(
-                    "Treino REGENERATIVO inválido: gerou %d etapas (esperado 3: aquec, principal, desaq)",
-                    etapas != null ? etapas.size() : 0));
-        }
-
-        if (!"AQUECIMENTO".equals(etapas.get(0).tipoEtapa()) || !"DESAQUECIMENTO".equals(etapas.get(2).tipoEtapa())) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino REGENERATIVO fora de ordem: [{}→{}→{}]",
-                    atletaId, etapas.get(0).tipoEtapa(), etapas.get(1).tipoEtapa(), etapas.get(2).tipoEtapa());
-            throw new LLMException("Treino REGENERATIVO inválido: deve ser AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO");
-        }
+        validarEstrutura3Etapas(treino, "REGENERATIVO", atletaId, true);
 
         if (treino.duracaoMin() != null) {
             var m = java.util.regex.Pattern.compile("^(\\d{1,3}):(\\d{2})$").matcher(treino.duracaoMin().trim());
@@ -1400,21 +1421,7 @@ public class IaServiceImpl implements IaService {
      * distância mínima de 5 km.
      */
     private void validarTreinoContinuo(TreinoPlanejadoLlmDto treino, Object atletaId) {
-        var etapas = treino.etapas();
-
-        if (etapas == null || etapas.size() != 3) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino CONTINUO tem {} etapas (esperado: 3)",
-                    atletaId, etapas != null ? etapas.size() : 0);
-            throw new LLMException(String.format(
-                    "Treino CONTINUO inválido: gerou %d etapas (esperado 3: aquec, principal, desaq)",
-                    etapas != null ? etapas.size() : 0));
-        }
-
-        if (!"AQUECIMENTO".equals(etapas.get(0).tipoEtapa()) || !"DESAQUECIMENTO".equals(etapas.get(2).tipoEtapa())) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino CONTINUO fora de ordem: [{}→{}→{}]",
-                    atletaId, etapas.get(0).tipoEtapa(), etapas.get(1).tipoEtapa(), etapas.get(2).tipoEtapa());
-            throw new LLMException("Treino CONTINUO inválido: deve ser AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO");
-        }
+        validarEstrutura3Etapas(treino, "CONTINUO", atletaId, true);
 
         if (treino.distanciaKm() != null && treino.distanciaKm() < 5.0) {
             log.warn("VALIDAÇÃO ALERTA [Atleta {}]: Treino CONTINUO com {} km (mínimo recomendado: 5 km)",
@@ -1430,23 +1437,9 @@ public class IaServiceImpl implements IaService {
      */
     private void validarTreinoTempoRun(TreinoPlanejadoLlmDto treino, Object atletaId,
                                         br.com.menthoros.backend.entity.Atleta atleta) {
-        var etapas = treino.etapas();
+        validarEstrutura3Etapas(treino, "TEMPO_RUN", atletaId, true);
 
-        if (etapas == null || etapas.size() != 3) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino TEMPO_RUN tem {} etapas (esperado: 3)",
-                    atletaId, etapas != null ? etapas.size() : 0);
-            throw new LLMException(String.format(
-                    "Treino TEMPO_RUN inválido: gerou %d etapas (esperado 3: aquec, principal, desaq)",
-                    etapas != null ? etapas.size() : 0));
-        }
-
-        if (!"AQUECIMENTO".equals(etapas.get(0).tipoEtapa()) || !"DESAQUECIMENTO".equals(etapas.get(2).tipoEtapa())) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino TEMPO_RUN fora de ordem: [{}→{}→{}]",
-                    atletaId, etapas.get(0).tipoEtapa(), etapas.get(1).tipoEtapa(), etapas.get(2).tipoEtapa());
-            throw new LLMException("Treino TEMPO_RUN inválido: deve ser AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO");
-        }
-
-        var etapaPrincipal = etapas.get(1);
+        var etapaPrincipal = treino.etapas().get(1);
 
         if (etapaPrincipal.duracaoMin() != null && etapaPrincipal.duracaoMin() < 15) {
             log.warn("VALIDAÇÃO ALERTA [Atleta {}]: TEMPO_RUN principal com {} min (mínimo para indução de limiar: 15 min)",
