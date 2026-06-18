@@ -9,6 +9,7 @@ import br.com.menthoros.backend.security.RequireTenant;
 import br.com.menthoros.backend.services.AtletaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -96,7 +97,7 @@ public class AtletaController {
     @GetMapping
     @Operation(summary = "Listar atletas", description = "Retorna atletas ativos com filtros opcionais por nome, nível e lesão")
     @ApiResponse(responseCode = "200", description = "Lista de atletas retornada com sucesso",
-            content = @Content(mediaType = "application/json", schema = @Schema(implementation = AtletaOutputDto.class)))
+            content = @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = AtletaOutputDto.class))))
     public ResponseEntity<List<AtletaOutputDto>> listarAtletas(
             @Parameter(description = "Filtrar por nome (busca parcial, case-insensitive)")
             @RequestParam(required = false) String nome,

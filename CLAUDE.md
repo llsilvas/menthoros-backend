@@ -75,6 +75,12 @@ Rules enforced across all controllers. Violations must be corrected in the same 
 - Every public method must have `@Operation(summary = "...")`.
 - Every public method must have `@ApiResponses` listing all possible HTTP status codes.
 - Use `@Parameter` for path/query parameters that need description.
+- **Collection endpoints (`List<>`) must declare `array` in the `200` response** — use
+  `@ArraySchema` (`content = @Content(array = @ArraySchema(schema = @Schema(implementation = X.class)))`)
+  **or omit the schema override entirely** and let springdoc infer the array from the `List<>` return
+  type (see `CoachDashboardController.getRoster`). A bare `schema = @Schema(implementation = X.class)`
+  on a list endpoint generates a **single-object** type in the front client, breaking `.map`/`.slice`
+  at runtime.
 
 ### HTTP Semantics (mandatory)
 - GET: read-only, no side effects.
