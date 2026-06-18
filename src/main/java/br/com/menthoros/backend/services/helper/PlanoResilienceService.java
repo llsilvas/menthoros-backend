@@ -54,18 +54,28 @@ public class PlanoResilienceService {
                 ultimaFalha = e;
                 if (tentativa >= MAX_TENTATIVAS) break;
                 Counter.builder("plano_retry").tag("motivo", "estrutural").register(meterRegistry).increment();
-                log.warn("Plano rejeitado na tentativa {} ({}); re-gerando 1x com feedback", tentativa, e.getMessage());
+                String motivo = truncar(e.getMessage());
+                log.warn("Plano rejeitado na tentativa {} ({}); re-gerando 1x com feedback", tentativa, motivo);
                 prompt = promptBase
                         + "\n\n## CORRECAO OBRIGATORIA (a tentativa anterior foi rejeitada)\n"
-                        + "Motivo: " + e.getMessage() + "\n"
+                        + "Motivo: " + motivo + "\n"
                         + "Gere o plano novamente corrigindo exatamente esse ponto, mantendo as demais regras.";
             }
         }
 
         Counter.builder("plano_geracao_falha_final").register(meterRegistry).increment();
         log.error("Geração de plano falhou após reparo + {} tentativa(s): {}",
-                MAX_TENTATIVAS, ultimaFalha != null ? ultimaFalha.getMessage() : "desconhecido");
+                MAX_TENTATIVAS, ultimaFalha != null ? truncar(ultimaFalha.getMessage()) : "desconhecido");
         throw new DomainRuleViolationException(
                 "Não foi possível gerar o plano desta semana. Tente novamente ou ajuste os parâmetros do atleta.");
+    }
+
+    /** Teto defensivo: a mensagem da rejeição vai para o prompt do LLM e para o log — evita reinjetar
+     *  payload extenso (ou eventual conteúdo de erro de SDK) por inteiro. */
+    private static final int MAX_MOTIVO_CHARS = 300;
+
+    private static String truncar(String motivo) {
+        if (motivo == null) return "motivo desconhecido";
+        return motivo.length() <= MAX_MOTIVO_CHARS ? motivo : motivo.substring(0, MAX_MOTIVO_CHARS) + "…";
     }
 }

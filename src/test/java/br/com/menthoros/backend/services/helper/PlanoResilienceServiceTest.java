@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -36,6 +37,10 @@ class PlanoResilienceServiceTest {
         var c = registry.find(nome).counter();
         return c == null ? 0.0 : c.count();
     }
+
+    @Nested
+    @DisplayName("gerarComResiliencia")
+    class GerarComResiliencia {
 
     @Test
     @DisplayName("sucesso na 1ª tentativa → sem retry")
@@ -88,5 +93,6 @@ class PlanoResilienceServiceTest {
         assertThatThrownBy(() -> service.gerarComResiliencia(gerar, plano -> plano, "base"))
                 .isInstanceOf(LLMException.class);
         assertThat(contador("plano_geracao_falha_final")).isZero();
+    }
     }
 }

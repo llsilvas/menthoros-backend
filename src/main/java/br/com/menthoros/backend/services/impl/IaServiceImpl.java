@@ -1297,9 +1297,6 @@ public class IaServiceImpl implements IaService {
     }
 
     /**
-     * Valida treino longo: deve ter exatamente 3 etapas
-     */
-    /**
      * Validação estrutural compartilhada de treinos "3 etapas" (AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO).
      * Hard-fail (lança {@link LLMException}) em: número de etapas ≠ 3 e — quando {@code validarOrdem} —
      * AQUECIMENTO/DESAQUECIMENTO fora de posição. Unifica REGENERATIVO/CONTINUO/TEMPO_RUN/LONGO
