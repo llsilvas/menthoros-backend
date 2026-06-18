@@ -1282,18 +1282,32 @@ public class IaServiceImpl implements IaService {
     /**
      * Valida treino longo: deve ter exatamente 3 etapas
      */
-    private void validarTreinoLongo(br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto treino, Object atletaId) {
+    /**
+     * Validação estrutural compartilhada de treinos "3 etapas" (AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO).
+     * Hard-fail (lança {@link LLMException}) em: número de etapas ≠ 3 e — quando {@code validarOrdem} —
+     * AQUECIMENTO/DESAQUECIMENTO fora de posição. Unifica REGENERATIVO/CONTINUO/TEMPO_RUN/LONGO
+     * (LONGO valida só a contagem, por isso o flag). As regras não mudam — só deixam de ser copiadas.
+     */
+    void validarEstrutura3Etapas(TreinoPlanejadoLlmDto treino, String tipo, Object atletaId, boolean validarOrdem) {
         var etapas = treino.etapas();
-
         if (etapas == null || etapas.size() != 3) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino LONGO tem {} etapas (esperado: 3)",
-                    atletaId, etapas != null ? etapas.size() : 0);
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} tem {} etapas (esperado: 3)",
+                    atletaId, tipo, etapas != null ? etapas.size() : 0);
             throw new LLMException(String.format(
-                    "Treino LONGO inválido: gerou %d etapas (esperado exatamente 3: aquec, principal, desaq)",
-                    etapas != null ? etapas.size() : 0
-            ));
+                    "Treino %s inválido: gerou %d etapas (esperado 3: aquec, principal, desaq)",
+                    tipo, etapas != null ? etapas.size() : 0));
         }
+        if (validarOrdem
+                && (!"AQUECIMENTO".equals(etapas.get(0).tipoEtapa()) || !"DESAQUECIMENTO".equals(etapas.get(2).tipoEtapa()))) {
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} fora de ordem: [{}→{}→{}]",
+                    atletaId, tipo, etapas.get(0).tipoEtapa(), etapas.get(1).tipoEtapa(), etapas.get(2).tipoEtapa());
+            throw new LLMException(String.format(
+                    "Treino %s inválido: deve ser AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO", tipo));
+        }
+    }
 
+    private void validarTreinoLongo(br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto treino, Object atletaId) {
+        validarEstrutura3Etapas(treino, "LONGO", atletaId, false);
         log.info("VALIDAÇÃO OK [Atleta {}]: Treino LONGO - 3 etapas conforme esperado", atletaId);
     }
 
@@ -1360,21 +1374,7 @@ public class IaServiceImpl implements IaService {
      * duração 20–45 min.
      */
     private void validarTreinoRegenerativo(TreinoPlanejadoLlmDto treino, Object atletaId) {
-        var etapas = treino.etapas();
-
-        if (etapas == null || etapas.size() != 3) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino REGENERATIVO tem {} etapas (esperado: 3)",
-                    atletaId, etapas != null ? etapas.size() : 0);
-            throw new LLMException(String.format(
-                    "Treino REGENERATIVO inválido: gerou %d etapas (esperado 3: aquec, principal, desaq)",
-                    etapas != null ? etapas.size() : 0));
-        }
-
-        if (!"AQUECIMENTO".equals(etapas.get(0).tipoEtapa()) || !"DESAQUECIMENTO".equals(etapas.get(2).tipoEtapa())) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino REGENERATIVO fora de ordem: [{}→{}→{}]",
-                    atletaId, etapas.get(0).tipoEtapa(), etapas.get(1).tipoEtapa(), etapas.get(2).tipoEtapa());
-            throw new LLMException("Treino REGENERATIVO inválido: deve ser AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO");
-        }
+        validarEstrutura3Etapas(treino, "REGENERATIVO", atletaId, true);
 
         if (treino.duracaoMin() != null) {
             var m = java.util.regex.Pattern.compile("^(\\d{1,3}):(\\d{2})$").matcher(treino.duracaoMin().trim());
@@ -1400,21 +1400,7 @@ public class IaServiceImpl implements IaService {
      * distância mínima de 5 km.
      */
     private void validarTreinoContinuo(TreinoPlanejadoLlmDto treino, Object atletaId) {
-        var etapas = treino.etapas();
-
-        if (etapas == null || etapas.size() != 3) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino CONTINUO tem {} etapas (esperado: 3)",
-                    atletaId, etapas != null ? etapas.size() : 0);
-            throw new LLMException(String.format(
-                    "Treino CONTINUO inválido: gerou %d etapas (esperado 3: aquec, principal, desaq)",
-                    etapas != null ? etapas.size() : 0));
-        }
-
-        if (!"AQUECIMENTO".equals(etapas.get(0).tipoEtapa()) || !"DESAQUECIMENTO".equals(etapas.get(2).tipoEtapa())) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino CONTINUO fora de ordem: [{}→{}→{}]",
-                    atletaId, etapas.get(0).tipoEtapa(), etapas.get(1).tipoEtapa(), etapas.get(2).tipoEtapa());
-            throw new LLMException("Treino CONTINUO inválido: deve ser AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO");
-        }
+        validarEstrutura3Etapas(treino, "CONTINUO", atletaId, true);
 
         if (treino.distanciaKm() != null && treino.distanciaKm() < 5.0) {
             log.warn("VALIDAÇÃO ALERTA [Atleta {}]: Treino CONTINUO com {} km (mínimo recomendado: 5 km)",
@@ -1430,23 +1416,9 @@ public class IaServiceImpl implements IaService {
      */
     private void validarTreinoTempoRun(TreinoPlanejadoLlmDto treino, Object atletaId,
                                         br.com.menthoros.backend.entity.Atleta atleta) {
-        var etapas = treino.etapas();
+        validarEstrutura3Etapas(treino, "TEMPO_RUN", atletaId, true);
 
-        if (etapas == null || etapas.size() != 3) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino TEMPO_RUN tem {} etapas (esperado: 3)",
-                    atletaId, etapas != null ? etapas.size() : 0);
-            throw new LLMException(String.format(
-                    "Treino TEMPO_RUN inválido: gerou %d etapas (esperado 3: aquec, principal, desaq)",
-                    etapas != null ? etapas.size() : 0));
-        }
-
-        if (!"AQUECIMENTO".equals(etapas.get(0).tipoEtapa()) || !"DESAQUECIMENTO".equals(etapas.get(2).tipoEtapa())) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino TEMPO_RUN fora de ordem: [{}→{}→{}]",
-                    atletaId, etapas.get(0).tipoEtapa(), etapas.get(1).tipoEtapa(), etapas.get(2).tipoEtapa());
-            throw new LLMException("Treino TEMPO_RUN inválido: deve ser AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO");
-        }
-
-        var etapaPrincipal = etapas.get(1);
+        var etapaPrincipal = treino.etapas().get(1);
 
         if (etapaPrincipal.duracaoMin() != null && etapaPrincipal.duracaoMin() < 15) {
             log.warn("VALIDAÇÃO ALERTA [Atleta {}]: TEMPO_RUN principal com {} min (mínimo para indução de limiar: 15 min)",
