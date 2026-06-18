@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.output.ProvaOutputDto;
 import br.com.menthoros.backend.services.ProvaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -55,7 +56,7 @@ public class ProvaController {
     @Operation(summary = "Listar provas", description = "Retorna todas as provas do atleta ordenadas por data")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso",
-                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ProvaOutputDto.class))),
+                content = @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ProvaOutputDto.class)))),
         @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
                 content = @Content(mediaType = "application/json"))
     })
