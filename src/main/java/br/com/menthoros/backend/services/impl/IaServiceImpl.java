@@ -21,6 +21,7 @@ import br.com.menthoros.backend.services.IaService;
 import br.com.menthoros.backend.services.helper.PaceValidator;
 import br.com.menthoros.backend.services.helper.RegraGeracaoTreino;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
+import br.com.menthoros.backend.services.helper.PlanoEstruturaReparador;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
 import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
@@ -62,6 +63,7 @@ public class IaServiceImpl implements IaService {
     private final PaceValidator paceValidator;
     private final ZonaTreinoService zonaTreinoService;
     private final PlanQualityChecker planQualityChecker;
+    private final PlanoEstruturaReparador estruturaReparador;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
@@ -69,7 +71,8 @@ public class IaServiceImpl implements IaService {
                          PaceHistoricoFormatter paceHistoricoFormatter,
                          PaceValidator paceValidator,
                          ZonaTreinoService zonaTreinoService,
-                         PlanQualityChecker planQualityChecker) {
+                         PlanQualityChecker planQualityChecker,
+                         PlanoEstruturaReparador estruturaReparador) {
         this.modelRouter = modelRouter;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
@@ -79,6 +82,7 @@ public class IaServiceImpl implements IaService {
         this.paceValidator = paceValidator;
         this.zonaTreinoService = zonaTreinoService;
         this.planQualityChecker = planQualityChecker;
+        this.estruturaReparador = estruturaReparador;
     }
 
     private OpenAiChatOptions defaultJsonSchemaOptions() {
@@ -373,6 +377,11 @@ public class IaServiceImpl implements IaService {
                 treino = expandirEtapasAgregadas(treino, zonasParaValidacao);
                 treino = reconciliarDistanciaComEtapas(treino);
             }
+
+            // Reparo determinístico de estrutura "3 etapas" ANTES da validação (não-op p/ outros tipos):
+            // sintetiza aquecimento/desaquecimento faltante ou reordena, evitando derrubar o plano por
+            // violação trivial. Falta-PRINCIPAL/ambíguo não é reparado → cai na validação (retry).
+            treino = estruturaReparador.reparar(treino, tipoTreino);
 
             // Validar treino LONGO
             if ("LONGO".equals(tipoTreino)) {
