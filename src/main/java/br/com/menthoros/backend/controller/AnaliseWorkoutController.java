@@ -22,7 +22,7 @@ import java.util.UUID;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/analises")
-@Tag(name = "Análise de Treino", description = "Consulta de análises pós-treino geradas por IA")
+@Tag(name = "analise", description = "Consulta de análises pós-treino geradas por IA")
 public class AnaliseWorkoutController {
 
     private final AnaliseWorkoutService analiseWorkoutService;

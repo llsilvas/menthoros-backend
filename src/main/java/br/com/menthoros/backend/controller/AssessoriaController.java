@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/admin/assessorias")
 @RequiredArgsConstructor
-@Tag(name = "Assessorias", description = "Operações administrativas de cadastro de assessorias (tenants)")
+@Tag(name = "assessorias", description = "Operações administrativas de cadastro de assessorias (tenants)")
 public class AssessoriaController {
 
     private final AssessoriaService assessoriaService;

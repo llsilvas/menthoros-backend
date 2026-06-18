@@ -38,7 +38,7 @@ import br.com.menthoros.backend.enums.ReconciliationStatus;
  */
 @RestController
 @RequestMapping("/api/v1/reconciliation")
-@Tag(name = "Reconciliação Manual", description = "Operações de reconciliação entre treinos realizados e planejados")
+@Tag(name = "reconciliacao", description = "Operações de reconciliação entre treinos realizados e planejados")
 @Validated
 public class ManualReconciliationController {
 

@@ -20,7 +20,7 @@ import java.util.Map;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/strava/webhook")
-@Tag(name = "Strava Webhook", description = "Recebimento de eventos do webhook do Strava")
+@Tag(name = "strava", description = "Recebimento de eventos do webhook do Strava")
 public class StravaWebhookController {
 
     private final StravaProperties stravaProperties;

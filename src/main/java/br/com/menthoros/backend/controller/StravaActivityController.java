@@ -23,7 +23,7 @@ import java.util.UUID;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/strava")
-@Tag(name = "Strava Sync", description = "Sincronização de atividades do Strava")
+@Tag(name = "strava", description = "Sincronização de atividades do Strava")
 public class StravaActivityController {
 
     private final StravaActivityService stravaActivityService;

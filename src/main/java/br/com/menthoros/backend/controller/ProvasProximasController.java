@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/provas")
 @RequiredArgsConstructor
-@Tag(name = "Provas Próximas", description = "Operações para listagem de provas próximas de todos os atletas")
+@Tag(name = "provas-proximas", description = "Operações para listagem de provas próximas de todos os atletas")
 public class ProvasProximasController {
 
     private final ProvaService provaService;

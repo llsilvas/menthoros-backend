@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/atletas/{atletaId}/metricas")
-@Tag(name = "Métricas", description = "Operações relacionadas às métricas de atletas")
+@Tag(name = "metricas", description = "Operações relacionadas às métricas de atletas")
 public class MetricasController {
 
     private final MetricasAdesaoService metricasAdesaoService;

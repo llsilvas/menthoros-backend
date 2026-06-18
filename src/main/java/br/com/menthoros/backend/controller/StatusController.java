@@ -19,7 +19,7 @@ import java.time.OffsetDateTime;
 // Sem @RequireTenant: endpoint global e público, não usa TenantContext.
 @RestController
 @RequestMapping("/api/v1/status")
-@Tag(name = "Status", description = "Status público da aplicação (nome, versão e horário do servidor)")
+@Tag(name = "status", description = "Status público da aplicação (nome, versão e horário do servidor)")
 public class StatusController {
 
     private final String application;

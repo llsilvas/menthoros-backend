@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
-@Tag(name = "Planos de Treino", description = "Operações relacionadas ao gerenciamento de planos de treino")
+@Tag(name = "plano-semanal", description = "Operações relacionadas ao gerenciamento de planos de treino")
 @RequiredArgsConstructor
 @RestController
 @RequestMapping("/api/v1/planos")

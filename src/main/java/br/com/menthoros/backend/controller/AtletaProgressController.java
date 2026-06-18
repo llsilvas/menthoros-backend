@@ -36,7 +36,7 @@ import java.util.UUID;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/atletas")
-@Tag(name = "Progresso do Atleta", description = "PMC, zonas, recordes, readiness e resumo do dia")
+@Tag(name = "progresso-atleta", description = "PMC, zonas, recordes, readiness e resumo do dia")
 public class AtletaProgressController {
 
     private final AtletaProgressService atletaProgressService;

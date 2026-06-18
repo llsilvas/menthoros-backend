@@ -22,7 +22,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/atletas/{atletaId}/provas")
-@Tag(name = "Provas", description = "Operações relacionadas ao cadastro de provas do atleta")
+@Tag(name = "prova", description = "Operações relacionadas ao cadastro de provas do atleta")
 @Validated
 public class ProvaController {
 

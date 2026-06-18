@@ -26,7 +26,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/atletas")
-@Tag(name = "Atletas", description = "Operações relacionadas ao gerenciamento de atletas")
+@Tag(name = "atletas", description = "Operações relacionadas ao gerenciamento de atletas")
 @Validated
 public class AtletaController {
 
