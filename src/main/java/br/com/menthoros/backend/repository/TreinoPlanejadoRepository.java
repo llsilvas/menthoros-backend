@@ -2,6 +2,7 @@ package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -56,6 +57,24 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
     Integer countPlannedTrainings(@Param("atletaId") UUID atletaId,
                                   @Param("weekStart") LocalDate weekStart,
                                   @Param("weekEnd") LocalDate weekEnd);
+
+    /**
+     * Busca o primeiro TreinoPlanejado sem realizado vinculado para best-effort match no registro manual.
+     * Filtra por atleta, data, tipo e status elegível (PENDENTE ou PERDIDO), ordenado pelo mais antigo.
+     */
+    @Query("""
+       SELECT tp FROM TreinoPlanejado tp
+       WHERE tp.atleta.id = :atletaId
+         AND tp.dataTreino = :data
+         AND tp.tipoTreino = :tipo
+         AND tp.treinoRealizado IS NULL
+         AND tp.statusTreino IN :statuses
+       ORDER BY tp.criadoEm ASC
+       """)
+    Optional<TreinoPlanejado> findFirstForManualMatch(@Param("atletaId") UUID atletaId,
+                                                       @Param("data") LocalDate data,
+                                                       @Param("tipo") TipoTreino tipo,
+                                                       @Param("statuses") List<TreinoExecucaoStatus> statuses);
 
     /**
      * Valida se um TreinoPlanejado pertence a um tenant específico.

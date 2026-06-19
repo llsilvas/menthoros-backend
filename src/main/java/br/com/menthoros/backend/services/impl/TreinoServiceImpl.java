@@ -1,11 +1,13 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.input.TreinoManualInputDto;
 import br.com.menthoros.backend.dto.input.TreinoRealizadoInputDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.dto.output.ResumoDetalhesDto;
 import br.com.menthoros.backend.dto.output.ResumoSemanalTreinoDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.*;
+import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
@@ -29,6 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.DayOfWeek;
 import java.time.temporal.IsoFields;
@@ -470,5 +473,82 @@ public class TreinoServiceImpl implements TreinoService {
         );
 
         return response;
+    }
+
+    @Override
+    @Transactional
+    public TreinoRealizadoOutputDto registrarTreinoManualAtleta(UUID atletaId, TreinoManualInputDto input) {
+        // Idempotent: NO. Side Effects: Database insert + TreinoRegistradoEvent + TSB update. Tenant-aware: YES.
+        LocalDate hoje = LocalDate.now();
+        if (input.data().isBefore(hoje.minusDays(7))) {
+            throw new DomainRuleViolationException(
+                    "Data do treino não pode ser anterior a 7 dias. Data informada: " + input.data());
+        }
+
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado para o tenant"));
+
+        // Best-effort match: busca TreinoPlanejado sem realizado vinculado para a mesma data/tipo
+        List<TreinoExecucaoStatus> statusesElegiveis = List.of(
+                TreinoExecucaoStatus.PENDENTE, TreinoExecucaoStatus.PERDIDO);
+        Optional<TreinoPlanejado> matchOpt = treinoPlanejadoRepository
+                .findFirstForManualMatch(atletaId, input.data(), input.tipo(), statusesElegiveis);
+
+        TreinoRealizado treino = new TreinoRealizado();
+        treino.setAtleta(atleta);
+        treino.setTenantId(tenantId);
+        treino.setDataTreino(input.data());
+        treino.setDiaSemana(toDiaSemana(input.data()));
+        treino.setTipoTreino(input.tipo());
+        treino.setDuracaoMin(Duration.ofMinutes(input.duracaoMinutos()));
+        treino.setDistanciaKm(input.distanciaKm());
+        treino.setPercepcaoEsforco(input.percepcaoEsforco());
+        treino.setObservacao(input.observacoes());
+        treino.setFonteDados(FonteDados.MANUAL);
+        treino.setStatus(TreinoExecucaoStatus.REALIZADO);
+        treino.setCriadoPor("ATLETA");
+        matchOpt.ifPresent(treino::setTreinoPlanejado);
+
+        TreinoRealizado treinoSalvo = treinoRealizadoRepository.save(treino);
+        log.info("Treino manual salvo: id={}, atletaId={}, data={}", treinoSalvo.getId(), atletaId, input.data());
+
+        matchOpt.ifPresent(planejado -> {
+            planejado.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
+            planejado.setTreinoRealizado(treinoSalvo);
+            treinoPlanejadoRepository.save(planejado);
+            log.info("TreinoPlanejado {} vinculado ao treino manual {}", planejado.getId(), treinoSalvo.getId());
+        });
+
+        eventPublisher.publishEvent(new TreinoRegistradoEvent(treinoSalvo.getId(), tenantId));
+        tsbService.atualizarTsbDia(atletaId, input.data());
+
+        return treinoMapper.toOutputDto(treinoSalvo);
+    }
+
+    @Override
+    @Transactional
+    public List<TreinoRealizadoOutputDto> listarTreinosRecentes(UUID atletaId, int dias) {
+        // Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+        int diasEfetivos = Math.min(dias, 30);
+        LocalDate hoje = LocalDate.now();
+        return treinoRealizadoRepository
+                .findByAtletaIdAndDataTreinoBetween(atletaId, hoje.minusDays(diasEfetivos), hoje)
+                .stream()
+                .sorted(Comparator.comparing(TreinoRealizado::getDataTreino).reversed())
+                .map(treinoMapper::toOutputDto)
+                .toList();
+    }
+
+    private DiaSemana toDiaSemana(LocalDate data) {
+        return switch (data.getDayOfWeek()) {
+            case MONDAY -> DiaSemana.SEGUNDA;
+            case TUESDAY -> DiaSemana.TERCA;
+            case WEDNESDAY -> DiaSemana.QUARTA;
+            case THURSDAY -> DiaSemana.QUINTA;
+            case FRIDAY -> DiaSemana.SEXTA;
+            case SATURDAY -> DiaSemana.SABADO;
+            case SUNDAY -> DiaSemana.DOMINGO;
+        };
     }
 }
