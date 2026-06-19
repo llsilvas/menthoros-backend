@@ -28,6 +28,7 @@ public class TenantValidationRepository {
     private final PlanoSemanalRepository planoSemanalRepository;
     private final ProvaRepository provaRepository;
     private final TreinoReconciliacaoRepository treinoReconciliacaoRepository;
+    private final SugestaoCoachRepository sugestaoCoachRepository;
 
     /**
      * Valida se um recurso UUID qualquer pertence ao tenant especificado.
@@ -91,6 +92,13 @@ public class TenantValidationRepository {
         if (treinoReconciliacaoRepository.existsByIdAndTreinoRealizado_Atleta_TenantId(
                 resourceId, tenantId)) {
             log.debug("TenantValidation: resourceId {} pertence a tenant {} (TreinoReconciliacao)",
+                    resourceId, tenantId);
+            return true;
+        }
+
+        // Tenta SugestaoCoach
+        if (sugestaoCoachRepository.existsByIdAndTenantId(resourceId, tenantId)) {
+            log.debug("TenantValidation: resourceId {} pertence a tenant {} (SugestaoCoach)",
                     resourceId, tenantId);
             return true;
         }
