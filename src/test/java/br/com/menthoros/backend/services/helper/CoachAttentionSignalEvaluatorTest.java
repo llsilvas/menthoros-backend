@@ -24,27 +24,35 @@ class CoachAttentionSignalEvaluatorTest {
         }
 
         @Test
-        @DisplayName("TSB ≤ -35 (fadiga excessiva) → CRITICA")
+        @DisplayName("TSB ≤ -35 (fadiga excessiva) → CRITICA com rationale e sourceRules")
         void critica() {
             var sinal = evaluator.avaliarFadiga(-40.0).orElseThrow();
             assertThat(sinal.motivo()).isEqualTo(MotivoAtencao.FADIGA);
             assertThat(sinal.severidade()).isEqualTo(Severidade.CRITICA);
             assertThat(sinal.evidencias()).singleElement()
                     .satisfies(e -> assertThat(e.label()).isEqualTo("TSB"));
+            assertThat(sinal.rationale()).contains("TSB em -40.0").contains("FADIGA_EXCESSIVA").contains("overtraining");
+            assertThat(sinal.sourceRules())
+                    .contains("CoachAttentionSignalEvaluator.avaliarFadiga")
+                    .contains("FaixaTsb.FADIGA_EXCESSIVA");
         }
 
         @Test
-        @DisplayName("TSB em (-35,-30] (fadiga alta) → ALTA")
+        @DisplayName("TSB em (-35,-30] (fadiga alta) → ALTA com rationale mencionando ALTO")
         void alta() {
             var sinal = evaluator.avaliarFadiga(-32.0).orElseThrow();
             assertThat(sinal.severidade()).isEqualTo(Severidade.ALTA);
+            assertThat(sinal.rationale()).contains("-32.0").contains("FADIGA_ALTA");
+            assertThat(sinal.sourceRules()).contains("FaixaTsb.FADIGA_ALTA");
         }
 
         @Test
-        @DisplayName("TSB em (-30,-10] (fadiga moderada) → MEDIA")
+        @DisplayName("TSB em (-30,-10] (fadiga moderada) → MEDIA com rationale mencionando ATENCAO")
         void media() {
             var sinal = evaluator.avaliarFadiga(-15.0).orElseThrow();
             assertThat(sinal.severidade()).isEqualTo(Severidade.MEDIA);
+            assertThat(sinal.rationale()).contains("-15.0").contains("ACUMULANDO_FADIGA");
+            assertThat(sinal.sourceRules()).contains("FaixaTsb.ACUMULANDO_FADIGA");
         }
 
         @Test
@@ -65,27 +73,46 @@ class CoachAttentionSignalEvaluatorTest {
         }
 
         @Test
-        @DisplayName("sobrecarga → ALTA")
+        @DisplayName("sobrecarga → ALTA com rationale de sobrecarga e sourceRules corretos")
         void sobrecargaAlta() {
             var sinal = evaluator.avaliarSobrecarga(true, false, false, false, null).orElseThrow();
             assertThat(sinal.motivo()).isEqualTo(MotivoAtencao.SOBRECARGA);
             assertThat(sinal.severidade()).isEqualTo(Severidade.ALTA);
+            assertThat(sinal.rationale()).contains("sobrecarga ativa");
+            assertThat(sinal.sourceRules())
+                    .contains("CoachAttentionSignalEvaluator.avaliarSobrecarga")
+                    .contains("PlanoMetaDados.alertaSobrecarga");
         }
 
         @Test
-        @DisplayName("necessita descanso → ALTA")
+        @DisplayName("necessita descanso → ALTA com rationale de descanso como flag prioritário")
         void necessitaDescansoAlta() {
-            assertThat(evaluator.avaliarSobrecarga(false, true, false, false, null).orElseThrow()
-                    .severidade()).isEqualTo(Severidade.ALTA);
+            var sinal = evaluator.avaliarSobrecarga(false, true, false, false, null).orElseThrow();
+            assertThat(sinal.severidade()).isEqualTo(Severidade.ALTA);
+            assertThat(sinal.rationale()).contains("descanso");
+            assertThat(sinal.sourceRules()).contains("PlanoMetaDados.alertaNecessitaDescanso");
         }
 
         @Test
-        @DisplayName("apenas ramp/dias consecutivos → MEDIA com contagem na evidência")
+        @DisplayName("sobrecarga + descanso → rationale prioriza sobrecarga; sourceRules inclui ambos")
+        void sobrecargaEDescanso() {
+            var sinal = evaluator.avaliarSobrecarga(true, true, false, false, null).orElseThrow();
+            assertThat(sinal.rationale()).contains("sobrecarga ativa");
+            assertThat(sinal.sourceRules())
+                    .contains("PlanoMetaDados.alertaSobrecarga")
+                    .contains("PlanoMetaDados.alertaNecessitaDescanso");
+        }
+
+        @Test
+        @DisplayName("apenas ramp/dias consecutivos → MEDIA com contagem na evidência e sourceRules correspondentes")
         void rampMedia() {
             var sinal = evaluator.avaliarSobrecarga(false, false, true, true, 6).orElseThrow();
             assertThat(sinal.severidade()).isEqualTo(Severidade.MEDIA);
-            assertThat(sinal.evidencias()).anySatisfy(e ->
-                    assertThat(e.value()).isEqualTo("6"));
+            assertThat(sinal.evidencias()).anySatisfy(e -> assertThat(e.value()).isEqualTo("6"));
+            assertThat(sinal.rationale()).contains("rampa");
+            assertThat(sinal.sourceRules())
+                    .contains("PlanoMetaDados.alertaRampAlto")
+                    .contains("PlanoMetaDados.alertaDiasConsecutivos");
         }
     }
 
@@ -100,15 +127,22 @@ class CoachAttentionSignalEvaluatorTest {
         }
 
         @Test
-        @DisplayName("2 perdidos → MEDIA")
+        @DisplayName("2 perdidos → MEDIA com rationale e sourceRules de aderência")
         void dois() {
-            assertThat(evaluator.avaliarAderencia(2).orElseThrow().severidade()).isEqualTo(Severidade.MEDIA);
+            var sinal = evaluator.avaliarAderencia(2).orElseThrow();
+            assertThat(sinal.severidade()).isEqualTo(Severidade.MEDIA);
+            assertThat(sinal.rationale()).contains("2 treino").contains("14 dias");
+            assertThat(sinal.sourceRules())
+                    .contains("CoachAttentionSignalEvaluator.avaliarAderencia")
+                    .contains("TreinoExecucaoStatus.PERDIDO|PARCIAL");
         }
 
         @Test
-        @DisplayName("3 perdidos (corte) → ALTA")
+        @DisplayName("3 perdidos (corte) → ALTA com contagem no rationale")
         void tres() {
-            assertThat(evaluator.avaliarAderencia(3).orElseThrow().severidade()).isEqualTo(Severidade.ALTA);
+            var sinal = evaluator.avaliarAderencia(3).orElseThrow();
+            assertThat(sinal.severidade()).isEqualTo(Severidade.ALTA);
+            assertThat(sinal.rationale()).contains("3 treino");
         }
     }
 
@@ -129,9 +163,12 @@ class CoachAttentionSignalEvaluatorTest {
         }
 
         @Test
-        @DisplayName("7 dias (corte) → MEDIA")
+        @DisplayName("7 dias (corte) → MEDIA com rationale e sourceRules de inatividade")
         void sete() {
-            assertThat(evaluator.avaliarInatividade(7L).orElseThrow().severidade()).isEqualTo(Severidade.MEDIA);
+            var sinal = evaluator.avaliarInatividade(7L).orElseThrow();
+            assertThat(sinal.severidade()).isEqualTo(Severidade.MEDIA);
+            assertThat(sinal.rationale()).contains("7 dias");
+            assertThat(sinal.sourceRules()).contains("CoachAttentionSignalEvaluator.avaliarInatividade");
         }
 
         @Test
@@ -141,9 +178,11 @@ class CoachAttentionSignalEvaluatorTest {
         }
 
         @Test
-        @DisplayName("14 dias (corte) → ALTA")
+        @DisplayName("14 dias (corte) → ALTA com contagem no rationale")
         void catorze() {
-            assertThat(evaluator.avaliarInatividade(14L).orElseThrow().severidade()).isEqualTo(Severidade.ALTA);
+            var sinal = evaluator.avaliarInatividade(14L).orElseThrow();
+            assertThat(sinal.severidade()).isEqualTo(Severidade.ALTA);
+            assertThat(sinal.rationale()).contains("14 dias");
         }
     }
 
@@ -158,11 +197,15 @@ class CoachAttentionSignalEvaluatorTest {
         }
 
         @Test
-        @DisplayName("vencidas → MEDIA")
+        @DisplayName("vencidas → MEDIA com rationale e sourceRules de zonas")
         void vencidas() {
             var sinal = evaluator.avaliarZonasVencidas(true).orElseThrow();
             assertThat(sinal.motivo()).isEqualTo(MotivoAtencao.ZONAS_VENCIDAS);
             assertThat(sinal.severidade()).isEqualTo(Severidade.MEDIA);
+            assertThat(sinal.rationale()).contains("3 meses").contains("zonas");
+            assertThat(sinal.sourceRules())
+                    .contains("CoachAttentionSignalEvaluator.avaliarZonasVencidas")
+                    .contains("Atleta.precisaAtualizarTestes");
         }
     }
 
@@ -177,11 +220,13 @@ class CoachAttentionSignalEvaluatorTest {
         }
 
         @Test
-        @DisplayName("sem plano → SEM_PLANO (ALTA)")
+        @DisplayName("sem plano → SEM_PLANO (ALTA) com rationale e sourceRules")
         void semPlano() {
             var sinal = evaluator.avaliarSemPlano(false).orElseThrow();
             assertThat(sinal.motivo()).isEqualTo(MotivoAtencao.SEM_PLANO);
             assertThat(sinal.severidade()).isEqualTo(Severidade.ALTA);
+            assertThat(sinal.rationale()).contains("sem plano ativo");
+            assertThat(sinal.sourceRules()).contains("CoachAttentionSignalEvaluator.avaliarSemPlano");
         }
     }
 }
