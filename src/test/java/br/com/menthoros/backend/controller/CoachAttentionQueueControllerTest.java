@@ -8,6 +8,7 @@ import br.com.menthoros.backend.security.JwtTenantFilter;
 import br.com.menthoros.backend.security.StructuredLoggingFilter;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -35,6 +36,10 @@ class CoachAttentionQueueControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private CoachAttentionQueueService service;
+
+    @Nested
+    @DisplayName("getAttentionQueue")
+    class GetAttentionQueue {
 
     @Test
     @DisplayName("GET /coach/attention-queue → 200 com a fila ordenada")
@@ -70,5 +75,6 @@ class CoachAttentionQueueControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$.length()").value(0));
+    }
     }
 }

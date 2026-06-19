@@ -13,6 +13,8 @@ public interface CoachAttentionQueueService {
     /**
      * Itens de atenção priorizados do tenant (apenas severidade ≥ ALTA na v1).
      * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     *
+     * @return itens ordenados por severidade/priorityScore (no máx. {@code MAX_ITENS}); vazio se nada exige ação
      */
     List<CoachAttentionItemOutputDto> getAttentionQueue();
 }

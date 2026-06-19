@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto;
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto.Evidencia;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AtletaStatus;
@@ -97,7 +98,7 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
         UUID atletaId = atleta.getId();
 
         Double tsb = metricasDiariasRepository.findLatestByAtletaId(atletaId)
-                .map(m -> m.getTsb()).orElse(null);
+                .map(MetricasDiarias::getTsb).orElse(null);
         PlanoMetaDados plano = planoMetadadosRepository.findByAtletaId(atletaId).orElse(null);
         long perdidos = contarNaoCumpridos(atletaId, inicioJanela, hoje);
         Long diasInativos = diasDesdeUltimaAtividade(atletaId, hoje);

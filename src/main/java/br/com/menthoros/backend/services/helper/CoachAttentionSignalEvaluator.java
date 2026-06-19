@@ -34,7 +34,7 @@ public class CoachAttentionSignalEvaluator {
             case CRITICO -> Severidade.CRITICA;
             case ALTO -> Severidade.ALTA;
             case ATENCAO -> Severidade.MEDIA;
-            case INFO -> null;
+            case INFO -> null; // faixa saudável/INFO não gera item de atenção
         };
         if (severidade == null) {
             return Optional.empty();

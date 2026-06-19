@@ -112,7 +112,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
                 (int) roster.stream().filter(r -> "active".equals(r.status())).count(),
                 (int) roster.stream().filter(r -> "warning".equals(r.status()) || "danger".equals(r.status())).count(),
                 (int) roster.stream().filter(r -> "paused".equals(r.status())).count(),
-                getCalendarioSemanal(null).treinos().size());
+                contarTreinosPlanejadosSemanaAtual());
 
         // Agrega volume/TSS realizados por semana (ISO) e volume total por atleta no período.
         Map<String, Double> volumePorSemana = new LinkedHashMap<>();
@@ -150,6 +150,15 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     }
 
     // ===== Helpers =====
+
+    /** Conta os treinos planejados do tenant na semana atual — sem passar por getCalendarioSemanal
+     *  (que aciona a fila de atenção), evitando custo O(N) extra no cálculo dos KPIs. */
+    private int contarTreinosPlanejadosSemanaAtual() {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        LocalDate inicio = LocalDate.now(clock).with(DayOfWeek.MONDAY);
+        LocalDate fim = inicio.plusDays(6);
+        return treinoPlanejadoRepository.findByTenantAndDataBetween(tenantId, inicio, fim).size();
+    }
 
     private CoachAtletaResumoDto montarResumo(Atleta atleta, LocalDate hoje, LocalDate inicioSemana, LocalDate fimSemana) {
         UUID atletaId = atleta.getId();
