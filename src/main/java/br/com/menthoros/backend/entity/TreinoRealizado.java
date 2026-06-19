@@ -39,14 +39,14 @@ public class TreinoRealizado extends TreinoBase{
     @Column(name = "metodo_calculo_tss")
     private String metodoCalculoTss; // "FC", "PACE", "RPE"
 
-    @Column(name = "fc_media", nullable = false)
+    @Column(name = "fc_media")
     private Integer fcMedia;
 
-    @Column(name = "fc_maxima_treino", nullable = false)
+    @Column(name = "fc_maxima_treino")
     private Integer fcMax;
 
     @JdbcTypeCode(SqlTypes.INTERVAL_SECOND)
-    @Column(name = "pace_media", nullable = false)
+    @Column(name = "pace_media")
     private Duration paceMedia; // min/km
 
     @Column(name = "velocidade_media")
