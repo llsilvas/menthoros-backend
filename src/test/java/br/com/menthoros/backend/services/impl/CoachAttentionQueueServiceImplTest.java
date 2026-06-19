@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto;
+import br.com.menthoros.backend.enums.ExplanationConfidence;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
@@ -91,6 +92,10 @@ class CoachAttentionQueueServiceImplTest {
                 assertThat(item.suggestedAction()).isNotBlank();
                 assertThat(item.generatedAt()).isEqualTo(CLOCK.instant());
                 assertThat(item.evidence()).isNotEmpty();
+                assertThat(item.explanation()).isNotNull();
+                assertThat(item.explanation().confidence()).isEqualTo(ExplanationConfidence.HIGH);
+                assertThat(item.explanation().rationale()).isNotBlank();
+                assertThat(item.explanation().sourceRules()).isNotEmpty();
             });
         }
 

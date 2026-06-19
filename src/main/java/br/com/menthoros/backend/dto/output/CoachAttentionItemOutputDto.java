@@ -39,7 +39,10 @@ public record CoachAttentionItemOutputDto(
         Instant generatedAt,
 
         @Schema(description = "Evidências resumidas que justificam a priorização")
-        List<Evidencia> evidence
+        List<Evidencia> evidence,
+
+        @Schema(description = "Explicabilidade estruturada do sinal principal (rationale, sourceRules, confidence)")
+        RecommendationExplanation explanation
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

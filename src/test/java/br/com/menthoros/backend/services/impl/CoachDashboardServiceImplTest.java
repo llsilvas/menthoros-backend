@@ -4,6 +4,8 @@ import br.com.menthoros.backend.dto.output.CoachAtletaResumoDto;
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto;
 import br.com.menthoros.backend.dto.output.CoachCalendarioDto;
 import br.com.menthoros.backend.dto.output.CoachInsightsDto;
+import br.com.menthoros.backend.dto.output.RecommendationExplanation;
+import br.com.menthoros.backend.enums.ExplanationConfidence;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.MotivoAtencao;
 import br.com.menthoros.backend.enums.Severidade;
@@ -193,10 +195,14 @@ class CoachDashboardServiceImplTest {
             Atleta bia = Atleta.builder().id(UUID.randomUUID()).nome("Bia").build();
             when(treinoPlanejadoRepository.findByTenantAndDataBetween(tenantId, INICIO_SEMANA, FIM_SEMANA))
                     .thenReturn(List.of(planejado(ana, HOJE, TipoTreino.LONGO), planejado(bia, HOJE, TipoTreino.REGENERATIVO)));
+            RecommendationExplanation exp = new RecommendationExplanation(
+                    "Atleta sem plano ativo; impossível avaliar carga ou progressão.",
+                    List.of("CoachAttentionSignalEvaluator.avaliarSemPlano"),
+                    ExplanationConfidence.HIGH);
             when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of(
                     new CoachAttentionItemOutputDto(ana.getId(), "Ana", Severidade.ALTA, 235,
                             MotivoAtencao.SEM_PLANO, MotivoAtencao.SEM_PLANO.getSuggestedAction(),
-                            Instant.parse("2026-06-17T12:00:00Z"), List.of())));
+                            Instant.parse("2026-06-17T12:00:00Z"), List.of(), exp)));
 
             CoachCalendarioDto cal = service.getCalendarioSemanal(null);
 

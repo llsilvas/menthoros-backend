@@ -2,7 +2,9 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto;
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto.Evidencia;
+import br.com.menthoros.backend.dto.output.RecommendationExplanation;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.enums.ExplanationConfidence;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoRealizado;
@@ -130,6 +132,8 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
 
         List<Evidencia> evidencias = consolidarEvidencias(sinais, principal);
         int priorityScore = principal.severidade().getPeso() * 100 + principal.motivo().getPeso();
+        RecommendationExplanation explanation = new RecommendationExplanation(
+                principal.rationale(), principal.sourceRules(), ExplanationConfidence.HIGH);
 
         return Optional.of(new CoachAttentionItemOutputDto(
                 atletaId,
@@ -139,7 +143,8 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
                 principal.motivo(),
                 principal.motivo().getSuggestedAction(),
                 geradoEm,
-                evidencias
+                evidencias,
+                explanation
         ));
     }
 
