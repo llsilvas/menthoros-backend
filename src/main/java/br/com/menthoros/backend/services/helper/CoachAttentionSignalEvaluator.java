@@ -24,6 +24,15 @@ import java.util.Optional;
 @Component
 public class CoachAttentionSignalEvaluator {
 
+    // Constantes de sourceRules — centralizadas para facilitar atualização em caso de renomeação
+    private static final String SOURCE_FADIGA = "CoachAttentionSignalEvaluator.avaliarFadiga";
+    private static final String SOURCE_FAIXA_TSB_PREFIX = "FaixaTsb.";
+    private static final String SOURCE_SOBRECARGA = "CoachAttentionSignalEvaluator.avaliarSobrecarga";
+    private static final String SOURCE_ADERENCIA = "CoachAttentionSignalEvaluator.avaliarAderencia";
+    private static final String SOURCE_INATIVIDADE = "CoachAttentionSignalEvaluator.avaliarInatividade";
+    private static final String SOURCE_ZONAS_VENCIDAS = "CoachAttentionSignalEvaluator.avaliarZonasVencidas";
+    private static final String SOURCE_SEM_PLANO = "CoachAttentionSignalEvaluator.avaliarSemPlano";
+
     /** Fadiga/forma via classificação de TSB ({@link FaixaTsb}); INFO ou TSB nulo → sem sinal. */
     public Optional<SinalAtencao> avaliarFadiga(Double tsb) {
         FaixaTsb faixa = FaixaTsb.classificar(tsb);
@@ -39,9 +48,16 @@ public class CoachAttentionSignalEvaluator {
         if (severidade == null) {
             return Optional.empty();
         }
-        String valor = String.format(Locale.US, "%.1f (%s)", tsb, faixa.getInterpretacao());
+        String valorEvidencia = String.format(Locale.US, "%.1f (%s)", tsb, faixa.getInterpretacao());
+        String descricaoRisco = severidade == Severidade.CRITICA
+                ? "fadiga excessiva com risco de overtraining"
+                : "fadiga elevada acima da capacidade de recuperação";
+        String rationale = String.format(Locale.US,
+                "TSB em %.1f situa-se na zona %s (%s), indicando %s.",
+                tsb, faixa.name(), faixa.getInterpretacao(), descricaoRisco);
+        List<String> sourceRules = List.of(SOURCE_FADIGA, SOURCE_FAIXA_TSB_PREFIX + faixa.name());
         return Optional.of(new SinalAtencao(MotivoAtencao.FADIGA, severidade,
-                List.of(new Evidencia("TSB", valor))));
+                List.of(new Evidencia("TSB", valorEvidencia)), rationale, sourceRules));
     }
 
     /** Sobrecarga/progressão via flags do plano. sobrecarga/necessita-descanso → ALTA; ramp/dias → MEDIA. */
@@ -56,15 +72,36 @@ public class CoachAttentionSignalEvaluator {
         } else {
             return Optional.empty();
         }
+        // rationale = primeiro flag ativo por prioridade (sobrecarga > descanso > ramp > dias)
+        String rationale;
+        if (sobrecarga) rationale = "Plano sinaliza sobrecarga ativa.";
+        else if (necessitaDescanso) rationale = "Plano sinaliza necessidade de descanso.";
+        else if (rampAlto) rationale = "Plano sinaliza rampa de carga elevada.";
+        else rationale = "Plano sinaliza dias consecutivos de treino excessivos.";
+
+        // evidencias e sourceRules = TODOS os flags ativos
         List<Evidencia> evidencias = new ArrayList<>();
-        if (sobrecarga) evidencias.add(new Evidencia("Sobrecarga", "sim"));
-        if (necessitaDescanso) evidencias.add(new Evidencia("Necessita descanso", "sim"));
-        if (rampAlto) evidencias.add(new Evidencia("Rampa de carga alta", "sim"));
+        List<String> sourceRules = new ArrayList<>();
+        sourceRules.add(SOURCE_SOBRECARGA);
+        if (sobrecarga) {
+            evidencias.add(new Evidencia("Sobrecarga", "sim"));
+            sourceRules.add("PlanoMetaDados.alertaSobrecarga");
+        }
+        if (necessitaDescanso) {
+            evidencias.add(new Evidencia("Necessita descanso", "sim"));
+            sourceRules.add("PlanoMetaDados.alertaNecessitaDescanso");
+        }
+        if (rampAlto) {
+            evidencias.add(new Evidencia("Rampa de carga alta", "sim"));
+            sourceRules.add("PlanoMetaDados.alertaRampAlto");
+        }
         if (diasConsecutivos) {
             evidencias.add(new Evidencia("Dias consecutivos de treino",
                     diasConsecutivosTreino != null ? diasConsecutivosTreino.toString() : "sim"));
+            sourceRules.add("PlanoMetaDados.alertaDiasConsecutivos");
         }
-        return Optional.of(new SinalAtencao(MotivoAtencao.SOBRECARGA, severidade, List.copyOf(evidencias)));
+        return Optional.of(new SinalAtencao(MotivoAtencao.SOBRECARGA, severidade,
+                List.copyOf(evidencias), rationale, List.copyOf(sourceRules)));
     }
 
     /** Aderência via treinos perdidos/parciais na janela. ≥3 → ALTA; 1-2 → MEDIA; 0 → sem sinal. */
@@ -73,8 +110,11 @@ public class CoachAttentionSignalEvaluator {
             return Optional.empty();
         }
         Severidade severidade = perdidosNaJanela >= 3 ? Severidade.ALTA : Severidade.MEDIA;
+        String rationale = perdidosNaJanela + " treino(s) não cumprido(s) nos últimos 14 dias (PERDIDO ou PARCIAL).";
         return Optional.of(new SinalAtencao(MotivoAtencao.ADERENCIA, severidade,
-                List.of(new Evidencia("Treinos não cumpridos (14d)", Long.toString(perdidosNaJanela)))));
+                List.of(new Evidencia("Treinos não cumpridos (14d)", Long.toString(perdidosNaJanela))),
+                rationale,
+                List.of(SOURCE_ADERENCIA, "TreinoExecucaoStatus.PERDIDO|PARCIAL")));
     }
 
     /** Inatividade via dias desde a última atividade. ≥14 → ALTA; 7-13 → MEDIA; <7 ou nulo → sem sinal. */
@@ -90,8 +130,11 @@ public class CoachAttentionSignalEvaluator {
         } else {
             return Optional.empty();
         }
+        String rationale = "Sem atividade registrada há " + diasInativos + " dias.";
         return Optional.of(new SinalAtencao(MotivoAtencao.INATIVIDADE, severidade,
-                List.of(new Evidencia("Dias sem atividade", Long.toString(diasInativos)))));
+                List.of(new Evidencia("Dias sem atividade", Long.toString(diasInativos))),
+                rationale,
+                List.of(SOURCE_INATIVIDADE)));
     }
 
     /** Zonas de FC/pace vencidas (3+ meses sem teste) → MEDIA. */
@@ -99,8 +142,11 @@ public class CoachAttentionSignalEvaluator {
         if (!precisaAtualizarTestes) {
             return Optional.empty();
         }
+        String rationale = "Último teste de FC/pace há mais de 3 meses; zonas de treinamento potencialmente desatualizadas.";
         return Optional.of(new SinalAtencao(MotivoAtencao.ZONAS_VENCIDAS, Severidade.MEDIA,
-                List.of(new Evidencia("Zonas", "teste de FC/pace há 3+ meses"))));
+                List.of(new Evidencia("Zonas", "teste de FC/pace há 3+ meses")),
+                rationale,
+                List.of(SOURCE_ZONAS_VENCIDAS, "Atleta.precisaAtualizarTestes")));
     }
 
     /** Atleta sem plano ativo → SEM_PLANO (ALTA), para não desaparecer da fila. */
@@ -108,7 +154,10 @@ public class CoachAttentionSignalEvaluator {
         if (temPlanoAtivo) {
             return Optional.empty();
         }
+        String rationale = "Atleta sem plano ativo; impossível avaliar carga ou progressão.";
         return Optional.of(new SinalAtencao(MotivoAtencao.SEM_PLANO, Severidade.ALTA,
-                List.of(new Evidencia("Plano", "sem plano ativo"))));
+                List.of(new Evidencia("Plano", "sem plano ativo")),
+                rationale,
+                List.of(SOURCE_SEM_PLANO)));
     }
 }

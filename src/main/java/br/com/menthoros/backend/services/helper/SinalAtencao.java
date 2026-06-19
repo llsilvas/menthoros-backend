@@ -9,9 +9,23 @@ import java.util.List;
 /**
  * Sinal de atenção bruto, derivado de uma fonte (fadiga, sobrecarga, ...) para um atleta, antes da
  * consolidação por atleta na fila. Interno à camada de serviço — não é contrato de API.
+ *
+ * <p>{@code rationale} é uma sentença PT-BR concreta explicando por que o sinal foi acionado
+ * (ex.: "TSB em -40.0 situa-se na zona CRITICO, indicando fadiga excessiva.").
+ * {@code sourceRules} lista os classificadores/regras que dispararam o sinal no formato
+ * {@code "ClassName.methodOrConstant"} — informativo, não executável.
  */
 public record SinalAtencao(
         MotivoAtencao motivo,
         Severidade severidade,
-        List<Evidencia> evidencias
-) {}
+        List<Evidencia> evidencias,
+        String rationale,
+        List<String> sourceRules
+) {
+    public SinalAtencao {
+        if (rationale == null || rationale.isBlank())
+            throw new IllegalArgumentException("SinalAtencao.rationale não pode ser nulo ou vazio");
+        if (sourceRules == null || sourceRules.isEmpty())
+            throw new IllegalArgumentException("SinalAtencao.sourceRules não pode ser nulo ou vazio");
+    }
+}
