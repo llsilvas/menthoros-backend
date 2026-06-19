@@ -1,9 +1,13 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.output.CoachAtletaResumoDto;
+import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto;
 import br.com.menthoros.backend.dto.output.CoachCalendarioDto;
 import br.com.menthoros.backend.dto.output.CoachInsightsDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.enums.MotivoAtencao;
+import br.com.menthoros.backend.enums.Severidade;
+import br.com.menthoros.backend.services.CoachAttentionQueueService;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
@@ -39,6 +43,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -54,6 +59,7 @@ class CoachDashboardServiceImplTest {
     @Mock private PlanoMetadadosRepository planoMetadadosRepository;
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
+    @Mock private CoachAttentionQueueService coachAttentionQueueService;
 
     private CoachDashboardServiceImpl service;
     private UUID tenantId;
@@ -65,7 +71,9 @@ class CoachDashboardServiceImplTest {
         Clock clock = Clock.fixed(Instant.parse("2026-06-17T12:00:00Z"), ZoneOffset.UTC);
         service = new CoachDashboardServiceImpl(
                 atletaRepository, metricasDiariasRepository, planoMetadadosRepository,
-                treinoRealizadoRepository, treinoPlanejadoRepository, clock);
+                treinoRealizadoRepository, treinoPlanejadoRepository, coachAttentionQueueService, clock);
+        // Default: sem itens de atenção (cada teste de calendário que precisar sobrescreve)
+        lenient().when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of());
     }
 
     @AfterEach
@@ -176,6 +184,24 @@ class CoachDashboardServiceImplTest {
             CoachCalendarioDto cal = service.getCalendarioSemanal(null);
             assertThat(cal.semanaInicio()).isEqualTo(INICIO_SEMANA);
             assertThat(cal.treinos()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("hasAlert = true para atleta presente na fila de atenção")
+        void hasAlertDaFila() {
+            Atleta ana = Atleta.builder().id(UUID.randomUUID()).nome("Ana").build();
+            Atleta bia = Atleta.builder().id(UUID.randomUUID()).nome("Bia").build();
+            when(treinoPlanejadoRepository.findByTenantAndDataBetween(tenantId, INICIO_SEMANA, FIM_SEMANA))
+                    .thenReturn(List.of(planejado(ana, HOJE, TipoTreino.LONGO), planejado(bia, HOJE, TipoTreino.REGENERATIVO)));
+            when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of(
+                    new CoachAttentionItemOutputDto(ana.getId(), "Ana", Severidade.ALTA, 235,
+                            MotivoAtencao.SEM_PLANO, MotivoAtencao.SEM_PLANO.getSuggestedAction(),
+                            Instant.parse("2026-06-17T12:00:00Z"), List.of())));
+
+            CoachCalendarioDto cal = service.getCalendarioSemanal(null);
+
+            assertThat(cal.treinos()).extracting(t -> t.nomeAtleta(), t -> t.hasAlert())
+                    .containsExactly(tuple("Ana", true), tuple("Bia", false));
         }
     }
 

@@ -16,6 +16,8 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto;
+import br.com.menthoros.backend.services.CoachAttentionQueueService;
 import br.com.menthoros.backend.services.CoachDashboardService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Implementação read-only dos dashboards do coach. Agrega no escopo do tenant
@@ -56,6 +59,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
+    private final CoachAttentionQueueService coachAttentionQueueService;
     private final Clock clock;
 
     @Override
@@ -79,9 +83,13 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         LocalDate inicio = base.with(DayOfWeek.MONDAY);
         LocalDate fim = inicio.plusDays(6);
 
+        Set<UUID> atletasEmAtencao = coachAttentionQueueService.getAttentionQueue().stream()
+                .map(CoachAttentionItemOutputDto::atletaId)
+                .collect(Collectors.toSet());
+
         List<CoachCalendarioDto.TreinoAgendado> treinos =
                 treinoPlanejadoRepository.findByTenantAndDataBetween(tenantId, inicio, fim).stream()
-                        .map(this::montarTreinoAgendado)
+                        .map(tp -> montarTreinoAgendado(tp, atletasEmAtencao))
                         .toList();
 
         return new CoachCalendarioDto(inicio, fim, treinos);
@@ -168,16 +176,17 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
                 deriveStatus(atleta, tsb, lastActivity, hoje), lastActivity, weeklyVolume);
     }
 
-    private CoachCalendarioDto.TreinoAgendado montarTreinoAgendado(TreinoPlanejado tp) {
+    private CoachCalendarioDto.TreinoAgendado montarTreinoAgendado(TreinoPlanejado tp, Set<UUID> atletasEmAtencao) {
         Atleta atleta = tp.getAtleta();
         TipoTreino tipo = tp.getTipoTreino();
+        boolean hasAlert = atleta != null && atletasEmAtencao.contains(atleta.getId());
         return new CoachCalendarioDto.TreinoAgendado(
                 atleta != null ? atleta.getId() : null,
                 atleta != null ? nomeCompleto(atleta) : null,
                 tp.getDataTreino(),
                 tipo != null ? tipo.name() : null,
                 tipo != null && TIPOS_CHAVE.contains(tipo),
-                false,  // hasAlert — fonte: add-coach-attention-queue (não entregue)
+                hasAlert,  // atleta presente na fila de atenção (add-coach-attention-queue)
                 false); // hasPendingSuggestion — fonte: add-coach-suggestion-inbox (não entregue)
     }
 
