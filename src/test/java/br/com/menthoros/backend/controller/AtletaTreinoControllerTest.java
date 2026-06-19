@@ -176,6 +176,36 @@ class AtletaTreinoControllerTest {
             mockMvc.perform(get("/api/v1/atletas/me/treinos").param("dias", "14"))
                     .andExpect(status().isOk());
         }
+
+        @Test
+        @DisplayName("400 quando dias=0 (abaixo do mínimo permitido)")
+        void retorna400QuandoDiasZero() throws Exception {
+            mockMvc.perform(get("/api/v1/atletas/me/treinos").param("dias", "0"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("400 quando dias=31 (acima do máximo permitido)")
+        void retorna400QuandoDias31() throws Exception {
+            mockMvc.perform(get("/api/v1/atletas/me/treinos").param("dias", "31"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("200 quando dias=1 (valor mínimo permitido)")
+        void retorna200QuandoDiasMinimo() throws Exception {
+            when(treinoService.listarTreinosRecentes(any(), anyInt())).thenReturn(List.of());
+            mockMvc.perform(get("/api/v1/atletas/me/treinos").param("dias", "1"))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("200 quando dias=30 (valor máximo permitido)")
+        void retorna200QuandoDiasMaximo() throws Exception {
+            when(treinoService.listarTreinosRecentes(any(), anyInt())).thenReturn(List.of());
+            mockMvc.perform(get("/api/v1/atletas/me/treinos").param("dias", "30"))
+                    .andExpect(status().isOk());
+        }
     }
 
     // -------------------------------------------------------------------------

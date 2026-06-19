@@ -44,7 +44,7 @@ public class AtletaTreinoController {
     // sem receber um resource-ID como parâmetro. Isolamento garantido por TenantContext + queries tenant-scoped.
 
     @PostMapping("/me/treinos")
-    @PreAuthorize("hasRole('ATLETA')")
+    @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
     @Operation(summary = "Registrar treino realizado manualmente")
     @ApiResponses({
             @ApiResponse(responseCode = "201", description = "Treino registrado com sucesso",
@@ -62,7 +62,7 @@ public class AtletaTreinoController {
     }
 
     @GetMapping("/me/treinos")
-    @PreAuthorize("hasRole('ATLETA')")
+    @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
     @Operation(summary = "Listar treinos recentes do atleta autenticado")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Lista de treinos realizados no período",
@@ -73,7 +73,7 @@ public class AtletaTreinoController {
     })
     public ResponseEntity<List<TreinoRealizadoOutputDto>> listarTreinosRecentes(
             @Parameter(description = "Número de dias a consultar (1–30, default 7)")
-            @RequestParam(defaultValue = "7") @Min(1) @Max(30) Integer dias) {
+            @RequestParam(defaultValue = "7") @Min(1) @Max(TreinoService.MAX_JANELA_DIAS) Integer dias) {
         UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
         return ResponseEntity.ok(treinoService.listarTreinosRecentes(atletaId, dias));
     }

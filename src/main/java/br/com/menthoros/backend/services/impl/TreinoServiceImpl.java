@@ -21,7 +21,7 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.services.TreinoService;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
-import jakarta.transaction.Transactional;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
@@ -551,9 +551,9 @@ public class TreinoServiceImpl implements TreinoService {
      * @return lista de treinos realizados no período, ordenada por data DESC
      */
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public List<TreinoRealizadoOutputDto> listarTreinosRecentes(UUID atletaId, int dias) {
-        int diasEfetivos = Math.min(dias, 30);
+        int diasEfetivos = Math.min(dias, TreinoService.MAX_JANELA_DIAS);
         LocalDate hoje = LocalDate.now();
         UUID tenantId = TenantContext.getRequiredTenantId();
         return treinoRealizadoRepository

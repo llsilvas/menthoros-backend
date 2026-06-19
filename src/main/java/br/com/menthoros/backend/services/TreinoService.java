@@ -15,6 +15,8 @@ import java.util.UUID;
 
 public interface TreinoService {
 
+    int MAX_JANELA_DIAS = 30;
+
     TreinoRealizado addTreino(UUID treinoPlanejadoId, TreinoRealizadoInputDto treinoRealizadoInputDto);
 
     TreinoRealizadoOutputDto updateTreino(UUID id, TreinoRealizadoInputDto treinoRealizadoInputDto);

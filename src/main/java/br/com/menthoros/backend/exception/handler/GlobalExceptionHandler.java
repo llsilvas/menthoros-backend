@@ -10,6 +10,7 @@ import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.exception.StravaRateLimitException;
 import jakarta.persistence.OptimisticLockException;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -44,6 +45,28 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(body);
     }
 
+    /**
+     * Handler para violações de constraint em parâmetros de request (@RequestParam, @PathVariable)
+     * anotados com @Min/@Max/@NotNull via @Validated no controller.
+     *
+     * Mapeamento: 400 Bad Request
+     * Gerada por: @Validated + @Min/@Max em parâmetros de controller (ex: dias em listarTreinosRecentes).
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleConstraintViolation(ConstraintViolationException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", 400);
+        body.put("error", "Bad Request");
+        Map<String, String> fields = new HashMap<>();
+        ex.getConstraintViolations().forEach(cv -> {
+            String path = cv.getPropertyPath().toString();
+            String field = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
+            fields.put(field, cv.getMessage());
+        });
+        body.put("fields", fields);
+        return ResponseEntity.badRequest().body(body);
+    }
+
 
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(ResourceNotFoundException ex) {
@@ -67,12 +90,23 @@ public class GlobalExceptionHandler {
     }
 
 
-    @ExceptionHandler({DuplicateResourceException.class, DataIntegrityViolationException.class})
-    public ResponseEntity<Map<String, Object>> handleDuplicate(Exception ex) {
+    @ExceptionHandler(DuplicateResourceException.class)
+    public ResponseEntity<Map<String, Object>> handleDuplicateResource(DuplicateResourceException ex) {
         Map<String, Object> body = Map.of(
                 "status", 409,
                 "error", "Conflict",
                 "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Map<String, Object>> handleDataIntegrity(DataIntegrityViolationException ex) {
+        log.warn("Violação de integridade de dados: {}", ex.getMostSpecificCause().getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 409,
+                "error", "Conflict",
+                "message", "Operação não permitida: conflito de dados. Verifique os dados enviados e tente novamente."
         );
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }

@@ -19,9 +19,10 @@ public record TreinoManualInputDto(
     @PastOrPresent(message = "Data do treino não pode ser no futuro")
     LocalDate data,
 
-    @Schema(description = "Duração do treino em minutos", example = "45")
+    @Schema(description = "Duração do treino em minutos (máx 1440 = 24h)", example = "45")
     @NotNull(message = "Duração é obrigatória")
     @Positive(message = "Duração deve ser positiva")
+    @Max(value = 1440, message = "Duração não pode exceder 1440 minutos (24h)")
     Integer duracaoMinutos,
 
     @Schema(description = "Distância percorrida em km (opcional)", example = "8.5")
