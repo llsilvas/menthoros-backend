@@ -1,7 +1,6 @@
 package br.com.menthoros.backend.dto.input;
 
 import br.com.menthoros.backend.enums.TipoTreino;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
 
@@ -9,7 +8,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Schema(description = "Dados para registro manual de treino pelo próprio atleta")
-@JsonInclude(JsonInclude.Include.NON_NULL)
 public record TreinoManualInputDto(
 
     @Schema(description = "Tipo do treino", example = "CONTINUO")

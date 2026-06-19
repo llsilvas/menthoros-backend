@@ -475,14 +475,27 @@ public class TreinoServiceImpl implements TreinoService {
         return response;
     }
 
+    private static final String CRIADO_POR_ATLETA = "ATLETA";
+
+    /**
+     * Registra treino executado manualmente pelo próprio atleta.
+     *
+     * <p><b>Idempotent:</b> NO — cria nova entidade a cada chamada.
+     * <p><b>Side Effects:</b> Database insert (TreinoRealizado) + TreinoRegistradoEvent + TSB update.
+     * <p><b>Tenant-aware:</b> YES — valida atleta via findByIdAndTenantId; query de match filtra por tenant.
+     *
+     * @param atletaId ID do atleta (resolvido do JWT no controller)
+     * @param input    dados do treino manual
+     * @return treino salvo como DTO
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException      se atletaId não pertence ao tenant
+     * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se data anterior a 7 dias
+     */
     @Override
     @Transactional
     public TreinoRealizadoOutputDto registrarTreinoManualAtleta(UUID atletaId, TreinoManualInputDto input) {
-        // Idempotent: NO. Side Effects: Database insert + TreinoRegistradoEvent + TSB update. Tenant-aware: YES.
         LocalDate hoje = LocalDate.now();
         if (input.data().isBefore(hoje.minusDays(7))) {
-            throw new DomainRuleViolationException(
-                    "Data do treino não pode ser anterior a 7 dias. Data informada: " + input.data());
+            throw new DomainRuleViolationException("Data do treino não pode ser anterior a 7 dias atrás.");
         }
 
         UUID tenantId = TenantContext.getRequiredTenantId();
@@ -493,7 +506,7 @@ public class TreinoServiceImpl implements TreinoService {
         List<TreinoExecucaoStatus> statusesElegiveis = List.of(
                 TreinoExecucaoStatus.PENDENTE, TreinoExecucaoStatus.PERDIDO);
         Optional<TreinoPlanejado> matchOpt = treinoPlanejadoRepository
-                .findFirstForManualMatch(atletaId, input.data(), input.tipo(), statusesElegiveis);
+                .findFirstForManualMatch(atletaId, tenantId, input.data(), input.tipo(), statusesElegiveis);
 
         TreinoRealizado treino = new TreinoRealizado();
         treino.setAtleta(atleta);
@@ -507,7 +520,7 @@ public class TreinoServiceImpl implements TreinoService {
         treino.setObservacao(input.observacoes());
         treino.setFonteDados(FonteDados.MANUAL);
         treino.setStatus(TreinoExecucaoStatus.REALIZADO);
-        treino.setCriadoPor("ATLETA");
+        treino.setCriadoPor(CRIADO_POR_ATLETA);
         matchOpt.ifPresent(treino::setTreinoPlanejado);
 
         TreinoRealizado treinoSalvo = treinoRealizadoRepository.save(treino);
@@ -526,16 +539,26 @@ public class TreinoServiceImpl implements TreinoService {
         return treinoMapper.toOutputDto(treinoSalvo);
     }
 
+    /**
+     * Lista treinos realizados recentes do atleta, ordenados por data DESC.
+     *
+     * <p><b>Idempotent:</b> YES — leitura pura, sem alteração de estado.
+     * <p><b>Side Effects:</b> NONE.
+     * <p><b>Tenant-aware:</b> YES — filtra por tenantId na query.
+     *
+     * @param atletaId ID do atleta
+     * @param dias     janela de consulta (limitado a 30 internamente)
+     * @return lista de treinos realizados no período, ordenada por data DESC
+     */
     @Override
     @Transactional
     public List<TreinoRealizadoOutputDto> listarTreinosRecentes(UUID atletaId, int dias) {
-        // Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
         int diasEfetivos = Math.min(dias, 30);
         LocalDate hoje = LocalDate.now();
+        UUID tenantId = TenantContext.getRequiredTenantId();
         return treinoRealizadoRepository
-                .findByAtletaIdAndDataTreinoBetween(atletaId, hoje.minusDays(diasEfetivos), hoje)
+                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, hoje.minusDays(diasEfetivos), hoje)
                 .stream()
-                .sorted(Comparator.comparing(TreinoRealizado::getDataTreino).reversed())
                 .map(treinoMapper::toOutputDto)
                 .toList();
     }

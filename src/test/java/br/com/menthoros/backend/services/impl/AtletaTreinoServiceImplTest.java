@@ -106,7 +106,7 @@ class AtletaTreinoServiceImplTest {
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
-            when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any()))
+            when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
                     .thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(outputDto);
 
@@ -140,7 +140,7 @@ class AtletaTreinoServiceImplTest {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
             when(treinoPlanejadoRepository.findFirstForManualMatch(
-                    eq(atletaId), eq(input.data()), eq(input.tipo()), any()))
+                    eq(atletaId), eq(tenantId), eq(input.data()), eq(input.tipo()), any()))
                     .thenReturn(Optional.of(planejado));
             when(treinoPlanejadoRepository.save(planejado)).thenReturn(planejado);
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(outputDto);
@@ -163,7 +163,7 @@ class AtletaTreinoServiceImplTest {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
             when(treinoPlanejadoRepository.findFirstForManualMatch(
-                    eq(atletaId), eq(input.data()), eq(input.tipo()), any()))
+                    eq(atletaId), eq(tenantId), eq(input.data()), eq(input.tipo()), any()))
                     .thenReturn(Optional.of(planejado));
             when(treinoPlanejadoRepository.save(planejado)).thenReturn(planejado);
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(outputDto);
@@ -194,7 +194,7 @@ class AtletaTreinoServiceImplTest {
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
-            when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any()))
+            when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
                     .thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());
 
@@ -221,7 +221,7 @@ class AtletaTreinoServiceImplTest {
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
-            when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any()))
+            when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
                     .thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());
 
@@ -241,7 +241,7 @@ class AtletaTreinoServiceImplTest {
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
-            when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any()))
+            when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
                     .thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());
 
@@ -250,7 +250,7 @@ class AtletaTreinoServiceImplTest {
             @SuppressWarnings("unchecked")
             ArgumentCaptor<List<TreinoExecucaoStatus>> statusCaptor = forClass(List.class);
             verify(treinoPlanejadoRepository).findFirstForManualMatch(
-                    eq(atletaId), eq(input.data()), eq(input.tipo()), statusCaptor.capture());
+                    eq(atletaId), eq(tenantId), eq(input.data()), eq(input.tipo()), statusCaptor.capture());
             assertThat(statusCaptor.getValue())
                     .containsExactlyInAnyOrder(TreinoExecucaoStatus.PENDENTE, TreinoExecucaoStatus.PERDIDO);
         }
@@ -268,7 +268,7 @@ class AtletaTreinoServiceImplTest {
             var treino = stubTreinoRealizado();
             var outputDto = stubOutputDto();
 
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(), any()))
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(treino));
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputDto);
 
@@ -280,14 +280,14 @@ class AtletaTreinoServiceImplTest {
         @Test
         @DisplayName("limita a 30 dias quando valor superior é informado")
         void limitaA30DiasQuandoValorSuperiorPassado() {
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(), any()))
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of());
 
             service.listarTreinosRecentes(atletaId, 999);
 
             ArgumentCaptor<LocalDate> dataInicioCaptor = forClass(LocalDate.class);
-            verify(treinoRealizadoRepository).findByAtletaIdAndDataTreinoBetween(
-                    eq(atletaId), dataInicioCaptor.capture(), any());
+            verify(treinoRealizadoRepository).findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    eq(atletaId), eq(tenantId), dataInicioCaptor.capture(), any());
 
             LocalDate hoje = LocalDate.now();
             assertThat(dataInicioCaptor.getValue()).isAfterOrEqualTo(hoje.minusDays(30));
@@ -297,10 +297,23 @@ class AtletaTreinoServiceImplTest {
         @Test
         @DisplayName("retorna lista vazia quando não há treinos no período")
         void retornaListaVaziaQuandoSemTreinos() {
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(), any()))
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of());
 
             assertThat(service.listarTreinosRecentes(atletaId, 7)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("isolamento cross-tenant — tenantId do contexto é sempre passado à query, independente do atletaId")
+        void passaTenantIdDoContextoAQuery() {
+            UUID atletaIdExterno = UUID.randomUUID();
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
+                    .thenReturn(List.of());
+
+            service.listarTreinosRecentes(atletaIdExterno, 7);
+
+            verify(treinoRealizadoRepository).findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    eq(atletaIdExterno), eq(tenantId), any(), any());
         }
     }
 

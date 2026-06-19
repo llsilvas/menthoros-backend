@@ -31,6 +31,7 @@ import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -74,6 +75,8 @@ class AtletaTreinoControllerTest {
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.fonteDados.value").value("MANUAL"))
                     .andExpect(jsonPath("$.status.value").value("REALIZADO"));
+
+            verify(atletaProgressService).resolverAtletaIdAtual();
         }
 
         @Test
@@ -150,6 +153,8 @@ class AtletaTreinoControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$").isArray())
                     .andExpect(jsonPath("$[0].fonteDados.value").value("MANUAL"));
+
+            verify(atletaProgressService).resolverAtletaIdAtual();
         }
 
         @Test

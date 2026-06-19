@@ -65,6 +65,7 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
     @Query("""
        SELECT tp FROM TreinoPlanejado tp
        WHERE tp.atleta.id = :atletaId
+         AND tp.atleta.assessoria.id = :tenantId
          AND tp.dataTreino = :data
          AND tp.tipoTreino = :tipo
          AND tp.treinoRealizado IS NULL
@@ -72,6 +73,7 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
        ORDER BY tp.criadoEm ASC
        """)
     Optional<TreinoPlanejado> findFirstForManualMatch(@Param("atletaId") UUID atletaId,
+                                                       @Param("tenantId") UUID tenantId,
                                                        @Param("data") LocalDate data,
                                                        @Param("tipo") TipoTreino tipo,
                                                        @Param("statuses") List<TreinoExecucaoStatus> statuses);
