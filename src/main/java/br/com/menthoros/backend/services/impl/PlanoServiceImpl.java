@@ -10,6 +10,7 @@ import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
+import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -28,6 +29,8 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -407,6 +410,7 @@ public class PlanoServiceImpl implements PlanoService {
         PlanoSemanal plano = planoSemanalMapper.toEntity(planoDto);
         plano.setAtleta(atleta);
         plano.setAssessoria(atleta.getAssessoria());
+        plano.setReviewStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
 
         plano.setSemanaInicio(semanaInicio);
         plano.setSemanaFim(semanaFim);
@@ -642,7 +646,23 @@ public class PlanoServiceImpl implements PlanoService {
 
     @Transactional
     public PlanoSemanalOutputDto buscarPlanoPorAtleta(UUID atletaId) {
-        PlanoSemanal planoSemanal = planoSemanalRepository.findByAtletaId(atletaId).orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + atletaId));
+        PlanoSemanal planoSemanal;
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        boolean isAtleta = auth != null && auth.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ATLETA".equals(a.getAuthority()));
+
+        if (isAtleta) {
+            // Atleta só enxerga planos APROVADOS
+            planoSemanal = planoSemanalRepository
+                    .findTopByAtletaIdAndReviewStatusOrderBySemanaInicioDesc(atletaId, PlanoReviewStatus.APROVADO)
+                    .orElseThrow(() -> new ResourceNotFoundException("Nenhum plano aprovado encontrado para o atleta: " + atletaId));
+        } else {
+            // TECNICO/ADMIN vê o plano mais recente independente do reviewStatus
+            planoSemanal = planoSemanalRepository.findByAtletaId(atletaId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Plano não encontrado para o atleta: " + atletaId));
+        }
+
         Hibernate.initialize(planoSemanal.getTreinosPlanejados());
         return planoSemanalMapper.toOutputDto(planoSemanal);
     }
