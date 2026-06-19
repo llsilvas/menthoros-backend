@@ -36,12 +36,21 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
     Optional<PlanoSemanal> findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
             UUID atletaId, LocalDate semanaInicio, PlanoStatus status);
 
+    /**
+     * Busca o plano mais recente (não-CONCLUIDO) de um atleta dentro do tenant.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES — filtra por assessoria.id
+     */
     @Query("""
                 select ps from PlanoSemanal ps
                     where ps.atleta.id = :atletaId
-                        and ps.status != 'CONCLUIDO'
+                      and ps.assessoria.id = :tenantId
+                      and ps.status != 'CONCLUIDO'
             """)
-    Optional<PlanoSemanal> findByAtletaId(UUID atletaId);
+    Optional<PlanoSemanal> findByAtletaIdAndTenantId(@Param("atletaId") UUID atletaId,
+                                                      @Param("tenantId") UUID tenantId);
 
     /**
      * Busca um PlanoSemanal filtrando por id e tenantId (assessoria.id).
@@ -55,15 +64,15 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
     Optional<PlanoSemanal> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 
     /**
-     * Busca o plano mais recente APROVADO de um atleta.
+     * Busca o plano mais recente APROVADO de um atleta, restrito ao tenant.
      * Usado pelo endpoint GET /api/v1/planos/{atletaId} quando caller é ATLETA.
      *
      * Idempotent: YES — leitura pura.
      * Side Effects: NONE
-     * Tenant-aware: YES — atleta.assessoria.id valida tenant implicitamente
+     * Tenant-aware: YES — filtra por assessoria.id explicitamente
      */
-    Optional<PlanoSemanal> findTopByAtletaIdAndReviewStatusOrderBySemanaInicioDesc(
-            UUID atletaId, PlanoReviewStatus reviewStatus);
+    Optional<PlanoSemanal> findTopByAtletaIdAndAssessoriaIdAndReviewStatusOrderBySemanaInicioDesc(
+            UUID atletaId, UUID assessoriaId, PlanoReviewStatus reviewStatus);
 
     /**
      * Lista todos os planos de um tenant com um reviewStatus específico, ordenados por semanaInicio ASC.

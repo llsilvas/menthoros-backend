@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -70,18 +71,23 @@ public class PlanoTreinoController {
         return ResponseEntity.noContent().build();
     }
 
-    @Operation(summary = "Buscar plano semanal do atleta", description = "Busca o plano semanal atual de um atleta")
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ATLETA', 'TECNICO', 'ADMIN')")
+    @Operation(summary = "Buscar plano semanal do atleta", description = "Busca o plano semanal atual de um atleta. "
+            + "ATLETAs recebem apenas planos APROVADOS; TECNICO/ADMIN recebem o mais recente.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Plano encontrado com sucesso",
                     content = @Content(mediaType = "application/json", schema = @Schema(implementation = PlanoSemanalOutputDto.class))),
+            @ApiResponse(responseCode = "403", description = "Sem permissão",
+                    content = @Content(mediaType = "application/json")),
             @ApiResponse(responseCode = "404", description = "Plano não encontrado",
                     content = @Content(mediaType = "application/json"))
     })
-    @GetMapping("/{id}")
     public ResponseEntity<PlanoSemanalOutputDto> buscarPlanoSemanal(
-            @Parameter(description = "ID do atleta") @PathVariable UUID id) {
-        PlanoSemanalOutputDto planoSemanalOutputDto = planoService.buscarPlanoPorAtleta(id);
-
-        return ResponseEntity.ok(planoSemanalOutputDto);
+            @Parameter(description = "ID do atleta") @PathVariable UUID id,
+            Authentication authentication) {
+        boolean apenasAprovados = authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ATLETA".equals(a.getAuthority()));
+        return ResponseEntity.ok(planoService.buscarPlanoPorAtleta(id, apenasAprovados));
     }
 }

@@ -62,7 +62,7 @@ class PlanoReviewServiceImplTest {
             when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
                     tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO))
                     .thenReturn(List.of(plano));
-            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(dto);
+            when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
 
             List<PlanoSemanalOutputDto> resultado = service.listarPlanosPendentes(tenantId);
 
@@ -109,7 +109,7 @@ class PlanoReviewServiceImplTest {
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId))
                     .thenReturn(Optional.of(plano));
             when(planoSemanalRepository.save(any())).thenReturn(plano);
-            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(dto);
+            when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
 
             PlanoSemanalOutputDto resultado = service.aprovarPlano(planoId, tenantId);
 
@@ -188,7 +188,7 @@ class PlanoReviewServiceImplTest {
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId))
                     .thenReturn(Optional.of(plano));
             when(planoSemanalRepository.save(any())).thenReturn(plano);
-            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(dto);
+            when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
 
             PlanoSemanalOutputDto resultado = service.rejeitarPlano(planoId, tenantId, motivo);
 

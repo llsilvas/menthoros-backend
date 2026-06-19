@@ -22,6 +22,11 @@ public interface PlanoSemanalMapper {
 
     PlanoSemanalOutputDto toOutputDto(PlanoSemanal entity);
 
+    default PlanoSemanalOutputDto toOutputDtoSafe(PlanoSemanal entity) {
+        if (entity == null) throw new IllegalArgumentException("PlanoSemanal entity cannot be null");
+        return toOutputDto(entity);
+    }
+
     @Mapping(source = "treinosPlanejados", target = "treinosPlanejados")
     PlanoSemanal toEntity(PlanoSemanalLlmDto dto);
 

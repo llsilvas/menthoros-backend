@@ -29,8 +29,6 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -645,22 +643,22 @@ public class PlanoServiceImpl implements PlanoService {
 
 
     @Transactional
-    public PlanoSemanalOutputDto buscarPlanoPorAtleta(UUID atletaId) {
+    @Override
+    public PlanoSemanalOutputDto buscarPlanoPorAtleta(UUID atletaId, boolean apenasAprovados) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
         PlanoSemanal planoSemanal;
 
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        boolean isAtleta = auth != null && auth.getAuthorities().stream()
-                .anyMatch(a -> "ROLE_ATLETA".equals(a.getAuthority()));
-
-        if (isAtleta) {
-            // Atleta só enxerga planos APROVADOS
+        if (apenasAprovados) {
             planoSemanal = planoSemanalRepository
-                    .findTopByAtletaIdAndReviewStatusOrderBySemanaInicioDesc(atletaId, PlanoReviewStatus.APROVADO)
-                    .orElseThrow(() -> new ResourceNotFoundException("Nenhum plano aprovado encontrado para o atleta: " + atletaId));
+                    .findTopByAtletaIdAndAssessoriaIdAndReviewStatusOrderBySemanaInicioDesc(
+                            atletaId, tenantId, PlanoReviewStatus.APROVADO)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Nenhum plano aprovado encontrado para o atleta: " + atletaId));
         } else {
-            // TECNICO/ADMIN vê o plano mais recente independente do reviewStatus
-            planoSemanal = planoSemanalRepository.findByAtletaId(atletaId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Plano não encontrado para o atleta: " + atletaId));
+            planoSemanal = planoSemanalRepository
+                    .findByAtletaIdAndTenantId(atletaId, tenantId)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Plano não encontrado para o atleta: " + atletaId));
         }
 
         Hibernate.initialize(planoSemanal.getTreinosPlanejados());

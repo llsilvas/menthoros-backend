@@ -37,13 +37,13 @@ import java.util.UUID;
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/coach/planos")
-@PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
 @Tag(name = "coach-plan-review", description = "Revisão e aprovação de planos semanais gerados pela IA")
 public class CoachPlanoReviewController {
 
     private final PlanoReviewService planoReviewService;
 
     @GetMapping("/pendentes")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Lista planos pendentes de revisão",
             description = "Retorna todos os planos do tenant com reviewStatus = AGUARDANDO_REVISAO, "
                     + "ordenados por semana de início (mais antigos primeiro).")
@@ -59,6 +59,7 @@ public class CoachPlanoReviewController {
     }
 
     @PostMapping("/{id}/aprovar")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Aprova um plano AGUARDANDO_REVISAO",
             description = "Transiciona AGUARDANDO_REVISAO → APROVADO. "
@@ -78,6 +79,7 @@ public class CoachPlanoReviewController {
     }
 
     @PostMapping("/{id}/rejeitar")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Rejeita um plano AGUARDANDO_REVISAO",
             description = "Transiciona AGUARDANDO_REVISAO → REJEITADO com motivo obrigatório. "

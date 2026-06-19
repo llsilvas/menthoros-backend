@@ -25,6 +25,13 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
     private final PlanoSemanalRepository planoSemanalRepository;
     private final PlanoSemanalMapper planoSemanalMapper;
 
+    /**
+     * Lista todos os planos do tenant com reviewStatus = AGUARDANDO_REVISAO.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     */
     @Override
     @Transactional(readOnly = true)
     public List<PlanoSemanalOutputDto> listarPlanosPendentes(UUID tenantId) {
@@ -36,12 +43,22 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         List<PlanoSemanal> pendentes = planoSemanalRepository
                 .findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO);
 
-        pendentes.forEach(p -> Hibernate.initialize(p.getTreinosPlanejados()));
+        pendentes.forEach(this::inicializarAssociacoes);
 
         log.info("Encontrados {} planos pendentes para tenant {}", pendentes.size(), tenantId);
-        return pendentes.stream().map(planoSemanalMapper::toOutputDto).toList();
+        return pendentes.stream().map(planoSemanalMapper::toOutputDtoSafe).toList();
     }
 
+    /**
+     * Transiciona o plano de AGUARDANDO_REVISAO para APROVADO.
+     *
+     * Idempotent: NO — altera o estado do plano.
+     * Side Effects: Database update (reviewStatus, reviewComment)
+     * Tenant-aware: YES — valida pertencimento via findByIdAndTenantId
+     *
+     * @throws DomainNotFoundException     se o plano não existir no tenant
+     * @throws DomainRuleViolationException se reviewStatus != AGUARDANDO_REVISAO
+     */
     @Override
     @Transactional
     public PlanoSemanalOutputDto aprovarPlano(UUID planoId, UUID tenantId) {
@@ -57,12 +74,22 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         plano.setReviewComment(null);
 
         PlanoSemanal salvo = planoSemanalRepository.save(plano);
-        Hibernate.initialize(salvo.getTreinosPlanejados());
+        inicializarAssociacoes(salvo);
 
         log.info("Plano {} aprovado com sucesso para tenant {}", planoId, tenantId);
-        return planoSemanalMapper.toOutputDto(salvo);
+        return planoSemanalMapper.toOutputDtoSafe(salvo);
     }
 
+    /**
+     * Transiciona o plano de AGUARDANDO_REVISAO para REJEITADO, registrando o motivo.
+     *
+     * Idempotent: NO — altera o estado e o comentário do plano.
+     * Side Effects: Database update (reviewStatus, reviewComment)
+     * Tenant-aware: YES — valida pertencimento via findByIdAndTenantId
+     *
+     * @throws DomainNotFoundException     se o plano não existir no tenant
+     * @throws DomainRuleViolationException se reviewStatus != AGUARDANDO_REVISAO
+     */
     @Override
     @Transactional
     public PlanoSemanalOutputDto rejeitarPlano(UUID planoId, UUID tenantId, String motivo) {
@@ -79,16 +106,19 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         plano.setReviewComment(motivo);
 
         PlanoSemanal salvo = planoSemanalRepository.save(plano);
-        Hibernate.initialize(salvo.getTreinosPlanejados());
+        inicializarAssociacoes(salvo);
 
         log.info("Plano {} rejeitado para tenant {}", planoId, tenantId);
-        return planoSemanalMapper.toOutputDto(salvo);
+        return planoSemanalMapper.toOutputDtoSafe(salvo);
     }
 
     private PlanoSemanal buscarPlanoDoTenant(UUID planoId, UUID tenantId) {
         return planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)
-                .orElseThrow(() -> new DomainNotFoundException(
-                        "Plano não encontrado: id=" + planoId + " para tenant=" + tenantId));
+                .orElseThrow(() -> new DomainNotFoundException("Plano não encontrado"));
+    }
+
+    private void inicializarAssociacoes(PlanoSemanal plano) {
+        Hibernate.initialize(plano.getTreinosPlanejados());
     }
 
     private void validarTransicao(PlanoSemanal plano, PlanoReviewStatus destino) {
