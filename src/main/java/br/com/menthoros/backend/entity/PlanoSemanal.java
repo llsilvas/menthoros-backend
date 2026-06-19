@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.entity;
 
+import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -62,6 +63,13 @@ public class PlanoSemanal {
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private PlanoStatus status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "review_status", nullable = false)
+    private PlanoReviewStatus reviewStatus;
+
+    @Column(name = "review_comment", columnDefinition = "TEXT")
+    private String reviewComment;
 
     @Column(name = "objetivo_semana")
     private String objetivoSemanal;
