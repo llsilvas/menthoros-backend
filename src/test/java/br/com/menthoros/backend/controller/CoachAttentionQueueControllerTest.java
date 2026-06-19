@@ -76,7 +76,9 @@ class CoachAttentionQueueControllerTest {
                 .andExpect(jsonPath("$[0].explanation.rationale").isString())
                 .andExpect(jsonPath("$[1].severity").value("ALTA"))
                 .andExpect(jsonPath("$[1].primaryReason").value("SEM_PLANO"))
-                .andExpect(jsonPath("$[1].explanation.confidence").value("HIGH"));
+                .andExpect(jsonPath("$[1].explanation.confidence").value("HIGH"))
+                .andExpect(jsonPath("$[0].explanation.sourceRules").isArray())
+                .andExpect(jsonPath("$[1].explanation.sourceRules").isArray());
     }
 
     @Test

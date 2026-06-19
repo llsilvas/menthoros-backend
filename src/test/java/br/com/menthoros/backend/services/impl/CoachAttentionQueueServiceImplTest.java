@@ -94,8 +94,10 @@ class CoachAttentionQueueServiceImplTest {
                 assertThat(item.evidence()).isNotEmpty();
                 assertThat(item.explanation()).isNotNull();
                 assertThat(item.explanation().confidence()).isEqualTo(ExplanationConfidence.HIGH);
-                assertThat(item.explanation().rationale()).isNotBlank();
-                assertThat(item.explanation().sourceRules()).isNotEmpty();
+                assertThat(item.explanation().rationale()).contains("TSB em -40.0").contains("overtraining");
+                assertThat(item.explanation().sourceRules())
+                        .contains("CoachAttentionSignalEvaluator.avaliarFadiga")
+                        .contains("FaixaTsb.FADIGA_EXCESSIVA");
             });
         }
 

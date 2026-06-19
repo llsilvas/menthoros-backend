@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.enums;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * Grau de confiança em uma explicação de recomendação.
  *
@@ -11,6 +13,7 @@ package br.com.menthoros.backend.enums;
  *
  * Na v1 (fila de atenção determinística), todos os sinais produzem {@code HIGH}.
  */
+@Schema(description = "Grau de confiança na explicação: HIGH=regra determinística, MEDIUM=heurística, LOW=modelo LLM")
 public enum ExplanationConfidence {
     HIGH,
     MEDIUM,

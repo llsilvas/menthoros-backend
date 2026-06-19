@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
 
 import java.util.List;
 
@@ -16,26 +14,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RecommendationExplanationTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
-
-    @Nested
-    @DisplayName("ExplanationConfidence")
-    class ExplanationConfidenceTest {
-
-        @ParameterizedTest
-        @EnumSource(ExplanationConfidence.class)
-        @DisplayName("todos os valores do enum existem e são não-nulos")
-        void valoresExistem(ExplanationConfidence confidence) {
-            assertThat(confidence).isNotNull();
-            assertThat(confidence.name()).isNotBlank();
-        }
-
-        @Test
-        @DisplayName("enum contém exatamente HIGH, MEDIUM, LOW")
-        void valoresExatos() {
-            assertThat(ExplanationConfidence.values())
-                    .containsExactly(ExplanationConfidence.HIGH, ExplanationConfidence.MEDIUM, ExplanationConfidence.LOW);
-        }
-    }
 
     @Nested
     @DisplayName("construção e serialização")

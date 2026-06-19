@@ -21,4 +21,11 @@ public record SinalAtencao(
         List<Evidencia> evidencias,
         String rationale,
         List<String> sourceRules
-) {}
+) {
+    public SinalAtencao {
+        if (rationale == null || rationale.isBlank())
+            throw new IllegalArgumentException("SinalAtencao.rationale não pode ser nulo ou vazio");
+        if (sourceRules == null || sourceRules.isEmpty())
+            throw new IllegalArgumentException("SinalAtencao.sourceRules não pode ser nulo ou vazio");
+    }
+}

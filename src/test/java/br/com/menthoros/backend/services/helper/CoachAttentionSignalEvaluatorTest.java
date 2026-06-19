@@ -38,11 +38,12 @@ class CoachAttentionSignalEvaluatorTest {
         }
 
         @Test
-        @DisplayName("TSB em (-35,-30] (fadiga alta) → ALTA com rationale mencionando ALTO")
+        @DisplayName("TSB em (-35,-30] (fadiga alta) → ALTA com rationale de fadiga elevada (não overtraining)")
         void alta() {
             var sinal = evaluator.avaliarFadiga(-32.0).orElseThrow();
             assertThat(sinal.severidade()).isEqualTo(Severidade.ALTA);
-            assertThat(sinal.rationale()).contains("-32.0").contains("FADIGA_ALTA");
+            assertThat(sinal.rationale()).contains("-32.0").contains("FADIGA_ALTA").contains("fadiga elevada");
+            assertThat(sinal.rationale()).doesNotContain("overtraining");
             assertThat(sinal.sourceRules()).contains("FaixaTsb.FADIGA_ALTA");
         }
 
