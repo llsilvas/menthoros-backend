@@ -27,6 +27,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -60,7 +61,7 @@ class PlanoReviewServiceImplTest {
             PlanoSemanalOutputDto dto = outputDto(PlanoReviewStatus.AGUARDANDO_REVISAO);
 
             when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
-                    tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO))
+                    eq(tenantId), eq(PlanoReviewStatus.AGUARDANDO_REVISAO), any(LocalDate.class)))
                     .thenReturn(List.of(plano));
             when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
 
@@ -73,7 +74,7 @@ class PlanoReviewServiceImplTest {
         @DisplayName("retorna lista vazia quando não há planos pendentes")
         void retornaVazioSemPendentes() {
             when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
-                    tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO))
+                    eq(tenantId), eq(PlanoReviewStatus.AGUARDANDO_REVISAO), any(LocalDate.class)))
                     .thenReturn(List.of());
 
             List<PlanoSemanalOutputDto> resultado = service.listarPlanosPendentes(tenantId);
@@ -274,7 +275,7 @@ class PlanoReviewServiceImplTest {
             PlanoSemanalOutputDto dto = outputDto(PlanoReviewStatus.APROVADO);
 
             when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
-                    tenantId, PlanoReviewStatus.APROVADO))
+                    eq(tenantId), eq(PlanoReviewStatus.APROVADO), any(LocalDate.class)))
                     .thenReturn(List.of(plano));
             when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
 
@@ -282,7 +283,8 @@ class PlanoReviewServiceImplTest {
 
             assertThat(resultado).containsExactly(dto);
             verify(planoSemanalRepository)
-                    .findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(tenantId, PlanoReviewStatus.APROVADO);
+                    .findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
+                            eq(tenantId), eq(PlanoReviewStatus.APROVADO), any(LocalDate.class));
         }
 
         @Test
@@ -292,7 +294,7 @@ class PlanoReviewServiceImplTest {
             PlanoSemanalOutputDto dto = outputDto(PlanoReviewStatus.REJEITADO);
 
             when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
-                    tenantId, PlanoReviewStatus.REJEITADO))
+                    eq(tenantId), eq(PlanoReviewStatus.REJEITADO), any(LocalDate.class)))
                     .thenReturn(List.of(plano));
             when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
 
@@ -305,7 +307,7 @@ class PlanoReviewServiceImplTest {
         @DisplayName("retorna lista vazia quando não há planos com o status")
         void retornaVazioSemPlanos() {
             when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
-                    tenantId, PlanoReviewStatus.APROVADO))
+                    eq(tenantId), eq(PlanoReviewStatus.APROVADO), any(LocalDate.class)))
                     .thenReturn(List.of());
 
             List<PlanoSemanalOutputDto> resultado = service.listarPlanosPorStatus(tenantId, PlanoReviewStatus.APROVADO);

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+
 @Repository
 public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID> {
     Optional<PlanoSemanal> findPlanoSemanalByAtletaIdAndTreinosPlanejadosDataTreino(UUID id, LocalDate localDate);
@@ -75,8 +76,11 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
             UUID atletaId, UUID assessoriaId, PlanoReviewStatus reviewStatus);
 
     /**
-     * Lista todos os planos de um tenant com um reviewStatus específico, ordenados por semanaInicio ASC.
-     * Usado pelo endpoint GET /api/v1/coach/planos/pendentes.
+     * Lista planos de um tenant com reviewStatus específico cuja semana ainda não encerrou
+     * (semanaFim >= dataReferencia), ordenados por semanaInicio ASC.
+     *
+     * O filtro de data garante que apenas planos relevantes para a semana corrente
+     * ou semanas futuras sejam retornados, excluindo histórico de semanas passadas.
      *
      * Idempotent: YES — leitura pura.
      * Side Effects: NONE
@@ -86,11 +90,13 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
             SELECT ps FROM PlanoSemanal ps
             WHERE ps.assessoria.id = :tenantId
               AND ps.reviewStatus = :reviewStatus
+              AND ps.semanaFim >= :dataReferencia
             ORDER BY ps.semanaInicio ASC
             """)
     List<PlanoSemanal> findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
             @Param("tenantId") UUID tenantId,
-            @Param("reviewStatus") PlanoReviewStatus reviewStatus);
+            @Param("reviewStatus") PlanoReviewStatus reviewStatus,
+            @Param("dataReferencia") LocalDate dataReferencia);
 
     /**
      * Valida se um PlanoSemanal pertence a um tenant específico.

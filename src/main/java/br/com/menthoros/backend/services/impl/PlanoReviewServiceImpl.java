@@ -14,6 +14,7 @@ import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,7 +42,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         log.info("Listando planos pendentes de revisão para tenant {}", tenantId);
 
         List<PlanoSemanal> pendentes = planoSemanalRepository
-                .findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO);
+                .findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO, LocalDate.now());
 
         pendentes.forEach(this::inicializarAssociacoes);
 
@@ -128,7 +129,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         log.info("Listando planos com reviewStatus={} para tenant {}", reviewStatus, tenantId);
 
         List<PlanoSemanal> planos = planoSemanalRepository
-                .findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(tenantId, reviewStatus);
+                .findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(tenantId, reviewStatus, LocalDate.now());
 
         planos.forEach(this::inicializarAssociacoes);
 
