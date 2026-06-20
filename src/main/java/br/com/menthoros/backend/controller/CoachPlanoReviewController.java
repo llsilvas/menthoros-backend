@@ -2,6 +2,7 @@ package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.input.PlanoRejectionInputDto;
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
+import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.security.RequireTenant;
 import br.com.menthoros.backend.services.PlanoReviewService;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -56,6 +58,25 @@ public class CoachPlanoReviewController {
     public ResponseEntity<List<PlanoSemanalOutputDto>> listarPendentes() {
         UUID tenantId = TenantContext.getRequiredTenantId();
         return ResponseEntity.ok(planoReviewService.listarPlanosPendentes(tenantId));
+    }
+
+    @GetMapping("/revisao")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @Operation(summary = "Lista planos por status de revisão",
+            description = "Retorna todos os planos do tenant com o reviewStatus informado, "
+                    + "ordenados por semana de início (mais antigos primeiro).")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Lista de planos",
+                    content = @Content(array = @ArraySchema(
+                            schema = @Schema(implementation = PlanoSemanalOutputDto.class)))),
+            @ApiResponse(responseCode = "400", description = "Status de revisão inválido"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)")
+    })
+    public ResponseEntity<List<PlanoSemanalOutputDto>> listarPorStatus(
+            @Parameter(description = "Status de revisão: AGUARDANDO_REVISAO, APROVADO ou REJEITADO")
+            @RequestParam PlanoReviewStatus status) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        return ResponseEntity.ok(planoReviewService.listarPlanosPorStatus(tenantId, status));
     }
 
     @PostMapping("/{id}/aprovar")

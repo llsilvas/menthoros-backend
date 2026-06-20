@@ -112,6 +112,30 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         return planoSemanalMapper.toOutputDtoSafe(salvo);
     }
 
+    /**
+     * Lista planos do tenant filtrados por reviewStatus.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<PlanoSemanalOutputDto> listarPlanosPorStatus(UUID tenantId, PlanoReviewStatus reviewStatus) {
+        if (tenantId == null) throw new IllegalArgumentException("tenantId não pode ser nulo");
+        if (reviewStatus == null) throw new IllegalArgumentException("reviewStatus não pode ser nulo");
+
+        log.info("Listando planos com reviewStatus={} para tenant {}", reviewStatus, tenantId);
+
+        List<PlanoSemanal> planos = planoSemanalRepository
+                .findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(tenantId, reviewStatus);
+
+        planos.forEach(this::inicializarAssociacoes);
+
+        log.info("Encontrados {} planos com status {} para tenant {}", planos.size(), reviewStatus, tenantId);
+        return planos.stream().map(planoSemanalMapper::toOutputDtoSafe).toList();
+    }
+
     private PlanoSemanal buscarPlanoDoTenant(UUID planoId, UUID tenantId) {
         return planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Plano não encontrado"));

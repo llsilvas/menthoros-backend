@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
+import br.com.menthoros.backend.enums.PlanoReviewStatus;
 
 import java.util.List;
 import java.util.UUID;
@@ -49,4 +50,17 @@ public interface PlanoReviewService {
      * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se a transição é ilegal
      */
     PlanoSemanalOutputDto rejeitarPlano(UUID planoId, UUID tenantId, String motivo);
+
+    /**
+     * Lista planos do tenant filtrados por reviewStatus, ordenados por semanaInicio ASC.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     *
+     * @param tenantId    ID da assessoria (tenant)
+     * @param reviewStatus status de revisão desejado
+     * @return lista de planos com o status informado, mais antigos primeiro
+     */
+    List<PlanoSemanalOutputDto> listarPlanosPorStatus(UUID tenantId, PlanoReviewStatus reviewStatus);
 }

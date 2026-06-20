@@ -260,6 +260,80 @@ class PlanoReviewServiceImplTest {
     }
 
     // =========================================================================
+    // listarPlanosPorStatus
+    // =========================================================================
+
+    @Nested
+    @DisplayName("listarPlanosPorStatus")
+    class ListarPlanosPorStatus {
+
+        @Test
+        @DisplayName("retorna planos APROVADOS do tenant")
+        void retornaAprovados() {
+            PlanoSemanal plano = planoComStatus(PlanoReviewStatus.APROVADO);
+            PlanoSemanalOutputDto dto = outputDto(PlanoReviewStatus.APROVADO);
+
+            when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
+                    tenantId, PlanoReviewStatus.APROVADO))
+                    .thenReturn(List.of(plano));
+            when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
+
+            List<PlanoSemanalOutputDto> resultado = service.listarPlanosPorStatus(tenantId, PlanoReviewStatus.APROVADO);
+
+            assertThat(resultado).containsExactly(dto);
+            verify(planoSemanalRepository)
+                    .findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(tenantId, PlanoReviewStatus.APROVADO);
+        }
+
+        @Test
+        @DisplayName("retorna planos REJEITADOS do tenant")
+        void retornaRejeitados() {
+            PlanoSemanal plano = planoComStatus(PlanoReviewStatus.REJEITADO);
+            PlanoSemanalOutputDto dto = outputDto(PlanoReviewStatus.REJEITADO);
+
+            when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
+                    tenantId, PlanoReviewStatus.REJEITADO))
+                    .thenReturn(List.of(plano));
+            when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
+
+            List<PlanoSemanalOutputDto> resultado = service.listarPlanosPorStatus(tenantId, PlanoReviewStatus.REJEITADO);
+
+            assertThat(resultado).containsExactly(dto);
+        }
+
+        @Test
+        @DisplayName("retorna lista vazia quando não há planos com o status")
+        void retornaVazioSemPlanos() {
+            when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
+                    tenantId, PlanoReviewStatus.APROVADO))
+                    .thenReturn(List.of());
+
+            List<PlanoSemanalOutputDto> resultado = service.listarPlanosPorStatus(tenantId, PlanoReviewStatus.APROVADO);
+
+            assertThat(resultado).isEmpty();
+            verifyNoMoreInteractions(planoSemanalMapper);
+        }
+
+        @Test
+        @DisplayName("lança IllegalArgumentException quando tenantId é nulo")
+        void lancaExcecaoParaTenantIdNulo() {
+            assertThatThrownBy(() -> service.listarPlanosPorStatus(null, PlanoReviewStatus.APROVADO))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("tenantId");
+            verifyNoInteractions(planoSemanalRepository);
+        }
+
+        @Test
+        @DisplayName("lança IllegalArgumentException quando reviewStatus é nulo")
+        void lancaExcecaoParaStatusNulo() {
+            assertThatThrownBy(() -> service.listarPlanosPorStatus(tenantId, null))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("reviewStatus");
+            verifyNoInteractions(planoSemanalRepository);
+        }
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
 
@@ -281,6 +355,6 @@ class PlanoReviewServiceImplTest {
         return new PlanoSemanalOutputDto(
                 planoId.toString(), LocalDate.now(), LocalDate.now().plusDays(6),
                 40.0, 0.0, 40.0, null, null, PlanoStatus.PLANEJADO,
-                null, "Semana base", List.of(), reviewStatus, null);
+                null, "Semana base", List.of(), reviewStatus, null, "Ana Silva");
     }
 }
