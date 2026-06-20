@@ -26,6 +26,7 @@ public interface PlanoSemanalMapper {
     default String resolveAtletaNome(PlanoSemanal entity) {
         if (entity.getAtleta() == null) return null;
         String nome = entity.getAtleta().getNome();
+        if (nome == null || nome.isBlank()) return null;
         String sobrenome = entity.getAtleta().getSobrenome();
         return (sobrenome != null && !sobrenome.isBlank()) ? nome + " " + sobrenome : nome;
     }

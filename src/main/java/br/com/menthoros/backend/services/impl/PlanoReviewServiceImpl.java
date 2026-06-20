@@ -28,26 +28,18 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
 
     /**
      * Lista todos os planos do tenant com reviewStatus = AGUARDANDO_REVISAO.
+     * Delegado para listarPlanosPorStatus para evitar duplicação de lógica.
      *
      * Idempotent: YES — leitura pura.
      * Side Effects: NONE
      * Tenant-aware: YES
      */
     @Override
-    @Transactional(readOnly = true)
     public List<PlanoSemanalOutputDto> listarPlanosPendentes(UUID tenantId) {
         if (tenantId == null) {
             throw new IllegalArgumentException("tenantId não pode ser nulo");
         }
-        log.info("Listando planos pendentes de revisão para tenant {}", tenantId);
-
-        List<PlanoSemanal> pendentes = planoSemanalRepository
-                .findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO, LocalDate.now());
-
-        pendentes.forEach(this::inicializarAssociacoes);
-
-        log.info("Encontrados {} planos pendentes para tenant {}", pendentes.size(), tenantId);
-        return pendentes.stream().map(planoSemanalMapper::toOutputDtoSafe).toList();
+        return listarPlanosPorStatus(tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO);
     }
 
     /**
