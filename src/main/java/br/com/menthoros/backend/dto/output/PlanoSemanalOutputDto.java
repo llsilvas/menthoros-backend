@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
@@ -46,5 +47,14 @@ public record PlanoSemanalOutputDto(
         String objetivoSemanal,
 
         @Schema(description = "Lista de treinos planejados da semana")
-        List<TreinoPlanejadoOutputDto> treinosPlanejados
+        List<TreinoPlanejadoOutputDto> treinosPlanejados,
+
+        @Schema(description = "Status de revisão do plano pelo coach", example = "AGUARDANDO_REVISAO")
+        PlanoReviewStatus reviewStatus,
+
+        @Schema(description = "Motivo informado pelo coach ao rejeitar o plano")
+        String reviewComment,
+
+        @Schema(description = "Nome completo do atleta dono do plano")
+        String atletaNome
 ) {}

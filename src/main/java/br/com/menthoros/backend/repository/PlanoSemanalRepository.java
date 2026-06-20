@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -8,8 +9,10 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
 
 @Repository
 public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID> {
@@ -34,12 +37,21 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
     Optional<PlanoSemanal> findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
             UUID atletaId, LocalDate semanaInicio, PlanoStatus status);
 
+    /**
+     * Busca o plano mais recente (não-CONCLUIDO) de um atleta dentro do tenant.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES — filtra por assessoria.id
+     */
     @Query("""
                 select ps from PlanoSemanal ps
                     where ps.atleta.id = :atletaId
-                        and ps.status != 'CONCLUIDO'
+                      and ps.assessoria.id = :tenantId
+                      and ps.status != 'CONCLUIDO'
             """)
-    Optional<PlanoSemanal> findByAtletaId(UUID atletaId);
+    Optional<PlanoSemanal> findByAtletaIdAndTenantId(@Param("atletaId") UUID atletaId,
+                                                      @Param("tenantId") UUID tenantId);
 
     /**
      * Busca um PlanoSemanal filtrando por id e tenantId (assessoria.id).
@@ -51,6 +63,40 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
      */
     @Query("SELECT ps FROM PlanoSemanal ps WHERE ps.id = :id AND ps.assessoria.id = :tenantId")
     Optional<PlanoSemanal> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+
+    /**
+     * Busca o plano mais recente APROVADO de um atleta, restrito ao tenant.
+     * Usado pelo endpoint GET /api/v1/planos/{atletaId} quando caller é ATLETA.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES — filtra por assessoria.id explicitamente
+     */
+    Optional<PlanoSemanal> findTopByAtletaIdAndAssessoriaIdAndReviewStatusOrderBySemanaInicioDesc(
+            UUID atletaId, UUID assessoriaId, PlanoReviewStatus reviewStatus);
+
+    /**
+     * Lista planos de um tenant com reviewStatus específico cuja semana ainda não encerrou
+     * (semanaFim >= dataReferencia), ordenados por semanaInicio ASC.
+     *
+     * O filtro de data garante que apenas planos relevantes para a semana corrente
+     * ou semanas futuras sejam retornados, excluindo histórico de semanas passadas.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     */
+    @Query("""
+            SELECT ps FROM PlanoSemanal ps
+            WHERE ps.assessoria.id = :tenantId
+              AND ps.reviewStatus = :reviewStatus
+              AND ps.semanaFim >= :dataReferencia
+            ORDER BY ps.semanaInicio ASC
+            """)
+    List<PlanoSemanal> findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
+            @Param("tenantId") UUID tenantId,
+            @Param("reviewStatus") PlanoReviewStatus reviewStatus,
+            @Param("dataReferencia") LocalDate dataReferencia);
 
     /**
      * Valida se um PlanoSemanal pertence a um tenant específico.

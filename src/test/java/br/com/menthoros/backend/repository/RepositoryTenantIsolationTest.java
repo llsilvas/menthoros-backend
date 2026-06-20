@@ -3,6 +3,7 @@ package br.com.menthoros.backend.repository;
 import br.com.menthoros.backend.AbstractIntegrationTest;
 import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.*;
+import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -257,6 +258,7 @@ class RepositoryTenantIsolationTest extends AbstractIntegrationTest {
         ps.setSemanaFim(LocalDate.now().plusDays(6));
         ps.setVolumePlanejadoKm(BigDecimal.valueOf(40));
         ps.setStatus(PlanoStatus.PLANEJADO);
+        ps.setReviewStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
         ps.setObjetivoSemanal("Semana base");
         return ps;
     }

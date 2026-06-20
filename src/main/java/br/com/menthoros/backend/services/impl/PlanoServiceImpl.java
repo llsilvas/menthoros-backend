@@ -10,6 +10,7 @@ import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
+import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -407,6 +408,7 @@ public class PlanoServiceImpl implements PlanoService {
         PlanoSemanal plano = planoSemanalMapper.toEntity(planoDto);
         plano.setAtleta(atleta);
         plano.setAssessoria(atleta.getAssessoria());
+        plano.setReviewStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
 
         plano.setSemanaInicio(semanaInicio);
         plano.setSemanaFim(semanaFim);
@@ -641,8 +643,24 @@ public class PlanoServiceImpl implements PlanoService {
 
 
     @Transactional
-    public PlanoSemanalOutputDto buscarPlanoPorAtleta(UUID atletaId) {
-        PlanoSemanal planoSemanal = planoSemanalRepository.findByAtletaId(atletaId).orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + atletaId));
+    @Override
+    public PlanoSemanalOutputDto buscarPlanoPorAtleta(UUID atletaId, boolean apenasAprovados) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        PlanoSemanal planoSemanal;
+
+        if (apenasAprovados) {
+            planoSemanal = planoSemanalRepository
+                    .findTopByAtletaIdAndAssessoriaIdAndReviewStatusOrderBySemanaInicioDesc(
+                            atletaId, tenantId, PlanoReviewStatus.APROVADO)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Nenhum plano aprovado encontrado para o atleta: " + atletaId));
+        } else {
+            planoSemanal = planoSemanalRepository
+                    .findByAtletaIdAndTenantId(atletaId, tenantId)
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Plano não encontrado para o atleta: " + atletaId));
+        }
+
         Hibernate.initialize(planoSemanal.getTreinosPlanejados());
         return planoSemanalMapper.toOutputDto(planoSemanal);
     }

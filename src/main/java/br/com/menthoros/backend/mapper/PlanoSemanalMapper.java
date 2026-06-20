@@ -20,7 +20,21 @@ public interface PlanoSemanalMapper {
     @Mapping(source = "treinosPlanejados", target = "treinosPlanejados")
     PlanoSemanal toEntity(PlanoSemanalInputDto dto);
 
+    @Mapping(target = "atletaNome", expression = "java(resolveAtletaNome(entity))")
     PlanoSemanalOutputDto toOutputDto(PlanoSemanal entity);
+
+    default String resolveAtletaNome(PlanoSemanal entity) {
+        if (entity.getAtleta() == null) return null;
+        String nome = entity.getAtleta().getNome();
+        if (nome == null || nome.isBlank()) return null;
+        String sobrenome = entity.getAtleta().getSobrenome();
+        return (sobrenome != null && !sobrenome.isBlank()) ? nome + " " + sobrenome : nome;
+    }
+
+    default PlanoSemanalOutputDto toOutputDtoSafe(PlanoSemanal entity) {
+        if (entity == null) throw new IllegalArgumentException("PlanoSemanal entity cannot be null");
+        return toOutputDto(entity);
+    }
 
     @Mapping(source = "treinosPlanejados", target = "treinosPlanejados")
     PlanoSemanal toEntity(PlanoSemanalLlmDto dto);

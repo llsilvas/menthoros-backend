@@ -14,5 +14,15 @@ public interface PlanoService {
 
     void deletePlanoSemanal(UUID planoSemanalId);
 
-    PlanoSemanalOutputDto buscarPlanoPorAtleta(UUID atletaId);
+    /**
+     * Busca o plano semanal mais recente do atleta.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES — usa TenantContext internamente
+     *
+     * @param atletaId      ID do atleta
+     * @param apenasAprovados true para ATLETA (só vê APROVADO); false para TECNICO/ADMIN
+     */
+    PlanoSemanalOutputDto buscarPlanoPorAtleta(UUID atletaId, boolean apenasAprovados);
 }
