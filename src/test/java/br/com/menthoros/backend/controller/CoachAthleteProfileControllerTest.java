@@ -65,11 +65,11 @@ class CoachAthleteProfileControllerTest {
         @DisplayName("atleta não encontrado no tenant → DomainNotFoundException propagada (GlobalExceptionHandler mapeia para 404)")
         void atletaNaoEncontrado() {
             when(service.buscarPerfil(atletaId))
-                    .thenThrow(new DomainNotFoundException("Atleta não encontrado: id=" + atletaId));
+                    .thenThrow(new DomainNotFoundException("Atleta não encontrado"));
 
             assertThatThrownBy(() -> controller.buscarPerfil(atletaId))
                     .isInstanceOf(DomainNotFoundException.class)
-                    .hasMessageContaining(atletaId.toString());
+                    .hasMessageContaining("não encontrado");
         }
     }
 

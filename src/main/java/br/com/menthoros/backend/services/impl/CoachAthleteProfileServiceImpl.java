@@ -51,8 +51,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
         long t0 = System.nanoTime();
         Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
-                .orElseThrow(() -> new DomainNotFoundException(
-                        "Atleta não encontrado: id=" + atletaId + ", tenantId=" + tenantId));
+                .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
         log.debug("[perfil] atleta: {}ms", ms(t0));
 
         List<String> avisos = new ArrayList<>();
@@ -79,9 +78,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
         long t5 = System.nanoTime();
         List<AtletaPerfilCoachOutputDto.SinalRecenteDto> sinais = buscarLista("sinaisRecentes", avisos,
-                () -> coachAttentionQueueService.getAttentionQueue().stream()
-                        .filter(i -> atletaId.equals(i.atletaId()))
-                        .limit(3)
+                () -> coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3).stream()
                         .map(i -> new AtletaPerfilCoachOutputDto.SinalRecenteDto(
                                 i.primaryReason(), i.severity(), i.generatedAt(), i.suggestedAction(),
                                 null)) // sugestaoId — v1: match heurístico não implementado
@@ -150,8 +147,10 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private <T> List<T> buscarLista(String campo, List<String> avisos, Supplier<List<T>> fn) {
         try {
             return fn.get();
+        } catch (DomainNotFoundException | IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("[perfil] erro ao buscar {}: {}", campo, e.getMessage());
+            log.warn("[perfil] erro ao buscar {}: {}", campo, e);
             avisos.add(campo);
             return List.of();
         }
@@ -160,8 +159,10 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private <T> T buscarNullable(String campo, List<String> avisos, Supplier<T> fn) {
         try {
             return fn.get();
+        } catch (DomainNotFoundException | IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
-            log.warn("[perfil] erro ao buscar {}: {}", campo, e.getMessage());
+            log.warn("[perfil] erro ao buscar {}: {}", campo, e);
             avisos.add(campo);
             return null;
         }

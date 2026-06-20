@@ -97,7 +97,7 @@ class CoachAthleteProfileServiceImplTest {
 
             assertThatThrownBy(() -> service.buscarPerfil(atletaId))
                     .isInstanceOf(DomainNotFoundException.class)
-                    .hasMessageContaining(atletaId.toString());
+                    .hasMessageContaining("não encontrado");
 
             verifyNoInteractions(atletaProgressService, coachAttentionQueueService,
                     sugestaoCoachService, planoSemanalRepository);
@@ -112,7 +112,7 @@ class CoachAthleteProfileServiceImplTest {
             stubRecordes();
             when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId))
                     .thenReturn(Optional.empty());
-            when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
             AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
@@ -140,7 +140,7 @@ class CoachAthleteProfileServiceImplTest {
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
             when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId)).thenReturn(Optional.empty());
-            when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
             assertThat(service.buscarPerfil(atletaId).nomeAtleta()).isEqualTo("Carlos");
@@ -155,7 +155,7 @@ class CoachAthleteProfileServiceImplTest {
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
             when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId)).thenReturn(Optional.empty());
-            when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
             AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
@@ -172,7 +172,7 @@ class CoachAthleteProfileServiceImplTest {
             when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
-            when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
             PlanoSemanal plano = planoAprovadoComTreinos();
@@ -195,7 +195,7 @@ class CoachAthleteProfileServiceImplTest {
             when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
-            when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
             PlanoSemanal plano = planoSemanalBuilder(PlanoReviewStatus.AGUARDANDO_REVISAO, List.of());
@@ -210,8 +210,8 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         @Test
-        @DisplayName("sinais filtrados por atletaId — somente os do atleta atual (top 3)")
-        void sinaisFiltradosPorAtleta() {
+        @DisplayName("sinais do atleta retornados via getSinaisParaAtleta(atletaId, 3)")
+        void sinaisDoAtleta() {
             stubAtleta();
             when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
@@ -219,11 +219,9 @@ class CoachAthleteProfileServiceImplTest {
             when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId)).thenReturn(Optional.empty());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
-            UUID outroAtletaId = UUID.randomUUID();
-            CoachAttentionItemOutputDto sinalDoAtleta = sinal(atletaId, MotivoAtencao.FADIGA, Severidade.ALTA);
-            CoachAttentionItemOutputDto sinalDeOutro = sinal(outroAtletaId, MotivoAtencao.ADERENCIA, Severidade.MEDIA);
-            when(coachAttentionQueueService.getAttentionQueue())
-                    .thenReturn(List.of(sinalDoAtleta, sinalDeOutro));
+            CoachAttentionItemOutputDto sinal = sinal(atletaId, MotivoAtencao.FADIGA, Severidade.ALTA);
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3))
+                    .thenReturn(List.of(sinal));
 
             var sinais = service.buscarPerfil(atletaId).sinaisRecentes();
 
@@ -239,7 +237,7 @@ class CoachAthleteProfileServiceImplTest {
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
             when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId)).thenReturn(Optional.empty());
-            when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId))
                     .thenReturn(List.of(
                             sugestao(TipoSugestao.RECOVERY),
@@ -260,7 +258,7 @@ class CoachAthleteProfileServiceImplTest {
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
             when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId)).thenReturn(Optional.empty());
-            when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
             service.buscarPerfil(atletaId);
@@ -269,7 +267,7 @@ class CoachAthleteProfileServiceImplTest {
             verify(atletaProgressService).getAderenciaSemanal(atletaId, 8);
             verify(atletaProgressService).getRecordes(atletaId);
             verify(planoSemanalRepository).findMostRecentRelevantPlano(atletaId, tenantId);
-            verify(coachAttentionQueueService).getAttentionQueue();
+            verify(coachAttentionQueueService).getSinaisParaAtleta(atletaId, 3);
             verify(sugestaoCoachService).listarPorAtleta(atletaId);
         }
     }
