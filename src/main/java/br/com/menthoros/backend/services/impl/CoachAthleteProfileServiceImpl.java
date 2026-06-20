@@ -11,10 +11,10 @@ import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
-import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAthleteProfileService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
+import br.com.menthoros.backend.services.PlanoService;
 import br.com.menthoros.backend.services.SugestaoCoachService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,7 +38,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final AtletaProgressService atletaProgressService;
     private final CoachAttentionQueueService coachAttentionQueueService;
     private final SugestaoCoachService sugestaoCoachService;
-    private final PlanoSemanalRepository planoSemanalRepository;
+    private final PlanoService planoService;
 
     /**
      * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
@@ -88,7 +88,6 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         long t6 = System.nanoTime();
         List<AtletaPerfilCoachOutputDto.SugestaoRecenteDto> sugestoes = buscarLista("sugestoesRecentes", avisos,
                 () -> sugestaoCoachService.listarPorAtleta(atletaId).stream()
-                        .limit(3)
                         .map(s -> new AtletaPerfilCoachOutputDto.SugestaoRecenteDto(
                                 s.id(), s.tipo(), s.status(), s.createdAt()))
                         .toList());
@@ -116,7 +115,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     }
 
     private AtletaPerfilCoachOutputDto.PlanoVigenteDto resolverPlanoVigente(UUID atletaId, UUID tenantId) {
-        Optional<PlanoSemanal> planoOpt = planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId);
+        Optional<PlanoSemanal> planoOpt = planoService.findPlanoVigenteRelevante(atletaId, tenantId);
         if (planoOpt.isEmpty()) return null;
 
         PlanoSemanal plano = planoOpt.get();

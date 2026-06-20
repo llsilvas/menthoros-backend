@@ -21,9 +21,9 @@ import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
-import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
+import br.com.menthoros.backend.services.PlanoService;
 import br.com.menthoros.backend.services.SugestaoCoachService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -58,7 +58,7 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private AtletaProgressService atletaProgressService;
     @Mock private CoachAttentionQueueService coachAttentionQueueService;
     @Mock private SugestaoCoachService sugestaoCoachService;
-    @Mock private PlanoSemanalRepository planoSemanalRepository;
+    @Mock private PlanoService planoService;
 
     @InjectMocks
     private CoachAthleteProfileServiceImpl service;
@@ -100,7 +100,7 @@ class CoachAthleteProfileServiceImplTest {
                     .hasMessageContaining("não encontrado");
 
             verifyNoInteractions(atletaProgressService, coachAttentionQueueService,
-                    sugestaoCoachService, planoSemanalRepository);
+                    sugestaoCoachService, planoService);
         }
 
         @Test
@@ -110,7 +110,7 @@ class CoachAthleteProfileServiceImplTest {
             stubPmc();
             stubAderencia();
             stubRecordes();
-            when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId))
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId))
                     .thenReturn(Optional.empty());
             when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
@@ -139,7 +139,7 @@ class CoachAthleteProfileServiceImplTest {
             when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
-            when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.empty());
             when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
@@ -154,7 +154,7 @@ class CoachAthleteProfileServiceImplTest {
                     .thenThrow(new RuntimeException("timeout PMC"));
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
-            when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.empty());
             when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
@@ -176,7 +176,7 @@ class CoachAthleteProfileServiceImplTest {
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
             PlanoSemanal plano = planoAprovadoComTreinos();
-            when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId))
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId))
                     .thenReturn(Optional.of(plano));
 
             AtletaPerfilCoachOutputDto.PlanoVigenteDto planoVigente = service.buscarPerfil(atletaId).planoVigente();
@@ -199,7 +199,7 @@ class CoachAthleteProfileServiceImplTest {
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
             PlanoSemanal plano = planoSemanalBuilder(PlanoReviewStatus.AGUARDANDO_REVISAO, List.of());
-            when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId))
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId))
                     .thenReturn(Optional.of(plano));
 
             AtletaPerfilCoachOutputDto.PlanoVigenteDto planoVigente = service.buscarPerfil(atletaId).planoVigente();
@@ -216,7 +216,7 @@ class CoachAthleteProfileServiceImplTest {
             when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
-            when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.empty());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
             CoachAttentionItemOutputDto sinal = sinal(atletaId, MotivoAtencao.FADIGA, Severidade.ALTA);
@@ -230,20 +230,19 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         @Test
-        @DisplayName("sugestões limitadas a top 3 por atletaId")
-        void sugestoesLimitadas() {
+        @DisplayName("sugestões retornam o que o service entregar (limite aplicado no repositório)")
+        void sugestoesPassthrough() {
             stubAtleta();
             when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
-            when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.empty());
             when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId))
                     .thenReturn(List.of(
                             sugestao(TipoSugestao.RECOVERY),
                             sugestao(TipoSugestao.RECOVERY),
-                            sugestao(TipoSugestao.RECOVERY),
-                            sugestao(TipoSugestao.RECOVERY)));  // 4 sugestões → retorna só 3
+                            sugestao(TipoSugestao.RECOVERY)));
 
             var sugestoes = service.buscarPerfil(atletaId).sugestoesRecentes();
 
@@ -257,7 +256,7 @@ class CoachAthleteProfileServiceImplTest {
             when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
             when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
-            when(planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.empty());
             when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
@@ -266,7 +265,7 @@ class CoachAthleteProfileServiceImplTest {
             verify(atletaProgressService).getHistoricoPmc(eq(atletaId), any(), any());
             verify(atletaProgressService).getAderenciaSemanal(atletaId, 8);
             verify(atletaProgressService).getRecordes(atletaId);
-            verify(planoSemanalRepository).findMostRecentRelevantPlano(atletaId, tenantId);
+            verify(planoService).findPlanoVigenteRelevante(atletaId, tenantId);
             verify(coachAttentionQueueService).getSinaisParaAtleta(atletaId, 3);
             verify(sugestaoCoachService).listarPorAtleta(atletaId);
         }

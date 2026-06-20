@@ -665,6 +665,12 @@ public class PlanoServiceImpl implements PlanoService {
         return planoSemanalMapper.toOutputDto(planoSemanal);
     }
 
+    @Override
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public Optional<PlanoSemanal> findPlanoVigenteRelevante(UUID atletaId, UUID tenantId) {
+        return planoSemanalRepository.findMostRecentRelevantPlano(atletaId, tenantId);
+    }
+
     /**
      * Atualiza contador de semanas de progressão contínua.
      *

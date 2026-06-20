@@ -33,11 +33,16 @@ public interface SugestaoCoachRepository extends JpaRepository<SugestaoCoach, UU
      * Lista todas as sugestões de um atleta dentro do tenant, ordenadas por createdAt DESC.
      * Usado no perfil do atleta para o coach para exibir as 3 mais recentes.
      */
+    /**
+     * Lista as 3 sugestões mais recentes de um atleta dentro do tenant, ordenadas por createdAt DESC.
+     * Limite aplicado no banco para evitar carregamento desnecessário de registros.
+     */
     @Query("""
        SELECT s FROM SugestaoCoach s JOIN FETCH s.atleta
        WHERE s.atleta.id = :atletaId
          AND s.tenantId = :tenantId
        ORDER BY s.createdAt DESC
+       LIMIT 3
        """)
     List<SugestaoCoach> findAllByAtletaIdAndTenantId(@Param("atletaId") UUID atletaId,
                                                       @Param("tenantId") UUID tenantId);

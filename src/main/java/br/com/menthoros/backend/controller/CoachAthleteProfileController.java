@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.output.AtletaPerfilCoachOutputDto;
+import br.com.menthoros.backend.security.RequireTenant;
 import br.com.menthoros.backend.services.CoachAthleteProfileService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -36,6 +37,7 @@ public class CoachAthleteProfileController {
     private final CoachAthleteProfileService coachAthleteProfileService;
 
     @GetMapping("/{atletaId}/perfil")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(
             summary = "Perfil completo de um atleta",
             description = "Agrega em uma chamada: PMC 90d, aderência 8 semanas, plano vigente, "
@@ -44,6 +46,7 @@ public class CoachAthleteProfileController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Perfil carregado com sucesso",
                     content = @Content(schema = @Schema(implementation = AtletaPerfilCoachOutputDto.class))),
+            @ApiResponse(responseCode = "401", description = "Não autenticado"),
             @ApiResponse(responseCode = "403", description = "Sem permissão ou atleta pertence a outro tenant"),
             @ApiResponse(responseCode = "404", description = "Atleta não encontrado no tenant")
     })

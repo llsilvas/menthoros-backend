@@ -207,8 +207,8 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     @Override
     @Transactional(readOnly = true)
     public List<AderenciasSemanalDto> getAderenciaSemanal(UUID atletaId, int semanas) {
-        validarAtletaNoTenant(atletaId);
         UUID tenantId = TenantContext.getRequiredTenantId();
+        validarAtletaNoTenant(atletaId);
 
         LocalDate hoje = LocalDate.now(clock);
         LocalDate inicioSemanaAtual = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));

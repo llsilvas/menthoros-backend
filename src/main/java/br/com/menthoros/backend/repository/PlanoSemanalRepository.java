@@ -110,7 +110,8 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
      * Tenant-aware: YES — filtra por assessoria.id.
      */
     @Query("""
-       SELECT ps FROM PlanoSemanal ps
+       SELECT DISTINCT ps FROM PlanoSemanal ps
+       LEFT JOIN FETCH ps.treinosPlanejados
        WHERE ps.atleta.id = :atletaId
          AND ps.assessoria.id = :assessoriaId
          AND ps.semanaFim >= CURRENT_DATE
