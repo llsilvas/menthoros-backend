@@ -31,6 +31,14 @@ public interface SugestaoCoachService {
     SugestaoCoachOutputDto detalhe(UUID id);
 
     /**
+     * Lista todas as sugestões de um atleta específico do tenant, ordenadas por data de criação DESC.
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     *
+     * @param atletaId ID do atleta
+     */
+    List<SugestaoCoachOutputDto> listarPorAtleta(UUID atletaId);
+
+    /**
      * Aprova uma sugestão PENDING, transicionando para APPROVED.
      * Idempotent: YES (aprovar já-APPROVED é no-op). Side Effects: DB update. Tenant-aware: YES.
      *

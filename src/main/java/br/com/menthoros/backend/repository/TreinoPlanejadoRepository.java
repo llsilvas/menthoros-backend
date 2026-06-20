@@ -79,6 +79,26 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
                                                        @Param("statuses") List<TreinoExecucaoStatus> statuses);
 
     /**
+     * Busca treinos planejados de um atleta a partir de uma data, com treinoRealizado em JOIN FETCH
+     * para evitar N+1 no cálculo de aderência semanal.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE.
+     * Tenant-aware: YES — filtra por tenantId direto no TreinoPlanejado (herdado de TreinoBase).
+     */
+    @Query("""
+       SELECT tp FROM TreinoPlanejado tp
+       LEFT JOIN FETCH tp.treinoRealizado
+       WHERE tp.atleta.id = :atletaId
+         AND tp.tenantId = :tenantId
+         AND tp.dataTreino >= :dataInicio
+       ORDER BY tp.dataTreino ASC
+       """)
+    List<TreinoPlanejado> findComRealizadoByAtletaAndPeriodo(@Param("atletaId") UUID atletaId,
+                                                              @Param("tenantId") UUID tenantId,
+                                                              @Param("dataInicio") LocalDate dataInicio);
+
+    /**
      * Valida se um TreinoPlanejado pertence a um tenant específico.
      * Usado pelo TenantValidationAspect para validação de isolamento.
      *

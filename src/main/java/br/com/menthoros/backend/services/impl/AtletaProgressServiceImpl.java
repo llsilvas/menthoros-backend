@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaHomeDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
 import br.com.menthoros.backend.dto.output.ReadinessDto;
@@ -8,6 +9,7 @@ import br.com.menthoros.backend.dto.output.ZonaDistribuicaoDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -28,10 +30,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Implementação read-only do progresso do atleta.
@@ -192,6 +199,46 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                 .orElse(new AtletaHomeDto.MetricasChave(null, null, null, null, null));
 
         return new AtletaHomeDto(proximo, metricas);
+    }
+
+    /**
+     * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<AderenciasSemanalDto> getAderenciaSemanal(UUID atletaId, int semanas) {
+        validarAtletaNoTenant(atletaId);
+        UUID tenantId = TenantContext.getRequiredTenantId();
+
+        LocalDate hoje = LocalDate.now(clock);
+        LocalDate inicioSemanaAtual = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate dataInicio = inicioSemanaAtual.minusWeeks(semanas - 1L);
+
+        List<TreinoPlanejado> treinos = treinoPlanejadoRepository
+                .findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, dataInicio);
+
+        if (treinos.isEmpty()) {
+            return List.of();
+        }
+
+        Map<LocalDate, List<TreinoPlanejado>> porSemana = treinos.stream()
+                .collect(Collectors.groupingBy(
+                        tp -> tp.getDataTreino().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))));
+
+        List<AderenciasSemanalDto> resultado = porSemana.entrySet().stream()
+                .map(e -> {
+                    int total = e.getValue().size();
+                    int realizado = (int) e.getValue().stream()
+                            .filter(tp -> tp.getTreinoRealizado() != null)
+                            .count();
+                    int percentual = total > 0 ? (int) Math.round(realizado * 100.0 / total) : 0;
+                    return new AderenciasSemanalDto(e.getKey(), total, realizado, percentual);
+                })
+                .sorted(Comparator.comparing(AderenciasSemanalDto::semanaInicio))
+                .toList();
+
+        boolean temDados = resultado.stream().anyMatch(a -> a.totalPlanejado() > 0);
+        return temDados ? resultado : List.of();
     }
 
     /**

@@ -405,7 +405,104 @@ class AtletaProgressServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("getAderenciaSemanal")
+    class GetAderenciaSemanal {
+
+        // HOJE = 2026-06-17 (quarta), inicioSemanaAtual = 2026-06-15 (seg)
+        // semanas=8 → dataInicio = 2026-06-15 - 7 semanas = 2026-04-27
+        private final LocalDate DATA_INICIO = LocalDate.of(2026, 4, 27);
+
+        @BeforeEach
+        void stubAtleta() {
+            atletaExisteNoTenant();
+        }
+
+        @Test
+        @DisplayName("atleta não existe no tenant → DomainNotFoundException")
+        void atletaNaoExiste() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> service.getAderenciaSemanal(atletaId, 8))
+                    .isInstanceOf(DomainNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("nenhum treino planejado no período → lista vazia")
+        void semTreinos() {
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, DATA_INICIO))
+                    .thenReturn(List.of());
+
+            assertThat(service.getAderenciaSemanal(atletaId, 8)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("treinos na mesma semana — calcula percentual corretamente")
+        void calculaPercentualSemanal() {
+            // semana 2026-06-15 (seg): Jun 17 (qua) e Jun 18 (qui) → 2 planejados, 1 realizado → 50%
+            TreinoPlanejado tp1 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 17), true);
+            TreinoPlanejado tp2 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 18), false);
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, DATA_INICIO))
+                    .thenReturn(List.of(tp1, tp2));
+
+            var resultado = service.getAderenciaSemanal(atletaId, 8);
+
+            assertThat(resultado).hasSize(1);
+            assertThat(resultado.get(0).semanaInicio()).isEqualTo(LocalDate.of(2026, 6, 15));
+            assertThat(resultado.get(0).totalPlanejado()).isEqualTo(2);
+            assertThat(resultado.get(0).totalRealizado()).isEqualTo(1);
+            assertThat(resultado.get(0).percentual()).isEqualTo(50);
+        }
+
+        @Test
+        @DisplayName("treinos em semanas distintas — resultado ordenado por semanaInicio ASC")
+        void multiplas_semanas_ordenadas() {
+            // semana A começa 2026-06-08 (seg): Jun 9 (ter), Jun 10 (qua), Jun 11 (qui) — 3 planejados, 2 realizados → 67%
+            TreinoPlanejado tpA1 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 9), true);
+            TreinoPlanejado tpA2 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 10), true);
+            TreinoPlanejado tpA3 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 11), false);
+            // semana B começa 2026-06-15 (seg): Jun 16 (ter), Jun 17 (qua) — 2 planejados, 2 realizados → 100%
+            TreinoPlanejado tpB1 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 16), true);
+            TreinoPlanejado tpB2 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 17), true);
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, DATA_INICIO))
+                    .thenReturn(List.of(tpA1, tpA2, tpA3, tpB1, tpB2));
+
+            var resultado = service.getAderenciaSemanal(atletaId, 8);
+
+            assertThat(resultado).hasSize(2);
+            assertThat(resultado.get(0).semanaInicio()).isEqualTo(LocalDate.of(2026, 6, 8));
+            assertThat(resultado.get(0).totalPlanejado()).isEqualTo(3);
+            assertThat(resultado.get(0).totalRealizado()).isEqualTo(2);
+            assertThat(resultado.get(0).percentual()).isEqualTo(67);
+            assertThat(resultado.get(1).semanaInicio()).isEqualTo(LocalDate.of(2026, 6, 15));
+            assertThat(resultado.get(1).percentual()).isEqualTo(100);
+        }
+
+        @Test
+        @DisplayName("todos os treinos sem realizado → percentual 0, lista retornada (tem planejados)")
+        void semNenhumRealizado() {
+            TreinoPlanejado tp = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 16), false);
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, DATA_INICIO))
+                    .thenReturn(List.of(tp));
+
+            var resultado = service.getAderenciaSemanal(atletaId, 8);
+
+            assertThat(resultado).hasSize(1);
+            assertThat(resultado.get(0).percentual()).isZero();
+            assertThat(resultado.get(0).totalRealizado()).isZero();
+        }
+    }
+
     // ===== helpers =====
+
+    private TreinoPlanejado treinoPlanejadoComRealizado(LocalDate data, boolean realizado) {
+        TreinoPlanejado tp = new TreinoPlanejado();
+        tp.setDataTreino(data);
+        if (realizado) {
+            TreinoRealizado tr = new TreinoRealizado();
+            tp.setTreinoRealizado(tr);
+        }
+        return tp;
+    }
 
     private MetricasDiarias metrica(LocalDate data, Double ctl, Double atl, Double tsb, Integer tss) {
         MetricasDiarias m = new MetricasDiarias();

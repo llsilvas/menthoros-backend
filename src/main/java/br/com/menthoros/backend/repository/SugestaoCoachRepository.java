@@ -28,4 +28,17 @@ public interface SugestaoCoachRepository extends JpaRepository<SugestaoCoach, UU
 
     /** Idempotência na camada Java: evita INSERT quando já existe pending para (atleta, tipo). */
     boolean existsByAtletaIdAndTipoAndStatus(UUID atletaId, TipoSugestao tipo, StatusSugestao status);
+
+    /**
+     * Lista todas as sugestões de um atleta dentro do tenant, ordenadas por createdAt DESC.
+     * Usado no perfil do atleta para o coach para exibir as 3 mais recentes.
+     */
+    @Query("""
+       SELECT s FROM SugestaoCoach s JOIN FETCH s.atleta
+       WHERE s.atleta.id = :atletaId
+         AND s.tenantId = :tenantId
+       ORDER BY s.createdAt DESC
+       """)
+    List<SugestaoCoach> findAllByAtletaIdAndTenantId(@Param("atletaId") UUID atletaId,
+                                                      @Param("tenantId") UUID tenantId);
 }

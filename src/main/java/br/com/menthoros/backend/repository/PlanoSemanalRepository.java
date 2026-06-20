@@ -99,6 +99,28 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
             @Param("dataReferencia") LocalDate dataReferencia);
 
     /**
+     * Busca o plano mais recente do atleta cuja semana ainda não encerrou (semanaFim >= hoje),
+     * independente do reviewStatus. Usado no perfil do atleta para o coach.
+     *
+     * <p>O filtro usa CURRENT_DATE do banco (não LocalDate.now() em Java) para evitar divergência
+     * de fuso horário entre servidor e banco na virada de semana.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE.
+     * Tenant-aware: YES — filtra por assessoria.id.
+     */
+    @Query("""
+       SELECT ps FROM PlanoSemanal ps
+       WHERE ps.atleta.id = :atletaId
+         AND ps.assessoria.id = :assessoriaId
+         AND ps.semanaFim >= CURRENT_DATE
+       ORDER BY ps.semanaInicio DESC
+       LIMIT 1
+       """)
+    Optional<PlanoSemanal> findMostRecentRelevantPlano(@Param("atletaId") UUID atletaId,
+                                                       @Param("assessoriaId") UUID assessoriaId);
+
+    /**
      * Valida se um PlanoSemanal pertence a um tenant específico.
      * Usado pelo TenantValidationAspect para validação de isolamento.
      */

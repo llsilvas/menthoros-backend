@@ -28,6 +28,15 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<SugestaoCoachOutputDto> listarPorAtleta(UUID atletaId) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        log.info("listarPorAtleta: atletaId={}, tenantId={}", atletaId, tenantId);
+        return repository.findAllByAtletaIdAndTenantId(atletaId, tenantId)
+                .stream().map(mapper::toOutputDto).toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public List<SugestaoCoachOutputDto> listar(StatusSugestao status) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         log.info("listar: tenantId={}, status={}", tenantId, status);
