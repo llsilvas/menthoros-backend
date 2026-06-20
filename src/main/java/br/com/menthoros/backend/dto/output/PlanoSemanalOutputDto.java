@@ -53,5 +53,8 @@ public record PlanoSemanalOutputDto(
         PlanoReviewStatus reviewStatus,
 
         @Schema(description = "Motivo informado pelo coach ao rejeitar o plano")
-        String reviewComment
+        String reviewComment,
+
+        @Schema(description = "Nome completo do atleta dono do plano")
+        String atletaNome
 ) {}
