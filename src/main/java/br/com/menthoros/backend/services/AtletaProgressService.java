@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services;
 
+import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaHomeDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
 import br.com.menthoros.backend.dto.output.ReadinessDto;
@@ -45,6 +46,19 @@ public interface AtletaProgressService {
      * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
      */
     AtletaHomeDto getHome(UUID atletaId);
+
+    /**
+     * Aderência semanal ao plano nas últimas {@code semanas} semanas (segunda a domingo, ISO-8601).
+     *
+     * <p>Retorna lista vazia quando nenhuma semana tem {@code totalPlanejado > 0} — o caller
+     * deve exibir estado "sem dados" em vez de barras de 0%.
+     *
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     *
+     * @param atletaId ID do atleta
+     * @param semanas  número de semanas a analisar (recomendado: 8)
+     */
+    List<AderenciasSemanalDto> getAderenciaSemanal(UUID atletaId, int semanas);
 
     /**
      * Resolve o {@code atletaId} do usuário autenticado (endpoints {@code me/*}).

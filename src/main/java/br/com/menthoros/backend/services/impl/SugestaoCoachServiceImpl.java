@@ -26,6 +26,25 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
     private final SugestaoCoachRepository repository;
     private final SugestaoCoachMapper mapper;
 
+    /**
+     * Lista as sugestões mais recentes de um atleta no tenant corrente.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE.
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId().
+     *
+     * @param atletaId ID do atleta
+     * @return lista de sugestões ordenadas por createdAt DESC, limitada pela query
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<SugestaoCoachOutputDto> listarPorAtleta(UUID atletaId) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        log.info("listarPorAtleta: atletaId={}, tenantId={}", atletaId, tenantId);
+        return repository.findAllByAtletaIdAndTenantId(atletaId, tenantId)
+                .stream().map(mapper::toOutputDto).toList();
+    }
+
     @Override
     @Transactional(readOnly = true)
     public List<SugestaoCoachOutputDto> listar(StatusSugestao status) {

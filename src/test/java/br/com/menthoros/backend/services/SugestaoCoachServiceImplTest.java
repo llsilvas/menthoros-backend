@@ -154,6 +154,53 @@ class SugestaoCoachServiceImplTest {
         }
     }
 
+    // ── listarPorAtleta ───────────────────────────────────────────────────────
+
+    @Nested
+    @DisplayName("listarPorAtleta")
+    class ListarPorAtleta {
+
+        private final UUID atletaId = UUID.randomUUID();
+
+        @Test
+        @DisplayName("retorna lista mapeada quando existem sugestões para o atleta")
+        void retornaListaMapeada() {
+            SugestaoCoach s = sugestao(StatusSugestao.PENDING);
+            SugestaoCoachOutputDto dto = outputDto(sugestaoId);
+            when(repository.findAllByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(List.of(s));
+            when(mapper.toOutputDto(s)).thenReturn(dto);
+
+            List<SugestaoCoachOutputDto> result = service.listarPorAtleta(atletaId);
+
+            assertThat(result).containsExactly(dto);
+            verify(repository).findAllByAtletaIdAndTenantId(atletaId, tenantId);
+        }
+
+        @Test
+        @DisplayName("retorna lista vazia quando o atleta não possui sugestões")
+        void retornaListaVazia() {
+            when(repository.findAllByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(List.of());
+
+            List<SugestaoCoachOutputDto> result = service.listarPorAtleta(atletaId);
+
+            assertThat(result).isEmpty();
+            verifyNoInteractions(mapper);
+        }
+
+        @Test
+        @DisplayName("cross-tenant — atletaId de outro tenant retorna vazio (query filtra por tenantId)")
+        void crossTenantRetornaVazio() {
+            UUID atletaOutroTenant = UUID.randomUUID();
+            when(repository.findAllByAtletaIdAndTenantId(atletaOutroTenant, tenantId)).thenReturn(List.of());
+
+            List<SugestaoCoachOutputDto> result = service.listarPorAtleta(atletaOutroTenant);
+
+            assertThat(result).isEmpty();
+            verify(repository).findAllByAtletaIdAndTenantId(atletaOutroTenant, tenantId);
+            verifyNoInteractions(mapper);
+        }
+    }
+
     // ── detalhe ──────────────────────────────────────────────────────────────
 
     @Nested

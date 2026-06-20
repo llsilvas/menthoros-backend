@@ -94,6 +94,26 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
         return fila;
     }
 
+    /**
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<CoachAttentionItemOutputDto> getSinaisParaAtleta(UUID atletaId, int limite) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        LocalDate hoje = LocalDate.now(clock);
+        LocalDate inicioJanela = hoje.minusDays(JANELA_ADERENCIA_DIAS);
+        Instant geradoEm = clock.instant();
+
+        return atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                .flatMap(atleta -> montarItem(atleta, hoje, inicioJanela, geradoEm))
+                .stream()
+                .filter(item -> item.severity().getPeso() >= CORTE_SEVERIDADE)
+                .sorted(ORDENACAO)
+                .limit(limite)
+                .toList();
+    }
+
     /** Deriva todos os sinais do atleta e consolida em um único item (motivo principal = maior severidade). */
     private Optional<CoachAttentionItemOutputDto> montarItem(Atleta atleta, LocalDate hoje,
                                                             LocalDate inicioJanela, Instant geradoEm) {

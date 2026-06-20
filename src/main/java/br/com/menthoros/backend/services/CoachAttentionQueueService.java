@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services;
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Fila de atenção do treinador: consolida e prioriza, on-demand e read-only, os sinais já produzidos
@@ -17,4 +18,14 @@ public interface CoachAttentionQueueService {
      * @return itens ordenados por severidade/priorityScore (no máx. {@code MAX_ITENS}); vazio se nada exige ação
      */
     List<CoachAttentionItemOutputDto> getAttentionQueue();
+
+    /**
+     * Sinais de atenção para um atleta específico do tenant, limitados a {@code limite} itens.
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     *
+     * @param atletaId ID do atleta (deve pertencer ao tenant do contexto)
+     * @param limite   número máximo de itens retornados
+     * @return sinais ordenados por severidade; vazio se nenhum sinal ativo
+     */
+    List<CoachAttentionItemOutputDto> getSinaisParaAtleta(UUID atletaId, int limite);
 }
