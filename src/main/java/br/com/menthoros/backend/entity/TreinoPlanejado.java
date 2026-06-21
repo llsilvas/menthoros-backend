@@ -26,6 +26,13 @@ import java.util.List;
 @AllArgsConstructor
 public class TreinoPlanejado extends TreinoBase{
 
+    @Version
+    @Column(name = "versao")
+    private Long versao;
+
+    @Column(name = "editado_pelo_coach", nullable = false)
+    private boolean editadoPeloCoach = false;
+
     @Column(name = "tss_planejado")
     private Integer tssPlanejado; // TSS estimado para o treino
 
@@ -121,6 +128,7 @@ public class TreinoPlanejado extends TreinoBase{
         if (this.tentativasSincronizacao == null) {
             this.tentativasSincronizacao = 0;
         }
+        // editadoPeloCoach já tem default false; garantir inicialização explícita
         this.setAtualizadoEm(LocalDateTime.now());
     }
 

@@ -46,6 +46,20 @@ public class TssCalculatorService {
     }
 
     /**
+     * Estimativa simplificada de TSS para treinos planejados, usando duração e RPE.
+     * Fórmula: round(duracaoMinutos × rpe² / 90.0), rpe default 5 quando nulo.
+     *
+     * Idempotent: YES — cálculo puro, sem estado.
+     * Side Effects: NONE
+     * Tenant-aware: NO
+     */
+    public int calcularTssEstimado(Duration duracaoMin, Integer rpe) {
+        long minutos = duracaoMin != null ? duracaoMin.toMinutes() : 0L;
+        int r = rpe != null ? rpe : 5;
+        return (int) Math.round((double) minutos * r * r / 90.0);
+    }
+
+    /**
      * Cálculo de TSS para corrida baseado em FC, Pace ou RPE.
      * Aplica fator de impacto por tipo de treino.
      */

@@ -1,0 +1,42 @@
+package br.com.menthoros.backend.dto.input;
+
+import br.com.menthoros.backend.enums.TipoTreino;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
+
+import java.math.BigDecimal;
+import java.time.Duration;
+
+@Schema(description = "Campos editáveis de um treino planejado durante revisão de plano. Campos null são ignorados (patch semântico).")
+public record TreinoPlanejadoPatchDto(
+
+        @Schema(description = "Tipo do treino", example = "LONGO")
+        TipoTreino tipoTreino,
+
+        @Schema(description = "Descrição do treino", example = "18km em Z2 — reduzido após semana de prova")
+        String descricao,
+
+        @Positive
+        @Schema(description = "Distância em quilômetros", example = "18.0")
+        BigDecimal distanciaKm,
+
+        @Schema(description = "Duração do treino em formato ISO-8601", example = "PT90M")
+        Duration duracaoMin,
+
+        @Schema(description = "Zona alvo do treino", example = "z2")
+        String zonaAlvo,
+
+        @Min(1) @Max(500)
+        @Schema(description = "TSS planejado — se informado, prevalece sobre o recálculo automático", example = "65")
+        Integer tssPlanejado,
+
+        @Min(1) @Max(10)
+        @Schema(description = "Percepção de esforço esperada (1-10)", example = "6")
+        Integer percepcaoEsforcoEsperada,
+
+        @Schema(description = "Observações do treinador sobre o treino")
+        String observacao
+
+) {}
