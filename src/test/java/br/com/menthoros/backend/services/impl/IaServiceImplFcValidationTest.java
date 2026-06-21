@@ -570,6 +570,24 @@ class IaServiceImplFcValidationTest {
             assertThat(resultado.get(0).distanciaKm()).isEqualTo(2.5);
         }
 
+        @Test
+        @DisplayName("tipoEtapa=null → etapa retornada intacta, sem NullPointerException")
+        void naoLancaNpeComTipoEtapaNulo() throws Exception {
+            var etapa = new EtapaTreinoLlmDto(1, null, "Etapa sem tipo", 10, 2.5, "120-136 bpm", 1, null);
+            var resultado = invokeCorrigirDistancias(List.of(etapa), new BigDecimal("4.5"));
+            assertThat(resultado).hasSize(1);
+            assertThat(resultado.get(0).distanciaKm()).isEqualTo(2.5);
+        }
+
+        @Test
+        @DisplayName("paceLimiar=0 → guarda pace <= 0 evita divisão por zero, distanciaKm original mantida")
+        void naoGeraInfinityComPaceLimiarZero() throws Exception {
+            var etapa = new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 10, 2.5, "120-136 bpm", 1, null);
+            var resultado = invokeCorrigirDistancias(List.of(etapa), BigDecimal.ZERO);
+            assertThat(resultado).hasSize(1);
+            assertThat(resultado.get(0).distanciaKm()).isEqualTo(2.5);
+        }
+
         @Nested
         @DisplayName("integração com reconciliarDistanciaComEtapas — CA1")
         class IntegracaoDistanciaTreinoIntervalado {

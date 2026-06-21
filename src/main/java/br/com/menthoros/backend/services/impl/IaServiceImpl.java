@@ -374,14 +374,14 @@ public class IaServiceImpl implements IaService {
             // Validar treinos INTERVALADO ou TIRO
             if ("INTERVALADO".equals(tipoTreino) || "TIRO".equals(tipoTreino)) {
                 // (Passo 0) corrige distâncias de etapas temporais antes de expandir e normalizar
-                List<EtapaTreinoLlmDto> etapasCorrigidas0 =
+                List<EtapaTreinoLlmDto> etapasCorrigidas =
                         corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar());
                 treino = new TreinoPlanejadoLlmDto(
                         treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
                         treino.tssPlanejado(), treino.intensidadePlanejada(),
                         treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
                         treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(),
-                        etapasCorrigidas0);
+                        etapasCorrigidas);
                 // Expansão ANTES da validação: corrige alucinação de compressão "NxDist"
                 treino = expandirEtapasAgregadas(treino, zonasParaValidacao);
                 validarTreinoIntervalado(treino, atletaId);
@@ -391,14 +391,14 @@ public class IaServiceImpl implements IaService {
 
             // Fartlek: expande alucinações "Nx (AccelMin + RecovMin)" e reconcilia distância
             if ("FARTLEK".equals(tipoTreino)) {
-                List<EtapaTreinoLlmDto> etapasCorrigidas1 =
+                List<EtapaTreinoLlmDto> etapasCorrigidas =
                         corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar());
                 treino = new TreinoPlanejadoLlmDto(
                         treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
                         treino.tssPlanejado(), treino.intensidadePlanejada(),
                         treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
                         treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(),
-                        etapasCorrigidas1);
+                        etapasCorrigidas);
                 treino = expandirEtapasAgregadas(treino, zonasParaValidacao);
                 treino = reconciliarDistanciaComEtapas(treino);
             }
@@ -1044,13 +1044,14 @@ public class IaServiceImpl implements IaService {
     }
 
     private EtapaTreinoLlmDto corrigirEtapaTemporal(EtapaTreinoLlmDto e, double paceZ1, double paceZ2) {
+        if (e.tipoEtapa() == null) return e;
         if (e.duracaoMin() == null || e.duracaoMin() <= 0) return e;
         double pace = switch (e.tipoEtapa().toUpperCase()) {
             case "AQUECIMENTO", "DESAQUECIMENTO" -> paceZ2;
             case "RECUPERACAO" -> paceZ1;
             default -> -1.0;
         };
-        if (pace < 0) return e;
+        if (pace <= 0) return e;
         double distancia = arredondar2(e.duracaoMin() / pace);
         return new EtapaTreinoLlmDto(
                 e.ordem(), e.tipoEtapa(), e.descricaoEtapa(),
