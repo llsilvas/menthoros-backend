@@ -2,6 +2,7 @@ package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.input.TreinoPlanejadoPatchDto;
 import br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto;
+import br.com.menthoros.backend.security.RequireTenant;
 import br.com.menthoros.backend.services.TreinoPlanejadoEditService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -38,6 +39,7 @@ public class CoachTreinoEditController {
 
     @PatchMapping("/{planoId}/treinos/{treinoId}")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(
             summary = "Edita um treino planejado",
             description = "Aplica patch semântico a um TreinoPlanejado. Campos null são ignorados. "

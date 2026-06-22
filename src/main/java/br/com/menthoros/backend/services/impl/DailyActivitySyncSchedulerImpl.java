@@ -152,8 +152,7 @@ public class DailyActivitySyncSchedulerImpl implements DailyActivitySyncSchedule
             return result;
         }
 
-//        LocalDate yesterday = LocalDate.now().minusDays(1);
-        LocalDate yesterday = LocalDate.now();
+        LocalDate yesterday = LocalDate.now().minusDays(1);
         LocalDate windowStart = yesterday.minusDays(1);
         LocalDate windowEnd = yesterday.plusDays(1);
         UUID tenantId = atleta.getAssessoria().getId();

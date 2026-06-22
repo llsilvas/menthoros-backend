@@ -17,6 +17,7 @@ import br.com.menthoros.backend.services.TreinoPlanejadoEditService;
 import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -143,6 +144,7 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
     }
 
     private void aplicarEtapasPatch(TreinoPlanejado treino, List<EtapaTreinoDto> etapasDto) {
+        Hibernate.initialize(treino.getEtapas());
         if (treino.getEtapas() == null) {
             treino.setEtapas(new ArrayList<>());
         }
