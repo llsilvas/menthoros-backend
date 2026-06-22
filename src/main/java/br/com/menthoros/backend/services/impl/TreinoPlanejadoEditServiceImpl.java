@@ -91,7 +91,55 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
         if (patch.zonaAlvo() != null) treino.setZonaAlvo(patch.zonaAlvo());
         if (patch.percepcaoEsforcoEsperada() != null) treino.setPercepcaoEsforcoEsperada(patch.percepcaoEsforcoEsperada());
         if (patch.observacao() != null) treino.setObservacao(patch.observacao());
-        if (patch.etapas() != null) aplicarEtapasPatch(treino, patch.etapas());
+        if (patch.etapas() != null) aplicarEtapasPatch(treino, expandirRepeticoes(patch.etapas()));
+    }
+
+    /**
+     * Expande blocos INTERVALADO com repeticoes > 1 em N pares consecutivos [INTERVALADO, RECUPERACAO].
+     * O bloco RECUPERACAO imediatamente seguinte ao INTERVALADO é usado como template para cada par.
+     * Renumera a ordem sequencialmente após a expansão.
+     *
+     * Exemplo: [AQUECIMENTO, INTERVALADO(rep=4), RECUPERACAO, DESAQUECIMENTO]
+     *       → [AQUECIMENTO, INTERVALADO, RECUPERACAO, INTERVALADO, RECUPERACAO,
+     *           INTERVALADO, RECUPERACAO, INTERVALADO, RECUPERACAO, DESAQUECIMENTO]
+     */
+    private List<EtapaTreinoDto> expandirRepeticoes(List<EtapaTreinoDto> etapas) {
+        List<EtapaTreinoDto> expandido = new ArrayList<>();
+        int i = 0;
+        while (i < etapas.size()) {
+            EtapaTreinoDto atual = etapas.get(i);
+            int reps = atual.repeticoes() != null ? atual.repeticoes() : 1;
+
+            if ("INTERVALADO".equals(atual.tipoEtapa()) && reps > 1) {
+                EtapaTreinoDto recuperacao = null;
+                if (i + 1 < etapas.size() && "RECUPERACAO".equals(etapas.get(i + 1).tipoEtapa())) {
+                    recuperacao = etapas.get(i + 1);
+                    i++;
+                }
+                for (int r = 0; r < reps; r++) {
+                    expandido.add(comRepeticoes(atual, 1));
+                    if (recuperacao != null) {
+                        expandido.add(comRepeticoes(recuperacao, 1));
+                    }
+                }
+            } else {
+                expandido.add(atual);
+            }
+            i++;
+        }
+
+        List<EtapaTreinoDto> resultado = new ArrayList<>(expandido.size());
+        for (int j = 0; j < expandido.size(); j++) {
+            EtapaTreinoDto e = expandido.get(j);
+            resultado.add(new EtapaTreinoDto(j + 1, e.tipoEtapa(), e.descricaoEtapa(),
+                    e.duracaoMin(), e.distanciaKm(), e.fcAlvoEtapa(), e.repeticoes()));
+        }
+        return resultado;
+    }
+
+    private static EtapaTreinoDto comRepeticoes(EtapaTreinoDto dto, int repeticoes) {
+        return new EtapaTreinoDto(dto.ordem(), dto.tipoEtapa(), dto.descricaoEtapa(),
+                dto.duracaoMin(), dto.distanciaKm(), dto.fcAlvoEtapa(), repeticoes);
     }
 
     private void aplicarEtapasPatch(TreinoPlanejado treino, List<EtapaTreinoDto> etapasDto) {
