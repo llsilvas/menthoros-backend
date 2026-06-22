@@ -1,7 +1,9 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.input.TreinoPlanejadoPatchDto;
+import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
 import br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto;
+import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
@@ -20,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -87,6 +91,28 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
         if (patch.zonaAlvo() != null) treino.setZonaAlvo(patch.zonaAlvo());
         if (patch.percepcaoEsforcoEsperada() != null) treino.setPercepcaoEsforcoEsperada(patch.percepcaoEsforcoEsperada());
         if (patch.observacao() != null) treino.setObservacao(patch.observacao());
+        if (patch.etapas() != null) aplicarEtapasPatch(treino, patch.etapas());
+    }
+
+    private void aplicarEtapasPatch(TreinoPlanejado treino, List<EtapaTreinoDto> etapasDto) {
+        if (treino.getEtapas() == null) {
+            treino.setEtapas(new ArrayList<>());
+        }
+        treino.getEtapas().clear();
+
+        for (int i = 0; i < etapasDto.size(); i++) {
+            EtapaTreinoDto dto = etapasDto.get(i);
+            EtapaTreino etapa = new EtapaTreino();
+            etapa.setTreinoPlanejado(treino);
+            etapa.setOrdem(dto.ordem() != null ? dto.ordem() : i + 1);
+            etapa.setTipoEtapa(dto.tipoEtapa() != null ? dto.tipoEtapa().name() : null);
+            etapa.setDescricaoEtapa(dto.descricaoEtapa());
+            etapa.setDuracaoMin(dto.duracaoMin());
+            etapa.setDistanciaKm(dto.distanciaKm() != null ? BigDecimal.valueOf(dto.distanciaKm()) : null);
+            etapa.setFcAlvoEtapa(dto.fcAlvoEtapa());
+            etapa.setRepeticoes(dto.repeticoes());
+            treino.getEtapas().add(etapa);
+        }
     }
 
     private void recalcularTssSeNecessario(TreinoPlanejado treino, TreinoPlanejadoPatchDto patch,

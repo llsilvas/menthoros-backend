@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.dto.input;
 
+import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
 import br.com.menthoros.backend.enums.TipoTreino;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
@@ -8,6 +9,7 @@ import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.util.List;
 
 @Schema(description = "Campos editáveis de um treino planejado durante revisão de plano. Campos null são ignorados (patch semântico).")
 public record TreinoPlanejadoPatchDto(
@@ -37,6 +39,9 @@ public record TreinoPlanejadoPatchDto(
         Integer percepcaoEsforcoEsperada,
 
         @Schema(description = "Observações do treinador sobre o treino")
-        String observacao
+        String observacao,
+
+        @Schema(description = "Lista de etapas do treino — quando informada, substitui todas as etapas existentes")
+        List<EtapaTreinoDto> etapas
 
 ) {}

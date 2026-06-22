@@ -83,7 +83,7 @@ class TreinoPlanejadoEditServiceImplTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputEsperado);
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, BigDecimal.valueOf(18.0), null, null, null, null, "Reduzido após prova"
+                    null, null, BigDecimal.valueOf(18.0), null, null, null, null, "Reduzido após prova", null
             );
 
             TreinoPlanejadoOutputDto result = editService.editarTreino(planoId, treinoId, patch);
@@ -113,7 +113,7 @@ class TreinoPlanejadoEditServiceImplTest {
 
             // Patch com apenas distanciaKm — não toca tipoTreino nem zonaAlvo
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, BigDecimal.valueOf(15.0), null, null, null, null, null
+                    null, null, BigDecimal.valueOf(15.0), null, null, null, null, null, null
             );
 
             editService.editarTreino(planoId, treinoId, patch);
@@ -143,7 +143,7 @@ class TreinoPlanejadoEditServiceImplTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, Duration.ofMinutes(90), null, null, null, null
+                    null, null, null, Duration.ofMinutes(90), null, null, null, null, null
             );
 
             editService.editarTreino(planoId, treinoId, patch);
@@ -166,7 +166,7 @@ class TreinoPlanejadoEditServiceImplTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, Duration.ofMinutes(90), null, 65, null, null
+                    null, null, null, Duration.ofMinutes(90), null, 65, null, null, null
             );
 
             editService.editarTreino(planoId, treinoId, patch);
@@ -191,7 +191,7 @@ class TreinoPlanejadoEditServiceImplTest {
 
             // Patch muda apenas zonaAlvo — volume não muda
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, "z3", null, null, null
+                    null, null, null, null, "z3", null, null, null, null
             );
 
             editService.editarTreino(planoId, treinoId, patch);
@@ -210,7 +210,7 @@ class TreinoPlanejadoEditServiceImplTest {
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null
+                    null, null, null, null, null, null, null, null, null
             );
 
             assertThatThrownBy(() -> editService.editarTreino(planoId, treinoId, patch))
@@ -226,7 +226,7 @@ class TreinoPlanejadoEditServiceImplTest {
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.empty());
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null
+                    null, null, null, null, null, null, null, null, null
             );
 
             assertThatThrownBy(() -> editService.editarTreino(planoId, treinoId, patch))
@@ -245,7 +245,7 @@ class TreinoPlanejadoEditServiceImplTest {
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treinoDeOutroPlano));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null
+                    null, null, null, null, null, null, null, null, null
             );
 
             assertThatThrownBy(() -> editService.editarTreino(planoId, treinoId, patch))
@@ -266,7 +266,7 @@ class TreinoPlanejadoEditServiceImplTest {
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treinoDeOutroPlano));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null
+                    null, null, null, null, null, null, null, null, null
             );
 
             assertThatThrownBy(() -> editService.editarTreino(planoId, treinoId, patch))
@@ -284,7 +284,7 @@ class TreinoPlanejadoEditServiceImplTest {
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.empty());
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null
+                    null, null, null, null, null, null, null, null, null
             );
 
             assertThatThrownBy(() -> editService.editarTreino(planoId, treinoId, patch))
