@@ -16,6 +16,8 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
 
     Optional<TreinoPlanejado> findByIdAndTenantId(UUID id, UUID tenantId);
 
+    Optional<TreinoPlanejado> findByIdAndPlanoSemanalIdAndTenantId(UUID id, UUID planoSemanalId, UUID tenantId);
+
     @Query("""
        select tp from TreinoPlanejado tp
        where tp.atleta.id = :atletaId

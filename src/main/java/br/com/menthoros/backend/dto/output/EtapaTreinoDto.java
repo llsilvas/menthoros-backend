@@ -1,7 +1,6 @@
 package br.com.menthoros.backend.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import br.com.menthoros.backend.enums.TipoEtapa;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "Dados de uma etapa de treino")
@@ -10,8 +9,8 @@ public record EtapaTreinoDto(
         @Schema(description = "Ordem da etapa no treino", example = "1")
         Integer ordem,
 
-        @Schema(description = "Tipo da etapa", example = "AQUECIMENTO")
-        TipoEtapa tipoEtapa,
+        @Schema(description = "Tipo da etapa: AQUECIMENTO, PRINCIPAL, INTERVALADO, RECUPERACAO ou DESAQUECIMENTO", example = "AQUECIMENTO")
+        String tipoEtapa,
 
         @Schema(description = "Descrição da etapa", example = "Corrida leve em ritmo confortável")
         String descricaoEtapa,

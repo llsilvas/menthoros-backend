@@ -5,9 +5,11 @@ import br.com.menthoros.backend.dto.input.TreinoPlanejadoInputDto;
 import br.com.menthoros.backend.dto.input.TreinoRealizadoInputDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.dto.output.EtapaRealizadaOutputDto;
+import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
 import br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.EtapaRealizada;
+import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import org.mapstruct.*;
@@ -16,6 +18,7 @@ import java.math.BigDecimal;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Mapper(
         componentModel = "spring",
@@ -97,6 +100,7 @@ public interface TreinoMapper {
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     @Mapping(target = "treinoRealizadoId", expression = "java(safeGetTreinoRealizadoId(treinoPlanejado))")
     @Mapping(target = "percepcaoEsforcoRealizado", expression = "java(safeGetPercepcaoEsforcoRealizado(treinoPlanejado))")
+    @Mapping(target = "etapas", expression = "java(safeGetEtapas(treinoPlanejado))")
     TreinoPlanejadoOutputDto toOutputDto(TreinoPlanejado treinoPlanejado);
 
     // Hibernate.isInitialized é insuficiente para @OneToOne(mappedBy=...) fora de sessão.
@@ -114,6 +118,24 @@ public interface TreinoMapper {
         try {
             TreinoRealizado tr = tp.getTreinoRealizado();
             return tr != null ? tr.getPercepcaoEsforco() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // Protege contra LazyInitializationException fora de transação
+    default List<EtapaTreinoDto> safeGetEtapas(TreinoPlanejado tp) {
+        try {
+            List<EtapaTreino> etapas = tp.getEtapas();
+            if (etapas == null) return null;
+            return etapas.stream()
+                    .map(e -> new EtapaTreinoDto(
+                            e.getOrdem(), e.getTipoEtapa(), e.getDescricaoEtapa(),
+                            e.getDuracaoMin(),
+                            e.getDistanciaKm() != null ? e.getDistanciaKm().doubleValue() : null,
+                            e.getFcAlvoEtapa(), e.getRepeticoes()
+                    ))
+                    .collect(Collectors.toList());
         } catch (Exception e) {
             return null;
         }

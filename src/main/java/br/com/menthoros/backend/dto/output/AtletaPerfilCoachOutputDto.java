@@ -81,6 +81,9 @@ public record AtletaPerfilCoachOutputDto(
     @Schema(description = "Resumo compacto de um treino planejado")
     public record TreinoPlanejadoResumoDto(
 
+            @Schema(description = "ID do treino planejado")
+            UUID id,
+
             @Schema(description = "Dia da semana", example = "SEGUNDA")
             String diaSemana,
 
@@ -92,7 +95,19 @@ public record AtletaPerfilCoachOutputDto(
 
             @Schema(description = "Status de execução: PENDENTE, CONCLUIDO, REALIZADO, PERDIDO, PARCIAL, LIVRE",
                     example = "PENDENTE")
-            String statusExecucao
+            String statusExecucao,
+
+            @Schema(description = "Duração planejada em formato ISO-8601", example = "PT60M")
+            String duracaoMin,
+
+            @Schema(description = "Zona alvo do treino", example = "Z2")
+            String zonaAlvo,
+
+            @Schema(description = "Percepção de esforço esperada (1–10)", example = "6")
+            Integer percepcaoEsforcoEsperada,
+
+            @Schema(description = "Etapas do treino (aquecimento, esforço, recuperação, desaquecimento)")
+            List<EtapaTreinoDto> etapas
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

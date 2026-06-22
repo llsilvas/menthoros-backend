@@ -29,8 +29,9 @@ public class JacksonConfig {
         // Registrar módulo JavaTime para LocalDate, LocalDateTime, etc.
         mapper.registerModule(new JavaTimeModule());
 
-        // Desabilitar serialização de datas como arrays
+        // Desabilitar serialização de datas e durations como arrays/números
         mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        mapper.disable(SerializationFeature.WRITE_DURATIONS_AS_TIMESTAMPS);
 
         // Permitir coerção de string vazia para null
         mapper.coercionConfigFor(LogicalType.Enum)

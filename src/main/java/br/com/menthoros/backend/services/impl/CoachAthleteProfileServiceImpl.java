@@ -2,9 +2,11 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaPerfilCoachOutputDto;
+import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
 import br.com.menthoros.backend.dto.output.RecordeDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
@@ -121,14 +123,20 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         PlanoSemanal plano = planoOpt.get();
         List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos;
 
-        if (plano.getReviewStatus() == PlanoReviewStatus.APROVADO) {
+        if (plano.getReviewStatus() == PlanoReviewStatus.APROVADO
+                || plano.getReviewStatus() == PlanoReviewStatus.AGUARDANDO_REVISAO) {
             treinos = plano.getTreinosPlanejados().stream()
                     .sorted(Comparator.comparing(TreinoPlanejado::getDataTreino))
                     .map(tp -> new AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto(
+                            tp.getId(),
                             tp.getDiaSemana().name(),
                             tp.getTipoTreino().name(),
                             tp.getDistanciaKm() != null ? tp.getDistanciaKm().doubleValue() : 0.0,
-                            tp.getStatusTreino().name()))
+                            tp.getStatusTreino().name(),
+                            tp.getDuracaoMin() != null ? tp.getDuracaoMin().toString() : null,
+                            tp.getZonaAlvo(),
+                            tp.getPercepcaoEsforcoEsperada(),
+                            safeGetEtapasResumo(tp)))
                     .toList();
         } else {
             treinos = List.of();
@@ -141,6 +149,22 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 plano.getReviewStatus(),
                 treinos
         );
+    }
+
+    private List<EtapaTreinoDto> safeGetEtapasResumo(TreinoPlanejado tp) {
+        try {
+            List<EtapaTreino> etapas = tp.getEtapas();
+            if (etapas == null || etapas.isEmpty()) return null;
+            return etapas.stream()
+                    .map(e -> new EtapaTreinoDto(
+                            e.getOrdem(), e.getTipoEtapa(), e.getDescricaoEtapa(),
+                            e.getDuracaoMin(),
+                            e.getDistanciaKm() != null ? e.getDistanciaKm().doubleValue() : null,
+                            e.getFcAlvoEtapa(), e.getRepeticoes()))
+                    .toList();
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private <T> List<T> buscarLista(String campo, List<String> avisos, Supplier<List<T>> fn) {

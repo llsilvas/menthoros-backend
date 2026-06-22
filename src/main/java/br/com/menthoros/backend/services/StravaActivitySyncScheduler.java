@@ -20,7 +20,9 @@ public class StravaActivitySyncScheduler {
     private final IntegracaoExternaRepository integracaoExternaRepository;
     private final StravaActivityService stravaActivityService;
 
-    @Scheduled(cron = "${menthoros.strava.sync.daily-cron:0 0 3 * * *}")
+//    @Scheduled(fixedRate = 7200000, initialDelay = 60000)
+    @Scheduled(fixedDelayString = "PT2H", initialDelayString = "PT1M")
+//    @Scheduled(cron = "${menthoros.strava.sync.daily-cron:0 0 3 * * *}")
     public void runDailyIncrementalSync() {
         List<IntegracaoExterna> integracoes = integracaoExternaRepository.findAllActiveByPlataforma(FonteDados.STRAVA);
         for (IntegracaoExterna integracao : integracoes) {

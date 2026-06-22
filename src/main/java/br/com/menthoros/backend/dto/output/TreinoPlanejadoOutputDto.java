@@ -70,6 +70,9 @@ public record TreinoPlanejadoOutputDto(
         @Schema(description = "Justificativa da IA", example = "Treino de base aeróbica para manter volume")
         String justificativaIa,
 
+        @Schema(description = "Indica se o treino foi editado manualmente pelo coach após geração pela IA", example = "false")
+        boolean editadoPeloCoach,
+
         // ===== ETAPAS E STATUS =====
 
         @Schema(description = "Lista de etapas do treino")
