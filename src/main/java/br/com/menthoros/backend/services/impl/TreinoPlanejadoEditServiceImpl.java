@@ -1,7 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.input.EtapaInputDto;
 import br.com.menthoros.backend.dto.input.TreinoPlanejadoPatchDto;
-import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
 import br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto;
 import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.PlanoSemanal;
@@ -9,6 +9,7 @@ import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.mapper.EtapaMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
@@ -36,6 +37,7 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final TssCalculatorService tssCalculatorService;
     private final TreinoMapper treinoMapper;
+    private final EtapaMapper etapaMapper;
 
     /**
      * Idempotent: NO — altera estado do treino a cada chamada.
@@ -57,17 +59,12 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
                 .orElseThrow(() -> new DomainNotFoundException("Plano não encontrado: " + planoId));
 
         if (plano.getReviewStatus() != PlanoReviewStatus.AGUARDANDO_REVISAO) {
-            throw new DomainRuleViolationException(
-                    "Treino só pode ser editado quando o plano está em revisão (status atual: " + plano.getReviewStatus() + ")"
-            );
+            throw new DomainRuleViolationException("Treino só pode ser editado quando o plano está aguardando revisão.");
         }
 
-        TreinoPlanejado treino = treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)
+        TreinoPlanejado treino = treinoPlanejadoRepository
+                .findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Treino não encontrado: " + treinoId));
-
-        if (!treino.getPlanoSemanal().getId().equals(planoId)) {
-            throw new DomainNotFoundException("Treino não encontrado: " + treinoId);
-        }
 
         BigDecimal distanciaAnterior = treino.getDistanciaKm();
         Duration duracaoAnterior = treino.getDuracaoMin();
@@ -97,25 +94,28 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
 
     /**
      * Expande blocos INTERVALADO com repeticoes > 1 em N pares [INTERVALADO(rep=1), RECUPERACAO(rep=1)].
-     * O RECUPERACAO imediatamente seguinte é consumido como template para cada par gerado.
-     * Renumera a ordem sequencialmente após a expansão.
+     * Normaliza tipoEtapa para uppercase. O RECUPERACAO imediatamente seguinte é consumido como template.
      *
      * Exemplo: [AQUECIMENTO, INTERVALADO(rep=4), RECUPERACAO, DESAQUECIMENTO]
-     *       → [AQUECIMENTO, INTERVALADO, RECUPERACAO, INTERVALADO, RECUPERACAO,
-     *           INTERVALADO, RECUPERACAO, INTERVALADO, RECUPERACAO, DESAQUECIMENTO]
+     *       → [AQUECIMENTO, INT, REC, INT, REC, INT, REC, INT, REC, DESAQUECIMENTO]
      */
-    private List<EtapaTreinoDto> expandirRepeticoes(List<EtapaTreinoDto> etapas) {
-        List<EtapaTreinoDto> expandido = new ArrayList<>();
+    private List<EtapaInputDto> expandirRepeticoes(List<EtapaInputDto> etapas) {
+        List<EtapaInputDto> expandido = new ArrayList<>();
         int i = 0;
         while (i < etapas.size()) {
-            EtapaTreinoDto atual = etapas.get(i);
+            EtapaInputDto atual = etapas.get(i);
+            String tipo = atual.tipoEtapa() != null ? atual.tipoEtapa().toUpperCase() : "";
             int reps = atual.repeticoes() != null ? atual.repeticoes() : 1;
 
-            if ("INTERVALADO".equals(atual.tipoEtapa()) && reps > 1) {
-                EtapaTreinoDto recuperacao = null;
-                if (i + 1 < etapas.size() && "RECUPERACAO".equals(etapas.get(i + 1).tipoEtapa())) {
-                    recuperacao = etapas.get(i + 1);
-                    i++;
+            if ("INTERVALADO".equals(tipo) && reps > 1) {
+                EtapaInputDto recuperacao = null;
+                if (i + 1 < etapas.size()) {
+                    String tipoProximo = etapas.get(i + 1).tipoEtapa() != null
+                            ? etapas.get(i + 1).tipoEtapa().toUpperCase() : "";
+                    if ("RECUPERACAO".equals(tipoProximo)) {
+                        recuperacao = etapas.get(i + 1);
+                        i++;
+                    }
                 }
                 for (int r = 0; r < reps; r++) {
                     expandido.add(comRepeticoes(atual, 1));
@@ -128,22 +128,21 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
             }
             i++;
         }
-
-        List<EtapaTreinoDto> resultado = new ArrayList<>(expandido.size());
-        for (int j = 0; j < expandido.size(); j++) {
-            EtapaTreinoDto e = expandido.get(j);
-            resultado.add(new EtapaTreinoDto(j + 1, e.tipoEtapa(), e.descricaoEtapa(),
-                    e.duracaoMin(), e.distanciaKm(), e.fcAlvoEtapa(), 1));
-        }
-        return resultado;
+        return expandido;
     }
 
-    private static EtapaTreinoDto comRepeticoes(EtapaTreinoDto dto, int repeticoes) {
-        return new EtapaTreinoDto(dto.ordem(), dto.tipoEtapa(), dto.descricaoEtapa(),
-                dto.duracaoMin(), dto.distanciaKm(), dto.fcAlvoEtapa(), repeticoes);
+    private static EtapaInputDto comRepeticoes(EtapaInputDto dto, int repeticoes) {
+        return new EtapaInputDto(
+                dto.tipoEtapa() != null ? dto.tipoEtapa().toUpperCase() : null,
+                dto.descricaoEtapa(),
+                dto.duracaoMin(),
+                dto.distanciaKm(),
+                dto.fcAlvoEtapa(),
+                repeticoes
+        );
     }
 
-    private void aplicarEtapasPatch(TreinoPlanejado treino, List<EtapaTreinoDto> etapasDto) {
+    private void aplicarEtapasPatch(TreinoPlanejado treino, List<EtapaInputDto> etapasDto) {
         Hibernate.initialize(treino.getEtapas());
         if (treino.getEtapas() == null) {
             treino.setEtapas(new ArrayList<>());
@@ -151,16 +150,9 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
         treino.getEtapas().clear();
 
         for (int i = 0; i < etapasDto.size(); i++) {
-            EtapaTreinoDto dto = etapasDto.get(i);
-            EtapaTreino etapa = new EtapaTreino();
+            EtapaTreino etapa = etapaMapper.toEntity(etapasDto.get(i));
             etapa.setTreinoPlanejado(treino);
-            etapa.setOrdem(dto.ordem() != null ? dto.ordem() : i + 1);
-            etapa.setTipoEtapa(dto.tipoEtapa());
-            etapa.setDescricaoEtapa(dto.descricaoEtapa());
-            etapa.setDuracaoMin(dto.duracaoMin());
-            etapa.setDistanciaKm(dto.distanciaKm() != null ? BigDecimal.valueOf(dto.distanciaKm()) : null);
-            etapa.setFcAlvoEtapa(dto.fcAlvoEtapa());
-            etapa.setRepeticoes(dto.repeticoes());
+            etapa.setOrdem(i + 1);
             treino.getEtapas().add(etapa);
         }
     }

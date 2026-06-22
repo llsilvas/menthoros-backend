@@ -130,6 +130,7 @@ class CoachTreinoEditControllerTest {
         @Test
         @DisplayName("retorna 403 quando requisição sem autenticação")
         void retorna403SemAutenticacao() throws Exception {
+            // @WebMvcTest sem security config completa: Spring Security retorna 403 para request sem token
             mockMvc.perform(patch("/api/v1/coach/planos/{planoId}/treinos/{treinoId}", planoId, treinoId)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}"))

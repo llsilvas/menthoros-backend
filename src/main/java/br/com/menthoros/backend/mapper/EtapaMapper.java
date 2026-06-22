@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.mapper;
 
+import br.com.menthoros.backend.dto.input.EtapaInputDto;
 import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
 import br.com.menthoros.backend.entity.EtapaTreino;
 import org.mapstruct.Mapper;
@@ -24,4 +25,12 @@ public interface EtapaMapper {
              expression = "java(dto.distanciaKm() != null ? java.math.BigDecimal.valueOf(dto.distanciaKm()) : null)")
     @Mapping(target = "treinoPlanejado", ignore = true)
     EtapaTreino toEntity(EtapaTreinoDto dto);
+
+    @Mapping(target = "tipoEtapa",
+             expression = "java(dto.tipoEtapa() != null ? dto.tipoEtapa().toUpperCase() : null)")
+    @Mapping(target = "distanciaKm",
+             expression = "java(dto.distanciaKm() != null ? java.math.BigDecimal.valueOf(dto.distanciaKm()) : null)")
+    @Mapping(target = "treinoPlanejado", ignore = true)
+    @Mapping(target = "ordem", ignore = true)
+    EtapaTreino toEntity(EtapaInputDto dto);
 }

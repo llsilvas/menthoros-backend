@@ -10,6 +10,7 @@ import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.mapper.EtapaMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
@@ -46,6 +47,7 @@ class TreinoPlanejadoEditServiceImplTest {
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock private TssCalculatorService tssCalculatorService;
     @Mock private TreinoMapper treinoMapper;
+    @Mock private EtapaMapper etapaMapper;
 
     @InjectMocks private TreinoPlanejadoEditServiceImpl editService;
 
@@ -78,7 +80,7 @@ class TreinoPlanejadoEditServiceImplTest {
             TreinoPlanejadoOutputDto outputEsperado = outputStub(treinoId, true);
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
-            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)).thenReturn(Optional.of(treino));
             when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputEsperado);
 
@@ -107,7 +109,7 @@ class TreinoPlanejadoEditServiceImplTest {
             treino.setZonaAlvo("z2");
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
-            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)).thenReturn(Optional.of(treino));
             when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
@@ -137,7 +139,7 @@ class TreinoPlanejadoEditServiceImplTest {
             treino.setTssPlanejado(55);
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
-            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)).thenReturn(Optional.of(treino));
             when(tssCalculatorService.calcularTssEstimado(Duration.ofMinutes(90), 7)).thenReturn(49);
             when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
@@ -161,7 +163,7 @@ class TreinoPlanejadoEditServiceImplTest {
             treino.setDuracaoMin(Duration.ofMinutes(60));
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
-            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)).thenReturn(Optional.of(treino));
             when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
@@ -185,7 +187,7 @@ class TreinoPlanejadoEditServiceImplTest {
             treino.setTssPlanejado(55);
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
-            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)).thenReturn(Optional.of(treino));
             when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
@@ -236,34 +238,14 @@ class TreinoPlanejadoEditServiceImplTest {
         }
 
         @Test
-        @DisplayName("lança DomainNotFoundException se treino não pertence ao plano")
+        @DisplayName("lança DomainNotFoundException se treino não pertence ao plano (intra-tenant cross-plan)")
         void lancaExcecaoSeTreinoNaoPertenceAoPlano() {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
-            TreinoPlanejado treinoDeOutroPlano = criarTreino(criarPlanoComOutroId(PlanoReviewStatus.AGUARDANDO_REVISAO));
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
-            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treinoDeOutroPlano));
-
-            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, null
-            );
-
-            assertThatThrownBy(() -> editService.editarTreino(planoId, treinoId, patch))
-                    .isInstanceOf(DomainNotFoundException.class);
-
-            verify(treinoPlanejadoRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("lança DomainNotFoundException se treinoId pertence ao tenant mas a planoId diferente (intra-tenant cross-plan)")
-        void lancaExcecaoSeTreinoIntraTenantCrossPlano() {
-            PlanoSemanal planoAlvo = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
-            PlanoSemanal outroPlano = criarPlanoComOutroId(PlanoReviewStatus.AGUARDANDO_REVISAO);
-            TreinoPlanejado treinoDeOutroPlano = criarTreino(outroPlano);
-
-            // Treino existe e pertence ao tenant, mas está vinculado a outroPlano (não ao planoAlvo)
-            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(planoAlvo));
-            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treinoDeOutroPlano));
+            // Query atômica retorna empty quando treinoId não pertence ao planoId
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.empty());
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null, null
@@ -281,7 +263,8 @@ class TreinoPlanejadoEditServiceImplTest {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
-            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.empty());
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.empty());
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null, null
@@ -299,13 +282,6 @@ class TreinoPlanejadoEditServiceImplTest {
     private PlanoSemanal criarPlano(PlanoReviewStatus reviewStatus) {
         PlanoSemanal plano = new PlanoSemanal();
         plano.setId(planoId); // mesmo id usado no stub do repositório
-        plano.setReviewStatus(reviewStatus);
-        return plano;
-    }
-
-    private PlanoSemanal criarPlanoComOutroId(PlanoReviewStatus reviewStatus) {
-        PlanoSemanal plano = new PlanoSemanal();
-        plano.setId(UUID.randomUUID()); // id diferente de planoId — testes cross-plano
         plano.setReviewStatus(reviewStatus);
         return plano;
     }
