@@ -39,6 +39,8 @@ public class CoachTreinoEditController {
 
     @PatchMapping("/{planoId}/treinos/{treinoId}")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    // @RequireTenant valida planoId (índice 0): TenantValidationAspect confirma que o plano pertence ao tenant.
+    // treinoId é validado atomicamente por findByIdAndPlanoSemanalIdAndTenantId no service.
     @RequireTenant(resourceParamIndex = 0)
     @Operation(
             summary = "Edita um treino planejado",

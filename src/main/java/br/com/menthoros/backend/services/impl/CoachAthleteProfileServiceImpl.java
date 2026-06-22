@@ -128,7 +128,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
             treinos = plano.getTreinosPlanejados().stream()
                     .sorted(Comparator.comparing(TreinoPlanejado::getDataTreino))
                     .map(tp -> new AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto(
-                            tp.getId() != null ? tp.getId().toString() : null,
+                            tp.getId(),
                             tp.getDiaSemana().name(),
                             tp.getTipoTreino().name(),
                             tp.getDistanciaKm() != null ? tp.getDistanciaKm().doubleValue() : 0.0,

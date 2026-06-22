@@ -238,12 +238,12 @@ class TreinoPlanejadoEditServiceImplTest {
         }
 
         @Test
-        @DisplayName("lança DomainNotFoundException se treino não pertence ao plano (intra-tenant cross-plan)")
-        void lancaExcecaoSeTreinoNaoPertenceAoPlano() {
+        @DisplayName("lança DomainNotFoundException se treino não existe no tenant ou não pertence ao plano")
+        void lancaExcecaoSeTreinoNaoEncontrado() {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
-            // Query atômica retorna empty quando treinoId não pertence ao planoId
+            // Query atômica cobre tanto "não existe" quanto "pertence a outro plano"
             when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
                     .thenReturn(Optional.empty());
 
@@ -258,22 +258,59 @@ class TreinoPlanejadoEditServiceImplTest {
         }
 
         @Test
-        @DisplayName("lança DomainNotFoundException se treino não existe no tenant")
-        void lancaExcecaoSeTreinoNaoExisteNoTenant() {
-            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
-
-            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
-            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
-                    .thenReturn(Optional.empty());
-
+        @DisplayName("lança IllegalArgumentException quando planoId é nulo")
+        void lancaExcecaoParaPlanoIdNulo() {
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null, null
             );
+            assertThatThrownBy(() -> editService.editarTreino(null, treinoId, patch))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("planoId");
+        }
 
-            assertThatThrownBy(() -> editService.editarTreino(planoId, treinoId, patch))
-                    .isInstanceOf(DomainNotFoundException.class);
+        @Test
+        @DisplayName("lança IllegalArgumentException quando treinoId é nulo")
+        void lancaExcecaoParaTreinoIdNulo() {
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, null
+            );
+            assertThatThrownBy(() -> editService.editarTreino(planoId, null, patch))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("treinoId");
+        }
 
-            verify(treinoPlanejadoRepository, never()).save(any());
+        @Test
+        @DisplayName("lança IllegalArgumentException quando patch é nulo")
+        void lancaExcecaoParaPatchNulo() {
+            assertThatThrownBy(() -> editService.editarTreino(planoId, treinoId, null))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("patch");
+        }
+
+        @Test
+        @DisplayName("recalcula TSS quando distanciaKm muda sem tssPlanejado explícito")
+        void recalculaTssQuandoDistanciaMudaSemTssExplicito() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setDistanciaKm(BigDecimal.valueOf(10.0));
+            treino.setPercepcaoEsforcoEsperada(6);
+            treino.setTssPlanejado(45);
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)).thenReturn(Optional.of(treino));
+            when(tssCalculatorService.calcularTssEstimado(any(), any())).thenReturn(38);
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, BigDecimal.valueOf(20.0), null, null, null, null, null, null
+            );
+
+            editService.editarTreino(planoId, treinoId, patch);
+
+            ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
+            verify(treinoPlanejadoRepository).save(captor.capture());
+            assertThat(captor.getValue().getTssPlanejado()).isEqualTo(38);
         }
     }
 

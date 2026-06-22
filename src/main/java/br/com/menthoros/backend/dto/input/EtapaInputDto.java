@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.dto.input;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
@@ -8,6 +9,8 @@ import jakarta.validation.constraints.Size;
 public record EtapaInputDto(
 
         @Schema(description = "Tipo da etapa: AQUECIMENTO, PRINCIPAL, INTERVALADO, RECUPERACAO, DESAQUECIMENTO")
+        @Pattern(regexp = "(?i)AQUECIMENTO|PRINCIPAL|INTERVALADO|RECUPERACAO|DESAQUECIMENTO",
+                 message = "tipoEtapa deve ser: AQUECIMENTO, PRINCIPAL, INTERVALADO, RECUPERACAO ou DESAQUECIMENTO")
         @Size(max = 30)
         String tipoEtapa,
 

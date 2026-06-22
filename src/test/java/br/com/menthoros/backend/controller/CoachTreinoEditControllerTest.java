@@ -64,7 +64,7 @@ class CoachTreinoEditControllerTest {
     }
 
     @Nested
-    @DisplayName("PATCH /api/v1/coach/planos/{planoId}/treinos/{treinoId}")
+    @DisplayName("editarTreino — PATCH /{planoId}/treinos/{treinoId}")
     class EditarTreino {
 
         @Test

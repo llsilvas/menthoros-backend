@@ -37,7 +37,11 @@ public class TssCalculatorService {
     private record ResultadoCalculo(int tssBase, MetodoCalculoTss metodo, boolean calculadoPorEtapas) {}
 
     /**
-     * Calcula TSS total do dia (soma de todos os treinos)
+     * Calcula TSS total do dia (soma de todos os treinos).
+     *
+     * Idempotent: YES — cálculo puro, sem estado.
+     * Side Effects: NONE
+     * Tenant-aware: NO
      */
     public Integer calcularTssDia(List<TreinoRealizado> treinos) {
         return treinos.stream()
@@ -62,6 +66,10 @@ public class TssCalculatorService {
     /**
      * Cálculo de TSS para corrida baseado em FC, Pace ou RPE.
      * Aplica fator de impacto por tipo de treino.
+     *
+     * Idempotent: YES — cálculo puro, sem estado.
+     * Side Effects: NONE
+     * Tenant-aware: NO
      */
     public int calcularTss(TreinoRealizado treino) {
         if (treino == null) {

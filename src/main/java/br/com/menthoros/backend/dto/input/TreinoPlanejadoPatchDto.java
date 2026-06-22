@@ -25,7 +25,8 @@ public record TreinoPlanejadoPatchDto(
         @Schema(description = "Distância em quilômetros", example = "18.0")
         BigDecimal distanciaKm,
 
-        @Schema(description = "Duração do treino em formato ISO-8601", example = "PT90M")
+        @Schema(description = "Duração do treino em formato ISO-8601 (ex: PT90M = 90 min, PT1H30M = 1h30). "
+                             + "Atenção: o campo de saída equivalente é serializado como HH:MM:SS.", example = "PT90M")
         Duration duracaoMin,
 
         @Size(max = 50)

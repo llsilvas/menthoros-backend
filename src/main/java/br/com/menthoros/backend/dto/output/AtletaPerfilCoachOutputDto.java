@@ -82,7 +82,7 @@ public record AtletaPerfilCoachOutputDto(
     public record TreinoPlanejadoResumoDto(
 
             @Schema(description = "ID do treino planejado")
-            String id,
+            UUID id,
 
             @Schema(description = "Dia da semana", example = "SEGUNDA")
             String diaSemana,
