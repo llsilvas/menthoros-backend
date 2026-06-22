@@ -14,16 +14,12 @@ import java.util.List;
 )
 public interface EtapaMapper {
 
-    @Mapping(target = "tipoEtapa",
-             expression = "java(etapa.getTipoEtapa() != null ? br.com.menthoros.backend.enums.TipoEtapa.valueOf(etapa.getTipoEtapa()) : null)")
     @Mapping(target = "distanciaKm",
              expression = "java(etapa.getDistanciaKm() != null ? etapa.getDistanciaKm().doubleValue() : null)")
     EtapaTreinoDto toDto(EtapaTreino etapa);
 
     List<EtapaTreinoDto> toDtoList(List<EtapaTreino> etapas);
 
-    @Mapping(target = "tipoEtapa",
-             expression = "java(dto.tipoEtapa() != null ? dto.tipoEtapa().name() : null)")
     @Mapping(target = "distanciaKm",
              expression = "java(dto.distanciaKm() != null ? java.math.BigDecimal.valueOf(dto.distanciaKm()) : null)")
     @Mapping(target = "treinoPlanejado", ignore = true)

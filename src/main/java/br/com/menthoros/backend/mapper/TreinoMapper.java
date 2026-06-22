@@ -12,7 +12,6 @@ import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
-import br.com.menthoros.backend.enums.TipoEtapa;
 import org.mapstruct.*;
 
 import java.math.BigDecimal;
@@ -130,16 +129,12 @@ public interface TreinoMapper {
             List<EtapaTreino> etapas = tp.getEtapas();
             if (etapas == null) return null;
             return etapas.stream()
-                    .map(e -> {
-                        TipoEtapa tipo = e.getTipoEtapa() != null
-                                ? TipoEtapa.valueOf(e.getTipoEtapa()) : null;
-                        return new EtapaTreinoDto(
-                                e.getOrdem(), tipo, e.getDescricaoEtapa(),
-                                e.getDuracaoMin(),
-                                e.getDistanciaKm() != null ? e.getDistanciaKm().doubleValue() : null,
-                                e.getFcAlvoEtapa(), e.getRepeticoes()
-                        );
-                    })
+                    .map(e -> new EtapaTreinoDto(
+                            e.getOrdem(), e.getTipoEtapa(), e.getDescricaoEtapa(),
+                            e.getDuracaoMin(),
+                            e.getDistanciaKm() != null ? e.getDistanciaKm().doubleValue() : null,
+                            e.getFcAlvoEtapa(), e.getRepeticoes()
+                    ))
                     .collect(Collectors.toList());
         } catch (Exception e) {
             return null;

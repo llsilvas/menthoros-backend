@@ -105,7 +105,7 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
             EtapaTreino etapa = new EtapaTreino();
             etapa.setTreinoPlanejado(treino);
             etapa.setOrdem(dto.ordem() != null ? dto.ordem() : i + 1);
-            etapa.setTipoEtapa(dto.tipoEtapa() != null ? dto.tipoEtapa().name() : null);
+            etapa.setTipoEtapa(dto.tipoEtapa());
             etapa.setDescricaoEtapa(dto.descricaoEtapa());
             etapa.setDuracaoMin(dto.duracaoMin());
             etapa.setDistanciaKm(dto.distanciaKm() != null ? BigDecimal.valueOf(dto.distanciaKm()) : null);
