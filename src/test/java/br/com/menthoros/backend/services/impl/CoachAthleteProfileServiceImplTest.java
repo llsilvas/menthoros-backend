@@ -21,6 +21,7 @@ import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
 import br.com.menthoros.backend.services.PlanoService;
@@ -59,6 +60,7 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private CoachAttentionQueueService coachAttentionQueueService;
     @Mock private SugestaoCoachService sugestaoCoachService;
     @Mock private PlanoService planoService;
+    @Mock private PlanoMetadadosRepository planoMetadadosRepository;
 
     @InjectMocks
     private CoachAthleteProfileServiceImpl service;

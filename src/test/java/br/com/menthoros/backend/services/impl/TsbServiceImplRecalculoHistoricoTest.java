@@ -8,6 +8,7 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
+import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import org.junit.jupiter.api.Test;
@@ -39,6 +40,7 @@ class TsbServiceImplRecalculoHistoricoTest {
 
         TsbServiceImpl service = new TsbServiceImpl(
                 treinoRepo,
+                null,
                 null,
                 null,
                 null,
@@ -90,7 +92,8 @@ class TsbServiceImplRecalculoHistoricoTest {
                 metricasRepoSemHistorico(atletaId),
                 atletaRepo(atleta),
                 null,
-                metricasAlertaServiceStub()
+                metricasAlertaServiceStub(),
+                new ThresholdInferenceService()
         );
 
         service.recalcularHistoricoCompleto(atletaId);

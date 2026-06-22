@@ -1,10 +1,12 @@
 package br.com.menthoros.backend.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import br.com.menthoros.backend.enums.ConfiancaInferencia;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FonteDados;
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Schema(description = "Dados de saída dos metadados de planejamento")
@@ -23,5 +25,20 @@ public record PlanoMetaDadosOutputDto(
         FonteDados fonteDados,
 
         @Schema(description = "Data e hora de criação", example = "2024-01-15T10:30:00")
-        LocalDateTime dataCriacao
+        LocalDateTime dataCriacao,
+
+        @Schema(description = "FC limiar estimado por inferência dos últimos 30 dias (bpm); null se não inferido")
+        Integer fcLimiarEstimado,
+
+        @Schema(description = "Pace limiar estimado formatado como mm:ss/km; null se não inferido", example = "4:45/km")
+        String paceLimiarEstimadoFormatado,
+
+        @Schema(description = "Confiança da inferência de FC: ALTA (≥10 treinos), MEDIA (5-9), BAIXA (3-4)")
+        ConfiancaInferencia confiancaInferenciaFc,
+
+        @Schema(description = "Confiança da inferência de pace: ALTA (≥10 treinos), MEDIA (5-9), BAIXA (3-4)")
+        ConfiancaInferencia confiancaInferenciaPace,
+
+        @Schema(description = "Data em que a inferência foi executada")
+        LocalDate dataInferenciaLimiar
 ) {}

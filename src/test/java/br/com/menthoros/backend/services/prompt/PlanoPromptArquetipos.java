@@ -15,6 +15,7 @@ import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.ContextoTreino;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.impl.MetricasAlertaService;
+import br.com.menthoros.backend.services.prompt.ThresholdConstraintFormatter;
 import br.com.menthoros.backend.skills.eligibility.IntervaladoElegibilidadeSkill;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.DefaultResourceLoader;
@@ -95,7 +96,8 @@ final class PlanoPromptArquetipos {
                 new DisponibilidadePromptFormatter(),
                 new IntervaladoElegibilidadeService(new IntervaladoElegibilidadeSkill()),
                 new PaceHistoricoFormatter(),
-                new PaceZoneCalculator(zona));
+                new PaceZoneCalculator(zona),
+                new ThresholdConstraintFormatter());
     }
 
     // ─────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.converter.FloatListToVectorConverter;
+import br.com.menthoros.backend.enums.ConfiancaInferencia;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FaixaTsb;
 import br.com.menthoros.backend.enums.FasePeriodizacao;
@@ -138,6 +139,25 @@ public class PlanoMetaDados {
     @Enumerated(EnumType.STRING)
     @Column(name = "fase_periodizacao", length = 30)
     private FasePeriodizacao fasePeriodizacao;
+
+    // ===== INFERÊNCIA DE LIMIARES =====
+
+    @Column(name = "fc_limiar_estimado")
+    private Integer fcLimiarEstimado;
+
+    @Column(name = "pace_limiar_estimado", precision = 5, scale = 4)
+    private BigDecimal paceLimiarEstimado;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "confianca_inferencia_fc", length = 10)
+    private ConfiancaInferencia confiancaInferenciaFc;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "confianca_inferencia_pace", length = 10)
+    private ConfiancaInferencia confiancaInferenciaPace;
+
+    @Column(name = "data_inferencia_limiar")
+    private LocalDate dataInferenciaLimiar;
 
     // ===== LIFECYCLE CALLBACKS =====
 

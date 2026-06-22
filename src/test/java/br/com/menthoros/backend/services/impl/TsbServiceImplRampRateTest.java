@@ -42,6 +42,7 @@ class TsbServiceImplRampRateTest {
                 metricasDiariasRepository,
                 null,
                 null,
+                null,
                 null
         );
 
@@ -74,6 +75,7 @@ class TsbServiceImplRampRateTest {
                 null,
                 null,
                 metricasDiariasRepository,
+                null,
                 null,
                 null,
                 null

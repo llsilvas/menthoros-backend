@@ -7,17 +7,23 @@ import br.com.menthoros.backend.dto.output.PmcPontoDto;
 import br.com.menthoros.backend.dto.output.RecordeDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaTreino;
+import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAthleteProfileService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
 import br.com.menthoros.backend.services.PlanoService;
 import br.com.menthoros.backend.services.SugestaoCoachService;
+import br.com.menthoros.backend.services.prompt.ThresholdConstraintFormatter;
+
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -41,6 +47,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final CoachAttentionQueueService coachAttentionQueueService;
     private final SugestaoCoachService sugestaoCoachService;
     private final PlanoService planoService;
+    private final PlanoMetadadosRepository planoMetadadosRepository;
 
     /**
      * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
@@ -95,6 +102,9 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                         .toList());
         log.debug("[perfil] sugestoes: {}ms", ms(t6));
 
+        AtletaPerfilCoachOutputDto.LimiareisInferidosDto limiareisInferidos =
+                resolverLimiareisInferidos(atletaId, atleta);
+
         String nome = atleta.getSobrenome() != null
                 ? atleta.getNome() + " " + atleta.getSobrenome()
                 : atleta.getNome();
@@ -112,7 +122,30 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 sugestoes,
                 recordes,
                 Instant.now(),
-                avisos.isEmpty() ? null : avisos
+                avisos.isEmpty() ? null : avisos,
+                limiareisInferidos
+        );
+    }
+
+    private AtletaPerfilCoachOutputDto.LimiareisInferidosDto resolverLimiareisInferidos(UUID atletaId, Atleta atleta) {
+        PlanoMetaDados metaDados = planoMetadadosRepository.findLatestByAtletaId(atletaId).orElse(null);
+        if (metaDados == null) return null;
+        if (metaDados.getFcLimiarEstimado() == null && metaDados.getPaceLimiarEstimado() == null) return null;
+
+        LocalDate hoje = LocalDate.now();
+        boolean fcDesatualizado = atleta.getFcLimiar() == null || atleta.getDataUltimoTesteFc() == null
+                || ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), hoje) > 90;
+        boolean paceDesatualizado = atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null
+                || ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje) > 90;
+
+        if (!fcDesatualizado && !paceDesatualizado) return null;
+
+        return new AtletaPerfilCoachOutputDto.LimiareisInferidosDto(
+                fcDesatualizado ? metaDados.getFcLimiarEstimado() : null,
+                paceDesatualizado ? ThresholdConstraintFormatter.formatarPace(metaDados.getPaceLimiarEstimado()) : null,
+                fcDesatualizado ? metaDados.getConfiancaInferenciaFc() : null,
+                paceDesatualizado ? metaDados.getConfiancaInferenciaPace() : null,
+                metaDados.getDataInferenciaLimiar()
         );
     }
 

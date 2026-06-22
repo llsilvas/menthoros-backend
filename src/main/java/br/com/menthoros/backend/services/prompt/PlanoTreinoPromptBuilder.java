@@ -50,6 +50,7 @@ public class PlanoTreinoPromptBuilder {
     private final IntervaladoElegibilidadeService intervaladoElegibilidadeService;
     private final PaceHistoricoFormatter paceHistoricoFormatter;
     private final PaceZoneCalculator paceZoneCalculator;
+    private final ThresholdConstraintFormatter thresholdConstraintFormatter;
 
     public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource,
                                     PromptTemplateLoader templateLoader,
@@ -64,7 +65,8 @@ public class PlanoTreinoPromptBuilder {
                                     DisponibilidadePromptFormatter disponibilidadePromptFormatter,
                                     IntervaladoElegibilidadeService intervaladoElegibilidadeService,
                                     PaceHistoricoFormatter paceHistoricoFormatter,
-                                    PaceZoneCalculator paceZoneCalculator) {
+                                    PaceZoneCalculator paceZoneCalculator,
+                                    ThresholdConstraintFormatter thresholdConstraintFormatter) {
         this.templateLoader = templateLoader;
         this.metricasAlertaService = metricasAlertaService;
         this.zonaTreinoService = zonaTreinoService;
@@ -78,6 +80,7 @@ public class PlanoTreinoPromptBuilder {
         this.intervaladoElegibilidadeService = intervaladoElegibilidadeService;
         this.paceHistoricoFormatter = paceHistoricoFormatter;
         this.paceZoneCalculator = paceZoneCalculator;
+        this.thresholdConstraintFormatter = thresholdConstraintFormatter;
         try {
             this.promptTemplate = new String(promptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -349,6 +352,8 @@ public class PlanoTreinoPromptBuilder {
         paceHistoricoFormatter.tetoConstraint(tetoPorTipo).ifPresent(regras::add);
         disponibilidadePromptFormatter.diasPermitidosConstraint(diasEfetivos).ifPresent(regras::add);
         regras.add(disponibilidadePromptFormatter.maxConsecutivosConstraint(metaDados, atleta));
+        thresholdConstraintFormatter.constraintFc(metaDados, atleta).ifPresent(regras::add);
+        thresholdConstraintFormatter.constraintPace(metaDados, atleta).ifPresent(regras::add);
         return regras;
     }
 
