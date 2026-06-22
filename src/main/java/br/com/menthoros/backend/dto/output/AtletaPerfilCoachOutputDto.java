@@ -104,7 +104,10 @@ public record AtletaPerfilCoachOutputDto(
             String zonaAlvo,
 
             @Schema(description = "Percepção de esforço esperada (1–10)", example = "6")
-            Integer percepcaoEsforcoEsperada
+            Integer percepcaoEsforcoEsperada,
+
+            @Schema(description = "Etapas do treino (aquecimento, esforço, recuperação, desaquecimento)")
+            List<EtapaTreinoDto> etapas
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
