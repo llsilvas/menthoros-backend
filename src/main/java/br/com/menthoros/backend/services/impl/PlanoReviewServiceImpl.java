@@ -136,6 +136,9 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
 
     private void inicializarAssociacoes(PlanoSemanal plano) {
         Hibernate.initialize(plano.getTreinosPlanejados());
+        if (plano.getTreinosPlanejados() != null) {
+            plano.getTreinosPlanejados().forEach(t -> Hibernate.initialize(t.getEtapas()));
+        }
     }
 
     private void validarTransicao(PlanoSemanal plano, PlanoReviewStatus destino) {
