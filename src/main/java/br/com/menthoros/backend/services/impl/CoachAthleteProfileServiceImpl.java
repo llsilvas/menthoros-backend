@@ -121,14 +121,19 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         PlanoSemanal plano = planoOpt.get();
         List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos;
 
-        if (plano.getReviewStatus() == PlanoReviewStatus.APROVADO) {
+        if (plano.getReviewStatus() == PlanoReviewStatus.APROVADO
+                || plano.getReviewStatus() == PlanoReviewStatus.AGUARDANDO_REVISAO) {
             treinos = plano.getTreinosPlanejados().stream()
                     .sorted(Comparator.comparing(TreinoPlanejado::getDataTreino))
                     .map(tp -> new AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto(
+                            tp.getId() != null ? tp.getId().toString() : null,
                             tp.getDiaSemana().name(),
                             tp.getTipoTreino().name(),
                             tp.getDistanciaKm() != null ? tp.getDistanciaKm().doubleValue() : 0.0,
-                            tp.getStatusTreino().name()))
+                            tp.getStatusTreino().name(),
+                            tp.getDuracaoMin() != null ? tp.getDuracaoMin().toString() : null,
+                            tp.getZonaAlvo(),
+                            tp.getPercepcaoEsforcoEsperada()))
                     .toList();
         } else {
             treinos = List.of();

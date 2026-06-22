@@ -189,7 +189,7 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         @Test
-        @DisplayName("plano AGUARDANDO_REVISAO — treinos retornam lista vazia")
+        @DisplayName("plano AGUARDANDO_REVISAO — treinos são retornados para permitir edição pelo coach")
         void planoAguardandoRevisao() {
             stubAtleta();
             when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
@@ -198,7 +198,8 @@ class CoachAthleteProfileServiceImplTest {
             when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
 
-            PlanoSemanal plano = planoSemanalBuilder(PlanoReviewStatus.AGUARDANDO_REVISAO, List.of());
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            plano.setReviewStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
             when(planoService.findPlanoVigenteRelevante(atletaId, tenantId))
                     .thenReturn(Optional.of(plano));
 
@@ -206,7 +207,8 @@ class CoachAthleteProfileServiceImplTest {
 
             assertThat(planoVigente).isNotNull();
             assertThat(planoVigente.reviewStatus()).isEqualTo(PlanoReviewStatus.AGUARDANDO_REVISAO);
-            assertThat(planoVigente.treinos()).isEmpty();
+            assertThat(planoVigente.treinos()).hasSize(2);
+            assertThat(planoVigente.treinos().get(0).diaSemana()).isEqualTo("SEGUNDA");
         }
 
         @Test
