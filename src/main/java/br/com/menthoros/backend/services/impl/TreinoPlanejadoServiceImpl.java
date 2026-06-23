@@ -19,8 +19,7 @@ import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
-import br.com.menthoros.backend.services.TreinoPlanejadoAddService;
-import br.com.menthoros.backend.services.TreinoPlanejadoEditService;
+import br.com.menthoros.backend.services.TreinoPlanejadoService;
 import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import br.com.menthoros.backend.util.Utils;
 import lombok.RequiredArgsConstructor;
@@ -38,7 +37,7 @@ import java.util.UUID;
 @Slf4j
 @RequiredArgsConstructor
 @Service
-public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoAddService, TreinoPlanejadoEditService {
+public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
 
     private static final int LIMITE_TREINOS_POR_SEMANA = 14;
 
