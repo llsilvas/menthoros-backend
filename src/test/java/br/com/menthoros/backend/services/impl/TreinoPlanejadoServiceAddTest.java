@@ -45,7 +45,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class TreinoPlanejadoAddServiceImplTest {
+class TreinoPlanejadoServiceAddTest {
 
     @Mock private PlanoSemanalRepository planoSemanalRepository;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
@@ -53,7 +53,7 @@ class TreinoPlanejadoAddServiceImplTest {
     @Mock private TreinoMapper treinoMapper;
     @Mock private EtapaMapper etapaMapper;
 
-    @InjectMocks private TreinoPlanejadoAddServiceImpl service;
+    @InjectMocks private TreinoPlanejadoServiceImpl service;
 
     private UUID tenantId;
     private UUID planoId;
