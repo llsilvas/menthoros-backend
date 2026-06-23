@@ -68,9 +68,23 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 
 ## 📊 DADOS FISIOLÓGICOS E ZONAS DE TREINO
 
-**ATENÇÃO:** Atleta sem dados fisiológicos cadastrados!
-- Usar valores estimados: FC Limiar ~85%% FCmáx, Pace conservador
-- Recomendar teste de limiar urgente
+**Frequência Cardíaca (estimada por fórmula etária — sem teste formal):**
+- FC Máxima: 180 bpm (estimada: 220 - idade)
+- FC Repouso: 60 bpm
+- FC Limiar: 153 bpm (estimativa: 85% FCmáx)
+
+**Pace/Velocidade:** sem dados — não prescrever pace até teste formal.
+
+**⚠️ ATENÇÃO:** Use EXATAMENTE as zonas de FC listadas abaixo.
+NÃO invente outros valores de BPM. Recomende teste de limiar urgente ao atleta.
+
+**Zonas de Treino (estimadas — USE ESTES VALORES DE BPM):**
+- Z1 (Recuperação): 115-130 bpm
+- Z2 (Aeróbico): 130-136 bpm
+- Z3 (Tempo): 136-144 bpm
+- Z4 (Limiar): 144-153 bpm
+- Z5 (VO2max): 153-162 bpm
+- Z6 (Sprint): 153-162 bpm
 
 
 ## ⚠️ FALLBACKS PARA DADOS INCOMPLETOS

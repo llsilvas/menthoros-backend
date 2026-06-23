@@ -431,15 +431,35 @@ public class PlanoTreinoPromptBuilder {
     }
 
     private String formatarDadosFisiologicos(Atleta atleta) {
-        if (atleta.getFcLimiar() == null && atleta.getPaceLimiar() == null) {
-            return """
-                    **ATENÇÃO:** Atleta sem dados fisiológicos cadastrados!
-                    - Usar valores estimados: FC Limiar ~85%% FCmáx, Pace conservador
-                    - Recomendar teste de limiar urgente
-                    """;
-        }
-
         List<ZonaCompleta> zonas = zonaTreinoService.calcularZonas(atleta);
+
+        if (atleta.getFcLimiar() == null && atleta.getPaceLimiar() == null) {
+            // Sem dados testados: calcular zonas pela fórmula etária (220 - idade → 85% FCmáx)
+            // e fornecer ao LLM os valores numéricos exatos para evitar alucinação de BPMs.
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("""
+                            **Frequência Cardíaca (estimada por fórmula etária — sem teste formal):**
+                            - FC Máxima: %d bpm (estimada: 220 - idade)
+                            - FC Repouso: %d bpm
+                            - FC Limiar: %d bpm (estimativa: 85%% FCmáx)
+
+                            **Pace/Velocidade:** sem dados — não prescrever pace até teste formal.
+
+                            **⚠️ ATENÇÃO:** Use EXATAMENTE as zonas de FC listadas abaixo.
+                            NÃO invente outros valores de BPM. Recomende teste de limiar urgente ao atleta.
+
+                            **Zonas de Treino (estimadas — USE ESTES VALORES DE BPM):**
+                            """,
+                    atleta.getFcMaximaCalculada(),
+                    atleta.getFcRepouso() != null ? atleta.getFcRepouso() : 60,
+                    atleta.getFcLimiarCalculada()
+            ));
+            for (ZonaCompleta zona : zonas) {
+                sb.append(String.format("- Z%d (%s): %d-%d bpm\n",
+                        zona.numero(), zona.nome(), zona.fc().fcMin(), zona.fc().fcMax()));
+            }
+            return sb.toString();
+        }
 
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("""
@@ -448,13 +468,6 @@ public class PlanoTreinoPromptBuilder {
                         - FC Repouso: %d bpm
                         - FC Limiar: %d bpm (%.0f%%%% FCmáx)
                         - Última atualização: %s
-                        
-                        **Pace/Velocidade:**
-                        - Pace Limiar: %.2f min/km
-                        - Velocidade Limiar: %.2f km/h
-                        - Última atualização: %s
-                        
-                        **Zonas de Treino Calculadas:**
                         """,
                 atleta.getFcMaximaCalculada(),
                 atleta.getFcMaxima() != null ? "" : "(estimada)",
@@ -462,13 +475,29 @@ public class PlanoTreinoPromptBuilder {
                 atleta.getFcLimiarCalculada(),
                 (atleta.getFcLimiarCalculada() * 100.0 / atleta.getFcMaximaCalculada()),
                 atleta.getDataUltimoTesteFc() != null ?
-                        atleta.getDataUltimoTesteFc().toString() : "Nunca testado",
-                atleta.getPaceLimiar(),
-                atleta.getVelocidadeLimiar(),
-                atleta.getDataUltimoTestePace() != null ?
-                        atleta.getDataUltimoTestePace().toString() : "Nunca testado"
+                        atleta.getDataUltimoTesteFc().toString() : "Nunca testado"
         ));
 
+        BigDecimal paceLimiar = atleta.getPaceLimiar();
+        if (paceLimiar != null) {
+            sb.append(String.format("""
+
+                            **Pace/Velocidade:**
+                            - Pace Limiar: %.2f min/km
+                            - Velocidade Limiar: %s
+                            - Última atualização: %s
+                            """,
+                    paceLimiar,
+                    atleta.getVelocidadeLimiar() != null
+                            ? String.format("%.2f km/h", atleta.getVelocidadeLimiar()) : "não calculada",
+                    atleta.getDataUltimoTestePace() != null ?
+                            atleta.getDataUltimoTestePace().toString() : "Nunca testado"
+            ));
+        } else {
+            sb.append("\n**Pace/Velocidade:** não cadastrado — sem dados para prescrição de pace.\n");
+        }
+
+        sb.append("\n**Zonas de Treino Calculadas:**\n");
         for (ZonaCompleta zona : zonas) {
             sb.append(String.format("- Z%d (%s): %s-%s min/km | %d-%d bpm\n",
                     zona.numero(),
