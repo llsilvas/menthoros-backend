@@ -274,19 +274,22 @@ public class TsbServiceImpl implements TsbService {
     private void atualizarLimiareInferidos(UUID atletaId, Atleta atleta,
                                             PlanoMetaDados metaDados, LocalDate hoje) {
         boolean fcStale = atleta.getFcLimiar() == null || atleta.getDataUltimoTesteFc() == null
-                || ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), hoje) > 90;
+                || ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), hoje)
+                        > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
         boolean paceStale = atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null
-                || ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje) > 90;
+                || ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje)
+                        > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
 
         if (!fcStale && !paceStale) return;
 
+        UUID tenantId = atleta.getAssessoria().getId();
         List<TreinoRealizado> treinos30d = treinoRealizadoRepository
-                .findByAtletaIdAndDataTreinoBetween(atletaId, hoje.minusDays(30), hoje);
+                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, hoje.minusDays(30), hoje);
 
         if (fcStale) {
             thresholdInferenceService.inferirFcLimiar(treinos30d, hoje)
                     .ifPresent(est -> {
-                        metaDados.setFcLimiarEstimado((Integer) est.valor());
+                        metaDados.setFcLimiarEstimado(est.valor());
                         metaDados.setConfiancaInferenciaFc(est.confianca());
                         metaDados.setDataInferenciaLimiar(hoje);
                     });
@@ -294,7 +297,7 @@ public class TsbServiceImpl implements TsbService {
         if (paceStale) {
             thresholdInferenceService.inferirPaceLimiar(treinos30d, hoje)
                     .ifPresent(est -> {
-                        metaDados.setPaceLimiarEstimado((BigDecimal) est.valor());
+                        metaDados.setPaceLimiarEstimado(est.valor());
                         metaDados.setConfiancaInferenciaPace(est.confianca());
                         metaDados.setDataInferenciaLimiar(hoje);
                     });

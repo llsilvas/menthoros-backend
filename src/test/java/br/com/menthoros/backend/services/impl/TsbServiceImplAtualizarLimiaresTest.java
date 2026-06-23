@@ -73,10 +73,10 @@ class TsbServiceImplAtualizarLimiaresTest {
             PlanoMetaDados metaDados = metaDadosBase(atleta);
 
             List<TreinoRealizado> treinos = treinos10ComFcMedia(163);
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(any(), any(), any()))
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(treinos);
             when(thresholdInferenceService.inferirFcLimiar(treinos, HOJE))
-                    .thenReturn(Optional.of(new ThresholdEstimate(163, 10, ConfiancaInferencia.ALTA)));
+                    .thenReturn(Optional.of(new ThresholdEstimate<>(163, 10, ConfiancaInferencia.ALTA)));
             when(thresholdInferenceService.inferirPaceLimiar(treinos, HOJE))
                     .thenReturn(Optional.empty());
 
@@ -113,7 +113,7 @@ class TsbServiceImplAtualizarLimiaresTest {
             atleta.setDataUltimoTestePace(null);
             PlanoMetaDados metaDados = metaDadosBase(atleta);
 
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(any(), any(), any()))
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(List.of());
             when(thresholdInferenceService.inferirFcLimiar(List.of(), HOJE))
                     .thenReturn(Optional.empty());
@@ -138,12 +138,12 @@ class TsbServiceImplAtualizarLimiaresTest {
             PlanoMetaDados metaDados = metaDadosBase(atleta);
 
             List<TreinoRealizado> treinos = treinos10ComFcMedia(163);
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(any(), any(), any()))
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(treinos);
             when(thresholdInferenceService.inferirFcLimiar(treinos, HOJE))
-                    .thenReturn(Optional.of(new ThresholdEstimate(163, 10, ConfiancaInferencia.ALTA)));
+                    .thenReturn(Optional.of(new ThresholdEstimate<>(163, 10, ConfiancaInferencia.ALTA)));
             when(thresholdInferenceService.inferirPaceLimiar(treinos, HOJE))
-                    .thenReturn(Optional.of(new ThresholdEstimate(new BigDecimal("4.7500"), 8, ConfiancaInferencia.MEDIA)));
+                    .thenReturn(Optional.of(new ThresholdEstimate<>(new BigDecimal("4.7500"), 8, ConfiancaInferencia.MEDIA)));
 
             invocarAtualizarLimiares(atleta, metaDados, HOJE);
 
@@ -171,10 +171,10 @@ class TsbServiceImplAtualizarLimiaresTest {
 
             List<TreinoRealizado> treinos = treinos10ComFcMedia(150);
             BigDecimal paceEstimado = new BigDecimal("4.7500");
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(any(), any(), any()))
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(treinos);
             when(thresholdInferenceService.inferirPaceLimiar(treinos, HOJE))
-                    .thenReturn(Optional.of(new ThresholdEstimate(paceEstimado, 6, ConfiancaInferencia.MEDIA)));
+                    .thenReturn(Optional.of(new ThresholdEstimate<>(paceEstimado, 6, ConfiancaInferencia.MEDIA)));
 
             invocarAtualizarLimiares(atleta, metaDados, HOJE);
 

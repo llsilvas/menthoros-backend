@@ -146,6 +146,9 @@ class TsbServiceImplDiasConsecutivosTest {
                                 })
                                 .toList();
                     }
+                    if ("findByAtletaIdAndTenantIdAndDataTreinoBetween".equals(method.getName())) {
+                        return Collections.emptyList();
+                    }
                     if ("toString".equals(method.getName())) {
                         return "TreinoRealizadoRepositoryProxy";
                     }

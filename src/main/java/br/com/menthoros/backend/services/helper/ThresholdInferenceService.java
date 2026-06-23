@@ -20,13 +20,20 @@ public class ThresholdInferenceService {
     static final long MIN_DURACAO_MIN = 20;
     private static final double FATOR_QUINTIL = 0.20;
 
+    /** Dias sem teste oficial para considerar o limiar desatualizado. */
+    public static final long DIAS_LIMIAR_DESATUALIZACAO = 90;
+
     private static final Set<TipoTreino> TIPOS_CONTINUOS =
             Set.of(TipoTreino.CONTINUO, TipoTreino.LONGO, TipoTreino.TEMPO_RUN, TipoTreino.FARTLEK);
 
     /**
-     * Idempotent: YES · Side Effects: NONE · Tenant-aware: YES (lista já filtrada pelo caller)
+     * Infere FC limiar a partir da mediana do quintil superior de fcMedia
+     * dos treinos fornecidos na janela de 30 dias.
+     *
+     * Idempotent: YES · Side Effects: NONE
+     * Tenant-aware: NO — o caller é responsável por passar apenas treinos do tenant correto.
      */
-    public Optional<ThresholdEstimate> inferirFcLimiar(List<TreinoRealizado> treinos, LocalDate hoje) {
+    public Optional<ThresholdEstimate<Integer>> inferirFcLimiar(List<TreinoRealizado> treinos, LocalDate hoje) {
         if (treinos == null || treinos.isEmpty()) return Optional.empty();
 
         List<Integer> fcValores = treinos.stream()
@@ -43,13 +50,17 @@ public class ThresholdInferenceService {
         List<Integer> quintil = fcValores.subList(0, topN);
         int mediana = mediana(quintil);
 
-        return Optional.of(new ThresholdEstimate(mediana, fcValores.size(), confianca(fcValores.size())));
+        return Optional.of(new ThresholdEstimate<>(mediana, fcValores.size(), confianca(fcValores.size())));
     }
 
     /**
-     * Idempotent: YES · Side Effects: NONE · Tenant-aware: YES (lista já filtrada pelo caller)
+     * Infere pace limiar a partir da mediana do quintil mais rápido de paceMedia
+     * em treinos contínuos dos últimos 30 dias.
+     *
+     * Idempotent: YES · Side Effects: NONE
+     * Tenant-aware: NO — o caller é responsável por passar apenas treinos do tenant correto.
      */
-    public Optional<ThresholdEstimate> inferirPaceLimiar(List<TreinoRealizado> treinos, LocalDate hoje) {
+    public Optional<ThresholdEstimate<BigDecimal>> inferirPaceLimiar(List<TreinoRealizado> treinos, LocalDate hoje) {
         if (treinos == null || treinos.isEmpty()) return Optional.empty();
 
         List<Long> paceSegundos = treinos.stream()
@@ -70,11 +81,21 @@ public class ThresholdInferenceService {
         BigDecimal paceLimiar = BigDecimal.valueOf(medianaSegundos)
                 .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
 
-        return Optional.of(new ThresholdEstimate(paceLimiar, paceSegundos.size(), confianca(paceSegundos.size())));
+        return Optional.of(new ThresholdEstimate<>(paceLimiar, paceSegundos.size(), confianca(paceSegundos.size())));
     }
 
+    /** Converte pace decimal (minutos) para formato "mm:ss/km". Ex: 4.7500 → "4:45/km". */
+    public static String formatarPace(BigDecimal paceDecimal) {
+        if (paceDecimal == null) return "N/A";
+        int totalSegundos = paceDecimal.multiply(BigDecimal.valueOf(60)).intValue();
+        int minutos = totalSegundos / 60;
+        int segundos = totalSegundos % 60;
+        return String.format("%d:%02d/km", minutos, segundos);
+    }
+
+    // Inclui o dia exato do limite (30 dias atrás), compatível com "últimos 30 dias"
     private boolean dentroJanela(TreinoRealizado t, LocalDate hoje) {
-        return t.getDataTreino() != null && t.getDataTreino().isAfter(hoje.minusDays(30));
+        return t.getDataTreino() != null && !t.getDataTreino().isBefore(hoje.minusDays(30));
     }
 
     private ConfiancaInferencia confianca(int amostras) {

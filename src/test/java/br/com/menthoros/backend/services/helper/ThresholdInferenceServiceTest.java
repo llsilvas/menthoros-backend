@@ -9,6 +9,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -53,7 +54,7 @@ class ThresholdInferenceServiceTest {
         @DisplayName("retorna BAIXA para 3 ou 4 amostras")
         void retornaBAIXAParaTresOuQuatroAmostras() {
             List<TreinoRealizado> treinos = treinosComFc(List.of(160, 158, 155), hoje);
-            Optional<ThresholdEstimate> resultado = service.inferirFcLimiar(treinos, hoje);
+            Optional<ThresholdEstimate<Integer>> resultado = service.inferirFcLimiar(treinos, hoje);
             assertThat(resultado).isPresent();
             assertThat(resultado.get().confianca()).isEqualTo(ConfiancaInferencia.BAIXA);
         }
@@ -62,7 +63,7 @@ class ThresholdInferenceServiceTest {
         @DisplayName("retorna MEDIA para 5 a 9 amostras")
         void retornaMEDIAPara5A9Amostras() {
             List<TreinoRealizado> treinos = treinosComFc(List.of(168, 165, 162, 160, 158), hoje);
-            Optional<ThresholdEstimate> resultado = service.inferirFcLimiar(treinos, hoje);
+            Optional<ThresholdEstimate<Integer>> resultado = service.inferirFcLimiar(treinos, hoje);
             assertThat(resultado).isPresent();
             assertThat(resultado.get().confianca()).isEqualTo(ConfiancaInferencia.MEDIA);
         }
@@ -72,7 +73,7 @@ class ThresholdInferenceServiceTest {
         void retornaALTAPara10OuMaisAmostras() {
             List<TreinoRealizado> treinos = treinosComFc(
                     List.of(170, 168, 165, 163, 162, 160, 158, 155, 153, 150), hoje);
-            Optional<ThresholdEstimate> resultado = service.inferirFcLimiar(treinos, hoje);
+            Optional<ThresholdEstimate<Integer>> resultado = service.inferirFcLimiar(treinos, hoje);
             assertThat(resultado).isPresent();
             assertThat(resultado.get().confianca()).isEqualTo(ConfiancaInferencia.ALTA);
         }
@@ -85,7 +86,7 @@ class ThresholdInferenceServiceTest {
             // mediana conservadora (n par → n/2-1): [170, 168].get(0) = 170
             List<TreinoRealizado> treinos = treinosComFc(
                     List.of(170, 168, 165, 163, 162, 160, 158, 155, 153, 150), hoje);
-            Optional<ThresholdEstimate> resultado = service.inferirFcLimiar(treinos, hoje);
+            Optional<ThresholdEstimate<Integer>> resultado = service.inferirFcLimiar(treinos, hoje);
             assertThat(resultado).isPresent();
             assertThat(resultado.get().valor().intValue()).isEqualTo(170);
             assertThat(resultado.get().amostras()).isEqualTo(10);
@@ -98,7 +99,7 @@ class ThresholdInferenceServiceTest {
             treinos.add(treinoCom(null, hoje.minusDays(5)));
             treinos.add(treinoCom(null, hoje.minusDays(8)));
             treinos.addAll(treinosComFc(List.of(160, 158, 155), hoje));
-            Optional<ThresholdEstimate> resultado = service.inferirFcLimiar(treinos, hoje);
+            Optional<ThresholdEstimate<Integer>> resultado = service.inferirFcLimiar(treinos, hoje);
             assertThat(resultado).isPresent();
             assertThat(resultado.get().amostras()).isEqualTo(3);
         }
@@ -111,7 +112,7 @@ class ThresholdInferenceServiceTest {
             List<TreinoRealizado> treinos = new ArrayList<>();
             treinos.add(curto);
             treinos.addAll(treinosComFc(List.of(160, 158, 155), hoje));
-            Optional<ThresholdEstimate> resultado = service.inferirFcLimiar(treinos, hoje);
+            Optional<ThresholdEstimate<Integer>> resultado = service.inferirFcLimiar(treinos, hoje);
             assertThat(resultado).isPresent();
             assertThat(resultado.get().amostras()).isEqualTo(3);
         }
@@ -123,7 +124,7 @@ class ThresholdInferenceServiceTest {
             List<TreinoRealizado> treinos = new ArrayList<>();
             treinos.add(antigo);
             treinos.addAll(treinosComFc(List.of(160, 158, 155), hoje));
-            Optional<ThresholdEstimate> resultado = service.inferirFcLimiar(treinos, hoje);
+            Optional<ThresholdEstimate<Integer>> resultado = service.inferirFcLimiar(treinos, hoje);
             assertThat(resultado).isPresent();
             assertThat(resultado.get().amostras()).isEqualTo(3);
         }
@@ -157,7 +158,7 @@ class ThresholdInferenceServiceTest {
             intervalado.setTipoTreino(TipoTreino.INTERVALADO);
             treinos.add(intervalado);
             treinos.addAll(treinosComPace(List.of(285L, 295L, 305L), hoje));
-            Optional<ThresholdEstimate> resultado = service.inferirPaceLimiar(treinos, hoje);
+            Optional<ThresholdEstimate<BigDecimal>> resultado = service.inferirPaceLimiar(treinos, hoje);
             assertThat(resultado).isPresent();
             assertThat(resultado.get().amostras()).isEqualTo(3);
         }
@@ -169,7 +170,7 @@ class ThresholdInferenceServiceTest {
             // top 20% = ceil(5 * 0.20) = 1 elemento: [270]
             // mediana de 1 elemento = 270 s/km
             List<TreinoRealizado> treinos = treinosComPace(List.of(270L, 280L, 285L, 295L, 305L), hoje);
-            Optional<ThresholdEstimate> resultado = service.inferirPaceLimiar(treinos, hoje);
+            Optional<ThresholdEstimate<BigDecimal>> resultado = service.inferirPaceLimiar(treinos, hoje);
             assertThat(resultado).isPresent();
             assertThat(resultado.get().valor().doubleValue()).isEqualTo(4.5); // 270/60 = 4.5
         }
@@ -178,7 +179,7 @@ class ThresholdInferenceServiceTest {
         @DisplayName("converte segundos para decimal de minutos (285s → 4.7500)")
         void converteSegundosParaDecimalMinutos() {
             List<TreinoRealizado> treinos = treinosComPace(List.of(285L, 290L, 295L), hoje);
-            Optional<ThresholdEstimate> resultado = service.inferirPaceLimiar(treinos, hoje);
+            Optional<ThresholdEstimate<BigDecimal>> resultado = service.inferirPaceLimiar(treinos, hoje);
             assertThat(resultado).isPresent();
             // top 20% de 3 = ceil(0.6) = 1 → [285] → mediana = 285 → 285/60 = 4.75
             assertThat(resultado.get().valor().toString()).isEqualTo("4.7500");

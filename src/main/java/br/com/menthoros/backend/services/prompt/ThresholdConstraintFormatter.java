@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.prompt;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.enums.ConfiancaInferencia;
+import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.services.prompt.constraint.Constraint;
 import org.springframework.stereotype.Component;
 
@@ -13,8 +14,6 @@ import java.util.Optional;
 
 @Component
 public class ThresholdConstraintFormatter {
-
-    private static final long DIAS_DESATUALIZACAO = 90;
 
     /**
      * Idempotent: YES · Side Effects: NONE · Tenant-aware: NO
@@ -64,7 +63,7 @@ public class ThresholdConstraintFormatter {
     private String formatarDescricaoPace(BigDecimal pace, ConfiancaInferencia confianca, LocalDate dataInferencia) {
         String dataStr = dataInferencia != null ? dataInferencia.toString() : "data desconhecida";
         String nivel = confianca != null ? confianca.name() : "DESCONHECIDA";
-        String paceFormatado = formatarPace(pace);
+        String paceFormatado = ThresholdInferenceService.formatarPace(pace);
         StringBuilder sb = new StringBuilder();
         sb.append(String.format(
                 "[LIMIAR_PACE_ESTIMADO] Pace limiar inferido: %s (inferido em %s) | Confiança: %s",
@@ -77,23 +76,17 @@ public class ThresholdConstraintFormatter {
         return sb.toString();
     }
 
-    public static String formatarPace(BigDecimal paceDecimal) {
-        if (paceDecimal == null) return "N/A";
-        int totalSegundos = paceDecimal.multiply(BigDecimal.valueOf(60)).intValue();
-        int minutos = totalSegundos / 60;
-        int segundos = totalSegundos % 60;
-        return String.format("%d:%02d/km", minutos, segundos);
-    }
-
     private boolean fcLimiarDesatualizado(Atleta atleta) {
         if (atleta == null) return false;
         if (atleta.getFcLimiar() == null || atleta.getDataUltimoTesteFc() == null) return true;
-        return ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), LocalDate.now()) > DIAS_DESATUALIZACAO;
+        return ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), LocalDate.now())
+                > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
     }
 
     private boolean paceLimiarDesatualizado(Atleta atleta) {
         if (atleta == null) return false;
         if (atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null) return true;
-        return ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), LocalDate.now()) > DIAS_DESATUALIZACAO;
+        return ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), LocalDate.now())
+                > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
     }
 }

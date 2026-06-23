@@ -154,6 +154,7 @@ class TsbServiceImplRecalculoSemanticaTest {
                     if ("findByAtletaIdOrderByDataTreinoDesc".equals(name)) return Collections.emptyList();
                     if ("findByAtletaIdAndDataTreino".equals(name)) return Collections.emptyList();
                     if ("findByAtletaIdAndDataTreinoBetween".equals(name)) return Collections.emptyList();
+                    if ("findByAtletaIdAndTenantIdAndDataTreinoBetween".equals(name)) return Collections.emptyList();
                     if ("toString".equals(name)) return "TreinoRealizadoRepositoryStub";
                     throw new UnsupportedOperationException("Método não suportado: " + name);
                 }
@@ -202,6 +203,7 @@ class TsbServiceImplRecalculoSemanticaTest {
                     if ("findByAtletaIdOrderByDataTreinoDesc".equals(name)) return List.of(ultimoTreinoEntity);
                     if ("findByAtletaIdAndDataTreino".equals(name)) return Collections.emptyList();
                     if ("findByAtletaIdAndDataTreinoBetween".equals(name)) return Collections.emptyList();
+                    if ("findByAtletaIdAndTenantIdAndDataTreinoBetween".equals(name)) return Collections.emptyList();
                     if ("toString".equals(name)) return "TreinoRealizadoRepositoryStub";
                     throw new UnsupportedOperationException("Método não suportado: " + name);
                 }

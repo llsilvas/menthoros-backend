@@ -20,7 +20,7 @@ import br.com.menthoros.backend.services.CoachAthleteProfileService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
 import br.com.menthoros.backend.services.PlanoService;
 import br.com.menthoros.backend.services.SugestaoCoachService;
-import br.com.menthoros.backend.services.prompt.ThresholdConstraintFormatter;
+import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -128,21 +128,25 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     }
 
     private AtletaPerfilCoachOutputDto.LimiareisInferidosDto resolverLimiareisInferidos(UUID atletaId, Atleta atleta) {
-        PlanoMetaDados metaDados = planoMetadadosRepository.findLatestByAtletaId(atletaId).orElse(null);
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        PlanoMetaDados metaDados = planoMetadadosRepository
+                .findLatestByAtletaIdAndTenantId(atletaId, tenantId).orElse(null);
         if (metaDados == null) return null;
         if (metaDados.getFcLimiarEstimado() == null && metaDados.getPaceLimiarEstimado() == null) return null;
 
         LocalDate hoje = LocalDate.now();
         boolean fcDesatualizado = atleta.getFcLimiar() == null || atleta.getDataUltimoTesteFc() == null
-                || ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), hoje) > 90;
+                || ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), hoje)
+                        > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
         boolean paceDesatualizado = atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null
-                || ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje) > 90;
+                || ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje)
+                        > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
 
         if (!fcDesatualizado && !paceDesatualizado) return null;
 
         return new AtletaPerfilCoachOutputDto.LimiareisInferidosDto(
                 fcDesatualizado ? metaDados.getFcLimiarEstimado() : null,
-                paceDesatualizado ? ThresholdConstraintFormatter.formatarPace(metaDados.getPaceLimiarEstimado()) : null,
+                paceDesatualizado ? ThresholdInferenceService.formatarPace(metaDados.getPaceLimiarEstimado()) : null,
                 fcDesatualizado ? metaDados.getConfiancaInferenciaFc() : null,
                 paceDesatualizado ? metaDados.getConfiancaInferenciaPace() : null,
                 metaDados.getDataInferenciaLimiar()

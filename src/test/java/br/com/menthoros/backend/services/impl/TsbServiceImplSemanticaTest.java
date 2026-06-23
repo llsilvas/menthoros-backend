@@ -281,6 +281,9 @@ class TsbServiceImplSemanticaTest {
                     if ("findByAtletaIdAndDataTreinoBetween".equals(method.getName())) {
                         return Collections.emptyList();
                     }
+                    if ("findByAtletaIdAndTenantIdAndDataTreinoBetween".equals(method.getName())) {
+                        return Collections.emptyList();
+                    }
                     if ("toString".equals(method.getName())) return "TreinoRealizadoRepositoryStub";
                     throw new UnsupportedOperationException("Método não suportado: " + method.getName());
                 }
