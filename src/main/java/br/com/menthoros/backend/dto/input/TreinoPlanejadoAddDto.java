@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -50,5 +51,6 @@ public record TreinoPlanejadoAddDto(
 
         @Schema(description = "Etapas do treino (opcional)")
         @Valid
+        @Size(max = 30, message = "etapas não pode ter mais de 30 itens")
         List<EtapaInputDto> etapas
 ) {}

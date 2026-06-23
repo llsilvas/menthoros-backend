@@ -2,6 +2,7 @@ package br.com.menthoros.backend.dto.input;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
@@ -41,9 +42,11 @@ public record EtapaInputDto(
 
         @Schema(description = "Número de repetições do bloco — somente quando tipoEtapa=BLOCO", example = "4")
         @Positive
+        @Max(value = 20, message = "blocoRepeticoes não pode exceder 20")
         Integer blocoRepeticoes,
 
         @Schema(description = "Etapas internas do bloco — somente quando tipoEtapa=BLOCO")
         @Valid
+        @Size(max = 10, message = "subEtapas não pode ter mais de 10 itens")
         List<EtapaInputDto> subEtapas
 ) {}

@@ -248,7 +248,7 @@ class TreinoPlanejadoAddServiceImplTest {
         void limiteQuatorzeTreinosLancaRuleViolation() {
             PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
             stubPlanoFound(plano);
-            when(treinoPlanejadoRepository.countByPlanoSemanalId(plano.getId())).thenReturn(14L);
+            when(treinoPlanejadoRepository.countByPlanoSemanalIdAndTenantId(plano.getId(), tenantId)).thenReturn(14L);
 
             assertThatThrownBy(() -> service.adicionarTreino(planoId, dtoSimples(DATA_SEXTA)))
                     .isInstanceOf(DomainRuleViolationException.class)

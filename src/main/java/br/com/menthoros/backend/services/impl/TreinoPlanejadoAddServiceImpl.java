@@ -61,7 +61,7 @@ public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService 
         PlanoSemanal plano = planoSemanalRepository.findByIdWithDependenciesAndTenant(planoId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Plano não encontrado: " + planoId));
 
-        validarEstadoDoPlano(plano, dto);
+        validarEstadoDoPlano(plano, dto, tenantId);
 
         TipoTreino tipoTreino = converterTipoTreino(dto.tipoTreino());
         DiaSemana diaSemana = Utils.converterDayOfWeekParaDiaSemana(dto.dataTreino().getDayOfWeek());
@@ -76,7 +76,7 @@ public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService 
         return treinoMapper.toOutputDto(salvo);
     }
 
-    private void validarEstadoDoPlano(PlanoSemanal plano, TreinoPlanejadoAddDto dto) {
+    private void validarEstadoDoPlano(PlanoSemanal plano, TreinoPlanejadoAddDto dto, UUID tenantId) {
         if (plano.getReviewStatus() != PlanoReviewStatus.AGUARDANDO_REVISAO) {
             throw new DomainRuleViolationException(
                     "Plano não está em revisão. Status atual: " + plano.getReviewStatus());
@@ -87,7 +87,7 @@ public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService 
                     "Data do treino fora do intervalo do plano: " + dto.dataTreino()
                     + " não está entre " + plano.getSemanaInicio() + " e " + plano.getSemanaFim());
         }
-        long totalTreinos = treinoPlanejadoRepository.countByPlanoSemanalId(plano.getId());
+        long totalTreinos = treinoPlanejadoRepository.countByPlanoSemanalIdAndTenantId(plano.getId(), tenantId);
         if (totalTreinos >= 14) {
             throw new DomainRuleViolationException("Limite de 14 treinos por semana atingido");
         }
@@ -152,11 +152,17 @@ public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService 
 
     private int expandirBloco(EtapaInputDto blocoDto, TreinoPlanejado treino,
                                List<EtapaTreino> etapas, int ordemInicial) {
+        List<EtapaInputDto> subEtapas = blocoDto.subEtapas() != null ? blocoDto.subEtapas() : List.of();
+        if (subEtapas.isEmpty()) {
+            throw new DomainRuleViolationException("Bloco repetido deve conter ao menos uma sub-etapa");
+        }
         int reps = blocoDto.blocoRepeticoes() != null && blocoDto.blocoRepeticoes() > 0
                 ? blocoDto.blocoRepeticoes() : 1;
+        if (reps > 20) {
+            throw new DomainRuleViolationException("blocoRepeticoes não pode exceder 20");
+        }
         UUID blocoId = UUID.randomUUID();
         int ordem = ordemInicial;
-        List<EtapaInputDto> subEtapas = blocoDto.subEtapas() != null ? blocoDto.subEtapas() : List.of();
         for (int r = 0; r < reps; r++) {
             for (EtapaInputDto sub : subEtapas) {
                 etapas.add(buildEtapaSimples(sub, treino, ordem++, blocoId, reps));
