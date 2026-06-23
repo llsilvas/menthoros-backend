@@ -13,6 +13,7 @@ import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.mapper.EtapaMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
@@ -50,6 +51,7 @@ class TreinoPlanejadoAddServiceImplTest {
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock private TssCalculatorService tssCalculatorService;
     @Mock private TreinoMapper treinoMapper;
+    @Mock private EtapaMapper etapaMapper;
 
     @InjectMocks private TreinoPlanejadoAddServiceImpl service;
 
@@ -107,6 +109,7 @@ class TreinoPlanejadoAddServiceImplTest {
             TreinoPlanejado saved = new TreinoPlanejado();
             when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
             when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
 
             List<EtapaInputDto> etapas = List.of(
                     new EtapaInputDto("AQUECIMENTO", null, 10, null, null, null, null, null),
@@ -124,8 +127,6 @@ class TreinoPlanejadoAddServiceImplTest {
             assertThat(etapasSalvas).hasSize(2);
             assertThat(etapasSalvas.get(0).getOrdem()).isEqualTo(1);
             assertThat(etapasSalvas.get(1).getOrdem()).isEqualTo(2);
-            assertThat(etapasSalvas.get(0).getTipoEtapa()).isEqualTo("AQUECIMENTO");
-            assertThat(etapasSalvas.get(1).getTipoEtapa()).isEqualTo("PRINCIPAL");
         }
 
         @Test
@@ -326,6 +327,7 @@ class TreinoPlanejadoAddServiceImplTest {
             TreinoPlanejado saved = new TreinoPlanejado();
             when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
             when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
 
             List<EtapaInputDto> subs = List.of(
                     new EtapaInputDto("INTERVALADO", null, 3, null, null, null, null, null),
@@ -357,6 +359,7 @@ class TreinoPlanejadoAddServiceImplTest {
             TreinoPlanejado saved = new TreinoPlanejado();
             when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
             when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
 
             TreinoPlanejadoAddDto dto = new TreinoPlanejadoAddDto(
                     "CONTINUO", DATA_SEXTA, null, null, null, null, null, null, null,
@@ -397,6 +400,7 @@ class TreinoPlanejadoAddServiceImplTest {
             TreinoPlanejado saved = new TreinoPlanejado();
             when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
             when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
 
             // [AQUECIMENTO, BLOCO(2 reps × 2 sub-etapas), DESAQUECIMENTO] → 6 etapas no total
             List<EtapaInputDto> subs = List.of(
@@ -418,10 +422,8 @@ class TreinoPlanejadoAddServiceImplTest {
             verify(treinoPlanejadoRepository).save(captor.capture());
             List<EtapaTreino> etapas = captor.getValue().getEtapas();
             assertThat(etapas).hasSize(6);
-            assertThat(etapas.get(0).getTipoEtapa()).isEqualTo("AQUECIMENTO");
             assertThat(etapas.get(0).getOrdem()).isEqualTo(1);
             assertThat(etapas.get(0).getBlocoId()).isNull();
-            assertThat(etapas.get(5).getTipoEtapa()).isEqualTo("DESAQUECIMENTO");
             assertThat(etapas.get(5).getOrdem()).isEqualTo(6);
             assertThat(etapas.get(5).getBlocoId()).isNull();
             UUID blocoId = etapas.get(1).getBlocoId();

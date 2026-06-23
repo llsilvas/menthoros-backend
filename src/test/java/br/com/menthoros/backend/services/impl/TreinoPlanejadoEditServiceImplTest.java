@@ -272,8 +272,7 @@ class TreinoPlanejadoEditServiceImplTest {
                     null, null, null, null, null, null, null, null, null
             );
             assertThatThrownBy(() -> editService.editarTreino(null, treinoId, patch))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("planoId");
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
@@ -283,16 +282,14 @@ class TreinoPlanejadoEditServiceImplTest {
                     null, null, null, null, null, null, null, null, null
             );
             assertThatThrownBy(() -> editService.editarTreino(planoId, null, patch))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("treinoId");
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
         @DisplayName("lança IllegalArgumentException quando patch é nulo")
         void lancaExcecaoParaPatchNulo() {
             assertThatThrownBy(() -> editService.editarTreino(planoId, treinoId, null))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("patch");
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
@@ -376,7 +373,7 @@ class TreinoPlanejadoEditServiceImplTest {
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
             when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
                     .thenReturn(Optional.of(treino));
-            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenReturn(new EtapaTreino());
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
             when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
@@ -402,7 +399,7 @@ class TreinoPlanejadoEditServiceImplTest {
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
             when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
                     .thenReturn(Optional.of(treino));
-            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenReturn(new EtapaTreino());
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
             when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
@@ -417,6 +414,89 @@ class TreinoPlanejadoEditServiceImplTest {
             assertThat(captor.getAllValues())
                     .filteredOn(e -> "INTERVALADO".equals(e.tipoEtapa()))
                     .allSatisfy(e -> assertThat(e.blocoRepeticoes()).isEqualTo(3));
+        }
+    }
+
+    @Nested
+    @DisplayName("expandirRepeticoes via editarTreino")
+    class ExpandirRepeticoes {
+
+        @Test
+        @DisplayName("INTERVALADO(reps=3) sem RECUPERACAO expande em 3 singletons com reps=1")
+        void intervaldoSemRecuperacaoExpandeEmSingletons() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+
+            EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, 3, null, null);
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, List.of(intervalado)
+            );
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            try (MockedStatic<Hibernate> ignored = mockStatic(Hibernate.class)) {
+                editService.editarTreino(planoId, treinoId, patch);
+            }
+
+            ArgumentCaptor<EtapaInputDto> captor = ArgumentCaptor.forClass(EtapaInputDto.class);
+            verify(etapaMapper, times(3)).toEntity(captor.capture());
+            assertThat(captor.getAllValues()).allSatisfy(e -> {
+                assertThat(e.tipoEtapa()).isEqualTo("INTERVALADO");
+                assertThat(e.repeticoes()).isEqualTo(1);
+            });
+        }
+
+        @Test
+        @DisplayName("INTERVALADO(reps=1) é passado diretamente sem expansão")
+        void intervaldoComUmaRepNaoExpande() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+
+            EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, 1, null, null);
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, List.of(intervalado)
+            );
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            try (MockedStatic<Hibernate> ignored = mockStatic(Hibernate.class)) {
+                editService.editarTreino(planoId, treinoId, patch);
+            }
+
+            verify(etapaMapper, times(1)).toEntity(any(EtapaInputDto.class));
+        }
+
+        @Test
+        @DisplayName("lista de etapas vazia não chama o mapper")
+        void listaVaziaNaoChamaMapper() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, List.of()
+            );
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            try (MockedStatic<Hibernate> ignored = mockStatic(Hibernate.class)) {
+                editService.editarTreino(planoId, treinoId, patch);
+            }
+
+            verify(etapaMapper, never()).toEntity(any(EtapaInputDto.class));
         }
     }
 

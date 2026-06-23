@@ -13,6 +13,7 @@ import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.mapper.EtapaMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
@@ -36,10 +37,13 @@ import java.util.UUID;
 @Service
 public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService {
 
+    private static final int LIMITE_TREINOS_POR_SEMANA = 14;
+
     private final PlanoSemanalRepository planoSemanalRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final TssCalculatorService tssCalculatorService;
     private final TreinoMapper treinoMapper;
+    private final EtapaMapper etapaMapper;
 
     /**
      * Idempotent: NO — cria nova entidade a cada chamada.
@@ -49,8 +53,8 @@ public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService 
     @Override
     @Transactional
     public TreinoPlanejadoOutputDto adicionarTreino(UUID planoId, TreinoPlanejadoAddDto dto) {
-        if (planoId == null) throw new IllegalArgumentException("planoId não pode ser nulo");
-        if (dto == null) throw new IllegalArgumentException("dto não pode ser nulo");
+        if (planoId == null) throw new IllegalArgumentException("Identificador do plano é obrigatório");
+        if (dto == null) throw new IllegalArgumentException("Dados de adição são obrigatórios");
 
         UUID tenantId = TenantContext.getRequiredTenantId();
         int etapasCount = dto.etapas() != null ? dto.etapas().size() : 0;
@@ -88,8 +92,8 @@ public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService 
                     + " não está entre " + plano.getSemanaInicio() + " e " + plano.getSemanaFim());
         }
         long totalTreinos = treinoPlanejadoRepository.countByPlanoSemanalIdAndTenantId(plano.getId(), tenantId);
-        if (totalTreinos >= 14) {
-            throw new DomainRuleViolationException("Limite de 14 treinos por semana atingido");
+        if (totalTreinos >= LIMITE_TREINOS_POR_SEMANA) {
+            throw new DomainRuleViolationException("Limite de " + LIMITE_TREINOS_POR_SEMANA + " treinos por semana atingido");
         }
     }
 
@@ -156,6 +160,11 @@ public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService 
         if (subEtapas.isEmpty()) {
             throw new DomainRuleViolationException("Bloco repetido deve conter ao menos uma sub-etapa");
         }
+        for (EtapaInputDto sub : subEtapas) {
+            if (sub.subEtapas() != null && !sub.subEtapas().isEmpty()) {
+                throw new DomainRuleViolationException("Sub-etapas não podem conter sub-etapas aninhadas");
+            }
+        }
         int reps = blocoDto.blocoRepeticoes() != null && blocoDto.blocoRepeticoes() > 0
                 ? blocoDto.blocoRepeticoes() : 1;
         if (reps > 20) {
@@ -173,13 +182,7 @@ public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService 
 
     private EtapaTreino buildEtapaSimples(EtapaInputDto dto, TreinoPlanejado treino,
                                            int ordem, UUID blocoId, Integer blocoRepeticoes) {
-        EtapaTreino etapa = new EtapaTreino();
-        etapa.setTipoEtapa(dto.tipoEtapa() != null ? dto.tipoEtapa().toUpperCase() : null);
-        etapa.setDescricaoEtapa(dto.descricaoEtapa());
-        etapa.setDuracaoMin(dto.duracaoMin());
-        etapa.setDistanciaKm(dto.distanciaKm() != null ? BigDecimal.valueOf(dto.distanciaKm()) : null);
-        etapa.setFcAlvoEtapa(dto.fcAlvoEtapa());
-        etapa.setRepeticoes(dto.repeticoes());
+        EtapaTreino etapa = etapaMapper.toEntity(dto);
         etapa.setBlocoId(blocoId);
         etapa.setBlocoRepeticoes(blocoRepeticoes);
         etapa.setOrdem(ordem);
