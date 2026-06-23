@@ -26,6 +26,9 @@ public record EtapaTreinoDto(
         @Schema(description = "Frequência cardíaca alvo da etapa", example = "70-80% FCmáx")
         String fcAlvoEtapa,
 
+        @Schema(description = "Ritmo alvo da etapa (ex: '5:00-5:30/km')", example = "5:00-5:30/km")
+        String ritmoAlvo,
+
         @Schema(description = "Número de repetições da etapa", example = "1")
         Integer repeticoes,
 

@@ -133,7 +133,7 @@ public interface TreinoMapper {
                             e.getOrdem(), e.getTipoEtapa(), e.getDescricaoEtapa(),
                             e.getDuracaoMin(),
                             e.getDistanciaKm() != null ? e.getDistanciaKm().doubleValue() : null,
-                            e.getFcAlvoEtapa(), e.getRepeticoes(),
+                            e.getFcAlvoEtapa(), e.getRitmoAlvo(), e.getRepeticoes(),
                             e.getBlocoId(), e.getBlocoRepeticoes()
                     ))
                     .collect(Collectors.toList());

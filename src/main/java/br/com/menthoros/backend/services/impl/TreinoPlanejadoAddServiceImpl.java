@@ -71,9 +71,9 @@ public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService 
         TreinoPlanejado treino = construirTreino(dto, plano, tipoTreino, diaSemana, duracaoMin, tssPlanejado);
 
         TreinoPlanejado salvo = treinoPlanejadoRepository.save(treino);
+        TreinoPlanejadoOutputDto output = treinoMapper.toOutputDto(salvo);
         log.info("Treino adicionado: treinoId={}, planoId={}, tenantId={}", salvo.getId(), planoId, tenantId);
-
-        return treinoMapper.toOutputDto(salvo);
+        return output;
     }
 
     private void validarEstadoDoPlano(PlanoSemanal plano, TreinoPlanejadoAddDto dto, UUID tenantId) {

@@ -212,6 +212,7 @@ class CoachTreinoAddControllerTest {
                                     """))
                     .andExpect(status().isForbidden());
         }
+
     }
 
     private void stubUsuarioAtivo() {

@@ -75,12 +75,8 @@ public class TenantValidationAspect {
             return joinPoint.proceed();
         }
 
-        // Obtém o tenant atual
-        UUID currentTenant = TenantContext.getTenantId();
-        if (currentTenant == null) {
-            log.error("RequireTenant: Nenhum tenant configurado no contexto");
-            throw new AccessDeniedException("Tenant não configurado");
-        }
+        // Obtém o tenant atual — lança IllegalStateException se não houver tenant no contexto
+        UUID currentTenant = TenantContext.getRequiredTenantId();
 
         // Valida que o recurso pertence ao tenant atual
         boolean belongsToTenant = tenantValidationRepository.resourceBelongsToTenant(resourceId, currentTenant);

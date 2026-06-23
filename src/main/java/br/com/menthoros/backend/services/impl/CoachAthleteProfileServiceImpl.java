@@ -198,7 +198,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             e.getOrdem(), e.getTipoEtapa(), e.getDescricaoEtapa(),
                             e.getDuracaoMin(),
                             e.getDistanciaKm() != null ? e.getDistanciaKm().doubleValue() : null,
-                            e.getFcAlvoEtapa(), e.getRepeticoes(),
+                            e.getFcAlvoEtapa(), e.getRitmoAlvo(), e.getRepeticoes(),
                             e.getBlocoId(), e.getBlocoRepeticoes()))
                     .toList();
         } catch (Exception e) {

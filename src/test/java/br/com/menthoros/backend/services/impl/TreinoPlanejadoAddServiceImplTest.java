@@ -152,7 +152,7 @@ class TreinoPlanejadoAddServiceImplTest {
 
         @Test
         @DisplayName("duracaoMin ausente: duracaoMin=Duration.ZERO e tssPlanejado=null")
-        void duracaoMinAusenteResultaDurationZeroETssNulo() {
+        void duracaoMinAusenteResultaNuloETssNulo() {
             PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
             stubPlanoFound(plano);
             TreinoPlanejado saved = new TreinoPlanejado();
@@ -311,6 +311,122 @@ class TreinoPlanejadoAddServiceImplTest {
         void dtoNuloLancaIllegalArgument() {
             assertThatThrownBy(() -> service.adicionarTreino(planoId, null))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("adicionarTreino — blocos repetidos")
+    class AdicionarTreinoBlocos {
+
+        @Test
+        @DisplayName("bloco com 3 repetições e 2 sub-etapas gera 6 etapas com mesma blocoId")
+        void blocoTresRepsGeraSeisEtapasComMesmaBlocoId() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            stubPlanoFound(plano);
+            TreinoPlanejado saved = new TreinoPlanejado();
+            when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
+            when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+
+            List<EtapaInputDto> subs = List.of(
+                    new EtapaInputDto("INTERVALADO", null, 3, null, null, null, null, null),
+                    new EtapaInputDto("RECUPERACAO",  null, 1, null, null, null, null, null)
+            );
+            TreinoPlanejadoAddDto dto = new TreinoPlanejadoAddDto(
+                    "INTERVALADO", DATA_SEXTA, null, null, null, null, null, null, null,
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 3, subs))
+            );
+
+            service.adicionarTreino(planoId, dto);
+
+            ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
+            verify(treinoPlanejadoRepository).save(captor.capture());
+            List<EtapaTreino> etapas = captor.getValue().getEtapas();
+            assertThat(etapas).hasSize(6);
+            UUID blocoId = etapas.get(0).getBlocoId();
+            assertThat(blocoId).isNotNull();
+            assertThat(etapas).allSatisfy(e -> assertThat(e.getBlocoId()).isEqualTo(blocoId));
+            assertThat(etapas).allSatisfy(e -> assertThat(e.getBlocoRepeticoes()).isEqualTo(3));
+            for (int i = 0; i < 6; i++) assertThat(etapas.get(i).getOrdem()).isEqualTo(i + 1);
+        }
+
+        @Test
+        @DisplayName("bloco com blocoRepeticoes nulo usa 1 repetição por default")
+        void blocoComRepeticoesNuloUsaDefaultUm() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            stubPlanoFound(plano);
+            TreinoPlanejado saved = new TreinoPlanejado();
+            when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
+            when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+
+            TreinoPlanejadoAddDto dto = new TreinoPlanejadoAddDto(
+                    "CONTINUO", DATA_SEXTA, null, null, null, null, null, null, null,
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null,
+                            List.of(new EtapaInputDto("PRINCIPAL", null, 30, null, null, null, null, null))))
+            );
+
+            service.adicionarTreino(planoId, dto);
+
+            ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
+            verify(treinoPlanejadoRepository).save(captor.capture());
+            List<EtapaTreino> etapas = captor.getValue().getEtapas();
+            assertThat(etapas).hasSize(1);
+            assertThat(etapas.get(0).getBlocoRepeticoes()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("bloco com subEtapas vazias lança DomainRuleViolationException")
+        void blocoComSubEtapasVaziasLancaRuleViolation() {
+            stubPlanoFound(planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>()));
+
+            TreinoPlanejadoAddDto dto = new TreinoPlanejadoAddDto(
+                    "CONTINUO", DATA_SEXTA, null, null, null, null, null, null, null,
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 3, List.of()))
+            );
+
+            assertThatThrownBy(() -> service.adicionarTreino(planoId, dto))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("sub-etapa");
+            verify(treinoPlanejadoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("bloco intercalado com etapas simples mantém ordem global contínua")
+        void blocoIntercaladoMantemOrdemGlobal() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            stubPlanoFound(plano);
+            TreinoPlanejado saved = new TreinoPlanejado();
+            when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
+            when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+
+            // [AQUECIMENTO, BLOCO(2 reps × 2 sub-etapas), DESAQUECIMENTO] → 6 etapas no total
+            List<EtapaInputDto> subs = List.of(
+                    new EtapaInputDto("INTERVALADO",  null, 3, null, null, null, null, null),
+                    new EtapaInputDto("RECUPERACAO",  null, 1, null, null, null, null, null)
+            );
+            TreinoPlanejadoAddDto dto = new TreinoPlanejadoAddDto(
+                    "INTERVALADO", DATA_SEXTA, null, null, null, null, null, null, null,
+                    List.of(
+                            new EtapaInputDto("AQUECIMENTO",    null, 10, null, null, null, null, null),
+                            new EtapaInputDto("BLOCO", null, null, null, null, null, 2, subs),
+                            new EtapaInputDto("DESAQUECIMENTO", null, 10, null, null, null, null, null)
+                    )
+            );
+
+            service.adicionarTreino(planoId, dto);
+
+            ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
+            verify(treinoPlanejadoRepository).save(captor.capture());
+            List<EtapaTreino> etapas = captor.getValue().getEtapas();
+            assertThat(etapas).hasSize(6);
+            assertThat(etapas.get(0).getTipoEtapa()).isEqualTo("AQUECIMENTO");
+            assertThat(etapas.get(0).getOrdem()).isEqualTo(1);
+            assertThat(etapas.get(0).getBlocoId()).isNull();
+            assertThat(etapas.get(5).getTipoEtapa()).isEqualTo("DESAQUECIMENTO");
+            assertThat(etapas.get(5).getOrdem()).isEqualTo(6);
+            assertThat(etapas.get(5).getBlocoId()).isNull();
+            UUID blocoId = etapas.get(1).getBlocoId();
+            assertThat(blocoId).isNotNull();
+            for (int i = 1; i <= 4; i++) assertThat(etapas.get(i).getBlocoId()).isEqualTo(blocoId);
         }
     }
 
