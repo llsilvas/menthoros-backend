@@ -384,7 +384,7 @@ Antes de gerar o plano, você DEVE analisar mentalmente:
 - SEMPRE use as zonas de treino (Z1-Z5) fornecidas no histórico com ranges EXATOS de pace e FC
 - Exemplo: "10km em Z2 (5:45-6:20 min/km, 140-160 bpm)" em vez de descrições genéricas
 - Prescreva ritmos e FC baseados nas zonas calculadas do atleta
-- Se não houver dados fisiológicos, use valores conservadores e recomende teste de limiar
+- Se não houver dados fisiológicos testados, use OBRIGATORIAMENTE os valores das zonas calculadas por fórmula etária fornecidos no histórico — nunca invente BPMs
 
 **6. Respeito a Metas e Limites Calculados**
 - O histórico contém seção "METAS PARA ESTA SEMANA" com TSS Alvo e Máximo de Dias Consecutivos
@@ -600,8 +600,8 @@ Etapa 11: RECUPERACAO - Recuperação ativa Z2 (2min)
 - Tiros de threshold (≥ 5min): recuperação = 30-50%% do tempo de esforço
 
 **4. Zonas de FC:**
-- Recuperação entre tiros curtos/intensos: Z1-Z2 (60-75%% FCmax)
-- Recuperação entre tiros longos: Z2 (70-80%% FCmax)
+- Recuperação entre tiros curtos/intensos: Z1-Z2 — usar o range exato de Z1 ou Z2 das zonas calculadas no histórico
+- Recuperação entre tiros longos: Z2 — usar o range exato de Z2 das zonas calculadas no histórico
 
 **Exemplo de descrição COMPLETA de recuperação:**
 ```
@@ -712,7 +712,7 @@ Todos os campos abaixo são **obrigatórios** e **não podem ser null ou ""**:
 
 - `diaSemana` (string, enum válido)
 - `tipoTreino` (string, enum válido)
-- `fcAlvo` (string, formato: `"60-70%% FCmax"` ou `"70-80%% FCmax"` baseado em %%FC limiar do atleta)
+- `fcAlvo` (string: range de BPM da zona principal do treino, extraído das **Zonas de Treino Calculadas** do histórico — ex: `"130-136 bpm"` para Z2, `"144-153 bpm"` para Z4)
 - `tssPlanejado` (number, ≥ 0)
 - `intensidadePlanejada` (number, 0.5-1.5)
 - `percepcaoEsforcoEsperada` (number, 1-10)
@@ -735,7 +735,7 @@ Todos os campos abaixo são **obrigatórios** em cada etapa:
 - `descricaoEtapa` (string, ≤ 120 caracteres, **sem aspas duplicadas**, instruções claras)
 - `duracaoMin` (number, ≥ 1)
 - `distanciaKm` (number, ≥ 0)
-- `fcAlvoEtapa` (string, formato: `"60-70%% FCmax"`)
+- `fcAlvoEtapa` (string: range de BPM da zona desta etapa, extraído das **Zonas de Treino Calculadas** do histórico — ex: `"115-130 bpm"` para Z1, `"130-136 bpm"` para Z2. **NUNCA use valores abaixo de 100 bpm**)
 - `repeticoes` (number, ≥ 1)
 
 **Fallbacks obrigatórios se faltar especificidade:**
@@ -769,7 +769,7 @@ Todos os campos abaixo são **obrigatórios** em cada etapa:
 
 **4. Formato de Strings:**
 - **Ritmo:** sempre `"5:00-5:30/km"` (hífen `-`, não travessão `—` ou `–`)
-- **FC:** sempre `"70-80%% FCmax"` ou `"Z2"` ou `"Z3-Z4"`
+- **FC:** sempre o range de BPM das **Zonas de Treino Calculadas** do histórico (ex: `"130-136 bpm"`), ou `"Z2"` ou `"Z3-Z4"` como referência secundária
 - **Distância:** sempre com 1 casa decimal `10.0` ou `0.0`
 
 **5. Nomenclatura de Intervalos:**
