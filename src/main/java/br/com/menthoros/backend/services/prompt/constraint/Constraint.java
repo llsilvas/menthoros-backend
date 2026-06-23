@@ -73,6 +73,16 @@ public record Constraint(ConstraintKey key, String descricao, Map<String, Object
         return new Constraint(ConstraintKey.MAX_CONSECUTIVOS, descricao, Map.of(PARAM_N, n));
     }
 
+    /** FC limiar estimado por inferência dos últimos 30 dias. */
+    public static Constraint limiarFcEstimado(String descricao) {
+        return new Constraint(ConstraintKey.LIMIAR_FC_ESTIMADO, descricao, Map.of());
+    }
+
+    /** Pace limiar estimado por inferência dos últimos 30 dias. */
+    public static Constraint limiarPaceEstimado(String descricao) {
+        return new Constraint(ConstraintKey.LIMIAR_PACE_ESTIMADO, descricao, Map.of());
+    }
+
     // ===== Accessors tipados (lidos pelo checker; tolerantes a params ausente) =====
 
     /** Teto de pace por tipo (vazio se não aplicável). */

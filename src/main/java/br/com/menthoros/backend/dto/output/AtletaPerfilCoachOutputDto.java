@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.dto.output;
 
+import br.com.menthoros.backend.enums.ConfiancaInferencia;
 import br.com.menthoros.backend.enums.MotivoAtencao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.Severidade;
@@ -54,7 +55,10 @@ public record AtletaPerfilCoachOutputDto(
         Instant geradoEm,
 
         @Schema(description = "Campos que não carregaram por erro interno; null quando todos ok")
-        List<String> avisos
+        List<String> avisos,
+
+        @Schema(description = "Limiares fisiológicos inferidos por dados recentes; null quando limiares estão atualizados ou sem dados suficientes")
+        LimiareisInferidosDto limiareisInferidos
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -108,6 +112,26 @@ public record AtletaPerfilCoachOutputDto(
 
             @Schema(description = "Etapas do treino (aquecimento, esforço, recuperação, desaquecimento)")
             List<EtapaTreinoDto> etapas
+    ) {}
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Limiares fisiológicos inferidos por dados recentes dos últimos 30 dias")
+    public record LimiareisInferidosDto(
+
+            @Schema(description = "FC limiar estimado em bpm", example = "163")
+            Integer fcLimiarEstimado,
+
+            @Schema(description = "Pace limiar estimado formatado (mm:ss/km)", example = "4:45/km")
+            String paceLimiarEstimadoFormatado,
+
+            @Schema(description = "Confiança da inferência de FC")
+            ConfiancaInferencia confiancaInferenciaFc,
+
+            @Schema(description = "Confiança da inferência de pace")
+            ConfiancaInferencia confiancaInferenciaPace,
+
+            @Schema(description = "Data em que a inferência foi executada")
+            LocalDate dataInferenciaLimiar
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

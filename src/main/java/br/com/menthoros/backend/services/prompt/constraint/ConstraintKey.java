@@ -19,5 +19,9 @@ public enum ConstraintKey {
     INTERVALADO_MAX_CATEGORIA,
     PACE_TETO,
     DIAS_PERMITIDOS,
-    MAX_CONSECUTIVOS
+    MAX_CONSECUTIVOS,
+    /** FC limiar inferido por mediana do quintil superior dos últimos 30 dias. */
+    LIMIAR_FC_ESTIMADO,
+    /** Pace limiar inferido por mediana do quintil mais rápido nos últimos 30 dias. */
+    LIMIAR_PACE_ESTIMADO
 }

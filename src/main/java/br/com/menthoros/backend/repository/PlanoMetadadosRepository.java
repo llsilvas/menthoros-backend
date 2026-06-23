@@ -22,6 +22,25 @@ public interface PlanoMetadadosRepository extends JpaRepository<PlanoMetaDados, 
     Optional<PlanoMetaDados> findLatestByAtletaId(UUID atletaId);
 
     /**
+     * Busca o metadados mais recente pelo ID do atleta, filtrado pelo tenant via assessoria.
+     * Previne cross-tenant data leak.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     */
+    @Query("""
+    SELECT pm FROM PlanoMetaDados pm
+    WHERE pm.atleta.id = :atletaId
+    AND pm.atleta.assessoria.id = :tenantId
+    ORDER BY pm.dataCriacao DESC
+    LIMIT 1
+    """)
+    Optional<PlanoMetaDados> findLatestByAtletaIdAndTenantId(
+            @Param("atletaId") UUID atletaId,
+            @Param("tenantId") UUID tenantId);
+
+    /**
      * Busca metadados por ID e tenant — previne cross-tenant data leak.
      * O tenant é resolvido via atleta.assessoria.id pois PlanoMetaDados
      * não possui coluna tenant_id direta.

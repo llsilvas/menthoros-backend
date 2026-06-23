@@ -146,6 +146,9 @@ class TsbServiceImplDiasConsecutivosTest {
                                 })
                                 .toList();
                     }
+                    if ("findByAtletaIdAndTenantIdAndDataTreinoBetween".equals(method.getName())) {
+                        return Collections.emptyList();
+                    }
                     if ("toString".equals(method.getName())) {
                         return "TreinoRealizadoRepositoryProxy";
                     }
@@ -153,7 +156,7 @@ class TsbServiceImplDiasConsecutivosTest {
                 }
         );
 
-        return new TsbServiceImpl(repo, null, null, null, null, null);
+        return new TsbServiceImpl(repo, null, null, null, null, null, null);
     }
 
     private int invocarContar(TsbServiceImpl service, LocalDate data, boolean hojeTemTreino) throws Exception {

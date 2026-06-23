@@ -9,6 +9,7 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.TreeMap;
@@ -35,6 +37,7 @@ public class TsbServiceImpl implements TsbService {
     private final AtletaRepository atletaRepository;
     private final TssCalculatorService tssCalculatorService;
     private final MetricasAlertaService metricasAlertaService;
+    private final ThresholdInferenceService thresholdInferenceService;
 
     private static final int CTL_TIME_CONSTANT = 42;
     private static final int ATL_TIME_CONSTANT = 7;
@@ -263,7 +266,46 @@ public class TsbServiceImpl implements TsbService {
         // Analisar métricas e aplicar alertas/status/recomendação (com nível de experiência para thresholds adaptativos)
         metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados, metricas.getAtleta().getNivelExperiencia()));
 
+        atualizarLimiareInferidos(atletaId, metricas.getAtleta(), metaDados, LocalDate.now());
+
         planoMetaDadosRepository.save(metaDados);
+    }
+
+    private void atualizarLimiareInferidos(UUID atletaId, Atleta atleta,
+                                            PlanoMetaDados metaDados, LocalDate hoje) {
+        boolean fcStale = atleta.getFcLimiar() == null || atleta.getDataUltimoTesteFc() == null
+                || ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), hoje)
+                        > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
+        boolean paceStale = atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null
+                || ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje)
+                        > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
+
+        if (!fcStale && !paceStale) return;
+
+        if (atleta.getAssessoria() == null) {
+            log.warn("atualizarLimiareInferidos: atleta {} sem assessoria — inferência ignorada", atletaId);
+            return;
+        }
+        UUID tenantId = atleta.getAssessoria().getId();
+        List<TreinoRealizado> treinos30d = treinoRealizadoRepository
+                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, hoje.minusDays(30), hoje);
+
+        if (fcStale) {
+            thresholdInferenceService.inferirFcLimiar(treinos30d, hoje)
+                    .ifPresent(est -> {
+                        metaDados.setFcLimiarEstimado(est.valor());
+                        metaDados.setConfiancaInferenciaFc(est.confianca());
+                        metaDados.setDataInferenciaLimiar(hoje);
+                    });
+        }
+        if (paceStale) {
+            thresholdInferenceService.inferirPaceLimiar(treinos30d, hoje)
+                    .ifPresent(est -> {
+                        metaDados.setPaceLimiarEstimado(est.valor());
+                        metaDados.setConfiancaInferenciaPace(est.confianca());
+                        metaDados.setDataInferenciaLimiar(hoje);
+                    });
+        }
     }
 
     /**
