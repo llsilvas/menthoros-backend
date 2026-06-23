@@ -20,4 +20,16 @@ public class Utils {
         };
     }
 
+    public static DiaSemana converterDayOfWeekParaDiaSemana(DayOfWeek dow) {
+        return switch (dow) {
+            case MONDAY -> DiaSemana.SEGUNDA;
+            case TUESDAY -> DiaSemana.TERCA;
+            case WEDNESDAY -> DiaSemana.QUARTA;
+            case THURSDAY -> DiaSemana.QUINTA;
+            case FRIDAY -> DiaSemana.SEXTA;
+            case SATURDAY -> DiaSemana.SABADO;
+            case SUNDAY -> DiaSemana.DOMINGO;
+        };
+    }
+
 }

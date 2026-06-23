@@ -30,6 +30,8 @@ public interface EtapaMapper {
              expression = "java(dto.tipoEtapa() != null ? dto.tipoEtapa().toUpperCase() : null)")
     @Mapping(target = "distanciaKm",
              expression = "java(dto.distanciaKm() != null ? java.math.BigDecimal.valueOf(dto.distanciaKm()) : null)")
+    @Mapping(target = "blocoRepeticoes", source = "blocoRepeticoes")
+    @Mapping(target = "blocoId", ignore = true)
     @Mapping(target = "treinoPlanejado", ignore = true)
     @Mapping(target = "ordem", ignore = true)
     EtapaTreino toEntity(EtapaInputDto dto);

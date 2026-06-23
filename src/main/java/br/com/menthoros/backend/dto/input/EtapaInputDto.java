@@ -1,16 +1,22 @@
 package br.com.menthoros.backend.dto.input;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
-@Schema(description = "Etapa de treino enviada pelo coach no patch de treino planejado")
+import java.util.List;
+
+@Schema(description = "Etapa ou bloco repetido de treino enviado pelo coach")
 public record EtapaInputDto(
 
-        @Schema(description = "Tipo da etapa: AQUECIMENTO, PRINCIPAL, INTERVALADO, RECUPERACAO, DESAQUECIMENTO")
-        @Pattern(regexp = "(?i)AQUECIMENTO|PRINCIPAL|INTERVALADO|RECUPERACAO|DESAQUECIMENTO",
-                 message = "tipoEtapa deve ser: AQUECIMENTO, PRINCIPAL, INTERVALADO, RECUPERACAO ou DESAQUECIMENTO")
+        @Schema(description = "Tipo da etapa: AQUECIMENTO, PRINCIPAL, INTERVALADO, RECUPERACAO, DESAQUECIMENTO, ou BLOCO para bloco repetido")
+        @NotBlank(message = "tipoEtapa não pode ser vazio")
+        @Pattern(regexp = "(?i)AQUECIMENTO|PRINCIPAL|INTERVALADO|RECUPERACAO|DESAQUECIMENTO|BLOCO",
+                 message = "tipoEtapa deve ser: AQUECIMENTO, PRINCIPAL, INTERVALADO, RECUPERACAO, DESAQUECIMENTO ou BLOCO")
         @Size(max = 30)
         String tipoEtapa,
 
@@ -32,5 +38,15 @@ public record EtapaInputDto(
 
         @Schema(description = "Número de repetições — somente para tipo INTERVALADO", example = "4")
         @Positive
-        Integer repeticoes
+        Integer repeticoes,
+
+        @Schema(description = "Número de repetições do bloco — somente quando tipoEtapa=BLOCO", example = "4")
+        @Positive
+        @Max(value = 20, message = "blocoRepeticoes não pode exceder 20")
+        Integer blocoRepeticoes,
+
+        @Schema(description = "Etapas internas do bloco — somente quando tipoEtapa=BLOCO")
+        @Valid
+        @Size(max = 10, message = "subEtapas não pode ter mais de 10 itens")
+        List<EtapaInputDto> subEtapas
 ) {}

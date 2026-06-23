@@ -122,6 +122,25 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
                                                        @Param("assessoriaId") UUID assessoriaId);
 
     /**
+     * Busca PlanoSemanal por id e tenant com JOIN FETCH de atleta e assessoria.
+     * Necessário para que o @PrePersist de TreinoPlanejado derive atleta e tenantId
+     * sem LazyInitializationException fora da sessão JPA.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     */
+    @Query("""
+            SELECT p FROM PlanoSemanal p
+            JOIN FETCH p.atleta
+            JOIN FETCH p.assessoria
+            WHERE p.id = :id
+              AND p.assessoria.id = :tenantId
+            """)
+    Optional<PlanoSemanal> findByIdWithDependenciesAndTenant(@Param("id") UUID id,
+                                                             @Param("tenantId") UUID tenantId);
+
+    /**
      * Valida se um PlanoSemanal pertence a um tenant específico.
      * Usado pelo TenantValidationAspect para validação de isolamento.
      */

@@ -2,6 +2,7 @@ package br.com.menthoros.backend.dto.input;
 
 import br.com.menthoros.backend.enums.TipoTreino;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
@@ -45,6 +46,7 @@ public record TreinoPlanejadoPatchDto(
         @Schema(description = "Observações do treinador sobre o treino")
         String observacao,
 
+        @Valid
         @Size(max = 20)
         @Schema(description = "Lista de etapas do treino — quando informada, substitui todas as etapas existentes")
         List<EtapaInputDto> etapas

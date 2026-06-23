@@ -14,6 +14,9 @@ import java.util.UUID;
 public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejado, UUID>{
     List<TreinoPlanejado> findByAtletaId(UUID atletaId);
 
+    @Query("SELECT COUNT(tp) FROM TreinoPlanejado tp WHERE tp.planoSemanal.id = :planoId AND tp.tenantId = :tenantId")
+    long countByPlanoSemanalIdAndTenantId(@Param("planoId") UUID planoId, @Param("tenantId") UUID tenantId);
+
     Optional<TreinoPlanejado> findByIdAndTenantId(UUID id, UUID tenantId);
 
     Optional<TreinoPlanejado> findByIdAndPlanoSemanalIdAndTenantId(UUID id, UUID planoSemanalId, UUID tenantId);

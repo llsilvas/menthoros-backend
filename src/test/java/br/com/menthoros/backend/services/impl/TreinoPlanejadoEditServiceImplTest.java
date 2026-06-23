@@ -1,6 +1,8 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.input.EtapaInputDto;
 import br.com.menthoros.backend.dto.input.TreinoPlanejadoPatchDto;
+import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
@@ -30,13 +32,19 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+
+import org.hibernate.Hibernate;
+import org.mockito.MockedStatic;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -264,8 +272,7 @@ class TreinoPlanejadoEditServiceImplTest {
                     null, null, null, null, null, null, null, null, null
             );
             assertThatThrownBy(() -> editService.editarTreino(null, treinoId, patch))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("planoId");
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
@@ -275,16 +282,14 @@ class TreinoPlanejadoEditServiceImplTest {
                     null, null, null, null, null, null, null, null, null
             );
             assertThatThrownBy(() -> editService.editarTreino(planoId, null, patch))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("treinoId");
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
         @DisplayName("lança IllegalArgumentException quando patch é nulo")
         void lancaExcecaoParaPatchNulo() {
             assertThatThrownBy(() -> editService.editarTreino(planoId, treinoId, null))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("patch");
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
@@ -311,6 +316,187 @@ class TreinoPlanejadoEditServiceImplTest {
             ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
             verify(treinoPlanejadoRepository).save(captor.capture());
             assertThat(captor.getValue().getTssPlanejado()).isEqualTo(38);
+        }
+    }
+
+    @Nested
+    @DisplayName("expandirBlocos via editarTreino")
+    class ExpandirBlocos {
+
+        @Test
+        @DisplayName("BLOCO com 2 reps e 1 sub-etapa gera 2 etapas com blocoRepeticoes=2")
+        void expandeBlocoEmEtapasSimples() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+
+            EtapaInputDto subEtapa = new EtapaInputDto("INTERVALADO", null, 5, null, null, null, null, null);
+            EtapaInputDto bloco   = new EtapaInputDto("BLOCO", null, null, null, null, null, 2, List.of(subEtapa));
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, List.of(bloco)
+            );
+
+            EtapaTreino etapaEntity = new EtapaTreino();
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenReturn(etapaEntity);
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            try (MockedStatic<Hibernate> ignored = mockStatic(Hibernate.class)) {
+                editService.editarTreino(planoId, treinoId, patch);
+            }
+
+            ArgumentCaptor<EtapaInputDto> captor = ArgumentCaptor.forClass(EtapaInputDto.class);
+            verify(etapaMapper, times(2)).toEntity(captor.capture());
+            assertThat(captor.getAllValues()).allSatisfy(e -> {
+                assertThat(e.tipoEtapa()).isEqualTo("INTERVALADO");
+                assertThat(e.blocoRepeticoes()).isEqualTo(2);
+            });
+        }
+
+        @Test
+        @DisplayName("BLOCO com 3 reps e 2 sub-etapas gera 6 etapas no total")
+        void expandeBlocoComMultiplasSubEtapas() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+
+            List<EtapaInputDto> subEtapas = List.of(
+                    new EtapaInputDto("INTERVALADO", null, 3, null, null, null, null, null),
+                    new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null)
+            );
+            EtapaInputDto bloco = new EtapaInputDto("BLOCO", null, null, null, null, null, 3, subEtapas);
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, List.of(bloco)
+            );
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            try (MockedStatic<Hibernate> ignored = mockStatic(Hibernate.class)) {
+                editService.editarTreino(planoId, treinoId, patch);
+            }
+
+            verify(etapaMapper, times(6)).toEntity(any(EtapaInputDto.class));
+        }
+
+        @Test
+        @DisplayName("comRepeticoes preserva blocoRepeticoes ao expandir INTERVALADO")
+        void comRepeticoesPreservaBlocoRepeticoes() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+
+            EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, 3, 3, null);
+            EtapaInputDto recuperacao = new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null);
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, List.of(intervalado, recuperacao)
+            );
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            try (MockedStatic<Hibernate> ignored = mockStatic(Hibernate.class)) {
+                editService.editarTreino(planoId, treinoId, patch);
+            }
+
+            // INTERVALADO(reps=3) + RECUPERACAO → 6 etapas (3 pares INT+REC)
+            ArgumentCaptor<EtapaInputDto> captor = ArgumentCaptor.forClass(EtapaInputDto.class);
+            verify(etapaMapper, times(6)).toEntity(captor.capture());
+            // Todas as etapas de INTERVALADO devem ter blocoRepeticoes=3 preservado
+            assertThat(captor.getAllValues())
+                    .filteredOn(e -> "INTERVALADO".equals(e.tipoEtapa()))
+                    .allSatisfy(e -> assertThat(e.blocoRepeticoes()).isEqualTo(3));
+        }
+    }
+
+    @Nested
+    @DisplayName("expandirRepeticoes via editarTreino")
+    class ExpandirRepeticoes {
+
+        @Test
+        @DisplayName("INTERVALADO(reps=3) sem RECUPERACAO expande em 3 singletons com reps=1")
+        void intervaldoSemRecuperacaoExpandeEmSingletons() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+
+            EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, 3, null, null);
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, List.of(intervalado)
+            );
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            try (MockedStatic<Hibernate> ignored = mockStatic(Hibernate.class)) {
+                editService.editarTreino(planoId, treinoId, patch);
+            }
+
+            ArgumentCaptor<EtapaInputDto> captor = ArgumentCaptor.forClass(EtapaInputDto.class);
+            verify(etapaMapper, times(3)).toEntity(captor.capture());
+            assertThat(captor.getAllValues()).allSatisfy(e -> {
+                assertThat(e.tipoEtapa()).isEqualTo("INTERVALADO");
+                assertThat(e.repeticoes()).isEqualTo(1);
+            });
+        }
+
+        @Test
+        @DisplayName("INTERVALADO(reps=1) é passado diretamente sem expansão")
+        void intervaldoComUmaRepNaoExpande() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+
+            EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, 1, null, null);
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, List.of(intervalado)
+            );
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            try (MockedStatic<Hibernate> ignored = mockStatic(Hibernate.class)) {
+                editService.editarTreino(planoId, treinoId, patch);
+            }
+
+            verify(etapaMapper, times(1)).toEntity(any(EtapaInputDto.class));
+        }
+
+        @Test
+        @DisplayName("lista de etapas vazia não chama o mapper")
+        void listaVaziaNaoChamaMapper() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, List.of()
+            );
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            try (MockedStatic<Hibernate> ignored = mockStatic(Hibernate.class)) {
+                editService.editarTreino(planoId, treinoId, patch);
+            }
+
+            verify(etapaMapper, never()).toEntity(any(EtapaInputDto.class));
         }
     }
 
@@ -341,7 +527,7 @@ class TreinoPlanejadoEditServiceImplTest {
         return new TreinoPlanejadoOutputDto(
                 id, null, null, null, TipoTreino.CONTINUO, null, null, "60:00", 10.0,
                 null, null, null, null, null, null, 55, null, null, editadoPeloCoach,
-                null, TreinoExecucaoStatus.PENDENTE, null, null, null, null
+                false, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null
         );
     }
 }
