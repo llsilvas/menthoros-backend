@@ -40,4 +40,6 @@ public interface TreinoPlanejadoService {
      * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se plano não estiver em AGUARDANDO_REVISAO
      */
     TreinoPlanejadoOutputDto editarTreino(UUID planoId, UUID treinoId, TreinoPlanejadoPatchDto patch);
+
+    void excluirTreino(UUID planoId, UUID treinoId);
 }

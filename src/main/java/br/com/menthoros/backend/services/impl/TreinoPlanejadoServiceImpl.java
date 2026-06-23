@@ -137,6 +137,28 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
         return treinoMapper.toOutputDto(salvo);
     }
 
+    @Override
+    public void excluirTreino(UUID planoId, UUID treinoId) {
+        if (planoId == null) {
+            throw new IllegalArgumentException("Identificador do plano é obrigatório");
+        }
+        if (treinoId == null) {
+            throw new IllegalArgumentException("Identificador do treino é obrigatório");
+        }
+
+        UUID tenantId = TenantContext.getRequiredTenantId();
+
+        log.info("Excluindo treino: planoId={}, treinoId={}", planoId, treinoId);
+
+        TreinoPlanejado treinoPlanejado = treinoPlanejadoRepository
+                .findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Treino não encontrado: " + treinoId));
+
+        treinoPlanejadoRepository.delete(treinoPlanejado);
+
+        log.info("Treino excluido com sucesso: planoId={}, treinoId={}", planoId, treinoId);
+    }
+
     private void validarEstadoDoPlanoParaAdicao(PlanoSemanal plano, TreinoPlanejadoAddDto dto, UUID tenantId) {
         if (plano.getReviewStatus() != PlanoReviewStatus.AGUARDANDO_REVISAO) {
             throw new DomainRuleViolationException(
