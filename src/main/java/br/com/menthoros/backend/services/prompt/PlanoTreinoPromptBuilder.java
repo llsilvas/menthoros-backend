@@ -352,8 +352,9 @@ public class PlanoTreinoPromptBuilder {
         paceHistoricoFormatter.tetoConstraint(tetoPorTipo).ifPresent(regras::add);
         disponibilidadePromptFormatter.diasPermitidosConstraint(diasEfetivos).ifPresent(regras::add);
         regras.add(disponibilidadePromptFormatter.maxConsecutivosConstraint(metaDados, atleta));
-        thresholdConstraintFormatter.constraintFc(metaDados, atleta).ifPresent(regras::add);
-        thresholdConstraintFormatter.constraintPace(metaDados, atleta).ifPresent(regras::add);
+        LocalDate hoje = LocalDate.now();
+        thresholdConstraintFormatter.constraintFc(metaDados, atleta, hoje).ifPresent(regras::add);
+        thresholdConstraintFormatter.constraintPace(metaDados, atleta, hoje).ifPresent(regras::add);
         return regras;
     }
 

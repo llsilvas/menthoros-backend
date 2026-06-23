@@ -17,10 +17,12 @@ public class ThresholdConstraintFormatter {
 
     /**
      * Idempotent: YES · Side Effects: NONE · Tenant-aware: NO
+     *
+     * @param hoje data de referência para o cálculo de staleness (injetada pelo caller)
      */
-    public Optional<Constraint> constraintFc(PlanoMetaDados metaDados, Atleta atleta) {
+    public Optional<Constraint> constraintFc(PlanoMetaDados metaDados, Atleta atleta, LocalDate hoje) {
         if (metaDados == null || metaDados.getFcLimiarEstimado() == null) return Optional.empty();
-        if (!fcLimiarDesatualizado(atleta)) return Optional.empty();
+        if (!fcLimiarDesatualizado(atleta, hoje)) return Optional.empty();
 
         Integer fc = metaDados.getFcLimiarEstimado();
         ConfiancaInferencia confianca = metaDados.getConfiancaInferenciaFc();
@@ -32,10 +34,12 @@ public class ThresholdConstraintFormatter {
 
     /**
      * Idempotent: YES · Side Effects: NONE · Tenant-aware: NO
+     *
+     * @param hoje data de referência para o cálculo de staleness (injetada pelo caller)
      */
-    public Optional<Constraint> constraintPace(PlanoMetaDados metaDados, Atleta atleta) {
+    public Optional<Constraint> constraintPace(PlanoMetaDados metaDados, Atleta atleta, LocalDate hoje) {
         if (metaDados == null || metaDados.getPaceLimiarEstimado() == null) return Optional.empty();
-        if (!paceLimiarDesatualizado(atleta)) return Optional.empty();
+        if (!paceLimiarDesatualizado(atleta, hoje)) return Optional.empty();
 
         BigDecimal pace = metaDados.getPaceLimiarEstimado();
         ConfiancaInferencia confianca = metaDados.getConfiancaInferenciaPace();
@@ -76,17 +80,17 @@ public class ThresholdConstraintFormatter {
         return sb.toString();
     }
 
-    private boolean fcLimiarDesatualizado(Atleta atleta) {
+    private boolean fcLimiarDesatualizado(Atleta atleta, LocalDate hoje) {
         if (atleta == null) return false;
         if (atleta.getFcLimiar() == null || atleta.getDataUltimoTesteFc() == null) return true;
-        return ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), LocalDate.now())
+        return ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), hoje)
                 > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
     }
 
-    private boolean paceLimiarDesatualizado(Atleta atleta) {
+    private boolean paceLimiarDesatualizado(Atleta atleta, LocalDate hoje) {
         if (atleta == null) return false;
         if (atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null) return true;
-        return ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), LocalDate.now())
+        return ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje)
                 > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
     }
 }

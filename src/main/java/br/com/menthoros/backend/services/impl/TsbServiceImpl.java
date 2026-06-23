@@ -282,6 +282,10 @@ public class TsbServiceImpl implements TsbService {
 
         if (!fcStale && !paceStale) return;
 
+        if (atleta.getAssessoria() == null) {
+            log.warn("atualizarLimiareInferidos: atleta {} sem assessoria — inferência ignorada", atletaId);
+            return;
+        }
         UUID tenantId = atleta.getAssessoria().getId();
         List<TreinoRealizado> treinos30d = treinoRealizadoRepository
                 .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, hoje.minusDays(30), hoje);

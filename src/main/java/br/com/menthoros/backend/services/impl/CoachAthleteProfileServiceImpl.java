@@ -146,7 +146,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
         return new AtletaPerfilCoachOutputDto.LimiareisInferidosDto(
                 fcDesatualizado ? metaDados.getFcLimiarEstimado() : null,
-                paceDesatualizado ? ThresholdInferenceService.formatarPace(metaDados.getPaceLimiarEstimado()) : null,
+                paceDesatualizado && metaDados.getPaceLimiarEstimado() != null
+                        ? ThresholdInferenceService.formatarPace(metaDados.getPaceLimiarEstimado()) : null,
                 fcDesatualizado ? metaDados.getConfiancaInferenciaFc() : null,
                 paceDesatualizado ? metaDados.getConfiancaInferenciaPace() : null,
                 metaDados.getDataInferenciaLimiar()

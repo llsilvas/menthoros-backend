@@ -18,6 +18,8 @@ import br.com.menthoros.backend.enums.StatusSugestao;
 import br.com.menthoros.backend.enums.TipoSugestao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
+import br.com.menthoros.backend.entity.PlanoMetaDados;
+import br.com.menthoros.backend.enums.ConfiancaInferencia;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
@@ -275,7 +277,90 @@ class CoachAthleteProfileServiceImplTest {
         }
     }
 
-    // ===== helpers =====
+    @Nested
+    @DisplayName("resolverLimiareisInferidos")
+    class ResolverLimiareisInferidos {
+
+        @Test
+        @DisplayName("metaDados não encontrado → limiareisInferidos null no perfil")
+        void metaDadosNulo_retornaLimiareisNulo() {
+            stubAtleta();
+            stubServicosSecundarios();
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.limiareisInferidos()).isNull();
+        }
+
+        @Test
+        @DisplayName("metaDados sem campos inferidos → limiareisInferidos null no perfil")
+        void metaDadosSemCamposInferidos_retornaLimiareisNulo() {
+            stubAtleta();
+            stubServicosSecundarios();
+            PlanoMetaDados metaDados = PlanoMetaDados.builder().atleta(atleta).build();
+            when(planoMetadadosRepository.findLatestByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(metaDados));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.limiareisInferidos()).isNull();
+        }
+
+        @Test
+        @DisplayName("FC desatualizado com estimativa → fcLimiarEstimado preenchido no perfil")
+        void fcDesatualizadoComEstimativa_retornaFcEstimado() {
+            atleta.setFcLimiar(null);
+            atleta.setDataUltimoTesteFc(null);
+            stubAtleta();
+            stubServicosSecundarios();
+            PlanoMetaDados metaDados = PlanoMetaDados.builder()
+                    .atleta(atleta)
+                    .fcLimiarEstimado(163)
+                    .confiancaInferenciaFc(ConfiancaInferencia.ALTA)
+                    .dataInferenciaLimiar(LocalDate.of(2026, 6, 20))
+                    .build();
+            when(planoMetadadosRepository.findLatestByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(metaDados));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.limiareisInferidos()).isNotNull();
+            assertThat(perfil.limiareisInferidos().fcLimiarEstimado()).isEqualTo(163);
+            assertThat(perfil.limiareisInferidos().confiancaInferenciaFc())
+                    .isEqualTo(ConfiancaInferencia.ALTA);
+            assertThat(perfil.limiareisInferidos().paceLimiarEstimadoFormatado()).isNull();
+        }
+
+        @Test
+        @DisplayName("ambos os limiares atualizados (< 90 dias) → limiareisInferidos null no perfil")
+        void ambosAtualizados_retornaLimiareisNulo() {
+            atleta.setFcLimiar(165);
+            atleta.setDataUltimoTesteFc(LocalDate.now().minusDays(30));
+            atleta.setPaceLimiar(new BigDecimal("5.00"));
+            atleta.setDataUltimoTestePace(LocalDate.now().minusDays(30));
+            stubAtleta();
+            stubServicosSecundarios();
+            PlanoMetaDados metaDados = PlanoMetaDados.builder()
+                    .atleta(atleta)
+                    .fcLimiarEstimado(163)
+                    .build();
+            when(planoMetadadosRepository.findLatestByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(metaDados));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.limiareisInferidos()).isNull();
+        }
+
+        private void stubServicosSecundarios() {
+            when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
+            when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
+            when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+            when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+        }
+    }
 
     private void stubAtleta() {
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
