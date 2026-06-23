@@ -83,6 +83,8 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
         TreinoPlanejado treino = construirTreinoParaAdicao(dto, plano, tipoTreino, diaSemana, duracaoMin, tssPlanejado);
 
         TreinoPlanejado salvo = treinoPlanejadoRepository.save(treino);
+        ajustarVolumePlano(plano, salvo.getDistanciaKm(), true);
+        planoSemanalRepository.save(plano);
         TreinoPlanejadoOutputDto output = treinoMapper.toOutputDto(salvo);
         log.info("Treino adicionado: treinoId={}, planoId={}, tenantId={}", salvo.getId(), planoId, tenantId);
         return output;
@@ -138,6 +140,7 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
     }
 
     @Override
+    @Transactional
     public void excluirTreino(UUID planoId, UUID treinoId) {
         if (planoId == null) {
             throw new IllegalArgumentException("Identificador do plano é obrigatório");
@@ -148,6 +151,9 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
 
         UUID tenantId = TenantContext.getRequiredTenantId();
 
+        PlanoSemanal plano = planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Plano não encontrado: " + planoId));
+
         log.info("Excluindo treino: planoId={}, treinoId={}", planoId, treinoId);
 
         TreinoPlanejado treinoPlanejado = treinoPlanejadoRepository
@@ -155,8 +161,23 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
                 .orElseThrow(() -> new DomainNotFoundException("Treino não encontrado: " + treinoId));
 
         treinoPlanejadoRepository.delete(treinoPlanejado);
+        ajustarVolumePlano(plano, treinoPlanejado.getDistanciaKm(), false);
+        planoSemanalRepository.save(plano);
 
         log.info("Treino excluido com sucesso: planoId={}, treinoId={}", planoId, treinoId);
+    }
+
+    private void ajustarVolumePlano(PlanoSemanal plano, BigDecimal distanciaKm, boolean adicionar) {
+        if (distanciaKm == null || distanciaKm.compareTo(BigDecimal.ZERO) == 0) {
+            return;
+        }
+        BigDecimal volumeAtual = plano.getVolumePlanejadoKm() != null
+                ? plano.getVolumePlanejadoKm() : BigDecimal.ZERO;
+        BigDecimal novoVolume = adicionar
+                ? volumeAtual.add(distanciaKm)
+                : volumeAtual.subtract(distanciaKm).max(BigDecimal.ZERO);
+        plano.setVolumePlanejadoKm(novoVolume);
+        plano.setVolumeAlvoKm(novoVolume);
     }
 
     private void validarEstadoDoPlanoParaAdicao(PlanoSemanal plano, TreinoPlanejadoAddDto dto, UUID tenantId) {
