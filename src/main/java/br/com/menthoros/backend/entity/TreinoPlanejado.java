@@ -33,6 +33,9 @@ public class TreinoPlanejado extends TreinoBase{
     @Column(name = "editado_pelo_coach", nullable = false)
     private boolean editadoPeloCoach = false;
 
+    @Column(name = "adicionado_pelo_coach", nullable = false)
+    private boolean adicionadoPeloCoach = false;
+
     @Column(name = "tss_planejado")
     private Integer tssPlanejado; // TSS estimado para o treino
 

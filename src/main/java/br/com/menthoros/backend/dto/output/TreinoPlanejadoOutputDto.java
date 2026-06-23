@@ -73,6 +73,9 @@ public record TreinoPlanejadoOutputDto(
         @Schema(description = "Indica se o treino foi editado manualmente pelo coach após geração pela IA", example = "false")
         boolean editadoPeloCoach,
 
+        @Schema(description = "Indica se o treino foi adicionado manualmente pelo coach (não gerado pela IA)", example = "false")
+        boolean adicionadoPeloCoach,
+
         // ===== ETAPAS E STATUS =====
 
         @Schema(description = "Lista de etapas do treino")
