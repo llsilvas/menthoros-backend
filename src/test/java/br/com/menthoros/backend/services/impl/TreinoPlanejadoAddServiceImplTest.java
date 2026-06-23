@@ -109,8 +109,8 @@ class TreinoPlanejadoAddServiceImplTest {
             when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
 
             List<EtapaInputDto> etapas = List.of(
-                    new EtapaInputDto("AQUECIMENTO", null, 10, null, null, null),
-                    new EtapaInputDto("PRINCIPAL",   null, 60, null, null, null)
+                    new EtapaInputDto("AQUECIMENTO", null, 10, null, null, null, null, null),
+                    new EtapaInputDto("PRINCIPAL",   null, 60, null, null, null, null, null)
             );
             TreinoPlanejadoAddDto dto = new TreinoPlanejadoAddDto(
                     "CONTINUO", DATA_SEXTA, null, null, 70, null, null, null, null, etapas

@@ -138,7 +138,9 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
                 dto.duracaoMin(),
                 dto.distanciaKm(),
                 dto.fcAlvoEtapa(),
-                repeticoes
+                repeticoes,
+                null,
+                null
         );
     }
 

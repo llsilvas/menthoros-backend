@@ -3,6 +3,8 @@ package br.com.menthoros.backend.dto.output;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.util.UUID;
+
 @Schema(description = "Dados de uma etapa de treino")
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record EtapaTreinoDto(
@@ -25,6 +27,11 @@ public record EtapaTreinoDto(
         String fcAlvoEtapa,
 
         @Schema(description = "Número de repetições da etapa", example = "1")
-        Integer repeticoes
-) {}
+        Integer repeticoes,
 
+        @Schema(description = "UUID do bloco repetido ao qual esta etapa pertence (nulo para etapas avulsas)")
+        UUID blocoId,
+
+        @Schema(description = "Total de repetições do bloco ao qual esta etapa pertence", example = "4")
+        Integer blocoRepeticoes
+) {}

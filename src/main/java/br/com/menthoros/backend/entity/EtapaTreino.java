@@ -48,4 +48,10 @@ public class EtapaTreino {
     @Column(name = "ritmo_alvo", length = 20)
     private String ritmoAlvo;
 
+    @Column(name = "bloco_id")
+    private UUID blocoId;
+
+    @Column(name = "bloco_repeticoes")
+    private Integer blocoRepeticoes;
+
 }

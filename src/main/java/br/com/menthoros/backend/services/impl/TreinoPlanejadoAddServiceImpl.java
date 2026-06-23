@@ -139,19 +139,45 @@ public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService 
 
     private List<EtapaTreino> construirEtapas(List<EtapaInputDto> etapasDto, TreinoPlanejado treino) {
         List<EtapaTreino> etapas = new ArrayList<>();
-        for (int i = 0; i < etapasDto.size(); i++) {
-            EtapaInputDto dto = etapasDto.get(i);
-            EtapaTreino etapa = new EtapaTreino();
-            etapa.setTipoEtapa(dto.tipoEtapa() != null ? dto.tipoEtapa().toUpperCase() : null);
-            etapa.setDescricaoEtapa(dto.descricaoEtapa());
-            etapa.setDuracaoMin(dto.duracaoMin());
-            etapa.setDistanciaKm(dto.distanciaKm() != null ? BigDecimal.valueOf(dto.distanciaKm()) : null);
-            etapa.setFcAlvoEtapa(dto.fcAlvoEtapa());
-            etapa.setRepeticoes(dto.repeticoes());
-            etapa.setOrdem(i + 1);
-            etapa.setTreinoPlanejado(treino);
-            etapas.add(etapa);
+        int ordem = 1;
+        for (EtapaInputDto dto : etapasDto) {
+            if ("BLOCO".equalsIgnoreCase(dto.tipoEtapa())) {
+                ordem = expandirBloco(dto, treino, etapas, ordem);
+            } else {
+                etapas.add(buildEtapaSimples(dto, treino, ordem++, null, null));
+            }
         }
         return etapas;
+    }
+
+    private int expandirBloco(EtapaInputDto blocoDto, TreinoPlanejado treino,
+                               List<EtapaTreino> etapas, int ordemInicial) {
+        int reps = blocoDto.blocoRepeticoes() != null && blocoDto.blocoRepeticoes() > 0
+                ? blocoDto.blocoRepeticoes() : 1;
+        UUID blocoId = UUID.randomUUID();
+        int ordem = ordemInicial;
+        List<EtapaInputDto> subEtapas = blocoDto.subEtapas() != null ? blocoDto.subEtapas() : List.of();
+        for (int r = 0; r < reps; r++) {
+            for (EtapaInputDto sub : subEtapas) {
+                etapas.add(buildEtapaSimples(sub, treino, ordem++, blocoId, reps));
+            }
+        }
+        return ordem;
+    }
+
+    private EtapaTreino buildEtapaSimples(EtapaInputDto dto, TreinoPlanejado treino,
+                                           int ordem, UUID blocoId, Integer blocoRepeticoes) {
+        EtapaTreino etapa = new EtapaTreino();
+        etapa.setTipoEtapa(dto.tipoEtapa() != null ? dto.tipoEtapa().toUpperCase() : null);
+        etapa.setDescricaoEtapa(dto.descricaoEtapa());
+        etapa.setDuracaoMin(dto.duracaoMin());
+        etapa.setDistanciaKm(dto.distanciaKm() != null ? BigDecimal.valueOf(dto.distanciaKm()) : null);
+        etapa.setFcAlvoEtapa(dto.fcAlvoEtapa());
+        etapa.setRepeticoes(dto.repeticoes());
+        etapa.setBlocoId(blocoId);
+        etapa.setBlocoRepeticoes(blocoRepeticoes);
+        etapa.setOrdem(ordem);
+        etapa.setTreinoPlanejado(treino);
+        return etapa;
     }
 }
