@@ -87,7 +87,7 @@ public class TreinoPlanejadoAddServiceImpl implements TreinoPlanejadoAddService 
                     "Data do treino fora do intervalo do plano: " + dto.dataTreino()
                     + " não está entre " + plano.getSemanaInicio() + " e " + plano.getSemanaFim());
         }
-        int totalTreinos = plano.getTreinosPlanejados() != null ? plano.getTreinosPlanejados().size() : 0;
+        long totalTreinos = treinoPlanejadoRepository.countByPlanoSemanalId(plano.getId());
         if (totalTreinos >= 14) {
             throw new DomainRuleViolationException("Limite de 14 treinos por semana atingido");
         }

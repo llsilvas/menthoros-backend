@@ -246,9 +246,9 @@ class TreinoPlanejadoAddServiceImplTest {
         @Test
         @DisplayName("14 treinos existentes lança DomainRuleViolationException com mensagem de limite")
         void limiteQuatorzeTreinosLancaRuleViolation() {
-            List<TreinoPlanejado> quatorze = new ArrayList<>();
-            for (int i = 0; i < 14; i++) quatorze.add(new TreinoPlanejado());
-            stubPlanoFound(planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, quatorze));
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            stubPlanoFound(plano);
+            when(treinoPlanejadoRepository.countByPlanoSemanalId(plano.getId())).thenReturn(14L);
 
             assertThatThrownBy(() -> service.adicionarTreino(planoId, dtoSimples(DATA_SEXTA)))
                     .isInstanceOf(DomainRuleViolationException.class)

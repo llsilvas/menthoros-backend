@@ -14,6 +14,8 @@ import java.util.UUID;
 public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejado, UUID>{
     List<TreinoPlanejado> findByAtletaId(UUID atletaId);
 
+    long countByPlanoSemanalId(UUID planoSemanalId);
+
     Optional<TreinoPlanejado> findByIdAndTenantId(UUID id, UUID tenantId);
 
     Optional<TreinoPlanejado> findByIdAndPlanoSemanalIdAndTenantId(UUID id, UUID planoSemanalId, UUID tenantId);

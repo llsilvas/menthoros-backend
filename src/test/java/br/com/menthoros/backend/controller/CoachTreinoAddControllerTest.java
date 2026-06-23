@@ -61,6 +61,18 @@ class CoachTreinoAddControllerTest {
                 .jwt(j -> j.claim("tenant_id", TENANT_ID.toString()).subject("tecnico-keycloak-id"));
     }
 
+    private RequestPostProcessor adminJwt() {
+        return jwt()
+                .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))
+                .jwt(j -> j.claim("tenant_id", TENANT_ID.toString()).subject("admin-keycloak-id"));
+    }
+
+    private RequestPostProcessor atletaJwt() {
+        return jwt()
+                .authorities(new SimpleGrantedAuthority("ROLE_ATLETA"))
+                .jwt(j -> j.claim("tenant_id", TENANT_ID.toString()).subject("atleta-keycloak-id"));
+    }
+
     @Nested
     @DisplayName("adicionarTreino — POST /{planoId}/treinos")
     class AdicionarTreino {
@@ -172,6 +184,22 @@ class CoachTreinoAddControllerTest {
                                     """)
                             .with(tecnicoJwt()))
                     .andExpect(status().isBadRequest());
+        }
+
+        @Test
+        @DisplayName("retorna 201 quando role ADMIN (também autorizado)")
+        void retorna201QuandoRoleAdmin() throws Exception {
+            TreinoPlanejadoOutputDto output = outputStub(UUID.randomUUID(), true);
+            when(addService.adicionarTreino(eq(planoId), any())).thenReturn(output);
+            stubUsuarioAtivo();
+
+            mockMvc.perform(post("/api/v1/coach/planos/{planoId}/treinos", planoId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"tipoTreino": "CONTINUO", "dataTreino": "2026-07-03"}
+                                    """)
+                            .with(adminJwt()))
+                    .andExpect(status().isCreated());
         }
 
         @Test
