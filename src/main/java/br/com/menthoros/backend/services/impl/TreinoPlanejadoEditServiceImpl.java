@@ -89,7 +89,43 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
         if (patch.zonaAlvo() != null) treino.setZonaAlvo(patch.zonaAlvo());
         if (patch.percepcaoEsforcoEsperada() != null) treino.setPercepcaoEsforcoEsperada(patch.percepcaoEsforcoEsperada());
         if (patch.observacao() != null) treino.setObservacao(patch.observacao());
-        if (patch.etapas() != null) aplicarEtapasPatch(treino, expandirRepeticoes(patch.etapas()));
+        if (patch.etapas() != null) aplicarEtapasPatch(treino, expandirEtapas(patch.etapas()));
+    }
+
+    private List<EtapaInputDto> expandirEtapas(List<EtapaInputDto> etapas) {
+        return expandirRepeticoes(expandirBlocos(etapas));
+    }
+
+    /**
+     * Expande etapas do tipo BLOCO (modelo coach) em etapas simples com blocoRepeticoes preenchido.
+     * Cada sub-etapa é duplicada N vezes onde N = blocoRepeticoes do bloco pai.
+     */
+    private static List<EtapaInputDto> expandirBlocos(List<EtapaInputDto> etapas) {
+        List<EtapaInputDto> resultado = new ArrayList<>();
+        for (EtapaInputDto etapa : etapas) {
+            if ("BLOCO".equalsIgnoreCase(etapa.tipoEtapa())) {
+                int reps = etapa.blocoRepeticoes() != null && etapa.blocoRepeticoes() > 0
+                        ? etapa.blocoRepeticoes() : 1;
+                List<EtapaInputDto> subEtapas = etapa.subEtapas() != null ? etapa.subEtapas() : List.of();
+                for (int r = 0; r < reps; r++) {
+                    for (EtapaInputDto sub : subEtapas) {
+                        resultado.add(new EtapaInputDto(
+                                sub.tipoEtapa() != null ? sub.tipoEtapa().toUpperCase() : null,
+                                sub.descricaoEtapa(),
+                                sub.duracaoMin(),
+                                sub.distanciaKm(),
+                                sub.fcAlvoEtapa(),
+                                sub.repeticoes(),
+                                reps,
+                                null
+                        ));
+                    }
+                }
+            } else {
+                resultado.add(etapa);
+            }
+        }
+        return resultado;
     }
 
     /**
@@ -139,7 +175,7 @@ public class TreinoPlanejadoEditServiceImpl implements TreinoPlanejadoEditServic
                 dto.distanciaKm(),
                 dto.fcAlvoEtapa(),
                 repeticoes,
-                null,
+                dto.blocoRepeticoes(),
                 null
         );
     }
