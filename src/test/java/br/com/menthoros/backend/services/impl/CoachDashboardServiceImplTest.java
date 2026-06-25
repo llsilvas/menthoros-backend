@@ -185,7 +185,8 @@ class CoachDashboardServiceImplTest {
         void aderenciaPercentualNullSemPlano() {
             Atleta a = atletaRoster("semplano", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
             when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(any(), any(), any()))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(
+                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3))))
                     .thenReturn(List.of());
 
             assertThat(service.getRoster().get(0).aderenciaPercentual()).isNull();
