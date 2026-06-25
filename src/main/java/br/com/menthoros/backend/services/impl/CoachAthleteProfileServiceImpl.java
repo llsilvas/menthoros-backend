@@ -1,20 +1,14 @@
 package br.com.menthoros.backend.services.impl;
 
-import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
-import br.com.menthoros.backend.dto.output.AtletaPerfilCoachOutputDto;
-import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
-import br.com.menthoros.backend.dto.output.PmcPontoDto;
-import br.com.menthoros.backend.dto.output.RecordeDto;
-import br.com.menthoros.backend.entity.Atleta;
-import br.com.menthoros.backend.entity.EtapaTreino;
-import br.com.menthoros.backend.entity.PlanoMetaDados;
-import br.com.menthoros.backend.entity.PlanoSemanal;
-import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.dto.output.*;
+import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAthleteProfileService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
@@ -26,6 +20,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -48,6 +43,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final SugestaoCoachService sugestaoCoachService;
     private final PlanoService planoService;
     private final PlanoMetadadosRepository planoMetadadosRepository;
+    private final ProvaRepository provaRepository;
+    private final ProvaMapper provaMapper;
 
     /**
      * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
@@ -109,11 +106,13 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 ? atleta.getNome() + " " + atleta.getSobrenome()
                 : atleta.getNome();
 
+        List<ProvaOutputDto> provas = buscarProvas(atletaId, tenantId);
+        
         return new AtletaPerfilCoachOutputDto(
                 atletaId,
                 nome,
                 atleta.getObjetivo(),
-                null, // provaAlvo — v1: derivar de provas fora do escopo; retorna null
+                getProximaProva(provas),
                 atleta.getNivelExperiencia() != null ? atleta.getNivelExperiencia().name() : null,
                 pmc,
                 aderencia,
@@ -125,6 +124,15 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 avisos.isEmpty() ? null : avisos,
                 limiareisInferidos
         );
+    }
+
+    private static @Nullable ProvaOutputDto getProximaProva(List<ProvaOutputDto> provas) {
+        LocalDate hoje = LocalDate.now();
+        return provas.stream()
+                .filter(provaOutputDto -> provaOutputDto.dataProva() != null)
+                .filter(provaOutputDto -> !provaOutputDto.dataProva().isBefore(hoje))
+                .min(Comparator.comparing(ProvaOutputDto::dataProva))
+                .orElse(null);
     }
 
     private AtletaPerfilCoachOutputDto.LimiareisInferidosDto resolverLimiareisInferidos(UUID atletaId, Atleta atleta) {
@@ -232,5 +240,11 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
     private long ms(long nanoStart) {
         return (System.nanoTime() - nanoStart) / 1_000_000;
+    }
+
+    private List<ProvaOutputDto> buscarProvas(UUID id, UUID tenantId) {
+        return provaRepository.findUpcomingByAtletaIdAndTenantId(id, tenantId, LocalDate.now()).stream()
+                .map(provaMapper::toOutputDto)
+                .toList();
     }
 }

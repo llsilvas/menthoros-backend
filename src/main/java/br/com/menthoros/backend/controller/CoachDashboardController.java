@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.input.CoachDashboardQueryDto;
+import br.com.menthoros.backend.dto.output.CoachDashboardOutputDto;
 import br.com.menthoros.backend.dto.output.CoachAtletaResumoDto;
 import br.com.menthoros.backend.dto.output.CoachCalendarioDto;
 import br.com.menthoros.backend.dto.output.CoachInsightsDto;
@@ -48,6 +50,38 @@ public class CoachDashboardController {
     })
     public ResponseEntity<List<CoachAtletaResumoDto>> getRoster() {
         return ResponseEntity.ok(coachDashboardService.getRoster());
+    }
+
+    @GetMapping("/dashboard")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @Operation(summary = "Dashboard agregado do coach",
+            description = "Agrega em uma chamada o resumo do tenant, fila de atenção, roster filtrado, "
+                    + "calendário semanal e insights do período. Read-only e tenant-aware.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Dashboard retornado"),
+            @ApiResponse(responseCode = "400", description = "Parâmetros de consulta inválidos"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)"),
+            @ApiResponse(responseCode = "401", description = "Não autenticado")
+    })
+    public ResponseEntity<CoachDashboardOutputDto> getDashboard(
+            @Parameter(description = "Busca textual por nome do atleta")
+            @RequestParam(required = false) String q,
+            @Parameter(description = "Status do roster: active, warning, danger ou paused")
+            @RequestParam(required = false) String status,
+            @Parameter(description = "Ordenação da lista: priority, name, volume ou tsb")
+            @RequestParam(required = false) String sortBy,
+            @Parameter(description = "Página zero-based da lista")
+            @RequestParam(required = false) Integer page,
+            @Parameter(description = "Tamanho da página")
+            @RequestParam(required = false) Integer size,
+            @Parameter(description = "Início do intervalo de insights")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @Parameter(description = "Fim do intervalo de insights")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @Parameter(description = "Dia dentro da semana desejada para o calendário")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate weekFrom) {
+        CoachDashboardQueryDto query = new CoachDashboardQueryDto(q, status, sortBy, page, size, from, to, weekFrom);
+        return ResponseEntity.ok(coachDashboardService.getDashboard(query));
     }
 
     @GetMapping("/calendario-semanal")

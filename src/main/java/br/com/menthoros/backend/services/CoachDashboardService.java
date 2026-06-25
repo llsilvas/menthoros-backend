@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.services;
 
+import br.com.menthoros.backend.dto.input.CoachDashboardQueryDto;
+import br.com.menthoros.backend.dto.output.CoachDashboardOutputDto;
 import br.com.menthoros.backend.dto.output.CoachAtletaResumoDto;
 import br.com.menthoros.backend.dto.output.CoachCalendarioDto;
 import br.com.menthoros.backend.dto.output.CoachInsightsDto;
@@ -30,4 +32,10 @@ public interface CoachDashboardService {
      * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
      */
     CoachInsightsDto getInsights(LocalDate from, LocalDate to);
+
+    /**
+     * Dashboard agregado para a tela principal do coach.
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     */
+    CoachDashboardOutputDto getDashboard(CoachDashboardQueryDto query);
 }

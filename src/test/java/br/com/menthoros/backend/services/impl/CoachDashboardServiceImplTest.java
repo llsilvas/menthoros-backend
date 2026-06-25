@@ -1,8 +1,12 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.input.CoachDashboardQueryDto;
 import br.com.menthoros.backend.dto.output.CoachAtletaResumoDto;
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto;
 import br.com.menthoros.backend.dto.output.CoachCalendarioDto;
+import br.com.menthoros.backend.dto.output.CoachDashboardOutputDto;
+import br.com.menthoros.backend.dto.output.CoachDashboardRosterPageDto;
+import br.com.menthoros.backend.dto.output.CoachDashboardSummaryDto;
 import br.com.menthoros.backend.dto.output.CoachInsightsDto;
 import br.com.menthoros.backend.dto.output.RecommendationExplanation;
 import br.com.menthoros.backend.enums.ExplanationConfidence;
@@ -256,6 +260,79 @@ class CoachDashboardServiceImplTest {
         void fromDepoisDeTo() {
             assertThatThrownBy(() -> service.getInsights(LocalDate.of(2026, 6, 10), LocalDate.of(2026, 6, 1)))
                     .isInstanceOf(DomainRuleViolationException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("getDashboard")
+    class GetDashboard {
+
+        @Test
+        @DisplayName("agrega resumo, roster paginado, fila, calendário e insights")
+        void agregaDashboard() {
+            Atleta bruno = atletaRoster("Bruno", AtletaStatus.ATIVO, -12.0, HOJE.minusDays(2));
+            Atleta carla = atletaRoster("Carla", AtletaStatus.ATIVO, 4.0, HOJE.minusDays(1));
+            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(bruno, carla));
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(bruno.getId()), any(), any()))
+                    .thenReturn(List.of(treino(LocalDate.of(2026, 6, 16), "10.0", 80)));
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(carla.getId()), any(), any()))
+                    .thenReturn(List.of(treino(LocalDate.of(2026, 6, 16), "8.0", 60)));
+            when(treinoPlanejadoRepository.findByTenantAndDataBetween(eq(tenantId), any(), any()))
+                    .thenReturn(List.of(planejado(bruno, HOJE, TipoTreino.INTERVALADO)));
+
+            CoachAttentionItemOutputDto atenção = new CoachAttentionItemOutputDto(
+                    bruno.getId(),
+                    "Bruno S",
+                    Severidade.ALTA,
+                    240,
+                    MotivoAtencao.FADIGA,
+                    MotivoAtencao.FADIGA.getSuggestedAction(),
+                    Instant.parse("2026-06-17T12:00:00Z"),
+                    List.of(),
+                    new RecommendationExplanation(
+                            "Fadiga alta",
+                            List.of("rule-1"),
+                            ExplanationConfidence.HIGH));
+            when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of(atenção));
+
+            CoachDashboardOutputDto dashboard = service.getDashboard(new CoachDashboardQueryDto(
+                    "Bruno", "warning", "priority", 0, 1,
+                    LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 30), HOJE));
+
+            assertThat(dashboard.summary().kpis().totalAtletas()).isEqualTo(2);
+            assertThat(dashboard.summary().atletasExibidos()).isEqualTo(1);
+            assertThat(dashboard.summary().itensFilaAtencao()).isEqualTo(1);
+            assertThat(dashboard.roster().items()).extracting(CoachAtletaResumoDto::nome)
+                    .containsExactly("Bruno S");
+            assertThat(dashboard.roster().page()).isZero();
+            assertThat(dashboard.roster().size()).isEqualTo(1);
+            assertThat(dashboard.roster().totalElements()).isEqualTo(1);
+            assertThat(dashboard.attentionQueue()).containsExactly(atenção);
+            assertThat(dashboard.calendar().semanaInicio()).isEqualTo(INICIO_SEMANA);
+            assertThat(dashboard.insights().kpis().treinosPlanejadosSemana()).isGreaterThanOrEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("rejeita paginação e ordenação inválidas")
+        void rejeitaParametrosInvalidos() {
+            assertThatThrownBy(() -> service.getDashboard(new CoachDashboardQueryDto(
+                    null, null, "invalido", 0, 10, null, null, null)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("sortBy inválido");
+        }
+
+        @Test
+        @DisplayName("rejeita page negativa e size fora do intervalo")
+        void rejeitaPaginaOuTamanhoInvalidos() {
+            assertThatThrownBy(() -> service.getDashboard(new CoachDashboardQueryDto(
+                    null, null, null, -1, 10, null, null, null)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("page não pode ser negativo");
+
+            assertThatThrownBy(() -> service.getDashboard(new CoachDashboardQueryDto(
+                    null, null, null, 0, 0, null, null, null)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("size deve ser maior que zero");
         }
     }
 

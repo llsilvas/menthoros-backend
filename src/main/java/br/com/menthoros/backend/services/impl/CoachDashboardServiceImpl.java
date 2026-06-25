@@ -1,7 +1,11 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.input.CoachDashboardQueryDto;
 import br.com.menthoros.backend.dto.output.CoachAtletaResumoDto;
 import br.com.menthoros.backend.dto.output.CoachCalendarioDto;
+import br.com.menthoros.backend.dto.output.CoachDashboardOutputDto;
+import br.com.menthoros.backend.dto.output.CoachDashboardRosterPageDto;
+import br.com.menthoros.backend.dto.output.CoachDashboardSummaryDto;
 import br.com.menthoros.backend.dto.output.CoachInsightsDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.MetricasDiarias;
@@ -49,10 +53,19 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
 
     private static final int SEMANAS_INSIGHTS = 12;
     private static final int TOP_ATLETAS = 5;
+    private static final int DEFAULT_PAGE_SIZE = 10;
+    private static final int MAX_PAGE_SIZE = 50;
 
     /** Tipos que contam como "treino-chave" da semana. */
     private static final Set<TipoTreino> TIPOS_CHAVE =
             Set.of(TipoTreino.INTERVALADO, TipoTreino.TIRO, TipoTreino.LONGO, TipoTreino.TEMPO_RUN);
+
+    private enum DashboardSort {
+        PRIORITY,
+        NAME,
+        VOLUME,
+        TSB
+    }
 
     private final AtletaRepository atletaRepository;
     private final MetricasDiariasRepository metricasDiariasRepository;
@@ -149,6 +162,64 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         return new CoachInsightsDto(kpis, tendencia, top);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public CoachDashboardOutputDto getDashboard(CoachDashboardQueryDto query) {
+        if (query == null) {
+            throw new IllegalArgumentException("query não pode ser nulo");
+        }
+        
+        DashboardSort sortBy = parseSort(query.sortBy());
+        int page = query.page() != null ? query.page() : 0;
+        int size = query.size() != null ? query.size() : DEFAULT_PAGE_SIZE;
+        validarPaginacao(page, size);
+        validarStatus(query.status());
+
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        log.info("Montando dashboard do coach: tenantId={}, q={}, status={}, sortBy={}, page={}, size={}, from={}, to={}, weekFrom={}",
+                tenantId, query.q(), query.status(), sortBy, page, size, query.from(), query.to(), query.weekFrom());
+
+        List<CoachAtletaResumoDto> roster = getRoster().stream()
+                .filter(atleta -> matchesSearch(atleta, query.q()))
+                .filter(atleta -> matchesStatus(atleta, query.status()))
+                .sorted(comparator(sortBy))
+                .toList();
+
+        int totalElements = roster.size();
+        int totalPages = totalElements == 0 ? 0 : (int) Math.ceil(totalElements / (double) size);
+        int fromIndex = Math.min(page * size, totalElements);
+        int toIndex = Math.min(fromIndex + size, totalElements);
+
+        List<CoachAtletaResumoDto> pageItems = roster.subList(fromIndex, toIndex);
+        CoachInsightsDto insights = getInsights(query.from(), query.to());
+        List<CoachAttentionItemOutputDto> attentionQueue = coachAttentionQueueService.getAttentionQueue();
+        CoachCalendarioDto calendar = getCalendarioSemanal(query.weekFrom());
+
+        CoachDashboardSummaryDto summary = new CoachDashboardSummaryDto(
+                insights.kpis(),
+                totalElements,
+                attentionQueue.size());
+
+        CoachDashboardRosterPageDto rosterPage = new CoachDashboardRosterPageDto(
+                pageItems,
+                page,
+                size,
+                totalElements,
+                totalPages);
+
+        CoachDashboardOutputDto dashboard = new CoachDashboardOutputDto(
+                clock.instant(),
+                summary,
+                rosterPage,
+                attentionQueue,
+                calendar,
+                insights);
+
+        log.info("Dashboard do coach montado: tenantId={}, atletasExibidos={}, itensFila={}",
+                tenantId, totalElements, attentionQueue.size());
+        return dashboard;
+    }
+
     // ===== Helpers =====
 
     /** Conta os treinos planejados do tenant na semana atual — sem passar por getCalendarioSemanal
@@ -217,6 +288,83 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         if (warning) return "warning";
 
         return "active";
+    }
+
+    private void validarPaginacao(int page, int size) {
+        if (page < 0) {
+            throw new IllegalArgumentException("page não pode ser negativo");
+        }
+        if (size <= 0) {
+            throw new IllegalArgumentException("size deve ser maior que zero");
+        }
+        if (size > MAX_PAGE_SIZE) {
+            throw new IllegalArgumentException("size não pode ser maior que " + MAX_PAGE_SIZE);
+        }
+    }
+
+    private void validarStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return;
+        }
+        if (!Set.of("active", "warning", "danger", "paused").contains(status.toLowerCase())) {
+            throw new IllegalArgumentException("status inválido: " + status);
+        }
+    }
+
+    private DashboardSort parseSort(String sortBy) {
+        if (sortBy == null || sortBy.isBlank()) {
+            return DashboardSort.PRIORITY;
+        }
+        return switch (sortBy.trim().toLowerCase()) {
+            case "priority" -> DashboardSort.PRIORITY;
+            case "name" -> DashboardSort.NAME;
+            case "volume" -> DashboardSort.VOLUME;
+            case "tsb" -> DashboardSort.TSB;
+            default -> throw new IllegalArgumentException("sortBy inválido: " + sortBy);
+        };
+    }
+
+    private boolean matchesSearch(CoachAtletaResumoDto atleta, String q) {
+        if (q == null || q.isBlank()) {
+            return true;
+        }
+        String termo = q.trim().toLowerCase();
+        return (atleta.nome() != null && atleta.nome().toLowerCase().contains(termo))
+                || (atleta.fase() != null && atleta.fase().toLowerCase().contains(termo));
+    }
+
+    private boolean matchesStatus(CoachAtletaResumoDto atleta, String status) {
+        if (status == null || status.isBlank()) {
+            return true;
+        }
+        return atleta.status() != null && atleta.status().equalsIgnoreCase(status.trim());
+    }
+
+    private Comparator<CoachAtletaResumoDto> comparator(DashboardSort sortBy) {
+        Comparator<CoachAtletaResumoDto> comparator = switch (sortBy) {
+            case NAME -> Comparator.comparing(CoachAtletaResumoDto::nome, Comparator.nullsLast(String::compareToIgnoreCase));
+            case VOLUME -> Comparator.comparing(CoachAtletaResumoDto::weeklyVolume, Comparator.nullsLast(Comparator.naturalOrder())).reversed();
+            case TSB -> Comparator.comparing(CoachAtletaResumoDto::tsb, Comparator.nullsLast(Comparator.naturalOrder()));
+            case PRIORITY -> Comparator
+                    .comparingInt((CoachAtletaResumoDto atleta) -> prioridadeStatus(atleta.status()))
+                    .reversed()
+                    .thenComparing(CoachAtletaResumoDto::tsb, Comparator.nullsLast(Comparator.naturalOrder()))
+                    .thenComparing(CoachAtletaResumoDto::lastActivity, Comparator.nullsLast(Comparator.naturalOrder()));
+        };
+        return comparator.thenComparing(CoachAtletaResumoDto::nome, Comparator.nullsLast(String::compareToIgnoreCase));
+    }
+
+    private int prioridadeStatus(String status) {
+        if (status == null) {
+            return 0;
+        }
+        return switch (status.toLowerCase()) {
+            case "danger" -> 4;
+            case "warning" -> 3;
+            case "paused" -> 2;
+            case "active" -> 1;
+            default -> 0;
+        };
     }
 
     private String nomeCompleto(Atleta atleta) {

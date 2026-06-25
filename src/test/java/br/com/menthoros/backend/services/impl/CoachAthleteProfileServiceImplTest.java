@@ -4,10 +4,12 @@ import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaPerfilCoachOutputDto;
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
+import br.com.menthoros.backend.dto.output.ProvaOutputDto;
 import br.com.menthoros.backend.dto.output.RecordeDto;
 import br.com.menthoros.backend.dto.output.SugestaoCoachOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.MotivoAtencao;
@@ -22,8 +24,10 @@ import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.enums.ConfiancaInferencia;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
 import br.com.menthoros.backend.services.PlanoService;
@@ -41,6 +45,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,6 +57,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("CoachAthleteProfileServiceImpl")
@@ -63,6 +69,8 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private SugestaoCoachService sugestaoCoachService;
     @Mock private PlanoService planoService;
     @Mock private PlanoMetadadosRepository planoMetadadosRepository;
+    @Mock private ProvaRepository provaRepository;
+    @Mock private ProvaMapper provaMapper;
 
     @InjectMocks
     private CoachAthleteProfileServiceImpl service;
@@ -83,6 +91,8 @@ class CoachAthleteProfileServiceImplTest {
                 .objetivo("Correr maratona em 4h")
                 .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
                 .build();
+        lenient().when(provaRepository.findUpcomingByAtletaIdAndTenantId(eq(atletaId), eq(tenantId), any(LocalDate.class)))
+                .thenReturn(List.of());
     }
 
     @AfterEach
@@ -129,10 +139,42 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(perfil.aderenciaSemanal()).hasSize(1);
             assertThat(perfil.recordes()).hasSize(1);
             assertThat(perfil.planoVigente()).isNull();
+            assertThat(perfil.proximaProva()).isNull();
             assertThat(perfil.sinaisRecentes()).isEmpty();
             assertThat(perfil.sugestoesRecentes()).isEmpty();
             assertThat(perfil.avisos()).isNull();
             assertThat(perfil.geradoEm()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("proximaProva — retorna a prova futura mais próxima e preserva marcação de prova alvo")
+        void proximaProvaRetornaMenorDataFuturaPreservandoAlvo() {
+            stubAtleta();
+            stubPmc();
+            stubAderencia();
+            stubRecordes();
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId))
+                    .thenReturn(Optional.empty());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+            when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+
+            Prova provaDistante = new Prova();
+            Prova provaMaisProxima = new Prova();
+            LocalDate hoje = LocalDate.now();
+            ProvaOutputDto dtoDistante = provaDto("Meia preparatória", hoje.plusDays(30), false);
+            ProvaOutputDto dtoMaisProxima = provaDto("Maratona alvo", hoje.plusDays(7), true);
+            when(provaRepository.findUpcomingByAtletaIdAndTenantId(eq(atletaId), eq(tenantId), any(LocalDate.class)))
+                    .thenReturn(List.of(provaDistante, provaMaisProxima));
+            when(provaMapper.toOutputDto(provaDistante)).thenReturn(dtoDistante);
+            when(provaMapper.toOutputDto(provaMaisProxima)).thenReturn(dtoMaisProxima);
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.proximaProva()).isEqualTo(dtoMaisProxima);
+            assertThat(perfil.proximaProva().nomeProva()).isEqualTo("Maratona alvo");
+            assertThat(perfil.proximaProva().dataProva()).isEqualTo(hoje.plusDays(7));
+            assertThat(perfil.proximaProva().provaAlvo()).isTrue();
+            verify(provaRepository).findUpcomingByAtletaIdAndTenantId(eq(atletaId), eq(tenantId), any(LocalDate.class));
         }
 
         @Test
@@ -418,5 +460,31 @@ class CoachAthleteProfileServiceImplTest {
     private SugestaoCoachOutputDto sugestao(TipoSugestao tipo) {
         return new SugestaoCoachOutputDto(UUID.randomUUID(), atletaId, "Ana", tipo,
                 StatusSugestao.PENDING, "HIGH", "Recuperar", null, Instant.now(), null, null);
+    }
+
+    private ProvaOutputDto provaDto(String nome, LocalDate data, boolean provaAlvo) {
+        return new ProvaOutputDto(
+                UUID.randomUUID(),
+                nome,
+                data,
+                null,
+                null,
+                null,
+                provaAlvo,
+                null,
+                null,
+                null,
+                null,
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                (int) ChronoUnit.DAYS.between(LocalDate.now(), data)
+        );
     }
 }
