@@ -114,6 +114,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 atleta.getObjetivo(),
                 getProximaProva(provas),
                 atleta.getNivelExperiencia() != null ? atleta.getNivelExperiencia().name() : null,
+                atleta.getIdade() != null ? atleta.getIdade() : null,
                 pmc,
                 aderencia,
                 planoVigente,

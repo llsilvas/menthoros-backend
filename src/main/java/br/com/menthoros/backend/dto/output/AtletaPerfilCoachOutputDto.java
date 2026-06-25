@@ -33,6 +33,9 @@ public record AtletaPerfilCoachOutputDto(
         @Schema(description = "Nível de experiência; null se não configurado", example = "INTERMEDIARIO")
         String nivelExperiencia,
 
+        @Schema(description = "Idade do atleta; null se não configurada", example = "32")
+        Integer idade,
+
         @Schema(description = "Série PMC dos últimos 90 dias")
         List<PmcPontoDto> pmc,
 
