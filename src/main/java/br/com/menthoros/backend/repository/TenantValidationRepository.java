@@ -27,7 +27,6 @@ public class TenantValidationRepository {
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final PlanoSemanalRepository planoSemanalRepository;
     private final ProvaRepository provaRepository;
-    private final TreinoReconciliacaoRepository treinoReconciliacaoRepository;
     private final SugestaoCoachRepository sugestaoCoachRepository;
 
     /**
@@ -84,14 +83,6 @@ public class TenantValidationRepository {
         // Tenta Prova (relacionado via Atleta)
         if (provaRepository.existsByIdAndAtleta_TenantId(resourceId, tenantId)) {
             log.debug("TenantValidation: resourceId {} pertence a tenant {} (Prova)",
-                    resourceId, tenantId);
-            return true;
-        }
-
-        // Tenta TreinoReconciliacao (relacionado via TreinoRealizado -> Atleta)
-        if (treinoReconciliacaoRepository.existsByIdAndTreinoRealizado_Atleta_TenantId(
-                resourceId, tenantId)) {
-            log.debug("TenantValidation: resourceId {} pertence a tenant {} (TreinoReconciliacao)",
                     resourceId, tenantId);
             return true;
         }

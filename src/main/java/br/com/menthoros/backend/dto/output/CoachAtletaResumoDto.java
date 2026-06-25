@@ -39,5 +39,8 @@ public record CoachAtletaResumoDto(
         LocalDate lastActivity,
 
         @Schema(description = "Volume realizado na semana atual (km)", example = "32.5")
-        BigDecimal weeklyVolume
+        BigDecimal weeklyVolume,
+
+        @Schema(description = "Percentual de aderência ao plano nas últimas 4 semanas (0–100); null quando sem plano", example = "78")
+        Integer aderenciaPercentual
 ) {}

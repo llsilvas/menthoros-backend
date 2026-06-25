@@ -51,6 +51,19 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
     @Query("SELECT p FROM Prova p WHERE p.id = :id AND p.assessoria.id = :tenantId")
     Optional<Prova> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 
+    @Query("""
+        SELECT p FROM Prova p
+        WHERE p.atleta.id = :id
+          AND p.assessoria.id = :tenantId
+          AND p.dataProva >= :dataMinima
+        ORDER BY p.dataProva ASC
+        """)
+    List<Prova> findUpcomingByAtletaIdAndTenantId(
+            @Param("id") UUID id,
+            @Param("tenantId") UUID tenantId,
+            @Param("dataMinima") LocalDate dataMinima
+    );
+
     /**
      * Valida se uma Prova pertence a um tenant específico.
      * Usado pelo TenantValidationAspect para validação de isolamento.
