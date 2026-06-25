@@ -159,6 +159,37 @@ class CoachDashboardServiceImplTest {
 
             assertThat(service.getRoster().get(0).weeklyVolume()).isEqualByComparingTo(new BigDecimal("15.5"));
         }
+
+        @Test
+        @DisplayName("aderenciaPercentual calculada sobre as últimas 4 semanas")
+        void aderenciaPercentual() {
+            Atleta a = atletaRoster("ader", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
+            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+
+            TreinoPlanejado realizado1 = planejado(a, HOJE.minusDays(7), TipoTreino.REGENERATIVO);
+            realizado1.setTreinoRealizado(treino(HOJE.minusDays(7), "5.0", 40));
+            TreinoPlanejado realizado2 = planejado(a, HOJE.minusDays(3), TipoTreino.REGENERATIVO);
+            realizado2.setTreinoRealizado(treino(HOJE.minusDays(3), "8.0", 60));
+            TreinoPlanejado naorealizado = planejado(a, HOJE.minusDays(1), TipoTreino.REGENERATIVO);
+
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(
+                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3))))
+                    .thenReturn(List.of(realizado1, realizado2, naorealizado));
+
+            // 2 de 3 realizados = 67%
+            assertThat(service.getRoster().get(0).aderenciaPercentual()).isEqualTo(67);
+        }
+
+        @Test
+        @DisplayName("aderenciaPercentual é null quando atleta não tem plano")
+        void aderenciaPercentualNullSemPlano() {
+            Atleta a = atletaRoster("semplano", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
+            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(any(), any(), any()))
+                    .thenReturn(List.of());
+
+            assertThat(service.getRoster().get(0).aderenciaPercentual()).isNull();
+        }
     }
 
     @Nested

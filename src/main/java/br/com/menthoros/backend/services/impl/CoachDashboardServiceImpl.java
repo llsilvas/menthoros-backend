@@ -233,6 +233,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
 
     private CoachAtletaResumoDto montarResumo(Atleta atleta, LocalDate hoje, LocalDate inicioSemana, LocalDate fimSemana) {
         UUID atletaId = atleta.getId();
+        UUID tenantId = TenantContext.getRequiredTenantId();
         MetricasDiarias metrica = metricasDiariasRepository.findLatestByAtletaId(atletaId).orElse(null);
 
         String fase = planoMetadadosRepository.findByAtletaId(atletaId)
@@ -252,8 +253,19 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         Double atl = metrica != null ? metrica.getAtl() : null;
         Double tsb = metrica != null ? metrica.getTsb() : null;
 
+        List<TreinoPlanejado> treinosAderencia = treinoPlanejadoRepository
+                .findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, inicioSemana.minusWeeks(3));
+        Integer aderenciaPercentual = null;
+        if (!treinosAderencia.isEmpty()) {
+            int totalAderencia = treinosAderencia.size();
+            int realizadoAderencia = (int) treinosAderencia.stream()
+                    .filter(tp -> tp.getTreinoRealizado() != null)
+                    .count();
+            aderenciaPercentual = (int) Math.round(realizadoAderencia * 100.0 / totalAderencia);
+        }
+
         return new CoachAtletaResumoDto(atletaId, nomeCompleto(atleta), ctl, atl, tsb, fase,
-                deriveStatus(atleta, tsb, lastActivity, hoje), lastActivity, weeklyVolume);
+                deriveStatus(atleta, tsb, lastActivity, hoje), lastActivity, weeklyVolume, aderenciaPercentual);
     }
 
     private CoachCalendarioDto.TreinoAgendado montarTreinoAgendado(TreinoPlanejado tp, Set<UUID> atletasEmAtencao) {
