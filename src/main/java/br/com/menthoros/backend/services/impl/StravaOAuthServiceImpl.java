@@ -20,6 +20,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Instant;
@@ -151,12 +152,20 @@ public class StravaOAuthServiceImpl implements StravaOAuthService {
     }
 
     private StravaTokenResponse callTokenEndpoint(MultiValueMap<String, String> formData) {
-        return stravaWebClient.post()
-                .uri(stravaProperties.getTokenUri())
-                .body(BodyInserters.fromFormData(formData))
-                .retrieve()
-                .bodyToMono(StravaTokenResponse.class)
-                .block();
+        try {
+            return stravaWebClient.post()
+                    .uri(stravaProperties.getTokenUri())
+                    .body(BodyInserters.fromFormData(formData))
+                    .retrieve()
+                    .bodyToMono(StravaTokenResponse.class)
+                    .block();
+        } catch (WebClientResponseException ex) {
+            // Strava devolve o motivo exato (code reutilizado, client inválido, etc.) no corpo da resposta
+            log.error("Falha na troca de token com Strava: status={} body={}",
+                    ex.getStatusCode(), ex.getResponseBodyAsString());
+            throw new IllegalStateException(
+                    "Falha ao trocar código por token no Strava: " + ex.getResponseBodyAsString(), ex);
+        }
     }
 
     private MultiValueMap<String, String> buildAuthorizationCodeBody(String code) {
