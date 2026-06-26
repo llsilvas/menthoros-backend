@@ -117,6 +117,11 @@ Rules enforced across all controllers. Violations must be corrected in the same 
 
 Rules for conversion between entities, DTOs, and domain objects.
 
+### Nullability Annotations (mandatory)
+- Use `@Nullable` from **`org.jspecify.annotations`** — not `javax.annotation` or `jakarta.annotation`.
+- JSpecify is the project's nullability library; mixing annotation sources breaks static analysis consistency.
+- Apply `@Nullable` on return types and parameters that legitimately return/accept null; omit on `@NonNull` paths.
+
 ### Null Handling (mandatory)
 - Every mapper method MUST validate null inputs explicitly.
 - Throw `IllegalArgumentException` with a clear message if null is detected.
@@ -345,6 +350,33 @@ A service that mixes orchestration, LLM/IO, schema building, validation and pers
 Keep the `*ServiceImpl` as a thin orchestrator and move focused logic into `services/helper`, `services/prompt`, or `skills/`.
 
 **Known debt — do not grow:** `IaServiceImpl` (~1500 lines: JSON-schema building + plan generation + FC/interval/load validation), `PlanoServiceImpl` (~740), `StravaActivityServiceImpl` (~650), `TsbServiceImpl` (~640). Decomposition of `IaServiceImpl` is tracked in OpenSpec change `refactor-iaservice-decomposition`.
+
+### Partial-Failure Pattern for Aggregation Endpoints (mandatory when applicable)
+
+When a service method assembles a response from multiple independent sub-queries (e.g. a profile endpoint that fetches PMC, aderência, plano, sinais, sugestões), use the **partial-failure pattern**: each sub-query runs inside a helper that catches non-critical exceptions, records the failed field in an `avisos` list, and returns a safe default (empty list or null) — so one failing query never brings down the whole response.
+
+Reference implementation: `CoachAthleteProfileServiceImpl.buscarPerfil()` + `buscarLista()` / `buscarNullable()`.
+
+```java
+// Helper shape — keep in the service impl, private
+private <T> List<T> buscarLista(String campo, List<String> avisos, Supplier<List<T>> fn) {
+    try {
+        return fn.get();
+    } catch (DomainNotFoundException | IllegalStateException e) {
+        throw e;  // domain errors always propagate
+    } catch (Exception e) {
+        log.warn("[perfil] erro ao buscar {}: {}", campo, e);
+        avisos.add(campo);
+        return List.of();
+    }
+}
+```
+
+Rules:
+- **Re-throw** `DomainNotFoundException` and `IllegalStateException` — these signal a broken invariant, not a degraded response.
+- **Swallow and record** infrastructure/transient exceptions (DB timeout, lazy-load outside TX, etc.) into `avisos`.
+- **Return the `avisos` list** in the DTO (as `List<String>` or null when empty) so callers can detect partial results without guessing.
+- Apply only to aggregation methods where sub-queries are genuinely independent. Do not use for single-resource lookups.
 
 ## Skills Architecture Standards
 
@@ -776,4 +808,4 @@ Reject code if it has:
 ❌ Test failures or compilation errors
 ```
 
-Last reviewed on: 2026-06-13
+Last reviewed on: 2026-06-26

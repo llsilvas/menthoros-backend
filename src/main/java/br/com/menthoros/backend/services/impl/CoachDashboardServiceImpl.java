@@ -255,6 +255,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
 
         List<TreinoPlanejado> treinosAderencia = treinoPlanejadoRepository
                 .findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, inicioSemana.minusWeeks(3));
+
         Integer aderenciaPercentual = null;
         if (!treinosAderencia.isEmpty()) {
             int totalAderencia = treinosAderencia.size();
