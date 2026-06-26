@@ -44,7 +44,7 @@ class StravaOAuthServiceTest {
         stravaProperties = new StravaProperties();
         stravaProperties.setClientId("123");
         stravaProperties.setClientSecret("secret");
-        stravaProperties.setRedirectUri("http://localhost:8080/api/strava/callback");
+        stravaProperties.setRedirectUri("http://localhost:8080/api/v1/strava/callback");
         stravaProperties.setAuthorizationUri("https://www.strava.com/oauth/authorize");
         stravaProperties.setTokenUri("https://www.strava.com/oauth/token");
         stravaProperties.setApiBaseUrl("https://www.strava.com/api/v3");
