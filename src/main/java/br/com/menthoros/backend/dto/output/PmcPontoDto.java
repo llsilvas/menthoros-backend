@@ -25,5 +25,8 @@ public record PmcPontoDto(
         Double tsb,
 
         @Schema(description = "Training Stress Score do dia", example = "85")
-        Integer tss
+        Integer tss,
+
+        @Schema(description = "Faixa de forma (FaixaTsb) resolvida pelo backend a partir do TSB; null quando tsb ausente", example = "FATIGADO")
+        String statusForma
 ) {}

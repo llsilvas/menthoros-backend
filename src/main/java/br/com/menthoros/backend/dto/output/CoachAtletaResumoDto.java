@@ -42,5 +42,8 @@ public record CoachAtletaResumoDto(
         BigDecimal weeklyVolume,
 
         @Schema(description = "Percentual de aderência ao plano nas últimas 4 semanas (0–100); null quando sem plano", example = "78")
-        Integer aderenciaPercentual
+        Integer aderenciaPercentual,
+
+        @Schema(description = "Faixa de forma (FaixaTsb) resolvida pelo backend a partir do TSB; null quando tsb ausente. Distinto de `status` (atenção do coach)", example = "FORMA_IDEAL")
+        String statusForma
 ) {}

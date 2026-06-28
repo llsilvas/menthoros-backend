@@ -51,6 +51,9 @@ public record AtletaHomeDto(
             Integer tss,
 
             @Schema(description = "Volume do dia (km)", example = "12.5")
-            BigDecimal volumeKm
+            BigDecimal volumeKm,
+
+            @Schema(description = "Faixa de forma (FaixaTsb) resolvida pelo backend a partir do TSB; null quando tsb ausente", example = "FORMA_IDEAL")
+            String statusForma
     ) {}
 }
