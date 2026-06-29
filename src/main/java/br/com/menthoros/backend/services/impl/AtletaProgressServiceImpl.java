@@ -12,6 +12,7 @@ import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.entity.Usuario;
+import br.com.menthoros.backend.enums.FaixaTsb;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -85,7 +86,8 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
         return metricasDiariasRepository
                 .findByAtletaIdAndDataBetweenOrderByDataAsc(atletaId, intervalo.from(), intervalo.to())
                 .stream()
-                .map(m -> new PmcPontoDto(m.getData(), m.getCtl(), m.getAtl(), m.getTsb(), m.getTss()))
+                .map(m -> new PmcPontoDto(m.getData(), m.getCtl(), m.getAtl(), m.getTsb(), m.getTss(),
+                        FaixaTsb.classificarNome(m.getTsb())))
                 .toList();
     }
 
@@ -195,8 +197,9 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                 .orElse(null);
 
         AtletaHomeDto.MetricasChave metricas = metricasDiariasRepository.findLatestByAtletaId(atletaId)
-                .map(m -> new AtletaHomeDto.MetricasChave(m.getCtl(), m.getAtl(), m.getTsb(), m.getTss(), m.getVolumeKm()))
-                .orElse(new AtletaHomeDto.MetricasChave(null, null, null, null, null));
+                .map(m -> new AtletaHomeDto.MetricasChave(m.getCtl(), m.getAtl(), m.getTsb(), m.getTss(), m.getVolumeKm(),
+                        FaixaTsb.classificarNome(m.getTsb())))
+                .orElse(new AtletaHomeDto.MetricasChave(null, null, null, null, null, null));
 
         return new AtletaHomeDto(proximo, metricas);
     }

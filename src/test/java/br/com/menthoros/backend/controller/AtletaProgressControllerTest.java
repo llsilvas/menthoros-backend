@@ -47,7 +47,7 @@ class AtletaProgressControllerTest {
     @DisplayName("GET /{id}/metricas/historico → 200 com a série")
     void historico() throws Exception {
         when(service.getHistoricoPmc(eq(atletaId), any(), any()))
-                .thenReturn(List.of(new PmcPontoDto(LocalDate.of(2026, 6, 1), 50.0, 60.0, -10.0, 80)));
+                .thenReturn(List.of(new PmcPontoDto(LocalDate.of(2026, 6, 1), 50.0, 60.0, -10.0, 80, "ACUMULANDO_FADIGA")));
 
         mockMvc.perform(get("/api/v1/atletas/{id}/metricas/historico", atletaId))
                 .andExpect(status().isOk())
@@ -121,7 +121,7 @@ class AtletaProgressControllerTest {
         when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
         when(service.getHome(atletaId)).thenReturn(new AtletaHomeDto(
                 new AtletaHomeDto.ProximoTreino(LocalDate.now().plusDays(1), "INTERVALADO", "6x800m"),
-                new AtletaHomeDto.MetricasChave(52.0, 44.0, 8.0, 0, null)));
+                new AtletaHomeDto.MetricasChave(52.0, 44.0, 8.0, 0, null, "FORMA_IDEAL")));
 
         mockMvc.perform(get("/api/v1/atletas/me/home"))
                 .andExpect(status().isOk())

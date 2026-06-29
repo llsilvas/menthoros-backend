@@ -410,7 +410,7 @@ class CoachAthleteProfileServiceImplTest {
 
     private void stubPmc() {
         when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any()))
-                .thenReturn(List.of(new PmcPontoDto(LocalDate.now(), 50.0, 55.0, -5.0, 80)));
+                .thenReturn(List.of(new PmcPontoDto(LocalDate.now(), 50.0, 55.0, -5.0, 80, "FATIGADO")));
     }
 
     private void stubAderencia() {

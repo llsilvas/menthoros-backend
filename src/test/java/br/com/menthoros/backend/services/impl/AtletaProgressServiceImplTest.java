@@ -114,7 +114,10 @@ class AtletaProgressServiceImplTest {
             List<PmcPontoDto> serie = service.getHistoricoPmc(atletaId, LocalDate.of(2026, 6, 1), LocalDate.of(2026, 6, 2));
 
             assertThat(serie).hasSize(2);
-            assertThat(serie.get(0)).isEqualTo(new PmcPontoDto(LocalDate.of(2026, 6, 1), 50.0, 60.0, -10.0, 80));
+            assertThat(serie.get(0)).isEqualTo(new PmcPontoDto(LocalDate.of(2026, 6, 1), 50.0, 60.0, -10.0, 80, "ACUMULANDO_FADIGA"));
+            // statusForma resolvido pelo backend a partir do TSB (tsb=-10 → ACUMULANDO_FADIGA; tsb=-7 → FATIGADO)
+            assertThat(serie).extracting(PmcPontoDto::statusForma)
+                    .containsExactly("ACUMULANDO_FADIGA", "FATIGADO");
         }
 
         @Test

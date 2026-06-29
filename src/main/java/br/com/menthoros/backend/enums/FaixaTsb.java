@@ -116,6 +116,17 @@ public enum FaixaTsb {
                 .orElse(FORMA_IDEAL); // fallback seguro
     }
 
+    /**
+     * Nome (constante do enum) da faixa correspondente ao TSB, para expor em DTOs.
+     *
+     * @param tsb valor de TSB (pode ser null)
+     * @return o {@code name()} da faixa (ex.: "FORMA_IDEAL"), ou null se tsb for null
+     */
+    public static String classificarNome(Double tsb) {
+        FaixaTsb faixa = classificar(tsb);
+        return faixa == null ? null : faixa.name();
+    }
+
     public boolean isFormaIdeal() {
         return this == FORMA_IDEAL;
     }
