@@ -49,7 +49,11 @@ public class JwtTenantFilter extends OncePerRequestFilter {
      */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return request.getRequestURI().startsWith("/api/admin/");
+        String uri = request.getRequestURI();
+        // /api/v1/waitlist: endpoint público (pré-signup), tenant-less por design. Isentar garante
+        // que um usuário autenticado que acerte essa rota (token injetado globalmente) não seja
+        // rejeitado por ausência de tenant_id.
+        return uri.startsWith("/api/admin/") || uri.startsWith("/api/v1/waitlist");
     }
 
     @Override

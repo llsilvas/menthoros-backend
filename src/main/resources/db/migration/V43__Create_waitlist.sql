@@ -4,7 +4,7 @@
 -- =====================================================================
 
 CREATE TABLE IF NOT EXISTS tb_waitlist (
-    id                UUID         NOT NULL,
+    id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     nome              VARCHAR(120) NOT NULL,
     email             VARCHAR(180) NOT NULL,
     email_normalized  VARCHAR(180) NOT NULL,
@@ -13,12 +13,9 @@ CREATE TABLE IF NOT EXISTS tb_waitlist (
     qtd_atletas       VARCHAR(20),
     aceite_lgpd       BOOLEAN      NOT NULL DEFAULT FALSE,
     origem            VARCHAR(40)  DEFAULT 'landing',
-    created_at        TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT pk_waitlist PRIMARY KEY (id)
+    created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    CONSTRAINT uk_waitlist_email_normalized UNIQUE (email_normalized)
 );
-
-CREATE UNIQUE INDEX IF NOT EXISTS uk_waitlist_email_normalized
-    ON tb_waitlist (email_normalized);
 
 COMMENT ON TABLE tb_waitlist IS
     'Interessados em testar o Menthoros (waitlist pública, pré-signup, sem tenant)';
@@ -33,5 +30,5 @@ COMMENT ON COLUMN tb_waitlist.aceite_lgpd IS
 
 DO $$
 BEGIN
-    RAISE NOTICE '✅ V43 - tabela tb_waitlist criada';
+    RAISE NOTICE '✅ V43 - tb_waitlist criada com sucesso';
 END$$;
