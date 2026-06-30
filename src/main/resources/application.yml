@@ -184,6 +184,7 @@ app:
       - "/v3/api-docs/**"
       - "/actuator/health"
       - "/api/v1/status"
+      - "/api/v1/waitlist"
     strava-paths:
       - "/api/v1/strava/webhook"
       - "/api/v1/strava/callback"

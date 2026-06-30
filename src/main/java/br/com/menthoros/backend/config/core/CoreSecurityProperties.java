@@ -24,7 +24,8 @@ public class CoreSecurityProperties {
         "/api-docs/**",
         "/v3/api-docs/**",
         "/actuator/health",
-        "/api/v1/status"
+        "/api/v1/status",
+        "/api/v1/waitlist"
     ));
 
     @NotEmpty(message = "stravaPaths cannot be empty")

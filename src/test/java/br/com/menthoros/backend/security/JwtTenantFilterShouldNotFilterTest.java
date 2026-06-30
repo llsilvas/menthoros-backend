@@ -33,4 +33,13 @@ class JwtTenantFilterShouldNotFilterTest {
 
         assertThat(filter.shouldNotFilter(request)).isFalse();
     }
+
+    @Test
+    @DisplayName("endpoint público da waitlist é isento do filtro de tenant (AC5b)")
+    void naoFiltraWaitlist() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRequestURI()).thenReturn("/api/v1/waitlist");
+
+        assertThat(filter.shouldNotFilter(request)).isTrue();
+    }
 }
