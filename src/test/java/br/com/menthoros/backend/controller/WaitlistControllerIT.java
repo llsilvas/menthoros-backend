@@ -1,6 +1,9 @@
 package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.AbstractIntegrationTest;
+import br.com.menthoros.backend.entity.Waitlist;
+import br.com.menthoros.backend.enums.FaixaAtletas;
+import br.com.menthoros.backend.enums.PerfilWaitlist;
 import br.com.menthoros.backend.repository.WaitlistRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,7 +52,7 @@ class WaitlistControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("cadastro válido sem autenticação retorna 201 e persiste (sem CSRF)")
+    @DisplayName("cadastro válido sem autenticação retorna 201 e persiste com aceite_lgpd (sem CSRF)")
     void cadastroValidoSemAuth() throws Exception {
         mockMvc.perform(post("/api/v1/waitlist")
                         .header("X-Forwarded-For", "10.0.0.1")
@@ -58,6 +61,11 @@ class WaitlistControllerIT extends AbstractIntegrationTest {
                 .andExpect(status().isCreated());
 
         assertThat(waitlistRepository.existsByEmailNormalized("maria@exemplo.com")).isTrue();
+        Waitlist salvo = waitlistRepository.findAll().get(0);
+        assertThat(salvo.isAceiteLgpd()).isTrue();
+        assertThat(salvo.getPerfil()).isEqualTo(PerfilWaitlist.TREINADOR);
+        assertThat(salvo.getQtdAtletas()).isEqualTo(FaixaAtletas.DE_11_A_30);
+        assertThat(salvo.getCreatedAt()).isNotNull();
     }
 
     @Test
