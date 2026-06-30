@@ -51,6 +51,7 @@ public class Waitlist {
     @Column(name = "origem", length = 40)
     private String origem;
 
+    @Builder.Default
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 }

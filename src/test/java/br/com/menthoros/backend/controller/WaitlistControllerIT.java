@@ -15,6 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -58,7 +59,9 @@ class WaitlistControllerIT extends AbstractIntegrationTest {
                         .header("X-Forwarded-For", "10.0.0.1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("Maria", "maria@exemplo.com", "TREINADOR", true, null, "DE_11_A_30")))
-                .andExpect(status().isCreated());
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("CRIADO"))
+                .andExpect(jsonPath("$.mensagem").isNotEmpty());
 
         assertThat(waitlistRepository.existsByEmailNormalized("maria@exemplo.com")).isTrue();
         Waitlist salvo = waitlistRepository.findAll().get(0);
@@ -104,7 +107,8 @@ class WaitlistControllerIT extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/v1/waitlist")
                         .header("X-Forwarded-For", "10.0.0.4")
                         .contentType(MediaType.APPLICATION_JSON).content(corpo))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("JA_INSCRITO"));
 
         assertThat(waitlistRepository.count()).isEqualTo(1);
     }

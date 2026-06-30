@@ -10,7 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.util.Locale;
 
 /**
@@ -24,6 +23,9 @@ import java.util.Locale;
 @Slf4j
 @RequiredArgsConstructor
 public class WaitlistServiceImpl implements WaitlistService {
+
+    private static final String ORIGEM_LANDING = "landing";
+    private static final String UK_EMAIL_NORMALIZED = "uk_waitlist_email_normalized";
 
     private final WaitlistRepository waitlistRepository;
 
@@ -63,8 +65,7 @@ public class WaitlistServiceImpl implements WaitlistService {
                 .perfil(dto.perfil())
                 .qtdAtletas(dto.perfil() == PerfilWaitlist.TREINADOR ? dto.qtdAtletas() : null)
                 .aceiteLgpd(Boolean.TRUE.equals(dto.aceiteLgpd()))
-                .origem("landing")
-                .createdAt(Instant.now())
+                .origem(ORIGEM_LANDING)
                 .build();
 
         try {
@@ -72,9 +73,14 @@ public class WaitlistServiceImpl implements WaitlistService {
             log.info("Waitlist: inscrição criada id={}", salvo.getId());
             return Resultado.CRIADO;
         } catch (DataIntegrityViolationException e) {
-            // Corrida: outra requisição inseriu o mesmo e-mail entre o existsBy e o insert.
-            log.info("Waitlist: e-mail já inscrito (corrida resolvida pelo índice único)");
-            return Resultado.JA_INSCRITO;
+            // Só trata como duplicata se a violação for do índice único de e-mail (corrida entre
+            // o existsBy e o insert). Qualquer outra violação de integridade é erro real — propaga.
+            Throwable causa = e.getMostSpecificCause();
+            if (causa.getMessage() != null && causa.getMessage().contains(UK_EMAIL_NORMALIZED)) {
+                log.info("Waitlist: e-mail já inscrito (corrida resolvida pelo índice único)");
+                return Resultado.JA_INSCRITO;
+            }
+            throw e;
         }
     }
 

@@ -30,7 +30,8 @@ public class WaitlistController {
             @ApiResponse(responseCode = "201", description = "Inscrição criada"),
             @ApiResponse(responseCode = "200", description = "E-mail já estava na lista (idempotente)"),
             @ApiResponse(responseCode = "400", description = "Dados inválidos (nome, e-mail ou aceite LGPD)"),
-            @ApiResponse(responseCode = "429", description = "Limite de requisições por IP excedido")
+            @ApiResponse(responseCode = "429", description = "Limite de requisições por IP excedido"),
+            @ApiResponse(responseCode = "500", description = "Erro interno inesperado")
     })
     @PostMapping
     public ResponseEntity<WaitlistOutputDto> inscrever(@Valid @RequestBody WaitlistInputDto dto) {

@@ -2,7 +2,6 @@ package br.com.menthoros.backend.dto.input;
 
 import br.com.menthoros.backend.enums.FaixaAtletas;
 import br.com.menthoros.backend.enums.PerfilWaitlist;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
@@ -11,7 +10,6 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 @Schema(description = "Dados de entrada para inscrição na waitlist pública do Menthoros")
-@JsonInclude(JsonInclude.Include.NON_NULL)
 public record WaitlistInputDto(
 
         @Schema(description = "Nome do interessado", example = "Maria Treinadora", requiredMode = Schema.RequiredMode.REQUIRED)

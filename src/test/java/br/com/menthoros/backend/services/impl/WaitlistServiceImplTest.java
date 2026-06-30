@@ -17,6 +17,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -109,6 +110,35 @@ class WaitlistServiceImplTest {
 
             verify(waitlistRepository).saveAndFlush(captor.capture());
             assertThat(captor.getValue().getQtdAtletas()).isNull();
+        }
+
+        @Test
+        @DisplayName("dto nulo lança IllegalArgumentException")
+        void dtoNuloLanca() {
+            assertThatThrownBy(() -> waitlistService.registrar(null))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("nulo");
+            verify(waitlistRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("e-mail em branco lança IllegalArgumentException")
+        void emailEmBrancoLanca() {
+            WaitlistInputDto dto = new WaitlistInputDto("Maria", "   ", null, PerfilWaitlist.ATLETA, null, true, null);
+            assertThatThrownBy(() -> waitlistService.registrar(dto))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("E-mail");
+            verify(waitlistRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("nome em branco lança IllegalArgumentException")
+        void nomeEmBrancoLanca() {
+            WaitlistInputDto dto = new WaitlistInputDto("  ", "joao@exemplo.com", null, PerfilWaitlist.ATLETA, null, true, null);
+            assertThatThrownBy(() -> waitlistService.registrar(dto))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Nome");
+            verify(waitlistRepository, never()).saveAndFlush(any());
         }
     }
 
