@@ -28,11 +28,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  * não pega. Usa Caffeine (já dependência do projeto) com janela <b>fixa</b> de 1 minuto por IP
  * ({@code expireAfterWrite} a partir da criação da entrada).
  *
- * <p><b>Limitação aceita (MVP):</b> o IP vem de {@code X-Forwarded-For}, que é controlável pelo cliente
- * — um atacante pode rotacionar o header para escapar do contador. Por ser um endpoint público de dado
- * de baixo valor e com anti-spam best-effort por decisão de produto, isso é aceito; o reforço (confiar no
- * XFF apenas do proxy do Railway via {@code server.forward-headers-strategy}) fica como tarefa de infra no
- * go-live, não bloqueante desta change.
+ * <p><b>IP de origem:</b> usamos {@code request.getRemoteAddr()}, não o header {@code X-Forwarded-For}
+ * cru. Com {@code server.forward-headers-strategy=framework}, o {@code ForwardedHeaderFilter} do Spring
+ * parseia o XFF do proxy do Railway e ajusta o {@code remoteAddr} para o cliente real — assim o atacante
+ * não escapa do contador rotacionando o {@code X-Forwarded-For}.
  */
 @Component
 @Order(SecurityProperties.DEFAULT_FILTER_ORDER - 1)
@@ -81,11 +80,11 @@ public class WaitlistRateLimitFilter extends OncePerRequestFilter {
     }
 
     private String clientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            return xff.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
+        // getRemoteAddr() já reflete o cliente real: com server.forward-headers-strategy=framework, o
+        // ForwardedHeaderFilter do Spring parseia o X-Forwarded-For do proxy. Não lemos o header cru —
+        // assim o atacante não escapa do contador rotacionando o X-Forwarded-For.
+        String ip = request.getRemoteAddr();
+        return (ip != null && !ip.isBlank()) ? ip : "desconhecido";
     }
 
     /** Mascara o último octeto (IPv4) ou os últimos grupos (IPv6) — IP é dado pessoal (LGPD). */
