@@ -3,6 +3,10 @@
 # ========================================
 server:
   port: ${SERVER_PORT:8080}
+  # Confia nos cabeçalhos X-Forwarded-* do proxy (Railway): o ForwardedHeaderFilter do Spring ajusta
+  # remoteAddr/scheme/host a partir do XFF do proxy. Necessário para o rate-limit do waitlist contar o
+  # IP real do cliente (não o do proxy) e impedir spoofing do X-Forwarded-For. Sem proxy/sem XFF é no-op.
+  forward-headers-strategy: ${FORWARD_HEADERS_STRATEGY:framework}
 
 # ========================================
 # SPRING CORE CONFIGURATION
