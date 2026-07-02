@@ -28,7 +28,8 @@ class IntervaladoElegibilidadeServiceTest {
     @BeforeEach
     void setUp() {
         // Injeta a skill real — ela é stateless e determinística, não precisa de mock
-        service = new IntervaladoElegibilidadeService(new IntervaladoElegibilidadeSkill());
+        service = new IntervaladoElegibilidadeService(
+                new IntervaladoElegibilidadeSkill(), new br.com.menthoros.backend.config.core.ReadinessProperties());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -342,5 +343,98 @@ class IntervaladoElegibilidadeServiceTest {
         assertInstanceOf(RecomendacaoIntervalado.Elegivel.class, resultado);
         assertEquals(CategoriaIntervalado.A,
                 ((RecomendacaoIntervalado.Elegivel) resultado).categoria());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // PORTÃO READINESS (6º) — checkin diário de prontidão
+    // ─────────────────────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("Readiness DESCANSAR bloqueia intervalado mesmo com todos os demais portões OK")
+    void readinessDescansarBloqueiaMesmoComPortoesFisiologicosOk() {
+        Atleta atleta = atletaSaudavel(NivelExperiencia.AVANCADO);
+        PlanoMetaDados meta = metaDadosPadrao(5.0, 45.0, FasePeriodizacao.BUILD);
+
+        RecomendacaoIntervalado resultado = service.avaliar(
+                atleta, meta, List.of(), DATA_REFERENCIA, NivelProntidao.DESCANSAR);
+
+        assertInstanceOf(RecomendacaoIntervalado.Substituido.class, resultado);
+        assertEquals(TipoTreino.REGENERATIVO,
+                ((RecomendacaoIntervalado.Substituido) resultado).tipoFallback());
+    }
+
+    @Test
+    @DisplayName("Readiness CAUTELOSO degrada Elegivel para atenuação de volume, mantendo a categoria")
+    void readinessCautelosoAtenuaElegivel() {
+        Atleta atleta = atletaSaudavel(NivelExperiencia.AVANCADO);
+        PlanoMetaDados meta = metaDadosPadrao(5.0, 45.0, FasePeriodizacao.BUILD);
+
+        RecomendacaoIntervalado resultado = service.avaliar(
+                atleta, meta, List.of(), DATA_REFERENCIA, NivelProntidao.CAUTELOSO);
+
+        assertInstanceOf(RecomendacaoIntervalado.Degradado.class, resultado);
+        RecomendacaoIntervalado.Degradado degradado = (RecomendacaoIntervalado.Degradado) resultado;
+        assertTrue(degradado.instrucaoParaLlm().contains("20-30%"));
+    }
+
+    @Test
+    @DisplayName("Readiness PRONTO não altera a decisão dos portões fisiológicos")
+    void readinessProntoNaoAlteraDecisao() {
+        Atleta atleta = atletaSaudavel(NivelExperiencia.AVANCADO);
+        PlanoMetaDados meta = metaDadosPadrao(5.0, 45.0, FasePeriodizacao.BUILD);
+
+        RecomendacaoIntervalado resultado = service.avaliar(
+                atleta, meta, List.of(), DATA_REFERENCIA, NivelProntidao.PRONTO);
+
+        assertInstanceOf(RecomendacaoIntervalado.Elegivel.class, resultado);
+    }
+
+    @Test
+    @DisplayName("Sem checkin do dia (null), motor opera igual à sobrecarga sem readiness (fallback)")
+    void semCheckinOperaComoFallback() {
+        Atleta atleta = atletaSaudavel(NivelExperiencia.AVANCADO);
+        PlanoMetaDados meta = metaDadosPadrao(5.0, 45.0, FasePeriodizacao.BUILD);
+
+        RecomendacaoIntervalado comNullExplicito = service.avaliar(
+                atleta, meta, List.of(), DATA_REFERENCIA, null);
+        RecomendacaoIntervalado semParametro = service.avaliar(atleta, meta, List.of(), DATA_REFERENCIA);
+
+        assertEquals(semParametro, comNullExplicito);
+    }
+
+    @Test
+    @DisplayName("Flag app.readiness.enabled=false ignora readiness mesmo com DESCANSAR")
+    void flagDesabilitadaIgnoraReadiness() {
+        br.com.menthoros.backend.config.core.ReadinessProperties propsDesabilitadas =
+                new br.com.menthoros.backend.config.core.ReadinessProperties();
+        propsDesabilitadas.setEnabled(false);
+        IntervaladoElegibilidadeService servicoComFlagOff = new IntervaladoElegibilidadeService(
+                new IntervaladoElegibilidadeSkill(), propsDesabilitadas);
+
+        Atleta atleta = atletaSaudavel(NivelExperiencia.AVANCADO);
+        PlanoMetaDados meta = metaDadosPadrao(5.0, 45.0, FasePeriodizacao.BUILD);
+
+        RecomendacaoIntervalado resultado = servicoComFlagOff.avaliar(
+                atleta, meta, List.of(), DATA_REFERENCIA, NivelProntidao.DESCANSAR);
+
+        assertInstanceOf(RecomendacaoIntervalado.Elegivel.class, resultado);
+    }
+
+    @Test
+    @DisplayName("Readiness CAUTELOSO não sobrescreve Substituido de portão fisiológico (lesão)")
+    void readinessCautelosoNaoSobrescreveSubstituidoPorLesao() {
+        Atleta atleta = Atleta.builder()
+                .nome("Atleta Lesionado")
+                .nivelExperiencia(NivelExperiencia.AVANCADO)
+                .temLesao(true)
+                .descricaoLesao("Tendinite")
+                .diaPreferidoLongo(DiaSemana.DOMINGO)
+                .build();
+        PlanoMetaDados meta = metaDadosPadrao(5.0, 45.0, FasePeriodizacao.BUILD);
+
+        RecomendacaoIntervalado resultado = service.avaliar(
+                atleta, meta, List.of(), DATA_REFERENCIA, NivelProntidao.CAUTELOSO);
+
+        assertInstanceOf(RecomendacaoIntervalado.Substituido.class, resultado);
     }
 }

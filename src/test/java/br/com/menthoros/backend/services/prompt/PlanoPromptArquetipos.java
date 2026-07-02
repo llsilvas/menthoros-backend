@@ -94,7 +94,8 @@ final class PlanoPromptArquetipos {
                 new PeriodizacaoPromptFormatter(),
                 new VariabilidadePromptFormatter(),
                 new DisponibilidadePromptFormatter(),
-                new IntervaladoElegibilidadeService(new IntervaladoElegibilidadeSkill()),
+                new IntervaladoElegibilidadeService(
+                        new IntervaladoElegibilidadeSkill(), new br.com.menthoros.backend.config.core.ReadinessProperties()),
                 new PaceHistoricoFormatter(),
                 new PaceZoneCalculator(zona),
                 new ThresholdConstraintFormatter());

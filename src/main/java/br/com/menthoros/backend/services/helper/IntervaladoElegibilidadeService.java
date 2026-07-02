@@ -1,11 +1,13 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.config.core.ReadinessProperties;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.CategoriaIntervalado;
 import br.com.menthoros.backend.enums.FasePeriodizacao;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.NivelProntidao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.skills.core.SkillContext;
 import br.com.menthoros.backend.skills.core.SkillResult;
@@ -56,9 +58,12 @@ public class IntervaladoElegibilidadeService {
      * A lógica principal do serviço permanece inalterada (delegação sem remoção — D6).
      */
     private final IntervaladoElegibilidadeSkill eligibilidadeSkill;
+    private final ReadinessProperties readinessProperties;
 
-    public IntervaladoElegibilidadeService(IntervaladoElegibilidadeSkill eligibilidadeSkill) {
+    public IntervaladoElegibilidadeService(IntervaladoElegibilidadeSkill eligibilidadeSkill,
+                                            ReadinessProperties readinessProperties) {
         this.eligibilidadeSkill = eligibilidadeSkill;
+        this.readinessProperties = readinessProperties;
     }
 
     // ── Portão 2: limiares de TSB por nível ──────────────────────────────────
@@ -100,6 +105,61 @@ public class IntervaladoElegibilidadeService {
      * @return {@link RecomendacaoIntervalado} — uma das 3 variantes seladas
      */
     public RecomendacaoIntervalado avaliar(
+            Atleta atleta,
+            PlanoMetaDados metaDados,
+            List<TreinoRealizado> treinosUltimas4Semanas,
+            LocalDate dataReferencia) {
+        return avaliar(atleta, metaDados, treinosUltimas4Semanas, dataReferencia, null);
+    }
+
+    /**
+     * Sobrecarga que adiciona o 6º portão — readiness subjetiva diária (checkin de sono, humor,
+     * dores, energia, estresse). {@code DESCANSAR} bloqueia intervalado de forma absoluta, mesmo
+     * que os 5 portões fisiológicos permitam. {@code CAUTELOSO} permite, mas atenua a instrução
+     * final com recomendação de redução de volume (20–30%). Sem checkin do dia ({@code null}),
+     * opera exatamente como a sobrecarga de 4 parâmetros (fallback documentado — spec Scenario
+     * "Sem checkin do dia"). A flag {@code app.readiness.enabled=false} desliga o portão inteiro
+     * sem remover dados (suporte a rollback).
+     *
+     * @param nivelProntidaoHoje nível de prontidão do dia de referência, ou {@code null} se não houver checkin
+     */
+    public RecomendacaoIntervalado avaliar(
+            Atleta atleta,
+            PlanoMetaDados metaDados,
+            List<TreinoRealizado> treinosUltimas4Semanas,
+            LocalDate dataReferencia,
+            NivelProntidao nivelProntidaoHoje) {
+
+        boolean readinessAtivo = readinessProperties.isEnabled();
+
+        // ── PORTÃO READINESS (6º portão): bloqueio absoluto por DESCANSAR ────
+        if (!readinessAtivo) {
+            log.debug("IntervaladoElegibilidade: readiness desabilitado via flag app.readiness.enabled — motor opera sem o portao");
+        } else if (nivelProntidaoHoje == null) {
+            log.warn("IntervaladoElegibilidade: sem checkin de prontidao para {} — motor opera sem readiness", dataReferencia);
+        } else if (nivelProntidaoHoje == NivelProntidao.DESCANSAR) {
+            return criarSubstituido(
+                    TipoTreino.REGENERATIVO,
+                    "Readiness do dia = DESCANSAR",
+                    "INTERVALADO PROIBIDO — readiness subjetiva do dia classificada como DESCANSAR. "
+                    + "Prescrever REGENERATIVO obrigatoriamente. Priorizar recuperacao esta sessao.");
+        }
+
+        RecomendacaoIntervalado decisao = avaliarPortoesFisiologicos(
+                atleta, metaDados, treinosUltimas4Semanas, dataReferencia);
+
+        if (readinessAtivo && nivelProntidaoHoje == NivelProntidao.CAUTELOSO) {
+            decisao = atenuarPorReadinessCauteloso(decisao);
+        }
+
+        return decisao;
+    }
+
+    /**
+     * Portões 1–5 (fisiológicos) — lógica original, inalterada, apenas extraída para método
+     * próprio de forma que o portão de readiness (6º) possa envolvê-la.
+     */
+    private RecomendacaoIntervalado avaliarPortoesFisiologicos(
             Atleta atleta,
             PlanoMetaDados metaDados,
             List<TreinoRealizado> treinosUltimas4Semanas,
@@ -417,6 +477,30 @@ public class IntervaladoElegibilidadeService {
     // ─────────────────────────────────────────────────────────────────────────
     // Factories com logging
     // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Aplica a atenuação de readiness CAUTELOSO sobre a decisão dos portões fisiológicos.
+     * {@code Elegivel} vira {@code Degradado} (mesma categoria, instrução de atenuação de volume);
+     * {@code Degradado} recebe a nota de atenuação adicional; {@code Substituido} não é alterado
+     * (já é o bloqueio máximo).
+     */
+    private RecomendacaoIntervalado atenuarPorReadinessCauteloso(RecomendacaoIntervalado decisao) {
+        String nota = " Readiness do dia CAUTELOSO — atenuar volume da sessao intervalada em 20-30%.";
+        return switch (decisao) {
+            case RecomendacaoIntervalado.Elegivel el -> {
+                log.info("IntervaladoElegibilidade: readiness CAUTELOSO — atenuando volume para Categoria {}", el.categoria());
+                yield new RecomendacaoIntervalado.Degradado(
+                        el.categoria(),
+                        el.motivo() + nota,
+                        el.instrucaoParaLlm() + nota);
+            }
+            case RecomendacaoIntervalado.Degradado deg -> new RecomendacaoIntervalado.Degradado(
+                    deg.categoriaSegura(),
+                    deg.motivo() + nota,
+                    deg.instrucaoParaLlm() + nota);
+            case RecomendacaoIntervalado.Substituido sub -> sub;
+        };
+    }
 
     private RecomendacaoIntervalado criarSubstituido(
             TipoTreino tipoFallback, String motivo, String instrucao) {
