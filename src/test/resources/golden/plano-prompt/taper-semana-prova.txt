@@ -115,6 +115,12 @@ Nenhuma prova preparatória cadastrada.
 - Z6 (Sprint): 3.32-3.65 min/km | 171-181 bpm
 
 
+## 🌡️ READINESS (PRONTIDÃO SUBJETIVA DIÁRIA)
+
+- **Últimos 7 dias:** [SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO]
+- **Hoje:** sem checkin registrado — decisão de intervalado não considera readiness.
+
+
 ## MÉTRICAS DE CARGA E FADIGA
 
 **Status Geral:** COLETANDO DADOS

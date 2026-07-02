@@ -93,6 +93,12 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 - Z6 (Sprint): 5.17-5.67 min/km | 165-175 bpm
 
 
+## 🌡️ READINESS (PRONTIDÃO SUBJETIVA DIÁRIA)
+
+- **Últimos 7 dias:** [SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO]
+- **Hoje:** sem checkin registrado — decisão de intervalado não considera readiness.
+
+
 ## MÉTRICAS DE CARGA E FADIGA
 
 **Status Geral:** COLETANDO DADOS

@@ -98,7 +98,8 @@ final class PlanoPromptArquetipos {
                         new IntervaladoElegibilidadeSkill(), new br.com.menthoros.backend.config.core.ReadinessProperties()),
                 new PaceHistoricoFormatter(),
                 new PaceZoneCalculator(zona),
-                new ThresholdConstraintFormatter());
+                new ThresholdConstraintFormatter(),
+                new ReadinessPromptFormatter());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -273,7 +274,7 @@ final class PlanoPromptArquetipos {
     }
 
     private static ContextoTreino contexto(List<TreinoRealizado> treinos) {
-        return new ContextoTreino(HOJE, treinos, List.of());
+        return new ContextoTreino(HOJE, treinos, List.of(), List.of());
     }
 
     // ─────────────────────────────────────────────────────────────────────────

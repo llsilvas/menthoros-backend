@@ -1,12 +1,18 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.CheckinProntidao;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.NivelProntidao;
+import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.repository.CheckinProntidaoRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
@@ -23,13 +29,16 @@ public class TreinoHistoricoProvider {
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final ProvaRepository provaRepository;
+    private final CheckinProntidaoRepository checkinProntidaoRepository;
     private final Clock clock;
 
     public TreinoHistoricoProvider(TreinoRealizadoRepository treinoRealizadoRepository,
                                    ProvaRepository provaRepository,
+                                   CheckinProntidaoRepository checkinProntidaoRepository,
                                    Clock clock) {
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.provaRepository = provaRepository;
+        this.checkinProntidaoRepository = checkinProntidaoRepository;
         this.clock = clock;
     }
 
@@ -52,7 +61,11 @@ public class TreinoHistoricoProvider {
                 .filter(p -> !p.isProvaAlvo())
                 .toList();
 
-        return new ContextoTreino(hoje, treinosUltimas4Semanas, provasPreparatorias);
+        // Checkins de prontidão dos últimos 7 dias (inclui hoje)
+        List<CheckinProntidao> checkinsUltimos7Dias = checkinProntidaoRepository
+                .findByAtletaIdAndDataBetween(atleta.getId(), hoje.minusDays(6), hoje, TenantContext.getRequiredTenantId());
+
+        return new ContextoTreino(hoje, treinosUltimas4Semanas, provasPreparatorias, checkinsUltimos7Dias);
     }
 
     /**
@@ -62,8 +75,50 @@ public class TreinoHistoricoProvider {
     public record ContextoTreino(
             LocalDate dataReferencia,
             List<TreinoRealizado> treinosUltimas4Semanas,
-            List<Prova> provasPreparatorias
+            List<Prova> provasPreparatorias,
+            List<CheckinProntidao> checkinsUltimos7Dias
     ) {
+        /**
+         * Nível de prontidão do dia de referência, ou {@code null} se não houver checkin.
+         */
+        @Nullable
+        public NivelProntidao nivelProntidaoHoje() {
+            return checkinsUltimos7Dias.stream()
+                    .filter(c -> dataReferencia.equals(c.getData()))
+                    .map(CheckinProntidao::getNivelProntidao)
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        /**
+         * Score de prontidão do dia de referência, ou {@code null} se não houver checkin.
+         */
+        @Nullable
+        public BigDecimal readinessScoreHoje() {
+            return checkinsUltimos7Dias.stream()
+                    .filter(c -> dataReferencia.equals(c.getData()))
+                    .map(CheckinProntidao::getReadinessScore)
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        /**
+         * Sequência dos últimos 7 dias (do mais antigo ao mais recente), um valor por dia —
+         * {@code null} nos dias sem checkin registrado.
+         */
+        public List<@Nullable NivelProntidao> sequenciaUltimos7Dias() {
+            List<NivelProntidao> sequencia = new java.util.ArrayList<>();
+            for (int i = 6; i >= 0; i--) {
+                LocalDate dia = dataReferencia.minusDays(i);
+                NivelProntidao nivel = checkinsUltimos7Dias.stream()
+                        .filter(c -> dia.equals(c.getData()))
+                        .map(CheckinProntidao::getNivelProntidao)
+                        .findFirst()
+                        .orElse(null);
+                sequencia.add(nivel);
+            }
+            return sequencia;
+        }
         /**
          * Treinos dos últimos 14 dias (usado por formatarHistoricoTreinos).
          */
