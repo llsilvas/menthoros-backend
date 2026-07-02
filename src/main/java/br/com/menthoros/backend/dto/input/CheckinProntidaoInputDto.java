@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
@@ -11,7 +12,8 @@ import java.time.LocalDate;
 @Schema(description = "Dados de entrada para registro do checkin diário de prontidão")
 public record CheckinProntidaoInputDto(
 
-    @Schema(description = "Data do checkin (default: hoje)", example = "2026-07-02")
+    @Schema(description = "Data do checkin (default: hoje). Não pode ser no futuro.", example = "2026-07-02")
+    @PastOrPresent(message = "Data do checkin não pode ser no futuro")
     LocalDate data,
 
     @Schema(description = "Qualidade do sono (1–10)", example = "8")

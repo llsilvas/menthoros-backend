@@ -11,8 +11,16 @@ public interface CheckinProntidaoService {
 
     CheckinProntidaoOutputDto registrarCheckin(UUID atletaId, CheckinProntidaoInputDto dto);
 
+    /**
+     * @param chamadorEhAdmin quando {@code false}, exige que {@code atletaId} seja o atleta
+     *                        autenticado (bloqueia acesso a checkin de outro atleta do tenant)
+     */
     @Nullable
-    CheckinProntidaoOutputDto buscarAtual(UUID atletaId);
+    CheckinProntidaoOutputDto buscarAtual(UUID atletaId, boolean chamadorEhAdmin);
 
-    List<CheckinProntidaoOutputDto> buscarHistorico(UUID atletaId, int dias);
+    /**
+     * @param chamadorEhAdmin quando {@code false}, exige que {@code atletaId} seja o atleta
+     *                        autenticado (bloqueia acesso a checkin de outro atleta do tenant)
+     */
+    List<CheckinProntidaoOutputDto> buscarHistorico(UUID atletaId, int dias, boolean chamadorEhAdmin);
 }

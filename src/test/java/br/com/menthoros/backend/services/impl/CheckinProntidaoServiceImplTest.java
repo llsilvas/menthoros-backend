@@ -6,12 +6,14 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.CheckinProntidao;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.enums.NivelProntidao;
+import br.com.menthoros.backend.exception.AccessDeniedException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.CheckinProntidaoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.CheckinProntidaoRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
+import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.helper.ReadinessService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +47,7 @@ class CheckinProntidaoServiceImplTest {
     @Mock private AtletaRepository atletaRepository;
     @Mock private ReadinessService readinessService;
     @Mock private CheckinProntidaoMapper mapper;
+    @Mock private AtletaProgressService atletaProgressService;
 
     @InjectMocks private CheckinProntidaoServiceImpl checkinService;
 
@@ -88,7 +91,7 @@ class CheckinProntidaoServiceImplTest {
             when(readinessService.calcularScore(any())).thenReturn(new BigDecimal("0.720"));
             when(readinessService.classificarNivel(new BigDecimal("0.720"))).thenReturn(NivelProntidao.CAUTELOSO);
             when(checkinProntidaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-            when(metricasDiariasRepository.findByAtletaIdAndData(atletaId, inputDto.data()))
+            when(metricasDiariasRepository.findByAtletaIdAndDataAndTenantId(atletaId, inputDto.data(), tenantId))
                     .thenReturn(Optional.empty());
             when(mapper.toOutputDto(any())).thenReturn(outputDto);
 
@@ -116,7 +119,7 @@ class CheckinProntidaoServiceImplTest {
             when(readinessService.calcularScore(any())).thenReturn(new BigDecimal("0.720"));
             when(readinessService.classificarNivel(any())).thenReturn(NivelProntidao.CAUTELOSO);
             when(checkinProntidaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-            when(metricasDiariasRepository.findByAtletaIdAndData(atletaId, inputDto.data()))
+            when(metricasDiariasRepository.findByAtletaIdAndDataAndTenantId(atletaId, inputDto.data(), tenantId))
                     .thenReturn(Optional.empty());
             when(mapper.toOutputDto(any())).thenReturn(outputDto);
 
@@ -139,7 +142,7 @@ class CheckinProntidaoServiceImplTest {
             when(readinessService.calcularScore(any())).thenReturn(new BigDecimal("0.720"));
             when(readinessService.classificarNivel(any())).thenReturn(NivelProntidao.CAUTELOSO);
             when(checkinProntidaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-            when(metricasDiariasRepository.findByAtletaIdAndData(atletaId, inputDto.data()))
+            when(metricasDiariasRepository.findByAtletaIdAndDataAndTenantId(atletaId, inputDto.data(), tenantId))
                     .thenReturn(Optional.of(metricas));
             when(mapper.toOutputDto(any())).thenReturn(outputDto);
 
@@ -176,15 +179,16 @@ class CheckinProntidaoServiceImplTest {
     class BuscarAtual {
 
         @Test
-        @DisplayName("retorna o checkin mais recente quando existe")
+        @DisplayName("retorna o checkin mais recente quando o próprio atleta consulta")
         void retornaCheckinQuandoExiste() {
             CheckinProntidao entity = CheckinProntidao.builder().atleta(atleta).build();
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(atletaId);
             when(checkinProntidaoRepository.findTopByAtletaIdOrderByDataDesc(atletaId, tenantId))
                     .thenReturn(Optional.of(entity));
             when(mapper.toOutputDto(entity)).thenReturn(outputDto);
 
-            CheckinProntidaoOutputDto result = checkinService.buscarAtual(atletaId);
+            CheckinProntidaoOutputDto result = checkinService.buscarAtual(atletaId, false);
 
             assertThat(result).isEqualTo(outputDto);
         }
@@ -193,12 +197,41 @@ class CheckinProntidaoServiceImplTest {
         @DisplayName("retorna null quando não há checkin registrado")
         void retornaNullQuandoNaoExiste() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(atletaId);
             when(checkinProntidaoRepository.findTopByAtletaIdOrderByDataDesc(atletaId, tenantId))
                     .thenReturn(Optional.empty());
 
-            CheckinProntidaoOutputDto result = checkinService.buscarAtual(atletaId);
+            CheckinProntidaoOutputDto result = checkinService.buscarAtual(atletaId, false);
 
             assertThat(result).isNull();
+        }
+
+        @Test
+        @DisplayName("lança AccessDeniedException quando atleta tenta acessar checkin de outro atleta (IDOR)")
+        void lancaExcecaoQuandoAtletaAcessaOutroAtleta() {
+            UUID outroAtletaId = UUID.randomUUID();
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(outroAtletaId);
+
+            assertThatThrownBy(() -> checkinService.buscarAtual(atletaId, false))
+                    .isInstanceOf(AccessDeniedException.class);
+
+            verify(checkinProntidaoRepository, never()).findTopByAtletaIdOrderByDataDesc(any(), any());
+        }
+
+        @Test
+        @DisplayName("admin acessa checkin de qualquer atleta sem resolver o atleta autenticado")
+        void adminAcessaSemResolverAtletaAtual() {
+            CheckinProntidao entity = CheckinProntidao.builder().atleta(atleta).build();
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(checkinProntidaoRepository.findTopByAtletaIdOrderByDataDesc(atletaId, tenantId))
+                    .thenReturn(Optional.of(entity));
+            when(mapper.toOutputDto(entity)).thenReturn(outputDto);
+
+            CheckinProntidaoOutputDto result = checkinService.buscarAtual(atletaId, true);
+
+            assertThat(result).isEqualTo(outputDto);
+            verify(atletaProgressService, never()).resolverAtletaIdAtual();
         }
     }
 
@@ -210,10 +243,11 @@ class CheckinProntidaoServiceImplTest {
         @DisplayName("usa o valor de dias informado dentro do limite")
         void respeitaDiasInformado() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(atletaId);
             when(checkinProntidaoRepository.findByAtletaIdAndDataBetween(any(), any(), any(), any()))
                     .thenReturn(List.of());
 
-            checkinService.buscarHistorico(atletaId, 14);
+            checkinService.buscarHistorico(atletaId, 14, false);
 
             verify(checkinProntidaoRepository).findByAtletaIdAndDataBetween(
                     eq(atletaId), eq(LocalDate.now().minusDays(13)), eq(LocalDate.now()), eq(tenantId));
@@ -223,10 +257,11 @@ class CheckinProntidaoServiceImplTest {
         @DisplayName("limita dias a 90 quando valor informado excede o máximo")
         void limitaA90QuandoExcede() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(atletaId);
             when(checkinProntidaoRepository.findByAtletaIdAndDataBetween(any(), any(), any(), any()))
                     .thenReturn(List.of());
 
-            checkinService.buscarHistorico(atletaId, 500);
+            checkinService.buscarHistorico(atletaId, 500, false);
 
             verify(checkinProntidaoRepository).findByAtletaIdAndDataBetween(
                     eq(atletaId), eq(LocalDate.now().minusDays(89)), eq(LocalDate.now()), eq(tenantId));
@@ -236,13 +271,39 @@ class CheckinProntidaoServiceImplTest {
         @DisplayName("aplica mínimo de 1 dia quando valor informado é zero ou negativo")
         void aplicaMinimoDeUmDia() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(atletaId);
             when(checkinProntidaoRepository.findByAtletaIdAndDataBetween(any(), any(), any(), any()))
                     .thenReturn(List.of());
 
-            checkinService.buscarHistorico(atletaId, -5);
+            checkinService.buscarHistorico(atletaId, -5, false);
 
             verify(checkinProntidaoRepository).findByAtletaIdAndDataBetween(
                     eq(atletaId), eq(LocalDate.now()), eq(LocalDate.now()), eq(tenantId));
+        }
+
+        @Test
+        @DisplayName("lança AccessDeniedException quando atleta tenta acessar histórico de outro atleta (IDOR)")
+        void lancaExcecaoQuandoAtletaAcessaOutroAtleta() {
+            UUID outroAtletaId = UUID.randomUUID();
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(outroAtletaId);
+
+            assertThatThrownBy(() -> checkinService.buscarHistorico(atletaId, 7, false))
+                    .isInstanceOf(AccessDeniedException.class);
+
+            verify(checkinProntidaoRepository, never()).findByAtletaIdAndDataBetween(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("admin acessa histórico de qualquer atleta sem resolver o atleta autenticado")
+        void adminAcessaSemResolverAtletaAtual() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(checkinProntidaoRepository.findByAtletaIdAndDataBetween(any(), any(), any(), any()))
+                    .thenReturn(List.of());
+
+            checkinService.buscarHistorico(atletaId, 7, true);
+
+            verify(atletaProgressService, never()).resolverAtletaIdAtual();
         }
     }
 }

@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -62,37 +63,51 @@ public class CheckinProntidaoController {
     @GetMapping("/{atletaId}/atual")
     @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
     @RequireTenant(resourceParamIndex = 0)
-    @Operation(summary = "Buscar o checkin mais recente do atleta")
+    @Operation(summary = "Buscar o checkin mais recente do atleta",
+            description = "Atletas só podem consultar o próprio checkin — o serviço valida a posse " +
+                    "além do isolamento de tenant já garantido por @RequireTenant.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Checkin mais recente encontrado",
                     content = @Content(schema = @Schema(implementation = CheckinProntidaoOutputDto.class))),
             @ApiResponse(responseCode = "204", description = "Nenhum checkin registrado para o atleta"),
             @ApiResponse(responseCode = "401", description = "Token ausente ou inválido"),
-            @ApiResponse(responseCode = "403", description = "Acesso negado"),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — atleta tentando acessar checkin de outro atleta"),
             @ApiResponse(responseCode = "404", description = "Atleta não encontrado")
     })
     public ResponseEntity<CheckinProntidaoOutputDto> buscarAtual(
             @Parameter(description = "ID do atleta") @PathVariable UUID atletaId) {
-        CheckinProntidaoOutputDto output = checkinProntidaoService.buscarAtual(atletaId);
+        CheckinProntidaoOutputDto output = checkinProntidaoService.buscarAtual(atletaId, isAdmin());
         return output != null ? ResponseEntity.ok(output) : ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{atletaId}")
     @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
     @RequireTenant(resourceParamIndex = 0)
-    @Operation(summary = "Listar histórico de checkins do atleta")
+    @Operation(summary = "Listar histórico de checkins do atleta",
+            description = "Atletas só podem consultar o próprio histórico — o serviço valida a posse " +
+                    "além do isolamento de tenant já garantido por @RequireTenant.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Histórico retornado com sucesso",
                     content = @Content(array = @ArraySchema(schema = @Schema(implementation = CheckinProntidaoOutputDto.class)))),
             @ApiResponse(responseCode = "400", description = "Parâmetro dias fora do intervalo permitido [1, 90]"),
             @ApiResponse(responseCode = "401", description = "Token ausente ou inválido"),
-            @ApiResponse(responseCode = "403", description = "Acesso negado"),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — atleta tentando acessar histórico de outro atleta"),
             @ApiResponse(responseCode = "404", description = "Atleta não encontrado")
     })
     public ResponseEntity<List<CheckinProntidaoOutputDto>> buscarHistorico(
             @Parameter(description = "ID do atleta") @PathVariable UUID atletaId,
             @Parameter(description = "Número de dias a consultar (1–90, default 7)")
             @RequestParam(defaultValue = "7") @Min(1) @Max(MAX_DIAS_HISTORICO) Integer dias) {
-        return ResponseEntity.ok(checkinProntidaoService.buscarHistorico(atletaId, dias));
+        return ResponseEntity.ok(checkinProntidaoService.buscarHistorico(atletaId, dias, isAdmin()));
+    }
+
+    /**
+     * Lê a role diretamente do {@link SecurityContextHolder} (ThreadLocal) em vez de receber
+     * {@code Authentication} como parâmetro de método — evita depender da cadeia de filtros
+     * servlet para popular {@code request.getUserPrincipal()}.
+     */
+    private boolean isAdmin() {
+        return SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
     }
 }
