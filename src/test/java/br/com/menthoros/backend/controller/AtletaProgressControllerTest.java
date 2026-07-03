@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaHomeDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
 import br.com.menthoros.backend.dto.output.ReadinessDto;
@@ -143,6 +144,122 @@ class AtletaProgressControllerTest {
         when(service.resolverAtletaIdAtual()).thenThrow(new DomainNotFoundException("Atleta não encontrado"));
 
         mockMvc.perform(get("/api/v1/atletas/me/home"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /me/metricas/historico → 200 e resolve o atleta do token")
+    void meHistorico() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
+        when(service.getHistoricoPmc(eq(atletaId), any(), any()))
+                .thenReturn(List.of(new PmcPontoDto(LocalDate.of(2026, 6, 1), 50.0, 60.0, -10.0, 80, "ACUMULANDO_FADIGA")));
+
+        mockMvc.perform(get("/api/v1/atletas/me/metricas/historico"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ctl").value(50.0));
+
+        verify(service).getHistoricoPmc(eq(atletaId), any(), any());
+    }
+
+    @Test
+    @DisplayName("GET /me/metricas/historico → 404 quando o atleta do token não é resolvido")
+    void meHistoricoNotFound() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenThrow(new DomainNotFoundException("Atleta não encontrado"));
+
+        mockMvc.perform(get("/api/v1/atletas/me/metricas/historico"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /me/metricas/zonas → 200 e resolve o atleta do token")
+    void meZonas() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
+        when(service.getDistribuicaoZonas(eq(atletaId), any(), any()))
+                .thenReturn(new ZonaDistribuicaoDto(600, 0, 300, 0, 0, 900));
+
+        mockMvc.perform(get("/api/v1/atletas/me/metricas/zonas"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.duracaoTotalSegundos").value(900));
+
+        verify(service).getDistribuicaoZonas(eq(atletaId), any(), any());
+    }
+
+    @Test
+    @DisplayName("GET /me/metricas/zonas → 404 quando o atleta do token não é resolvido")
+    void meZonasNotFound() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenThrow(new DomainNotFoundException("Atleta não encontrado"));
+
+        mockMvc.perform(get("/api/v1/atletas/me/metricas/zonas"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /me/recordes → 200 e resolve o atleta do token")
+    void meRecordes() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
+        when(service.getRecordes(atletaId))
+                .thenReturn(List.of(new RecordeDto("10k", 2730L, LocalDate.of(2026, 5, 8), UUID.randomUUID())));
+
+        mockMvc.perform(get("/api/v1/atletas/me/recordes"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].distancia").value("10k"));
+
+        verify(service).getRecordes(atletaId);
+    }
+
+    @Test
+    @DisplayName("GET /me/recordes → 200 com lista vazia (atleta sem recordes ainda)")
+    void meRecordesVazio() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
+        when(service.getRecordes(atletaId)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/atletas/me/recordes"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    @DisplayName("GET /me/recordes → 404 quando o atleta do token não é resolvido")
+    void meRecordesNotFound() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenThrow(new DomainNotFoundException("Atleta não encontrado"));
+
+        mockMvc.perform(get("/api/v1/atletas/me/recordes"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /me/aderencia → 200, resolve o atleta do token e usa semanas=4 por default")
+    void meAderenciaDefault() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
+        when(service.getAderenciaSemanal(atletaId, 4))
+                .thenReturn(List.of(new AderenciasSemanalDto(LocalDate.of(2026, 6, 1), 5, 4, 80)));
+
+        mockMvc.perform(get("/api/v1/atletas/me/aderencia"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].percentual").value(80));
+
+        verify(service).getAderenciaSemanal(atletaId, 4);
+    }
+
+    @Test
+    @DisplayName("GET /me/aderencia?semanas=N → repassa N ao service")
+    void meAderenciaComParametro() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
+        when(service.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/atletas/me/aderencia").param("semanas", "8"))
+                .andExpect(status().isOk());
+
+        verify(service).getAderenciaSemanal(atletaId, 8);
+    }
+
+    @Test
+    @DisplayName("GET /me/aderencia → 404 quando o atleta do token não é resolvido")
+    void meAderenciaNotFound() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenThrow(new DomainNotFoundException("Atleta não encontrado"));
+
+        mockMvc.perform(get("/api/v1/atletas/me/aderencia"))
                 .andExpect(status().isNotFound());
     }
 }

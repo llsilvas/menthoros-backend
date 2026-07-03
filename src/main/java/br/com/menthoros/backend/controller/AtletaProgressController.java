@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaHomeDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
 import br.com.menthoros.backend.dto.output.ReadinessDto;
@@ -8,13 +9,18 @@ import br.com.menthoros.backend.dto.output.ZonaDistribuicaoDto;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -37,6 +43,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @RequestMapping("/api/v1/atletas")
 @Tag(name = "progresso-atleta", description = "PMC, zonas, recordes, readiness e resumo do dia")
+@Validated
 public class AtletaProgressController {
 
     private final AtletaProgressService atletaProgressService;
@@ -122,5 +129,78 @@ public class AtletaProgressController {
     public ResponseEntity<AtletaHomeDto> getHome() {
         UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
         return ResponseEntity.ok(atletaProgressService.getHome(atletaId));
+    }
+
+    @GetMapping("/me/metricas/historico")
+    @PreAuthorize("hasRole('ATLETA')")
+    @Operation(summary = "Histórico PMC do atleta autenticado",
+            description = "Série diária CTL/ATL/TSB/TSS no intervalo (default: últimos 90 dias). Resolve o atleta do token.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Série PMC retornada",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = PmcPontoDto.class)))),
+            @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado"),
+            @ApiResponse(responseCode = "422", description = "Intervalo inválido (from > to)"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer ATLETA)"),
+            @ApiResponse(responseCode = "401", description = "Não autenticado")
+    })
+    public ResponseEntity<List<PmcPontoDto>> getHistoricoPmcAtual(
+            @Parameter(description = "Início do intervalo (ISO-8601); default 90 dias atrás")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @Parameter(description = "Fim do intervalo (ISO-8601); default hoje")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return ResponseEntity.ok(atletaProgressService.getHistoricoPmc(atletaId, from, to));
+    }
+
+    @GetMapping("/me/metricas/zonas")
+    @PreAuthorize("hasRole('ATLETA')")
+    @Operation(summary = "Distribuição de zonas do atleta autenticado",
+            description = "Tempo por zona de FC (z1–z5) no intervalo (default: últimos 90 dias). Resolve o atleta do token.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Distribuição de zonas retornada"),
+            @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado"),
+            @ApiResponse(responseCode = "422", description = "Intervalo inválido (from > to)"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer ATLETA)"),
+            @ApiResponse(responseCode = "401", description = "Não autenticado")
+    })
+    public ResponseEntity<ZonaDistribuicaoDto> getDistribuicaoZonasAtual(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return ResponseEntity.ok(atletaProgressService.getDistribuicaoZonas(atletaId, from, to));
+    }
+
+    @GetMapping("/me/recordes")
+    @PreAuthorize("hasRole('ATLETA')")
+    @Operation(summary = "Recordes pessoais do atleta autenticado",
+            description = "PRs (5k/10k/21k) derivados dos treinos realizados. Resolve o atleta do token.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Recordes retornados (lista vazia quando o atleta ainda não tem PRs)",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = RecordeDto.class)))),
+            @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer ATLETA)"),
+            @ApiResponse(responseCode = "401", description = "Não autenticado")
+    })
+    public ResponseEntity<List<RecordeDto>> getRecordesAtual() {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return ResponseEntity.ok(atletaProgressService.getRecordes(atletaId));
+    }
+
+    @GetMapping("/me/aderencia")
+    @PreAuthorize("hasRole('ATLETA')")
+    @Operation(summary = "Aderência semanal ao plano do atleta autenticado",
+            description = "Total planejado/realizado e percentual por semana, nas últimas N semanas (default 4). Resolve o atleta do token.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Aderência semanal retornada",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = AderenciasSemanalDto.class)))),
+            @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer ATLETA)"),
+            @ApiResponse(responseCode = "401", description = "Não autenticado")
+    })
+    public ResponseEntity<List<AderenciasSemanalDto>> getAderenciaSemanalAtual(
+            @Parameter(description = "Número de semanas a analisar (default 4)")
+            @RequestParam(defaultValue = "4") @Min(1) int semanas) {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return ResponseEntity.ok(atletaProgressService.getAderenciaSemanal(atletaId, semanas));
     }
 }
