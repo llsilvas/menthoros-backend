@@ -98,6 +98,12 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 
 ⚠️ **Ajuste por fadiga:** TSB atual = -20,0 → paces com penalidade de **+7 seg/km** nas zonas acima. Prescrever dentro das faixas indicadas.
 
+## 🌡️ READINESS (PRONTIDÃO SUBJETIVA DIÁRIA)
+
+- **Últimos 7 dias:** [SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO]
+- **Hoje:** sem checkin registrado — decisão de intervalado não considera readiness.
+
+
 ## MÉTRICAS DE CARGA E FADIGA
 
 **Status Geral:** COLETANDO DADOS

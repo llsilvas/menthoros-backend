@@ -51,6 +51,7 @@ public class PlanoTreinoPromptBuilder {
     private final PaceHistoricoFormatter paceHistoricoFormatter;
     private final PaceZoneCalculator paceZoneCalculator;
     private final ThresholdConstraintFormatter thresholdConstraintFormatter;
+    private final ReadinessPromptFormatter readinessPromptFormatter;
 
     public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource,
                                     PromptTemplateLoader templateLoader,
@@ -66,7 +67,8 @@ public class PlanoTreinoPromptBuilder {
                                     IntervaladoElegibilidadeService intervaladoElegibilidadeService,
                                     PaceHistoricoFormatter paceHistoricoFormatter,
                                     PaceZoneCalculator paceZoneCalculator,
-                                    ThresholdConstraintFormatter thresholdConstraintFormatter) {
+                                    ThresholdConstraintFormatter thresholdConstraintFormatter,
+                                    ReadinessPromptFormatter readinessPromptFormatter) {
         this.templateLoader = templateLoader;
         this.metricasAlertaService = metricasAlertaService;
         this.zonaTreinoService = zonaTreinoService;
@@ -81,6 +83,7 @@ public class PlanoTreinoPromptBuilder {
         this.paceHistoricoFormatter = paceHistoricoFormatter;
         this.paceZoneCalculator = paceZoneCalculator;
         this.thresholdConstraintFormatter = thresholdConstraintFormatter;
+        this.readinessPromptFormatter = readinessPromptFormatter;
         try {
             this.promptTemplate = new String(promptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -162,9 +165,9 @@ public class PlanoTreinoPromptBuilder {
                                              LocalDate inicioSemana, List<DiaSemana> diasEfetivos) {
         var ctx = treinoHistoricoProvider.prepararContexto(atleta);
 
-        // DECISÃO INTERVALADO — avaliação determinística pré-LLM (5 portões fisiológicos)
+        // DECISÃO INTERVALADO — avaliação determinística pré-LLM (5 portões fisiológicos + readiness)
         RecomendacaoIntervalado recomIntervalado = intervaladoElegibilidadeService.avaliar(
-                atleta, metaDados, ctx.treinosUltimas4Semanas(), ctx.dataReferencia());
+                atleta, metaDados, ctx.treinosUltimas4Semanas(), ctx.dataReferencia(), ctx.nivelProntidaoHoje());
 
         // 1. Dados básicos do atleta
 
@@ -217,6 +220,10 @@ public class PlanoTreinoPromptBuilder {
         if (!avisoTsb.isEmpty()) {
             historicoCompleto.append(avisoTsb).append("\n");
         }
+
+        // ETAPA 1.5: Readiness (prontidão subjetiva diária) — sequência 7 dias + hoje
+        historicoCompleto.append(readinessPromptFormatter.formatarReadiness(
+                ctx.sequenciaUltimos7Dias(), ctx.nivelProntidaoHoje(), ctx.readinessScoreHoje())).append("\n\n");
 
         // ETAPA 2: Métricas de carga e fadiga (consolidadas)
         historicoCompleto.append(metricasPromptFormatter.formatarMetricas(metaDados)).append("\n\n");

@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.entity;
 
 
+import br.com.menthoros.backend.enums.NivelProntidao;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -88,6 +89,15 @@ public class MetricasDiarias {
 
     @Column(name = "tsb_fim_dia")
     private Double tsbFimDia;
+
+    // ===== READINESS (checkin diário de prontidão subjetiva) =====
+
+    @Column(name = "readiness_score", precision = 4, scale = 3)
+    private BigDecimal readinessScore;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "nivel_prontidao")
+    private NivelProntidao nivelProntidao;
 
     @PrePersist
     @PreUpdate

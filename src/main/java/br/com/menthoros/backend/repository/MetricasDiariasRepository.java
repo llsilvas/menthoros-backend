@@ -13,6 +13,17 @@ public interface MetricasDiariasRepository extends JpaRepository<MetricasDiarias
 
     Optional<MetricasDiarias> findByAtletaIdAndData(UUID atletaId, LocalDate data);
 
+    /**
+     * Variante tenant-aware de {@link #findByAtletaIdAndData}, para callers que ainda não
+     * validaram {@code atletaId} contra o tenant antes de chamar este repository (defesa em
+     * profundidade — evita depender apenas do caller para o isolamento).
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     */
+    Optional<MetricasDiarias> findByAtletaIdAndDataAndTenantId(UUID atletaId, LocalDate data, UUID tenantId);
+
     List<MetricasDiarias> findByAtletaIdAndDataBetweenOrderByDataAsc(UUID atletaId, LocalDate dataInicio, LocalDate dataFim);
 
     @Query("Select m from MetricasDiarias m where m.atleta.id = :atletaId " +

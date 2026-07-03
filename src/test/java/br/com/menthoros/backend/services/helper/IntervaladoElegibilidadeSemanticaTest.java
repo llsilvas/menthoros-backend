@@ -33,7 +33,8 @@ class IntervaladoElegibilidadeSemanticaTest {
     @BeforeEach
     void setUp() {
         // Injeta a skill real — ela é stateless e determinística, não precisa de mock
-        service = new IntervaladoElegibilidadeService(new IntervaladoElegibilidadeSkill());
+        service = new IntervaladoElegibilidadeService(
+                new IntervaladoElegibilidadeSkill(), new br.com.menthoros.backend.config.core.ReadinessProperties());
     }
 
     private Atleta atletaSaudavel(NivelExperiencia nivel) {

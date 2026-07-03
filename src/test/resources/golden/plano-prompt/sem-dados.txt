@@ -99,6 +99,12 @@ NÃO invente outros valores de BPM. Recomende teste de limiar urgente ao atleta.
 - Se FC disponível: priorizar FC sobre pace estimado
 - Adicionar na justificativa: "Zonas estimadas - recomenda-se teste de limiar"
 
+## 🌡️ READINESS (PRONTIDÃO SUBJETIVA DIÁRIA)
+
+- **Últimos 7 dias:** [SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO]
+- **Hoje:** sem checkin registrado — decisão de intervalado não considera readiness.
+
+
 ## MÉTRICAS DE CARGA E FADIGA
 
 **Status Geral:** COLETANDO DADOS
