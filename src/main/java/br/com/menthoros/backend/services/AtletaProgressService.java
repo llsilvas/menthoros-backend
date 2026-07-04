@@ -17,6 +17,9 @@ import java.util.UUID;
  */
 public interface AtletaProgressService {
 
+    /** Limite superior de {@code semanas} aceito por {@link #getAderenciaSemanal} (2 anos). */
+    int MAX_SEMANAS_ADERENCIA = 104;
+
     /**
      * Série PMC diária no intervalo (default: últimos 90 dias quando {@code from}/{@code to} ausentes).
      * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.

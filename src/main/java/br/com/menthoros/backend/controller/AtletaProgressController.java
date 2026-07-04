@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -193,13 +194,16 @@ public class AtletaProgressController {
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Aderência semanal retornada",
                     content = @Content(array = @ArraySchema(schema = @Schema(implementation = AderenciasSemanalDto.class)))),
+            @ApiResponse(responseCode = "400", description = "Parâmetro semanas fora do intervalo permitido [1, "
+                    + AtletaProgressService.MAX_SEMANAS_ADERENCIA + "]"),
             @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado"),
             @ApiResponse(responseCode = "403", description = "Sem permissão (requer ATLETA)"),
             @ApiResponse(responseCode = "401", description = "Não autenticado")
     })
     public ResponseEntity<List<AderenciasSemanalDto>> getAderenciaSemanalAtual(
-            @Parameter(description = "Número de semanas a analisar (default 4)")
-            @RequestParam(defaultValue = "4") @Min(1) int semanas) {
+            @Parameter(description = "Número de semanas a analisar (default 4, máx "
+                    + AtletaProgressService.MAX_SEMANAS_ADERENCIA + ")")
+            @RequestParam(defaultValue = "4") @Min(1) @Max(AtletaProgressService.MAX_SEMANAS_ADERENCIA) int semanas) {
         UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
         return ResponseEntity.ok(atletaProgressService.getAderenciaSemanal(atletaId, semanas));
     }

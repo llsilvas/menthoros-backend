@@ -255,6 +255,20 @@ class AtletaProgressControllerTest {
     }
 
     @Test
+    @DisplayName("GET /me/aderencia?semanas=0 → 400 (abaixo do mínimo)")
+    void meAderenciaSemanasAbaixoDoMinimo() throws Exception {
+        mockMvc.perform(get("/api/v1/atletas/me/aderencia").param("semanas", "0"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("GET /me/aderencia?semanas=105 → 400 (acima do máximo)")
+    void meAderenciaSemanasAcimaDoMaximo() throws Exception {
+        mockMvc.perform(get("/api/v1/atletas/me/aderencia").param("semanas", "105"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     @DisplayName("GET /me/aderencia → 404 quando o atleta do token não é resolvido")
     void meAderenciaNotFound() throws Exception {
         when(service.resolverAtletaIdAtual()).thenThrow(new DomainNotFoundException("Atleta não encontrado"));
