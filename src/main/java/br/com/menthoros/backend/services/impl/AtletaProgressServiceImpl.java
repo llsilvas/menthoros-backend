@@ -7,6 +7,7 @@ import br.com.menthoros.backend.dto.output.ReadinessDto;
 import br.com.menthoros.backend.dto.output.RecordeDto;
 import br.com.menthoros.backend.dto.output.ZonaDistribuicaoDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.CheckinProntidao;
 import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
@@ -17,6 +18,7 @@ import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.CheckinProntidaoRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
@@ -30,6 +32,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -72,6 +76,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final ZonaTreinoService zonaTreinoService;
     private final AuthenticatedPrincipalResolver principalResolver;
+    private final CheckinProntidaoRepository checkinProntidaoRepository;
     private final Clock clock;
 
     /**
@@ -146,13 +151,19 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
 
     /**
      * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
-     * Heurística objetiva provisória (sem check-in subjetivo): score a partir do TSB de prontidão,
-     * ajustado pelo RPE do último treino. Degrada para score nulo quando não há sinais.
+     * Usa readinessScore/nivelProntidao do check-in de hoje quando existe (fonte única de
+     * verdade); caso contrário, degrada para a heurística objetiva a partir do TSB de prontidão,
+     * ajustada pelo RPE do último treino. Degrada para score nulo quando não há nenhum sinal.
      */
     @Override
     @Transactional(readOnly = true)
     public ReadinessDto getReadinessAtual(UUID atletaId) {
         validarAtletaNoTenant(atletaId);
+
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        CheckinProntidao checkinHoje = checkinProntidaoRepository
+                .findByAtletaIdAndData(atletaId, LocalDate.now(clock), tenantId)
+                .orElse(null);
 
         PlanoMetaDados meta = planoMetadadosRepository.findByAtletaId(atletaId).orElse(null);
         Integer ultimoRpe = treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(atletaId)
@@ -163,9 +174,21 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
         Double atl = meta != null ? meta.getAtlAtual() : null;
         ReadinessDto.Fatores fatores = new ReadinessDto.Fatores(tsbProntidao, ctl, atl, ultimoRpe);
 
+        // Check-in de hoje é fonte única de verdade quando existe — não recalcular
+        // (readinessScore/nivelProntidao já foram calculados e persistidos no registro do checkin).
+        if (checkinHoje != null) {
+            int scoreDoCheckin = Math.max(0, Math.min(100,
+                    checkinHoje.getReadinessScore()
+                            .multiply(BigDecimal.valueOf(100))
+                            .setScale(0, RoundingMode.HALF_UP)
+                            .intValueExact()));
+            return new ReadinessDto(scoreDoCheckin, checkinHoje.getNivelProntidao().name(), fatores,
+                    "Baseado no seu check-in de hoje.");
+        }
+
         if (tsbProntidao == null) {
             return new ReadinessDto(null, "INDISPONIVEL", fatores,
-                    "Dados insuficientes: sem métricas de prontidão e sem check-in subjetivo.");
+                    "Dados insuficientes: sem métricas de prontidão e sem check-in subjetivo hoje.");
         }
 
         int score = (int) Math.round(60 + 1.5 * tsbProntidao);
@@ -175,7 +198,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
         score = Math.max(0, Math.min(100, score));
 
         return new ReadinessDto(score, classificar(score), fatores,
-                "Provisório: sem check-in subjetivo; baseado em TSB de prontidão e carga.");
+                "Baseado em TSB de prontidão e carga — faça seu check-in de hoje para um sinal mais preciso.");
     }
 
     /**
