@@ -108,7 +108,8 @@ public class AtletaProgressController {
     @GetMapping("/me/readiness")
     @PreAuthorize("hasRole('ATLETA')")
     @Operation(summary = "Readiness atual do atleta autenticado",
-            description = "Score + fatores objetivos (provisório, sem check-in subjetivo). Resolve o atleta do token.")
+            description = "Score + fatores objetivos. Usa o check-in de prontidão de hoje quando existe; "
+                    + "caso contrário, degrada para uma heurística objetiva. Resolve o atleta do token.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Readiness retornado (defaults quando sem sinais)"),
             @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado"),

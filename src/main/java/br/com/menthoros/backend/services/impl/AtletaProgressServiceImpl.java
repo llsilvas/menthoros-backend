@@ -32,6 +32,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -149,8 +151,9 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
 
     /**
      * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
-     * Heurística objetiva provisória (sem check-in subjetivo): score a partir do TSB de prontidão,
-     * ajustado pelo RPE do último treino. Degrada para score nulo quando não há sinais.
+     * Usa readinessScore/nivelProntidao do check-in de hoje quando existe (fonte única de
+     * verdade); caso contrário, degrada para a heurística objetiva a partir do TSB de prontidão,
+     * ajustada pelo RPE do último treino. Degrada para score nulo quando não há nenhum sinal.
      */
     @Override
     @Transactional(readOnly = true)
@@ -175,7 +178,10 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
         // (readinessScore/nivelProntidao já foram calculados e persistidos no registro do checkin).
         if (checkinHoje != null) {
             int scoreDoCheckin = Math.max(0, Math.min(100,
-                    (int) Math.round(checkinHoje.getReadinessScore().doubleValue() * 100)));
+                    checkinHoje.getReadinessScore()
+                            .multiply(BigDecimal.valueOf(100))
+                            .setScale(0, RoundingMode.HALF_UP)
+                            .intValueExact()));
             return new ReadinessDto(scoreDoCheckin, checkinHoje.getNivelProntidao().name(), fatores,
                     "Baseado no seu check-in de hoje.");
         }

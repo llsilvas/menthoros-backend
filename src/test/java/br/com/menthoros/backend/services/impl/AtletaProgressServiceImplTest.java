@@ -33,6 +33,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -282,6 +285,28 @@ class AtletaProgressServiceImplTest {
             assertThat(r.classificacao()).isEqualTo("PRONTO"); // nivelProntidao do check-in, não "BOM"
             assertThat(r.nota()).contains("check-in de hoje");
             assertThat(r.fatores().tsbProntidao()).isEqualTo(10.0); // fatores objetivos preservados como contexto
+        }
+
+        @ParameterizedTest(name = "readinessScore={0} → score={1}")
+        @DisplayName("com check-in de hoje: score respeita os limites 0 e 100 (BVA)")
+        @CsvSource({ "0.00, 0", "1.00, 100", "0.995, 100", "0.004, 0" })
+        void comCheckinDeHojeScoreNosLimites(String readinessScore, int scoreEsperado) {
+            when(checkinProntidaoRepository.findByAtletaIdAndData(atletaId, HOJE, tenantId))
+                    .thenReturn(Optional.of(checkin(HOJE, new BigDecimal(readinessScore), NivelProntidao.PRONTO)));
+            stubReadiness(10.0, 6);
+
+            assertThat(service.getReadinessAtual(atletaId).score()).isEqualTo(scoreEsperado);
+        }
+
+        @ParameterizedTest(name = "nivelProntidao={0}")
+        @DisplayName("com check-in de hoje: classificacao repassa cada valor do enum NivelProntidao")
+        @EnumSource(NivelProntidao.class)
+        void comCheckinDeHojeClassificacaoPorEnum(NivelProntidao nivel) {
+            when(checkinProntidaoRepository.findByAtletaIdAndData(atletaId, HOJE, tenantId))
+                    .thenReturn(Optional.of(checkin(HOJE, new BigDecimal("0.82"), nivel)));
+            stubReadiness(10.0, 6);
+
+            assertThat(service.getReadinessAtual(atletaId).classificacao()).isEqualTo(nivel.name());
         }
 
         @Test
