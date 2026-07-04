@@ -6,17 +6,20 @@ import br.com.menthoros.backend.dto.output.ReadinessDto;
 import br.com.menthoros.backend.dto.output.RecordeDto;
 import br.com.menthoros.backend.dto.output.ZonaDistribuicaoDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.CheckinProntidao;
 import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.entity.Usuario;
+import br.com.menthoros.backend.enums.NivelProntidao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.CheckinProntidaoRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
@@ -65,6 +68,7 @@ class AtletaProgressServiceImplTest {
     @Mock private PlanoMetadadosRepository planoMetadadosRepository;
     @Mock private ZonaTreinoService zonaTreinoService;
     @Mock private AuthenticatedPrincipalResolver principalResolver;
+    @Mock private CheckinProntidaoRepository checkinProntidaoRepository;
 
     private AtletaProgressServiceImpl service;
 
@@ -81,7 +85,8 @@ class AtletaProgressServiceImplTest {
         Clock clock = Clock.fixed(Instant.parse("2026-06-17T12:00:00Z"), ZoneOffset.UTC);
         service = new AtletaProgressServiceImpl(
                 atletaRepository, usuarioRepository, metricasDiariasRepository, treinoRealizadoRepository,
-                treinoPlanejadoRepository, planoMetadadosRepository, zonaTreinoService, principalResolver, clock);
+                treinoPlanejadoRepository, planoMetadadosRepository, zonaTreinoService, principalResolver,
+                checkinProntidaoRepository, clock);
     }
 
     @AfterEach
@@ -260,6 +265,47 @@ class AtletaProgressServiceImplTest {
         @BeforeEach
         void stubAtleta() {
             atletaExisteNoTenant();
+            when(checkinProntidaoRepository.findByAtletaIdAndData(atletaId, HOJE, tenantId))
+                    .thenReturn(Optional.empty());
+        }
+
+        @Test
+        @DisplayName("com check-in de hoje: usa readinessScore/nivelProntidao persistidos, sem recalcular")
+        void comCheckinDeHoje() {
+            when(checkinProntidaoRepository.findByAtletaIdAndData(atletaId, HOJE, tenantId))
+                    .thenReturn(Optional.of(checkin(HOJE, new BigDecimal("0.82"), NivelProntidao.PRONTO)));
+            stubReadiness(10.0, 6); // fatores objetivos continuam populados no DTO mesmo com check-in
+
+            ReadinessDto r = service.getReadinessAtual(atletaId);
+
+            assertThat(r.score()).isEqualTo(82); // do check-in (0.82 * 100), não 75 (fórmula objetiva)
+            assertThat(r.classificacao()).isEqualTo("PRONTO"); // nivelProntidao do check-in, não "BOM"
+            assertThat(r.nota()).contains("check-in de hoje");
+            assertThat(r.fatores().tsbProntidao()).isEqualTo(10.0); // fatores objetivos preservados como contexto
+        }
+
+        @Test
+        @DisplayName("check-in de outro dia (não hoje) é ignorado — mantém fallback objetivo")
+        void checkinDeOutroDiaNaoConta() {
+            when(checkinProntidaoRepository.findByAtletaIdAndData(atletaId, HOJE, tenantId))
+                    .thenReturn(Optional.empty()); // repository já filtra por data — outro dia não retorna aqui
+            stubReadiness(10.0, 6);
+
+            ReadinessDto r = service.getReadinessAtual(atletaId);
+
+            assertThat(r.score()).isEqualTo(75); // fallback objetivo, não o do check-in de outro dia
+            assertThat(r.nota()).contains("faça seu check-in de hoje");
+        }
+
+        @Test
+        @DisplayName("sem check-in de hoje e sem sinais objetivos: nota não nega mais a existência do check-in")
+        void semCheckinESemSinaisNotaAjustada() {
+            when(planoMetadadosRepository.findByAtletaId(atletaId)).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Optional.empty());
+
+            ReadinessDto r = service.getReadinessAtual(atletaId);
+
+            assertThat(r.nota()).contains("sem check-in subjetivo hoje");
         }
 
         @Test
@@ -324,6 +370,15 @@ class AtletaProgressServiceImplTest {
         private void stubReadiness(Double tsbProntidao, Integer rpe) {
             when(planoMetadadosRepository.findByAtletaId(atletaId)).thenReturn(Optional.of(meta(tsbProntidao, 50.0, 44.0)));
             when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Optional.of(treinoRpe(rpe)));
+        }
+
+        private CheckinProntidao checkin(LocalDate data, BigDecimal readinessScore, NivelProntidao nivelProntidao) {
+            return CheckinProntidao.builder()
+                    .id(UUID.randomUUID())
+                    .data(data)
+                    .readinessScore(readinessScore)
+                    .nivelProntidao(nivelProntidao)
+                    .build();
         }
     }
 
