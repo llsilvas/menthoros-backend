@@ -33,7 +33,7 @@ public class Kudos {
     private Usuario coach;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(nullable = false, length = 20)
     private MotivoKudos motivo;
 
     @Column(nullable = false)

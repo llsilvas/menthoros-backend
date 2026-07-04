@@ -80,6 +80,16 @@ class AtletaKudosControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.length()").value(0));
         }
+
+        @Test
+        @DisplayName("404 quando o atleta do usuário autenticado não é encontrado")
+        void retorna404QuandoAtletaNaoEncontrado() throws Exception {
+            when(atletaProgressService.resolverAtletaIdAtual())
+                    .thenThrow(new br.com.menthoros.backend.exception.DomainNotFoundException("Atleta vinculado ao usuário não encontrado"));
+
+            mockMvc.perform(get("/api/v1/atletas/me/kudos/recentes"))
+                    .andExpect(status().isNotFound());
+        }
     }
 
     private void setAtletaAuth() {

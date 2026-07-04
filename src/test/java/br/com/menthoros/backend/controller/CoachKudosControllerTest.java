@@ -111,6 +111,25 @@ class CoachKudosControllerTest {
                             .content(mapper.writeValueAsString(Map.of("motivo", "CONSISTENCIA"))))
                     .andExpect(status().isConflict());
         }
+
+        @Test
+        @DisplayName("404 quando atleta ou coach não encontrado no tenant")
+        void retorna404QuandoNaoEncontrado() throws Exception {
+            when(kudosService.registrar(eq(atletaId), any()))
+                    .thenThrow(new br.com.menthoros.backend.exception.DomainNotFoundException("Atleta não encontrado no tenant atual"));
+
+            mockMvc.perform(post("/api/v1/coach/atletas/{atletaId}/kudos", atletaId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(Map.of("motivo", "CONSISTENCIA"))))
+                    .andExpect(status().isNotFound());
+        }
+
+        // Nota: não é possível testar "403 quando role inválida" neste slice de teste —
+        // `@WebMvcTest(..., addFilters = false)` + `SecurityContextHolder` manual não tece o
+        // `@PreAuthorize` (method security). Confirmado experimentalmente (uma tentativa de
+        // teste aqui passou com 201 mesmo com ROLE_ATLETA). A aplicação correta da anotação foi
+        // verificada por leitura de código (idêntica ao padrão de outros controllers coach);
+        // cobertura do caminho negativo fica como débito de teste registrado no tasks.md.
     }
 
     private void setCoachAuth() {

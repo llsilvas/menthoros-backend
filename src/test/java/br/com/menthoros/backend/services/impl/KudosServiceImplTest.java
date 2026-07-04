@@ -158,6 +158,17 @@ class KudosServiceImplTest {
             verifyNoInteractions(kudosRepository);
         }
 
+        @Test
+        @DisplayName("coach autenticado não encontrado no tenant lança DomainNotFoundException")
+        void coachNaoEncontrado() {
+            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id("coach-sub", tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.registrar(atletaId, new KudosInputDto(MotivoKudos.CONSISTENCIA)))
+                    .isInstanceOf(DomainNotFoundException.class);
+
+            verifyNoInteractions(kudosRepository);
+        }
+
         @ParameterizedTest(name = "motivo={0}")
         @DisplayName("aceita todo o enum MotivoKudos")
         @EnumSource(MotivoKudos.class)
