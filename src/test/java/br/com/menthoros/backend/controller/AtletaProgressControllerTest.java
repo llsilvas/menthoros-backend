@@ -3,13 +3,18 @@ package br.com.menthoros.backend.controller;
 import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaHomeDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
+import br.com.menthoros.backend.dto.output.ProvaOutputDto;
 import br.com.menthoros.backend.dto.output.ReadinessDto;
 import br.com.menthoros.backend.dto.output.RecordeDto;
 import br.com.menthoros.backend.dto.output.ZonaDistribuicaoDto;
+import br.com.menthoros.backend.enums.DistanciaProva;
+import br.com.menthoros.backend.enums.ProvaStatus;
+import br.com.menthoros.backend.enums.TipoProva;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.security.JwtTenantFilter;
 import br.com.menthoros.backend.security.StructuredLoggingFilter;
 import br.com.menthoros.backend.services.AtletaProgressService;
+import br.com.menthoros.backend.services.ProvaService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +46,7 @@ class AtletaProgressControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private AtletaProgressService service;
+    @MockitoBean private ProvaService provaService;
 
     private final UUID atletaId = UUID.randomUUID();
 
@@ -275,5 +281,47 @@ class AtletaProgressControllerTest {
 
         mockMvc.perform(get("/api/v1/atletas/me/aderencia"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /me/provas → 200, resolve o atleta do token e delega em ProvaService.listarProvas")
+    void meProvas() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
+        when(provaService.listarProvas(atletaId)).thenReturn(List.of(provaStub()));
+
+        mockMvc.perform(get("/api/v1/atletas/me/provas"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].nomeProva").value("Maratona de São Paulo"))
+                .andExpect(jsonPath("$[0].diasFaltando").value(45));
+
+        verify(provaService).listarProvas(atletaId);
+    }
+
+    @Test
+    @DisplayName("GET /me/provas → 200 com lista vazia (atleta sem provas cadastradas)")
+    void meProvasVazio() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
+        when(provaService.listarProvas(atletaId)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/v1/atletas/me/provas"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    @DisplayName("GET /me/provas → 404 quando o atleta do token não é resolvido")
+    void meProvasNotFound() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenThrow(new DomainNotFoundException("Atleta não encontrado"));
+
+        mockMvc.perform(get("/api/v1/atletas/me/provas"))
+                .andExpect(status().isNotFound());
+    }
+
+    private static ProvaOutputDto provaStub() {
+        return new ProvaOutputDto(
+                UUID.randomUUID(), "Maratona de São Paulo", LocalDate.of(2026, 8, 18),
+                TipoProva.MARATONA, DistanciaProva.KM_42, null, true, ProvaStatus.CONFIRMADA,
+                null, null, null, false, null, null, null, null, null, null, null, null, 45);
     }
 }
