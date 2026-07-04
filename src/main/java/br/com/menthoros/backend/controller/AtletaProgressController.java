@@ -3,10 +3,12 @@ package br.com.menthoros.backend.controller;
 import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaHomeDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
+import br.com.menthoros.backend.dto.output.ProvaOutputDto;
 import br.com.menthoros.backend.dto.output.ReadinessDto;
 import br.com.menthoros.backend.dto.output.RecordeDto;
 import br.com.menthoros.backend.dto.output.ZonaDistribuicaoDto;
 import br.com.menthoros.backend.services.AtletaProgressService;
+import br.com.menthoros.backend.services.ProvaService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
@@ -48,6 +50,7 @@ import java.util.UUID;
 public class AtletaProgressController {
 
     private final AtletaProgressService atletaProgressService;
+    private final ProvaService provaService;
 
     @GetMapping("/{id}/metricas/historico")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
@@ -206,5 +209,21 @@ public class AtletaProgressController {
             @RequestParam(defaultValue = "4") @Min(1) @Max(AtletaProgressService.MAX_SEMANAS_ADERENCIA) int semanas) {
         UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
         return ResponseEntity.ok(atletaProgressService.getAderenciaSemanal(atletaId, semanas));
+    }
+
+    @GetMapping("/me/provas")
+    @PreAuthorize("hasRole('ATLETA')")
+    @Operation(summary = "Provas cadastradas do atleta autenticado",
+            description = "Todas as provas (passadas e futuras) cadastradas pelo coach para o atleta. Resolve o atleta do token.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Provas retornadas (lista vazia quando o atleta ainda não tem provas cadastradas)",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = ProvaOutputDto.class)))),
+            @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer ATLETA)"),
+            @ApiResponse(responseCode = "401", description = "Não autenticado")
+    })
+    public ResponseEntity<List<ProvaOutputDto>> getProvasAtual() {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return ResponseEntity.ok(provaService.listarProvas(atletaId));
     }
 }
