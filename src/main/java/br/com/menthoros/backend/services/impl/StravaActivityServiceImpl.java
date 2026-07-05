@@ -163,7 +163,10 @@ public class StravaActivityServiceImpl implements StravaActivityService {
 
         mergeActivityIntoTreino(treino, activity, atleta);
         attachLaps(treino, accessToken, activity.id());
-        // Task 1.2: Idempotent save handles concurrent deduplication (constraint violation retry)
+        // Task 1.2: Idempotent save handles concurrent deduplication (constraint violation retry).
+        // SaveResult#inserted() é ignorado de propósito aqui: diferente do import de .fit, `treino`
+        // já vem de um find-or-new (linha acima) — save() normalmente é um UPDATE (merge), então
+        // TSB/atualizarTsbDia abaixo deve rodar em todo re-sync, não só na primeira inserção.
         treinoDedupHelper.saveIdempotent(treino, String.valueOf(activity.id()), atleta.getId());
         integracao.setUltimaSincronizacao(Instant.now());
         atualizarTsbDia(atleta.getId(), treino.getDataTreino());
