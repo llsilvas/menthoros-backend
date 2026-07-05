@@ -41,6 +41,18 @@ spring:
       shutdown:
         await-termination: true
         await-termination-period: 60s
+
+  # ----------------------------------------
+  # MULTIPART UPLOAD (import de .fit)
+  # ----------------------------------------
+  # Limite explícito de tamanho — um .fit real raramente passa de poucos MB; sem isto, o
+  # endpoint dependeria dos defaults implícitos do Spring Boot (1MB/10MB) sem que ninguém
+  # precisasse decidir isso conscientemente para um upload binário não confiável.
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
   # ----------------------------------------
   # DATABASE CONFIGURATION
   # ----------------------------------------
