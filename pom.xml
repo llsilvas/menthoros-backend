@@ -206,7 +206,9 @@
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>
 
-        <!-- FIT file upload ingestion — SDK oficial da Garmin, Apache 2.0 -->
+        <!-- FIT file upload ingestion — SDK oficial da Garmin, licenciado sob o
+             "Flexible and Interoperable Data Transfer (FIT) Protocol License Agreement"
+             da própria Garmin (não é Apache 2.0) -->
         <dependency>
             <groupId>com.garmin</groupId>
             <artifactId>fit</artifactId>
