@@ -5,6 +5,7 @@ import br.com.menthoros.backend.exception.AccessDeniedException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
+import br.com.menthoros.backend.exception.FitParseException;
 import br.com.menthoros.backend.exception.KeycloakIntegrationException;
 import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
@@ -258,6 +259,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DomainRuleViolationException.class)
     public ResponseEntity<Map<String, Object>> handleDomainRuleViolation(DomainRuleViolationException ex) {
         log.warn("Violação de regra de domínio: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 422,
+                "error", "Unprocessable Entity",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
+    }
+
+    @ExceptionHandler(FitParseException.class)
+    public ResponseEntity<Map<String, Object>> handleFitParseException(FitParseException ex) {
+        log.warn("Falha ao parsear arquivo .fit: {}", ex.getMessage());
         Map<String, Object> body = Map.of(
                 "status", 422,
                 "error", "Unprocessable Entity",
