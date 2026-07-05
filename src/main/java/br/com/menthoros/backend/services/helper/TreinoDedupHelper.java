@@ -24,9 +24,25 @@ public class TreinoDedupHelper {
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
 
-    public TreinoRealizado saveIdempotent(TreinoRealizado treino, String externalId, UUID atletaId) {
+    /**
+     * Tenta persistir {@code treino}; sob corrida de concorrência na constraint única, retorna o
+     * registro que já foi inserido por outra requisição em vez de propagar o erro.
+     *
+     * <p><b>Idempotent:</b> YES — reenviar o mesmo (externalId, atletaId) nunca duplica a linha.
+     * <p><b>Side Effects:</b> Database insert (quando não há conflito) ou apenas leitura (quando
+     * outra requisição já venceu a corrida).
+     * <p><b>Tenant-aware:</b> NO diretamente — depende do chamador já ter validado que
+     * {@code atletaId} pertence ao tenant atual antes de chamar este método.
+     *
+     * @return um {@link SaveResult} que expõe explicitamente se ESTA chamada inseriu o registro
+     *         (via {@link SaveResult#inserted()}) — chamadores que disparam side effects (eventos,
+     *         recálculo de métricas) só quando um registro NOVO foi criado devem checar essa flag
+     *         em vez de inferir a partir de identidade de objeto/referência.
+     */
+    public SaveResult saveIdempotent(TreinoRealizado treino, String externalId, UUID atletaId) {
         try {
-            return treinoRealizadoRepository.save(treino);
+            TreinoRealizado salvo = treinoRealizadoRepository.save(treino);
+            return new SaveResult(salvo, true);
         } catch (DataIntegrityViolationException e) {
             log.warn(
                 "Deduplication: constraint violation on (externalId={}, atletaId={}), " +
@@ -42,7 +58,7 @@ public class TreinoDedupHelper {
                     "for (externalId={}, atletaId={})",
                     existing.get().getId(), externalId, atletaId
                 );
-                return existing.get();
+                return new SaveResult(existing.get(), false);
             }
 
             log.error(
@@ -52,4 +68,12 @@ public class TreinoDedupHelper {
             throw e;
         }
     }
+
+    /**
+     * @param treino   o treino persistido (novo, se {@code inserted}, ou já existente, se não)
+     * @param inserted {@code true} quando ESTA chamada inseriu o registro; {@code false} quando
+     *                 uma requisição concorrente já havia inserido e este resultado é o vencedor
+     *                 dessa corrida buscado do banco
+     */
+    public record SaveResult(TreinoRealizado treino, boolean inserted) {}
 }

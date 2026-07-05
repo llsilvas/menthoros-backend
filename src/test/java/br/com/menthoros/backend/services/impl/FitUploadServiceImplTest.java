@@ -25,6 +25,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.io.ByteArrayInputStream;
 import java.time.Duration;
@@ -51,6 +52,7 @@ class FitUploadServiceImplTest {
     @Mock private TssCalculatorService tssCalculatorService;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private TreinoDedupHelper treinoDedupHelper;
+    @Mock private PlatformTransactionManager transactionManager;
 
     private FitUploadServiceImpl service;
 
@@ -65,7 +67,7 @@ class FitUploadServiceImplTest {
         TenantContext.setTenantId(tenantId);
 
         service = new FitUploadServiceImpl(fitParseService, atletaRepository, treinoRealizadoRepository,
-                treinoMapper, tsbService, tssCalculatorService, eventPublisher, treinoDedupHelper);
+                treinoMapper, tsbService, tssCalculatorService, eventPublisher, treinoDedupHelper, transactionManager);
 
         atleta = mock(Atleta.class);
         lenient().when(atleta.getId()).thenReturn(atletaId);
@@ -98,7 +100,8 @@ class FitUploadServiceImplTest {
         void importaNovo() {
             FitSessionData dados = sessionCorrida(123456789L, 1751360400L);
             when(fitParseService.parse(any())).thenReturn(dados);
-            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any())).thenAnswer(inv -> inv.getArgument(0));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             TreinoRealizadoOutputDto dtoEsperado = mock(TreinoRealizadoOutputDto.class);
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(dtoEsperado);
 
@@ -146,7 +149,8 @@ class FitUploadServiceImplTest {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofHours(1), 30.0, 140, 165, 80, false, "CYCLING", List.of());
             when(fitParseService.parse(any())).thenReturn(dados);
-            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any())).thenAnswer(inv -> inv.getArgument(0));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
             service.importar(atletaId, new ByteArrayInputStream(new byte[0]));
@@ -164,7 +168,8 @@ class FitUploadServiceImplTest {
                     Duration.ofMinutes(30), 5.0, 150, 175, null, true, "RUNNING", List.of());
             when(fitParseService.parse(any())).thenReturn(dados);
             when(tssCalculatorService.calcularTss(any())).thenReturn(70);
-            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any())).thenAnswer(inv -> inv.getArgument(0));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
             service.importar(atletaId, new ByteArrayInputStream(new byte[0]));
@@ -181,7 +186,8 @@ class FitUploadServiceImplTest {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofMinutes(20), null, null, null, 40, true, "RUNNING", List.of());
             when(fitParseService.parse(any())).thenReturn(dados);
-            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any())).thenAnswer(inv -> inv.getArgument(0));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
             service.importar(atletaId, new ByteArrayInputStream(new byte[0]));
@@ -212,11 +218,12 @@ class FitUploadServiceImplTest {
             when(fitParseService.parse(any())).thenReturn(dados);
             String externalId = atletaId + "-1-1751360400";
             // TreinoDedupHelper já cobre o retry sob conflito em seu próprio teste — aqui simula
-            // o resultado dessa corrida retornando uma instância DIFERENTE da que o service
-            // construiu (o "vencedor" buscado do banco), que é o sinal usado por
-            // FitUploadServiceImpl.importar para decidir NÃO publicar evento/recalcular TSB.
+            // o resultado dessa corrida com inserted=false (o "vencedor" buscado do banco), que é
+            // o sinal explícito usado por FitUploadServiceImpl.importar para decidir NÃO publicar
+            // evento/recalcular TSB.
             TreinoRealizado ganhador = new TreinoRealizado();
-            when(treinoDedupHelper.saveIdempotent(any(), eq(externalId), eq(atletaId))).thenReturn(ganhador);
+            when(treinoDedupHelper.saveIdempotent(any(), eq(externalId), eq(atletaId)))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(ganhador, false));
             when(treinoMapper.toOutputDto(ganhador)).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
             FitImportResultado resultado = service.importar(atletaId, new ByteArrayInputStream(new byte[0]));

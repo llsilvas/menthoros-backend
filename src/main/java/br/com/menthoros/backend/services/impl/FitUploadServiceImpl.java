@@ -27,7 +27,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -50,12 +51,22 @@ public class FitUploadServiceImpl implements FitUploadService {
     private final TssCalculatorService tssCalculatorService;
     private final ApplicationEventPublisher eventPublisher;
     private final TreinoDedupHelper treinoDedupHelper;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
-    @Transactional
     public FitImportResultado importar(UUID atletaId, InputStream in) {
+        // Parse do binário (CPU/IO-bound, sem acesso a banco) fica FORA da transação — só a
+        // persistência abaixo precisa segurar uma conexão. Transação programática (em vez de
+        // @Transactional no método) porque a chamada é feita a partir deste mesmo método, e um
+        // @Transactional numa chamada interna (this.persistir(...)) seria ignorado pelo proxy
+        // de AOP do Spring (self-invocation não passa pelo proxy).
         FitSessionData dados = fitParseService.parse(in);
 
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        return transactionTemplate.execute(status -> persistir(atletaId, dados));
+    }
+
+    private FitImportResultado persistir(UUID atletaId, FitSessionData dados) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado no tenant atual"));
@@ -70,15 +81,13 @@ public class FitUploadServiceImpl implements FitUploadService {
         }
 
         TreinoRealizado treino = montarTreino(dados, atleta, tenantId, externalId);
-        TreinoRealizado salvo = treinoDedupHelper.saveIdempotent(treino, externalId, atletaId);
+        TreinoDedupHelper.SaveResult resultado = treinoDedupHelper.saveIdempotent(treino, externalId, atletaId);
+        TreinoRealizado salvo = resultado.treino();
 
-        // Referência idêntica a `treino` só ocorre quando o insert desta requisição venceu a
-        // corrida (JPA save() de entidade nova retorna a mesma instância); no branch de conflito
-        // o dedup helper retorna o registro já existente buscado do banco (instância diferente).
-        // Publicar evento/recalcular TSB só faz sentido quando ESTA requisição inseriu o treino —
-        // do contrário duplicaríamos o efeito colateral para um treino que já foi processado.
-        boolean inserido = salvo == treino;
-        if (inserido) {
+        // Publicar evento/recalcular TSB só faz sentido quando ESTA requisição de fato inseriu o
+        // treino — do contrário duplicaríamos o efeito colateral para um treino já processado por
+        // outra requisição concorrente (ver TreinoDedupHelper.SaveResult#inserted).
+        if (resultado.inserted()) {
             eventPublisher.publishEvent(new TreinoRegistradoEvent(salvo.getId(), tenantId));
             tsbService.atualizarTsbDia(atletaId, salvo.getDataTreino());
             log.info("Fit importado: treinoId={}, atletaId={}, externalId={}", salvo.getId(), atletaId, externalId);

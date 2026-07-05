@@ -38,19 +38,20 @@ class TreinoDedupHelperTest {
     class SaveIdempotent {
 
         @Test
-        @DisplayName("persiste normalmente quando não há conflito — retorna a mesma instância")
+        @DisplayName("persiste normalmente quando não há conflito — inserted=true")
         void persisteSemConflito() {
             String externalId = "ext-1";
             TreinoRealizado treino = new TreinoRealizado();
             when(treinoRealizadoRepository.save(treino)).thenReturn(treino);
 
-            TreinoRealizado salvo = helper.saveIdempotent(treino, externalId, atletaId);
+            TreinoDedupHelper.SaveResult resultado = helper.saveIdempotent(treino, externalId, atletaId);
 
-            assertThat(salvo).isSameAs(treino);
+            assertThat(resultado.treino()).isSameAs(treino);
+            assertThat(resultado.inserted()).isTrue();
         }
 
         @Test
-        @DisplayName("sob conflito de constraint, retorna o registro já existente (vencedor da corrida)")
+        @DisplayName("sob conflito de constraint, retorna o registro já existente com inserted=false")
         void retornaVencedorSobConflito() {
             String externalId = "ext-2";
             TreinoRealizado treino = new TreinoRealizado();
@@ -59,9 +60,10 @@ class TreinoDedupHelperTest {
             when(treinoRealizadoRepository.findByExternalIdAndAtletaId(externalId, atletaId))
                     .thenReturn(Optional.of(vencedor));
 
-            TreinoRealizado salvo = helper.saveIdempotent(treino, externalId, atletaId);
+            TreinoDedupHelper.SaveResult resultado = helper.saveIdempotent(treino, externalId, atletaId);
 
-            assertThat(salvo).isSameAs(vencedor).isNotSameAs(treino);
+            assertThat(resultado.treino()).isSameAs(vencedor).isNotSameAs(treino);
+            assertThat(resultado.inserted()).isFalse();
             verify(treinoRealizadoRepository).findByExternalIdAndAtletaId(externalId, atletaId);
         }
 
