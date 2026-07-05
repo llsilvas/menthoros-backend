@@ -23,7 +23,7 @@ import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.exception.StravaRateLimitException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.services.TsbService;
-import org.springframework.dao.DataIntegrityViolationException;
+import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
@@ -60,8 +60,9 @@ public class StravaActivityServiceImpl implements StravaActivityService {
     private final TreinoMapper treinoMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final WebClient stravaWebClient;
+    private final TreinoDedupHelper treinoDedupHelper;
 
-    public StravaActivityServiceImpl(AtletaRepository atletaRepository, TreinoRealizadoRepository treinoRealizadoRepository, IntegracaoExternaRepository integracaoExternaRepository, StravaOAuthService stravaOAuthService, TsbService tsbService, TreinoMapper treinoMapper, ApplicationEventPublisher eventPublisher, @Qualifier("stravaWebClient")WebClient stravaWebClient) {
+    public StravaActivityServiceImpl(AtletaRepository atletaRepository, TreinoRealizadoRepository treinoRealizadoRepository, IntegracaoExternaRepository integracaoExternaRepository, StravaOAuthService stravaOAuthService, TsbService tsbService, TreinoMapper treinoMapper, ApplicationEventPublisher eventPublisher, @Qualifier("stravaWebClient")WebClient stravaWebClient, TreinoDedupHelper treinoDedupHelper) {
         this.atletaRepository = atletaRepository;
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.integracaoExternaRepository = integracaoExternaRepository;
@@ -70,56 +71,7 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         this.treinoMapper = treinoMapper;
         this.eventPublisher = eventPublisher;
         this.stravaWebClient = stravaWebClient;
-    }
-
-    /**
-     * Idempotent save for TreinoRealizado with deduplication handling.
-     *
-     * Implements Task 1.2 requirement: guarantee no duplicate (externalId, atletaId) pairs.
-     *
-     * Race condition scenario (without this method):
-     * - Thread A: find(externalId, atletaId) → empty, create new
-     * - Thread B: find(externalId, atletaId) → empty, create new
-     * - Thread A: save() → succeeds, inserts row
-     * - Thread B: save() → FAILS with UNIQUE constraint violation (unhandled exception)
-     *
-     * Solution: Catch constraint violation and retry with fetch.
-     * If violation occurs, the duplicate was already inserted by another thread,
-     * so we fetch and return the existing record (idempotent behavior).
-     */
-    private TreinoRealizado saveIdempotent(TreinoRealizado treino, String externalId, UUID atletaId) {
-        try {
-            return treinoRealizadoRepository.save(treino);
-        } catch (DataIntegrityViolationException e) {
-            // UNIQUE constraint violation on (externalId, atletaId)
-            // Another thread/process already inserted this activity
-            // Fetch and return the existing record (idempotent)
-            log.warn(
-                "Deduplication: constraint violation on (externalId={}, atletaId={}), " +
-                "retrying fetch. This is normal under concurrent load.",
-                externalId, atletaId
-            );
-
-            var existing = treinoRealizadoRepository
-                    .findByExternalIdAndAtletaId(externalId, atletaId);
-
-            if (existing.isPresent()) {
-                log.info(
-                    "Deduplication idempotent: returning existing TreinoRealizado {} " +
-                    "for (externalId={}, atletaId={})",
-                    existing.get().getId(), externalId, atletaId
-                );
-                return existing.get();
-            }
-
-            // If we reach here, constraint was violated but record not found on retry
-            // This shouldn't happen under normal circumstances
-            log.error(
-                "CRITICAL: Deduplication failed - constraint violation but record not found. " +
-                "externalId={}, atletaId={}", externalId, atletaId
-            );
-            throw e; // Re-throw if we can't handle it
-        }
+        this.treinoDedupHelper = treinoDedupHelper;
     }
 
     @Transactional(readOnly = true)
@@ -211,8 +163,11 @@ public class StravaActivityServiceImpl implements StravaActivityService {
 
         mergeActivityIntoTreino(treino, activity, atleta);
         attachLaps(treino, accessToken, activity.id());
-        // Task 1.2: Idempotent save handles concurrent deduplication (constraint violation retry)
-        saveIdempotent(treino, String.valueOf(activity.id()), atleta.getId());
+        // Task 1.2: Idempotent save handles concurrent deduplication (constraint violation retry).
+        // SaveResult#inserted() é ignorado de propósito aqui: diferente do import de .fit, `treino`
+        // já vem de um find-or-new (linha acima) — save() normalmente é um UPDATE (merge), então
+        // TSB/atualizarTsbDia abaixo deve rodar em todo re-sync, não só na primeira inserção.
+        treinoDedupHelper.saveIdempotent(treino, String.valueOf(activity.id()), atleta.getId());
         integracao.setUltimaSincronizacao(Instant.now());
         atualizarTsbDia(atleta.getId(), treino.getDataTreino());
         integracaoExternaRepository.save(integracao);
@@ -345,7 +300,7 @@ public class StravaActivityServiceImpl implements StravaActivityService {
                     mergeActivityIntoTreino(treino, activity, atleta);
                     attachLaps(treino, accessToken, activity.id());
                     // Task 1.2: Idempotent save handles concurrent deduplication (constraint violation retry)
-                    saveIdempotent(treino, String.valueOf(activity.id()), atleta.getId());
+                    treinoDedupHelper.saveIdempotent(treino, String.valueOf(activity.id()), atleta.getId());
                     imported++;
 
                     Instant activityInstant = parseActivityInstant(activity.startDateLocal());
