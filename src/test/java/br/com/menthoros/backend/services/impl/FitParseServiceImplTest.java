@@ -163,6 +163,50 @@ class FitParseServiceImplTest {
             assertThatThrownBy(() -> service.parse(lixo))
                     .isInstanceOf(FitParseException.class);
         }
+
+        @Test
+        @DisplayName("lança FitParseException quando o arquivo tem múltiplas mensagens Session (multiesporte)")
+        void multiplasSessionsLancaExcecao() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg natacao = new SessionMesg();
+                natacao.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+                natacao.setSport(Sport.SWIMMING);
+                natacao.setTotalElapsedTime(600f);
+                builder.mesgs.add(natacao);
+
+                SessionMesg corrida = new SessionMesg();
+                corrida.setStartTime(new DateTime(Instant.parse("2026-07-01T10:15:00Z")));
+                corrida.setSport(Sport.RUNNING);
+                corrida.setTotalElapsedTime(1800f);
+                builder.mesgs.add(corrida);
+            });
+
+            assertThatThrownBy(() -> service.parse(new ByteArrayInputStream(fit)))
+                    .isInstanceOf(FitParseException.class)
+                    .hasMessageContaining("múltiplas");
+        }
+
+        @Test
+        @DisplayName("lança FitParseException quando o número de laps excede o limite (proteção contra flood)")
+        void muitasLapsLancaExcecao() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg session = new SessionMesg();
+                session.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+                session.setSport(Sport.RUNNING);
+                session.setTotalElapsedTime(1800f);
+                builder.mesgs.add(session);
+
+                for (int i = 0; i < 1001; i++) {
+                    LapMesg lap = new LapMesg();
+                    lap.setTotalElapsedTime(1f);
+                    builder.mesgs.add(lap);
+                }
+            });
+
+            assertThatThrownBy(() -> service.parse(new ByteArrayInputStream(fit)))
+                    .isInstanceOf(FitParseException.class)
+                    .hasMessageContaining("laps");
+        }
     }
 
     // ── Helper: gera um .fit real e mínimo via FileEncoder do próprio SDK ─────────────────────

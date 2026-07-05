@@ -6,7 +6,6 @@ import br.com.menthoros.backend.exception.FitParseException;
 import br.com.menthoros.backend.services.FitParseService;
 import com.garmin.fit.Decode;
 import com.garmin.fit.FileIdMesgListener;
-import com.garmin.fit.FitRuntimeException;
 import com.garmin.fit.LapMesgListener;
 import com.garmin.fit.MesgBroadcaster;
 import com.garmin.fit.SessionMesgListener;
@@ -28,11 +27,19 @@ import java.util.concurrent.atomic.AtomicReference;
 @Service
 public class FitParseServiceImpl implements FitParseService {
 
+    /**
+     * Nenhum dispositivo real produz mais laps que isso num único treino — um arquivo que
+     * excede o limite é tratado como hostil (flood de mensagens Lap) e rejeitado antes de
+     * consumir memória/DB desproporcionalmente.
+     */
+    private static final int MAX_LAPS = 1000;
+
     @Override
     public FitSessionData parse(InputStream in) {
         List<FitLapData> laps = new ArrayList<>();
         AtomicLong serialNumber = new AtomicLong(0);
         AtomicInteger lapOrdem = new AtomicInteger(1);
+        AtomicInteger sessionCount = new AtomicInteger(0);
         AtomicReference<FitSessionData> resultado = new AtomicReference<>();
 
         MesgBroadcaster broadcaster = new MesgBroadcaster();
@@ -43,15 +50,26 @@ public class FitParseServiceImpl implements FitParseService {
             }
         });
 
-        broadcaster.addListener((LapMesgListener) mesg -> laps.add(new FitLapData(
-                lapOrdem.getAndIncrement(),
-                duracaoDeSegundos(mesg.getTotalElapsedTime()),
-                distanciaKmDeMetros(mesg.getTotalDistance()),
-                inteiroOuNulo(mesg.getAvgHeartRate()),
-                inteiroOuNulo(mesg.getMaxHeartRate())
-        )));
+        broadcaster.addListener((LapMesgListener) mesg -> {
+            if (laps.size() >= MAX_LAPS) {
+                throw new FitParseException("Arquivo .fit excede o número máximo de laps permitido (" + MAX_LAPS + ").");
+            }
+            laps.add(new FitLapData(
+                    lapOrdem.getAndIncrement(),
+                    duracaoDeSegundos(mesg.getTotalElapsedTime()),
+                    distanciaKmDeMetros(mesg.getTotalDistance()),
+                    inteiroOuNulo(mesg.getAvgHeartRate()),
+                    inteiroOuNulo(mesg.getMaxHeartRate())
+            ));
+        });
 
         broadcaster.addListener((SessionMesgListener) mesg -> {
+            if (sessionCount.incrementAndGet() > 1) {
+                // Arquivo multiesporte/multiessão (ex.: triathlon) — laps de sessões diferentes
+                // seriam misturados sob uma única Session, corrompendo FC/duração/distância.
+                // Rejeitar em vez de mesclar silenciosamente (D0.6 assume esporte único por sessão).
+                throw new FitParseException("Arquivo .fit contém múltiplas mensagens Session — não suportado.");
+            }
             if (mesg.getStartTime() == null) {
                 // Sem startTime não há como compor um externalId estável — fabricar um timestamp
                 // com Instant.now() quebraria a garantia de idempotência do reenvio do mesmo .fit.
@@ -78,7 +96,13 @@ public class FitParseServiceImpl implements FitParseService {
 
         try {
             new Decode().read(in, broadcaster);
-        } catch (FitRuntimeException e) {
+        } catch (FitParseException e) {
+            // Já é a exceção/mensagem certa (lançada pelos nossos próprios listeners) — não reenvelopar.
+            throw e;
+        } catch (RuntimeException e) {
+            // com.garmin.fit.FitRuntimeException cobre a maioria dos casos de stream malformado,
+            // mas um binário adversarial pode disparar outros RuntimeException inesperados dentro
+            // do SDK — tratar qualquer um deles como .fit inválido em vez de vazar um 500 genérico.
             log.warn("Falha ao decodificar arquivo .fit: {}", e.getMessage());
             throw new FitParseException("Arquivo inválido ou corrompido — não é um .fit válido.", e);
         }
