@@ -13,6 +13,7 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.FitParseService;
 import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,7 +25,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.DataIntegrityViolationException;
 
 import java.io.ByteArrayInputStream;
 import java.time.Duration;
@@ -50,6 +50,7 @@ class FitUploadServiceImplTest {
     @Mock private TsbService tsbService;
     @Mock private TssCalculatorService tssCalculatorService;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private TreinoDedupHelper treinoDedupHelper;
 
     private FitUploadServiceImpl service;
 
@@ -64,7 +65,7 @@ class FitUploadServiceImplTest {
         TenantContext.setTenantId(tenantId);
 
         service = new FitUploadServiceImpl(fitParseService, atletaRepository, treinoRealizadoRepository,
-                treinoMapper, tsbService, tssCalculatorService, eventPublisher);
+                treinoMapper, tsbService, tssCalculatorService, eventPublisher, treinoDedupHelper);
 
         atleta = mock(Atleta.class);
         lenient().when(atleta.getId()).thenReturn(atletaId);
@@ -97,7 +98,7 @@ class FitUploadServiceImplTest {
         void importaNovo() {
             FitSessionData dados = sessionCorrida(123456789L, 1751360400L);
             when(fitParseService.parse(any())).thenReturn(dados);
-            when(treinoRealizadoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any())).thenAnswer(inv -> inv.getArgument(0));
             TreinoRealizadoOutputDto dtoEsperado = mock(TreinoRealizadoOutputDto.class);
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(dtoEsperado);
 
@@ -107,7 +108,7 @@ class FitUploadServiceImplTest {
             assertThat(resultado.treino()).isSameAs(dtoEsperado);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
-            verify(treinoRealizadoRepository).save(captor.capture());
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
             TreinoRealizado salvo = captor.getValue();
             assertThat(salvo.getDataTreino()).isEqualTo(LocalDate.of(2026, 7, 1));
             assertThat(salvo.getFcMedia()).isEqualTo(150);
@@ -136,8 +137,7 @@ class FitUploadServiceImplTest {
 
             assertThat(resultado.novo()).isFalse();
             assertThat(resultado.treino()).isSameAs(dtoExistente);
-            verify(treinoRealizadoRepository, never()).save(any());
-            verifyNoInteractions(eventPublisher, tsbService);
+            verifyNoInteractions(treinoDedupHelper, eventPublisher, tsbService);
         }
 
         @Test
@@ -146,13 +146,13 @@ class FitUploadServiceImplTest {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofHours(1), 30.0, 140, 165, 80, false, "CYCLING", List.of());
             when(fitParseService.parse(any())).thenReturn(dados);
-            when(treinoRealizadoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any())).thenAnswer(inv -> inv.getArgument(0));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
             service.importar(atletaId, new ByteArrayInputStream(new byte[0]));
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
-            verify(treinoRealizadoRepository).save(captor.capture());
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
             assertThat(captor.getValue().getTipoTreino().name()).isEqualTo("CONTINUO");
             assertThat(captor.getValue().getDescricao()).contains("CYCLING");
         }
@@ -164,13 +164,13 @@ class FitUploadServiceImplTest {
                     Duration.ofMinutes(30), 5.0, 150, 175, null, true, "RUNNING", List.of());
             when(fitParseService.parse(any())).thenReturn(dados);
             when(tssCalculatorService.calcularTss(any())).thenReturn(70);
-            when(treinoRealizadoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any())).thenAnswer(inv -> inv.getArgument(0));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
             service.importar(atletaId, new ByteArrayInputStream(new byte[0]));
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
-            verify(treinoRealizadoRepository).save(captor.capture());
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
             assertThat(captor.getValue().getTssCalculado()).isEqualTo(70);
             assertThat(captor.getValue().getMetodoCalculoTss()).isEqualTo("FC");
         }
@@ -181,13 +181,13 @@ class FitUploadServiceImplTest {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofMinutes(20), null, null, null, 40, true, "RUNNING", List.of());
             when(fitParseService.parse(any())).thenReturn(dados);
-            when(treinoRealizadoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any())).thenAnswer(inv -> inv.getArgument(0));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
             service.importar(atletaId, new ByteArrayInputStream(new byte[0]));
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
-            verify(treinoRealizadoRepository).save(captor.capture());
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
             assertThat(captor.getValue().getDistanciaKm()).isNull();
             assertThat(captor.getValue().getFcMedia()).isNull();
             assertThat(captor.getValue().getFcMax()).isNull();
@@ -202,26 +202,28 @@ class FitUploadServiceImplTest {
             assertThatThrownBy(() -> service.importar(atletaId, new ByteArrayInputStream(new byte[0])))
                     .isInstanceOf(DomainNotFoundException.class);
 
-            verifyNoInteractions(treinoRealizadoRepository, eventPublisher, tsbService);
+            verifyNoInteractions(treinoRealizadoRepository, treinoDedupHelper, eventPublisher, tsbService);
         }
 
         @Test
-        @DisplayName("corrida de concorrência na constraint única retorna o registro que venceu, não propaga erro")
+        @DisplayName("corrida de concorrência: retorna o registro que venceu, sem duplicar evento/recálculo de TSB")
         void concorrenciaRetornaRegistroExistente() {
             FitSessionData dados = sessionCorrida(1L, 1751360400L);
             when(fitParseService.parse(any())).thenReturn(dados);
             String externalId = atletaId + "-1-1751360400";
-            when(treinoRealizadoRepository.save(any())).thenThrow(new DataIntegrityViolationException("duplicate"));
+            // TreinoDedupHelper já cobre o retry sob conflito em seu próprio teste — aqui simula
+            // o resultado dessa corrida retornando uma instância DIFERENTE da que o service
+            // construiu (o "vencedor" buscado do banco), que é o sinal usado por
+            // FitUploadServiceImpl.importar para decidir NÃO publicar evento/recalcular TSB.
             TreinoRealizado ganhador = new TreinoRealizado();
-            when(treinoRealizadoRepository.findByExternalIdAndAtletaId(externalId, atletaId))
-                    .thenReturn(Optional.empty()) // pré-check inicial: não existe
-                    .thenReturn(Optional.of(ganhador)); // retry após a violação: existe
+            when(treinoDedupHelper.saveIdempotent(any(), eq(externalId), eq(atletaId))).thenReturn(ganhador);
             when(treinoMapper.toOutputDto(ganhador)).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
             FitImportResultado resultado = service.importar(atletaId, new ByteArrayInputStream(new byte[0]));
 
             assertThat(resultado.novo()).isTrue(); // decisão de 201 já foi tomada no pré-check
-            verify(treinoRealizadoRepository, times(2)).findByExternalIdAndAtletaId(externalId, atletaId);
+            verify(eventPublisher, never()).publishEvent(any());
+            verify(tsbService, never()).atualizarTsbDia(any(), any());
         }
     }
 }

@@ -7,7 +7,6 @@ import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.TreinoRealizado;
-import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
@@ -21,11 +20,12 @@ import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.FitParseService;
 import br.com.menthoros.backend.services.FitUploadService;
 import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import br.com.menthoros.backend.services.helper.TssCalculatorService;
+import br.com.menthoros.backend.util.Utils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,7 +40,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class FitUploadServiceImpl implements FitUploadService {
 
-    private static final String CRIADO_POR_ATLETA = "ATLETA";
+    private static final String CRIADO_POR_GARMIN = "GARMIN";
 
     private final FitParseService fitParseService;
     private final AtletaRepository atletaRepository;
@@ -49,6 +49,7 @@ public class FitUploadServiceImpl implements FitUploadService {
     private final TsbService tsbService;
     private final TssCalculatorService tssCalculatorService;
     private final ApplicationEventPublisher eventPublisher;
+    private final TreinoDedupHelper treinoDedupHelper;
 
     @Override
     @Transactional
@@ -69,11 +70,22 @@ public class FitUploadServiceImpl implements FitUploadService {
         }
 
         TreinoRealizado treino = montarTreino(dados, atleta, tenantId, externalId);
-        TreinoRealizado salvo = saveIdempotent(treino, externalId, atletaId);
+        TreinoRealizado salvo = treinoDedupHelper.saveIdempotent(treino, externalId, atletaId);
 
-        eventPublisher.publishEvent(new TreinoRegistradoEvent(salvo.getId(), tenantId));
-        tsbService.atualizarTsbDia(atletaId, salvo.getDataTreino());
-        log.info("Fit importado: treinoId={}, atletaId={}, externalId={}", salvo.getId(), atletaId, externalId);
+        // Referência idêntica a `treino` só ocorre quando o insert desta requisição venceu a
+        // corrida (JPA save() de entidade nova retorna a mesma instância); no branch de conflito
+        // o dedup helper retorna o registro já existente buscado do banco (instância diferente).
+        // Publicar evento/recalcular TSB só faz sentido quando ESTA requisição inseriu o treino —
+        // do contrário duplicaríamos o efeito colateral para um treino que já foi processado.
+        boolean inserido = salvo == treino;
+        if (inserido) {
+            eventPublisher.publishEvent(new TreinoRegistradoEvent(salvo.getId(), tenantId));
+            tsbService.atualizarTsbDia(atletaId, salvo.getDataTreino());
+            log.info("Fit importado: treinoId={}, atletaId={}, externalId={}", salvo.getId(), atletaId, externalId);
+        } else {
+            log.info("Corrida de concorrência no import de .fit — registro já persistido por outra requisição: treinoId={}, atletaId={}, externalId={}",
+                    salvo.getId(), atletaId, externalId);
+        }
 
         return new FitImportResultado(treinoMapper.toOutputDto(salvo), true);
     }
@@ -94,7 +106,7 @@ public class FitUploadServiceImpl implements FitUploadService {
         treino.setAtleta(atleta);
         treino.setTenantId(tenantId);
         treino.setDataTreino(dados.dataTreino());
-        treino.setDiaSemana(toDiaSemana(dados.dataTreino()));
+        treino.setDiaSemana(Utils.converterDayOfWeekParaDiaSemana(dados.dataTreino().getDayOfWeek()));
         // TipoTreino não discrimina esporte (só propósito de treino de corrida) — nunca fabricar
         // INTERVALADO/TIRO/etc. a partir da estrutura do .fit (D0.6).
         treino.setTipoTreino(TipoTreino.CONTINUO);
@@ -103,9 +115,9 @@ public class FitUploadServiceImpl implements FitUploadService {
         treino.setDistanciaKm(toBigDecimal(dados.distanciaKm()));
         treino.setFcMedia(dados.fcMedia());
         treino.setFcMax(dados.fcMax());
-        treino.setFonteDados(FonteDados.MANUAL);
+        treino.setFonteDados(FonteDados.GARMIN);
         treino.setStatus(TreinoExecucaoStatus.REALIZADO);
-        treino.setCriadoPor(CRIADO_POR_ATLETA);
+        treino.setCriadoPor(CRIADO_POR_GARMIN);
         treino.setExternalId(externalId);
 
         if (dados.tssCalculado() != null) {
@@ -146,32 +158,4 @@ public class FitUploadServiceImpl implements FitUploadService {
         return valor != null ? BigDecimal.valueOf(valor).setScale(3, RoundingMode.HALF_UP) : null;
     }
 
-    private DiaSemana toDiaSemana(java.time.LocalDate data) {
-        return switch (data.getDayOfWeek()) {
-            case MONDAY -> DiaSemana.SEGUNDA;
-            case TUESDAY -> DiaSemana.TERCA;
-            case WEDNESDAY -> DiaSemana.QUARTA;
-            case THURSDAY -> DiaSemana.QUINTA;
-            case FRIDAY -> DiaSemana.SEXTA;
-            case SATURDAY -> DiaSemana.SABADO;
-            case SUNDAY -> DiaSemana.DOMINGO;
-        };
-    }
-
-    /**
-     * Idempotente sob concorrência: se dois uploads do mesmo .fit colidirem na constraint única
-     * entre o pré-check e o insert, retorna o registro que "venceu" a corrida em vez de falhar
-     * (mesmo padrão de StravaActivityServiceImpl.saveIdempotent — não reusado diretamente pois é
-     * privado naquela classe, então replicado aqui).
-     */
-    private TreinoRealizado saveIdempotent(TreinoRealizado treino, String externalId, UUID atletaId) {
-        try {
-            return treinoRealizadoRepository.save(treino);
-        } catch (DataIntegrityViolationException e) {
-            log.warn("Corrida de concorrência no import de .fit (externalId={}, atletaId={}), buscando registro existente.",
-                    externalId, atletaId);
-            return treinoRealizadoRepository.findByExternalIdAndAtletaId(externalId, atletaId)
-                    .orElseThrow(() -> e);
-        }
-    }
 }
