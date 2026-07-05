@@ -140,6 +140,22 @@ class FitParseServiceImplTest {
         }
 
         @Test
+        @DisplayName("lança FitParseException quando a Session não tem startTime — nunca fabrica timestamp com now()")
+        void semStartTimeLancaExcecao() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg session = new SessionMesg();
+                // Sem setStartTime — cenário de dispositivo malformado/sem relógio sincronizado.
+                session.setSport(Sport.RUNNING);
+                session.setTotalElapsedTime(1800f);
+                builder.mesgs.add(session);
+            });
+
+            assertThatThrownBy(() -> service.parse(new ByteArrayInputStream(fit)))
+                    .isInstanceOf(FitParseException.class)
+                    .hasMessageContaining("horário de início");
+        }
+
+        @Test
         @DisplayName("lança FitParseException para arquivo corrompido/não-FIT")
         void arquivoCorrompidoLancaExcecao() {
             InputStream lixo = new ByteArrayInputStream("isto não é um arquivo fit".getBytes());

@@ -52,11 +52,14 @@ public class FitParseServiceImpl implements FitParseService {
         )));
 
         broadcaster.addListener((SessionMesgListener) mesg -> {
+            if (mesg.getStartTime() == null) {
+                // Sem startTime não há como compor um externalId estável — fabricar um timestamp
+                // com Instant.now() quebraria a garantia de idempotência do reenvio do mesmo .fit.
+                throw new FitParseException("Arquivo .fit sem horário de início (Session.StartTime) — não é possível processar.");
+            }
             Sport sport = mesg.getSport();
             boolean corrida = sport == Sport.RUNNING;
-            Instant startInstant = mesg.getStartTime() != null
-                    ? mesg.getStartTime().getDate().toInstant()
-                    : Instant.now();
+            Instant startInstant = mesg.getStartTime().getDate().toInstant();
 
             resultado.set(new FitSessionData(
                     serialNumber.get() != 0 ? serialNumber.get() : null,
