@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.input.EncerrarLoteInputDto;
 import br.com.menthoros.backend.dto.output.EncerramentoLoteOutputDto;
 import br.com.menthoros.backend.dto.output.EncerramentoSemanaOutputDto;
 import br.com.menthoros.backend.security.RequireTenant;
@@ -17,10 +18,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -68,10 +71,11 @@ public class CoachEncerramentoSemanaController {
                     content = @Content(schema = @Schema(implementation = EncerramentoLoteOutputDto.class))),
             @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)")
     })
-    public ResponseEntity<EncerramentoLoteOutputDto> previewLote() {
+    public ResponseEntity<EncerramentoLoteOutputDto> previewLote(
+            @RequestBody(required = false) EncerrarLoteInputDto body) {
         // @RequireTenant não se aplica: sem resourceId no path; isolamento via
         // TenantContext.getRequiredTenantId() + queries tenant-scoped (findAllAtletas).
-        EncerramentoLoteResultado resultado = encerramentoSemanaService.previewLoteAssessoria();
+        EncerramentoLoteResultado resultado = encerramentoSemanaService.previewLoteAssessoria(atletaIds(body));
         return ResponseEntity.ok(EncerramentoLoteOutputDto.from(resultado));
     }
 
@@ -85,10 +89,15 @@ public class CoachEncerramentoSemanaController {
                     content = @Content(schema = @Schema(implementation = EncerramentoLoteOutputDto.class))),
             @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)")
     })
-    public ResponseEntity<EncerramentoLoteOutputDto> encerrarLote() {
+    public ResponseEntity<EncerramentoLoteOutputDto> encerrarLote(
+            @RequestBody(required = false) EncerrarLoteInputDto body) {
         // @RequireTenant não se aplica: sem resourceId no path; isolamento via
         // TenantContext.getRequiredTenantId() + queries tenant-scoped (findAllAtletas).
-        EncerramentoLoteResultado resultado = encerramentoSemanaService.encerrarSemanaLoteAssessoria();
+        EncerramentoLoteResultado resultado = encerramentoSemanaService.encerrarSemanaLoteAssessoria(atletaIds(body));
         return ResponseEntity.ok(EncerramentoLoteOutputDto.from(resultado));
+    }
+
+    private static List<UUID> atletaIds(EncerrarLoteInputDto body) {
+        return body == null ? List.of() : body.atletaIds();
     }
 }

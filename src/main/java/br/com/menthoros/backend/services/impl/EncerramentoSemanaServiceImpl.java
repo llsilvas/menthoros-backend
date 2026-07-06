@@ -31,9 +31,11 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -60,14 +62,14 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
     }
 
     @Override
-    public EncerramentoLoteResultado encerrarSemanaLoteAssessoria() {
+    public EncerramentoLoteResultado encerrarSemanaLoteAssessoria(List<UUID> atletaIds) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         LocalDate hoje = hoje();
         TransactionTemplate tx = novaTransacaoRequiresNew();
 
         List<EncerramentoSemanaResultado> resultados = new ArrayList<>();
         List<FalhaAtleta> falhas = new ArrayList<>();
-        int semPlano = iterarAtletasComPlanoCorrente(tenantId, hoje, plano -> {
+        int semPlano = iterarAtletasComPlanoCorrente(tenantId, hoje, atletaIds, plano -> {
             UUID planoId = plano.getId();
             try {
                 resultados.add(tx.execute(status ->
@@ -83,12 +85,12 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
 
     @Override
     @Transactional(readOnly = true)
-    public EncerramentoLoteResultado previewLoteAssessoria() {
+    public EncerramentoLoteResultado previewLoteAssessoria(List<UUID> atletaIds) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         LocalDate hoje = hoje();
 
         List<EncerramentoSemanaResultado> resultados = new ArrayList<>();
-        int semPlano = iterarAtletasComPlanoCorrente(tenantId, hoje,
+        int semPlano = iterarAtletasComPlanoCorrente(tenantId, hoje, atletaIds,
                 plano -> resultados.add(projetarPlano(plano, hoje, tenantId)));
         return consolidar(resultados, semPlano, List.of());
     }
@@ -200,7 +202,12 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
      * Itera os atletas do tenant, resolve a semana corrente de cada um e aplica o {@code processador}
      * ao plano encontrado. Retorna quantos atletas ficaram sem plano na semana corrente.
      */
-    private int iterarAtletasComPlanoCorrente(UUID tenantId, LocalDate hoje, Consumer<PlanoSemanal> processador) {
+    private int iterarAtletasComPlanoCorrente(UUID tenantId, LocalDate hoje, List<UUID> atletaIds,
+                                              Consumer<PlanoSemanal> processador) {
+        // Filtro opcional por atletas selecionados. Interseção com os atletas do tenant (findAllAtletas
+        // é tenant-scoped): um id de outro tenant simplesmente não aparece → sem vazamento cross-tenant.
+        Set<UUID> filtro = (atletaIds == null || atletaIds.isEmpty()) ? null : new HashSet<>(atletaIds);
+
         // 1 query para todos os planos correntes do tenant (evita N+1). Agrupa por atleta escolhendo
         // o mais recente (query ordenada por semanaInicio desc → putIfAbsent guarda o primeiro/mais recente).
         Map<UUID, PlanoSemanal> planoPorAtleta = new LinkedHashMap<>();
@@ -213,6 +220,9 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
 
         int semPlano = 0;
         for (Atleta atleta : atletaRepository.findAllAtletas(tenantId)) {
+            if (filtro != null && !filtro.contains(atleta.getId())) {
+                continue;
+            }
             PlanoSemanal plano = planoPorAtleta.get(atleta.getId());
             if (plano == null) {
                 semPlano++;

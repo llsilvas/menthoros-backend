@@ -296,7 +296,7 @@ class EncerramentoSemanaServiceImplTest {
             stubPendentes(p1.getId(), List.of(treino(LocalDate.of(2026, 7, 4), TreinoExecucaoStatus.PENDENTE)));
             stubPendentes(p2.getId(), List.of(treino(LocalDate.of(2026, 7, 4), TreinoExecucaoStatus.PENDENTE)));
 
-            EncerramentoLoteResultado resultado = servico(domingo).encerrarSemanaLoteAssessoria();
+            EncerramentoLoteResultado resultado = servico(domingo).encerrarSemanaLoteAssessoria(List.of());
 
             assertThat(resultado.atletasProcessados()).isEqualTo(2);
             assertThat(resultado.atletasSemPlano()).isZero();
@@ -317,7 +317,7 @@ class EncerramentoSemanaServiceImplTest {
             when(planoSemanalRepository.findByIdAndTenantId(p1.getId(), tenantId)).thenReturn(Optional.of(p1));
             stubPendentes(p1.getId(), List.of());
 
-            EncerramentoLoteResultado resultado = servico(domingo).encerrarSemanaLoteAssessoria();
+            EncerramentoLoteResultado resultado = servico(domingo).encerrarSemanaLoteAssessoria(List.of());
 
             assertThat(resultado.atletasProcessados()).isEqualTo(1);
             assertThat(resultado.atletasSemPlano()).isEqualTo(1);
@@ -331,7 +331,7 @@ class EncerramentoSemanaServiceImplTest {
             when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of());
             when(planoSemanalRepository.findSemanasCorrentes(eq(tenantId), any())).thenReturn(List.of());
 
-            servico(domingo).encerrarSemanaLoteAssessoria();
+            servico(domingo).encerrarSemanaLoteAssessoria(List.of());
 
             verify(planoSemanalRepository).findSemanasCorrentes(eq(tenantId), any());
             verify(atletaRepository).findAllAtletas(tenantId);
@@ -352,11 +352,31 @@ class EncerramentoSemanaServiceImplTest {
             when(planoSemanalRepository.findByIdAndTenantId(pFalha.getId(), tenantId)).thenReturn(Optional.empty());
             stubPendentes(pOk.getId(), List.of());
 
-            EncerramentoLoteResultado resultado = servico(domingo).encerrarSemanaLoteAssessoria();
+            EncerramentoLoteResultado resultado = servico(domingo).encerrarSemanaLoteAssessoria(List.of());
 
             assertThat(resultado.atletasProcessados()).isEqualTo(1);
             assertThat(resultado.falhas()).hasSize(1);
             assertThat(resultado.falhas().get(0).atletaId()).isEqualTo(pFalha.getAtleta().getId());
+        }
+
+        @Test
+        @DisplayName("encerra apenas os atletas informados quando atletaIds é passado")
+        void encerraApenasSelecionados() {
+            LocalDate domingo = LocalDate.of(2026, 7, 5);
+            Atleta a1 = atleta();
+            Atleta a2 = atleta();
+            PlanoSemanal p1 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO, a1);
+            PlanoSemanal p2 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO, a2);
+            when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of(a1, a2));
+            when(planoSemanalRepository.findSemanasCorrentes(eq(tenantId), any())).thenReturn(List.of(p1, p2));
+            when(planoSemanalRepository.findByIdAndTenantId(p1.getId(), tenantId)).thenReturn(Optional.of(p1));
+            stubPendentes(p1.getId(), List.of());
+
+            EncerramentoLoteResultado resultado = servico(domingo).encerrarSemanaLoteAssessoria(List.of(a1.getId()));
+
+            assertThat(resultado.atletasProcessados()).isEqualTo(1);
+            // o atleta não selecionado (a2) não é recarregado nem encerrado
+            verify(planoSemanalRepository, never()).findByIdAndTenantId(p2.getId(), tenantId);
         }
     }
 
@@ -374,7 +394,7 @@ class EncerramentoSemanaServiceImplTest {
             when(planoSemanalRepository.findSemanasCorrentes(eq(tenantId), any())).thenReturn(List.of(p1));
             stubPendentes(p1.getId(), List.of(treino(LocalDate.of(2026, 7, 4), TreinoExecucaoStatus.PENDENTE)));
 
-            EncerramentoLoteResultado preview = servico(domingo).previewLoteAssessoria();
+            EncerramentoLoteResultado preview = servico(domingo).previewLoteAssessoria(List.of());
 
             assertThat(preview.atletasProcessados()).isEqualTo(1);
             assertThat(preview.treinosPerdidosTotal()).isEqualTo(1);

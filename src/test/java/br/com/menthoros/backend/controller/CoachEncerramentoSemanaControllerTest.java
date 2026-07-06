@@ -26,6 +26,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 /**
@@ -98,9 +99,9 @@ class CoachEncerramentoSemanaControllerTest {
         void encerrarLoteRetorna200() {
             EncerramentoLoteResultado resultado = new EncerramentoLoteResultado(
                     8, 2, 8, 23, List.of(), List.of());
-            when(encerramentoSemanaService.encerrarSemanaLoteAssessoria()).thenReturn(resultado);
+            when(encerramentoSemanaService.encerrarSemanaLoteAssessoria(any())).thenReturn(resultado);
 
-            ResponseEntity<EncerramentoLoteOutputDto> resposta = controller.encerrarLote();
+            ResponseEntity<EncerramentoLoteOutputDto> resposta = controller.encerrarLote(null);
 
             assertThat(resposta.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(resposta.getBody()).isNotNull();
@@ -113,9 +114,9 @@ class CoachEncerramentoSemanaControllerTest {
         void previewLoteRetorna200() {
             EncerramentoLoteResultado projecao = new EncerramentoLoteResultado(
                     8, 2, 8, 23, List.of(), List.of());
-            when(encerramentoSemanaService.previewLoteAssessoria()).thenReturn(projecao);
+            when(encerramentoSemanaService.previewLoteAssessoria(any())).thenReturn(projecao);
 
-            ResponseEntity<EncerramentoLoteOutputDto> resposta = controller.previewLote();
+            ResponseEntity<EncerramentoLoteOutputDto> resposta = controller.previewLote(null);
 
             assertThat(resposta.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(resposta.getBody()).isNotNull();
