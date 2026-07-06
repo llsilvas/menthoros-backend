@@ -187,6 +187,14 @@ app:
       strategy: original  # enhanced | fixed | original
 
   # ----------------------------------------
+  # BATCH PLAN GENERATION CONFIGURATION
+  # ----------------------------------------
+  batch-plan:
+    # Máximo de chamadas ao LLM em voo simultaneamente no lote (Semaphore),
+    # independente do nº de virtual threads. Controla o risco de 429 do provedor.
+    llm-concorrencia: ${BATCH_PLAN_LLM_CONCORRENCIA:4}
+
+  # ----------------------------------------
   # SECURITY CONFIGURATION
   # ----------------------------------------
   security:
