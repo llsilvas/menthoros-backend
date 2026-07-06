@@ -9,6 +9,7 @@ import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.repository.BatchPlanJobRepository;
 import br.com.menthoros.backend.services.BatchPlanProcessor;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -17,6 +18,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.Optional;
@@ -46,6 +49,21 @@ class BatchPlanServiceImplTest {
         // ObjectMapper real: exercita a (de)serialização de verdade.
         service = new BatchPlanServiceImpl(jobRepository, batchPlanProcessor, new ObjectMapper());
         tenantId = UUID.randomUUID();
+        // iniciarLote registra sincronização de transação (dispara o async no afterCommit);
+        // sem uma transação real, ativamos a sincronização manualmente no teste.
+        TransactionSynchronizationManager.initSynchronization();
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    /** Simula o commit: dispara o afterCommit de todas as sincronizações registradas. */
+    private static void dispararAfterCommit() {
+        TransactionSynchronizationManager.getSynchronizations().forEach(TransactionSynchronization::afterCommit);
     }
 
     @Nested
@@ -102,6 +120,13 @@ class BatchPlanServiceImplTest {
 
             service.iniciarLote(
                     new BatchGeracaoPlanoInputDto(List.of(a, a), ModoGeracaoPlano.SEMANA_ATUAL), tenantId);
+
+            // Antes do commit o async NÃO é disparado.
+            verify(batchPlanProcessor, org.mockito.Mockito.never()).processarLote(
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                    org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+
+            dispararAfterCommit();
 
             verify(batchPlanProcessor).processarLote(
                     eq(jobId), eq(List.of(a)), eq(ModoGeracaoPlano.SEMANA_ATUAL), eq(tenantId));

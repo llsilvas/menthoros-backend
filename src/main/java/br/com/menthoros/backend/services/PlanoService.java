@@ -6,7 +6,6 @@ import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import jakarta.transaction.Transactional;
 
-import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,22 +14,24 @@ public interface PlanoService {
     PlanoSemanal gerarPlanoTreino(UUID atletaId, ModoGeracaoPlano modoGeracao);
 
     /**
-     * Calcula a semana-início alvo que {@link #gerarPlanoTreino} usaria para o
-     * atleta/modo — mesma lógica interna, exposta para o fast-path de
-     * duplicidade do lote (evita chamar o LLM quando o plano já existe).
+     * Indica se o atleta já possui um plano ATIVO (review status diferente de
+     * REJEITADO) na semana alvo do modo informado — mesma invariante que
+     * {@link #gerarPlanoTreino} aplica antes de persistir. Exposto para o
+     * fast-path de duplicidade do lote (evita chamar o LLM quando já existe).
      *
-     * <p>Para {@code PROXIMA_SEMANA} é history-dependent (encadeia a partir do
-     * último plano do atleta); por isso não pode ser replicada fora do serviço.
+     * <p>Encapsula o cálculo da semana (history-dependent para
+     * {@code PROXIMA_SEMANA}) + a checagem de existência tenant-scoped, mantendo
+     * a regra de negócio em um único ponto.
      *
      * Idempotent: YES — leitura pura.
      * Side Effects: NONE.
-     * Tenant-aware: YES.
+     * Tenant-aware: YES — usa {@code TenantContext.getRequiredTenantId()}.
      *
      * @param atletaId    ID do atleta
      * @param modoGeracao modo de geração (define a semana alvo)
-     * @return a segunda-feira (ISO) de início da semana alvo
+     * @return true se já existe plano ativo na semana alvo
      */
-    LocalDate calcularSemanaInicioAlvo(UUID atletaId, ModoGeracaoPlano modoGeracao);
+    boolean existePlanoParaSemana(UUID atletaId, ModoGeracaoPlano modoGeracao);
 
     void deletePlanoSemanal(UUID planoSemanalId);
 

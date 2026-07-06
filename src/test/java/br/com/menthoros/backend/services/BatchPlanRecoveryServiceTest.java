@@ -6,12 +6,14 @@ import br.com.menthoros.backend.enums.BatchJobStatus;
 import br.com.menthoros.backend.repository.BatchPlanJobRepository;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,6 +34,10 @@ class BatchPlanRecoveryServiceTest extends AbstractIntegrationTest {
     @Autowired
     private EntityManager entityManager;
 
+    @Nested
+    @DisplayName("recuperarJobsOrfaos")
+    class RecuperarJobsOrfaos {
+
     @Test
     @DisplayName("fecha job órfão anterior ao limiar como CONCLUIDO_COM_ERROS com concluidoEm e observação")
     void fechaJobOrfao() {
@@ -46,7 +52,7 @@ class BatchPlanRecoveryServiceTest extends AbstractIntegrationTest {
         assertThat(recarregado.getStatus()).isEqualTo(BatchJobStatus.CONCLUIDO_COM_ERROS);
         assertThat(recarregado.getConcluidoEm()).isNotNull();
         // naoProcessados = 5 - 2 - 0 = 3
-        assertThat(recarregado.getResultado()).contains("3 atleta(s)").contains("reinício");
+        assertThat(recarregado.getResultado()).contains("3 atleta(s)").contains("interrompido");
     }
 
     @Test
@@ -95,7 +101,9 @@ class BatchPlanRecoveryServiceTest extends AbstractIntegrationTest {
         Instant concluidoPrimeira = jobRepository.findById(orfao.getId()).orElseThrow().getConcluidoEm();
 
         // 2ª chamada: o job já é terminal, não deve mais aparecer como órfão.
-        assertThat(jobRepository.findJobsOrfaos(Instant.now())).extracting(BatchPlanJob::getId)
+        assertThat(jobRepository.findByStatusInAndCriadoEmBefore(
+                List.of(BatchJobStatus.PENDENTE, BatchJobStatus.EM_PROGRESSO), Instant.now()))
+                .extracting(BatchPlanJob::getId)
                 .doesNotContain(orfao.getId());
         recoveryService.recuperarJobsOrfaos();
         entityManager.flush();
@@ -104,6 +112,7 @@ class BatchPlanRecoveryServiceTest extends AbstractIntegrationTest {
         BatchPlanJob recarregado = jobRepository.findById(orfao.getId()).orElseThrow();
         assertThat(recarregado.getStatus()).isEqualTo(BatchJobStatus.CONCLUIDO_COM_ERROS);
         assertThat(recarregado.getConcluidoEm()).isEqualTo(concluidoPrimeira);
+    }
     }
 
     // ─── helpers ─────────────────────────────────────────────────────────────

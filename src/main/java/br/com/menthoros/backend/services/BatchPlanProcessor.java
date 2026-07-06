@@ -8,10 +8,10 @@ import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.BatchJobStatus;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.exception.PlanoJaExistenteException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.BatchPlanJobRepository;
-import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,7 +23,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -48,7 +47,6 @@ public class BatchPlanProcessor {
     private final Executor batchPlanExecutor;
     private final BatchPlanJobRepository jobRepository;
     private final AtletaRepository atletaRepository;
-    private final PlanoSemanalRepository planoSemanalRepository;
     private final PlanoService planoService;
     private final LlmConcurrencyLimiter llmConcurrencyLimiter;
     private final ObjectMapper objectMapper;
@@ -57,7 +55,6 @@ public class BatchPlanProcessor {
     public BatchPlanProcessor(@Qualifier("batchPlanExecutor") Executor batchPlanExecutor,
                               BatchPlanJobRepository jobRepository,
                               AtletaRepository atletaRepository,
-                              PlanoSemanalRepository planoSemanalRepository,
                               PlanoService planoService,
                               LlmConcurrencyLimiter llmConcurrencyLimiter,
                               ObjectMapper objectMapper,
@@ -65,7 +62,6 @@ public class BatchPlanProcessor {
         this.batchPlanExecutor = batchPlanExecutor;
         this.jobRepository = jobRepository;
         this.atletaRepository = atletaRepository;
-        this.planoSemanalRepository = planoSemanalRepository;
         this.planoService = planoService;
         this.llmConcurrencyLimiter = llmConcurrencyLimiter;
         this.objectMapper = objectMapper;
@@ -96,11 +92,25 @@ public class BatchPlanProcessor {
                     .map(CompletableFuture::join)
                     .toList();
 
-            finalizarJob(jobId, resultados);
+            finalizarJob(jobId, tenantId, resultados);
         } catch (Exception e) {
             log.error("[batch-plan] falha inesperada ao processar o lote {}: {}", jobId, e.getMessage(), e);
+            fecharEmEmergencia(jobId);
         } finally {
             TenantContext.clear();
+        }
+    }
+
+    /**
+     * Fecha o job em caso de falha inesperada no processamento — evita que fique
+     * preso em EM_PROGRESSO até o recovery de startup. Best-effort: se esta
+     * transição também falhar, o recovery ainda o alcança.
+     */
+    private void fecharEmEmergencia(UUID jobId) {
+        try {
+            jobRepository.atualizarStatus(jobId, BatchJobStatus.CONCLUIDO_COM_ERROS);
+        } catch (Exception ex) {
+            log.error("[batch-plan] falha ao fechar o job {} em emergência: {}", jobId, ex.getMessage());
         }
     }
 
@@ -117,9 +127,9 @@ public class BatchPlanProcessor {
             }
             String atletaNome = atletaOpt.get().getNome();
 
-            // Fast-path: evita a chamada ao LLM quando o plano já existe na semana alvo.
-            LocalDate semanaAlvo = planoService.calcularSemanaInicioAlvo(atletaId, modo);
-            if (planoSemanalRepository.findByAtletaIdAndSemanaInicio(atletaId, semanaAlvo).isPresent()) {
+            // Fast-path: evita a chamada ao LLM quando já existe plano ativo na semana alvo
+            // (regra encapsulada no PlanoService — exclui REJEITADO, tenant-scoped).
+            if (planoService.existePlanoParaSemana(atletaId, modo)) {
                 return registrarErro(jobId, atletaId, MOTIVO_PLANO_JA_EXISTE);
             }
 
@@ -127,16 +137,15 @@ public class BatchPlanProcessor {
             jobRepository.incrementarGerados(jobId);
             return ResultadoAtleta.ok(new BatchGeradoItemDto(atletaId, plano.getId(), atletaNome));
 
+        } catch (PlanoJaExistenteException e) {
+            // Corrida entre fast-path e a checagem interna do gerarPlanoTreino.
+            return registrarErro(jobId, atletaId, MOTIVO_PLANO_JA_EXISTE);
         } catch (DataIntegrityViolationException e) {
             // Corrida entre lotes concorrentes: o índice único fechou a janela do fast-path.
             return registrarErro(jobId, atletaId, MOTIVO_PLANO_JA_EXISTE);
         } catch (DomainRuleViolationException e) {
-            // gerarPlanoTreino também usa DomainRuleViolationException para "sem dias disponíveis";
-            // só é duplicidade quando a mensagem indica plano já existente.
-            String motivo = e.getMessage() != null && e.getMessage().contains("existe um plano")
-                    ? MOTIVO_PLANO_JA_EXISTE
-                    : MOTIVO_ERRO_GERACAO;
-            return registrarErro(jobId, atletaId, motivo);
+            // Outras violações de regra (ex.: "sem dias disponíveis") — erro genérico.
+            return registrarErro(jobId, atletaId, MOTIVO_ERRO_GERACAO);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return registrarErro(jobId, atletaId, MOTIVO_ERRO_GERACAO);
@@ -153,7 +162,7 @@ public class BatchPlanProcessor {
         return ResultadoAtleta.falha(new BatchErroItemDto(atletaId, motivo));
     }
 
-    private void finalizarJob(UUID jobId, List<ResultadoAtleta> resultados) {
+    private void finalizarJob(UUID jobId, UUID tenantId, List<ResultadoAtleta> resultados) {
         List<BatchGeradoItemDto> gerados = resultados.stream()
                 .map(ResultadoAtleta::gerado).filter(java.util.Objects::nonNull).toList();
         List<BatchErroItemDto> erros = resultados.stream()
@@ -165,7 +174,7 @@ public class BatchPlanProcessor {
         String json = serializar(new BatchResultadoJson(gerados, erros, null));
 
         transactionTemplate.executeWithoutResult(status -> {
-            BatchPlanJob job = jobRepository.findById(jobId).orElseThrow();
+            BatchPlanJob job = jobRepository.findByIdAndTenantId(jobId, tenantId).orElseThrow();
             job.setStatus(statusFinal);
             job.setConcluidoEm(Instant.now());
             job.setResultado(json);

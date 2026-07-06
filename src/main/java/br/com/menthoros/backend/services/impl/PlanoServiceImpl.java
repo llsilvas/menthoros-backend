@@ -14,6 +14,7 @@ import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.exception.PlanoJaExistenteException;
 import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.mapper.AtletaMapper;
@@ -96,11 +97,14 @@ public class PlanoServiceImpl implements PlanoService {
     /**
      * Idempotent: YES — leitura pura.
      * Side Effects: NONE.
-     * Tenant-aware: YES.
+     * Tenant-aware: YES — usa TenantContext.getRequiredTenantId().
      */
     @Override
-    public LocalDate calcularSemanaInicioAlvo(UUID atletaId, ModoGeracaoPlano modoGeracao) {
-        return calcularSemanaInicio(atletaId, LocalDate.now(), modoGeracao);
+    @Transactional
+    public boolean existePlanoParaSemana(UUID atletaId, ModoGeracaoPlano modoGeracao) {
+        LocalDate semanaAlvo = calcularSemanaInicio(atletaId, LocalDate.now(), modoGeracao);
+        return planoSemanalRepository.existePlanoAtivoNaSemana(
+                atletaId, semanaAlvo, TenantContext.getRequiredTenantId());
     }
 
     @Transactional
@@ -165,14 +169,14 @@ public class PlanoServiceImpl implements PlanoService {
         PeriodoPlano periodo = new PeriodoPlano(semanaInicio);
 
         // ** Adição da verificação de duplicidade **
-        planoSemanalRepository.findByAtletaIdAndSemanaInicio(atleta.getId(), semanaInicio)
-                .ifPresent(existingPlano -> {
-                    log.debug("Tentativa de gerar plano duplicado para atleta {} na semana de início {}. Plano existente ID: {}", atleta.getId(), semanaInicio, existingPlano.getId());
-                    throw new DomainRuleViolationException(
-                            "Já existe um plano semanal para o atleta " + atleta.getId() +
-                                    " iniciando em " + semanaInicio + ". Não é possível gerar planos duplicados."
-                    );
-                });
+        // Duplicidade: um plano REJEITADO não bloqueia (casa com o índice único parcial da V52).
+        if (planoSemanalRepository.existePlanoAtivoNaSemana(atleta.getId(), semanaInicio, TenantContext.getRequiredTenantId())) {
+            log.debug("Tentativa de gerar plano duplicado para atleta {} na semana de início {}.", atleta.getId(), semanaInicio);
+            throw new PlanoJaExistenteException(
+                    "Já existe um plano semanal ativo para o atleta " + atleta.getId() +
+                            " iniciando em " + semanaInicio + ". Não é possível gerar planos duplicados."
+            );
+        }
         // ** Fim da adição **
 
         log.info("Período calculado: {} a {} (Modo: {}, {} treinos no plano LLM)",

@@ -16,6 +16,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.List;
 import java.util.UUID;
@@ -52,10 +54,20 @@ public class BatchPlanServiceImpl implements BatchPlanService {
         job.setTotalAtletas(atletaIds.size());
         job = jobRepository.save(job);
 
-        log.info("[batch-plan] job {} criado com {} atleta(s) (tenant {})", job.getId(), atletaIds.size(), tenantId);
+        UUID jobId = job.getId();
+        log.info("[batch-plan] job {} criado com {} atleta(s) (tenant {})", jobId, atletaIds.size(), tenantId);
 
-        batchPlanProcessor.processarLote(job.getId(), atletaIds, input.modo(), tenantId);
-        return new BatchLoteAceitoOutputDto(job.getId(), atletaIds.size());
+        // Disparar o processamento assíncrono SOMENTE após o commit desta transação:
+        // o @Async roda em outra thread e, se iniciado antes do commit do INSERT, os
+        // UPDATEs de status/contadores não veriam o job (afetariam 0 linhas).
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                batchPlanProcessor.processarLote(jobId, atletaIds, input.modo(), tenantId);
+            }
+        });
+
+        return new BatchLoteAceitoOutputDto(jobId, atletaIds.size());
     }
 
     /**

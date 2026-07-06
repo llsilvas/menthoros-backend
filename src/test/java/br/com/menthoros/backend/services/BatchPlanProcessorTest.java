@@ -7,10 +7,10 @@ import br.com.menthoros.backend.enums.BatchJobStatus;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.LLMException;
+import br.com.menthoros.backend.exception.PlanoJaExistenteException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.BatchPlanJobRepository;
-import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
@@ -22,12 +22,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.quality.Strictness;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -44,7 +42,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@org.mockito.junit.jupiter.MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("BatchPlanProcessor")
 class BatchPlanProcessorTest {
 
@@ -52,8 +49,6 @@ class BatchPlanProcessorTest {
     private BatchPlanJobRepository jobRepository;
     @Mock
     private AtletaRepository atletaRepository;
-    @Mock
-    private PlanoSemanalRepository planoSemanalRepository;
     @Mock
     private PlanoService planoService;
     @Mock
@@ -70,24 +65,24 @@ class BatchPlanProcessorTest {
     void setUp() throws InterruptedException {
         // Executor síncrono (Runnable::run) — as subtasks rodam inline no teste.
         processor = new BatchPlanProcessor(
-                Runnable::run, jobRepository, atletaRepository, planoSemanalRepository,
+                Runnable::run, jobRepository, atletaRepository,
                 planoService, llmConcurrencyLimiter, new ObjectMapper(), transactionTemplate);
 
         jobId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
 
-        // finalizarJob: carrega o job e persiste dentro do TransactionTemplate.
+        // finalizarJob: carrega o job (tenant-scoped) e persiste dentro do TransactionTemplate.
         BatchPlanJob job = new BatchPlanJob();
         job.setId(jobId);
         job.setTenantId(tenantId);
-        lenient().when(jobRepository.findById(jobId)).thenReturn(Optional.of(job));
-        doAnswer(inv -> {
+        lenient().when(jobRepository.findByIdAndTenantId(jobId, tenantId)).thenReturn(Optional.of(job));
+        lenient().doAnswer(inv -> {
             Consumer<TransactionStatus> c = inv.getArgument(0);
             c.accept(null);
             return null;
         }).when(transactionTemplate).executeWithoutResult(any());
 
-        // limiter roda o supplier passado.
+        // limiter roda o supplier passado (só nos testes que chamam gerarPlanoTreino).
         lenient().when(llmConcurrencyLimiter.executar(any())).thenAnswer(inv -> {
             Supplier<?> s = inv.getArgument(0);
             return s.get();
@@ -115,6 +110,9 @@ class BatchPlanProcessorTest {
             verify(jobRepository, org.mockito.Mockito.times(2)).incrementarGerados(jobId);
             verify(jobRepository, never()).incrementarErros(jobId);
             assertThat(statusFinalPersistido()).isEqualTo(BatchJobStatus.CONCLUIDO);
+            assertThat(geradosPersistidos())
+                    .extracting(br.com.menthoros.backend.dto.output.BatchJobStatusOutputDto.BatchGeradoItemDto::atletaNome)
+                    .containsExactlyInAnyOrder("Ana", "Bia");
         }
 
         @Test
@@ -147,13 +145,10 @@ class BatchPlanProcessorTest {
         }
 
         @Test
-        @DisplayName("atleta com plano existente na semana → 'Plano já existe' via fast-path, sem LLM")
+        @DisplayName("atleta com plano ativo na semana → 'Plano já existe' via fast-path, sem LLM")
         void planoJaExisteFastPath() {
             UUID id = atletaValido("Ana");
-            LocalDate semana = LocalDate.of(2026, 7, 6);
-            when(planoService.calcularSemanaInicioAlvo(id, ModoGeracaoPlano.PROXIMA_SEMANA)).thenReturn(semana);
-            when(planoSemanalRepository.findByAtletaIdAndSemanaInicio(id, semana))
-                    .thenReturn(Optional.of(new PlanoSemanal()));
+            when(planoService.existePlanoParaSemana(id, ModoGeracaoPlano.PROXIMA_SEMANA)).thenReturn(true);
 
             processor.processarLote(jobId, List.of(id), ModoGeracaoPlano.PROXIMA_SEMANA, tenantId);
 
@@ -176,11 +171,11 @@ class BatchPlanProcessorTest {
         }
 
         @Test
-        @DisplayName("DomainRuleViolationException de duplicidade → 'Plano já existe'")
-        void dupViaDomainRule() {
+        @DisplayName("PlanoJaExistenteException (corrida fast-path/checagem interna) → 'Plano já existe'")
+        void dupViaExcecaoTipada() {
             UUID id = atletaValido("Ana");
             when(planoService.gerarPlanoTreino(eq(id), any()))
-                    .thenThrow(new DomainRuleViolationException("Já existe um plano semanal para o atleta"));
+                    .thenThrow(new PlanoJaExistenteException("Já existe um plano semanal ativo"));
 
             processor.processarLote(jobId, List.of(id), ModoGeracaoPlano.PROXIMA_SEMANA, tenantId);
 
@@ -233,10 +228,17 @@ class BatchPlanProcessorTest {
     }
 
     private String motivoErroPersistido() {
+        return resultadoPersistido().erros().get(0).motivo();
+    }
+
+    private List<br.com.menthoros.backend.dto.output.BatchJobStatusOutputDto.BatchGeradoItemDto> geradosPersistidos() {
+        return resultadoPersistido().gerados();
+    }
+
+    private BatchResultadoJson resultadoPersistido() {
         BatchPlanJob job = jobPersistido();
         try {
-            BatchResultadoJson r = new ObjectMapper().readValue(job.getResultado(), BatchResultadoJson.class);
-            return r.erros().get(0).motivo();
+            return new ObjectMapper().readValue(job.getResultado(), BatchResultadoJson.class);
         } catch (Exception e) {
             throw new AssertionError("resultado inválido: " + job.getResultado(), e);
         }

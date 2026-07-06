@@ -73,6 +73,9 @@ public class CoachBatchPlanController {
     })
     public ResponseEntity<BatchJobStatusOutputDto> consultarLote(
             @Parameter(description = "ID do job de geração em lote") @PathVariable UUID jobId) {
+        // @RequireTenant não é usado aqui de propósito: o aspecto valida recursos de domínio
+        // conhecidos, não o BatchPlanJob. O isolamento é garantido no serviço via
+        // findByIdAndTenantId(jobId, tenantId), que retorna 404 para job de outro tenant.
         UUID tenantId = TenantContext.getRequiredTenantId();
         return ResponseEntity.ok(batchPlanService.consultarStatus(jobId, tenantId));
     }

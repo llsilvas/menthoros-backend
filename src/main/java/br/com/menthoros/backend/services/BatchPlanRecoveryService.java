@@ -59,7 +59,8 @@ public class BatchPlanRecoveryService {
     @Transactional
     public void recuperarJobsOrfaos() {
         Instant limite = Instant.now().minus(Duration.ofMinutes(limiteMinutos));
-        List<BatchPlanJob> orfaos = jobRepository.findJobsOrfaos(limite);
+        List<BatchPlanJob> orfaos = jobRepository.findByStatusInAndCriadoEmBefore(
+                List.of(BatchJobStatus.PENDENTE, BatchJobStatus.EM_PROGRESSO), limite);
         if (orfaos.isEmpty()) {
             return;
         }
@@ -69,8 +70,8 @@ public class BatchPlanRecoveryService {
 
     private void fecharComoInterrompido(BatchPlanJob job) {
         int naoProcessados = job.getTotalAtletas() - job.getGerados() - job.getErros();
-        String observacao = "Lote interrompido por reinício da aplicação. " + naoProcessados
-                + " atleta(s) podem não ter sido processados — reenvie o lote.";
+        String observacao = "Lote interrompido inesperadamente. " + naoProcessados
+                + " atleta(s) podem não ter sido processados — reenvie o lote para os atletas pendentes.";
         job.setStatus(BatchJobStatus.CONCLUIDO_COM_ERROS);
         job.setConcluidoEm(Instant.now());
         job.setResultado(serializar(observacao));

@@ -27,11 +27,7 @@ public interface BatchPlanJobRepository extends JpaRepository<BatchPlanJob, UUID
      * antes do limiar — candidatos ao recovery no startup. Não é tenant-scoped:
      * é uma tarefa de manutenção do sistema, sobre todos os tenants.
      */
-    @Query("SELECT b FROM BatchPlanJob b WHERE b.status IN "
-            + "(br.com.menthoros.backend.enums.BatchJobStatus.PENDENTE, "
-            + "br.com.menthoros.backend.enums.BatchJobStatus.EM_PROGRESSO) "
-            + "AND b.criadoEm < :limite")
-    List<BatchPlanJob> findJobsOrfaos(@Param("limite") Instant limite);
+    List<BatchPlanJob> findByStatusInAndCriadoEmBefore(List<BatchJobStatus> statuses, Instant limite);
 
     /**
      * Incremento atômico do contador de gerados — UPDATE direto no banco, sem
