@@ -34,6 +34,24 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
 
     Optional<PlanoSemanal> findByAtletaIdAndSemanaInicio(UUID atletaId, LocalDate semanaInicio);
 
+    /**
+     * Indica se o atleta já possui um plano ATIVO (review status diferente de
+     * REJEITADO) na semana alvo, dentro do tenant. Casa com o índice único
+     * parcial {@code uk_plano_semanal_atleta_semana_ativo} — um plano rejeitado
+     * não bloqueia a geração de um novo.
+     */
+    @Query("""
+              select case when count(ps) > 0 then true else false end
+              from PlanoSemanal ps
+              where ps.atleta.id = :atletaId
+                and ps.semanaInicio = :semanaInicio
+                and ps.atleta.assessoria.id = :tenantId
+                and ps.reviewStatus <> br.com.menthoros.backend.enums.PlanoReviewStatus.REJEITADO
+            """)
+    boolean existePlanoAtivoNaSemana(@Param("atletaId") UUID atletaId,
+                                     @Param("semanaInicio") LocalDate semanaInicio,
+                                     @Param("tenantId") UUID tenantId);
+
     Optional<PlanoSemanal> findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
             UUID atletaId, LocalDate semanaInicio, PlanoStatus status);
 

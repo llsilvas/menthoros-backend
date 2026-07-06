@@ -13,6 +13,26 @@ public interface PlanoService {
     @Transactional
     PlanoSemanal gerarPlanoTreino(UUID atletaId, ModoGeracaoPlano modoGeracao);
 
+    /**
+     * Indica se o atleta já possui um plano ATIVO (review status diferente de
+     * REJEITADO) na semana alvo do modo informado — mesma invariante que
+     * {@link #gerarPlanoTreino} aplica antes de persistir. Exposto para o
+     * fast-path de duplicidade do lote (evita chamar o LLM quando já existe).
+     *
+     * <p>Encapsula o cálculo da semana (history-dependent para
+     * {@code PROXIMA_SEMANA}) + a checagem de existência tenant-scoped, mantendo
+     * a regra de negócio em um único ponto.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE.
+     * Tenant-aware: YES — usa {@code TenantContext.getRequiredTenantId()}.
+     *
+     * @param atletaId    ID do atleta
+     * @param modoGeracao modo de geração (define a semana alvo)
+     * @return true se já existe plano ativo na semana alvo
+     */
+    boolean existePlanoParaSemana(UUID atletaId, ModoGeracaoPlano modoGeracao);
+
     void deletePlanoSemanal(UUID planoSemanalId);
 
     /**
