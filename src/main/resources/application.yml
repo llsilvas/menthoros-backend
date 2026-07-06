@@ -193,6 +193,9 @@ app:
     # Máximo de chamadas ao LLM em voo simultaneamente no lote (Semaphore),
     # independente do nº de virtual threads. Controla o risco de 429 do provedor.
     llm-concorrencia: ${BATCH_PLAN_LLM_CONCORRENCIA:4}
+    # Idade mínima (min) para um job em andamento ser considerado órfão no recovery
+    # de startup — nenhum lote real dura tanto.
+    recovery-limite-min: ${BATCH_PLAN_RECOVERY_LIMITE_MIN:30}
 
   # ----------------------------------------
   # SECURITY CONFIGURATION

@@ -162,7 +162,7 @@ public class BatchPlanProcessor {
         BatchJobStatus statusFinal = erros.isEmpty()
                 ? BatchJobStatus.CONCLUIDO
                 : BatchJobStatus.CONCLUIDO_COM_ERROS;
-        String json = serializar(new BatchResultadoJson(gerados, erros));
+        String json = serializar(new BatchResultadoJson(gerados, erros, null));
 
         transactionTemplate.executeWithoutResult(status -> {
             BatchPlanJob job = jobRepository.findById(jobId).orElseThrow();

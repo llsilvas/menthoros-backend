@@ -9,6 +9,8 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,6 +21,17 @@ public interface BatchPlanJobRepository extends JpaRepository<BatchPlanJob, UUID
      * Busca o job garantindo o isolamento de tenant (usado no GET de status).
      */
     Optional<BatchPlanJob> findByIdAndTenantId(UUID id, UUID tenantId);
+
+    /**
+     * Jobs órfãos: presos em estado não-terminal (PENDENTE/EM_PROGRESSO) e criados
+     * antes do limiar — candidatos ao recovery no startup. Não é tenant-scoped:
+     * é uma tarefa de manutenção do sistema, sobre todos os tenants.
+     */
+    @Query("SELECT b FROM BatchPlanJob b WHERE b.status IN "
+            + "(br.com.menthoros.backend.enums.BatchJobStatus.PENDENTE, "
+            + "br.com.menthoros.backend.enums.BatchJobStatus.EM_PROGRESSO) "
+            + "AND b.criadoEm < :limite")
+    List<BatchPlanJob> findJobsOrfaos(@Param("limite") Instant limite);
 
     /**
      * Incremento atômico do contador de gerados — UPDATE direto no banco, sem

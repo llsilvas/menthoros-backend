@@ -86,13 +86,13 @@ public class BatchPlanServiceImpl implements BatchPlanService {
      */
     private BatchResultadoJson desserializarResultado(BatchPlanJob job) {
         if (job.getResultado() == null || job.getResultado().isBlank()) {
-            return new BatchResultadoJson(List.<BatchGeradoItemDto>of(), List.<BatchErroItemDto>of());
+            return new BatchResultadoJson(List.<BatchGeradoItemDto>of(), List.<BatchErroItemDto>of(), null);
         }
         try {
             return objectMapper.readValue(job.getResultado(), BatchResultadoJson.class);
         } catch (Exception e) {
             log.error("[batch-plan] falha ao ler o resultado do job {}: {}", job.getId(), e.getMessage());
-            return new BatchResultadoJson(List.<BatchGeradoItemDto>of(), List.<BatchErroItemDto>of());
+            return new BatchResultadoJson(List.<BatchGeradoItemDto>of(), List.<BatchErroItemDto>of(), null);
         }
     }
 }
