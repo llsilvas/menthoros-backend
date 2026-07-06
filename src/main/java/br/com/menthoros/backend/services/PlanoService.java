@@ -6,12 +6,31 @@ import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import jakarta.transaction.Transactional;
 
+import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 
 public interface PlanoService {
     @Transactional
     PlanoSemanal gerarPlanoTreino(UUID atletaId, ModoGeracaoPlano modoGeracao);
+
+    /**
+     * Calcula a semana-início alvo que {@link #gerarPlanoTreino} usaria para o
+     * atleta/modo — mesma lógica interna, exposta para o fast-path de
+     * duplicidade do lote (evita chamar o LLM quando o plano já existe).
+     *
+     * <p>Para {@code PROXIMA_SEMANA} é history-dependent (encadeia a partir do
+     * último plano do atleta); por isso não pode ser replicada fora do serviço.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE.
+     * Tenant-aware: YES.
+     *
+     * @param atletaId    ID do atleta
+     * @param modoGeracao modo de geração (define a semana alvo)
+     * @return a segunda-feira (ISO) de início da semana alvo
+     */
+    LocalDate calcularSemanaInicioAlvo(UUID atletaId, ModoGeracaoPlano modoGeracao);
 
     void deletePlanoSemanal(UUID planoSemanalId);
 

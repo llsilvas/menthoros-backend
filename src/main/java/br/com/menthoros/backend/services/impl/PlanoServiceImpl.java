@@ -93,6 +93,16 @@ public class PlanoServiceImpl implements PlanoService {
      * @see ModoGeracaoPlano
      * @see PlanoSemanal
      */
+    /**
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE.
+     * Tenant-aware: YES.
+     */
+    @Override
+    public LocalDate calcularSemanaInicioAlvo(UUID atletaId, ModoGeracaoPlano modoGeracao) {
+        return calcularSemanaInicio(atletaId, LocalDate.now(), modoGeracao);
+    }
+
     @Transactional
     @Override
     public PlanoSemanal gerarPlanoTreino(UUID atletaId, ModoGeracaoPlano modoGeracao) {

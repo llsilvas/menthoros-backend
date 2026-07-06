@@ -76,9 +76,13 @@ class PlanoSemanalOrigemEncerramentoTest extends AbstractIntegrationTest {
     @DisplayName("a query GROUP BY origem_encerramento é executável e segmenta as origens")
     void queryDeMetricaSegmentaOrigens() {
         Atleta atleta = seedAtleta();
-        salvarPlano(atleta, OrigemEncerramento.ON_DEMAND, PlanoStatus.CONCLUIDO);
-        salvarPlano(atleta, OrigemEncerramento.AUTOMATICO, PlanoStatus.CONCLUIDO);
-        salvarPlano(atleta, null, PlanoStatus.EM_ANDAMENTO);
+        LocalDate hoje = LocalDate.now();
+        // Semanas distintas: o índice único uk_plano_semanal_atleta_semana_ativo impede
+        // múltiplos planos ativos no mesmo atleta+semana (invariante do gerarPlanoTreino).
+        // A métrica GROUP BY origem_encerramento agrega entre semanas, então isto é equivalente.
+        salvarPlano(atleta, OrigemEncerramento.ON_DEMAND, PlanoStatus.CONCLUIDO, hoje);
+        salvarPlano(atleta, OrigemEncerramento.AUTOMATICO, PlanoStatus.CONCLUIDO, hoje.minusWeeks(1));
+        salvarPlano(atleta, null, PlanoStatus.EM_ANDAMENTO, hoje.minusWeeks(2));
         entityManager.flush();
 
         @SuppressWarnings("unchecked")
