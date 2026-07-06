@@ -8,6 +8,7 @@ import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.events.SemanaEncerradaEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
@@ -32,6 +33,7 @@ import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 @Slf4j
 @Service
@@ -59,31 +61,21 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
     public EncerramentoLoteResultado encerrarSemanaLoteAssessoria() {
         UUID tenantId = TenantContext.getRequiredTenantId();
         LocalDate hoje = hoje();
-
-        // Uma transação por atleta: a falha de um não derruba os demais (que já commitaram).
-        TransactionTemplate tx = new TransactionTemplate(transactionManager);
-        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        TransactionTemplate tx = novaTransacaoRequiresNew();
 
         List<EncerramentoSemanaResultado> resultados = new ArrayList<>();
         List<FalhaAtleta> falhas = new ArrayList<>();
-        int semPlano = 0;
-
-        for (Atleta atleta : atletaRepository.findAllAtletas(tenantId)) {
-            List<PlanoSemanal> planos = planoSemanalRepository.findSemanaCorrente(atleta.getId(), tenantId, hoje);
-            if (planos.isEmpty()) {
-                semPlano++;
-                continue;
-            }
-            UUID planoId = planos.get(0).getId();
+        int semPlano = iterarAtletasComPlanoCorrente(tenantId, hoje, plano -> {
+            UUID planoId = plano.getId();
             try {
-                EncerramentoSemanaResultado r = tx.execute(status ->
-                        encerrarPlanoPorId(planoId, tenantId, hoje, OrigemEncerramento.ON_DEMAND));
-                resultados.add(r);
+                resultados.add(tx.execute(status ->
+                        encerrarPlanoPorId(planoId, tenantId, hoje, OrigemEncerramento.ON_DEMAND)));
             } catch (Exception e) {
-                log.warn("Falha ao encerrar semana do atleta {}: {}", atleta.getId(), e.getMessage());
-                falhas.add(new FalhaAtleta(atleta.getId(), e.getMessage()));
+                log.warn("Falha ao encerrar semana do plano {} (atleta {}): {}",
+                        planoId, plano.getAtleta().getId(), e.getMessage());
+                falhas.add(new FalhaAtleta(plano.getAtleta().getId(), motivoSeguro(e)));
             }
-        }
+        });
         return consolidar(resultados, semPlano, falhas);
     }
 
@@ -94,15 +86,8 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
         LocalDate hoje = hoje();
 
         List<EncerramentoSemanaResultado> resultados = new ArrayList<>();
-        int semPlano = 0;
-        for (Atleta atleta : atletaRepository.findAllAtletas(tenantId)) {
-            List<PlanoSemanal> planos = planoSemanalRepository.findSemanaCorrente(atleta.getId(), tenantId, hoje);
-            if (planos.isEmpty()) {
-                semPlano++;
-                continue;
-            }
-            resultados.add(projetarPlano(planos.get(0), hoje));
-        }
+        int semPlano = iterarAtletasComPlanoCorrente(tenantId, hoje,
+                plano -> resultados.add(projetarPlano(plano, hoje, tenantId)));
         return consolidar(resultados, semPlano, List.of());
     }
 
@@ -113,11 +98,7 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
         if (elegiveis.isEmpty()) {
             return 0;
         }
-
-        // Uma transação por plano: a falha de um não derruba os demais.
-        TransactionTemplate tx = new TransactionTemplate(transactionManager);
-        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
-
+        TransactionTemplate tx = novaTransacaoRequiresNew();
         int encerrados = 0;
         for (PlanoSemanal plano : elegiveis) {
             UUID planoId = plano.getId();
@@ -132,36 +113,27 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
         return encerrados;
     }
 
-    private EncerramentoLoteResultado consolidar(List<EncerramentoSemanaResultado> resultados,
-                                                 int semPlano, List<FalhaAtleta> falhas) {
-        int concluidos = (int) resultados.stream()
-                .filter(EncerramentoSemanaResultado::prontoParaProximaSemana).count();
-        int perdidos = resultados.stream()
-                .mapToInt(EncerramentoSemanaResultado::treinosFinalizados).sum();
-        return new EncerramentoLoteResultado(resultados.size(), semPlano, concluidos, perdidos, resultados, falhas);
-    }
+    // ---- núcleo ----
 
-    EncerramentoSemanaResultado encerrarPlanoPorId(UUID planoId, UUID tenantId, LocalDate hoje, OrigemEncerramento origem) {
+    private EncerramentoSemanaResultado encerrarPlanoPorId(UUID planoId, UUID tenantId,
+                                                           LocalDate hoje, OrigemEncerramento origem) {
         PlanoSemanal plano = planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Plano semanal não encontrado"));
-        return encerrarPlano(plano, hoje, origem);
+        return encerrarPlano(plano, hoje, origem, tenantId);
     }
 
     /**
      * Encerra um plano já carregado (e validado quanto ao tenant): finaliza os pendentes elegíveis,
      * fecha o plano quando a semana terminou ({@code hoje >= semanaFim}) — evitando reprocesso
-     * perpétuo de plano vazio/sem elegíveis — e publica o {@link SemanaEncerradaEvent}. Reusado pelo
-     * fluxo on-demand, pelo lote e pelo fallback automático (que informa {@code origem}).
-     *
-     * <p><b>Idempotent:</b> YES. <b>Side Effects:</b> Database update + evento. <b>Tenant-aware:</b>
-     * YES (o chamador garante o tenant do plano).
+     * perpétuo de plano vazio/sem elegíveis — e publica o {@link SemanaEncerradaEvent} apenas quando
+     * houve mudança de estado.
      */
-    EncerramentoSemanaResultado encerrarPlano(PlanoSemanal plano, LocalDate hoje, OrigemEncerramento origem) {
+    private EncerramentoSemanaResultado encerrarPlano(PlanoSemanal plano, LocalDate hoje,
+                                                      OrigemEncerramento origem, UUID tenantId) {
         boolean jaConcluido = plano.getStatus() == PlanoStatus.CONCLUIDO;
-        List<UUID> perdidos = finalizarPendentes(plano, hoje);
+        List<UUID> perdidos = finalizarPendentes(plano, hoje, tenantId);
 
-        boolean semanaTerminou = !hoje.isBefore(plano.getSemanaFim()); // hoje >= semanaFim
-        if (semanaTerminou && plano.getStatus() != PlanoStatus.CONCLUIDO) {
+        if (semanaTerminou(plano, hoje) && plano.getStatus() != PlanoStatus.CONCLUIDO) {
             plano.setStatus(PlanoStatus.CONCLUIDO);
         }
 
@@ -175,9 +147,12 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
         boolean pronto = plano.getStatus() == PlanoStatus.CONCLUIDO;
         String aviso = avisoSemanaNaoTerminou(plano, hoje, pronto);
 
-        eventPublisher.publishEvent(new SemanaEncerradaEvent(
-                plano.getId(), plano.getAtleta().getId(), plano.getAssessoria().getId(),
-                perdidos.size(), origem));
+        // Publica somente quando houve mudança real (evita evento em replay idempotente).
+        if (fechouAgora || !perdidos.isEmpty()) {
+            eventPublisher.publishEvent(new SemanaEncerradaEvent(
+                    plano.getId(), plano.getAtleta().getId(), plano.getAssessoria().getId(),
+                    perdidos.size(), origem));
+        }
 
         log.info("Semana encerrada: plano={}, tenant={}, origem={}, treinosPerdidos={}, status={}",
                 plano.getId(), plano.getAssessoria().getId(), origem, perdidos.size(), plano.getStatus());
@@ -186,46 +161,91 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
     }
 
     /** Projeta o encerramento de um plano SEM persistir (usado no preview do lote). */
-    private EncerramentoSemanaResultado projetarPlano(PlanoSemanal plano, LocalDate hoje) {
-        List<UUID> elegiveis = elegiveis(plano, hoje).stream().map(TreinoPlanejado::getId).toList();
-        boolean fecharia = !hoje.isBefore(plano.getSemanaFim());
+    private EncerramentoSemanaResultado projetarPlano(PlanoSemanal plano, LocalDate hoje, UUID tenantId) {
+        List<UUID> elegiveis = elegiveis(plano, hoje, tenantId).stream().map(TreinoPlanejado::getId).toList();
+        boolean fecharia = semanaTerminou(plano, hoje);
         PlanoStatus statusProjetado = fecharia ? PlanoStatus.CONCLUIDO : plano.getStatus();
         String aviso = avisoSemanaNaoTerminou(plano, hoje, fecharia);
         return new EncerramentoSemanaResultado(plano.getId(), statusProjetado, elegiveis.size(),
                 elegiveis, fecharia, OrigemEncerramento.ON_DEMAND, aviso);
     }
 
-    private String avisoSemanaNaoTerminou(PlanoSemanal plano, LocalDate hoje, boolean fechado) {
-        return (!fechado && hoje.isBefore(plano.getSemanaFim()))
-                ? "Semana ainda não terminou; os treinos futuros permanecem pendentes."
-                : null;
-    }
-
-    /**
-     * Marca como PERDIDO os treinos PENDENTE elegíveis do plano, delegando a marcação unitária a
-     * {@link TreinoService#marcarTreinoPerdido(UUID)} (que recalcula o status do plano).
-     */
-    private List<UUID> finalizarPendentes(PlanoSemanal plano, LocalDate hoje) {
-        List<UUID> perdidos = new ArrayList<>();
-        for (TreinoPlanejado treino : elegiveis(plano, hoje)) {
-            treinoService.marcarTreinoPerdido(treino.getId());
-            perdidos.add(treino.getId());
-        }
-        return perdidos;
+    /** Marca em lote como PERDIDO os treinos elegíveis do plano (1 recálculo ao final — sem N+1). */
+    private List<UUID> finalizarPendentes(PlanoSemanal plano, LocalDate hoje, UUID tenantId) {
+        List<TreinoPlanejado> elegiveis = elegiveis(plano, hoje, tenantId);
+        treinoService.marcarTreinosPerdidos(plano, elegiveis);
+        return elegiveis.stream().map(TreinoPlanejado::getId).toList();
     }
 
     /**
      * Treinos elegíveis a PERDIDO: PENDENTE e ({@code dataTreino < hoje}, ou {@code dataTreino == hoje}
-     * somente no fim da semana). Um treino que já não está PENDENTE (corrida com registro retroativo)
-     * é excluído aqui, sem lançar exceção.
+     * somente no fim da semana).
      */
-    private List<TreinoPlanejado> elegiveis(PlanoSemanal plano, LocalDate hoje) {
+    private List<TreinoPlanejado> elegiveis(PlanoSemanal plano, LocalDate hoje, UUID tenantId) {
         boolean fimDaSemana = hoje.equals(plano.getSemanaFim());
-        return treinoPlanejadoRepository.findPendentesAteHojeDoPlano(plano.getId(), hoje).stream()
+        return treinoPlanejadoRepository.findPendentesAteHojeDoPlano(plano.getId(), tenantId, hoje).stream()
+                // defesa contra corrida: o treino pode ter virado REALIZADO entre a query e este ponto
+                // (registro retroativo de atividade) — nesse caso é ignorado, sem lançar.
                 .filter(treino -> treino.getStatusTreino() == TreinoExecucaoStatus.PENDENTE)
                 .filter(treino -> treino.getDataTreino().isBefore(hoje)
                         || (treino.getDataTreino().isEqual(hoje) && fimDaSemana))
                 .toList();
+    }
+
+    // ---- helpers de lote ----
+
+    /**
+     * Itera os atletas do tenant, resolve a semana corrente de cada um e aplica o {@code processador}
+     * ao plano encontrado. Retorna quantos atletas ficaram sem plano na semana corrente.
+     */
+    private int iterarAtletasComPlanoCorrente(UUID tenantId, LocalDate hoje, Consumer<PlanoSemanal> processador) {
+        int semPlano = 0;
+        for (Atleta atleta : atletaRepository.findAllAtletas(tenantId)) {
+            List<PlanoSemanal> planos = planoSemanalRepository.findSemanaCorrente(atleta.getId(), tenantId, hoje);
+            if (planos.isEmpty()) {
+                semPlano++;
+                continue;
+            }
+            if (planos.size() > 1) {
+                log.warn("Sobreposição de {} planos na semana corrente do atleta {}; usando o mais recente",
+                        planos.size(), atleta.getId());
+            }
+            processador.accept(planos.get(0));
+        }
+        return semPlano;
+    }
+
+    private EncerramentoLoteResultado consolidar(List<EncerramentoSemanaResultado> resultados,
+                                                 int semPlano, List<FalhaAtleta> falhas) {
+        int concluidos = (int) resultados.stream()
+                .filter(EncerramentoSemanaResultado::prontoParaProximaSemana).count();
+        int perdidos = resultados.stream()
+                .mapToInt(EncerramentoSemanaResultado::treinosFinalizados).sum();
+        return new EncerramentoLoteResultado(resultados.size(), semPlano, concluidos, perdidos, resultados, falhas);
+    }
+
+    private TransactionTemplate novaTransacaoRequiresNew() {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        return tx;
+    }
+
+    /** Mensagem segura para a resposta HTTP: só propaga erros de domínio; o resto vira genérico. */
+    private String motivoSeguro(Exception e) {
+        if (e instanceof DomainNotFoundException || e instanceof DomainRuleViolationException) {
+            return e.getMessage();
+        }
+        return "Encerramento não concluído; verifique o log.";
+    }
+
+    private boolean semanaTerminou(PlanoSemanal plano, LocalDate hoje) {
+        return !hoje.isBefore(plano.getSemanaFim()); // hoje >= semanaFim
+    }
+
+    private String avisoSemanaNaoTerminou(PlanoSemanal plano, LocalDate hoje, boolean fechado) {
+        return (!fechado && hoje.isBefore(plano.getSemanaFim()))
+                ? "Semana ainda não terminou; os treinos futuros permanecem pendentes."
+                : null;
     }
 
     private LocalDate hoje() {

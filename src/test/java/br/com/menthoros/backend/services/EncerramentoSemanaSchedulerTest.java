@@ -6,6 +6,7 @@ import br.com.menthoros.backend.repository.AssessoriaRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -49,6 +50,10 @@ class EncerramentoSemanaSchedulerTest {
         TenantContext.clear();
     }
 
+    @Nested
+    @DisplayName("encerrarSemanasVencidas")
+    class EncerrarSemanasVencidas {
+
     @Test
     @DisplayName("isola os tenants: uma iteração que lança não impede a seguinte, e o contexto é limpo")
     void isolaTenantsELimpaContexto() {
@@ -83,5 +88,6 @@ class EncerramentoSemanaSchedulerTest {
         scheduler.encerrarSemanasVencidas();
 
         verifyNoInteractions(assessoriaRepository, encerramentoSemanaService);
+    }
     }
 }

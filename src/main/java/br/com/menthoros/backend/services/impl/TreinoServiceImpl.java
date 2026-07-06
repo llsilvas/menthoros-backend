@@ -391,6 +391,22 @@ public class TreinoServiceImpl implements TreinoService {
         }
     }
 
+    @Override
+    @Transactional
+    public void marcarTreinosPerdidos(PlanoSemanal plano, List<TreinoPlanejado> treinos) {
+        if (treinos == null || treinos.isEmpty()) {
+            return;
+        }
+        treinos.forEach(treino -> treino.setStatusTreino(TreinoExecucaoStatus.PERDIDO));
+        treinoPlanejadoRepository.saveAll(treinos);
+        if (plano != null) {
+            Hibernate.initialize(plano.getTreinosPlanejados());
+            atualizarStatusDoPlano(plano);
+        }
+        log.info("{} treino(s) marcado(s) como PERDIDO no plano {}", treinos.size(),
+                plano != null ? plano.getId() : null);
+    }
+
     @Transactional
     public void gravarTreino(List<PlanoSemanal> planoSemanalList) {
         planoSemanalRepository.saveAll(planoSemanalList);

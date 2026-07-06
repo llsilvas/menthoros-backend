@@ -6,6 +6,8 @@ import br.com.menthoros.backend.dto.input.TreinoRealizadoInputDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.dto.output.ResumoSemanalTreinoDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
+import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import jakarta.validation.Valid;
 
@@ -30,6 +32,19 @@ public interface TreinoService {
     TreinoRealizadoOutputDto lancarTreino(UUID atletaId, @Valid TreinoRealizadoInputDto treinoRealizadoInputDto);
 
     void marcarTreinoPerdido(UUID treinoPlanejadoId);
+
+    /**
+     * Marca em lote como PERDIDO os treinos planejados informados (já carregados e validados como
+     * elegíveis pelo chamador) e recalcula o status do plano UMA vez ao final — evitando o N+1 de
+     * chamar {@link #marcarTreinoPerdido(UUID)} por treino.
+     *
+     * <p><b>Idempotent:</b> YES (lista vazia é no-op). <b>Side Effects:</b> Database update (treinos +
+     * status do plano). <b>Tenant-aware:</b> YES (o chamador garante o tenant dos treinos/plano).
+     *
+     * @param plano   plano dono dos treinos (recalculado ao final)
+     * @param treinos treinos PENDENTE a marcar como PERDIDO
+     */
+    void marcarTreinosPerdidos(PlanoSemanal plano, List<TreinoPlanejado> treinos);
 
     ResumoSemanalTreinoDto getResumoSemanal(UUID atletaId, LocalDate targetDate);
 

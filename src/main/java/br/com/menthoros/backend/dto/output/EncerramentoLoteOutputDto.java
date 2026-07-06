@@ -1,7 +1,6 @@
 package br.com.menthoros.backend.dto.output;
 
 import br.com.menthoros.backend.services.EncerramentoLoteResultado;
-import br.com.menthoros.backend.services.FalhaAtleta;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -27,7 +26,7 @@ public record EncerramentoLoteOutputDto(
         List<EncerramentoSemanaOutputDto> resultados,
 
         @Schema(description = "Atletas cujo encerramento falhou (lote não abortado)")
-        List<FalhaAtleta> falhas
+        List<EncerramentoFalhaAtletaOutputDto> falhas
 ) {
 
     public static EncerramentoLoteOutputDto from(EncerramentoLoteResultado r) {
@@ -37,6 +36,6 @@ public record EncerramentoLoteOutputDto(
                 r.planosConcluidos(),
                 r.treinosPerdidosTotal(),
                 r.resultados().stream().map(EncerramentoSemanaOutputDto::from).toList(),
-                r.falhas());
+                r.falhas().stream().map(EncerramentoFalhaAtletaOutputDto::from).toList());
     }
 }

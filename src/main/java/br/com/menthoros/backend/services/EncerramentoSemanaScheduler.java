@@ -18,6 +18,11 @@ import java.util.UUID;
  * Fallback automático de encerramento de semanas: fecha diariamente os planos que o treinador não
  * encerrou manualmente, após a carência configurável. Roda FORA de request — itera as assessorias
  * ativas populando/limpando o {@link TenantContext} por iteração (padrão do StravaActivitySyncScheduler).
+ *
+ * <p><b>Concorrência:</b> depende do pool single-thread padrão do {@code @Scheduled} (uma execução por
+ * vez). Cada iteração limpa o {@link TenantContext} no {@code finally}, então uma falha não vaza tenant
+ * para a próxima. Se um {@code SchedulingConfigurer} com pool &gt; 1 for adicionado no futuro, garanta que
+ * este job não rode de forma re-entrante sobre o mesmo tenant.
  */
 @Slf4j
 @Component

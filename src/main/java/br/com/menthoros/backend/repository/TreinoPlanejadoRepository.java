@@ -24,10 +24,13 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
     @Query("""
        SELECT tp FROM TreinoPlanejado tp
        WHERE tp.planoSemanal.id = :planoId
+         AND tp.tenantId = :tenantId
          AND tp.statusTreino = br.com.menthoros.backend.enums.TreinoExecucaoStatus.PENDENTE
          AND tp.dataTreino <= :hoje
        """)
-    List<TreinoPlanejado> findPendentesAteHojeDoPlano(@Param("planoId") UUID planoId, @Param("hoje") LocalDate hoje);
+    List<TreinoPlanejado> findPendentesAteHojeDoPlano(@Param("planoId") UUID planoId,
+                                                      @Param("tenantId") UUID tenantId,
+                                                      @Param("hoje") LocalDate hoje);
 
     @Query("""
        select tp from TreinoPlanejado tp

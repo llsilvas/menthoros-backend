@@ -49,7 +49,8 @@ public class CoachEncerramentoSemanaController {
             @ApiResponse(responseCode = "200", description = "Resumo do encerramento",
                     content = @Content(schema = @Schema(implementation = EncerramentoSemanaOutputDto.class))),
             @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)"),
-            @ApiResponse(responseCode = "404", description = "Plano não encontrado no tenant")
+            @ApiResponse(responseCode = "404", description = "Plano não encontrado no tenant"),
+            @ApiResponse(responseCode = "409", description = "Conflito de edição concorrente (outro encerramento/registro em andamento)")
     })
     public ResponseEntity<EncerramentoSemanaOutputDto> encerrarSemana(
             @Parameter(description = "ID do plano semanal") @PathVariable UUID planoId) {
@@ -68,6 +69,8 @@ public class CoachEncerramentoSemanaController {
             @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)")
     })
     public ResponseEntity<EncerramentoLoteOutputDto> previewLote() {
+        // @RequireTenant não se aplica: sem resourceId no path; isolamento via
+        // TenantContext.getRequiredTenantId() + queries tenant-scoped (findAllAtletas).
         EncerramentoLoteResultado resultado = encerramentoSemanaService.previewLoteAssessoria();
         return ResponseEntity.ok(EncerramentoLoteOutputDto.from(resultado));
     }
@@ -83,6 +86,8 @@ public class CoachEncerramentoSemanaController {
             @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)")
     })
     public ResponseEntity<EncerramentoLoteOutputDto> encerrarLote() {
+        // @RequireTenant não se aplica: sem resourceId no path; isolamento via
+        // TenantContext.getRequiredTenantId() + queries tenant-scoped (findAllAtletas).
         EncerramentoLoteResultado resultado = encerramentoSemanaService.encerrarSemanaLoteAssessoria();
         return ResponseEntity.ok(EncerramentoLoteOutputDto.from(resultado));
     }
