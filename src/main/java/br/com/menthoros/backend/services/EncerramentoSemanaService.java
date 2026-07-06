@@ -25,4 +25,23 @@ public interface EncerramentoSemanaService {
      *                                                                    existir no tenant corrente
      */
     EncerramentoSemanaResultado encerrarSemana(UUID planoId);
+
+    /**
+     * Encerra a semana corrente de todos os atletas do tenant corrente (ação on-demand do treinador,
+     * origem ON_DEMAND, sem carência). Cada atleta é encerrado em sua própria transação — a falha de um
+     * é registrada em {@code falhas} e não aborta o lote.
+     *
+     * <p><b>Idempotent:</b> YES. <b>Side Effects:</b> Database update por atleta. <b>Tenant-aware:</b> YES.
+     *
+     * @return resumo consolidado (processados, sem-plano, concluídos, perdidos, resultados, falhas)
+     */
+    EncerramentoLoteResultado encerrarSemanaLoteAssessoria();
+
+    /**
+     * Projeta o impacto do encerramento em lote SEM persistir nada (dry-run) — para a tela de
+     * confirmação do treinador.
+     *
+     * <p><b>Idempotent:</b> YES. <b>Side Effects:</b> NONE (read-only). <b>Tenant-aware:</b> YES.
+     */
+    EncerramentoLoteResultado previewLoteAssessoria();
 }

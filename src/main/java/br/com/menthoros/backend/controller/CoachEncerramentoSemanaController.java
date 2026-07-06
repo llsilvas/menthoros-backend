@@ -1,7 +1,9 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.output.EncerramentoLoteOutputDto;
 import br.com.menthoros.backend.dto.output.EncerramentoSemanaOutputDto;
 import br.com.menthoros.backend.security.RequireTenant;
+import br.com.menthoros.backend.services.EncerramentoLoteResultado;
 import br.com.menthoros.backend.services.EncerramentoSemanaResultado;
 import br.com.menthoros.backend.services.EncerramentoSemanaService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -53,5 +55,35 @@ public class CoachEncerramentoSemanaController {
             @Parameter(description = "ID do plano semanal") @PathVariable UUID planoId) {
         EncerramentoSemanaResultado resultado = encerramentoSemanaService.encerrarSemana(planoId);
         return ResponseEntity.ok(EncerramentoSemanaOutputDto.from(resultado));
+    }
+
+    @PostMapping("/semanas/encerrar-lote/preview")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @Operation(summary = "Projeta o encerramento em lote da assessoria (dry-run)",
+            description = "Calcula o impacto do encerramento em lote (treinos que seriam marcados PERDIDO por "
+                    + "atleta, planos que fechariam) SEM persistir nada. Para a tela de confirmação do treinador.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Projeção do impacto",
+                    content = @Content(schema = @Schema(implementation = EncerramentoLoteOutputDto.class))),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)")
+    })
+    public ResponseEntity<EncerramentoLoteOutputDto> previewLote() {
+        EncerramentoLoteResultado resultado = encerramentoSemanaService.previewLoteAssessoria();
+        return ResponseEntity.ok(EncerramentoLoteOutputDto.from(resultado));
+    }
+
+    @PostMapping("/semanas/encerrar-lote")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @Operation(summary = "Encerra a semana de todos os atletas da assessoria",
+            description = "Encerra a semana corrente de cada atleta do tenant (origem ON_DEMAND, sem carência). "
+                    + "Uma transação por atleta: a falha de um não aborta o lote (reportada em 'falhas').")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Resumo consolidado do lote",
+                    content = @Content(schema = @Schema(implementation = EncerramentoLoteOutputDto.class))),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)")
+    })
+    public ResponseEntity<EncerramentoLoteOutputDto> encerrarLote() {
+        EncerramentoLoteResultado resultado = encerramentoSemanaService.encerrarSemanaLoteAssessoria();
+        return ResponseEntity.ok(EncerramentoLoteOutputDto.from(resultado));
     }
 }

@@ -10,10 +10,13 @@ import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.events.SemanaEncerradaEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
+import br.com.menthoros.backend.services.EncerramentoLoteResultado;
 import br.com.menthoros.backend.services.EncerramentoSemanaResultado;
 import br.com.menthoros.backend.services.TreinoService;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -55,6 +58,10 @@ class EncerramentoSemanaServiceImplTest {
     private TreinoService treinoService;
     @Mock
     private ApplicationEventPublisher eventPublisher;
+    @Mock
+    private AtletaRepository atletaRepository;
+    @Mock
+    private PlatformTransactionManager transactionManager;
 
     private UUID tenantId;
 
@@ -306,6 +313,118 @@ class EncerramentoSemanaServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("encerrarSemanaLoteAssessoria")
+    class EncerrarLote {
+
+        @Test
+        @DisplayName("encerra a semana de todos os atletas e consolida os totais")
+        void encerraTodosOsAtletas() {
+            LocalDate domingo = LocalDate.of(2026, 7, 5);
+            Atleta a1 = atleta();
+            Atleta a2 = atleta();
+            PlanoSemanal p1 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO);
+            PlanoSemanal p2 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO);
+            when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of(a1, a2));
+            when(planoSemanalRepository.findSemanaCorrente(eq(a1.getId()), any(), any())).thenReturn(List.of(p1));
+            when(planoSemanalRepository.findSemanaCorrente(eq(a2.getId()), any(), any())).thenReturn(List.of(p2));
+            when(planoSemanalRepository.findByIdAndTenantId(p1.getId(), tenantId)).thenReturn(Optional.of(p1));
+            when(planoSemanalRepository.findByIdAndTenantId(p2.getId(), tenantId)).thenReturn(Optional.of(p2));
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(p1.getId()), any()))
+                    .thenReturn(List.of(treino(LocalDate.of(2026, 7, 4), TreinoExecucaoStatus.PENDENTE)));
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(p2.getId()), any()))
+                    .thenReturn(List.of(treino(LocalDate.of(2026, 7, 4), TreinoExecucaoStatus.PENDENTE)));
+
+            EncerramentoLoteResultado resultado = servico(domingo).encerrarSemanaLoteAssessoria();
+
+            assertThat(resultado.atletasProcessados()).isEqualTo(2);
+            assertThat(resultado.atletasSemPlano()).isZero();
+            assertThat(resultado.planosConcluidos()).isEqualTo(2);
+            assertThat(resultado.treinosPerdidosTotal()).isEqualTo(2);
+            assertThat(resultado.falhas()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("atleta sem semana corrente é ignorado (não é falha)")
+        void atletaSemPlanoEIgnorado() {
+            LocalDate domingo = LocalDate.of(2026, 7, 5);
+            Atleta comPlano = atleta();
+            Atleta semPlano = atleta();
+            PlanoSemanal p1 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO);
+            when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of(comPlano, semPlano));
+            when(planoSemanalRepository.findSemanaCorrente(eq(comPlano.getId()), any(), any())).thenReturn(List.of(p1));
+            when(planoSemanalRepository.findSemanaCorrente(eq(semPlano.getId()), any(), any())).thenReturn(List.of());
+            when(planoSemanalRepository.findByIdAndTenantId(p1.getId(), tenantId)).thenReturn(Optional.of(p1));
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(p1.getId()), any())).thenReturn(List.of());
+
+            EncerramentoLoteResultado resultado = servico(domingo).encerrarSemanaLoteAssessoria();
+
+            assertThat(resultado.atletasProcessados()).isEqualTo(1);
+            assertThat(resultado.atletasSemPlano()).isEqualTo(1);
+            assertThat(resultado.falhas()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("usa a fonte de atletas tenant-scoped do tenant corrente")
+        void usaFonteTenantScoped() {
+            LocalDate domingo = LocalDate.of(2026, 7, 5);
+            when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of());
+
+            servico(domingo).encerrarSemanaLoteAssessoria();
+
+            verify(atletaRepository).findAllAtletas(tenantId);
+        }
+
+        @Test
+        @DisplayName("falha de um atleta não aborta o lote (reportada em falhas)")
+        void falhaParcialNaoAbortaOLote() {
+            LocalDate domingo = LocalDate.of(2026, 7, 5);
+            Atleta ok = atleta();
+            Atleta comFalha = atleta();
+            PlanoSemanal pOk = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO);
+            UUID planoFalhaId = UUID.randomUUID();
+            when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of(ok, comFalha));
+            when(planoSemanalRepository.findSemanaCorrente(eq(ok.getId()), any(), any())).thenReturn(List.of(pOk));
+            when(planoSemanalRepository.findSemanaCorrente(eq(comFalha.getId()), any(), any()))
+                    .thenReturn(List.of(plano(planoFalhaId, domingo, PlanoStatus.EM_ANDAMENTO)));
+            when(planoSemanalRepository.findByIdAndTenantId(pOk.getId(), tenantId)).thenReturn(Optional.of(pOk));
+            // o plano do atleta com falha não é encontrado ao recarregar → DomainNotFoundException na sua transação
+            when(planoSemanalRepository.findByIdAndTenantId(planoFalhaId, tenantId)).thenReturn(Optional.empty());
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(pOk.getId()), any())).thenReturn(List.of());
+
+            EncerramentoLoteResultado resultado = servico(domingo).encerrarSemanaLoteAssessoria();
+
+            assertThat(resultado.atletasProcessados()).isEqualTo(1);
+            assertThat(resultado.falhas()).hasSize(1);
+            assertThat(resultado.falhas().get(0).atletaId()).isEqualTo(comFalha.getId());
+        }
+    }
+
+    @Nested
+    @DisplayName("previewLoteAssessoria")
+    class PreviewLote {
+
+        @Test
+        @DisplayName("projeta o impacto sem persistir (não marca nem salva)")
+        void projetaSemPersistir() {
+            LocalDate domingo = LocalDate.of(2026, 7, 5);
+            Atleta a1 = atleta();
+            PlanoSemanal p1 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO);
+            when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of(a1));
+            when(planoSemanalRepository.findSemanaCorrente(eq(a1.getId()), any(), any())).thenReturn(List.of(p1));
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(p1.getId()), any()))
+                    .thenReturn(List.of(treino(LocalDate.of(2026, 7, 4), TreinoExecucaoStatus.PENDENTE)));
+
+            EncerramentoLoteResultado preview = servico(domingo).previewLoteAssessoria();
+
+            assertThat(preview.atletasProcessados()).isEqualTo(1);
+            assertThat(preview.treinosPerdidosTotal()).isEqualTo(1);
+            assertThat(preview.planosConcluidos()).isEqualTo(1);
+            verify(treinoService, never()).marcarTreinoPerdido(any());
+            verify(planoSemanalRepository, never()).save(any());
+        }
+    }
+
     // ---- helpers ----
 
     private EncerramentoSemanaServiceImpl servico(LocalDate hoje) {
@@ -314,7 +433,8 @@ class EncerramentoSemanaServiceImplTest {
 
     private EncerramentoSemanaServiceImpl servicoComClock(Clock clock) {
         return new EncerramentoSemanaServiceImpl(
-                planoSemanalRepository, treinoPlanejadoRepository, treinoService, eventPublisher, clock);
+                planoSemanalRepository, treinoPlanejadoRepository, atletaRepository, treinoService,
+                eventPublisher, transactionManager, clock);
     }
 
     private void stubPlano(UUID planoId, PlanoSemanal plano) {
@@ -332,6 +452,10 @@ class EncerramentoSemanaServiceImplTest {
                 .semanaFim(semanaFim)
                 .status(status)
                 .build();
+    }
+
+    private Atleta atleta() {
+        return Atleta.builder().id(UUID.randomUUID()).build();
     }
 
     private TreinoPlanejado treino(LocalDate data, TreinoExecucaoStatus status) {

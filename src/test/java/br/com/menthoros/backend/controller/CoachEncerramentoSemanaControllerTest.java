@@ -1,10 +1,12 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.output.EncerramentoLoteOutputDto;
 import br.com.menthoros.backend.dto.output.EncerramentoSemanaOutputDto;
 import br.com.menthoros.backend.enums.OrigemEncerramento;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.services.EncerramentoLoteResultado;
 import br.com.menthoros.backend.services.EncerramentoSemanaResultado;
 import br.com.menthoros.backend.services.EncerramentoSemanaService;
 import org.junit.jupiter.api.AfterEach;
@@ -84,6 +86,40 @@ class CoachEncerramentoSemanaControllerTest {
 
             assertThatThrownBy(() -> controller.encerrarSemana(planoId))
                     .isInstanceOf(DomainNotFoundException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("encerrarLote / previewLote")
+    class Lote {
+
+        @Test
+        @DisplayName("POST /semanas/encerrar-lote → 200 com o resumo consolidado")
+        void encerrarLoteRetorna200() {
+            EncerramentoLoteResultado resultado = new EncerramentoLoteResultado(
+                    8, 2, 8, 23, List.of(), List.of());
+            when(encerramentoSemanaService.encerrarSemanaLoteAssessoria()).thenReturn(resultado);
+
+            ResponseEntity<EncerramentoLoteOutputDto> resposta = controller.encerrarLote();
+
+            assertThat(resposta.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(resposta.getBody()).isNotNull();
+            assertThat(resposta.getBody().atletasProcessados()).isEqualTo(8);
+            assertThat(resposta.getBody().treinosPerdidosTotal()).isEqualTo(23);
+        }
+
+        @Test
+        @DisplayName("POST /semanas/encerrar-lote/preview → 200 com a projeção")
+        void previewLoteRetorna200() {
+            EncerramentoLoteResultado projecao = new EncerramentoLoteResultado(
+                    8, 2, 8, 23, List.of(), List.of());
+            when(encerramentoSemanaService.previewLoteAssessoria()).thenReturn(projecao);
+
+            ResponseEntity<EncerramentoLoteOutputDto> resposta = controller.previewLote();
+
+            assertThat(resposta.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(resposta.getBody()).isNotNull();
+            assertThat(resposta.getBody().atletasProcessados()).isEqualTo(8);
         }
     }
 }

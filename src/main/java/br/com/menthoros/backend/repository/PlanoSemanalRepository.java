@@ -65,6 +65,23 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
     Optional<PlanoSemanal> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 
     /**
+     * Semana corrente de um atleta (plano cujo intervalo contém :hoje), tenant-scoped.
+     * Retorna lista ordenada por semanaInicio desc — o chamador usa o primeiro — para ser
+     * resiliente a eventual sobreposição de semanas (em vez de estourar como Optional).
+     *
+     * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Query("""
+            SELECT ps FROM PlanoSemanal ps
+            WHERE ps.atleta.id = :atletaId AND ps.assessoria.id = :tenantId
+              AND :hoje BETWEEN ps.semanaInicio AND ps.semanaFim
+            ORDER BY ps.semanaInicio DESC
+            """)
+    List<PlanoSemanal> findSemanaCorrente(@Param("atletaId") UUID atletaId,
+                                          @Param("tenantId") UUID tenantId,
+                                          @Param("hoje") LocalDate hoje);
+
+    /**
      * Busca o plano mais recente APROVADO de um atleta, restrito ao tenant.
      * Usado pelo endpoint GET /api/v1/planos/{atletaId} quando caller é ATLETA.
      *
