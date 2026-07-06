@@ -85,7 +85,7 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
         log.info("Semana encerrada: plano={}, tenant={}, origem={}, treinosPerdidos={}, status={}",
                 plano.getId(), plano.getAssessoria().getId(), origem, perdidos.size(), plano.getStatus());
         return new EncerramentoSemanaResultado(
-                plano.getId(), plano.getStatus(), perdidos.size(), perdidos, pronto, aviso);
+                plano.getId(), plano.getStatus(), perdidos.size(), perdidos, pronto, origem, aviso);
     }
 
     /**
