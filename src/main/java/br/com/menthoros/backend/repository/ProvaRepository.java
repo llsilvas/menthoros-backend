@@ -37,7 +37,7 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
      * ordenadas pela data ascendente (mais próximas primeiro).
      * Usa JOIN FETCH para eager-load o relacionamento com Atleta.
      */
-    @Query("SELECT DISTINCT p FROM Prova p JOIN FETCH p.atleta WHERE p.dataProva >= CURRENT_DATE AND p.dataProva <= :endDate ORDER BY p.dataProva ASC")
+    @Query("SELECT DISTINCT p FROM Prova p JOIN FETCH p.atleta WHERE p.dataProva >= CURRENT_DATE AND p.dataProva <= :endDate AND p.statusProva != 'CANCELADA' ORDER BY p.dataProva ASC")
     List<Prova> findUpcomingProvasNext15Days(@Param("endDate") LocalDate endDate);
 
     /**
