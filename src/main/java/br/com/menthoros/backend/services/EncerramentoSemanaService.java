@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 public interface EncerramentoSemanaService {
@@ -44,4 +45,19 @@ public interface EncerramentoSemanaService {
      * <p><b>Idempotent:</b> YES. <b>Side Effects:</b> NONE (read-only). <b>Tenant-aware:</b> YES.
      */
     EncerramentoLoteResultado previewLoteAssessoria();
+
+    /**
+     * Fallback automático: encerra (origem AUTOMATICO) os planos do tenant não CONCLUIDO cuja semana
+     * terminou há pelo menos {@code carenciaDias} dias. Cada plano é encerrado em sua própria transação.
+     *
+     * <p><b>Idempotent:</b> YES. <b>Side Effects:</b> Database update por plano. <b>Tenant-aware:</b> YES
+     * (o tenant é passado explicitamente; o {@code TenantContext} deve estar populado pelo chamador para a
+     * marcação unitária).
+     *
+     * @param tenantId     assessoria alvo
+     * @param hoje         data corrente (fuso resolvido pelo chamador)
+     * @param carenciaDias dias de carência após {@code semanaFim}
+     * @return quantidade de planos encerrados
+     */
+    int encerrarPlanosElegiveis(UUID tenantId, LocalDate hoje, int carenciaDias);
 }

@@ -118,6 +118,10 @@ class PlanoSemanalOrigemEncerramentoTest extends AbstractIntegrationTest {
     }
 
     private PlanoSemanal salvarPlano(Atleta atleta, OrigemEncerramento origem, PlanoStatus status) {
+        return salvarPlano(atleta, origem, status, LocalDate.now());
+    }
+
+    private PlanoSemanal salvarPlano(Atleta atleta, OrigemEncerramento origem, PlanoStatus status, LocalDate semanaFim) {
         PlanoMetaDados meta = new PlanoMetaDados();
         meta.setAtleta(atleta);
         meta.setAssessoria(atleta.getAssessoria());
@@ -128,13 +132,34 @@ class PlanoSemanalOrigemEncerramentoTest extends AbstractIntegrationTest {
         plano.setAtleta(atleta);
         plano.setAssessoria(atleta.getAssessoria());
         plano.setPlanoMetaDados(meta);
-        plano.setSemanaInicio(LocalDate.now().minusDays(6));
-        plano.setSemanaFim(LocalDate.now());
+        plano.setSemanaInicio(semanaFim.minusDays(6));
+        plano.setSemanaFim(semanaFim);
         plano.setVolumePlanejadoKm(BigDecimal.valueOf(40));
         plano.setStatus(status);
         plano.setReviewStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
         plano.setObjetivoSemanal("Semana base");
         plano.setOrigemEncerramento(origem);
         return planoSemanalRepository.save(plano);
+    }
+
+    @Test
+    @DisplayName("findElegiveisFallback retorna só não-CONCLUIDO com semanaFim <= limite de carência (tenant-scoped)")
+    void findElegiveisFallbackRespeitaCarenciaEStatus() {
+        Atleta atleta = seedAtleta();
+        UUID tenantId = atleta.getAssessoria().getId();
+        LocalDate hoje = LocalDate.now();
+        LocalDate limite = hoje.minusDays(5); // carência de 5 dias
+
+        // elegível: não concluído e semanaFim há 5 dias (== limite)
+        PlanoSemanal elegivel = salvarPlano(atleta, null, PlanoStatus.EM_ANDAMENTO, hoje.minusDays(5));
+        // dentro da carência: semanaFim há 4 dias (> limite) → não elegível (critério 6)
+        salvarPlano(atleta, null, PlanoStatus.EM_ANDAMENTO, hoje.minusDays(4));
+        // já concluído: excluído por status mesmo com semana bem antiga
+        salvarPlano(atleta, OrigemEncerramento.ON_DEMAND, PlanoStatus.CONCLUIDO, hoje.minusDays(10));
+        entityManager.flush();
+
+        List<PlanoSemanal> resultado = planoSemanalRepository.findElegiveisFallback(tenantId, limite);
+
+        assertThat(resultado).extracting(PlanoSemanal::getId).containsExactly(elegivel.getId());
     }
 }

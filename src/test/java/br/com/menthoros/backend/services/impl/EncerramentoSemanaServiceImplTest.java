@@ -425,6 +425,37 @@ class EncerramentoSemanaServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("encerrarPlanosElegiveis (fallback)")
+    class EncerrarPlanosElegiveis {
+
+        @Test
+        @DisplayName("seleciona por hoje - carência e encerra com origem AUTOMATICO")
+        void encerraElegiveisComCarencia() {
+            LocalDate hoje = LocalDate.of(2026, 7, 10);
+            PlanoSemanal plano = plano(UUID.randomUUID(), LocalDate.of(2026, 7, 1), PlanoStatus.EM_ANDAMENTO);
+            when(planoSemanalRepository.findElegiveisFallback(tenantId, LocalDate.of(2026, 7, 5)))
+                    .thenReturn(List.of(plano));
+            when(planoSemanalRepository.findByIdAndTenantId(plano.getId(), tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(plano.getId()), any())).thenReturn(List.of());
+
+            int encerrados = servico(hoje).encerrarPlanosElegiveis(tenantId, hoje, 5);
+
+            assertThat(encerrados).isEqualTo(1);
+            verify(planoSemanalRepository).findElegiveisFallback(tenantId, LocalDate.of(2026, 7, 5));
+            assertThat(plano.getOrigemEncerramento()).isEqualTo(OrigemEncerramento.AUTOMATICO);
+        }
+
+        @Test
+        @DisplayName("retorna 0 quando nenhum plano é elegível")
+        void nenhumElegivel() {
+            LocalDate hoje = LocalDate.of(2026, 7, 10);
+            when(planoSemanalRepository.findElegiveisFallback(eq(tenantId), any())).thenReturn(List.of());
+
+            assertThat(servico(hoje).encerrarPlanosElegiveis(tenantId, hoje, 3)).isZero();
+        }
+    }
+
     // ---- helpers ----
 
     private EncerramentoSemanaServiceImpl servico(LocalDate hoje) {

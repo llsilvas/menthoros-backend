@@ -82,6 +82,21 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
                                           @Param("hoje") LocalDate hoje);
 
     /**
+     * Planos elegíveis ao fechamento automático (fallback): não CONCLUIDO e cuja semana terminou
+     * há pelo menos a carência (semanaFim <= limiteCarencia), tenant-scoped.
+     *
+     * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Query("""
+            SELECT ps FROM PlanoSemanal ps
+            WHERE ps.assessoria.id = :tenantId
+              AND ps.status <> br.com.menthoros.backend.enums.PlanoStatus.CONCLUIDO
+              AND ps.semanaFim <= :limiteCarencia
+            """)
+    List<PlanoSemanal> findElegiveisFallback(@Param("tenantId") UUID tenantId,
+                                             @Param("limiteCarencia") LocalDate limiteCarencia);
+
+    /**
      * Busca o plano mais recente APROVADO de um atleta, restrito ao tenant.
      * Usado pelo endpoint GET /api/v1/planos/{atletaId} quando caller é ATLETA.
      *

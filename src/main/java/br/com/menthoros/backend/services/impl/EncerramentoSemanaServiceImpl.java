@@ -106,6 +106,32 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
         return consolidar(resultados, semPlano, List.of());
     }
 
+    @Override
+    public int encerrarPlanosElegiveis(UUID tenantId, LocalDate hoje, int carenciaDias) {
+        LocalDate limiteCarencia = hoje.minusDays(carenciaDias);
+        List<PlanoSemanal> elegiveis = planoSemanalRepository.findElegiveisFallback(tenantId, limiteCarencia);
+        if (elegiveis.isEmpty()) {
+            return 0;
+        }
+
+        // Uma transação por plano: a falha de um não derruba os demais.
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+
+        int encerrados = 0;
+        for (PlanoSemanal plano : elegiveis) {
+            UUID planoId = plano.getId();
+            try {
+                tx.execute(status ->
+                        encerrarPlanoPorId(planoId, tenantId, hoje, OrigemEncerramento.AUTOMATICO));
+                encerrados++;
+            } catch (Exception e) {
+                log.warn("Falha no fallback ao encerrar plano {}: {}", planoId, e.getMessage());
+            }
+        }
+        return encerrados;
+    }
+
     private EncerramentoLoteResultado consolidar(List<EncerramentoSemanaResultado> resultados,
                                                  int semPlano, List<FalhaAtleta> falhas) {
         int concluidos = (int) resultados.stream()
