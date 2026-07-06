@@ -530,6 +530,8 @@ public class TreinoServiceImpl implements TreinoService {
             planejado.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
             planejado.setTreinoRealizado(treinoSalvo);
             treinoPlanejadoRepository.save(planejado);
+            // Reverter PERDIDO -> REALIZADO (registro retroativo) exige recalcular o plano.
+            atualizarPlanoSemanalSeAplicavel(planejado.getPlanoSemanal());
             log.info("TreinoPlanejado {} vinculado ao treino manual {}", planejado.getId(), treinoSalvo.getId());
         });
 
