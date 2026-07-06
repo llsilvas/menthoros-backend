@@ -63,10 +63,11 @@ class BatchPlanServiceImplTest {
                 return j;
             });
 
-            UUID resultado = service.iniciarLote(
+            var resultado = service.iniciarLote(
                     new BatchGeracaoPlanoInputDto(List.of(atletaId), ModoGeracaoPlano.PROXIMA_SEMANA), tenantId);
 
-            assertThat(resultado).isEqualTo(jobId);
+            assertThat(resultado.jobId()).isEqualTo(jobId);
+            assertThat(resultado.totalAtletas()).isEqualTo(1);
         }
 
         @Test
@@ -81,10 +82,11 @@ class BatchPlanServiceImplTest {
                 return j;
             });
 
-            service.iniciarLote(
+            var resultado = service.iniciarLote(
                     new BatchGeracaoPlanoInputDto(List.of(a, a, b), ModoGeracaoPlano.PROXIMA_SEMANA), tenantId);
 
             assertThat(jobCaptor.getValue().getTotalAtletas()).isEqualTo(2);
+            assertThat(resultado.totalAtletas()).isEqualTo(2);
         }
 
         @Test

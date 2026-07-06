@@ -4,6 +4,7 @@ import br.com.menthoros.backend.dto.input.BatchGeracaoPlanoInputDto;
 import br.com.menthoros.backend.dto.output.BatchJobStatusOutputDto;
 import br.com.menthoros.backend.dto.output.BatchJobStatusOutputDto.BatchErroItemDto;
 import br.com.menthoros.backend.dto.output.BatchJobStatusOutputDto.BatchGeradoItemDto;
+import br.com.menthoros.backend.dto.output.BatchLoteAceitoOutputDto;
 import br.com.menthoros.backend.entity.BatchPlanJob;
 import br.com.menthoros.backend.enums.BatchJobStatus;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
@@ -42,7 +43,7 @@ public class BatchPlanServiceImpl implements BatchPlanService {
      */
     @Override
     @Transactional
-    public UUID iniciarLote(BatchGeracaoPlanoInputDto input, UUID tenantId) {
+    public BatchLoteAceitoOutputDto iniciarLote(BatchGeracaoPlanoInputDto input, UUID tenantId) {
         List<UUID> atletaIds = input.atletaIds().stream().distinct().toList();
 
         BatchPlanJob job = new BatchPlanJob();
@@ -54,7 +55,7 @@ public class BatchPlanServiceImpl implements BatchPlanService {
         log.info("[batch-plan] job {} criado com {} atleta(s) (tenant {})", job.getId(), atletaIds.size(), tenantId);
 
         batchPlanProcessor.processarLote(job.getId(), atletaIds, input.modo(), tenantId);
-        return job.getId();
+        return new BatchLoteAceitoOutputDto(job.getId(), atletaIds.size());
     }
 
     /**
