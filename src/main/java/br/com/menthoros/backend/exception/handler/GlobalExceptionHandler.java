@@ -84,10 +84,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(OptimisticLockException.class)
     public ResponseEntity<Map<String, Object>> handleConflict(OptimisticLockException ex) {
+        // Não expõe ex.getMessage() (contém nome da entidade + PK); usa mensagem genérica.
+        log.warn("Conflito de edição concorrente (optimistic lock): {}", ex.getMessage());
         Map<String, Object> body = Map.of(
                 "status", 409,
                 "error", "Conflict",
-                "message", ex.getMessage()
+                "message", "Conflito de edição concorrente. Recarregue e tente novamente."
         );
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }

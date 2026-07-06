@@ -162,4 +162,22 @@ class PlanoSemanalOrigemEncerramentoTest extends AbstractIntegrationTest {
 
         assertThat(resultado).extracting(PlanoSemanal::getId).containsExactly(elegivel.getId());
     }
+
+    @Test
+    @DisplayName("findSemanasCorrentes retorna só o plano cuja semana contém hoje (tenant-scoped)")
+    void findSemanasCorrentesRetornaSemanaQueContemHoje() {
+        Atleta atleta = seedAtleta();
+        UUID tenantId = atleta.getAssessoria().getId();
+        LocalDate hoje = LocalDate.now();
+
+        // corrente: semanaInicio = hoje-3, semanaFim = hoje+3 → contém hoje
+        PlanoSemanal corrente = salvarPlano(atleta, null, PlanoStatus.EM_ANDAMENTO, hoje.plusDays(3));
+        // passado: semanaFim = hoje-1 → não contém hoje
+        salvarPlano(atleta, null, PlanoStatus.EM_ANDAMENTO, hoje.minusDays(1));
+        entityManager.flush();
+
+        List<PlanoSemanal> resultado = planoSemanalRepository.findSemanasCorrentes(tenantId, hoje);
+
+        assertThat(resultado).extracting(PlanoSemanal::getId).containsExactly(corrente.getId());
+    }
 }

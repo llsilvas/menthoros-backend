@@ -30,6 +30,9 @@ public record EncerramentoLoteOutputDto(
 ) {
 
     public static EncerramentoLoteOutputDto from(EncerramentoLoteResultado r) {
+        if (r == null) {
+            throw new IllegalArgumentException("EncerramentoLoteResultado não pode ser null");
+        }
         return new EncerramentoLoteOutputDto(
                 r.atletasProcessados(),
                 r.atletasSemPlano(),

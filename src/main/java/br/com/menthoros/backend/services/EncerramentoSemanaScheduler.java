@@ -47,6 +47,10 @@ public class EncerramentoSemanaScheduler {
             log.debug("Encerramento automático de semanas desabilitado");
             return;
         }
+        if (carenciaDias < 0) {
+            log.error("carencia-dias inválida ({}); encerramento automático abortado", carenciaDias);
+            return;
+        }
         LocalDate hoje = LocalDate.now(clock.withZone(ZONA));
         for (Assessoria assessoria : assessoriaRepository.findByAtivoTrue()) {
             UUID tenantId = assessoria.getId();

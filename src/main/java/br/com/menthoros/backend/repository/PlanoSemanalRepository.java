@@ -82,6 +82,22 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
                                           @Param("hoje") LocalDate hoje);
 
     /**
+     * Semanas correntes de TODOS os atletas do tenant numa única query (evita N+1 no lote/preview).
+     * Faz fetch do atleta (usado fora de transação no lote). Ordena por semanaInicio desc para que,
+     * em caso de sobreposição, o primeiro plano de cada atleta seja o mais recente.
+     *
+     * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Query("""
+            SELECT ps FROM PlanoSemanal ps
+            JOIN FETCH ps.atleta
+            WHERE ps.assessoria.id = :tenantId
+              AND :hoje BETWEEN ps.semanaInicio AND ps.semanaFim
+            ORDER BY ps.semanaInicio DESC
+            """)
+    List<PlanoSemanal> findSemanasCorrentes(@Param("tenantId") UUID tenantId, @Param("hoje") LocalDate hoje);
+
+    /**
      * Planos elegíveis ao fechamento automático (fallback): não CONCLUIDO e cuja semana terminou
      * há pelo menos a carência (semanaFim <= limiteCarencia), tenant-scoped.
      *

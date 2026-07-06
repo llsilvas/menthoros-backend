@@ -36,6 +36,9 @@ public record EncerramentoSemanaOutputDto(
 ) {
 
     public static EncerramentoSemanaOutputDto from(EncerramentoSemanaResultado r) {
+        if (r == null) {
+            throw new IllegalArgumentException("EncerramentoSemanaResultado não pode ser null");
+        }
         return new EncerramentoSemanaOutputDto(
                 r.planoId(), r.novoStatus(), r.treinosFinalizados(), r.treinosPerdidos(),
                 r.prontoParaProximaSemana(), r.origem(), r.aviso());

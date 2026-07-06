@@ -18,6 +18,9 @@ public record EncerramentoFalhaAtletaOutputDto(
 ) {
 
     public static EncerramentoFalhaAtletaOutputDto from(FalhaAtleta falha) {
+        if (falha == null) {
+            throw new IllegalArgumentException("FalhaAtleta não pode ser null");
+        }
         return new EncerramentoFalhaAtletaOutputDto(falha.atletaId(), falha.motivo());
     }
 }

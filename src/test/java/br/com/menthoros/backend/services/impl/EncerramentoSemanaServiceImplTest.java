@@ -287,11 +287,10 @@ class EncerramentoSemanaServiceImplTest {
             LocalDate domingo = LocalDate.of(2026, 7, 5);
             Atleta a1 = atleta();
             Atleta a2 = atleta();
-            PlanoSemanal p1 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO);
-            PlanoSemanal p2 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO);
+            PlanoSemanal p1 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO, a1);
+            PlanoSemanal p2 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO, a2);
             when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of(a1, a2));
-            when(planoSemanalRepository.findSemanaCorrente(eq(a1.getId()), any(), any())).thenReturn(List.of(p1));
-            when(planoSemanalRepository.findSemanaCorrente(eq(a2.getId()), any(), any())).thenReturn(List.of(p2));
+            when(planoSemanalRepository.findSemanasCorrentes(eq(tenantId), any())).thenReturn(List.of(p1, p2));
             when(planoSemanalRepository.findByIdAndTenantId(p1.getId(), tenantId)).thenReturn(Optional.of(p1));
             when(planoSemanalRepository.findByIdAndTenantId(p2.getId(), tenantId)).thenReturn(Optional.of(p2));
             stubPendentes(p1.getId(), List.of(treino(LocalDate.of(2026, 7, 4), TreinoExecucaoStatus.PENDENTE)));
@@ -312,10 +311,9 @@ class EncerramentoSemanaServiceImplTest {
             LocalDate domingo = LocalDate.of(2026, 7, 5);
             Atleta comPlano = atleta();
             Atleta semPlano = atleta();
-            PlanoSemanal p1 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO);
+            PlanoSemanal p1 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO, comPlano);
             when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of(comPlano, semPlano));
-            when(planoSemanalRepository.findSemanaCorrente(eq(comPlano.getId()), any(), any())).thenReturn(List.of(p1));
-            when(planoSemanalRepository.findSemanaCorrente(eq(semPlano.getId()), any(), any())).thenReturn(List.of());
+            when(planoSemanalRepository.findSemanasCorrentes(eq(tenantId), any())).thenReturn(List.of(p1));
             when(planoSemanalRepository.findByIdAndTenantId(p1.getId(), tenantId)).thenReturn(Optional.of(p1));
             stubPendentes(p1.getId(), List.of());
 
@@ -331,9 +329,11 @@ class EncerramentoSemanaServiceImplTest {
         void usaFonteTenantScoped() {
             LocalDate domingo = LocalDate.of(2026, 7, 5);
             when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of());
+            when(planoSemanalRepository.findSemanasCorrentes(eq(tenantId), any())).thenReturn(List.of());
 
             servico(domingo).encerrarSemanaLoteAssessoria();
 
+            verify(planoSemanalRepository).findSemanasCorrentes(eq(tenantId), any());
             verify(atletaRepository).findAllAtletas(tenantId);
         }
 
@@ -343,11 +343,10 @@ class EncerramentoSemanaServiceImplTest {
             LocalDate domingo = LocalDate.of(2026, 7, 5);
             Atleta ok = atleta();
             Atleta comFalha = atleta();
-            PlanoSemanal pOk = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO);
-            PlanoSemanal pFalha = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO);
+            PlanoSemanal pOk = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO, ok);
+            PlanoSemanal pFalha = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO, comFalha);
             when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of(ok, comFalha));
-            when(planoSemanalRepository.findSemanaCorrente(eq(ok.getId()), any(), any())).thenReturn(List.of(pOk));
-            when(planoSemanalRepository.findSemanaCorrente(eq(comFalha.getId()), any(), any())).thenReturn(List.of(pFalha));
+            when(planoSemanalRepository.findSemanasCorrentes(eq(tenantId), any())).thenReturn(List.of(pOk, pFalha));
             when(planoSemanalRepository.findByIdAndTenantId(pOk.getId(), tenantId)).thenReturn(Optional.of(pOk));
             // o plano do atleta com falha não é encontrado ao recarregar → DomainNotFoundException na sua transação
             when(planoSemanalRepository.findByIdAndTenantId(pFalha.getId(), tenantId)).thenReturn(Optional.empty());
@@ -370,9 +369,9 @@ class EncerramentoSemanaServiceImplTest {
         void projetaSemPersistir() {
             LocalDate domingo = LocalDate.of(2026, 7, 5);
             Atleta a1 = atleta();
-            PlanoSemanal p1 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO);
+            PlanoSemanal p1 = plano(UUID.randomUUID(), domingo, PlanoStatus.EM_ANDAMENTO, a1);
             when(atletaRepository.findAllAtletas(tenantId)).thenReturn(List.of(a1));
-            when(planoSemanalRepository.findSemanaCorrente(eq(a1.getId()), any(), any())).thenReturn(List.of(p1));
+            when(planoSemanalRepository.findSemanasCorrentes(eq(tenantId), any())).thenReturn(List.of(p1));
             stubPendentes(p1.getId(), List.of(treino(LocalDate.of(2026, 7, 4), TreinoExecucaoStatus.PENDENTE)));
 
             EncerramentoLoteResultado preview = servico(domingo).previewLoteAssessoria();
@@ -454,8 +453,11 @@ class EncerramentoSemanaServiceImplTest {
     }
 
     private PlanoSemanal plano(UUID id, LocalDate semanaFim, PlanoStatus status) {
+        return plano(id, semanaFim, status, atleta());
+    }
+
+    private PlanoSemanal plano(UUID id, LocalDate semanaFim, PlanoStatus status, Atleta atleta) {
         Assessoria assessoria = Assessoria.builder().id(tenantId).build();
-        Atleta atleta = Atleta.builder().id(UUID.randomUUID()).build();
         return PlanoSemanal.builder()
                 .id(id)
                 .atleta(atleta)

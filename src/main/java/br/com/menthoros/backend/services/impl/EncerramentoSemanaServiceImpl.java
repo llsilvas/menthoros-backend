@@ -31,7 +31,9 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -199,18 +201,24 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
      * ao plano encontrado. Retorna quantos atletas ficaram sem plano na semana corrente.
      */
     private int iterarAtletasComPlanoCorrente(UUID tenantId, LocalDate hoje, Consumer<PlanoSemanal> processador) {
+        // 1 query para todos os planos correntes do tenant (evita N+1). Agrupa por atleta escolhendo
+        // o mais recente (query ordenada por semanaInicio desc → putIfAbsent guarda o primeiro/mais recente).
+        Map<UUID, PlanoSemanal> planoPorAtleta = new LinkedHashMap<>();
+        for (PlanoSemanal plano : planoSemanalRepository.findSemanasCorrentes(tenantId, hoje)) {
+            UUID atletaId = plano.getAtleta().getId();
+            if (planoPorAtleta.putIfAbsent(atletaId, plano) != null) {
+                log.warn("Sobreposição de semanas na semana corrente do atleta {}; usando o mais recente", atletaId);
+            }
+        }
+
         int semPlano = 0;
         for (Atleta atleta : atletaRepository.findAllAtletas(tenantId)) {
-            List<PlanoSemanal> planos = planoSemanalRepository.findSemanaCorrente(atleta.getId(), tenantId, hoje);
-            if (planos.isEmpty()) {
+            PlanoSemanal plano = planoPorAtleta.get(atleta.getId());
+            if (plano == null) {
                 semPlano++;
                 continue;
             }
-            if (planos.size() > 1) {
-                log.warn("Sobreposição de {} planos na semana corrente do atleta {}; usando o mais recente",
-                        planos.size(), atleta.getId());
-            }
-            processador.accept(planos.get(0));
+            processador.accept(plano);
         }
         return semPlano;
     }
