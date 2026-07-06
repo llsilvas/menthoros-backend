@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.entity;
 
+import br.com.menthoros.backend.enums.OrigemEncerramento;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import jakarta.persistence.*;
@@ -67,6 +68,10 @@ public class PlanoSemanal {
     @Enumerated(EnumType.STRING)
     @Column(name = "review_status", nullable = false)
     private PlanoReviewStatus reviewStatus;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "origem_encerramento", length = 15)
+    private OrigemEncerramento origemEncerramento;
 
     @Column(name = "review_comment", columnDefinition = "TEXT")
     private String reviewComment;

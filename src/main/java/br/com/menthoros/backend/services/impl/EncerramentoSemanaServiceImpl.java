@@ -58,11 +58,18 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
      * YES (o chamador garante o tenant do plano).
      */
     EncerramentoSemanaResultado encerrarPlano(PlanoSemanal plano, LocalDate hoje, OrigemEncerramento origem) {
+        boolean jaConcluido = plano.getStatus() == PlanoStatus.CONCLUIDO;
         List<UUID> perdidos = finalizarPendentes(plano, hoje);
 
         boolean semanaTerminou = !hoje.isBefore(plano.getSemanaFim()); // hoje >= semanaFim
         if (semanaTerminou && plano.getStatus() != PlanoStatus.CONCLUIDO) {
             plano.setStatus(PlanoStatus.CONCLUIDO);
+        }
+
+        // Registra a origem apenas quando ESTE encerramento fechou o plano (métrica de adoção).
+        boolean fechouAgora = !jaConcluido && plano.getStatus() == PlanoStatus.CONCLUIDO;
+        if (fechouAgora) {
+            plano.setOrigemEncerramento(origem);
             planoSemanalRepository.save(plano);
         }
 

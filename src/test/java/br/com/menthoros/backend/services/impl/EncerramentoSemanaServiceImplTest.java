@@ -260,6 +260,50 @@ class EncerramentoSemanaServiceImplTest {
             assertThat(evento.treinosPerdidos()).isEqualTo(1);
             assertThat(evento.origem()).isEqualTo(OrigemEncerramento.ON_DEMAND);
         }
+
+        @Test
+        @DisplayName("persiste origem ON_DEMAND quando o encerramento on-demand fecha o plano")
+        void persisteOrigemOnDemand() {
+            LocalDate domingo = LocalDate.of(2026, 7, 5);
+            UUID planoId = UUID.randomUUID();
+            PlanoSemanal plano = plano(planoId, domingo, PlanoStatus.EM_ANDAMENTO);
+            stubPlano(planoId, plano);
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(planoId), any()))
+                    .thenReturn(List.of());
+
+            servico(domingo).encerrarSemana(planoId);
+
+            assertThat(plano.getOrigemEncerramento()).isEqualTo(OrigemEncerramento.ON_DEMAND);
+        }
+
+        @Test
+        @DisplayName("persiste origem AUTOMATICO quando o fallback fecha o plano")
+        void persisteOrigemAutomatico() {
+            LocalDate hoje = LocalDate.of(2026, 7, 10);
+            UUID planoId = UUID.randomUUID();
+            PlanoSemanal plano = plano(planoId, LocalDate.of(2026, 7, 5), PlanoStatus.EM_ANDAMENTO);
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(planoId), any()))
+                    .thenReturn(List.of());
+
+            servico(hoje).encerrarPlano(plano, hoje, OrigemEncerramento.AUTOMATICO);
+
+            assertThat(plano.getOrigemEncerramento()).isEqualTo(OrigemEncerramento.AUTOMATICO);
+        }
+
+        @Test
+        @DisplayName("não registra origem no meio da semana (plano não fecha)")
+        void naoRegistraOrigemNoMeioDaSemana() {
+            LocalDate terca = LocalDate.of(2026, 7, 7);
+            UUID planoId = UUID.randomUUID();
+            PlanoSemanal plano = plano(planoId, LocalDate.of(2026, 7, 12), PlanoStatus.EM_ANDAMENTO);
+            stubPlano(planoId, plano);
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(planoId), any()))
+                    .thenReturn(List.of());
+
+            servico(terca).encerrarSemana(planoId);
+
+            assertThat(plano.getOrigemEncerramento()).isNull();
+        }
     }
 
     // ---- helpers ----
