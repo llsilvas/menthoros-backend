@@ -34,6 +34,13 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
 
     Optional<PlanoSemanal> findByAtletaIdAndSemanaInicio(UUID atletaId, LocalDate semanaInicio);
 
+    /**
+     * Fast-path do processador de lote: indica se o atleta já possui um plano
+     * ativo (review status diferente de REJEITADO) na semana alvo. Casa com o
+     * índice único parcial {@code uk_plano_semanal_atleta_semana_ativo}.
+     */
+    boolean existsByAtletaIdAndSemanaInicioAndReviewStatusNot(UUID atletaId, LocalDate semanaInicio, PlanoReviewStatus reviewStatus);
+
     Optional<PlanoSemanal> findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
             UUID atletaId, LocalDate semanaInicio, PlanoStatus status);
 
