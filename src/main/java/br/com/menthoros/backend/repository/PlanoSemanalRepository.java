@@ -65,6 +65,54 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
     Optional<PlanoSemanal> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 
     /**
+     * Semana corrente de um atleta (plano cujo intervalo contém :hoje), tenant-scoped.
+     * Retorna lista ordenada por semanaInicio desc — o chamador usa o primeiro — para ser
+     * resiliente a eventual sobreposição de semanas (em vez de estourar como Optional).
+     *
+     * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Query("""
+            SELECT ps FROM PlanoSemanal ps
+            WHERE ps.atleta.id = :atletaId AND ps.assessoria.id = :tenantId
+              AND :hoje BETWEEN ps.semanaInicio AND ps.semanaFim
+            ORDER BY ps.semanaInicio DESC
+            """)
+    List<PlanoSemanal> findSemanaCorrente(@Param("atletaId") UUID atletaId,
+                                          @Param("tenantId") UUID tenantId,
+                                          @Param("hoje") LocalDate hoje);
+
+    /**
+     * Semanas correntes de TODOS os atletas do tenant numa única query (evita N+1 no lote/preview).
+     * Faz fetch do atleta (usado fora de transação no lote). Ordena por semanaInicio desc para que,
+     * em caso de sobreposição, o primeiro plano de cada atleta seja o mais recente.
+     *
+     * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Query("""
+            SELECT ps FROM PlanoSemanal ps
+            JOIN FETCH ps.atleta
+            WHERE ps.assessoria.id = :tenantId
+              AND :hoje BETWEEN ps.semanaInicio AND ps.semanaFim
+            ORDER BY ps.semanaInicio DESC
+            """)
+    List<PlanoSemanal> findSemanasCorrentes(@Param("tenantId") UUID tenantId, @Param("hoje") LocalDate hoje);
+
+    /**
+     * Planos elegíveis ao fechamento automático (fallback): não CONCLUIDO e cuja semana terminou
+     * há pelo menos a carência (semanaFim <= limiteCarencia), tenant-scoped.
+     *
+     * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
+     */
+    @Query("""
+            SELECT ps FROM PlanoSemanal ps
+            WHERE ps.assessoria.id = :tenantId
+              AND ps.status <> br.com.menthoros.backend.enums.PlanoStatus.CONCLUIDO
+              AND ps.semanaFim <= :limiteCarencia
+            """)
+    List<PlanoSemanal> findElegiveisFallback(@Param("tenantId") UUID tenantId,
+                                             @Param("limiteCarencia") LocalDate limiteCarencia);
+
+    /**
      * Busca o plano mais recente APROVADO de um atleta, restrito ao tenant.
      * Usado pelo endpoint GET /api/v1/planos/{atletaId} quando caller é ATLETA.
      *

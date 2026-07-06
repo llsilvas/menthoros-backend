@@ -98,6 +98,78 @@ class TreinoServiceImplTest {
     }
 
     @Nested
+    @DisplayName("marcarTreinosPerdidos")
+    class MarcarTreinosPerdidos {
+
+        @Test
+        @DisplayName("lista vazia é no-op (não salva)")
+        void listaVaziaNoOp() {
+            treinoService.marcarTreinosPerdidos(planoDoTenant(), java.util.List.of());
+            org.mockito.Mockito.verify(treinoPlanejadoRepository, org.mockito.Mockito.never())
+                    .saveAll(org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        @DisplayName("ignora treinos não-PENDENTE (não sobrescreve REALIZADO)")
+        void ignoraNaoPendente() {
+            PlanoSemanal plano = planoDoTenant();
+            TreinoPlanejado pendente = planejado(br.com.menthoros.backend.enums.TreinoExecucaoStatus.PENDENTE);
+            TreinoPlanejado realizado = planejado(br.com.menthoros.backend.enums.TreinoExecucaoStatus.REALIZADO);
+
+            treinoService.marcarTreinosPerdidos(plano, java.util.List.of(pendente, realizado));
+
+            org.assertj.core.api.Assertions.assertThat(pendente.getStatusTreino())
+                    .isEqualTo(br.com.menthoros.backend.enums.TreinoExecucaoStatus.PERDIDO);
+            org.assertj.core.api.Assertions.assertThat(realizado.getStatusTreino())
+                    .isEqualTo(br.com.menthoros.backend.enums.TreinoExecucaoStatus.REALIZADO);
+            org.mockito.Mockito.verify(treinoPlanejadoRepository).saveAll(java.util.List.of(pendente));
+        }
+
+        @Test
+        @DisplayName("rejeita plano de outro tenant")
+        void rejeitaOutroTenant() {
+            PlanoSemanal plano = new PlanoSemanal();
+            plano.setAssessoria(Assessoria.builder().id(UUID.randomUUID()).build());
+            TreinoPlanejado pendente = planejado(br.com.menthoros.backend.enums.TreinoExecucaoStatus.PENDENTE);
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                            () -> treinoService.marcarTreinosPerdidos(plano, java.util.List.of(pendente)))
+                    .isInstanceOf(org.springframework.security.access.AccessDeniedException.class);
+            org.mockito.Mockito.verify(treinoPlanejadoRepository, org.mockito.Mockito.never())
+                    .saveAll(org.mockito.ArgumentMatchers.any());
+        }
+
+        @Test
+        @DisplayName("marca em lote e recalcula o status do plano uma vez")
+        void marcaERecalcula() {
+            PlanoSemanal plano = planoDoTenant();
+            TreinoPlanejado pendente = planejado(br.com.menthoros.backend.enums.TreinoExecucaoStatus.PENDENTE);
+            plano.setTreinosPlanejados(new java.util.ArrayList<>(java.util.List.of(pendente)));
+
+            treinoService.marcarTreinosPerdidos(plano, java.util.List.of(pendente));
+
+            org.mockito.Mockito.verify(treinoPlanejadoRepository).saveAll(java.util.List.of(pendente));
+            org.mockito.Mockito.verify(planoSemanalRepository).save(plano);
+        }
+
+        private PlanoSemanal planoDoTenant() {
+            PlanoSemanal p = new PlanoSemanal();
+            p.setId(UUID.randomUUID());
+            p.setAssessoria(Assessoria.builder().id(tenantId).build());
+            p.setStatus(br.com.menthoros.backend.enums.PlanoStatus.EM_ANDAMENTO);
+            p.setTreinosPlanejados(new java.util.ArrayList<>());
+            return p;
+        }
+
+        private TreinoPlanejado planejado(br.com.menthoros.backend.enums.TreinoExecucaoStatus status) {
+            TreinoPlanejado t = new TreinoPlanejado();
+            t.setId(UUID.randomUUID());
+            t.setStatusTreino(status);
+            return t;
+        }
+    }
+
+    @Nested
     @DisplayName("marcarTreinoPerdido")
     class MarcarTreinoPerdido {
 

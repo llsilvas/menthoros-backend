@@ -12,6 +12,8 @@ import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -36,6 +38,7 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -172,6 +175,35 @@ class AtletaTreinoServiceImplTest {
 
             assertThat(planejado.getStatusTreino()).isEqualTo(TreinoExecucaoStatus.REALIZADO);
             verify(treinoPlanejadoRepository).save(planejado);
+        }
+
+        @Test
+        @DisplayName("ao reverter PERDIDO->REALIZADO, vincula ao realizado e recalcula o status do plano")
+        void recalculaPlanoAoReverterPerdido() {
+            var input = novoInput(LocalDate.now());
+            var treinoSalvo = stubTreinoRealizado();
+            var planejado = stubTreinoPlanejado(TreinoExecucaoStatus.PERDIDO);
+            PlanoSemanal semanal = new PlanoSemanal();
+            semanal.setId(UUID.randomUUID());
+            semanal.setStatus(PlanoStatus.CONCLUIDO);
+            semanal.setTreinosPlanejados(new ArrayList<>(List.of(planejado)));
+            planejado.setPlanoSemanal(semanal);
+            var outputDto = stubOutputDto();
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(treinoPlanejadoRepository.findFirstForManualMatch(
+                    eq(atletaId), eq(tenantId), eq(input.data()), eq(input.tipo()), any()))
+                    .thenReturn(Optional.of(planejado));
+            when(treinoPlanejadoRepository.save(planejado)).thenReturn(planejado);
+            when(treinoRealizadoRepository.sumDistanciaByPlanoSemanalId(semanal.getId())).thenReturn(0.0);
+            when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(outputDto);
+
+            service.registrarTreinoManualAtleta(atletaId, input);
+
+            assertThat(planejado.getStatusTreino()).isEqualTo(TreinoExecucaoStatus.REALIZADO);
+            assertThat(planejado.getTreinoRealizado()).isEqualTo(treinoSalvo);
+            verify(planoSemanalRepository).save(semanal);
         }
 
         @Test

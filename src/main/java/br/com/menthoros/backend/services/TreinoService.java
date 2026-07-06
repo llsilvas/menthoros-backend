@@ -6,6 +6,8 @@ import br.com.menthoros.backend.dto.input.TreinoRealizadoInputDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.dto.output.ResumoSemanalTreinoDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
+import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import jakarta.validation.Valid;
 
@@ -30,6 +32,22 @@ public interface TreinoService {
     TreinoRealizadoOutputDto lancarTreino(UUID atletaId, @Valid TreinoRealizadoInputDto treinoRealizadoInputDto);
 
     void marcarTreinoPerdido(UUID treinoPlanejadoId);
+
+    /**
+     * Marca em lote como PERDIDO os treinos planejados informados e recalcula o status do plano UMA vez
+     * ao final — evitando o N+1 de chamar {@link #marcarTreinoPerdido(UUID)} por treino.
+     *
+     * <p>Defensivo: só marca os que ainda estão PENDENTE (treinos em outro status são ignorados
+     * silenciosamente, nunca sobrescritos) e valida que o {@code plano} pertence ao tenant corrente.
+     *
+     * <p><b>Idempotent:</b> YES (lista vazia / sem PENDENTE é no-op). <b>Side Effects:</b> Database update
+     * (treinos + status do plano). <b>Tenant-aware:</b> YES (valida o tenant do plano).
+     *
+     * @param plano   plano dono dos treinos (recalculado ao final)
+     * @param treinos treinos a marcar como PERDIDO (apenas os PENDENTE são afetados)
+     * @throws org.springframework.security.access.AccessDeniedException se o plano não é do tenant corrente
+     */
+    void marcarTreinosPerdidos(PlanoSemanal plano, List<TreinoPlanejado> treinos);
 
     ResumoSemanalTreinoDto getResumoSemanal(UUID atletaId, LocalDate targetDate);
 

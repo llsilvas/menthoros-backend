@@ -18,6 +18,7 @@ import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.repository.*;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import org.springframework.security.access.AccessDeniedException;
 import br.com.menthoros.backend.services.TreinoService;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
@@ -391,6 +392,36 @@ public class TreinoServiceImpl implements TreinoService {
         }
     }
 
+    @Override
+    @Transactional
+    public void marcarTreinosPerdidos(PlanoSemanal plano, List<TreinoPlanejado> treinos) {
+        if (treinos == null || treinos.isEmpty()) {
+            return;
+        }
+        // Guarda de tenant: o plano precisa pertencer ao tenant corrente (defense-in-depth).
+        if (plano != null && plano.getAssessoria() != null) {
+            UUID tenantId = TenantContext.getRequiredTenantId();
+            if (!tenantId.equals(plano.getAssessoria().getId())) {
+                throw new AccessDeniedException("Plano não pertence ao tenant corrente");
+            }
+        }
+        // Só marca o que ainda está PENDENTE — nunca sobrescreve REALIZADO/PARCIAL (corrida/uso indevido).
+        List<TreinoPlanejado> pendentes = treinos.stream()
+                .filter(treino -> treino.getStatusTreino() == TreinoExecucaoStatus.PENDENTE)
+                .toList();
+        if (pendentes.isEmpty()) {
+            return;
+        }
+        pendentes.forEach(treino -> treino.setStatusTreino(TreinoExecucaoStatus.PERDIDO));
+        treinoPlanejadoRepository.saveAll(pendentes);
+        if (plano != null) {
+            Hibernate.initialize(plano.getTreinosPlanejados());
+            atualizarStatusDoPlano(plano);
+        }
+        log.info("{} treino(s) marcado(s) como PERDIDO no plano {}", pendentes.size(),
+                plano != null ? plano.getId() : null);
+    }
+
     @Transactional
     public void gravarTreino(List<PlanoSemanal> planoSemanalList) {
         planoSemanalRepository.saveAll(planoSemanalList);
@@ -530,6 +561,8 @@ public class TreinoServiceImpl implements TreinoService {
             planejado.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
             planejado.setTreinoRealizado(treinoSalvo);
             treinoPlanejadoRepository.save(planejado);
+            // Reverter PERDIDO -> REALIZADO (registro retroativo) exige recalcular o plano.
+            atualizarPlanoSemanalSeAplicavel(planejado.getPlanoSemanal());
             log.info("TreinoPlanejado {} vinculado ao treino manual {}", planejado.getId(), treinoSalvo.getId());
         });
 

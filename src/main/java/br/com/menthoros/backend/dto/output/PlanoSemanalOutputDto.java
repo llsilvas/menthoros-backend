@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import br.com.menthoros.backend.enums.OrigemEncerramento;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -51,6 +52,9 @@ public record PlanoSemanalOutputDto(
 
         @Schema(description = "Status de revisão do plano pelo coach", example = "AGUARDANDO_REVISAO")
         PlanoReviewStatus reviewStatus,
+
+        @Schema(description = "Origem do encerramento da semana (ON_DEMAND pelo treinador, AUTOMATICO pelo scheduler); null se ainda não encerrada", example = "ON_DEMAND")
+        OrigemEncerramento origemEncerramento,
 
         @Schema(description = "Motivo informado pelo coach ao rejeitar o plano")
         String reviewComment,
