@@ -1,9 +1,13 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.entity.Assessoria;
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.enums.OrigemEncerramento;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
+import br.com.menthoros.backend.events.SemanaEncerradaEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
@@ -19,6 +23,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -48,6 +53,8 @@ class EncerramentoSemanaServiceImplTest {
     private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock
     private TreinoService treinoService;
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     private UUID tenantId;
 
@@ -196,6 +203,63 @@ class EncerramentoSemanaServiceImplTest {
 
             verify(treinoService, never()).marcarTreinoPerdido(any());
         }
+
+        @Test
+        @DisplayName("fecha o plano (CONCLUIDO) quando a semana terminou")
+        void planoFechaQuandoSemanaTerminou() {
+            LocalDate domingo = LocalDate.of(2026, 7, 5);
+            UUID planoId = UUID.randomUUID();
+            PlanoSemanal plano = plano(planoId, domingo, PlanoStatus.EM_ANDAMENTO);
+            TreinoPlanejado pendente = treino(LocalDate.of(2026, 7, 4), TreinoExecucaoStatus.PENDENTE);
+            stubPlano(planoId, plano);
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(planoId), any()))
+                    .thenReturn(List.of(pendente));
+
+            EncerramentoSemanaResultado resultado = servico(domingo).encerrarSemana(planoId);
+
+            assertThat(resultado.novoStatus()).isEqualTo(PlanoStatus.CONCLUIDO);
+            assertThat(resultado.prontoParaProximaSemana()).isTrue();
+            assertThat(resultado.aviso()).isNull();
+        }
+
+        @Test
+        @DisplayName("plano passado sem treinos elegíveis é fechado (não reprocessa)")
+        void planoVazioPassadoFecha() {
+            LocalDate hoje = LocalDate.of(2026, 7, 10);
+            UUID planoId = UUID.randomUUID();
+            PlanoSemanal plano = plano(planoId, LocalDate.of(2026, 7, 5), PlanoStatus.EM_ANDAMENTO);
+            stubPlano(planoId, plano);
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(planoId), any()))
+                    .thenReturn(List.of());
+
+            EncerramentoSemanaResultado resultado = servico(hoje).encerrarSemana(planoId);
+
+            assertThat(resultado.treinosFinalizados()).isZero();
+            assertThat(resultado.novoStatus()).isEqualTo(PlanoStatus.CONCLUIDO);
+        }
+
+        @Test
+        @DisplayName("publica SemanaEncerradaEvent com os campos obrigatórios e origem ON_DEMAND")
+        void publicaSemanaEncerradaEventComCampos() {
+            LocalDate domingo = LocalDate.of(2026, 7, 5);
+            UUID planoId = UUID.randomUUID();
+            PlanoSemanal plano = plano(planoId, domingo, PlanoStatus.EM_ANDAMENTO);
+            TreinoPlanejado pendente = treino(LocalDate.of(2026, 7, 4), TreinoExecucaoStatus.PENDENTE);
+            stubPlano(planoId, plano);
+            when(treinoPlanejadoRepository.findPendentesAteHojeDoPlano(eq(planoId), any()))
+                    .thenReturn(List.of(pendente));
+
+            servico(domingo).encerrarSemana(planoId);
+
+            ArgumentCaptor<SemanaEncerradaEvent> eventoCaptor = ArgumentCaptor.forClass(SemanaEncerradaEvent.class);
+            verify(eventPublisher).publishEvent(eventoCaptor.capture());
+            SemanaEncerradaEvent evento = eventoCaptor.getValue();
+            assertThat(evento.planoId()).isEqualTo(planoId);
+            assertThat(evento.atletaId()).isEqualTo(plano.getAtleta().getId());
+            assertThat(evento.tenantId()).isEqualTo(tenantId);
+            assertThat(evento.treinosPerdidos()).isEqualTo(1);
+            assertThat(evento.origem()).isEqualTo(OrigemEncerramento.ON_DEMAND);
+        }
     }
 
     // ---- helpers ----
@@ -206,7 +270,7 @@ class EncerramentoSemanaServiceImplTest {
 
     private EncerramentoSemanaServiceImpl servicoComClock(Clock clock) {
         return new EncerramentoSemanaServiceImpl(
-                planoSemanalRepository, treinoPlanejadoRepository, treinoService, clock);
+                planoSemanalRepository, treinoPlanejadoRepository, treinoService, eventPublisher, clock);
     }
 
     private void stubPlano(UUID planoId, PlanoSemanal plano) {
@@ -214,8 +278,12 @@ class EncerramentoSemanaServiceImplTest {
     }
 
     private PlanoSemanal plano(UUID id, LocalDate semanaFim, PlanoStatus status) {
+        Assessoria assessoria = Assessoria.builder().id(tenantId).build();
+        Atleta atleta = Atleta.builder().id(UUID.randomUUID()).build();
         return PlanoSemanal.builder()
                 .id(id)
+                .atleta(atleta)
+                .assessoria(assessoria)
                 .semanaInicio(semanaFim.minusDays(6))
                 .semanaFim(semanaFim)
                 .status(status)

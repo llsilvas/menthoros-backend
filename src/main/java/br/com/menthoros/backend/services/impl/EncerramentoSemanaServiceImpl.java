@@ -2,8 +2,10 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.enums.OrigemEncerramento;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
+import br.com.menthoros.backend.events.SemanaEncerradaEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
@@ -13,6 +15,7 @@ import br.com.menthoros.backend.services.EncerramentoSemanaService;
 import br.com.menthoros.backend.services.TreinoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,6 +36,7 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
     private final PlanoSemanalRepository planoSemanalRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final TreinoService treinoService;
+    private final ApplicationEventPublisher eventPublisher;
     private final Clock clock;
 
     @Override
@@ -41,19 +45,40 @@ public class EncerramentoSemanaServiceImpl implements EncerramentoSemanaService 
         UUID tenantId = TenantContext.getRequiredTenantId();
         PlanoSemanal plano = planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Plano semanal não encontrado"));
+        return encerrarPlano(plano, hoje(), OrigemEncerramento.ON_DEMAND);
+    }
 
-        LocalDate hoje = hoje();
+    /**
+     * Encerra um plano já carregado (e validado quanto ao tenant): finaliza os pendentes elegíveis,
+     * fecha o plano quando a semana terminou ({@code hoje >= semanaFim}) — evitando reprocesso
+     * perpétuo de plano vazio/sem elegíveis — e publica o {@link SemanaEncerradaEvent}. Reusado pelo
+     * fluxo on-demand e pelo fallback automático (que informa {@code origem}).
+     *
+     * <p><b>Idempotent:</b> YES. <b>Side Effects:</b> Database update + evento. <b>Tenant-aware:</b>
+     * YES (o chamador garante o tenant do plano).
+     */
+    EncerramentoSemanaResultado encerrarPlano(PlanoSemanal plano, LocalDate hoje, OrigemEncerramento origem) {
         List<UUID> perdidos = finalizarPendentes(plano, hoje);
+
+        boolean semanaTerminou = !hoje.isBefore(plano.getSemanaFim()); // hoje >= semanaFim
+        if (semanaTerminou && plano.getStatus() != PlanoStatus.CONCLUIDO) {
+            plano.setStatus(PlanoStatus.CONCLUIDO);
+            planoSemanalRepository.save(plano);
+        }
 
         boolean pronto = plano.getStatus() == PlanoStatus.CONCLUIDO;
         String aviso = (!pronto && hoje.isBefore(plano.getSemanaFim()))
                 ? "Semana ainda não terminou; os treinos futuros permanecem pendentes."
                 : null;
 
-        log.info("Semana encerrada: plano={}, tenant={}, treinosPerdidos={}, status={}",
-                planoId, tenantId, perdidos.size(), plano.getStatus());
+        eventPublisher.publishEvent(new SemanaEncerradaEvent(
+                plano.getId(), plano.getAtleta().getId(), plano.getAssessoria().getId(),
+                perdidos.size(), origem));
+
+        log.info("Semana encerrada: plano={}, tenant={}, origem={}, treinosPerdidos={}, status={}",
+                plano.getId(), plano.getAssessoria().getId(), origem, perdidos.size(), plano.getStatus());
         return new EncerramentoSemanaResultado(
-                planoId, plano.getStatus(), perdidos.size(), perdidos, pronto, aviso);
+                plano.getId(), plano.getStatus(), perdidos.size(), perdidos, pronto, aviso);
     }
 
     /**
