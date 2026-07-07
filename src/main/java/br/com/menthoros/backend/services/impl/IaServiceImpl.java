@@ -19,6 +19,7 @@ import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.services.IaService;
+import br.com.menthoros.backend.services.helper.LlmUsageLogger;
 import br.com.menthoros.backend.services.helper.PaceValidator;
 import br.com.menthoros.backend.services.helper.RegraGeracaoTreino;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
@@ -70,6 +71,7 @@ public class IaServiceImpl implements IaService {
     private final PlanoEstruturaReparador estruturaReparador;
     private final PlanoResilienceService planoResilienceService;
     private final MeterRegistry meterRegistry;
+    private final LlmUsageLogger llmUsageLogger;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
@@ -80,7 +82,8 @@ public class IaServiceImpl implements IaService {
                          PlanQualityChecker planQualityChecker,
                          PlanoEstruturaReparador estruturaReparador,
                          PlanoResilienceService planoResilienceService,
-                         MeterRegistry meterRegistry) {
+                         MeterRegistry meterRegistry,
+                         LlmUsageLogger llmUsageLogger) {
         this.modelRouter = modelRouter;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
@@ -93,6 +96,7 @@ public class IaServiceImpl implements IaService {
         this.estruturaReparador = estruturaReparador;
         this.planoResilienceService = planoResilienceService;
         this.meterRegistry = meterRegistry;
+        this.llmUsageLogger = llmUsageLogger;
     }
 
     private OpenAiChatOptions defaultJsonSchemaOptions() {
@@ -291,6 +295,15 @@ public class IaServiceImpl implements IaService {
         }
     }
 
+    /**
+     * Gera o plano semanal avançado via LLM (roteado por {@code TaskComplexity.PLANO} → GPT-4o).
+     *
+     * Idempotent: NO — invoca o LLM (saída não-determinística); sem escrita de estado por tentativa.
+     * Side Effects: chamada ao LLM (billable); leitura de atleta/histórico/metadados; log de uso de
+     *   tokens via {@code LlmUsageLogger} (best-effort); métricas Micrometer via {@code PlanoResilienceService}.
+     * Tenant-aware: YES — o atleta é resolvido com predicado de tenant e {@code validarENormalizarPlanoGerado}
+     *   opera sob o {@code TenantContext} corrente.
+     */
     public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracaoPlano){
         LocalDate inicioSemana;
 
@@ -318,7 +331,12 @@ public class IaServiceImpl implements IaService {
             // Geração resiliente: reparo já aplicado no validar; aqui, retry único com feedback se a
             // validação ainda falhar estruturalmente. Falha final → DomainRuleViolationException (4xx).
             plano = planoResilienceService.gerarComResiliencia(
-                    p -> chatClient.prompt().user(p).options(defaultJsonSchemaOptions()).call().entity(PlanoSemanalLlmDto.class),
+                    p -> {
+                        var resposta = chatClient.prompt().user(p).options(defaultJsonSchemaOptions())
+                                .call().responseEntity(PlanoSemanalLlmDto.class);
+                        llmUsageLogger.registrar(resposta.getResponse()); // best-effort, nunca lança
+                        return resposta.getEntity();
+                    },
                     p -> validarENormalizarPlanoGerado(p, atleta.getId()),
                     prompt);
         } catch (DomainRuleViolationException e) {
