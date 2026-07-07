@@ -25,6 +25,17 @@ public interface TreinoService {
 
     void deleteTreino(UUID id);
 
+    /**
+     * Busca um treino realizado por id, no escopo do tenant corrente, para o detalhe do coach.
+     *
+     * Idempotent: YES — leitura, sem mutação.
+     * Side Effects: NONE
+     * Tenant-aware: YES — via TenantContext.getRequiredTenantId() + findByIdAndTenantId.
+     *
+     * @param id id do treino realizado
+     * @return o DTO do treino realizado (inclui métricas derivadas como o decoupling)
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException se não existir no tenant
+     */
     TreinoRealizadoOutputDto getTreinoById(UUID id);
 
     void gravarTreino(UUID atletaId, TreinoPlanejadoLlmDto planoSemanalOutputDto);

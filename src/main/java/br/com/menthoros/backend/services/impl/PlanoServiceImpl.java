@@ -8,10 +8,7 @@ import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.*;
-import br.com.menthoros.backend.enums.DiaSemana;
-import br.com.menthoros.backend.enums.ModoGeracaoPlano;
-import br.com.menthoros.backend.enums.PlanoReviewStatus;
-import br.com.menthoros.backend.enums.PlanoStatus;
+import br.com.menthoros.backend.enums.*;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.PlanoJaExistenteException;
@@ -577,6 +574,7 @@ public class PlanoServiceImpl implements PlanoService {
                 ? Collections.emptyList()
                 : atleta.getProvas().stream()
                         .filter(p -> p.getDataProva() != null && !p.getDataProva().isBefore(hoje))
+                  .filter(prova -> prova.getStatusProva() != ProvaStatus.CANCELADA)
                         .sorted(Comparator.comparing(Prova::getDataProva))
                         .toList();
 

@@ -302,9 +302,17 @@ public class TreinoServiceImpl implements TreinoService {
 
     }
 
+    /** {@inheritDoc} */
     @Override
+    @Transactional(readOnly = true)
     public TreinoRealizadoOutputDto getTreinoById(UUID id) {
-        return null;
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        log.debug("Buscando treino realizado: id={}, tenantId={}", id, tenantId);
+        TreinoRealizado treino = treinoRealizadoRepository
+                .findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Treino realizado não encontrado: " + id));
+        log.debug("Treino realizado encontrado: id={}", id);
+        return treinoMapper.toOutputDto(treino);
     }
 
     @Override

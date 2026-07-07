@@ -59,6 +59,7 @@ public class TreinoRealizadoController {
                     content = @Content(mediaType = "application/json"))
     })
     @PostMapping("{treinoPlanejadoId}/marcar-realizado")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<TreinoRealizadoOutputDto> criarTreino(
             @Parameter(description = "ID do treino planejado que foi realizado")
             @PathVariable("treinoPlanejadoId") UUID treinoPlanejadoId,
@@ -77,6 +78,7 @@ public class TreinoRealizadoController {
                     content = @Content(mediaType = "application/json"))
     })
     @PatchMapping("{treinoPlanejadoId}/marcar-perdido")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> marcarPerdido(
             @Parameter(description = "ID do treino planejado")
             @PathVariable("treinoPlanejadoId") UUID treinoPlanejadoId) {
@@ -151,6 +153,28 @@ public class TreinoRealizadoController {
             @PathVariable UUID id) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         return ok(stravaActivityService.enriquecerTreinoComStrava(id, tenantId));
+    }
+
+    @Operation(summary = "Obter detalhe de um treino realizado",
+               description = "Retorna o detalhe completo de um treino realizado (incluindo métricas derivadas "
+                           + "como o decoupling aeróbico), para o treinador revisar a execução do atleta.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Treino realizado encontrado",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = TreinoRealizadoOutputDto.class))),
+            @ApiResponse(responseCode = "403", description = "Não autenticado ou sem permissão",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "404", description = "Treino não encontrado ou não pertence ao tenant",
+                    content = @Content(mediaType = "application/json"))
+    })
+    // Isolamento de tenant garantido pelo service (findByIdAndTenantId → 404). Não usa @RequireTenant:
+    // o aspecto rodaria antes do service e converteria "não encontrado" em 403, divergindo do contrato 404.
+    // Visibilidade tenant-wide para técnicos (sem vínculo coach↔atleta) segue o modelo dos demais endpoints.
+    @GetMapping("/realizados/{id}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    public ResponseEntity<TreinoRealizadoOutputDto> obterRealizado(
+            @Parameter(description = "ID do treino realizado")
+            @PathVariable UUID id) {
+        return ok(treinoService.getTreinoById(id));
     }
 
     @Operation(summary = "Obter resumo semanal de treinos",

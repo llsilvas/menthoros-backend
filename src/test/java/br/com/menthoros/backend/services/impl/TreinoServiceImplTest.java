@@ -463,6 +463,50 @@ class TreinoServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("getTreinoById")
+    class GetTreinoById {
+
+        @Test
+        @DisplayName("retorna o DTO do treino realizado no escopo do tenant")
+        void retornaDtoQuandoEncontrado() {
+            UUID id = UUID.randomUUID();
+            TreinoRealizado treino = new TreinoRealizado();
+            treino.setId(id);
+            treino.setTenantId(tenantId);
+            TreinoRealizadoOutputDto stub = outputStub(id);
+
+            when(treinoRealizadoRepository.findByIdAndTenantId(id, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoMapper.toOutputDto(treino)).thenReturn(stub);
+
+            assertSame(stub, treinoService.getTreinoById(id));
+        }
+
+        @Test
+        @DisplayName("lança DomainNotFoundException quando não existe no tenant")
+        void lancaQuandoNaoEncontrado() {
+            UUID id = UUID.randomUUID();
+            when(treinoRealizadoRepository.findByIdAndTenantId(id, tenantId))
+                    .thenReturn(Optional.empty());
+
+            assertThrows(DomainNotFoundException.class, () -> treinoService.getTreinoById(id));
+            verify(treinoMapper, never()).toOutputDto(any(TreinoRealizado.class));
+        }
+
+        @Test
+        @DisplayName("id de outro tenant resolve para not-found (isolamento)")
+        void isolaCrossTenant() {
+            UUID idDeOutroTenant = UUID.randomUUID();
+            // O treino existe, mas noutro tenant → a query tenant-scoped não o retorna ao tenant corrente.
+            when(treinoRealizadoRepository.findByIdAndTenantId(idDeOutroTenant, tenantId))
+                    .thenReturn(Optional.empty());
+
+            assertThrows(DomainNotFoundException.class, () -> treinoService.getTreinoById(idDeOutroTenant));
+            verify(treinoMapper, never()).toOutputDto(any(TreinoRealizado.class));
+        }
+    }
+
     // =========================================================================
     // Helpers
     // =========================================================================
