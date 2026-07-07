@@ -59,6 +59,7 @@ public class TreinoRealizadoController {
                     content = @Content(mediaType = "application/json"))
     })
     @PostMapping("{treinoPlanejadoId}/marcar-realizado")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<TreinoRealizadoOutputDto> criarTreino(
             @Parameter(description = "ID do treino planejado que foi realizado")
             @PathVariable("treinoPlanejadoId") UUID treinoPlanejadoId,
@@ -77,6 +78,7 @@ public class TreinoRealizadoController {
                     content = @Content(mediaType = "application/json"))
     })
     @PatchMapping("{treinoPlanejadoId}/marcar-perdido")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<Void> marcarPerdido(
             @Parameter(description = "ID do treino planejado")
             @PathVariable("treinoPlanejadoId") UUID treinoPlanejadoId) {
@@ -164,9 +166,11 @@ public class TreinoRealizadoController {
             @ApiResponse(responseCode = "404", description = "Treino não encontrado ou não pertence ao tenant",
                     content = @Content(mediaType = "application/json"))
     })
+    // Isolamento de tenant garantido pelo service (findByIdAndTenantId → 404). Não usa @RequireTenant:
+    // o aspecto rodaria antes do service e converteria "não encontrado" em 403, divergindo do contrato 404.
+    // Visibilidade tenant-wide para técnicos (sem vínculo coach↔atleta) segue o modelo dos demais endpoints.
     @GetMapping("/realizados/{id}")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
-    @RequireTenant
     public ResponseEntity<TreinoRealizadoOutputDto> obterRealizado(
             @Parameter(description = "ID do treino realizado")
             @PathVariable UUID id) {

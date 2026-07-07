@@ -493,6 +493,18 @@ class TreinoServiceImplTest {
             assertThrows(DomainNotFoundException.class, () -> treinoService.getTreinoById(id));
             verify(treinoMapper, never()).toOutputDto(any(TreinoRealizado.class));
         }
+
+        @Test
+        @DisplayName("id de outro tenant resolve para not-found (isolamento)")
+        void isolaCrossTenant() {
+            UUID idDeOutroTenant = UUID.randomUUID();
+            // O treino existe, mas noutro tenant → a query tenant-scoped não o retorna ao tenant corrente.
+            when(treinoRealizadoRepository.findByIdAndTenantId(idDeOutroTenant, tenantId))
+                    .thenReturn(Optional.empty());
+
+            assertThrows(DomainNotFoundException.class, () -> treinoService.getTreinoById(idDeOutroTenant));
+            verify(treinoMapper, never()).toOutputDto(any(TreinoRealizado.class));
+        }
     }
 
     // =========================================================================
