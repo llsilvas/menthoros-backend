@@ -83,6 +83,11 @@ public record TreinoRealizadoOutputDto(
         @Schema(description = "Intensidade real (IF)", example = "0.85")
         Double intensidadeReal,
 
+        @Schema(description = "Decoupling aeróbico Pa:HR (% de queda de eficiência da 1ª p/ 2ª metade); "
+                        + "null quando não aplicável (esforço não contínuo ou dados insuficientes)",
+                example = "4.2")
+        Double decouplingPercentual,
+
         // ===== FEEDBACK DO ATLETA =====
 
         @Schema(description = "Comentário sobre o treino", example = "Treino intenso, últimos 2km foram difíceis")

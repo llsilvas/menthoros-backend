@@ -1,8 +1,10 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.entity.EtapaRealizada;
+import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.TipoTreino;
 import lombok.extern.slf4j.Slf4j;
+import org.mapstruct.Named;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -63,6 +65,19 @@ public class DecouplingCalculatorService {
         double eficiencia() {
             return (somaVelPonderada / somaPeso) / (somaFcPonderada / somaPeso);
         }
+    }
+
+    /**
+     * Adaptador para o MapStruct: extrai etapas e tipo do {@link TreinoRealizado} e delega ao cálculo puro.
+     *
+     * <p>Idempotent: YES — cálculo puro, sem estado. Side Effects: NONE. Tenant-aware: NO.
+     */
+    @Named("decouplingDeTreino")
+    public Double calcular(TreinoRealizado treino) {
+        if (treino == null) {
+            return null;
+        }
+        return calcular(treino.getEtapasRealizadas(), treino.getTipoTreino());
     }
 
     public Double calcular(List<EtapaRealizada> etapas, TipoTreino tipoTreino) {
