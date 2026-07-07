@@ -4,6 +4,8 @@ import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.services.helper.DecouplingCalculatorService;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -21,7 +23,12 @@ class TreinoMapperDecouplingTest {
 
     private final TreinoMapper mapper = new TreinoMapperImpl(new DecouplingCalculatorService());
 
+    @Nested
+    @DisplayName("toOutputDto")
+    class ToOutputDto {
+
     @Test
+    @DisplayName("contínuo steady → decouplingPercentual preenchido")
     void devePreencherDecouplingParaContinuoSteady() {
         TreinoRealizado treino = treino(TipoTreino.CONTINUO, etapasSteady());
 
@@ -29,10 +36,12 @@ class TreinoMapperDecouplingTest {
     }
 
     @Test
+    @DisplayName("intervalado → decouplingPercentual nulo (omitido no JSON via NON_NULL)")
     void deveDeixarDecouplingNuloParaIntervalado() {
         TreinoRealizado treino = treino(TipoTreino.INTERVALADO, etapasSteady());
 
         assertThat(mapper.toOutputDto(treino).decouplingPercentual()).isNull();
+    }
     }
 
     private static TreinoRealizado treino(TipoTreino tipo, List<EtapaRealizada> etapas) {

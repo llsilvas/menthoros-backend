@@ -11,6 +11,8 @@ import java.time.Duration;
 import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -22,8 +24,8 @@ import java.util.Set;
  * <p><b>Gate de aplicabilidade (na dúvida, {@code null}):</b> falso-negativo (esconder
  * num treino talvez elegível) é aceitável; falso-positivo (número sobre intervalado) não.
  * O CV entre segmentos é a defesa primária, robusta e independente da classificação; o
- * belt-and-suspenders por {@link TipoTreino} é rede de segurança para um contínuo
- * mal-segmentado.
+ * belt-and-suspenders por {@link TipoTreino} é rede de segurança para um esforço
+ * não-steady mal-segmentado.
  *
  * <p>Thresholds são heurística v1 (constantes nomeadas), calibráveis sem mudar contrato.
  *
@@ -35,11 +37,18 @@ public class DecouplingCalculatorService {
 
     private static final double CV_FC_MAX = 0.10;
     private static final double CV_VEL_MAX = 0.15;
-    private static final Duration DURACAO_MIN_SEG = Duration.ofMinutes(20);
-    private static final Duration MIN_SEG_DURACAO = Duration.ofSeconds(60);
+    /** Duração mínima do esforço elegível como um todo. */
+    private static final Duration DURACAO_ESFORCO_MINIMA = Duration.ofMinutes(20);
+    /** Duração mínima de um segmento individual para entrar no cálculo do CV. */
+    private static final Duration DURACAO_SEGMENTO_MINIMA = Duration.ofSeconds(60);
 
+    /**
+     * Tipos que nunca calculam decoupling (esforço não-steady por definição), mesmo com CV baixo.
+     * {@code PROVA} e {@code TEMPO_RUN} ficam de fora deliberadamente: são esforços em ritmo
+     * sustentado onde o decoupling é justamente útil. Lista revisável pós-release (heurística v1).
+     */
     private static final Set<TipoTreino> TIPOS_NAO_CONTINUOS =
-            EnumSet.of(TipoTreino.INTERVALADO, TipoTreino.FARTLEK, TipoTreino.TIRO);
+            EnumSet.of(TipoTreino.INTERVALADO, TipoTreino.FARTLEK, TipoTreino.TIRO, TipoTreino.SUBIDA);
     private static final Set<String> ETAPAS_DESCARTADAS = Set.of("AQUECIMENTO", "DESAQUECIMENTO", "VOLTA_CALMA");
 
     /** Segmento elegível com métricas já normalizadas (duração em segundos, velocidade em km/h). */
@@ -80,36 +89,46 @@ public class DecouplingCalculatorService {
         return calcular(treino.getEtapasRealizadas(), treino.getTipoTreino());
     }
 
+    /**
+     * Calcula o decoupling aeróbico dos segmentos, ou {@code null} quando não aplicável (gate).
+     *
+     * <p>Idempotent: YES — cálculo puro, sem estado. Side Effects: NONE. Tenant-aware: NO.
+     *
+     * @param etapas segmentos realizados (podem conter elementos inválidos/nulos — filtrados)
+     * @param tipoTreino tipo do treino, para o belt-and-suspenders (tolera {@code null})
+     * @return decoupling em % (1 casa; positivo = piora, negativo = melhora) ou {@code null}
+     */
     public Double calcular(List<EtapaRealizada> etapas, TipoTreino tipoTreino) {
         if (etapas == null || etapas.isEmpty()) {
             return null;
         }
 
-        // Belt-and-suspenders: intervalado/fartlek/tiro nunca calcula (o guarda null é defensivo).
+        // Gate: tipo não-contínuo (belt-and-suspenders) — o guarda null é defensivo.
         if (tipoTreino != null && TIPOS_NAO_CONTINUOS.contains(tipoTreino)) {
             return null;
         }
 
-        // Predicado 1 — elegibilidade (descarta aquecimento/desaquecimento rotulados e segmentos sem métrica).
+        // Gate: elegibilidade — descarta nulos, aquecimento/desaquecimento rotulados e segmentos sem métrica.
         List<Segmento> elegiveis = etapas.stream()
+                .filter(Objects::nonNull)
                 .filter(DecouplingCalculatorService::naoEhAquecimentoOuDesaquecimento)
                 .map(DecouplingCalculatorService::normalizar)
-                .filter(s -> s != null)
+                .filter(Objects::nonNull)
                 .sorted(Comparator.comparingInt(Segmento::ordem))
                 .toList();
         if (elegiveis.size() < 2) {
             return null;
         }
 
-        // Predicado 2 — duração sustentada.
+        // Gate: duração sustentada.
         double duracaoTotal = elegiveis.stream().mapToDouble(Segmento::duracaoSeg).sum();
-        if (duracaoTotal < DURACAO_MIN_SEG.toSeconds()) {
+        if (duracaoTotal < DURACAO_ESFORCO_MINIMA.toSeconds()) {
             return null;
         }
 
-        // Predicado 4 — steady por variabilidade (CV apenas sobre segmentos >= 60s).
+        // Gate: steady por variabilidade (CV apenas sobre segmentos >= 60s).
         List<Segmento> paraCv = elegiveis.stream()
-                .filter(s -> s.duracaoSeg() >= MIN_SEG_DURACAO.toSeconds())
+                .filter(s -> s.duracaoSeg() >= DURACAO_SEGMENTO_MINIMA.toSeconds())
                 .toList();
         if (paraCv.size() < 2) {
             return null;
@@ -139,14 +158,14 @@ public class DecouplingCalculatorService {
             acumulado = fim;
         }
 
-        // Predicado 3 — ambas as metades válidas.
+        // Gate: ambas as metades válidas.
         if (primeira.vazia() || segunda.vazia()) {
             return null;
         }
 
         double ef1 = primeira.eficiencia();
         double ef2 = segunda.eficiencia();
-        // Predicado 6 — sanidade.
+        // Gate: sanidade (EF positivo e finito).
         if (ef1 <= 0 || ef2 <= 0 || !Double.isFinite(ef1) || !Double.isFinite(ef2)) {
             return null;
         }
@@ -157,7 +176,7 @@ public class DecouplingCalculatorService {
 
     private static boolean naoEhAquecimentoOuDesaquecimento(EtapaRealizada etapa) {
         String tipo = etapa.getTipoEtapa();
-        return tipo == null || !ETAPAS_DESCARTADAS.contains(tipo.trim().toUpperCase());
+        return tipo == null || !ETAPAS_DESCARTADAS.contains(tipo.trim().toUpperCase(Locale.ROOT));
     }
 
     /** Converte a etapa em {@link Segmento} normalizado, ou {@code null} se não tiver métrica utilizável. */
