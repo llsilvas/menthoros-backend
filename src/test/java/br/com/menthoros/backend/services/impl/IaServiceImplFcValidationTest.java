@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.exception.LLMException;
+import br.com.menthoros.backend.services.helper.LlmUsageLogger;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,7 +53,7 @@ class IaServiceImplFcValidationTest {
                 mock(br.com.menthoros.backend.services.helper.PlanoEstruturaReparador.class),
                 mock(br.com.menthoros.backend.services.helper.PlanoResilienceService.class),
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
-                new br.com.menthoros.backend.services.helper.LlmUsageLogger()
+                new LlmUsageLogger()
         );
 
         zonasFC160 = List.of(

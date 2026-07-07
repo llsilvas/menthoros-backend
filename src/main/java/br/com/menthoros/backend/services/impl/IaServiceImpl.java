@@ -295,6 +295,15 @@ public class IaServiceImpl implements IaService {
         }
     }
 
+    /**
+     * Gera o plano semanal avançado via LLM (roteado por {@code TaskComplexity.PLANO} → GPT-4o).
+     *
+     * Idempotent: NO — invoca o LLM (saída não-determinística); sem escrita de estado por tentativa.
+     * Side Effects: chamada ao LLM (billable); leitura de atleta/histórico/metadados; log de uso de
+     *   tokens via {@code LlmUsageLogger} (best-effort); métricas Micrometer via {@code PlanoResilienceService}.
+     * Tenant-aware: YES — o atleta é resolvido com predicado de tenant e {@code validarENormalizarPlanoGerado}
+     *   opera sob o {@code TenantContext} corrente.
+     */
     public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracaoPlano){
         LocalDate inicioSemana;
 

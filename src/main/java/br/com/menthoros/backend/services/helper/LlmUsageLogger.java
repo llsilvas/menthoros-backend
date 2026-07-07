@@ -32,13 +32,13 @@ public class LlmUsageLogger {
             if (usage == null) {
                 return;
             }
-            int prompt = valor(usage.getPromptTokens());
-            int completion = valor(usage.getCompletionTokens());
-            int cached = valor(extrairCachedTokens(usage.getNativeUsage()));
-            double cacheHitRatio = prompt > 0 ? (double) cached / prompt : 0.0;
+            int prompt = orZero(usage.getPromptTokens());
+            int completion = orZero(usage.getCompletionTokens());
+            int cached = orZero(extrairCachedTokens(usage.getNativeUsage()));
+            String cacheHitRatio = prompt > 0 ? "%.2f".formatted((double) cached / prompt) : "0.00";
 
             log.info("[llm-usage] plano: promptTokens={} cachedTokens={} completionTokens={} cacheHitRatio={}",
-                    prompt, cached, completion, String.format("%.2f", cacheHitRatio));
+                    prompt, cached, completion, cacheHitRatio);
         } catch (Exception e) {
             log.warn("[llm-usage] falha ao registrar o uso de tokens (ignorado): {}", e.getMessage());
         }
@@ -58,7 +58,7 @@ public class LlmUsageLogger {
         return null;
     }
 
-    private static int valor(Integer i) {
+    private static int orZero(Integer i) {
         return i != null ? i : 0;
     }
 }
