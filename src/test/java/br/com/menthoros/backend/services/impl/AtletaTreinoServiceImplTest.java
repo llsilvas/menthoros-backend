@@ -374,7 +374,7 @@ class AtletaTreinoServiceImplTest {
                 UUID.randomUUID(), null, null, TipoTreino.CONTINUO,
                 null, null, "00:45:00", null, null, null,
                 null, null, null, null, null, null, null, null,
-                6, null, null, null, null, null, null,
+                6, null, null, null, null, null, null, null,
                 FonteDados.MANUAL, TreinoExecucaoStatus.REALIZADO, null, null, null);
     }
 }

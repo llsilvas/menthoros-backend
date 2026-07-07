@@ -517,7 +517,8 @@ class TreinoServiceImplTest {
         return new TreinoRealizadoOutputDto(
                 id, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null
+                null, null, null, null, null, null, null, null, null, null,
+                null
         );
     }
 }

@@ -12,6 +12,7 @@ import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.services.helper.DecouplingCalculatorService;
 import org.mapstruct.*;
 
 import java.math.BigDecimal;
@@ -22,7 +23,8 @@ import java.util.stream.Collectors;
 
 @Mapper(
         componentModel = "spring",
-        unmappedSourcePolicy = ReportingPolicy.IGNORE
+        unmappedSourcePolicy = ReportingPolicy.IGNORE,
+        uses = DecouplingCalculatorService.class
 )
 public interface TreinoMapper {
 
@@ -166,6 +168,7 @@ public interface TreinoMapper {
     @Mapping(target = "paceMedia", source = "paceMedia", qualifiedByName = "durationToString")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     @Mapping(target = "sugestaoReclassificacao", ignore = true)
+    @Mapping(target = "decouplingPercentual", source = ".", qualifiedByName = "decouplingDeTreino")
     TreinoRealizadoOutputDto toOutputDto(TreinoRealizado treinoRealizado);
 
     // ===== EtapaRealizada: Input -> Entity =====
