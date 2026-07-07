@@ -153,6 +153,26 @@ public class TreinoRealizadoController {
         return ok(stravaActivityService.enriquecerTreinoComStrava(id, tenantId));
     }
 
+    @Operation(summary = "Obter detalhe de um treino realizado",
+               description = "Retorna o detalhe completo de um treino realizado (incluindo métricas derivadas "
+                           + "como o decoupling aeróbico), para o treinador revisar a execução do atleta.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Treino realizado encontrado",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = TreinoRealizadoOutputDto.class))),
+            @ApiResponse(responseCode = "403", description = "Não autenticado ou sem permissão",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "404", description = "Treino não encontrado ou não pertence ao tenant",
+                    content = @Content(mediaType = "application/json"))
+    })
+    @GetMapping("/realizados/{id}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant
+    public ResponseEntity<TreinoRealizadoOutputDto> obterRealizado(
+            @Parameter(description = "ID do treino realizado")
+            @PathVariable UUID id) {
+        return ok(treinoService.getTreinoById(id));
+    }
+
     @Operation(summary = "Obter resumo semanal de treinos",
                description = "Retorna um resumo agregado dos treinos realizados em uma semana, incluindo volume total, TSS, duração e breakdown por dia")
     @ApiResponses(value = {

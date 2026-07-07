@@ -302,9 +302,21 @@ public class TreinoServiceImpl implements TreinoService {
 
     }
 
+    /**
+     * Busca um treino realizado por id, no escopo do tenant, para o detalhe do coach.
+     *
+     * Idempotent: YES — leitura, sem mutação.
+     * Side Effects: NONE
+     * Tenant-aware: YES — via TenantContext.getRequiredTenantId().
+     */
     @Override
+    @Transactional(readOnly = true)
     public TreinoRealizadoOutputDto getTreinoById(UUID id) {
-        return null;
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        TreinoRealizado treino = treinoRealizadoRepository
+                .findByIdAndTenantId(id, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Treino realizado não encontrado: " + id));
+        return treinoMapper.toOutputDto(treino);
     }
 
     @Override
