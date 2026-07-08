@@ -28,12 +28,6 @@ import org.springframework.context.annotation.Configuration;
  * Nenhum bean aqui tem @Primary — o bean primário está em ChatClientConfig.
  * Injeção: use @Qualifier("gpt4oMiniClient"), ("claudeHaikuClient"),
  *          ("claudeSonnetClient"), ("gpt4oClient") ou ("gpt4oPlanoClient").
- *
- * Preços vigentes (maio/2026, USD; ~R$5,70/USD):
- *   gpt-4o-mini:       $0,15/MTok input | $0,60/MTok output
- *   Claude Haiku 4.5:  $1,00/MTok input | $5,00/MTok output
- *   Claude Sonnet 4.6: $3,00/MTok input | $15,00/MTok output
- *   gpt-4o:            $2,50/MTok input | $10,00/MTok output
  */
 @Configuration
 public class MultiModelConfig {

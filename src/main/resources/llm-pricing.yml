@@ -1,0 +1,37 @@
+# =====================================================================
+# Fonte ÚNICA de preços LLM (RISK-02) — consumida por LlmPricingRegistry.
+#
+# NÃO duplicar estes valores em Javadoc, código ou docs; o guia de uso
+# (docs/llm-pricing-guide.md no workspace) apenas referencia este arquivo.
+#
+# Valores em USD por MTok (1 milhão de tokens).
+#   input-per-mtok        — tokens de entrada (sem cache)
+#   cached-input-per-mtok — cache read hit
+#   cache-write-per-mtok  — cache write (Anthropic; TTL 1h = 2x input)
+#   output-per-mtok       — tokens de saída
+#
+# Referências oficiais:
+#   Anthropic: https://platform.claude.com/docs/en/about-claude/pricing
+#   OpenAI:    https://developers.openai.com/api/docs/pricing
+# =====================================================================
+vigencia: 2026-05
+
+modelos:
+  gpt-4o-mini:
+    input-per-mtok: 0.15
+    cached-input-per-mtok: 0.075
+    output-per-mtok: 0.60
+  gpt-4o:
+    input-per-mtok: 2.50
+    cached-input-per-mtok: 1.25
+    output-per-mtok: 10.00
+  claude-haiku-4-5-20251001:
+    input-per-mtok: 1.00
+    cached-input-per-mtok: 0.10
+    cache-write-per-mtok: 2.00
+    output-per-mtok: 5.00
+  claude-sonnet-4-6:
+    input-per-mtok: 3.00
+    cached-input-per-mtok: 0.30
+    cache-write-per-mtok: 6.00
+    output-per-mtok: 15.00
