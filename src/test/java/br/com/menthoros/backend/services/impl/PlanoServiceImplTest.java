@@ -524,6 +524,50 @@ class PlanoServiceImplTest {
         verify(iaService, never()).geraPlanoSemanalAvancado(any(), any(), any(), eq(modoGeracao), any());
     }
 
+    @Test
+    @DisplayName("falha no ProgressaoTreinoService não impede geração do plano")
+    void falhaNoProgressaoServiceNaoImpedeGeracao() {
+        // Given
+        UUID atletaId = UUID.randomUUID();
+        ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+
+        Atleta atleta = criarAtletaMock(atletaId);
+        PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
+        PlanoSemanalLlmDto planoDto = criarPlanoSemanalLlmDto();
+        PlanoSemanal planoSalvo = criarPlanoSemanalMock();
+        TreinoPlanejado treinoPlanejado = criarTreinoPlanejadoMock();
+
+        doThrow(new RuntimeException("falha simulada no serviço de progressão"))
+                .when(progressaoTreinoService).calcularHistorico(atletaId);
+
+        mockMetricasAgregadasEAlertas(metaDados);
+
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
+        when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
+        when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
+                any(), any(), any())).thenReturn(Optional.empty());
+
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao), any())).thenReturn(planoDto);
+        when(planoMetadadosRepository.findByIdAndTenantId(any(), any())).thenReturn(Optional.of(metaDados));
+        when(planoSemanalMapper.toEntity(planoDto)).thenReturn(planoSalvo);
+        when(treinoMapper.toEntity(any(TreinoPlanejadoLlmDto.class))).thenReturn(treinoPlanejado);
+        when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenReturn(planoSalvo);
+        when(planoMetadadosRepository.save(any(PlanoMetaDados.class))).thenReturn(metaDados);
+
+        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+
+            // When
+            PlanoSemanal resultado = planoService.gerarPlanoTreino(atletaId, modoGeracao);
+
+            // Then — plano gerado normalmente mesmo sem contexto de progressão
+            assertNotNull(resultado);
+            verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao), any());
+        }
+    }
+
     // Helper methods to create mock objects
     private Atleta criarAtletaMock(UUID atletaId) {
         Assessoria assessoria = new Assessoria();
