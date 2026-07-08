@@ -1,5 +1,9 @@
 package br.com.menthoros.backend.config.external;
 
+import br.com.menthoros.backend.ai.cost.CostTrackingAdvisor;
+import br.com.menthoros.backend.ai.cost.LlmPricingRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
+import lombok.RequiredArgsConstructor;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.anthropic.api.AnthropicCacheOptions;
@@ -30,16 +34,22 @@ import org.springframework.context.annotation.Configuration;
  *          ("claudeSonnetClient"), ("gpt4oClient") ou ("gpt4oPlanoClient").
  */
 @Configuration
+@RequiredArgsConstructor
 public class MultiModelConfig {
+
+    private final LlmRoutingProperties props;
+    private final LlmPricingRegistry pricingRegistry;
+    private final MeterRegistry meterRegistry;
 
     /**
      * Rota {@code simple} — tradução, extração de dados, tarefas simples.
      */
     @Bean
     @Qualifier("gpt4oMiniClient")
-    public ChatClient gpt4oMiniClient(OpenAiChatModel openAiChatModel, LlmRoutingProperties props) {
+    public ChatClient gpt4oMiniClient(OpenAiChatModel openAiChatModel) {
         return ChatClient.builder(openAiChatModel)
                 .defaultOptions(opcoesOpenAi(props.getSimple()))
+                .defaultAdvisors(advisorDeCusto("simple"))
                 .build();
     }
 
@@ -48,9 +58,10 @@ public class MultiModelConfig {
      */
     @Bean
     @Qualifier("claudeHaikuClient")
-    public ChatClient claudeHaikuClient(AnthropicChatModel anthropicChatModel, LlmRoutingProperties props) {
+    public ChatClient claudeHaikuClient(AnthropicChatModel anthropicChatModel) {
         return ChatClient.builder(anthropicChatModel)
                 .defaultOptions(opcoesAnthropic(props.getStandard()))
+                .defaultAdvisors(advisorDeCusto("standard"))
                 .build();
     }
 
@@ -59,9 +70,10 @@ public class MultiModelConfig {
      */
     @Bean
     @Qualifier("claudeSonnetClient")
-    public ChatClient claudeSonnetClient(AnthropicChatModel anthropicChatModel, LlmRoutingProperties props) {
+    public ChatClient claudeSonnetClient(AnthropicChatModel anthropicChatModel) {
         return ChatClient.builder(anthropicChatModel)
                 .defaultOptions(opcoesAnthropic(props.getComplex()))
+                .defaultAdvisors(advisorDeCusto("complex"))
                 .build();
     }
 
@@ -70,9 +82,10 @@ public class MultiModelConfig {
      */
     @Bean
     @Qualifier("gpt4oClient")
-    public ChatClient gpt4oClient(OpenAiChatModel openAiChatModel, LlmRoutingProperties props) {
+    public ChatClient gpt4oClient(OpenAiChatModel openAiChatModel) {
         return ChatClient.builder(openAiChatModel)
                 .defaultOptions(opcoesOpenAi(props.getExpert()))
+                .defaultAdvisors(advisorDeCusto("expert"))
                 .build();
     }
 
@@ -85,10 +98,15 @@ public class MultiModelConfig {
      */
     @Bean
     @Qualifier("gpt4oPlanoClient")
-    public ChatClient gpt4oPlanoClient(OpenAiChatModel openAiChatModel, LlmRoutingProperties props) {
+    public ChatClient gpt4oPlanoClient(OpenAiChatModel openAiChatModel) {
         return ChatClient.builder(openAiChatModel)
                 .defaultOptions(opcoesOpenAi(props.getPlano()))
+                .defaultAdvisors(advisorDeCusto("plano"))
                 .build();
+    }
+
+    private CostTrackingAdvisor advisorDeCusto(String rota) {
+        return CostTrackingAdvisor.paraRota(rota, pricingRegistry, meterRegistry);
     }
 
     static OpenAiChatOptions opcoesOpenAi(LlmRoutingProperties.RotaLlm rota) {

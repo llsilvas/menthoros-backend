@@ -116,7 +116,9 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        # prometheus: métricas llm_* do CostTrackingAdvisor (fix-llm-routing-finops);
+        # endpoint autenticado — só /actuator/health é público (SecurityConfig).
+        include: health,prometheus
   endpoint:
     health:
       # when-authorized: anônimos (probes do Railway) recebem só {"status":"UP"};
