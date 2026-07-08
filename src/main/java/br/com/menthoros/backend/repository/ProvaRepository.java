@@ -14,23 +14,42 @@ import java.util.UUID;
 public interface ProvaRepository extends JpaRepository<Prova, UUID> {
 
     /**
-     * Busca provas de um atleta em um intervalo de datas, ordenadas pela data
+     * Busca provas de um atleta em um intervalo de datas, excluindo provas CANCELADAS.
      */
+    @Query("""
+        SELECT p FROM Prova p
+        WHERE p.atleta = :atleta
+          AND p.dataProva BETWEEN :dataInicio AND :dataFim
+          AND p.statusProva != 'CANCELADA'
+        ORDER BY p.dataProva ASC
+        """)
     List<Prova> findByAtletaAndDataProvaBetweenOrderByDataProvaAsc(
-            Atleta atleta,
-            LocalDate dataInicio,
-            LocalDate dataFim
+            @Param("atleta") Atleta atleta,
+            @Param("dataInicio") LocalDate dataInicio,
+            @Param("dataFim") LocalDate dataFim
     );
 
     /**
-     * Busca todas as provas de um atleta
+     * Busca todas as provas de um atleta, excluindo provas CANCELADAS.
      */
-    List<Prova> findByAtletaOrderByDataProvaAsc(Atleta atleta);
+    @Query("""
+        SELECT p FROM Prova p
+        WHERE p.atleta = :atleta
+          AND p.statusProva != 'CANCELADA'
+        ORDER BY p.dataProva ASC
+        """)
+    List<Prova> findByAtletaOrderByDataProvaAsc(@Param("atleta") Atleta atleta);
 
     /**
-     * Busca a prova alvo do atleta
+     * Busca a prova alvo do atleta, excluindo provas CANCELADAS.
      */
-    List<Prova> findByAtletaAndProvaAlvoTrue(Atleta atleta);
+    @Query("""
+        SELECT p FROM Prova p
+        WHERE p.atleta = :atleta
+          AND p.provaAlvo = true
+          AND p.statusProva != 'CANCELADA'
+        """)
+    List<Prova> findByAtletaAndProvaAlvoTrue(@Param("atleta") Atleta atleta);
 
     /**
      * Busca todas as provas de todos os atletas nos próximos 15 dias,
@@ -56,6 +75,7 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
         WHERE p.atleta.id = :id
           AND p.assessoria.id = :tenantId
           AND p.dataProva >= :dataMinima
+          AND p.statusProva != 'CANCELADA'
         ORDER BY p.dataProva ASC
         """)
     List<Prova> findUpcomingByAtletaIdAndTenantId(
