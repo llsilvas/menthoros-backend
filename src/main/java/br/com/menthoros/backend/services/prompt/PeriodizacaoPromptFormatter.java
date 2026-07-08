@@ -1,10 +1,12 @@
 package br.com.menthoros.backend.services.prompt;
 
+import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.MetricasThresholds;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -312,6 +314,45 @@ public class PeriodizacaoPromptFormatter {
         }
 
         return "DESENVOLVIMENTO";
+    }
+
+    /**
+     * Formata o bloco de decisão de progressão para o prompt de IA.
+     * Retorna string vazia quando decisao é null (fallback gracioso — D7).
+     */
+    public String formatarDecisaoProgressao(@Nullable DecisaoProgressao decisao) {
+        if (decisao == null) return "";
+
+        String ajusteVolume = decisao.ajusteVolumePercentual() >= 0
+                ? String.format("+%.0f%%", decisao.ajusteVolumePercentual() * 100)
+                : String.format("%.0f%%", decisao.ajusteVolumePercentual() * 100);
+
+        String ajusteLongo = decisao.ajusteLongoMinutos() >= 0
+                ? String.format("+%d min", decisao.ajusteLongoMinutos())
+                : String.format("%d min", decisao.ajusteLongoMinutos());
+
+        String intensidade = decisao.permitirProgressaoIntensidade()
+                ? "Permitir progressão de intensidade nesta semana."
+                : "Não progredir intensidade nesta semana.";
+
+        return String.format("""
+                ## 📈 DECISÃO DE PROGRESSÃO (últimos 21 dias)
+
+                - **Estado:** %s
+                - **Ajuste de volume:** %s em relação à semana base
+                - **Longão:** %s no treino longo desta semana
+                - **Intensidade:** %s
+                - **Motivo:** %s
+
+                (O teto de TSS acima tem precedência sobre o ajuste de volume. Esta diretriz é calculada automaticamente a partir do histórico real do atleta.)
+
+                """,
+                decisao.estado().name(),
+                ajusteVolume,
+                ajusteLongo,
+                intensidade,
+                decisao.motivo()
+        );
     }
 
     private double calcularProgressaoSegura(Double rampRate, Double tsb) {

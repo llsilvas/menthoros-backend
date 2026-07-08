@@ -321,7 +321,7 @@ public class IaServiceImpl implements IaService {
                 ? regraGeracaoTreino.filtrarDiasDisponiveis(atleta.getDiasDisponiveis(), LocalDate.now(), modoGeracaoPlano)
                 : null;
 
-        var promptGerado = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos);
+        var promptGerado = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos, decisaoProgressao);
         String prompt = promptGerado.prompt();
 
         ChatClient chatClient = modelRouter.route(TaskComplexity.PLANO);
