@@ -1,5 +1,9 @@
 package br.com.menthoros.backend.config.external;
 
+import br.com.menthoros.backend.ai.cost.CostTrackingAdvisor;
+import br.com.menthoros.backend.ai.cost.LlmPricingRegistry;
+import io.micrometer.core.instrument.MeterRegistry;
+import lombok.RequiredArgsConstructor;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.anthropic.api.AnthropicCacheOptions;
@@ -14,124 +18,113 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Configura os 4 beans ChatClient nomeados para roteamento multi-modelo.
+ * Configura os 5 beans ChatClient nomeados para roteamento multi-modelo.
  *
  * Cada bean injeta o ChatModel correto para seu provider, evitando que
  * o Spring AI use o builder do provider errado quando dois starters
  * (openai + anthropic) estão ativos.
  *
+ * Model IDs e parâmetros (temperature, maxTokens) vêm de
+ * {@link LlmRoutingProperties} ({@code app.llm.routing} no application.yml) —
+ * troca de modelo por ambiente sem recompilação. Preços vivem exclusivamente
+ * em {@code llm-pricing.yml}.
+ *
  * Nenhum bean aqui tem @Primary — o bean primário está em ChatClientConfig.
  * Injeção: use @Qualifier("gpt4oMiniClient"), ("claudeHaikuClient"),
- *          ("claudeSonnetClient") ou ("gpt4oClient").
- *
- * Preços vigentes (maio/2026, USD; ~R$5,70/USD):
- *   gpt-4o-mini:       $0,15/MTok input | $0,60/MTok output
- *   Claude Haiku 4.5:  $1,00/MTok input | $5,00/MTok output
- *   Claude Sonnet 4.6: $3,00/MTok input | $15,00/MTok output
- *   gpt-4o:            $2,50/MTok input | $10,00/MTok output
- *
- * Alternativas mais baratas disponíveis na OpenAI:
- *   gpt-4.1-nano: $0,10/MTok input | $0,40/MTok output (ultra-baixo custo)
- *   gpt-4.1-mini: $0,40/MTok input | $1,60/MTok output (melhor custo/qualidade)
+ *          ("claudeSonnetClient"), ("gpt4oClient") ou ("gpt4oPlanoClient").
  */
 @Configuration
+@RequiredArgsConstructor
 public class MultiModelConfig {
 
+    private final LlmRoutingProperties props;
+    private final LlmPricingRegistry pricingRegistry;
+    private final MeterRegistry meterRegistry;
+
     /**
-     * GPT-4o-mini — tradução, extração de dados, tarefas simples.
-     * Preço: $0,15/MTok input | $0,60/MTok output.
-     * Custo estimado: ~R$ 0,001/operação (300 tokens input + 200 output).
+     * Rota {@code simple} — tradução, extração de dados, tarefas simples.
      */
     @Bean
     @Qualifier("gpt4oMiniClient")
     public ChatClient gpt4oMiniClient(OpenAiChatModel openAiChatModel) {
         return ChatClient.builder(openAiChatModel)
-                .defaultOptions(OpenAiChatOptions.builder()
-                        .model("gpt-4o-mini")
-                        .temperature(0.3)
-                        .maxTokens(1000)
-                        .build())
+                .defaultOptions(opcoesOpenAi(props.getSimple()))
+                .defaultAdvisors(advisorDeCusto("simple"))
                 .build();
     }
 
     /**
-     * Claude Haiku 4.5 — análises simples, tradução de qualidade, velocidade.
-     * Preço: $1,00/MTok input | $5,00/MTok output | cache hit: $0,10/MTok.
-     * Custo estimado: ~R$ 0,014/operação sem cache; ~R$ 0,004 com cache hit.
+     * Rota {@code standard} — análises simples, tradução de qualidade, velocidade.
      */
     @Bean
     @Qualifier("claudeHaikuClient")
     public ChatClient claudeHaikuClient(AnthropicChatModel anthropicChatModel) {
         return ChatClient.builder(anthropicChatModel)
-                .defaultOptions(AnthropicChatOptions.builder()
-                        .model("claude-haiku-4-5-20251001")
-                        .temperature(0.5)
-                        .maxTokens(2000)
-                        .cacheOptions(AnthropicCacheOptions.builder()
-                                .strategy(AnthropicCacheStrategy.SYSTEM_ONLY)
-                                .messageTypeTtl(MessageType.SYSTEM, AnthropicCacheTtl.ONE_HOUR)
-                                .build())
-                        .build())
+                .defaultOptions(opcoesAnthropic(props.getStandard()))
+                .defaultAdvisors(advisorDeCusto("standard"))
                 .build();
     }
 
     /**
-     * Claude Sonnet 4.6 — análise pós-treino com skill, prescrição de treinos.
-     * Preço: $3,00/MTok input | $15,00/MTok output | cache hit: $0,30/MTok.
-     * Custo estimado: ~R$ 0,12/operação sem cache; ~R$ 0,033 com cache hit no SKILL.md.
+     * Rota {@code complex} — análise pós-treino com skill, prescrição de treinos.
      */
     @Bean
     @Qualifier("claudeSonnetClient")
     public ChatClient claudeSonnetClient(AnthropicChatModel anthropicChatModel) {
         return ChatClient.builder(anthropicChatModel)
-                .defaultOptions(AnthropicChatOptions.builder()
-                        .model("claude-sonnet-4-6")
-                        .temperature(0.7)
-                        .maxTokens(4000)
-                        .cacheOptions(AnthropicCacheOptions.builder()
-                                .strategy(AnthropicCacheStrategy.SYSTEM_ONLY)
-                                .messageTypeTtl(MessageType.SYSTEM, AnthropicCacheTtl.ONE_HOUR)
-                                .build())
-                        .build())
+                .defaultOptions(opcoesAnthropic(props.getComplex()))
+                .defaultAdvisors(advisorDeCusto("complex"))
                 .build();
     }
 
     /**
-     * GPT-4o — raciocínio profundo, análise de lesões, casos especialistas.
-     * Preço: $2,50/MTok input | $10,00/MTok output.
-     * Custo estimado: ~R$ 0,11/operação (2000 tokens input + 1500 output).
+     * Rota {@code expert} — raciocínio profundo, análise de lesões, casos especialistas.
      */
     @Bean
     @Qualifier("gpt4oClient")
     public ChatClient gpt4oClient(OpenAiChatModel openAiChatModel) {
         return ChatClient.builder(openAiChatModel)
-                .defaultOptions(OpenAiChatOptions.builder()
-                        .model("gpt-4o")
-                        .temperature(0.8)
-                        .maxTokens(8000)
-                        .build())
+                .defaultOptions(opcoesOpenAi(props.getExpert()))
+                .defaultAdvisors(advisorDeCusto("expert"))
                 .build();
     }
 
     /**
-     * GPT-4o (plano semanal) — geração de plano, o fluxo mais caro e crítico do sistema.
-     * Bean dedicado para tornar o modelo explícito e rastreável por feature (antes usava o
-     * ChatClient @Primary genérico, que herdava os defaults do application.yml).
-     *
-     * <p>temperature/maxTokens espelham deliberadamente os defaults que a geração de plano já
-     * usava via yaml (0.2 / 12000) — esta change não altera o comportamento do modelo, apenas
-     * torna o roteamento explícito. Temperatura baixa (0.2) favorece aderência às regras
-     * estruturais do plano (ex.: nº de etapas por tipo de treino).</p>
-     * Preço: $2,50/MTok input | $10,00/MTok output.
+     * Rota {@code plano} — geração de plano semanal, o fluxo mais caro e crítico
+     * do sistema. Bean dedicado para tornar o modelo explícito e rastreável por
+     * feature (antes usava o ChatClient @Primary genérico, que herdava os
+     * defaults do application.yml). Temperatura baixa favorece aderência às
+     * regras estruturais do plano (ex.: nº de etapas por tipo de treino).
      */
     @Bean
     @Qualifier("gpt4oPlanoClient")
     public ChatClient gpt4oPlanoClient(OpenAiChatModel openAiChatModel) {
         return ChatClient.builder(openAiChatModel)
-                .defaultOptions(OpenAiChatOptions.builder()
-                        .model("gpt-4o")
-                        .temperature(0.2)
-                        .maxTokens(12000)
+                .defaultOptions(opcoesOpenAi(props.getPlano()))
+                .defaultAdvisors(advisorDeCusto("plano"))
+                .build();
+    }
+
+    private CostTrackingAdvisor advisorDeCusto(String rota) {
+        return CostTrackingAdvisor.paraRota(rota, pricingRegistry, meterRegistry);
+    }
+
+    static OpenAiChatOptions opcoesOpenAi(LlmRoutingProperties.RotaLlm rota) {
+        return OpenAiChatOptions.builder()
+                .model(rota.getModel())
+                .temperature(rota.getTemperature())
+                .maxTokens(rota.getMaxTokens())
+                .build();
+    }
+
+    static AnthropicChatOptions opcoesAnthropic(LlmRoutingProperties.RotaLlm rota) {
+        return AnthropicChatOptions.builder()
+                .model(rota.getModel())
+                .temperature(rota.getTemperature())
+                .maxTokens(rota.getMaxTokens())
+                .cacheOptions(AnthropicCacheOptions.builder()
+                        .strategy(AnthropicCacheStrategy.SYSTEM_ONLY)
+                        .messageTypeTtl(MessageType.SYSTEM, AnthropicCacheTtl.ONE_HOUR)
                         .build())
                 .build();
     }
