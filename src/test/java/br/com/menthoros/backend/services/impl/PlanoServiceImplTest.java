@@ -138,7 +138,7 @@ class PlanoServiceImplTest {
         // Mock dependencies
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
-        when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
@@ -180,7 +180,7 @@ class PlanoServiceImplTest {
 
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
-        when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
@@ -212,7 +212,7 @@ class PlanoServiceImplTest {
 
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
-        when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
@@ -264,7 +264,7 @@ class PlanoServiceImplTest {
 
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
-        when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
@@ -304,7 +304,7 @@ class PlanoServiceImplTest {
 
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
-        when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
@@ -363,7 +363,7 @@ class PlanoServiceImplTest {
 
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
-        when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(List.of(longo1, longo2));
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(List.of(longo1, longo2));
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());
@@ -405,7 +405,7 @@ class PlanoServiceImplTest {
 
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
-        when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(Collections.emptyList());
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
         when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
         when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
                 any(), any(), any())).thenReturn(Optional.empty());

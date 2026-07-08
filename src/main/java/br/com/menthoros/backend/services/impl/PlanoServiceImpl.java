@@ -45,7 +45,7 @@ public class PlanoServiceImpl implements PlanoService {
     private static final BigDecimal PESO_VOLUME_HISTORICO = BigDecimal.valueOf(0.7); // 70% peso histórico
     private static final BigDecimal PESO_VOLUME_ATUAL = BigDecimal.valueOf(0.3); // 30% peso atual
     private static final int DIAS_POR_SEMANA = 6;
-    private static final int LIMITE_TREINOS_HISTORICO = 7;
+    private static final int JANELA_HISTORICO_DIAS = 42;
 
     private final IaService iaService;
     private final AtletaRepository atletaRepository;
@@ -543,13 +543,11 @@ public class PlanoServiceImpl implements PlanoService {
 
         PlanoMetaDados metaDados = planoMetadadosService.buscarOuCriarMetadados(atleta);
 
+        LocalDate inicio42d = LocalDate.now().minusDays(JANELA_HISTORICO_DIAS);
         List<TreinoRealizado> realizados = treinoRealizadoRepository
-                .findByAtletaIdOrderByDataTreinoDesc(atletaId);
+                .findByAtletaIdAndDataTreinoBetween(atletaId, inicio42d, LocalDate.now());
 
-        List<TreinoRealizadoOutputDto> ultimosTreinos = realizados.isEmpty()
-                ? Collections.emptyList()
-                : realizados.stream()
-                .limit(LIMITE_TREINOS_HISTORICO)
+        List<TreinoRealizadoOutputDto> ultimosTreinos = realizados.stream()
                 .map(treinoMapper::toOutputDto)
                 .toList();
 
