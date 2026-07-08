@@ -548,9 +548,10 @@ public class PlanoServiceImpl implements PlanoService {
 
         PlanoMetaDados metaDados = planoMetadadosService.buscarOuCriarMetadados(atleta);
 
-        LocalDate inicio42d = LocalDate.now().minusDays(JANELA_HISTORICO_DIAS);
+        LocalDate hoje = LocalDate.now();
+        LocalDate inicio42d = hoje.minusDays(JANELA_HISTORICO_DIAS);
         List<TreinoRealizado> realizados = treinoRealizadoRepository
-                .findByAtletaIdAndDataTreinoBetween(atletaId, inicio42d, LocalDate.now());
+                .findByAtletaIdAndDataTreinoBetween(atletaId, inicio42d, hoje);
 
         List<TreinoRealizadoOutputDto> ultimosTreinos = realizados.stream()
                 .map(treinoMapper::toOutputDto)
@@ -777,6 +778,8 @@ public class PlanoServiceImpl implements PlanoService {
         try {
             ProgressaoHistoricoResumo historico = progressaoTreinoService.calcularHistorico(atletaId);
             return progressaoTreinoService.calcularDecisao(historico);
+        } catch (DomainNotFoundException | IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("Falha ao calcular decisão de progressão para atleta {} — plano será gerado sem contexto de progressão", atletaId, e);
             return null;

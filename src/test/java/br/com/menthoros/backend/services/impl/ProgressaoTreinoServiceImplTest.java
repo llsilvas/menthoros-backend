@@ -80,7 +80,7 @@ class ProgressaoTreinoServiceImplTest {
             TreinoRealizado longo21d = treino(HOJE.minusDays(14), TipoTreino.LONGO, 22.0, null);
             TreinoRealizado facil42d = treino(HOJE.minusDays(35), TipoTreino.FACIL, 8.0, null);
 
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(), any()))
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(longo7d, intervalado21d, longo21d, facil42d));
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
                     .thenReturn(List.of(planejado(), planejado(), planejado(), planejado()));
@@ -103,7 +103,7 @@ class ProgressaoTreinoServiceImplTest {
         @Test
         @DisplayName("novo atleta sem treinos — campos zerados, sem exceção")
         void atletaSemTreinos() {
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(), any()))
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(Collections.emptyList());
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
                     .thenReturn(Collections.emptyList());
@@ -128,7 +128,7 @@ class ProgressaoTreinoServiceImplTest {
             TreinoRealizado intervalado = treino(HOJE.minusDays(5), TipoTreino.INTERVALADO, 10.0, null);
             TreinoRealizado tempoRun = treino(HOJE.minusDays(12), TipoTreino.TEMPO_RUN, 8.0, null);
 
-            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(), any()))
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(intervalado, tempoRun));
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
                     .thenReturn(List.of(planejado(), planejado()));

@@ -17,7 +17,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
@@ -44,6 +43,13 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
     private static final int LONGAS_MINIMAS_PROGREDIR = 2;
     private static final int TREINOS_MINIMOS_21D = 3;
 
+    private static final double AJUSTE_VOLUME_PROGREDIR      =  0.06;
+    private static final double AJUSTE_VOLUME_PROGREDIR_LEVE =  0.03;
+    private static final double AJUSTE_VOLUME_REDUZIR        = -0.05;
+    private static final int    AJUSTE_LONGO_PROGREDIR       =  10;
+    private static final int    AJUSTE_LONGO_PROGREDIR_LEVE  =   5;
+    private static final int    AJUSTE_LONGO_REDUZIR         = -10;
+
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final PlanoMetadadosService planoMetadadosService;
@@ -52,13 +58,14 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
     @Override
     @Transactional(readOnly = true)
     public ProgressaoHistoricoResumo calcularHistorico(UUID atletaId) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
         LocalDate hoje = LocalDate.now(clock);
         LocalDate inicio7d = hoje.minusDays(7);
         LocalDate inicio21d = hoje.minusDays(21);
         LocalDate inicio42d = hoje.minusDays(42);
 
         List<TreinoRealizado> treinos42d = treinoRealizadoRepository
-                .findByAtletaIdAndDataTreinoBetween(atletaId, inicio42d, hoje);
+                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, inicio42d, hoje);
 
         List<TreinoRealizado> treinos21d = treinos42d.stream()
                 .filter(t -> !t.getDataTreino().isBefore(inicio21d))
@@ -78,13 +85,9 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
         Double rpeMedioTreinosDuros = calcularRpeMedioTreinosDuros(treinos21d);
 
         int treinosConcluidos21d = treinos21d.size();
-        int treinosPlanejados21d = 0;
-        if (TenantContext.hasTenant()) {
-            UUID tenantId = TenantContext.getTenantId();
-            List<TreinoPlanejado> planejados = treinoPlanejadoRepository
-                    .findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, inicio21d);
-            treinosPlanejados21d = planejados.size();
-        }
+        List<TreinoPlanejado> planejados = treinoPlanejadoRepository
+                .findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, inicio21d);
+        int treinosPlanejados21d = planejados.size();
 
         PlanoMetaDados metaDados = planoMetadadosService.buscarPorAtletaId(atletaId);
 
@@ -115,19 +118,19 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
         if (deveReduzir(aderencia, tsb, rpe)) {
             String motivo = motivoReducao(aderencia, tsb, rpe);
             log.info("DecisaoProgressao REDUZIR para histórico — motivo: {}", motivo);
-            return new DecisaoProgressao(EstadoProgressao.REDUZIR, -0.05, -10, false, motivo);
+            return new DecisaoProgressao(EstadoProgressao.REDUZIR, AJUSTE_VOLUME_REDUZIR, AJUSTE_LONGO_REDUZIR, false, motivo);
         }
 
         if (podeProgredir(aderencia, tsb, rpe, resumo.longoesRealizados21d())) {
             log.info("DecisaoProgressao PROGREDIR — aderência={}, longões21d={}, TSB={}",
                     aderencia, resumo.longoesRealizados21d(), tsb);
-            return new DecisaoProgressao(EstadoProgressao.PROGREDIR, 0.06, 10, true,
+            return new DecisaoProgressao(EstadoProgressao.PROGREDIR, AJUSTE_VOLUME_PROGREDIR, AJUSTE_LONGO_PROGREDIR, true,
                     "atleta respondendo bem ao treino");
         }
 
         if (podeProgredirLeve(aderencia, tsb)) {
             log.info("DecisaoProgressao PROGREDIR_LEVE — aderência={}, TSB={}", aderencia, tsb);
-            return new DecisaoProgressao(EstadoProgressao.PROGREDIR_LEVE, 0.03, 5, false,
+            return new DecisaoProgressao(EstadoProgressao.PROGREDIR_LEVE, AJUSTE_VOLUME_PROGREDIR_LEVE, AJUSTE_LONGO_PROGREDIR_LEVE, false,
                     "progressão moderada recomendada");
         }
 
