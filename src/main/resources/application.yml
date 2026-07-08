@@ -195,7 +195,9 @@ app:
         max-tokens: 4000
       expert:            # deep-reasoning: lesões, casos clínicos
         model: gpt-4o
-        temperature: 0.8
+        # 0.2 (era 0.8): raciocínio especialista/clínico pede determinismo;
+        # 0.8 era semântica de geração criativa, invertida para esta rota.
+        temperature: 0.2
         max-tokens: 8000
       plano:             # geração de plano semanal — fluxo mais caro e crítico
         model: gpt-4o

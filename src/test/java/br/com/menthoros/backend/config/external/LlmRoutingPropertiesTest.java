@@ -83,6 +83,19 @@ class LlmRoutingPropertiesTest {
         }
 
         @Test
+        @DisplayName("application.yml real define temperatura 0.2 na rota expert (deep-reasoning determinístico)")
+        void temperaturaExpertNoYmlReal() {
+            new ApplicationContextRunner()
+                    .withInitializer(new org.springframework.boot.test.context.ConfigDataApplicationContextInitializer())
+                    .withUserConfiguration(TestConfig.class)
+                    .run(ctx -> {
+                        LlmRoutingProperties props = ctx.getBean(LlmRoutingProperties.class);
+                        assertThat(props.getExpert().getModel()).isEqualTo("gpt-4o");
+                        assertThat(props.getExpert().getTemperature()).isEqualTo(0.2);
+                    });
+        }
+
+        @Test
         @DisplayName("falha o contexto quando o model de uma rota está em branco")
         void falhaComModelEmBranco() {
             String[] modelVazio = java.util.Arrays.stream(PROPRIEDADES_COMPLETAS)
