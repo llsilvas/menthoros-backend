@@ -40,6 +40,15 @@ public class LlmRoutingProperties {
     @NotNull @Valid
     private RotaLlm plano;
 
+    /**
+     * Todas as rotas configuradas — fonte única para validações que precisam
+     * varrer a topologia (ex.: {@code LlmPricingRegistry}); adicionar uma rota
+     * nova aqui a inclui automaticamente nessas validações.
+     */
+    public java.util.List<RotaLlm> todasAsRotas() {
+        return java.util.List.of(simple, standard, complex, expert, plano);
+    }
+
     @Getter
     @Setter
     public static class RotaLlm {

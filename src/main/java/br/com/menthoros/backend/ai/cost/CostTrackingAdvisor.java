@@ -134,7 +134,9 @@ public final class CostTrackingAdvisor implements CallAdvisor {
     }
 
     private static BigDecimal porMtok(long tokens, BigDecimal precoPorMtok) {
-        return precoPorMtok.multiply(BigDecimal.valueOf(tokens)).divide(MTOK);
+        // 10 casas: preserva precisão de custos sub-centavo por chamada
+        return precoPorMtok.multiply(BigDecimal.valueOf(tokens))
+                .divide(MTOK, 10, java.math.RoundingMode.HALF_UP);
     }
 
     private void incrementar(String metrica, String model, double valor) {

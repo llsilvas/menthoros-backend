@@ -75,9 +75,7 @@ public class LlmPricingRegistry {
     @PostConstruct
     public void validarRotasComPreco() {
         Set<String> semPreco = new LinkedHashSet<>();
-        for (LlmRoutingProperties.RotaLlm rota : new LlmRoutingProperties.RotaLlm[]{
-                routing.getSimple(), routing.getStandard(), routing.getComplex(),
-                routing.getExpert(), routing.getPlano()}) {
+        for (LlmRoutingProperties.RotaLlm rota : routing.todasAsRotas()) {
             if (!precos.containsKey(rota.getModel())) {
                 semPreco.add(rota.getModel());
             }
@@ -91,25 +89,34 @@ public class LlmPricingRegistry {
 
     private static Map<String, PrecoModelo> carregarPrecos() {
         try (InputStream in = new ClassPathResource(ARQUIVO_PRECOS).getInputStream()) {
-            Map<String, Object> raiz = new Yaml().load(in);
-            @SuppressWarnings("unchecked")
-            Map<String, Map<String, Object>> modelos = (Map<String, Map<String, Object>>) raiz.get("modelos");
-            if (modelos == null || modelos.isEmpty()) {
-                throw new IllegalStateException("Bloco 'modelos' ausente ou vazio em " + ARQUIVO_PRECOS);
+            Object raiz = new Yaml().load(in);
+            if (!(raiz instanceof Map<?, ?> raizMap)) {
+                throw new IllegalStateException(ARQUIVO_PRECOS + " vazio ou inválido (raiz não é um mapa)");
+            }
+            Object modelos = raizMap.get("modelos");
+            if (!(modelos instanceof Map<?, ?> modelosMap) || modelosMap.isEmpty()) {
+                throw new IllegalStateException("Bloco 'modelos' ausente, vazio ou malformado em " + ARQUIVO_PRECOS);
             }
             Map<String, PrecoModelo> resultado = new LinkedHashMap<>();
-            modelos.forEach((modelId, campos) -> resultado.put(modelId, new PrecoModelo(
-                    valorObrigatorio(modelId, campos, "input-per-mtok"),
-                    valorObrigatorio(modelId, campos, "cached-input-per-mtok"),
-                    valorOpcional(campos, "cache-write-per-mtok"),
-                    valorObrigatorio(modelId, campos, "output-per-mtok"))));
+            modelosMap.forEach((modelId, campos) -> {
+                if (!(campos instanceof Map<?, ?> camposMap)) {
+                    throw new IllegalStateException(
+                            "Entrada do modelo '" + modelId + "' malformada em " + ARQUIVO_PRECOS + " (esperado mapa de campos)");
+                }
+                String id = String.valueOf(modelId);
+                resultado.put(id, new PrecoModelo(
+                        valorObrigatorio(id, camposMap, "input-per-mtok"),
+                        valorObrigatorio(id, camposMap, "cached-input-per-mtok"),
+                        valorOpcional(camposMap, "cache-write-per-mtok"),
+                        valorObrigatorio(id, camposMap, "output-per-mtok")));
+            });
             return Map.copyOf(resultado);
         } catch (IOException e) {
             throw new UncheckedIOException("Falha ao ler " + ARQUIVO_PRECOS + " do classpath", e);
         }
     }
 
-    private static BigDecimal valorObrigatorio(String modelId, Map<String, Object> campos, String chave) {
+    private static BigDecimal valorObrigatorio(String modelId, Map<?, ?> campos, String chave) {
         Object valor = campos.get(chave);
         if (valor == null) {
             throw new IllegalStateException(
@@ -119,7 +126,7 @@ public class LlmPricingRegistry {
     }
 
     @Nullable
-    private static BigDecimal valorOpcional(Map<String, Object> campos, String chave) {
+    private static BigDecimal valorOpcional(Map<?, ?> campos, String chave) {
         Object valor = campos.get(chave);
         return valor != null ? new BigDecimal(String.valueOf(valor)) : null;
     }
