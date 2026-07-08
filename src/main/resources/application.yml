@@ -178,6 +178,29 @@ app:
       core-size: 2
       max-size: 5
       queue-capacity: 100
+    # Roteamento multi-modelo (MultiModelConfig) — RISK-01/ADR-FIN-02:
+    # model IDs e parâmetros externalizados; preços em llm-pricing.yml.
+    routing:
+      simple:            # tradução, extração, classificação simples
+        model: gpt-4o-mini
+        temperature: 0.3
+        max-tokens: 1000
+      standard:          # análises rápidas, chatbot, sumarização
+        model: claude-haiku-4-5-20251001
+        temperature: 0.5
+        max-tokens: 2000
+      complex:           # análise pós-treino com skill, prescrição
+        model: claude-sonnet-4-6
+        temperature: 0.7
+        max-tokens: 4000
+      expert:            # deep-reasoning: lesões, casos clínicos
+        model: gpt-4o
+        temperature: 0.8
+        max-tokens: 8000
+      plano:             # geração de plano semanal — fluxo mais caro e crítico
+        model: gpt-4o
+        temperature: 0.2
+        max-tokens: 12000
 
   # ----------------------------------------
   # IA SERVICE CONFIGURATION
