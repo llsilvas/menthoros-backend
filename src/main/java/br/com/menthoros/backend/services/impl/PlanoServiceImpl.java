@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.DecisaoProgressao;
+import br.com.menthoros.backend.dto.ProgressaoHistoricoResumo;
 import br.com.menthoros.backend.dto.input.DadosPlanoDto;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
@@ -45,9 +47,10 @@ public class PlanoServiceImpl implements PlanoService {
     private static final BigDecimal PESO_VOLUME_HISTORICO = BigDecimal.valueOf(0.7); // 70% peso histórico
     private static final BigDecimal PESO_VOLUME_ATUAL = BigDecimal.valueOf(0.3); // 30% peso atual
     private static final int DIAS_POR_SEMANA = 6;
-    private static final int LIMITE_TREINOS_HISTORICO = 7;
+    private static final int JANELA_HISTORICO_DIAS = 42;
 
     private final IaService iaService;
+    private final ProgressaoTreinoService progressaoTreinoService;
     private final AtletaRepository atletaRepository;
     private final AtletaMapper atletaMapper;
     private final TreinoMapper treinoMapper;
@@ -113,8 +116,10 @@ public class PlanoServiceImpl implements PlanoService {
         DadosPlanoDto dadosPlano = getPreparaDadosPlano(atletaId);
         Hibernate.initialize(dadosPlano.atleta().getProvas()); // evita LazyInitializationException
 
+        DecisaoProgressao decisaoProgressao = calcularDecisaoProgressao(atletaId);
+
         try {
-            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano, modoGeracao);
+            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano, modoGeracao, decisaoProgressao);
 
             if (planoDto == null) {
                 throw new LLMException("Falha ao gerar plano: IA retornou resposta nula. Tente novamente.");
@@ -543,13 +548,12 @@ public class PlanoServiceImpl implements PlanoService {
 
         PlanoMetaDados metaDados = planoMetadadosService.buscarOuCriarMetadados(atleta);
 
+        LocalDate hoje = LocalDate.now();
+        LocalDate inicio42d = hoje.minusDays(JANELA_HISTORICO_DIAS);
         List<TreinoRealizado> realizados = treinoRealizadoRepository
-                .findByAtletaIdOrderByDataTreinoDesc(atletaId);
+                .findByAtletaIdAndDataTreinoBetween(atletaId, inicio42d, hoje);
 
-        List<TreinoRealizadoOutputDto> ultimosTreinos = realizados.isEmpty()
-                ? Collections.emptyList()
-                : realizados.stream()
-                .limit(LIMITE_TREINOS_HISTORICO)
+        List<TreinoRealizadoOutputDto> ultimosTreinos = realizados.stream()
                 .map(treinoMapper::toOutputDto)
                 .toList();
 
@@ -588,7 +592,7 @@ public class PlanoServiceImpl implements PlanoService {
                 .or(() -> provasFuturas.stream().findFirst());
     }
 
-    private PlanoSemanalLlmDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto, ModoGeracaoPlano modoGeracao) {
+    private PlanoSemanalLlmDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto, ModoGeracaoPlano modoGeracao, DecisaoProgressao decisaoProgressao) {
         try {
             log.info("Iniciando geração de plano para atleta: {}", dadosPlanoDto.atleta().getId());
 
@@ -598,7 +602,7 @@ public class PlanoServiceImpl implements PlanoService {
                         dadosPlanoDto.atleta().getId());
             }
 
-            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), prova, modoGeracao);
+            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), prova, modoGeracao, decisaoProgressao);
 
             validaPlanoGerado(planoDto);
             return planoDto;
@@ -768,5 +772,17 @@ public class PlanoServiceImpl implements PlanoService {
                 atleta.getId(),
                 atleta.getDiasDisponiveis().size(),
                 atleta.getNivelExperiencia());
+    }
+
+    private DecisaoProgressao calcularDecisaoProgressao(UUID atletaId) {
+        try {
+            ProgressaoHistoricoResumo historico = progressaoTreinoService.calcularHistorico(atletaId);
+            return progressaoTreinoService.calcularDecisao(historico);
+        } catch (DomainNotFoundException | IllegalStateException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Falha ao calcular decisão de progressão para atleta {} — plano será gerado sem contexto de progressão", atletaId, e);
+            return null;
+        }
     }
 }

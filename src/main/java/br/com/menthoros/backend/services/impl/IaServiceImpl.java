@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
@@ -304,7 +305,8 @@ public class IaServiceImpl implements IaService {
      * Tenant-aware: YES — o atleta é resolvido com predicado de tenant e {@code validarENormalizarPlanoGerado}
      *   opera sob o {@code TenantContext} corrente.
      */
-    public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracaoPlano){
+    @Override
+    public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracaoPlano, DecisaoProgressao decisaoProgressao){
         LocalDate inicioSemana;
 
         if(ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracaoPlano)){
@@ -319,7 +321,7 @@ public class IaServiceImpl implements IaService {
                 ? regraGeracaoTreino.filtrarDiasDisponiveis(atleta.getDiasDisponiveis(), LocalDate.now(), modoGeracaoPlano)
                 : null;
 
-        var promptGerado = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos);
+        var promptGerado = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos, decisaoProgressao);
         String prompt = promptGerado.prompt();
 
         ChatClient chatClient = modelRouter.route(TaskComplexity.PLANO);

@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.prompt;
 
+import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.output.AtletaOutputDto;
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.dto.output.ProvaOutputDto;
@@ -32,6 +33,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.jspecify.annotations.Nullable;
 
 @Component
 public class PlanoTreinoPromptBuilder {
@@ -163,6 +165,12 @@ public class PlanoTreinoPromptBuilder {
 
     public PromptGerado buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo,
                                              LocalDate inicioSemana, List<DiaSemana> diasEfetivos) {
+        return buildOptimizedPrompt(atleta, metaDados, provaAlvo, inicioSemana, diasEfetivos, null);
+    }
+
+    public PromptGerado buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo,
+                                             LocalDate inicioSemana, List<DiaSemana> diasEfetivos,
+                                             @Nullable DecisaoProgressao decisaoProgressao) {
         var ctx = treinoHistoricoProvider.prepararContexto(atleta);
 
         // DECISÃO INTERVALADO — avaliação determinística pré-LLM (5 portões fisiológicos + readiness)
@@ -304,6 +312,12 @@ public class PlanoTreinoPromptBuilder {
         historicoCompleto.append("  - Baseado em TSB, experiência e histórico\n\n");
         historicoCompleto.append(String.format("- **Distribuição Semanal Sugerida:** %s\n\n",
                 disponibilidadePromptFormatter.sugerirDistribuicaoSemanal(metaDados, atleta)));
+
+        // ETAPA 10.5: Decisão de progressão — abaixo do teto de TSS (hierarquia explícita, D7)
+        String blocoProgressao = periodizacaoPromptFormatter.formatarDecisaoProgressao(decisaoProgressao);
+        if (!blocoProgressao.isEmpty()) {
+            historicoCompleto.append(blocoProgressao);
+        }
 
         // 8. Fallbacks para dados nulos
         String diaPreferidoLongo = atleta.getDiaPreferidoLongo() != null ?
