@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -146,6 +147,8 @@ public class FitTreinoPersister {
                     .distanciaKm(toBigDecimal(lap.distanciaKm()))
                     .fcMedia(lap.fcMedia())
                     .fcMax(lap.fcMax())
+                    .velocidadeMedia(velocidadeMediaKmh(lap))
+                    .paceMedia(paceMedia(lap))
                     .build();
             treino.getEtapasRealizadas().add(etapa);
         }
@@ -162,5 +165,31 @@ public class FitTreinoPersister {
 
     private BigDecimal toBigDecimal(Double valor) {
         return valor != null ? BigDecimal.valueOf(valor).setScale(3, RoundingMode.HALF_UP) : null;
+    }
+
+    /**
+     * O .fit traz só distância/duração por lap — velocidade e pace são derivados aqui para que
+     * a etapa persistida tenha o mesmo contrato dos splits do Strava (que já chegam com
+     * velocidade pronta). Sem isso o {@code DecouplingCalculatorService} descarta todas as
+     * etapas de imports .fit e o decoupling Pa:HR volta sempre null.
+     */
+    private static BigDecimal velocidadeMediaKmh(FitLapData lap) {
+        if (!temMetricaDeVelocidade(lap)) {
+            return null;
+        }
+        double horas = lap.duracao().toMillis() / 3_600_000.0;
+        return BigDecimal.valueOf(lap.distanciaKm() / horas).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static Duration paceMedia(FitLapData lap) {
+        if (!temMetricaDeVelocidade(lap)) {
+            return null;
+        }
+        return Duration.ofSeconds(Math.round(lap.duracao().toSeconds() / lap.distanciaKm()));
+    }
+
+    private static boolean temMetricaDeVelocidade(FitLapData lap) {
+        return lap.distanciaKm() != null && lap.distanciaKm() > 0
+                && lap.duracao() != null && !lap.duracao().isZero() && !lap.duracao().isNegative();
     }
 }
