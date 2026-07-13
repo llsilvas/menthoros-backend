@@ -97,6 +97,24 @@ class FitTreinoPersisterTest {
                 null, null, null, null, null, null, null);
     }
 
+    /** Lap padrão variando só o GCT médio — para os testes de sanitização (BVA). */
+    private static FitLapData lapComGct(int ordem, Integer gctMedioMs) {
+        return new FitLapData(ordem, Duration.ofMinutes(5), 1.0, 148, 160, null, null, null, null,
+                null, gctMedioMs, null, null, null, null, null);
+    }
+
+    /** Lap padrão variando só o equilíbrio de GCT — para os testes de sanitização (BVA). */
+    private static FitLapData lapComGctEquilibrio(int ordem, String gctEquilibrioPct) {
+        return new FitLapData(ordem, Duration.ofMinutes(5), 1.0, 148, 160, null, null, null, null,
+                null, null, new java.math.BigDecimal(gctEquilibrioPct), null, null, null, null);
+    }
+
+    /** Lap padrão variando só a passada — para os testes de sanitização (BVA). */
+    private static FitLapData lapComPassada(int ordem, String passadaMediaM) {
+        return new FitLapData(ordem, Duration.ofMinutes(5), 1.0, 148, 160, null, null, null, null,
+                null, null, null, new java.math.BigDecimal(passadaMediaM), null, null, null);
+    }
+
     @Nested
     @DisplayName("persistir")
     class Persistir {
@@ -374,6 +392,246 @@ class FitTreinoPersisterTest {
             assertThat(etapas.get(2).getElevacaoPerdaMetros()).isZero();
             assertThat(etapas.get(2).getPotenciaMedia()).isNull();
             assertThat(etapas.get(3).getPotenciaMedia()).isNull();
+        }
+
+        @Test
+        @DisplayName("running dynamics completos (GCT, equilíbrio, passada, oscilação, proporção, temperatura, tempo em movimento, calorias) persistem no treino e na etapa")
+        void persisteRunningDynamicsCompletos() {
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null,
+                    Duration.ofSeconds(1750), 650, 252, new java.math.BigDecimal("49.3"),
+                    new java.math.BigDecimal("1.05"), new java.math.BigDecimal("8.2"), new java.math.BigDecimal("6.8"),
+                    new java.math.BigDecimal("22.0"),
+                    List.of(new FitLapData(1, Duration.ofMinutes(15), 2.5, 148, 160, null, null, null, null,
+                            Duration.ofSeconds(850), 255, new java.math.BigDecimal("48.7"),
+                            new java.math.BigDecimal("0.98"), new java.math.BigDecimal("9.0"), new java.math.BigDecimal("7.1"),
+                            new java.math.BigDecimal("23.0"))));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            TreinoRealizado treino = captor.getValue();
+            assertThat(treino.getTempoMovimento()).isEqualTo(Duration.ofSeconds(1750));
+            assertThat(treino.getCalorias()).isEqualTo(650);
+            assertThat(treino.getGctMedioMs()).isEqualTo(252);
+            assertThat(treino.getGctEquilibrioPct()).isEqualByComparingTo("49.3");
+            assertThat(treino.getPassadaMediaM()).isEqualByComparingTo("1.05");
+            assertThat(treino.getOscilacaoVerticalCm()).isEqualByComparingTo("8.2");
+            assertThat(treino.getProporcaoVerticalPct()).isEqualByComparingTo("6.8");
+            assertThat(treino.getTemperaturaMediaC()).isEqualByComparingTo("22.0");
+
+            var etapa = treino.getEtapasRealizadas().get(0);
+            assertThat(etapa.getTempoMovimento()).isEqualTo(Duration.ofSeconds(850));
+            assertThat(etapa.getGctMedioMs()).isEqualTo(255);
+            assertThat(etapa.getGctEquilibrioPct()).isEqualByComparingTo("48.7");
+            assertThat(etapa.getPassadaMediaM()).isEqualByComparingTo("0.98");
+            assertThat(etapa.getOscilacaoVerticalCm()).isEqualByComparingTo("9.0");
+            assertThat(etapa.getProporcaoVerticalPct()).isEqualByComparingTo("7.1");
+            assertThat(etapa.getTemperaturaMediaC()).isEqualByComparingTo("23.0");
+        }
+
+        @Test
+        @DisplayName("dispositivo sem running dynamics: campos ficam null sem falhar (CA4)")
+        void semRunningDynamicsPersisteNullSemFalhar() {
+            FitSessionData dados = sessionCorrida(1L, 1751360400L);
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            TreinoRealizado treino = captor.getValue();
+            assertThat(treino.getTempoMovimento()).isNull();
+            assertThat(treino.getCalorias()).isNull();
+            assertThat(treino.getGctMedioMs()).isNull();
+            assertThat(treino.getGctEquilibrioPct()).isNull();
+            assertThat(treino.getPassadaMediaM()).isNull();
+            assertThat(treino.getOscilacaoVerticalCm()).isNull();
+            assertThat(treino.getProporcaoVerticalPct()).isNull();
+            assertThat(treino.getTemperaturaMediaC()).isNull();
+        }
+
+        @Test
+        @DisplayName("GCT fora de 100-500ms é descartado — BVA nos limites")
+        void gctForaDaFaixaDescartado() {
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null, null, null, null, null, null, null, null, null,
+                    List.of(
+                            lapComGct(1, 99),
+                            lapComGct(2, 100),
+                            lapComGct(3, 500),
+                            lapComGct(4, 501)));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            var etapas = captor.getValue().getEtapasRealizadas();
+            assertThat(etapas.get(0).getGctMedioMs()).isNull();
+            assertThat(etapas.get(1).getGctMedioMs()).isEqualTo(100);
+            assertThat(etapas.get(2).getGctMedioMs()).isEqualTo(500);
+            assertThat(etapas.get(3).getGctMedioMs()).isNull();
+        }
+
+        @Test
+        @DisplayName("equilíbrio de GCT fora de 30-70% é descartado — BVA nos limites")
+        void gctEquilibrioForaDaFaixaDescartado() {
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null, null, null, null, null, null, null, null, null,
+                    List.of(
+                            lapComGctEquilibrio(1, "29.9"),
+                            lapComGctEquilibrio(2, "30.0"),
+                            lapComGctEquilibrio(3, "70.0"),
+                            lapComGctEquilibrio(4, "70.1")));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            var etapas = captor.getValue().getEtapasRealizadas();
+            assertThat(etapas.get(0).getGctEquilibrioPct()).isNull();
+            assertThat(etapas.get(1).getGctEquilibrioPct()).isEqualByComparingTo("30.0");
+            assertThat(etapas.get(2).getGctEquilibrioPct()).isEqualByComparingTo("70.0");
+            assertThat(etapas.get(3).getGctEquilibrioPct()).isNull();
+        }
+
+        @Test
+        @DisplayName("passada fora de 0,3-3,0m é descartada — BVA nos limites")
+        void passadaForaDaFaixaDescartada() {
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null, null, null, null, null, null, null, null, null,
+                    List.of(
+                            lapComPassada(1, "0.29"),
+                            lapComPassada(2, "0.30"),
+                            lapComPassada(3, "3.0"),
+                            lapComPassada(4, "3.01")));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            var etapas = captor.getValue().getEtapasRealizadas();
+            assertThat(etapas.get(0).getPassadaMediaM()).isNull();
+            assertThat(etapas.get(1).getPassadaMediaM()).isEqualByComparingTo("0.30");
+            assertThat(etapas.get(2).getPassadaMediaM()).isEqualByComparingTo("3.0");
+            assertThat(etapas.get(3).getPassadaMediaM()).isNull();
+        }
+
+        @Test
+        @DisplayName("D6/CA7: tempoMovimento menor que duracao corrige velocidade/pace (lap com pausa)")
+        void tempoMovimentoMenorCorrigeVelocidade() {
+            // 2,5km em 15min elapsed (10,00 km/h) mas só 12min30s em movimento (12,00 km/h real).
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null, null, null, null, null, null, null, null, null,
+                    List.of(new FitLapData(1, Duration.ofMinutes(15), 2.5, 148, 160, null, null, null, null,
+                            Duration.ofSeconds(750), null, null, null, null, null, null)));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            var etapa = captor.getValue().getEtapasRealizadas().get(0);
+            assertThat(etapa.getVelocidadeMedia()).isEqualByComparingTo("12.00");
+            assertThat(etapa.getPaceMedia()).isEqualTo(Duration.ofSeconds(300)); // 5:00/km
+            // duracao persistida continua sendo o elapsed — D6 só corrige o cálculo derivado.
+            assertThat(etapa.getDuracao()).isEqualTo(Duration.ofMinutes(15));
+        }
+
+        @Test
+        @DisplayName("D6/CA7: sem tempoMovimento, velocidade/pace usam duracao — comportamento legado preservado")
+        void semTempoMovimentoUsaDuracaoLegado() {
+            FitSessionData dados = sessionCorrida(1L, 1751360400L); // lapCorrida sem tempoMovimento
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            var etapa = captor.getValue().getEtapasRealizadas().get(0);
+            // 2,5km em 15min -> 10,00 km/h, pace 6:00/km (idêntico ao golden anterior a esta change).
+            assertThat(etapa.getVelocidadeMedia()).isEqualByComparingTo("10.00");
+            assertThat(etapa.getPaceMedia()).isEqualTo(Duration.ofMinutes(6));
+        }
+
+        @Test
+        @DisplayName("D6/CA7: tempoMovimento >= duracao é defensivo — mantém duracao (dado inconsistente do firmware)")
+        void tempoMovimentoMaiorOuIgualMantemDuracao() {
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null, null, null, null, null, null, null, null, null,
+                    List.of(new FitLapData(1, Duration.ofMinutes(15), 2.5, 148, 160, null, null, null, null,
+                            Duration.ofMinutes(15), null, null, null, null, null, null))); // tempoMovimento == duracao
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            var etapa = captor.getValue().getEtapasRealizadas().get(0);
+            assertThat(etapa.getVelocidadeMedia()).isEqualByComparingTo("10.00");
+            assertThat(etapa.getPaceMedia()).isEqualTo(Duration.ofMinutes(6));
+        }
+
+        @Test
+        @DisplayName("D6/CA7: teste de regressão — voltas com pausa da fixture real (achado de fit-lap-derived-metrics)")
+        void regressaoVoltasComPausaDaFixtureReal() {
+            // Reconstrução da volta 10 da fixture corrida-15km-16laps.fit: totalElapsedTime=611s,
+            // ~364s de movimento real (achado documentado em fit-lap-derived-metrics/tasks.md 3.1:
+            // pace bruto derivado de elapsed diverge do Garmin em até 239 s/km nessa volta).
+            // Distância do lap: 1,000 km (volta de 1km da fixture).
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null, null, null, null, null, null, null, null, null,
+                    List.of(new FitLapData(10, Duration.ofSeconds(611), 1.0, 150, 165, null, null, null, null,
+                            Duration.ofSeconds(364), null, null, null, null, null, null)));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            var etapa = captor.getValue().getEtapasRealizadas().get(0);
+
+            // Pace bruto (elapsed, comportamento pré-D6): 611s/km -> 10:11/km — o que o Garmin
+            // reportava como discrepante (o CSV real mostrava ~366s/km nessa volta).
+            Duration paceBrutoElapsed = Duration.ofSeconds(611);
+            // Pace corrigido (D6, tempoMovimento): 364s/km -> 6:04/km — na faixa do erro sem pausa
+            // (~4,8-8 s/km de desvio vs. Garmin), não mais nos 239 s/km documentados.
+            Duration paceCorrigido = Duration.ofSeconds(364);
+
+            assertThat(etapa.getPaceMedia()).isEqualTo(paceCorrigido);
+            assertThat(etapa.getPaceMedia()).isNotEqualTo(paceBrutoElapsed);
+            long desvioSegKm = Math.abs(paceBrutoElapsed.toSeconds() - paceCorrigido.toSeconds());
+            assertThat(desvioSegKm).isGreaterThan(200); // prova que o cenário reproduz o desvio grande documentado
         }
 
         @Test

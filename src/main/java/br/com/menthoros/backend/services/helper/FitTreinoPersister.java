@@ -49,6 +49,16 @@ public class FitTreinoPersister {
     private static final int ELEVACAO_MAX_METROS = 10_000;
     private static final int POTENCIA_MAX_WATTS = 2_500;
 
+    // Running dynamics (design D2 de fit-running-dynamics-ingestion) — mesma lógica de descarte
+    // silencioso; oscilação vertical, proporção vertical, temperatura, tempo em movimento e
+    // calorias não têm faixa de sanidade própria no design (passam direto, sem fabricar).
+    private static final int GCT_MIN_MS = 100;
+    private static final int GCT_MAX_MS = 500;
+    private static final BigDecimal GCT_EQUILIBRIO_MIN_PCT = BigDecimal.valueOf(30.0);
+    private static final BigDecimal GCT_EQUILIBRIO_MAX_PCT = BigDecimal.valueOf(70.0);
+    private static final BigDecimal PASSADA_MIN_M = BigDecimal.valueOf(0.3);
+    private static final BigDecimal PASSADA_MAX_M = BigDecimal.valueOf(3.0);
+
     private final AtletaRepository atletaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoMapper treinoMapper;
@@ -137,6 +147,14 @@ public class FitTreinoPersister {
         treino.setElevacaoPerdaMetros(sanitizarElevacao(dados.descidaMetros()));
         treino.setPotenciaMedia(sanitizarPotencia(dados.potenciaMediaWatts()));
         treino.setCadenciaMedia(sanitizarCadencia(dados.cadenciaMediaPpm()));
+        treino.setTempoMovimento(dados.tempoMovimento());
+        treino.setCalorias(dados.calorias());
+        treino.setGctMedioMs(sanitizarGct(dados.gctMedioMs()));
+        treino.setGctEquilibrioPct(sanitizarGctEquilibrio(dados.gctEquilibrioPct()));
+        treino.setPassadaMediaM(sanitizarPassada(dados.passadaMediaM()));
+        treino.setOscilacaoVerticalCm(dados.oscilacaoVerticalCm());
+        treino.setProporcaoVerticalPct(dados.proporcaoVerticalPct());
+        treino.setTemperaturaMediaC(dados.temperaturaMediaC());
 
         if (dados.tssCalculado() != null) {
             treino.setTssCalculado(dados.tssCalculado());
@@ -164,6 +182,13 @@ public class FitTreinoPersister {
                     .elevacaoPerdaMetros(sanitizarElevacao(lap.descidaMetros()))
                     .potenciaMedia(sanitizarPotencia(lap.potenciaMediaWatts()))
                     .cadenciaMedia(sanitizarCadencia(lap.cadenciaMediaPpm()))
+                    .tempoMovimento(lap.tempoMovimento())
+                    .gctMedioMs(sanitizarGct(lap.gctMedioMs()))
+                    .gctEquilibrioPct(sanitizarGctEquilibrio(lap.gctEquilibrioPct()))
+                    .passadaMediaM(sanitizarPassada(lap.passadaMediaM()))
+                    .oscilacaoVerticalCm(lap.oscilacaoVerticalCm())
+                    .proporcaoVerticalPct(lap.proporcaoVerticalPct())
+                    .temperaturaMediaC(lap.temperaturaMediaC())
                     .build();
             treino.getEtapasRealizadas().add(etapa);
         }
@@ -192,7 +217,7 @@ public class FitTreinoPersister {
         if (!temMetricaDeVelocidade(lap)) {
             return null;
         }
-        double horas = lap.duracao().toMillis() / 3_600_000.0;
+        double horas = duracaoParaVelocidade(lap).toMillis() / 3_600_000.0;
         return BigDecimal.valueOf(lap.distanciaKm() / horas).setScale(2, RoundingMode.HALF_UP);
     }
 
@@ -200,7 +225,22 @@ public class FitTreinoPersister {
         if (!temMetricaDeVelocidade(lap)) {
             return null;
         }
-        return Duration.ofSeconds(Math.round(lap.duracao().toSeconds() / lap.distanciaKm()));
+        return Duration.ofSeconds(Math.round(duracaoParaVelocidade(lap).toSeconds() / lap.distanciaKm()));
+    }
+
+    /**
+     * Design D6 de fit-running-dynamics-ingestion (CA7): corrige pace/velocidade em laps com
+     * pausa. {@code duracao} ({@code totalElapsedTime}) inclui o tempo parado; quando o lap tem
+     * {@code tempoMovimento} ({@code totalTimerTime}) menor, ele é a base real do esforço — sem
+     * isso, pace/velocidade ficam artificialmente lentos em laps com autopause/pausa manual
+     * (achado registrado por fit-lap-derived-metrics: até 239 s/km de desvio numa fixture real).
+     * Não muda {@code EtapaRealizada.duracao} em si, só o cálculo derivado desta classe.
+     */
+    private static Duration duracaoParaVelocidade(FitLapData lap) {
+        Duration movimento = lap.tempoMovimento();
+        boolean movimentoValido = movimento != null && !movimento.isZero() && !movimento.isNegative()
+                && movimento.compareTo(lap.duracao()) < 0;
+        return movimentoValido ? movimento : lap.duracao();
     }
 
     private static boolean temMetricaDeVelocidade(FitLapData lap) {
@@ -229,5 +269,29 @@ public class FitTreinoPersister {
             return null;
         }
         return watts;
+    }
+
+    /** Tempo médio de contato com o solo: fora de 100-500ms é lixo de firmware, não corrida real. */
+    private static Integer sanitizarGct(Integer ms) {
+        if (ms == null || ms < GCT_MIN_MS || ms > GCT_MAX_MS) {
+            return null;
+        }
+        return ms;
+    }
+
+    /** Equilíbrio de GCT (% do pé esquerdo): fora de 30-70% é fisiologicamente implausível. */
+    private static BigDecimal sanitizarGctEquilibrio(BigDecimal pct) {
+        if (pct == null || pct.compareTo(GCT_EQUILIBRIO_MIN_PCT) < 0 || pct.compareTo(GCT_EQUILIBRIO_MAX_PCT) > 0) {
+            return null;
+        }
+        return pct;
+    }
+
+    /** Comprimento de passada: fora de 0,3-3,0m é lixo de firmware, não passada de corrida real. */
+    private static BigDecimal sanitizarPassada(BigDecimal metros) {
+        if (metros == null || metros.compareTo(PASSADA_MIN_M) < 0 || metros.compareTo(PASSADA_MAX_M) > 0) {
+            return null;
+        }
+        return metros;
     }
 }
