@@ -42,6 +42,13 @@ public class FitTreinoPersister {
 
     private static final String CRIADO_POR_GARMIN = "GARMIN";
 
+    // Faixas de sanidade para dados vindos do .fit (upload não confiável): fora delas → null,
+    // nunca persistir lixo de firmware/arquivo adversarial. Cadência espelha a regra do Strava.
+    private static final int CADENCIA_MIN_PPM = 60;
+    private static final int CADENCIA_MAX_PPM = 200;
+    private static final int ELEVACAO_MAX_METROS = 10_000;
+    private static final int POTENCIA_MAX_WATTS = 2_500;
+
     private final AtletaRepository atletaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoMapper treinoMapper;
@@ -126,6 +133,10 @@ public class FitTreinoPersister {
         treino.setStatus(TreinoExecucaoStatus.REALIZADO);
         treino.setCriadoPor(CRIADO_POR_GARMIN);
         treino.setExternalId(externalId);
+        treino.setElevacaoGanhoMetros(sanitizarElevacao(dados.subidaMetros()));
+        treino.setElevacaoPerdaMetros(sanitizarElevacao(dados.descidaMetros()));
+        treino.setPotenciaMedia(sanitizarPotencia(dados.potenciaMediaWatts()));
+        treino.setCadenciaMedia(sanitizarCadencia(dados.cadenciaMediaPpm()));
 
         if (dados.tssCalculado() != null) {
             treino.setTssCalculado(dados.tssCalculado());
@@ -149,6 +160,10 @@ public class FitTreinoPersister {
                     .fcMax(lap.fcMax())
                     .velocidadeMedia(velocidadeMediaKmh(lap))
                     .paceMedia(paceMedia(lap))
+                    .elevacaoGanhoMetros(sanitizarElevacao(lap.subidaMetros()))
+                    .elevacaoPerdaMetros(sanitizarElevacao(lap.descidaMetros()))
+                    .potenciaMedia(sanitizarPotencia(lap.potenciaMediaWatts()))
+                    .cadenciaMedia(sanitizarCadencia(lap.cadenciaMediaPpm()))
                     .build();
             treino.getEtapasRealizadas().add(etapa);
         }
@@ -191,5 +206,28 @@ public class FitTreinoPersister {
     private static boolean temMetricaDeVelocidade(FitLapData lap) {
         return lap.distanciaKm() != null && lap.distanciaKm() > 0
                 && lap.duracao() != null && !lap.duracao().isZero() && !lap.duracao().isNegative();
+    }
+
+    private static Integer sanitizarCadencia(Integer ppm) {
+        if (ppm == null || ppm < CADENCIA_MIN_PPM || ppm > CADENCIA_MAX_PPM) {
+            return null;
+        }
+        return ppm;
+    }
+
+    /** Elevação por lap/sessão: 0 é válido (percurso plano); acima do teto é dado adversarial. */
+    private static Integer sanitizarElevacao(Integer metros) {
+        if (metros == null || metros < 0 || metros > ELEVACAO_MAX_METROS) {
+            return null;
+        }
+        return metros;
+    }
+
+    /** Potência média: 0 W equivale a "sem dado" (sensor ausente), não a um treino real. */
+    private static Integer sanitizarPotencia(Integer watts) {
+        if (watts == null || watts <= 0 || watts > POTENCIA_MAX_WATTS) {
+            return null;
+        }
+        return watts;
     }
 }

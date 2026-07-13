@@ -7,11 +7,13 @@ import java.util.List;
 /**
  * Dados de sessão extraídos de um arquivo .fit — POJO interno, não é DTO de API.
  *
- * @param serialNumber   serial do dispositivo (FileIdMesg) — usado para compor o externalId (D0.2)
- * @param corrida        {@code true} quando {@code Session.Sport == RUNNING}; qualquer outro
- *                       esporte usa {@code tipoTreino = CONTINUO} e o nome do esporte é anotado
- *                       em {@code descricao} pelo chamador (D0.6) — este record só carrega o fato
- *                       bruto, a decisão de mapeamento fica no service de persistência.
+ * @param serialNumber     serial do dispositivo (FileIdMesg) — usado para compor o externalId (D0.2)
+ * @param corrida          {@code true} quando {@code Session.Sport == RUNNING}; qualquer outro
+ *                         esporte usa {@code tipoTreino = CONTINUO} e o nome do esporte é anotado
+ *                         em {@code descricao} pelo chamador (D0.6) — este record só carrega o fato
+ *                         bruto, a decisão de mapeamento fica no service de persistência.
+ * @param cadenciaMediaPpm cadência em passos por minuto de DUAS pernas (conversão no parser,
+ *                         mesma regra do {@link FitLapData}).
  */
 public record FitSessionData(
         Long serialNumber,
@@ -24,5 +26,9 @@ public record FitSessionData(
         Integer tssCalculado,
         boolean corrida,
         String esporteDetectado,
+        Integer subidaMetros,
+        Integer descidaMetros,
+        Integer potenciaMediaWatts,
+        Integer cadenciaMediaPpm,
         List<FitLapData> laps
 ) {}

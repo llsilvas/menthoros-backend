@@ -74,7 +74,23 @@ class FitTreinoPersisterTest {
     private FitSessionData sessionCorrida(Long serial, long startEpoch) {
         return new FitSessionData(serial, LocalDate.of(2026, 7, 1), startEpoch,
                 Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
-                List.of(new FitLapData(1, Duration.ofMinutes(15), 2.5, 148, 160)));
+                null, null, null, null, // sem subida/descida/potência/cadência
+                List.of(lapCorrida(1, Duration.ofMinutes(15), 2.5, 148, 160)));
+    }
+
+    /** Lap de corrida sem as métricas novas (elevação/potência/cadência) — evita a fila de nulls posicionais. */
+    private static FitLapData lapCorrida(int ordem, Duration duracao, Double distanciaKm, Integer fcMedia, Integer fcMax) {
+        return new FitLapData(ordem, duracao, distanciaKm, fcMedia, fcMax, null, null, null, null);
+    }
+
+    /** Lap padrão variando só a cadência — para os testes de sanitização (BVA). */
+    private static FitLapData lapComCadencia(int ordem, Integer cadenciaPpm) {
+        return new FitLapData(ordem, Duration.ofMinutes(5), 1.0, 148, 160, null, null, null, cadenciaPpm);
+    }
+
+    /** Lap padrão variando elevação/potência — para os testes de sanitização (BVA). */
+    private static FitLapData lapComElevacaoPotencia(int ordem, Integer subida, Integer descida, Integer potencia) {
+        return new FitLapData(ordem, Duration.ofMinutes(5), 1.0, 148, 160, subida, descida, potencia, 161);
     }
 
     @Nested
@@ -138,7 +154,8 @@ class FitTreinoPersisterTest {
         @DisplayName("esporte não-corrida usa tipoTreino=CONTINUO e anota o esporte em descricao")
         void esporteNaoCorridaUsaContinuoEDescricao() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
-                    Duration.ofHours(1), 30.0, 140, 165, 80, false, "CYCLING", List.of());
+                    Duration.ofHours(1), 30.0, 140, 165, 80, false, "CYCLING",
+                    null, null, null, null, List.of());
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
@@ -155,7 +172,8 @@ class FitTreinoPersisterTest {
         @DisplayName("TSS ausente no .fit é calculado via TssCalculatorService (fallback D0.3)")
         void tssAusenteUsaFallback() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
-                    Duration.ofMinutes(30), 5.0, 150, 175, null, true, "RUNNING", List.of());
+                    Duration.ofMinutes(30), 5.0, 150, 175, null, true, "RUNNING",
+                    null, null, null, null, List.of());
             when(tssCalculatorService.calcularTss(any())).thenReturn(70);
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
@@ -173,7 +191,8 @@ class FitTreinoPersisterTest {
         @DisplayName("dados parciais (sem distância/FC) não fabrica valores — persiste null")
         void dadosParciaisNaoFabricaValores() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
-                    Duration.ofMinutes(20), null, null, null, 40, true, "RUNNING", List.of());
+                    Duration.ofMinutes(20), null, null, null, 40, true, "RUNNING",
+                    null, null, null, null, List.of());
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
@@ -210,10 +229,11 @@ class FitTreinoPersisterTest {
         void lapSemMetricaNaoFabricaVelocidade() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null, // sem subida/descida/potência/cadência
                     List.of(
-                            new FitLapData(1, Duration.ofMinutes(15), null, 148, 160),
-                            new FitLapData(2, Duration.ZERO, 0.5, 150, 162),
-                            new FitLapData(3, Duration.ofMinutes(10), 0.0, 152, 164)));
+                            lapCorrida(1, Duration.ofMinutes(15), null, 148, 160),
+                            lapCorrida(2, Duration.ZERO, 0.5, 150, 162),
+                            lapCorrida(3, Duration.ofMinutes(10), 0.0, 152, 164)));
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
@@ -227,6 +247,124 @@ class FitTreinoPersisterTest {
                         assertThat(etapa.getVelocidadeMedia()).isNull();
                         assertThat(etapa.getPaceMedia()).isNull();
                     });
+        }
+
+        @Test
+        @DisplayName("lap e sessão com elevação/potência/cadência persistem os campos na etapa e no treino")
+        void persisteElevacaoPotenciaCadencia() {
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    65, 57, 362, 165,
+                    List.of(new FitLapData(1, Duration.ofMinutes(15), 2.5, 148, 160, 4, 2, 351, 161)));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            TreinoRealizado treino = captor.getValue();
+            assertThat(treino.getElevacaoGanhoMetros()).isEqualTo(65);
+            assertThat(treino.getElevacaoPerdaMetros()).isEqualTo(57);
+            assertThat(treino.getPotenciaMedia()).isEqualTo(362);
+            assertThat(treino.getCadenciaMedia()).isEqualTo(165);
+
+            var etapa = treino.getEtapasRealizadas().get(0);
+            assertThat(etapa.getElevacaoGanhoMetros()).isEqualTo(4);
+            assertThat(etapa.getElevacaoPerdaMetros()).isEqualTo(2);
+            assertThat(etapa.getPotenciaMedia()).isEqualTo(351);
+            assertThat(etapa.getCadenciaMedia()).isEqualTo(161);
+        }
+
+        @Test
+        @DisplayName("lap e sessão sem elevação/potência/cadência persistem null sem falhar")
+        void semMetricasNovasPersisteNull() {
+            FitSessionData dados = sessionCorrida(1L, 1751360400L);
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            TreinoRealizado treino = captor.getValue();
+            assertThat(treino.getElevacaoGanhoMetros()).isNull();
+            assertThat(treino.getElevacaoPerdaMetros()).isNull();
+            assertThat(treino.getPotenciaMedia()).isNull();
+            assertThat(treino.getCadenciaMedia()).isNull();
+            var etapa = treino.getEtapasRealizadas().get(0);
+            assertThat(etapa.getElevacaoGanhoMetros()).isNull();
+            assertThat(etapa.getPotenciaMedia()).isNull();
+            assertThat(etapa.getCadenciaMedia()).isNull();
+        }
+
+        @Test
+        @DisplayName("cadência fora da faixa fisiológica (60-200 ppm) é descartada — BVA nos limites")
+        void cadenciaForaDaFaixaDescartada() {
+            // 59 e 201 → null; 60 e 200 → mantidos (mesma regra do import Strava)
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, 59, // cadência de sessão também fora da faixa
+                    List.of(
+                            lapComCadencia(1, 59),
+                            lapComCadencia(2, 60),
+                            lapComCadencia(3, 200),
+                            lapComCadencia(4, 201)));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            TreinoRealizado treino = captor.getValue();
+            assertThat(treino.getCadenciaMedia()).isNull();
+            assertThat(treino.getEtapasRealizadas().get(0).getCadenciaMedia()).isNull();
+            assertThat(treino.getEtapasRealizadas().get(1).getCadenciaMedia()).isEqualTo(60);
+            assertThat(treino.getEtapasRealizadas().get(2).getCadenciaMedia()).isEqualTo(200);
+            assertThat(treino.getEtapasRealizadas().get(3).getCadenciaMedia()).isNull();
+        }
+
+        @Test
+        @DisplayName("elevação e potência adversariais (sentinel uint16/fora da faixa) são descartadas — BVA nos limites")
+        void elevacaoEPotenciaForaDaFaixaDescartadas() {
+            // .fit é upload não confiável: 65534 (uint16 máx válido do SDK) não pode virar dado do treino.
+            // BVA: elevação 0 e 10000 mantidas, 10001 null; potência 2500 mantida, 2501 e 0 null.
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    65534, 65534, 65534, 165,
+                    List.of(
+                            lapComElevacaoPotencia(1, 65534, 65534, 65534),
+                            lapComElevacaoPotencia(2, 0, 10_000, 2_500),
+                            lapComElevacaoPotencia(3, 10_001, 0, 2_501),
+                            lapComElevacaoPotencia(4, null, null, 0)));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            TreinoRealizado treino = captor.getValue();
+            assertThat(treino.getElevacaoGanhoMetros()).isNull();
+            assertThat(treino.getElevacaoPerdaMetros()).isNull();
+            assertThat(treino.getPotenciaMedia()).isNull();
+
+            var etapas = treino.getEtapasRealizadas();
+            assertThat(etapas.get(0).getElevacaoGanhoMetros()).isNull();
+            assertThat(etapas.get(0).getElevacaoPerdaMetros()).isNull();
+            assertThat(etapas.get(0).getPotenciaMedia()).isNull();
+            assertThat(etapas.get(1).getElevacaoGanhoMetros()).isZero();
+            assertThat(etapas.get(1).getElevacaoPerdaMetros()).isEqualTo(10_000);
+            assertThat(etapas.get(1).getPotenciaMedia()).isEqualTo(2_500);
+            assertThat(etapas.get(2).getElevacaoGanhoMetros()).isNull();
+            assertThat(etapas.get(2).getElevacaoPerdaMetros()).isZero();
+            assertThat(etapas.get(2).getPotenciaMedia()).isNull();
+            assertThat(etapas.get(3).getPotenciaMedia()).isNull();
         }
 
         @Test
