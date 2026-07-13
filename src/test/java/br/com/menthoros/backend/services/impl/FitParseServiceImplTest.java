@@ -132,6 +132,29 @@ class FitParseServiceImplTest {
         }
 
         @Test
+        @DisplayName("esporte não-corrida não fabrica cadência de passos a partir de RPM (fica null)")
+        void esporteNaoCorridaNaoConverteCadencia() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg session = new SessionMesg();
+                session.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+                session.setSport(Sport.CYCLING);
+                session.setTotalElapsedTime(3600f);
+                session.setAvgCadence((short) 90); // RPM de pedal — dobrar viraria 180 "ppm" fantasma
+                builder.mesgs.add(session);
+
+                LapMesg lap = new LapMesg();
+                lap.setTotalElapsedTime(1800f);
+                lap.setAvgCadence((short) 90);
+                builder.mesgs.add(lap);
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.cadenciaMediaPpm()).isNull();
+            assertThat(dados.laps().get(0).cadenciaMediaPpm()).isNull();
+        }
+
+        @Test
         @DisplayName("cadência sem fracional converte só o valor inteiro (duas pernas)")
         void cadenciaSemFracional() throws IOException {
             byte[] fit = gerarFit(builder -> {

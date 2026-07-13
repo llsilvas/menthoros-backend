@@ -34,13 +34,41 @@ public class FitParseServiceImpl implements FitParseService {
      */
     private static final int MAX_LAPS = 1000;
 
+    /**
+     * Lap cru, ainda sem interpretação dependente do esporte: a conversão de cadência
+     * (uma perna → duas pernas) só vale para corrida, e o esporte vem da mensagem Session —
+     * que não tem ordem garantida em relação aos Laps no stream. Por isso os listeners só
+     * coletam dados crus e o resultado final é montado APÓS o decode completo.
+     */
+    private record LapBruto(
+            int ordem,
+            Float totalElapsedTime,
+            Float totalDistance,
+            Short avgHeartRate,
+            Short maxHeartRate,
+            Integer totalAscent,
+            Integer totalDescent,
+            Integer avgPower,
+            Short cadenciaUmaPerna,
+            Float cadenciaFracionaria
+    ) {}
+
+    /**
+     * Decodifica um arquivo .fit e extrai os dados estruturados de sessão e laps.
+     *
+     * <p><b>Idempotent:</b> YES — parse puro do stream, sem estado entre chamadas.
+     * <b>Side Effects:</b> NONE — apenas lê e transforma; nada de banco/contexto.
+     * <b>Tenant-aware:</b> NO — tenant é resolvido pelo chamador ({@code FitTreinoPersister}).
+     *
+     * @throws FitParseException arquivo inválido, corrompido, multiessão ou sem startTime
+     */
     @Override
     public FitSessionData parse(InputStream in) {
-        List<FitLapData> laps = new ArrayList<>();
+        List<LapBruto> lapsBrutos = new ArrayList<>();
         AtomicLong serialNumber = new AtomicLong(0);
         AtomicInteger lapOrdem = new AtomicInteger(1);
         AtomicInteger sessionCount = new AtomicInteger(0);
-        AtomicReference<FitSessionData> resultado = new AtomicReference<>();
+        AtomicReference<SessaoBruta> sessao = new AtomicReference<>();
 
         MesgBroadcaster broadcaster = new MesgBroadcaster();
 
@@ -51,20 +79,20 @@ public class FitParseServiceImpl implements FitParseService {
         });
 
         broadcaster.addListener((LapMesgListener) mesg -> {
-            if (laps.size() >= MAX_LAPS) {
+            if (lapsBrutos.size() >= MAX_LAPS) {
                 throw new FitParseException("Arquivo .fit excede o número máximo de laps permitido (" + MAX_LAPS + ").");
             }
-            laps.add(new FitLapData(
+            lapsBrutos.add(new LapBruto(
                     lapOrdem.getAndIncrement(),
-                    duracaoDeSegundos(mesg.getTotalElapsedTime()),
-                    distanciaKmDeMetros(mesg.getTotalDistance()),
-                    inteiroOuNulo(mesg.getAvgHeartRate()),
-                    inteiroOuNulo(mesg.getMaxHeartRate()),
+                    mesg.getTotalElapsedTime(),
+                    mesg.getTotalDistance(),
+                    mesg.getAvgHeartRate(),
+                    mesg.getMaxHeartRate(),
                     mesg.getTotalAscent(),
                     mesg.getTotalDescent(),
                     mesg.getAvgPower(),
-                    cadenciaPpm(primeiroNaoNulo(mesg.getAvgRunningCadence(), mesg.getAvgCadence()),
-                            mesg.getAvgFractionalCadence())
+                    primeiroNaoNulo(mesg.getAvgRunningCadence(), mesg.getAvgCadence()),
+                    mesg.getAvgFractionalCadence()
             ));
         });
 
@@ -81,26 +109,20 @@ public class FitParseServiceImpl implements FitParseService {
                 throw new FitParseException("Arquivo .fit sem horário de início (Session.StartTime) — não é possível processar.");
             }
             Sport sport = mesg.getSport();
-            boolean corrida = sport == Sport.RUNNING;
-            Instant startInstant = mesg.getStartTime().getDate().toInstant();
-
-            resultado.set(new FitSessionData(
-                    serialNumber.get() != 0 ? serialNumber.get() : null,
-                    startInstant.atZone(ZoneId.systemDefault()).toLocalDate(),
-                    startInstant.getEpochSecond(),
-                    duracaoDeSegundos(mesg.getTotalElapsedTime()),
-                    distanciaKmDeMetros(mesg.getTotalDistance()),
-                    inteiroOuNulo(mesg.getAvgHeartRate()),
-                    inteiroOuNulo(mesg.getMaxHeartRate()),
-                    mesg.getTrainingStressScore() != null ? Math.round(mesg.getTrainingStressScore()) : null,
-                    corrida,
+            sessao.set(new SessaoBruta(
+                    mesg.getStartTime().getDate().toInstant(),
+                    mesg.getTotalElapsedTime(),
+                    mesg.getTotalDistance(),
+                    mesg.getAvgHeartRate(),
+                    mesg.getMaxHeartRate(),
+                    mesg.getTrainingStressScore(),
+                    sport == Sport.RUNNING,
                     sport != null ? sport.name() : "GENERIC",
                     mesg.getTotalAscent(),
                     mesg.getTotalDescent(),
                     mesg.getAvgPower(),
-                    cadenciaPpm(primeiroNaoNulo(mesg.getAvgRunningCadence(), mesg.getAvgCadence()),
-                            mesg.getAvgFractionalCadence()),
-                    laps
+                    primeiroNaoNulo(mesg.getAvgRunningCadence(), mesg.getAvgCadence()),
+                    mesg.getAvgFractionalCadence()
             ));
         });
 
@@ -117,11 +139,65 @@ public class FitParseServiceImpl implements FitParseService {
             throw new FitParseException("Arquivo inválido ou corrompido — não é um .fit válido.", e);
         }
 
-        FitSessionData dados = resultado.get();
-        if (dados == null) {
+        SessaoBruta s = sessao.get();
+        if (s == null) {
             throw new FitParseException("Nenhuma mensagem Session encontrada no arquivo FIT.");
         }
-        return dados;
+        return montarResultado(s, lapsBrutos, serialNumber.get());
+    }
+
+    /** Sessão crua capturada no listener — resultado final montado após o decode (ver {@link LapBruto}). */
+    private record SessaoBruta(
+            Instant startInstant,
+            Float totalElapsedTime,
+            Float totalDistance,
+            Short avgHeartRate,
+            Short maxHeartRate,
+            Float trainingStressScore,
+            boolean corrida,
+            String esporte,
+            Integer totalAscent,
+            Integer totalDescent,
+            Integer avgPower,
+            Short cadenciaUmaPerna,
+            Float cadenciaFracionaria
+    ) {}
+
+    private static FitSessionData montarResultado(SessaoBruta s, List<LapBruto> lapsBrutos, long serialNumber) {
+        // Cadência só existe no domínio como passos/min de corrida — para outros esportes o
+        // campo bruto é RPM (pedal, braçada) e dobrá-lo fabricaria um valor fantasma; fica null.
+        boolean corrida = s.corrida();
+        List<FitLapData> laps = lapsBrutos.stream()
+                .map(lap -> new FitLapData(
+                        lap.ordem(),
+                        duracaoDeSegundos(lap.totalElapsedTime()),
+                        distanciaKmDeMetros(lap.totalDistance()),
+                        inteiroOuNulo(lap.avgHeartRate()),
+                        inteiroOuNulo(lap.maxHeartRate()),
+                        lap.totalAscent(),
+                        lap.totalDescent(),
+                        lap.avgPower(),
+                        corrida ? cadenciaPpm(lap.cadenciaUmaPerna(), lap.cadenciaFracionaria()) : null
+                ))
+                .toList();
+
+        return new FitSessionData(
+                serialNumber != 0 ? serialNumber : null,
+                s.startInstant().atZone(ZoneId.systemDefault()).toLocalDate(),
+                s.startInstant().getEpochSecond(),
+                duracaoDeSegundos(s.totalElapsedTime()),
+                distanciaKmDeMetros(s.totalDistance()),
+                inteiroOuNulo(s.avgHeartRate()),
+                inteiroOuNulo(s.maxHeartRate()),
+                s.trainingStressScore() != null ? Math.round(s.trainingStressScore()) : null,
+                corrida,
+                s.esporte(),
+                s.totalAscent(),
+                s.totalDescent(),
+                s.avgPower(),
+                corrida ? cadenciaPpm(s.cadenciaUmaPerna(), s.cadenciaFracionaria()) : null,
+                laps
+        );
     }
 
     private static Duration duracaoDeSegundos(Float segundos) {
@@ -140,7 +216,8 @@ public class FitParseServiceImpl implements FitParseService {
     /**
      * {@code avgRunningCadence} é um SUBFIELD de {@code avg_cadence} que só resolve quando a
      * mensagem tem {@code sport} preenchido — dispositivos que omitem o sport no lap fariam a
-     * cadência sumir; o fallback lê o campo bruto (mesmo valor físico).
+     * cadência sumir; o fallback lê o campo bruto (mesmo valor físico). Seguro porque a conversão
+     * para ppm só é aplicada quando a Session declara corrida (RPM de outros esportes vira null).
      */
     private static Short primeiroNaoNulo(Short preferido, Short fallback) {
         return preferido != null ? preferido : fallback;
