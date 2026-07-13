@@ -227,7 +227,7 @@ class TreinoServiceConsistenciaValidatorTest {
         //         distanciaKm, ritmoAlvo, paceMedia, elevacaoGanhoMetros, elevacaoPerdaMetros,
         //         observacao, fcMedia, fcMax, cadenciaMedia, potenciaMedia, velocidadeMedia,
         //         percepcaoEsforco, tssCalculado, metodoCalculoTss, intensidadeReal,
-        //         [running dynamics x8, V53], decouplingPercentual, decoupling, serieEficiencia,
+        //         runningDynamics (V53), decouplingPercentual, decoupling, serieEficiencia,
         //         feedbackAtleta, qualidadeSonoNoiteAnterior, nivelEstresse,
         //         fonteDados, status, externalId, etapasRealizadas, sugestaoReclassificacao
         return new TreinoRealizadoOutputDto(
@@ -236,7 +236,7 @@ class TreinoServiceConsistenciaValidatorTest {
                 null, null, null, null, null,
                 null, null, null, null, null, null,
                 null, null, null, null,
-                null, null, null, null, null, null, null, null, // running dynamics (V53)
+                null, // runningDynamics
                 null, null, null,
                 null, null, null,
                 null, null, null, null, null

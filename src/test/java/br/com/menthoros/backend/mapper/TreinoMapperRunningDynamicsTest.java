@@ -37,27 +37,30 @@ class TreinoMapperRunningDynamicsTest {
 
             var dto = mapper.toOutputDto(treino);
 
-            assertThat(dto.tempoMovimento()).isEqualTo("29:10");
-            assertThat(dto.calorias()).isEqualTo(650);
-            assertThat(dto.gctMedioMs()).isEqualTo(252);
-            assertThat(dto.gctEquilibrioPct()).isEqualTo(49.3);
-            assertThat(dto.passadaMediaM()).isEqualTo(1.05);
-            assertThat(dto.oscilacaoVerticalCm()).isEqualTo(8.2);
-            assertThat(dto.proporcaoVerticalPct()).isEqualTo(6.8);
-            assertThat(dto.temperaturaMediaC()).isEqualTo(22.0);
+            assertThat(dto.runningDynamics()).isNotNull();
+            assertThat(dto.runningDynamics().tempoMovimento()).isEqualTo("29:10");
+            assertThat(dto.runningDynamics().calorias()).isEqualTo(650);
+            assertThat(dto.runningDynamics().gctMedioMs()).isEqualTo(252);
+            assertThat(dto.runningDynamics().gctEquilibrioPct()).isEqualTo(49.3);
+            assertThat(dto.runningDynamics().passadaMediaM()).isEqualTo(1.05);
+            assertThat(dto.runningDynamics().oscilacaoVerticalCm()).isEqualTo(8.2);
+            assertThat(dto.runningDynamics().proporcaoVerticalPct()).isEqualTo(6.8);
+            assertThat(dto.runningDynamics().temperaturaMediaC()).isEqualTo(22.0);
 
             var etapa = dto.etapasRealizadas().get(0);
-            assertThat(etapa.tempoMovimento()).isEqualTo("14:10");
-            assertThat(etapa.gctMedioMs()).isEqualTo(255);
-            assertThat(etapa.gctEquilibrioPct()).isEqualTo(48.7);
-            assertThat(etapa.passadaMediaM()).isEqualTo(0.98);
-            assertThat(etapa.oscilacaoVerticalCm()).isEqualTo(9.0);
-            assertThat(etapa.proporcaoVerticalPct()).isEqualTo(7.1);
-            assertThat(etapa.temperaturaMediaC()).isEqualTo(23.0);
+            assertThat(etapa.runningDynamics()).isNotNull();
+            assertThat(etapa.runningDynamics().tempoMovimento()).isEqualTo("14:10");
+            assertThat(etapa.runningDynamics().calorias()).isNull(); // só existe a nível de sessão
+            assertThat(etapa.runningDynamics().gctMedioMs()).isEqualTo(255);
+            assertThat(etapa.runningDynamics().gctEquilibrioPct()).isEqualTo(48.7);
+            assertThat(etapa.runningDynamics().passadaMediaM()).isEqualTo(0.98);
+            assertThat(etapa.runningDynamics().oscilacaoVerticalCm()).isEqualTo(9.0);
+            assertThat(etapa.runningDynamics().proporcaoVerticalPct()).isEqualTo(7.1);
+            assertThat(etapa.runningDynamics().temperaturaMediaC()).isEqualTo(23.0);
         }
 
         @Test
-        @DisplayName("sem running dynamics, campos ficam null (omitidos no JSON via NON_NULL)")
+        @DisplayName("sem running dynamics, envelope fica null (omitido no JSON via NON_NULL)")
         void semRunningDynamicsFicaNull() {
             TreinoRealizado treino = new TreinoRealizado();
             treino.setTipoTreino(TipoTreino.CONTINUO);
@@ -65,14 +68,11 @@ class TreinoMapperRunningDynamicsTest {
 
             var dto = mapper.toOutputDto(treino);
 
-            assertThat(dto.tempoMovimento()).isNull();
-            assertThat(dto.calorias()).isNull();
-            assertThat(dto.gctMedioMs()).isNull();
-            assertThat(dto.gctEquilibrioPct()).isNull();
-            assertThat(dto.passadaMediaM()).isNull();
-            assertThat(dto.oscilacaoVerticalCm()).isNull();
-            assertThat(dto.proporcaoVerticalPct()).isNull();
-            assertThat(dto.temperaturaMediaC()).isNull();
+            // O envelope em si nunca é null (mesmo padrão de DecouplingResultadoDto) — cada campo
+            // interno é que fica null individualmente, omitido no JSON via @JsonInclude(NON_NULL).
+            assertThat(dto.runningDynamics()).isEqualTo(
+                    new br.com.menthoros.backend.dto.output.RunningDynamicsOutputDto(
+                            null, null, null, null, null, null, null, null));
         }
     }
 
@@ -88,14 +88,7 @@ class TreinoMapperRunningDynamicsTest {
             var comum = mapper.toOutputDto(treino);
             var detalhe = mapper.toOutputDtoDetalhado(treino);
 
-            assertThat(detalhe.tempoMovimento()).isEqualTo(comum.tempoMovimento());
-            assertThat(detalhe.calorias()).isEqualTo(comum.calorias());
-            assertThat(detalhe.gctMedioMs()).isEqualTo(comum.gctMedioMs());
-            assertThat(detalhe.gctEquilibrioPct()).isEqualTo(comum.gctEquilibrioPct());
-            assertThat(detalhe.passadaMediaM()).isEqualTo(comum.passadaMediaM());
-            assertThat(detalhe.oscilacaoVerticalCm()).isEqualTo(comum.oscilacaoVerticalCm());
-            assertThat(detalhe.proporcaoVerticalPct()).isEqualTo(comum.proporcaoVerticalPct());
-            assertThat(detalhe.temperaturaMediaC()).isEqualTo(comum.temperaturaMediaC());
+            assertThat(detalhe.runningDynamics()).isEqualTo(comum.runningDynamics());
         }
     }
 

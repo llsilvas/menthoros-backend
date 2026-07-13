@@ -83,34 +83,9 @@ public record TreinoRealizadoOutputDto(
         @Schema(description = "Intensidade real (IF)", example = "0.85")
         Double intensidadeReal,
 
-        // ===== RUNNING DYNAMICS (import .fit) =====
-
-        @Schema(description = "Tempo em movimento da sessão (formato MM:SS ou HH:MM:SS); ausente quando o "
-                        + "dispositivo não grava timer time — nesse caso é igual à duração elapsed",
-                example = "29:10")
-        String tempoMovimento,
-
-        @Schema(description = "Calorias totais da sessão (kcal)", example = "650")
-        Integer calorias,
-
-        @Schema(description = "Tempo médio de contato com o solo (ground contact time), em ms", example = "252")
-        Integer gctMedioMs,
-
-        @Schema(description = "Equilíbrio de GCT — % do pé esquerdo (convenção Garmin); ~50 é equilíbrio perfeito",
-                example = "49.3")
-        Double gctEquilibrioPct,
-
-        @Schema(description = "Comprimento médio da passada em metros", example = "1.05")
-        Double passadaMediaM,
-
-        @Schema(description = "Oscilação vertical média em centímetros", example = "8.2")
-        Double oscilacaoVerticalCm,
-
-        @Schema(description = "Proporção vertical média (%) — oscilação/passada", example = "6.8")
-        Double proporcaoVerticalPct,
-
-        @Schema(description = "Temperatura média durante a sessão, em °C", example = "22.0")
-        Double temperaturaMediaC,
+        @Schema(description = "Running dynamics da sessão (GCT, equilíbrio, passada, oscilação, proporção "
+                        + "vertical, temperatura, tempo em movimento, calorias)")
+        RunningDynamicsOutputDto runningDynamics,
 
         @Schema(description = "Decoupling aeróbico Pa:HR (% de queda de eficiência da 1ª p/ 2ª metade); "
                         + "null quando não aplicável (esforço não contínuo ou dados insuficientes). "

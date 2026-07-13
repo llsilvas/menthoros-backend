@@ -265,7 +265,7 @@ class EnriquecerStravaServiceTest {
                 null, null, null, null, null, null,
                 null, null, null, null, null, null,
                 null, null, null, // intensidadeReal
-                null, null, null, null, null, null, null, null, // running dynamics (V53) — todos null
+                null, // runningDynamics
                 null, null, null,
                 null, null, null, null,
                 null, null, null, null

@@ -54,29 +54,8 @@ public record EtapaRealizadaOutputDto(
         @Schema(description = "Observações sobre a etapa", example = "Senti pernas pesadas")
         String observacao,
 
-        // ===== RUNNING DYNAMICS (import .fit) =====
-
-        @Schema(description = "Tempo em movimento da etapa (formato MM:SS ou HH:MM:SS); ausente quando o "
-                        + "dispositivo não grava timer time — nesse caso é igual à duração elapsed",
-                example = "04:00")
-        String tempoMovimento,
-
-        @Schema(description = "Tempo médio de contato com o solo (ground contact time), em ms", example = "252")
-        Integer gctMedioMs,
-
-        @Schema(description = "Equilíbrio de GCT — % do pé esquerdo (convenção Garmin); ~50 é equilíbrio perfeito",
-                example = "49.3")
-        Double gctEquilibrioPct,
-
-        @Schema(description = "Comprimento médio da passada em metros", example = "1.05")
-        Double passadaMediaM,
-
-        @Schema(description = "Oscilação vertical média em centímetros", example = "8.2")
-        Double oscilacaoVerticalCm,
-
-        @Schema(description = "Proporção vertical média (%) — oscilação/passada", example = "6.8")
-        Double proporcaoVerticalPct,
-
-        @Schema(description = "Temperatura média durante a etapa, em °C", example = "22.0")
-        Double temperaturaMediaC
+        @Schema(description = "Running dynamics da etapa (GCT, equilíbrio, passada, oscilação, proporção "
+                        + "vertical, temperatura, tempo em movimento) — calorias sempre ausente aqui, só "
+                        + "existe a nível de sessão")
+        RunningDynamicsOutputDto runningDynamics
 ) {}

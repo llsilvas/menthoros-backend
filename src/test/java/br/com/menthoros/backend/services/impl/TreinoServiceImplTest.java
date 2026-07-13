@@ -563,7 +563,7 @@ class TreinoServiceImplTest {
                 id, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null,
                 null, null, // intensidadeReal
-                null, null, null, null, null, null, null, null, // running dynamics (V53)
+                null, // runningDynamics
                 null, null, null, null, null, null, null, null,
                 null, null, null
         );

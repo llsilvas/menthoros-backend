@@ -67,13 +67,13 @@ class TreinoRealizadoControllerTest {
     }
 
     private static TreinoRealizadoOutputDto stubComDecoupling(UUID id, Double decoupling) {
-        // Construtor posicional (41 campos). decouplingPercentual é o 31º campo (após os 8 novos de running dynamics, V53).
+        // Construtor posicional (34 campos). decouplingPercentual é o 24º campo (após runningDynamics, V53).
         return new TreinoRealizadoOutputDto(
                 id, null, null, null, null, null, null, null, null, null,   // 1-10
                 null, null, null, null, null, null, null, null, null, null, // 11-20
                 null, null, // 21-22 (intensidadeReal)
-                null, null, null, null, null, null, null, null, // 23-30 running dynamics (V53) — todos null
-                decoupling, null, null, null, null, null, null, // 31-37 (31=decouplingPercentual, 32=envelope, 33=serie)
-                null, null, null, null); // 38-41
+                null, // 23 runningDynamics
+                decoupling, null, null, null, null, null, null, // 24-30 (24=decouplingPercentual, 25=envelope, 26=serie)
+                null, null, null, null); // 31-34
     }
 }

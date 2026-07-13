@@ -670,18 +670,18 @@ class PlanoServiceImplTest {
                 null, // 20 tssCalculado
                 null, // 21 metodoCalculoTss
                 null, // 22 intensidadeReal
-                null, null, null, null, null, null, null, null, // 23-30 running dynamics (V53) — todos null
-                null, // 31 decouplingPercentual
-                null, // 32 decoupling
-                null, // 33 serieEficiencia
-                null, // 34 feedbackAtleta
-                null, // 35 qualidadeSonoNoiteAnterior
-                null, // 36 nivelEstresse
-                null, // 37 fonteDados
-                null, // 38 status
-                null, // 39 externalId
-                null, // 40 etapasRealizadas
-                null  // 41 sugestaoReclassificacao
+                null, // 23 runningDynamics
+                null, // 24 decouplingPercentual
+                null, // 25 decoupling
+                null, // 26 serieEficiencia
+                null, // 27 feedbackAtleta
+                null, // 28 qualidadeSonoNoiteAnterior
+                null, // 29 nivelEstresse
+                null, // 30 fonteDados
+                null, // 31 status
+                null, // 32 externalId
+                null, // 33 etapasRealizadas
+                null  // 34 sugestaoReclassificacao
         );
     }
 
