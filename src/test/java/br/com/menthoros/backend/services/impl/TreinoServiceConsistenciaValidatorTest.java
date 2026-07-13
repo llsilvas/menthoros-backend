@@ -237,7 +237,7 @@ class TreinoServiceConsistenciaValidatorTest {
                 null, null, null, null,
                 null, null, null,
                 null, null, null, null,
-                null, null
+                null, null, null, null
         );
     }
 

@@ -71,7 +71,7 @@ class TreinoRealizadoControllerTest {
         return new TreinoRealizadoOutputDto(
                 id, null, null, null, null, null, null, null, null, null,   // 1-10
                 null, null, null, null, null, null, null, null, null, null, // 11-20
-                null, null, decoupling, null, null, null, null, null, null, null, // 21-30 (23=decouplingPercentual)
-                null); // 31
+                null, null, decoupling, null, null, null, null, null, null, null, // 21-30 (23=decouplingPercentual, 24=envelope, 25=serie)
+                null, null, null); // 31-33
     }
 }

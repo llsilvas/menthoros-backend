@@ -13,6 +13,8 @@ import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.services.helper.DecouplingCalculatorService;
+import br.com.menthoros.backend.services.helper.LapEfficiencySeriesCalculator;
+import org.mapstruct.InheritConfiguration;
 import org.mapstruct.*;
 
 import java.math.BigDecimal;
@@ -24,7 +26,7 @@ import java.util.stream.Collectors;
 @Mapper(
         componentModel = "spring",
         unmappedSourcePolicy = ReportingPolicy.IGNORE,
-        uses = DecouplingCalculatorService.class
+        uses = {DecouplingCalculatorService.class, LapEfficiencySeriesCalculator.class}
 )
 public interface TreinoMapper {
 
@@ -169,7 +171,23 @@ public interface TreinoMapper {
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     @Mapping(target = "sugestaoReclassificacao", ignore = true)
     @Mapping(target = "decouplingPercentual", source = ".", qualifiedByName = "decouplingDeTreino")
+    // Envelope completo (Pw:HR/potência inclusos) e série de EF ficam fora do fluxo comum
+    // (listagens): só o detalhe os carrega (design D4). O legado decouplingPercentual continua
+    // aqui para compatibilidade (CA4).
+    @Mapping(target = "decoupling", ignore = true)
+    @Mapping(target = "serieEficiencia", ignore = true)
+    @Named("treinoRealizadoToOutputDto")
     TreinoRealizadoOutputDto toOutputDto(TreinoRealizado treinoRealizado);
+
+    /**
+     * Variante de DETALHE ({@code GET /api/v1/treinos/realizados/{id}}): herda o mapeamento comum
+     * e adiciona o envelope completo de decoupling (Pa:HR + Pw:HR) e a série de EF por volta —
+     * payload maior, deliberadamente fora das listagens.
+     */
+    @InheritConfiguration(name = "toOutputDto")
+    @Mapping(target = "decoupling", source = ".", qualifiedByName = "decouplingResultadoDeTreino")
+    @Mapping(target = "serieEficiencia", source = ".", qualifiedByName = "serieEficienciaDeTreino")
+    TreinoRealizadoOutputDto toOutputDtoDetalhado(TreinoRealizado treinoRealizado);
 
     // ===== EtapaRealizada: Input -> Entity =====
 
@@ -196,6 +214,7 @@ public interface TreinoMapper {
     List<EtapaRealizadaOutputDto> toEtapaRealizadaOutputDtoList(List<EtapaRealizada> etapas);
 
     @Named("treinoRealizadoListToOutputDtoList")
+    @IterableMapping(qualifiedByName = "treinoRealizadoToOutputDto")
     List<TreinoRealizadoOutputDto> toOutputDtoListTreinoRealizado(List<TreinoRealizado> treinosRealizados);
 
     @AfterMapping

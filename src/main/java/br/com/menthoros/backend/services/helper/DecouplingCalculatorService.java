@@ -1,7 +1,10 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.dto.output.DecouplingResultadoDto;
 import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.MotivoNullDecoupling;
+import br.com.menthoros.backend.enums.OrigemCalculo;
 import br.com.menthoros.backend.enums.TipoTreino;
 import lombok.extern.slf4j.Slf4j;
 import org.mapstruct.Named;
@@ -14,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * Cálculo do decoupling aeróbico (Pa:HR) — deterioração do fator de eficiência
@@ -37,6 +41,10 @@ public class DecouplingCalculatorService {
 
     private static final double CV_FC_MAX = 0.10;
     private static final double CV_VEL_MAX = 0.15;
+    /** CV máximo de potência — constante própria, calibrável independentemente de CV_VEL_MAX (D3). */
+    private static final double CV_POT_MAX = 0.15;
+    /** Cobertura mínima de potência POR METADE do esforço elegível — evita comparar janelas assimétricas. */
+    private static final double COBERTURA_POTENCIA_MIN = 0.80;
     /** Duração mínima do esforço elegível como um todo. */
     private static final Duration DURACAO_ESFORCO_MINIMA = Duration.ofMinutes(20);
     /** Duração mínima de um segmento individual para entrar no cálculo do CV. */
@@ -51,18 +59,39 @@ public class DecouplingCalculatorService {
             EnumSet.of(TipoTreino.INTERVALADO, TipoTreino.FARTLEK, TipoTreino.TIRO, TipoTreino.SUBIDA);
     private static final Set<String> ETAPAS_DESCARTADAS = Set.of("AQUECIMENTO", "DESAQUECIMENTO", "VOLTA_CALMA");
 
-    /** Segmento elegível com métricas já normalizadas (duração em segundos, velocidade em km/h). */
-    private record Segmento(int ordem, double duracaoSeg, double fc, double velocidade) {}
+    /**
+     * Segmento com métricas normalizadas (duração em segundos, velocidade em km/h, potência em W).
+     * Velocidade e potência são opcionais — cada métrica filtra os segmentos que a suportam.
+     * Elevação/distância alimentam o gate de CV GAP-ajustado quando o hard gate estiver liberado.
+     */
+    private record Segmento(int ordem, double duracaoSeg, double fc, Double velocidade, Double potencia,
+                            Integer subidaMetros, Integer descidaMetros, Double distanciaKm) {
+
+        Double velocidadeGapAjustada() {
+            return GapCalculator.velocidadeAjustada(velocidade, subidaMetros, descidaMetros, distanciaKm);
+        }
+    }
+
+    /** Resultado de um pipeline de métrica: valor calculado OU motivo do null. */
+    private record Metrica(Double valor, MotivoNullDecoupling motivo) {
+        static Metrica ok(Double valor) {
+            return valor != null ? new Metrica(valor, null) : new Metrica(null, MotivoNullDecoupling.DADOS_INVALIDOS);
+        }
+
+        static Metrica nula(MotivoNullDecoupling motivo) {
+            return new Metrica(null, motivo);
+        }
+    }
 
     /** Acumulador ponderado por duração de uma metade do esforço. */
     private static final class Metade {
-        private double somaVelPonderada;
+        private double somaIntensidadePonderada;
         private double somaFcPonderada;
         private double somaPeso;
 
-        void adicionar(Segmento s, double peso) {
-            somaVelPonderada += s.velocidade() * peso;
-            somaFcPonderada += s.fc() * peso;
+        void adicionar(double intensidade, double fc, double peso) {
+            somaIntensidadePonderada += intensidade * peso;
+            somaFcPonderada += fc * peso;
             somaPeso += peso;
         }
 
@@ -70,9 +99,9 @@ public class DecouplingCalculatorService {
             return somaPeso <= 0;
         }
 
-        /** Fator de eficiência velocidade/FC ponderado por duração. */
+        /** Fator de eficiência intensidade/FC ponderado por duração. */
         double eficiencia() {
-            return (somaVelPonderada / somaPeso) / (somaFcPonderada / somaPeso);
+            return (somaIntensidadePonderada / somaPeso) / (somaFcPonderada / somaPeso);
         }
     }
 
@@ -90,6 +119,27 @@ public class DecouplingCalculatorService {
     }
 
     /**
+     * Adaptador para o MapStruct: envelope completo (Pa:HR + Pw:HR + proveniência) do treino.
+     * Mesmo padrão do {@code decouplingDeTreino} — o mapper resolve por {@code qualifiedByName}.
+     *
+     * <p>Idempotent: YES — cálculo puro, sem estado. Side Effects: NONE. Tenant-aware: NO.
+     */
+    @Named("decouplingResultadoDeTreino")
+    public DecouplingResultadoDto calcularResultado(TreinoRealizado treino) {
+        if (treino == null) {
+            return null;
+        }
+        DecouplingResultado r = calcularCompleto(treino.getEtapasRealizadas(), treino.getTipoTreino());
+        return new DecouplingResultadoDto(
+                r.percentual(),
+                r.motivoNull(),
+                r.potenciaPercentual(),
+                r.motivoNullPotencia(),
+                OrigemCalculo.POR_VOLTA
+        );
+    }
+
+    /**
      * Calcula o decoupling aeróbico dos segmentos, ou {@code null} quando não aplicável (gate).
      *
      * <p>Idempotent: YES — cálculo puro, sem estado. Side Effects: NONE. Tenant-aware: NO.
@@ -99,31 +149,95 @@ public class DecouplingCalculatorService {
      * @return decoupling em % (1 casa; positivo = piora, negativo = melhora) ou {@code null}
      */
     public Double calcular(List<EtapaRealizada> etapas, TipoTreino tipoTreino) {
+        return calcularCompleto(etapas, tipoTreino).percentual();
+    }
+
+    /**
+     * Calcula Pa:HR e Pw:HR com pipelines de elegibilidade INDEPENDENTES (design D3 de
+     * fit-lap-derived-metrics) — potência tem ruído, dropouts e suporte de dispositivo próprios,
+     * então um lado pode ser null com o outro calculado; os motivos de null explicam cada um.
+     *
+     * <p>Idempotent: YES — cálculo puro, sem estado. Side Effects: NONE. Tenant-aware: NO.
+     */
+    public DecouplingResultado calcularCompleto(List<EtapaRealizada> etapas, TipoTreino tipoTreino) {
+        return calcularCompleto(etapas, tipoTreino, GapCalculator.HABILITADO);
+    }
+
+    /**
+     * Variante com o gate de CV GAP-ajustado controlável — package-private para os testes
+     * exercitarem o comportamento "ligado" sem violar o hard gate de produção
+     * ({@link GapCalculator#HABILITADO}).
+     */
+    DecouplingResultado calcularCompleto(List<EtapaRealizada> etapas, TipoTreino tipoTreino, boolean gapCvHabilitado) {
         if (etapas == null || etapas.isEmpty()) {
-            return null;
+            return DecouplingResultado.ambosNull(MotivoNullDecoupling.SEM_ETAPAS);
         }
 
-        // Gate: tipo não-contínuo (belt-and-suspenders) — o guarda null é defensivo.
+        // Gate compartilhado: tipo não-contínuo (belt-and-suspenders) — o guarda null é defensivo.
         if (tipoTreino != null && TIPOS_NAO_CONTINUOS.contains(tipoTreino)) {
-            return null;
+            return DecouplingResultado.ambosNull(MotivoNullDecoupling.TIPO_NAO_CONTINUO);
         }
 
-        // Gate: elegibilidade — descarta nulos, aquecimento/desaquecimento rotulados e segmentos sem métrica.
-        List<Segmento> elegiveis = etapas.stream()
+        // Base comum: descarta nulos, aquecimento/desaquecimento rotulados e segmentos sem FC/duração.
+        // Velocidade e potência ficam opcionais — cada pipeline filtra o que suporta.
+        List<Segmento> base = etapas.stream()
                 .filter(Objects::nonNull)
                 .filter(DecouplingCalculatorService::naoEhAquecimentoOuDesaquecimento)
                 .map(DecouplingCalculatorService::normalizar)
                 .filter(Objects::nonNull)
                 .sorted(Comparator.comparingInt(Segmento::ordem))
                 .toList();
+
+        Metrica paHr = calcularMetrica(base, extratorVelocidade(base, gapCvHabilitado), CV_VEL_MAX, false);
+        Metrica pwHr = calcularMetrica(base, Segmento::potencia, CV_POT_MAX, true);
+        return new DecouplingResultado(paHr.valor(), paHr.motivo(), pwHr.valor(), pwHr.motivo());
+    }
+
+    /**
+     * Extrator de intensidade do Pa:HR: velocidade bruta por padrão; velocidade GAP-ajustada
+     * somente quando o hard gate estiver liberado E TODAS as voltas com velocidade tiverem GAP
+     * computável — GAP parcial misturaria escalas de velocidade dentro do mesmo esforço.
+     */
+    private static Function<Segmento, Double> extratorVelocidade(List<Segmento> base, boolean gapCvHabilitado) {
+        if (!gapCvHabilitado) {
+            return Segmento::velocidade;
+        }
+        boolean todasComGap = base.stream()
+                .filter(s -> s.velocidade() != null)
+                .allMatch(s -> s.velocidadeGapAjustada() != null);
+        if (!todasComGap) {
+            return Segmento::velocidade;
+        }
+        return s -> s.velocidade() != null ? s.velocidadeGapAjustada() : null;
+    }
+
+    /**
+     * Pipeline de elegibilidade de UMA métrica de intensidade sobre a base comum de segmentos.
+     *
+     * @param exigirCobertura quando true (potência), exige presença da métrica em pelo menos
+     *                        {@link #COBERTURA_POTENCIA_MIN} da duração de CADA metade da base —
+     *                        cobertura global alta concentrada numa metade compararia janelas
+     *                        de tempo diferentes (achado do adversarial review).
+     */
+    private static Metrica calcularMetrica(List<Segmento> base,
+                                           Function<Segmento, Double> intensidade,
+                                           double cvMax,
+                                           boolean exigirCobertura) {
+        List<Segmento> elegiveis = base.stream()
+                .filter(s -> intensidade.apply(s) != null)
+                .toList();
         if (elegiveis.size() < 2) {
-            return null;
+            return Metrica.nula(MotivoNullDecoupling.SEGMENTOS_INSUFICIENTES);
         }
 
-        // Gate: duração sustentada.
+        // Gate: duração sustentada da métrica.
         double duracaoTotal = elegiveis.stream().mapToDouble(Segmento::duracaoSeg).sum();
         if (duracaoTotal < DURACAO_ESFORCO_MINIMA.toSeconds()) {
-            return null;
+            return Metrica.nula(MotivoNullDecoupling.DURACAO_INSUFICIENTE);
+        }
+
+        if (exigirCobertura && !coberturaPorMetadeSuficiente(base, intensidade)) {
+            return Metrica.nula(MotivoNullDecoupling.COBERTURA_POTENCIA_INSUFICIENTE);
         }
 
         // Gate: steady por variabilidade (CV apenas sobre segmentos >= 60s).
@@ -131,29 +245,84 @@ public class DecouplingCalculatorService {
                 .filter(s -> s.duracaoSeg() >= DURACAO_SEGMENTO_MINIMA.toSeconds())
                 .toList();
         if (paraCv.size() < 2) {
-            return null;
+            return Metrica.nula(MotivoNullDecoupling.SEGMENTOS_INSUFICIENTES);
         }
         double cvFc = coeficienteVariacao(paraCv.stream().mapToDouble(Segmento::fc).toArray());
-        double cvVel = coeficienteVariacao(paraCv.stream().mapToDouble(Segmento::velocidade).toArray());
-        if (cvFc > CV_FC_MAX || cvVel > CV_VEL_MAX) {
-            return null;
+        double cvIntensidade = coeficienteVariacao(paraCv.stream()
+                .mapToDouble(s -> intensidade.apply(s)).toArray());
+        if (cvFc > CV_FC_MAX || cvIntensidade > cvMax) {
+            return Metrica.nula(MotivoNullDecoupling.VARIABILIDADE_ALTA);
         }
 
-        // Partição por tempo acumulado; o segmento que cruza o meio é dividido proporcionalmente.
+        // Linha do tempo da partição: Pw:HR usa a base completa (mesmo corte do gate de
+        // cobertura acima); Pa:HR preserva o comportamento legado — só os segmentos com a
+        // métrica presente — para não alterar decouplingPercentual em treinos com volta sem
+        // velocidade (achado do adversarial review Codex, 2ª rodada).
+        return Metrica.ok(deterioracaoPercentual(exigirCobertura ? base : elegiveis, intensidade));
+    }
+
+    /**
+     * Cobertura da métrica POR METADE da linha do tempo da base: um segmento que cruza o meio
+     * contribui proporcionalmente para as duas metades.
+     */
+    private static boolean coberturaPorMetadeSuficiente(List<Segmento> base,
+                                                        Function<Segmento, Double> intensidade) {
+        double duracaoBase = base.stream().mapToDouble(Segmento::duracaoSeg).sum();
+        if (duracaoBase <= 0) {
+            return false;
+        }
+        double meio = duracaoBase / 2.0;
+        double coberto1 = 0.0;
+        double coberto2 = 0.0;
+        double acumulado = 0.0;
+        for (Segmento s : base) {
+            double inicio = acumulado;
+            double fim = acumulado + s.duracaoSeg();
+            if (intensidade.apply(s) != null) {
+                coberto1 += Math.max(0, Math.min(fim, meio) - inicio);
+                coberto2 += Math.max(0, fim - Math.max(inicio, meio));
+            }
+            acumulado = fim;
+        }
+        return coberto1 / meio >= COBERTURA_POTENCIA_MIN && coberto2 / meio >= COBERTURA_POTENCIA_MIN;
+    }
+
+    /**
+     * Mecânica compartilhada do decoupling (design D3 de fit-lap-derived-metrics): partição
+     * temporal em metades — MESMO corte de tempo para qualquer métrica, sempre relativo à linha
+     * do tempo COMPLETA do treino ({@code base}, não apenas aos segmentos elegíveis para a
+     * métrica) — com ponderação por duração e deterioração do fator de eficiência
+     * {@code intensidade/FC}. A ELEGIBILIDADE (CV, cobertura, duração, tipo) é responsabilidade
+     * do chamador, por métrica; segmentos sem a métrica ({@code intensidade} retorna
+     * {@code null}) ocupam seu lugar na linha do tempo mas não contribuem para nenhuma metade —
+     * evita que dropouts assimétricos desloquem o corte usado pelo gate de cobertura
+     * ({@link #coberturaPorMetadeSuficiente}) em relação ao corte usado aqui (achado do
+     * adversarial review Codex).
+     *
+     * <p>Idempotent: YES — cálculo puro. Side Effects: NONE. Tenant-aware: NO.
+     */
+    private static Double deterioracaoPercentual(List<Segmento> base, Function<Segmento, Double> intensidade) {
+        double duracaoTotal = base.stream().mapToDouble(Segmento::duracaoSeg).sum();
+
+        // Partição por tempo acumulado sobre a linha do tempo completa; o segmento que cruza o
+        // meio é dividido proporcionalmente. Segmentos sem a métrica só avançam o acumulado.
         Metade primeira = new Metade();
         Metade segunda = new Metade();
         double meio = duracaoTotal / 2.0;
         double acumulado = 0.0;
-        for (Segmento s : elegiveis) {
+        for (Segmento s : base) {
             double inicio = acumulado;
             double fim = acumulado + s.duracaoSeg();
-            if (fim <= meio) {
-                primeira.adicionar(s, s.duracaoSeg());
-            } else if (inicio >= meio) {
-                segunda.adicionar(s, s.duracaoSeg());
-            } else {
-                primeira.adicionar(s, meio - inicio);
-                segunda.adicionar(s, fim - meio);
+            Double valor = intensidade.apply(s);
+            if (valor != null) {
+                if (fim <= meio) {
+                    primeira.adicionar(valor, s.fc(), s.duracaoSeg());
+                } else if (inicio >= meio) {
+                    segunda.adicionar(valor, s.fc(), s.duracaoSeg());
+                } else {
+                    primeira.adicionar(valor, s.fc(), meio - inicio);
+                    segunda.adicionar(valor, s.fc(), fim - meio);
+                }
             }
             acumulado = fim;
         }
@@ -179,7 +348,11 @@ public class DecouplingCalculatorService {
         return tipo == null || !ETAPAS_DESCARTADAS.contains(tipo.trim().toUpperCase(Locale.ROOT));
     }
 
-    /** Converte a etapa em {@link Segmento} normalizado, ou {@code null} se não tiver métrica utilizável. */
+    /**
+     * Converte a etapa em {@link Segmento} da base comum (exige FC e duração válidas), ou
+     * {@code null} se inelegível. Velocidade e potência entram como opcionais — a elegibilidade
+     * por métrica é decidida no pipeline de cada uma.
+     */
     private static Segmento normalizar(EtapaRealizada etapa) {
         Duration duracao = etapa.getDuracao();
         Integer fc = etapa.getFcMedia();
@@ -187,14 +360,23 @@ public class DecouplingCalculatorService {
             return null;
         }
         Double velocidade = velocidadeKmh(etapa);
-        if (velocidade == null || velocidade <= 0) {
-            return null;
+        if (velocidade != null && velocidade <= 0) {
+            velocidade = null;
         }
-        return new Segmento(etapa.getOrdem() != null ? etapa.getOrdem() : 0, duracao.toSeconds(), fc, velocidade);
+        Integer potenciaMedia = etapa.getPotenciaMedia();
+        Double potencia = potenciaMedia != null && potenciaMedia > 0 ? potenciaMedia.doubleValue() : null;
+        return new Segmento(etapa.getOrdem() != null ? etapa.getOrdem() : 0,
+                duracao.toSeconds(), fc, velocidade, potencia,
+                etapa.getElevacaoGanhoMetros(), etapa.getElevacaoPerdaMetros(),
+                etapa.getDistanciaKm() != null ? etapa.getDistanciaKm().doubleValue() : null);
     }
 
-    /** Velocidade em km/h: direto de {@code velocidadeMedia}, senão convertida de {@code paceMedia}. */
-    private static Double velocidadeKmh(EtapaRealizada etapa) {
+    /**
+     * Velocidade em km/h: direto de {@code velocidadeMedia}, senão convertida de {@code paceMedia}.
+     * Package-private: resolução compartilhada com o {@link LapEfficiencySeriesCalculator} —
+     * mesma regra para o escalar e para a série.
+     */
+    static Double velocidadeKmh(EtapaRealizada etapa) {
         if (etapa.getVelocidadeMedia() != null && etapa.getVelocidadeMedia().signum() > 0) {
             return etapa.getVelocidadeMedia().doubleValue();
         }

@@ -317,6 +317,32 @@ class FitParseServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("fixture de referência (corrida 15 km, 16 laps — par do CSV do Garmin Connect)")
+    class FixtureReferencia {
+
+        @Test
+        @DisplayName("parseia a fixture real com elevação, potência e cadência por lap e sessão")
+        void parseiaFixtureReal() throws IOException {
+            try (InputStream in = getClass().getResourceAsStream("/fit/corrida-15km-16laps.fit")) {
+                assertThat(in).as("fixture /fit/corrida-15km-16laps.fit no classpath").isNotNull();
+                FitSessionData dados = service.parse(in);
+
+                assertThat(dados.laps()).hasSize(16);
+                assertThat(dados.distanciaKm()).isCloseTo(15.0, org.assertj.core.data.Offset.offset(0.01));
+                assertThat(dados.subidaMetros()).isEqualTo(65);
+                assertThat(dados.descidaMetros()).isEqualTo(57);
+                assertThat(dados.potenciaMediaWatts()).isEqualTo(362);
+                assertThat(dados.cadenciaMediaPpm()).isEqualTo(165);
+                // Amostras por lap conferidas contra o CSV (corrida-15km-16laps-garmin.csv)
+                assertThat(dados.laps().get(0).subidaMetros()).isEqualTo(4);
+                assertThat(dados.laps().get(0).potenciaMediaWatts()).isEqualTo(351);
+                assertThat(dados.laps().get(0).cadenciaMediaPpm()).isEqualTo(161);
+                assertThat(dados.laps().get(13).subidaMetros()).isEqualTo(11);
+            }
+        }
+    }
+
     // ── Helper: gera um .fit real e mínimo via FileEncoder do próprio SDK ─────────────────────
 
     private interface FitBuilderCustomizer {
