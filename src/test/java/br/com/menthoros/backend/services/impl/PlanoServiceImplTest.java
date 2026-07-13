@@ -652,35 +652,36 @@ class PlanoServiceImplTest {
                 treino.getDataTreino(),
                 treino.getDiaSemana(),
                 treino.getTipoTreino(),
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
+                null, // 5 descricao
+                null, // 6 zonaAlvo
+                null, // 7 duracaoMin
+                null, // 8 distanciaKm
+                null, // 9 ritmoAlvo
+                null, // 10 paceMedia
+                null, // 11 elevacaoGanhoMetros
+                null, // 12 elevacaoPerdaMetros
+                null, // 13 observacao
+                null, // 14 fcMedia
+                null, // 15 fcMax
+                null, // 16 cadenciaMedia
+                null, // 17 potenciaMedia
+                null, // 18 velocidadeMedia
+                null, // 19 percepcaoEsforco
+                null, // 20 tssCalculado
+                null, // 21 metodoCalculoTss
+                null, // 22 intensidadeReal
+                null, // 23 runningDynamics
+                null, // 24 decouplingPercentual
+                null, // 25 decoupling
+                null, // 26 serieEficiencia
+                null, // 27 feedbackAtleta
+                null, // 28 qualidadeSonoNoiteAnterior
+                null, // 29 nivelEstresse
+                null, // 30 fonteDados
+                null, // 31 status
+                null, // 32 externalId
+                null, // 33 etapasRealizadas
+                null  // 34 sugestaoReclassificacao
         );
     }
 

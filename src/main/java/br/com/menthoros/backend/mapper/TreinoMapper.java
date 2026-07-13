@@ -6,6 +6,7 @@ import br.com.menthoros.backend.dto.input.TreinoRealizadoInputDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.dto.output.EtapaRealizadaOutputDto;
 import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
+import br.com.menthoros.backend.dto.output.RunningDynamicsOutputDto;
 import br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.EtapaRealizada;
@@ -94,6 +95,45 @@ public interface TreinoMapper {
         return value != null ? value.doubleValue() : null;
     }
 
+    // ===== Running dynamics (import .fit) — escalares simples agrupados num sub-record,
+    // mesmo padrão de DecouplingResultadoDto/LapEfficiencySeriesDto (fluxo comum, design D3
+    // de fit-running-dynamics-ingestion) =====
+
+    @Named("runningDynamicsDeTreino")
+    default RunningDynamicsOutputDto runningDynamicsDeTreino(TreinoRealizado treino) {
+        if (treino == null) {
+            return null;
+        }
+        return new RunningDynamicsOutputDto(
+                durationToString(treino.getTempoMovimento()),
+                treino.getCalorias(),
+                treino.getGctMedioMs(),
+                bigDecimalToDouble(treino.getGctEquilibrioPct()),
+                bigDecimalToDouble(treino.getPassadaMediaM()),
+                bigDecimalToDouble(treino.getOscilacaoVerticalCm()),
+                bigDecimalToDouble(treino.getProporcaoVerticalPct()),
+                bigDecimalToDouble(treino.getTemperaturaMediaC())
+        );
+    }
+
+    /** Mesmos campos de {@link #runningDynamicsDeTreino}, exceto calorias — só existe a nível de sessão. */
+    @Named("runningDynamicsDeEtapa")
+    default RunningDynamicsOutputDto runningDynamicsDeEtapa(EtapaRealizada etapa) {
+        if (etapa == null) {
+            return null;
+        }
+        return new RunningDynamicsOutputDto(
+                durationToString(etapa.getTempoMovimento()),
+                null,
+                etapa.getGctMedioMs(),
+                bigDecimalToDouble(etapa.getGctEquilibrioPct()),
+                bigDecimalToDouble(etapa.getPassadaMediaM()),
+                bigDecimalToDouble(etapa.getOscilacaoVerticalCm()),
+                bigDecimalToDouble(etapa.getProporcaoVerticalPct()),
+                bigDecimalToDouble(etapa.getTemperaturaMediaC())
+        );
+    }
+
     @Mapping(target = "planoSemanal.id", source = "planoSemanalId")
     @Mapping(target = "atleta.id", source = "atletaId")
     @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "stringToDuration")
@@ -170,6 +210,7 @@ public interface TreinoMapper {
     @Mapping(target = "paceMedia", source = "paceMedia", qualifiedByName = "durationToString")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     @Mapping(target = "sugestaoReclassificacao", ignore = true)
+    @Mapping(target = "runningDynamics", source = ".", qualifiedByName = "runningDynamicsDeTreino")
     @Mapping(target = "decouplingPercentual", source = ".", qualifiedByName = "decouplingDeTreino")
     // Envelope completo (Pw:HR/potência inclusos) e série de EF ficam fora do fluxo comum
     // (listagens): só o detalhe os carrega (design D4). O legado decouplingPercentual continua
@@ -209,6 +250,7 @@ public interface TreinoMapper {
     @Mapping(target = "paceMedia", source = "paceMedia", qualifiedByName = "durationToString")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     @Mapping(target = "velocidadeMedia", source = "velocidadeMedia", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "runningDynamics", source = ".", qualifiedByName = "runningDynamicsDeEtapa")
     EtapaRealizadaOutputDto toOutputDto(EtapaRealizada etapaRealizada);
 
     List<EtapaRealizadaOutputDto> toEtapaRealizadaOutputDtoList(List<EtapaRealizada> etapas);

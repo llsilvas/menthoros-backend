@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.dto.fit;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
@@ -14,6 +15,16 @@ import java.util.List;
  *                         bruto, a decisão de mapeamento fica no service de persistência.
  * @param cadenciaMediaPpm cadência em passos por minuto de DUAS pernas (conversão no parser,
  *                         mesma regra do {@link FitLapData}).
+ * @param tempoMovimento   tempo em movimento da sessão ({@code getTotalTimerTime()}) — nullable,
+ *                         agregado de sessão para simetria com o CSV do Garmin (mesma regra do
+ *                         {@link FitLapData}, não usado para corrigir pace de sessão nesta change).
+ * @param calorias         calorias totais da sessão ({@code getTotalCalories()}, kcal).
+ * @param gctMedioMs           tempo médio de contato com o solo, em ms.
+ * @param gctEquilibrioPct     % de GCT do pé esquerdo.
+ * @param passadaMediaM        comprimento médio da passada, em metros (FIT entrega em mm).
+ * @param oscilacaoVerticalCm  oscilação vertical média, em cm (FIT entrega em mm).
+ * @param proporcaoVerticalPct proporção vertical média, em %.
+ * @param temperaturaMediaC    temperatura média, em °C.
  */
 public record FitSessionData(
         Long serialNumber,
@@ -30,5 +41,13 @@ public record FitSessionData(
         Integer descidaMetros,
         Integer potenciaMediaWatts,
         Integer cadenciaMediaPpm,
+        Duration tempoMovimento,
+        Integer calorias,
+        Integer gctMedioMs,
+        BigDecimal gctEquilibrioPct,
+        BigDecimal passadaMediaM,
+        BigDecimal oscilacaoVerticalCm,
+        BigDecimal proporcaoVerticalPct,
+        BigDecimal temperaturaMediaC,
         List<FitLapData> laps
 ) {}

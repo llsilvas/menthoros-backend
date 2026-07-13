@@ -88,4 +88,28 @@ public class EtapaRealizada {
     @Column(name = "elevacao_perda_metros")
     private Integer elevacaoPerdaMetros;
 
+    // ===== CAMPOS RUNNING DYNAMICS (V53) =====
+
+    @Column(name = "gct_medio_ms")
+    private Integer gctMedioMs;
+
+    @Column(name = "gct_equilibrio_pct", precision = 4, scale = 1)
+    private BigDecimal gctEquilibrioPct; // % do pé esquerdo (convenção Garmin)
+
+    @Column(name = "passada_media_m", precision = 4, scale = 2)
+    private BigDecimal passadaMediaM;
+
+    @Column(name = "oscilacao_vertical_cm", precision = 4, scale = 1)
+    private BigDecimal oscilacaoVerticalCm;
+
+    @Column(name = "proporcao_vertical_pct", precision = 4, scale = 1)
+    private BigDecimal proporcaoVerticalPct;
+
+    @Column(name = "temperatura_media_c", precision = 4, scale = 1)
+    private BigDecimal temperaturaMediaC;
+
+    @JdbcTypeCode(SqlTypes.INTERVAL_SECOND)
+    @Column(name = "tempo_movimento")
+    private Duration tempoMovimento;
+
 }

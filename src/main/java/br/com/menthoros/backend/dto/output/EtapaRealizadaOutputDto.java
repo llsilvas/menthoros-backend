@@ -52,5 +52,10 @@ public record EtapaRealizadaOutputDto(
         Integer potenciaMedia,
 
         @Schema(description = "Observações sobre a etapa", example = "Senti pernas pesadas")
-        String observacao
+        String observacao,
+
+        @Schema(description = "Running dynamics da etapa (GCT, equilíbrio, passada, oscilação, proporção "
+                        + "vertical, temperatura, tempo em movimento) — calorias sempre ausente aqui, só "
+                        + "existe a nível de sessão")
+        RunningDynamicsOutputDto runningDynamics
 ) {}

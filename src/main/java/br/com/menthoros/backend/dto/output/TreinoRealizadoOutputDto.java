@@ -83,6 +83,10 @@ public record TreinoRealizadoOutputDto(
         @Schema(description = "Intensidade real (IF)", example = "0.85")
         Double intensidadeReal,
 
+        @Schema(description = "Running dynamics da sessão (GCT, equilíbrio, passada, oscilação, proporção "
+                        + "vertical, temperatura, tempo em movimento, calorias)")
+        RunningDynamicsOutputDto runningDynamics,
+
         @Schema(description = "Decoupling aeróbico Pa:HR (% de queda de eficiência da 1ª p/ 2ª metade); "
                         + "null quando não aplicável (esforço não contínuo ou dados insuficientes). "
                         + "Campo legado — o envelope 'decoupling' traz o mesmo valor com proveniência",

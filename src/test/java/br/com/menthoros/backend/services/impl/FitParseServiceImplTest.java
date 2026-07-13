@@ -132,6 +132,93 @@ class FitParseServiceImplTest {
         }
 
         @Test
+        @DisplayName("extrai running dynamics (GCT, equilíbrio, passada, oscilação, proporção, temperatura, tempo em movimento, calorias) com conversão de unidade")
+        void extraiRunningDynamicsCompleto() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg session = new SessionMesg();
+                session.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+                session.setSport(Sport.RUNNING);
+                session.setTotalElapsedTime(1800f);
+                session.setTotalTimerTime(1750f); // 30min elapsed, 29:10 em movimento
+                session.setTotalCalories(650);
+                session.setAvgStanceTime(252f);
+                session.setAvgStanceTimeBalance(49.3f);
+                session.setAvgStepLength(1050f); // mm -> 1.05 m
+                session.setAvgVerticalOscillation(82f); // mm -> 8.2 cm
+                session.setAvgVerticalRatio(6.8f);
+                session.setAvgTemperature((byte) 22);
+                builder.mesgs.add(session);
+
+                LapMesg lap = new LapMesg();
+                lap.setTotalElapsedTime(900f);
+                lap.setTotalTimerTime(850f); // pausa de 50s dentro do lap
+                lap.setAvgStanceTime(255f);
+                lap.setAvgStanceTimeBalance(48.7f);
+                lap.setAvgStepLength(980f); // mm -> 0.98 m
+                lap.setAvgVerticalOscillation(90f); // mm -> 9.0 cm
+                lap.setAvgVerticalRatio(7.1f);
+                lap.setAvgTemperature((byte) 23);
+                builder.mesgs.add(lap);
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.tempoMovimento()).isEqualTo(java.time.Duration.ofSeconds(1750));
+            assertThat(dados.calorias()).isEqualTo(650);
+            assertThat(dados.gctMedioMs()).isEqualTo(252);
+            assertThat(dados.gctEquilibrioPct()).isEqualByComparingTo("49.3");
+            assertThat(dados.passadaMediaM()).isEqualByComparingTo("1.05");
+            assertThat(dados.oscilacaoVerticalCm()).isEqualByComparingTo("8.2");
+            assertThat(dados.proporcaoVerticalPct()).isEqualByComparingTo("6.8");
+            assertThat(dados.temperaturaMediaC()).isEqualByComparingTo("22.0");
+
+            var lap0 = dados.laps().get(0);
+            assertThat(lap0.tempoMovimento()).isEqualTo(java.time.Duration.ofSeconds(850));
+            assertThat(lap0.gctMedioMs()).isEqualTo(255);
+            assertThat(lap0.gctEquilibrioPct()).isEqualByComparingTo("48.7");
+            assertThat(lap0.passadaMediaM()).isEqualByComparingTo("0.98");
+            assertThat(lap0.oscilacaoVerticalCm()).isEqualByComparingTo("9.0");
+            assertThat(lap0.proporcaoVerticalPct()).isEqualByComparingTo("7.1");
+            assertThat(lap0.temperaturaMediaC()).isEqualByComparingTo("23.0");
+        }
+
+        @Test
+        @DisplayName("dispositivo sem running dynamics: campos ficam null; tempoMovimento ausente NÃO vira zero (diferente de duracao)")
+        void semRunningDynamicsFicaNullSemFabricarZero() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg session = new SessionMesg();
+                session.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+                session.setSport(Sport.RUNNING);
+                session.setTotalElapsedTime(1800f);
+                // sem totalTimerTime, sem running dynamics — relógio mais antigo
+                builder.mesgs.add(session);
+
+                LapMesg lap = new LapMesg();
+                lap.setTotalElapsedTime(900f);
+                builder.mesgs.add(lap);
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            // duracao (totalElapsedTime) sempre presente — nunca null.
+            assertThat(dados.duracao()).isEqualTo(java.time.Duration.ofMinutes(30));
+            // tempoMovimento (totalTimerTime) ausente -> null, NUNCA Duration.ZERO fabricado.
+            assertThat(dados.tempoMovimento()).isNull();
+            assertThat(dados.calorias()).isNull();
+            assertThat(dados.gctMedioMs()).isNull();
+            assertThat(dados.gctEquilibrioPct()).isNull();
+            assertThat(dados.passadaMediaM()).isNull();
+            assertThat(dados.oscilacaoVerticalCm()).isNull();
+            assertThat(dados.proporcaoVerticalPct()).isNull();
+            assertThat(dados.temperaturaMediaC()).isNull();
+
+            var lap0 = dados.laps().get(0);
+            assertThat(lap0.duracao()).isEqualTo(java.time.Duration.ofMinutes(15));
+            assertThat(lap0.tempoMovimento()).isNull();
+            assertThat(lap0.gctMedioMs()).isNull();
+        }
+
+        @Test
         @DisplayName("esporte não-corrida não fabrica cadência de passos a partir de RPM (fica null)")
         void esporteNaoCorridaNaoConverteCadencia() throws IOException {
             byte[] fit = gerarFit(builder -> {

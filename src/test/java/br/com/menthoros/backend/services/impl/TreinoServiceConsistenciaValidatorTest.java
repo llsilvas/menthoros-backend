@@ -227,17 +227,19 @@ class TreinoServiceConsistenciaValidatorTest {
         //         distanciaKm, ritmoAlvo, paceMedia, elevacaoGanhoMetros, elevacaoPerdaMetros,
         //         observacao, fcMedia, fcMax, cadenciaMedia, potenciaMedia, velocidadeMedia,
         //         percepcaoEsforco, tssCalculado, metodoCalculoTss, intensidadeReal,
+        //         runningDynamics (V53), decouplingPercentual, decoupling, serieEficiencia,
         //         feedbackAtleta, qualidadeSonoNoiteAnterior, nivelEstresse,
-        //         fonteDados, status, externalId, etapasRealizadas
+        //         fonteDados, status, externalId, etapasRealizadas, sugestaoReclassificacao
         return new TreinoRealizadoOutputDto(
                 UUID.randomUUID(), LocalDate.now(), DiaSemana.SEGUNDA,
                 TipoTreino.REGENERATIVO, null, null, null,
                 null, null, null, null, null,
                 null, null, null, null, null, null,
                 null, null, null, null,
+                null, // runningDynamics
                 null, null, null,
-                null, null, null, null,
-                null, null, null, null
+                null, null, null,
+                null, null, null, null, null
         );
     }
 
