@@ -18,7 +18,6 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
-import java.util.function.ToDoubleFunction;
 
 /**
  * Cálculo do decoupling aeróbico (Pa:HR) — deterioração do fator de eficiência
@@ -255,7 +254,7 @@ public class DecouplingCalculatorService {
             return Metrica.nula(MotivoNullDecoupling.VARIABILIDADE_ALTA);
         }
 
-        return Metrica.ok(deterioracaoPercentual(elegiveis, s -> intensidade.apply(s)));
+        return Metrica.ok(deterioracaoPercentual(base, intensidade));
     }
 
     /**
@@ -286,32 +285,40 @@ public class DecouplingCalculatorService {
 
     /**
      * Mecânica compartilhada do decoupling (design D3 de fit-lap-derived-metrics): partição
-     * temporal em metades — MESMO corte de tempo para qualquer métrica — com ponderação por
-     * duração e deterioração do fator de eficiência {@code intensidade/FC}. A ELEGIBILIDADE
-     * (CV, cobertura, duração, tipo) é responsabilidade do chamador, por métrica: este método
-     * assume segmentos já filtrados e ordenados.
+     * temporal em metades — MESMO corte de tempo para qualquer métrica, sempre relativo à linha
+     * do tempo COMPLETA do treino ({@code base}, não apenas aos segmentos elegíveis para a
+     * métrica) — com ponderação por duração e deterioração do fator de eficiência
+     * {@code intensidade/FC}. A ELEGIBILIDADE (CV, cobertura, duração, tipo) é responsabilidade
+     * do chamador, por métrica; segmentos sem a métrica ({@code intensidade} retorna
+     * {@code null}) ocupam seu lugar na linha do tempo mas não contribuem para nenhuma metade —
+     * evita que dropouts assimétricos desloquem o corte usado pelo gate de cobertura
+     * ({@link #coberturaPorMetadeSuficiente}) em relação ao corte usado aqui (achado do
+     * adversarial review Codex).
      *
      * <p>Idempotent: YES — cálculo puro. Side Effects: NONE. Tenant-aware: NO.
      */
-    private static Double deterioracaoPercentual(List<Segmento> segmentos, ToDoubleFunction<Segmento> intensidade) {
-        double duracaoTotal = segmentos.stream().mapToDouble(Segmento::duracaoSeg).sum();
+    private static Double deterioracaoPercentual(List<Segmento> base, Function<Segmento, Double> intensidade) {
+        double duracaoTotal = base.stream().mapToDouble(Segmento::duracaoSeg).sum();
 
-        // Partição por tempo acumulado; o segmento que cruza o meio é dividido proporcionalmente.
+        // Partição por tempo acumulado sobre a linha do tempo completa; o segmento que cruza o
+        // meio é dividido proporcionalmente. Segmentos sem a métrica só avançam o acumulado.
         Metade primeira = new Metade();
         Metade segunda = new Metade();
         double meio = duracaoTotal / 2.0;
         double acumulado = 0.0;
-        for (Segmento s : segmentos) {
+        for (Segmento s : base) {
             double inicio = acumulado;
             double fim = acumulado + s.duracaoSeg();
-            double valor = intensidade.applyAsDouble(s);
-            if (fim <= meio) {
-                primeira.adicionar(valor, s.fc(), s.duracaoSeg());
-            } else if (inicio >= meio) {
-                segunda.adicionar(valor, s.fc(), s.duracaoSeg());
-            } else {
-                primeira.adicionar(valor, s.fc(), meio - inicio);
-                segunda.adicionar(valor, s.fc(), fim - meio);
+            Double valor = intensidade.apply(s);
+            if (valor != null) {
+                if (fim <= meio) {
+                    primeira.adicionar(valor, s.fc(), s.duracaoSeg());
+                } else if (inicio >= meio) {
+                    segunda.adicionar(valor, s.fc(), s.duracaoSeg());
+                } else {
+                    primeira.adicionar(valor, s.fc(), meio - inicio);
+                    segunda.adicionar(valor, s.fc(), fim - meio);
+                }
             }
             acumulado = fim;
         }
