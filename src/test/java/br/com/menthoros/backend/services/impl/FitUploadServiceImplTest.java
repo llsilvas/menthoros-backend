@@ -50,7 +50,7 @@ class FitUploadServiceImplTest {
             UUID atletaId = UUID.randomUUID();
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
-                    null, null, null, null, List.of());
+                    null, null, null, null, null, null, null, null, null, null, null, null, List.of());
             when(fitParseService.parse(any())).thenReturn(dados);
             FitImportResultado resultadoEsperado = new FitImportResultado(mock(TreinoRealizadoOutputDto.class), true);
             when(fitTreinoPersister.persistir(eq(atletaId), eq(dados))).thenReturn(resultadoEsperado);

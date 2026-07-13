@@ -75,22 +75,26 @@ class FitTreinoPersisterTest {
         return new FitSessionData(serial, LocalDate.of(2026, 7, 1), startEpoch,
                 Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
                 null, null, null, null, // sem subida/descida/potência/cadência
+                null, null, null, null, null, null, null, null, // sem running dynamics/tempo movimento/calorias
                 List.of(lapCorrida(1, Duration.ofMinutes(15), 2.5, 148, 160)));
     }
 
-    /** Lap de corrida sem as métricas novas (elevação/potência/cadência) — evita a fila de nulls posicionais. */
+    /** Lap de corrida sem as métricas novas (elevação/potência/cadência/running dynamics) — evita a fila de nulls posicionais. */
     private static FitLapData lapCorrida(int ordem, Duration duracao, Double distanciaKm, Integer fcMedia, Integer fcMax) {
-        return new FitLapData(ordem, duracao, distanciaKm, fcMedia, fcMax, null, null, null, null);
+        return new FitLapData(ordem, duracao, distanciaKm, fcMedia, fcMax, null, null, null, null,
+                null, null, null, null, null, null, null);
     }
 
     /** Lap padrão variando só a cadência — para os testes de sanitização (BVA). */
     private static FitLapData lapComCadencia(int ordem, Integer cadenciaPpm) {
-        return new FitLapData(ordem, Duration.ofMinutes(5), 1.0, 148, 160, null, null, null, cadenciaPpm);
+        return new FitLapData(ordem, Duration.ofMinutes(5), 1.0, 148, 160, null, null, null, cadenciaPpm,
+                null, null, null, null, null, null, null);
     }
 
     /** Lap padrão variando elevação/potência — para os testes de sanitização (BVA). */
     private static FitLapData lapComElevacaoPotencia(int ordem, Integer subida, Integer descida, Integer potencia) {
-        return new FitLapData(ordem, Duration.ofMinutes(5), 1.0, 148, 160, subida, descida, potencia, 161);
+        return new FitLapData(ordem, Duration.ofMinutes(5), 1.0, 148, 160, subida, descida, potencia, 161,
+                null, null, null, null, null, null, null);
     }
 
     @Nested
@@ -155,7 +159,7 @@ class FitTreinoPersisterTest {
         void esporteNaoCorridaUsaContinuoEDescricao() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofHours(1), 30.0, 140, 165, 80, false, "CYCLING",
-                    null, null, null, null, List.of());
+                    null, null, null, null, null, null, null, null, null, null, null, null, List.of());
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
@@ -173,7 +177,7 @@ class FitTreinoPersisterTest {
         void tssAusenteUsaFallback() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofMinutes(30), 5.0, 150, 175, null, true, "RUNNING",
-                    null, null, null, null, List.of());
+                    null, null, null, null, null, null, null, null, null, null, null, null, List.of());
             when(tssCalculatorService.calcularTss(any())).thenReturn(70);
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
@@ -192,7 +196,7 @@ class FitTreinoPersisterTest {
         void dadosParciaisNaoFabricaValores() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofMinutes(20), null, null, null, 40, true, "RUNNING",
-                    null, null, null, null, List.of());
+                    null, null, null, null, null, null, null, null, null, null, null, null, List.of());
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
@@ -230,6 +234,7 @@ class FitTreinoPersisterTest {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
                     null, null, null, null, // sem subida/descida/potência/cadência
+                    null, null, null, null, null, null, null, null, // sem running dynamics/tempo movimento/calorias
                     List.of(
                             lapCorrida(1, Duration.ofMinutes(15), null, 148, 160),
                             lapCorrida(2, Duration.ZERO, 0.5, 150, 162),
@@ -255,7 +260,9 @@ class FitTreinoPersisterTest {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
                     65, 57, 362, 165,
-                    List.of(new FitLapData(1, Duration.ofMinutes(15), 2.5, 148, 160, 4, 2, 351, 161)));
+                    null, null, null, null, null, null, null, null,
+                    List.of(new FitLapData(1, Duration.ofMinutes(15), 2.5, 148, 160, 4, 2, 351, 161,
+                            null, null, null, null, null, null, null)));
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
@@ -307,6 +314,7 @@ class FitTreinoPersisterTest {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
                     null, null, null, 59, // cadência de sessão também fora da faixa
+                    null, null, null, null, null, null, null, null,
                     List.of(
                             lapComCadencia(1, 59),
                             lapComCadencia(2, 60),
@@ -336,6 +344,7 @@ class FitTreinoPersisterTest {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
                     65534, 65534, 65534, 165,
+                    null, null, null, null, null, null, null, null,
                     List.of(
                             lapComElevacaoPotencia(1, 65534, 65534, 65534),
                             lapComElevacaoPotencia(2, 0, 10_000, 2_500),

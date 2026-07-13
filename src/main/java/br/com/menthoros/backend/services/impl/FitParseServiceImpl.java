@@ -14,6 +14,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -50,7 +52,14 @@ public class FitParseServiceImpl implements FitParseService {
             Integer totalDescent,
             Integer avgPower,
             Short cadenciaUmaPerna,
-            Float cadenciaFracionaria
+            Float cadenciaFracionaria,
+            Float totalTimerTime,
+            Float avgStanceTime,
+            Float avgStanceTimeBalance,
+            Float avgStepLength,
+            Float avgVerticalOscillation,
+            Float avgVerticalRatio,
+            Byte avgTemperature
     ) {}
 
     /**
@@ -92,7 +101,14 @@ public class FitParseServiceImpl implements FitParseService {
                     mesg.getTotalDescent(),
                     mesg.getAvgPower(),
                     primeiroNaoNulo(mesg.getAvgRunningCadence(), mesg.getAvgCadence()),
-                    mesg.getAvgFractionalCadence()
+                    mesg.getAvgFractionalCadence(),
+                    mesg.getTotalTimerTime(),
+                    mesg.getAvgStanceTime(),
+                    mesg.getAvgStanceTimeBalance(),
+                    mesg.getAvgStepLength(),
+                    mesg.getAvgVerticalOscillation(),
+                    mesg.getAvgVerticalRatio(),
+                    mesg.getAvgTemperature()
             ));
         });
 
@@ -122,7 +138,15 @@ public class FitParseServiceImpl implements FitParseService {
                     mesg.getTotalDescent(),
                     mesg.getAvgPower(),
                     primeiroNaoNulo(mesg.getAvgRunningCadence(), mesg.getAvgCadence()),
-                    mesg.getAvgFractionalCadence()
+                    mesg.getAvgFractionalCadence(),
+                    mesg.getTotalTimerTime(),
+                    mesg.getTotalCalories(),
+                    mesg.getAvgStanceTime(),
+                    mesg.getAvgStanceTimeBalance(),
+                    mesg.getAvgStepLength(),
+                    mesg.getAvgVerticalOscillation(),
+                    mesg.getAvgVerticalRatio(),
+                    mesg.getAvgTemperature()
             ));
         });
 
@@ -160,7 +184,15 @@ public class FitParseServiceImpl implements FitParseService {
             Integer totalDescent,
             Integer avgPower,
             Short cadenciaUmaPerna,
-            Float cadenciaFracionaria
+            Float cadenciaFracionaria,
+            Float totalTimerTime,
+            Integer totalCalories,
+            Float avgStanceTime,
+            Float avgStanceTimeBalance,
+            Float avgStepLength,
+            Float avgVerticalOscillation,
+            Float avgVerticalRatio,
+            Byte avgTemperature
     ) {}
 
     private static FitSessionData montarResultado(SessaoBruta s, List<LapBruto> lapsBrutos, long serialNumber) {
@@ -177,7 +209,14 @@ public class FitParseServiceImpl implements FitParseService {
                         lap.totalAscent(),
                         lap.totalDescent(),
                         lap.avgPower(),
-                        corrida ? cadenciaPpm(lap.cadenciaUmaPerna(), lap.cadenciaFracionaria()) : null
+                        corrida ? cadenciaPpm(lap.cadenciaUmaPerna(), lap.cadenciaFracionaria()) : null,
+                        tempoMovimentoDeSegundos(lap.totalTimerTime()),
+                        inteiroArredondado(lap.avgStanceTime()),
+                        bigDecimal1Casa(lap.avgStanceTimeBalance()),
+                        metrosDeMilimetros(lap.avgStepLength()),
+                        centimetrosDeMilimetros(lap.avgVerticalOscillation()),
+                        bigDecimal1Casa(lap.avgVerticalRatio()),
+                        celsiusDeByte(lap.avgTemperature())
                 ))
                 .toList();
 
@@ -196,6 +235,14 @@ public class FitParseServiceImpl implements FitParseService {
                 s.totalDescent(),
                 s.avgPower(),
                 corrida ? cadenciaPpm(s.cadenciaUmaPerna(), s.cadenciaFracionaria()) : null,
+                tempoMovimentoDeSegundos(s.totalTimerTime()),
+                s.totalCalories(),
+                inteiroArredondado(s.avgStanceTime()),
+                bigDecimal1Casa(s.avgStanceTimeBalance()),
+                metrosDeMilimetros(s.avgStepLength()),
+                centimetrosDeMilimetros(s.avgVerticalOscillation()),
+                bigDecimal1Casa(s.avgVerticalRatio()),
+                celsiusDeByte(s.avgTemperature()),
                 laps
         );
     }
@@ -203,6 +250,43 @@ public class FitParseServiceImpl implements FitParseService {
     private static Duration duracaoDeSegundos(Float segundos) {
         if (segundos == null) return Duration.ZERO;
         return Duration.ofMillis(Math.round(segundos * 1000));
+    }
+
+    /**
+     * Tempo em movimento ({@code getTotalTimerTime()}) — DIFERENTE de {@link #duracaoDeSegundos},
+     * que fabrica {@code Duration.ZERO} para {@code totalElapsedTime} (sempre presente num lap/
+     * sessão válidos). Timer time é opcional (falta em dispositivos antigos sem o campo) — regra
+     * transversal "getter null → coluna null" (design D2 de fit-running-dynamics-ingestion).
+     */
+    private static Duration tempoMovimentoDeSegundos(Float segundos) {
+        return segundos != null ? Duration.ofMillis(Math.round(segundos * 1000)) : null;
+    }
+
+    private static Integer inteiroArredondado(Float valor) {
+        return valor != null ? Math.round(valor) : null;
+    }
+
+    /** GCT-equilíbrio/proporção vertical: % direto do SDK, arredondado para 1 casa. */
+    private static BigDecimal bigDecimal1Casa(Float valor) {
+        return valor != null ? BigDecimal.valueOf(valor).setScale(1, RoundingMode.HALF_UP) : null;
+    }
+
+    /** Passada: a FIT entrega em mm; o domínio usa metros (2 casas). */
+    private static BigDecimal metrosDeMilimetros(Float milimetros) {
+        return milimetros != null
+                ? BigDecimal.valueOf(milimetros / 1000.0).setScale(2, RoundingMode.HALF_UP)
+                : null;
+    }
+
+    /** Oscilação vertical: a FIT entrega em mm; o domínio usa centímetros (1 casa). */
+    private static BigDecimal centimetrosDeMilimetros(Float milimetros) {
+        return milimetros != null
+                ? BigDecimal.valueOf(milimetros / 10.0).setScale(1, RoundingMode.HALF_UP)
+                : null;
+    }
+
+    private static BigDecimal celsiusDeByte(Byte graus) {
+        return graus != null ? BigDecimal.valueOf(graus).setScale(1, RoundingMode.HALF_UP) : null;
     }
 
     private static Double distanciaKmDeMetros(Float metros) {
