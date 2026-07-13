@@ -73,6 +73,25 @@ class DecouplingCalculatorServiceTest {
         }
 
         @Test
+        @DisplayName("Pa:HR ignora volta sem velocidade na partição — preserva timeline legado (CA4)")
+        void deveIgnorarVoltaSemVelocidadeNaParticaoDoPaHr() {
+            // Mesmas 4 etapas do golden (7.3%) + 1 etapa longa só com FC/duração (sem velocidade,
+            // ex.: GPS caiu) inserida antes de todas. Se a partição do Pa:HR usasse a linha do
+            // tempo completa (base) — como o Pw:HR passou a usar —, essa etapa dominaria o "meio"
+            // e esvaziaria a 1ª metade (retornando null). Pa:HR deve seguir ignorando por completo
+            // a volta sem velocidade, igual ao comportamento anterior a esta change (achado do
+            // adversarial review Codex, 2ª rodada).
+            List<EtapaRealizada> etapas = List.of(
+                    etapa(1, 100, 140, null),
+                    etapa(2, 10, 150, 12.0),
+                    etapa(3, 10, 150, 12.0),
+                    etapa(4, 10, 155, 11.5),
+                    etapa(5, 10, 155, 11.5)
+            );
+            assertThat(service.calcular(etapas, TipoTreino.CONTINUO)).isEqualTo(7.3);
+        }
+
+        @Test
         @DisplayName("pace convertido para velocidade quando velocidadeMedia ausente")
         void deveConverterPaceParaVelocidadeQuandoVelocidadeAusente() {
             // pace 5:00/km == 12 km/h; velocidadeMedia null -> usa a conversão.

@@ -254,7 +254,11 @@ public class DecouplingCalculatorService {
             return Metrica.nula(MotivoNullDecoupling.VARIABILIDADE_ALTA);
         }
 
-        return Metrica.ok(deterioracaoPercentual(base, intensidade));
+        // Linha do tempo da partição: Pw:HR usa a base completa (mesmo corte do gate de
+        // cobertura acima); Pa:HR preserva o comportamento legado — só os segmentos com a
+        // métrica presente — para não alterar decouplingPercentual em treinos com volta sem
+        // velocidade (achado do adversarial review Codex, 2ª rodada).
+        return Metrica.ok(deterioracaoPercentual(exigirCobertura ? base : elegiveis, intensidade));
     }
 
     /**
