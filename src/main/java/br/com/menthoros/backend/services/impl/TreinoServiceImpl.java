@@ -312,7 +312,8 @@ public class TreinoServiceImpl implements TreinoService {
                 .findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Treino realizado não encontrado: " + id));
         log.debug("Treino realizado encontrado: id={}", id);
-        return treinoMapper.toOutputDto(treino);
+        // Fluxo de detalhe: única rota que carrega a série de EF por volta (design D4).
+        return treinoMapper.toOutputDtoDetalhado(treino);
     }
 
     @Override

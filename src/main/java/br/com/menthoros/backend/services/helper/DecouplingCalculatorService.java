@@ -360,8 +360,12 @@ public class DecouplingCalculatorService {
                 etapa.getDistanciaKm() != null ? etapa.getDistanciaKm().doubleValue() : null);
     }
 
-    /** Velocidade em km/h: direto de {@code velocidadeMedia}, senão convertida de {@code paceMedia}. */
-    private static Double velocidadeKmh(EtapaRealizada etapa) {
+    /**
+     * Velocidade em km/h: direto de {@code velocidadeMedia}, senão convertida de {@code paceMedia}.
+     * Package-private: resolução compartilhada com o {@link LapEfficiencySeriesCalculator} —
+     * mesma regra para o escalar e para a série.
+     */
+    static Double velocidadeKmh(EtapaRealizada etapa) {
         if (etapa.getVelocidadeMedia() != null && etapa.getVelocidadeMedia().signum() > 0) {
             return etapa.getVelocidadeMedia().doubleValue();
         }

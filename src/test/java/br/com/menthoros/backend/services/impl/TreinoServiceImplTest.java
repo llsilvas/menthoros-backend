@@ -468,7 +468,7 @@ class TreinoServiceImplTest {
     class GetTreinoById {
 
         @Test
-        @DisplayName("retorna o DTO do treino realizado no escopo do tenant")
+        @DisplayName("retorna o DTO de DETALHE (com série de EF) do treino realizado no escopo do tenant")
         void retornaDtoQuandoEncontrado() {
             UUID id = UUID.randomUUID();
             TreinoRealizado treino = new TreinoRealizado();
@@ -478,9 +478,10 @@ class TreinoServiceImplTest {
 
             when(treinoRealizadoRepository.findByIdAndTenantId(id, tenantId))
                     .thenReturn(Optional.of(treino));
-            when(treinoMapper.toOutputDto(treino)).thenReturn(stub);
+            when(treinoMapper.toOutputDtoDetalhado(treino)).thenReturn(stub);
 
             assertSame(stub, treinoService.getTreinoById(id));
+            verify(treinoMapper, never()).toOutputDto(any(TreinoRealizado.class));
         }
 
         @Test
@@ -491,7 +492,7 @@ class TreinoServiceImplTest {
                     .thenReturn(Optional.empty());
 
             assertThrows(DomainNotFoundException.class, () -> treinoService.getTreinoById(id));
-            verify(treinoMapper, never()).toOutputDto(any(TreinoRealizado.class));
+            verify(treinoMapper, never()).toOutputDtoDetalhado(any(TreinoRealizado.class));
         }
 
         @Test
@@ -562,7 +563,7 @@ class TreinoServiceImplTest {
                 id, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null,
-                null, null
+                null, null, null
         );
     }
 }

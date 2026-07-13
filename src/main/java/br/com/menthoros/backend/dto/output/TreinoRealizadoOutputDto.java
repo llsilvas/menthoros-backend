@@ -92,6 +92,9 @@ public record TreinoRealizadoOutputDto(
         @Schema(description = "Envelope do decoupling com Pw:HR, proveniência e motivos de null por métrica")
         DecouplingResultadoDto decoupling,
 
+        @Schema(description = "Série de eficiência por volta — presente apenas no endpoint de detalhe do treino")
+        LapEfficiencySeriesDto serieEficiencia,
+
         // ===== FEEDBACK DO ATLETA =====
 
         @Schema(description = "Comentário sobre o treino", example = "Treino intenso, últimos 2km foram difíceis")

@@ -21,7 +21,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class TreinoMapperDecouplingTest {
 
-    private final TreinoMapper mapper = new TreinoMapperImpl(new DecouplingCalculatorService());
+    private final TreinoMapper mapper = new TreinoMapperImpl(
+            new DecouplingCalculatorService(),
+            new br.com.menthoros.backend.services.helper.LapEfficiencySeriesCalculator());
 
     @Nested
     @DisplayName("toOutputDto")
@@ -69,6 +71,21 @@ class TreinoMapperDecouplingTest {
                 .isEqualTo(br.com.menthoros.backend.enums.MotivoNullDecoupling.TIPO_NAO_CONTINUO);
         assertThat(dto.decoupling().motivoNullPotencia())
                 .isEqualTo(br.com.menthoros.backend.enums.MotivoNullDecoupling.TIPO_NAO_CONTINUO);
+    }
+
+    @Test
+    @DisplayName("toOutputDto (listagens) NÃO carrega a série de EF; toOutputDtoDetalhado carrega")
+    void serieSoNoDetalhe() {
+        TreinoRealizado treino = treino(TipoTreino.CONTINUO, etapasSteadyComPotencia());
+
+        assertThat(mapper.toOutputDto(treino).serieEficiencia()).isNull();
+
+        var detalhe = mapper.toOutputDtoDetalhado(treino);
+        assertThat(detalhe.serieEficiencia()).isNotNull();
+        assertThat(detalhe.serieEficiencia().totalVoltas()).isEqualTo(4);
+        assertThat(detalhe.serieEficiencia().pontos()).hasSize(4);
+        // demais campos permanecem idênticos ao fluxo comum
+        assertThat(detalhe.decouplingPercentual()).isEqualTo(mapper.toOutputDto(treino).decouplingPercentual());
     }
     }
 
