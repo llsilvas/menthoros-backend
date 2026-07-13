@@ -276,6 +276,52 @@ class DecouplingCalculatorServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("golden — fixture real (corrida 15 km, 16 laps)")
+    class GoldenFixtureReal {
+
+        /**
+         * Characterization test (task 1.1 de fit-lap-derived-metrics): fixa o Pa:HR do treino
+         * real ANTES do refactor do extrator de intensidade — qualquer mudança neste valor
+         * durante o refactor é regressão, não evolução.
+         */
+        @Test
+        @DisplayName("Pa:HR do treino real permanece byte a byte após refactors")
+        void goldenPaHrDaFixtureReal() throws Exception {
+            List<EtapaRealizada> etapas = etapasDaFixtureReal();
+
+            // 15.6% = deterioração real de EF (FC 130→~160 bpm com pace estável, dia de 21-24°C)
+            assertThat(service.calcular(etapas, TipoTreino.CONTINUO)).isEqualTo(15.6);
+        }
+
+        /**
+         * Converte os laps da fixture na mesma forma que o FitTreinoPersister persiste
+         * (velocidade derivada de distância/duração, 2 casas) — se o persister mudar a
+         * derivação, este helper deve mudar junto.
+         */
+        private List<EtapaRealizada> etapasDaFixtureReal() throws Exception {
+            try (var in = getClass().getResourceAsStream("/fit/corrida-15km-16laps.fit")) {
+                var dados = new br.com.menthoros.backend.services.impl.FitParseServiceImpl().parse(in);
+                return dados.laps().stream()
+                        .map(lap -> EtapaRealizada.builder()
+                                .ordem(lap.ordem())
+                                .duracao(lap.duracao())
+                                .fcMedia(lap.fcMedia())
+                                .velocidadeMedia(velocidadeDerivada(lap.distanciaKm(), lap.duracao()))
+                                .build())
+                        .toList();
+            }
+        }
+
+        private BigDecimal velocidadeDerivada(Double distanciaKm, Duration duracao) {
+            if (distanciaKm == null || distanciaKm <= 0 || duracao == null || duracao.isZero()) {
+                return null;
+            }
+            double horas = duracao.toMillis() / 3_600_000.0;
+            return BigDecimal.valueOf(distanciaKm / horas).setScale(2, java.math.RoundingMode.HALF_UP);
+        }
+    }
+
     // ===== fixtures =====
 
     private static EtapaRealizada etapa(int ordem, int durMin, Integer fc, Double velKmh) {

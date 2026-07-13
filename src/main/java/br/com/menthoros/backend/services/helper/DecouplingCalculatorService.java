@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.ToDoubleFunction;
 
 /**
  * Cálculo do decoupling aeróbico (Pa:HR) — deterioração do fator de eficiência
@@ -56,13 +57,13 @@ public class DecouplingCalculatorService {
 
     /** Acumulador ponderado por duração de uma metade do esforço. */
     private static final class Metade {
-        private double somaVelPonderada;
+        private double somaIntensidadePonderada;
         private double somaFcPonderada;
         private double somaPeso;
 
-        void adicionar(Segmento s, double peso) {
-            somaVelPonderada += s.velocidade() * peso;
-            somaFcPonderada += s.fc() * peso;
+        void adicionar(double intensidade, double fc, double peso) {
+            somaIntensidadePonderada += intensidade * peso;
+            somaFcPonderada += fc * peso;
             somaPeso += peso;
         }
 
@@ -70,9 +71,9 @@ public class DecouplingCalculatorService {
             return somaPeso <= 0;
         }
 
-        /** Fator de eficiência velocidade/FC ponderado por duração. */
+        /** Fator de eficiência intensidade/FC ponderado por duração. */
         double eficiencia() {
-            return (somaVelPonderada / somaPeso) / (somaFcPonderada / somaPeso);
+            return (somaIntensidadePonderada / somaPeso) / (somaFcPonderada / somaPeso);
         }
     }
 
@@ -139,21 +140,37 @@ public class DecouplingCalculatorService {
             return null;
         }
 
+        return deterioracaoPercentual(elegiveis, Segmento::velocidade);
+    }
+
+    /**
+     * Mecânica compartilhada do decoupling (design D3 de fit-lap-derived-metrics): partição
+     * temporal em metades — MESMO corte de tempo para qualquer métrica — com ponderação por
+     * duração e deterioração do fator de eficiência {@code intensidade/FC}. A ELEGIBILIDADE
+     * (CV, cobertura, duração, tipo) é responsabilidade do chamador, por métrica: este método
+     * assume segmentos já filtrados e ordenados.
+     *
+     * <p>Idempotent: YES — cálculo puro. Side Effects: NONE. Tenant-aware: NO.
+     */
+    private static Double deterioracaoPercentual(List<Segmento> segmentos, ToDoubleFunction<Segmento> intensidade) {
+        double duracaoTotal = segmentos.stream().mapToDouble(Segmento::duracaoSeg).sum();
+
         // Partição por tempo acumulado; o segmento que cruza o meio é dividido proporcionalmente.
         Metade primeira = new Metade();
         Metade segunda = new Metade();
         double meio = duracaoTotal / 2.0;
         double acumulado = 0.0;
-        for (Segmento s : elegiveis) {
+        for (Segmento s : segmentos) {
             double inicio = acumulado;
             double fim = acumulado + s.duracaoSeg();
+            double valor = intensidade.applyAsDouble(s);
             if (fim <= meio) {
-                primeira.adicionar(s, s.duracaoSeg());
+                primeira.adicionar(valor, s.fc(), s.duracaoSeg());
             } else if (inicio >= meio) {
-                segunda.adicionar(s, s.duracaoSeg());
+                segunda.adicionar(valor, s.fc(), s.duracaoSeg());
             } else {
-                primeira.adicionar(s, meio - inicio);
-                segunda.adicionar(s, fim - meio);
+                primeira.adicionar(valor, s.fc(), meio - inicio);
+                segunda.adicionar(valor, s.fc(), fim - meio);
             }
             acumulado = fim;
         }
