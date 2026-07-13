@@ -46,11 +46,19 @@ class TreinoMapperDecouplingTest {
     }
 
     @Test
-    @DisplayName("envelope decoupling carrega Pa:HR igual ao legado, origem POR_VOLTA e Pw:HR quando há potência")
+    @DisplayName("toOutputDto (listagens) NÃO carrega o envelope de decoupling (design D4)")
+    void naoDevePreencherEnvelopeNoFluxoComum() {
+        TreinoRealizado treino = treino(TipoTreino.CONTINUO, etapasSteadyComPotencia());
+
+        assertThat(mapper.toOutputDto(treino).decoupling()).isNull();
+    }
+
+    @Test
+    @DisplayName("envelope decoupling (detalhe) carrega Pa:HR igual ao legado, origem POR_VOLTA e Pw:HR quando há potência")
     void devePreencherEnvelopeComProveniencia() {
         TreinoRealizado treino = treino(TipoTreino.CONTINUO, etapasSteadyComPotencia());
 
-        var dto = mapper.toOutputDto(treino);
+        var dto = mapper.toOutputDtoDetalhado(treino);
 
         assertThat(dto.decoupling()).isNotNull();
         assertThat(dto.decoupling().percentual()).isEqualTo(dto.decouplingPercentual()).isEqualTo(7.3);
@@ -60,11 +68,11 @@ class TreinoMapperDecouplingTest {
     }
 
     @Test
-    @DisplayName("envelope explica o null: intervalado carrega TIPO_NAO_CONTINUO nas duas métricas")
+    @DisplayName("envelope (detalhe) explica o null: intervalado carrega TIPO_NAO_CONTINUO nas duas métricas")
     void deveExplicarNullNoEnvelope() {
         TreinoRealizado treino = treino(TipoTreino.INTERVALADO, etapasSteady());
 
-        var dto = mapper.toOutputDto(treino);
+        var dto = mapper.toOutputDtoDetalhado(treino);
 
         assertThat(dto.decoupling().percentual()).isNull();
         assertThat(dto.decoupling().motivoNull())

@@ -171,17 +171,21 @@ public interface TreinoMapper {
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     @Mapping(target = "sugestaoReclassificacao", ignore = true)
     @Mapping(target = "decouplingPercentual", source = ".", qualifiedByName = "decouplingDeTreino")
-    @Mapping(target = "decoupling", source = ".", qualifiedByName = "decouplingResultadoDeTreino")
-    // Série de EF fica fora do fluxo comum (listagens): só o detalhe a carrega (design D4).
+    // Envelope completo (Pw:HR/potência inclusos) e série de EF ficam fora do fluxo comum
+    // (listagens): só o detalhe os carrega (design D4). O legado decouplingPercentual continua
+    // aqui para compatibilidade (CA4).
+    @Mapping(target = "decoupling", ignore = true)
     @Mapping(target = "serieEficiencia", ignore = true)
     @Named("treinoRealizadoToOutputDto")
     TreinoRealizadoOutputDto toOutputDto(TreinoRealizado treinoRealizado);
 
     /**
      * Variante de DETALHE ({@code GET /api/v1/treinos/realizados/{id}}): herda o mapeamento comum
-     * e adiciona a série de EF por volta — payload maior, deliberadamente fora das listagens.
+     * e adiciona o envelope completo de decoupling (Pa:HR + Pw:HR) e a série de EF por volta —
+     * payload maior, deliberadamente fora das listagens.
      */
     @InheritConfiguration(name = "toOutputDto")
+    @Mapping(target = "decoupling", source = ".", qualifiedByName = "decouplingResultadoDeTreino")
     @Mapping(target = "serieEficiencia", source = ".", qualifiedByName = "serieEficienciaDeTreino")
     TreinoRealizadoOutputDto toOutputDtoDetalhado(TreinoRealizado treinoRealizado);
 
