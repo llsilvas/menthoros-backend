@@ -562,7 +562,9 @@ class TreinoServiceImplTest {
         return new TreinoRealizadoOutputDto(
                 id, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null,
+                null, null, // intensidadeReal
+                null, null, null, null, null, null, null, null, // running dynamics (V53)
+                null, null, null, null, null, null, null, null,
                 null, null, null
         );
     }

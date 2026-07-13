@@ -170,6 +170,12 @@ public interface TreinoMapper {
     @Mapping(target = "paceMedia", source = "paceMedia", qualifiedByName = "durationToString")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     @Mapping(target = "sugestaoReclassificacao", ignore = true)
+    @Mapping(target = "tempoMovimento", source = "tempoMovimento", qualifiedByName = "durationToString")
+    @Mapping(target = "gctEquilibrioPct", source = "gctEquilibrioPct", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "passadaMediaM", source = "passadaMediaM", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "oscilacaoVerticalCm", source = "oscilacaoVerticalCm", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "proporcaoVerticalPct", source = "proporcaoVerticalPct", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "temperaturaMediaC", source = "temperaturaMediaC", qualifiedByName = "bigDecimalToDouble")
     @Mapping(target = "decouplingPercentual", source = ".", qualifiedByName = "decouplingDeTreino")
     // Envelope completo (Pw:HR/potência inclusos) e série de EF ficam fora do fluxo comum
     // (listagens): só o detalhe os carrega (design D4). O legado decouplingPercentual continua
@@ -209,6 +215,12 @@ public interface TreinoMapper {
     @Mapping(target = "paceMedia", source = "paceMedia", qualifiedByName = "durationToString")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     @Mapping(target = "velocidadeMedia", source = "velocidadeMedia", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "tempoMovimento", source = "tempoMovimento", qualifiedByName = "durationToString")
+    @Mapping(target = "gctEquilibrioPct", source = "gctEquilibrioPct", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "passadaMediaM", source = "passadaMediaM", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "oscilacaoVerticalCm", source = "oscilacaoVerticalCm", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "proporcaoVerticalPct", source = "proporcaoVerticalPct", qualifiedByName = "bigDecimalToDouble")
+    @Mapping(target = "temperaturaMediaC", source = "temperaturaMediaC", qualifiedByName = "bigDecimalToDouble")
     EtapaRealizadaOutputDto toOutputDto(EtapaRealizada etapaRealizada);
 
     List<EtapaRealizadaOutputDto> toEtapaRealizadaOutputDtoList(List<EtapaRealizada> etapas);

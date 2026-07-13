@@ -652,35 +652,36 @@ class PlanoServiceImplTest {
                 treino.getDataTreino(),
                 treino.getDiaSemana(),
                 treino.getTipoTreino(),
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null
+                null, // 5 descricao
+                null, // 6 zonaAlvo
+                null, // 7 duracaoMin
+                null, // 8 distanciaKm
+                null, // 9 ritmoAlvo
+                null, // 10 paceMedia
+                null, // 11 elevacaoGanhoMetros
+                null, // 12 elevacaoPerdaMetros
+                null, // 13 observacao
+                null, // 14 fcMedia
+                null, // 15 fcMax
+                null, // 16 cadenciaMedia
+                null, // 17 potenciaMedia
+                null, // 18 velocidadeMedia
+                null, // 19 percepcaoEsforco
+                null, // 20 tssCalculado
+                null, // 21 metodoCalculoTss
+                null, // 22 intensidadeReal
+                null, null, null, null, null, null, null, null, // 23-30 running dynamics (V53) — todos null
+                null, // 31 decouplingPercentual
+                null, // 32 decoupling
+                null, // 33 serieEficiencia
+                null, // 34 feedbackAtleta
+                null, // 35 qualidadeSonoNoiteAnterior
+                null, // 36 nivelEstresse
+                null, // 37 fonteDados
+                null, // 38 status
+                null, // 39 externalId
+                null, // 40 etapasRealizadas
+                null  // 41 sugestaoReclassificacao
         );
     }
 

@@ -224,7 +224,9 @@ class AtletaTreinoControllerTest {
                 UUID.randomUUID(), LocalDate.now(), null, TipoTreino.CONTINUO,
                 null, null, "00:45:00", null, null, null,
                 null, null, null, null, null, null, null, null,
-                6, null, null, null, null, null, null, null, null, null,
+                6, null, null, null, // percepcaoEsforco..intensidadeReal
+                null, null, null, null, null, null, null, null, // running dynamics (V53) — todos null
+                null, null, null, null, null, null, // decouplingPercentual..nivelEstresse
                 FonteDados.MANUAL, TreinoExecucaoStatus.REALIZADO, null, null, null);
     }
 }

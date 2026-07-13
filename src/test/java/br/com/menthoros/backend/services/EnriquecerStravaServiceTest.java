@@ -264,7 +264,9 @@ class EnriquecerStravaServiceTest {
                 treinoId, null, null, null, null, null, null,
                 null, null, null, null, null, null,
                 null, null, null, null, null, null,
-                null, null, null, null, null, null,
+                null, null, null, // intensidadeReal
+                null, null, null, null, null, null, null, null, // running dynamics (V53) — todos null
+                null, null, null,
                 null, null, null, null,
                 null, null, null, null
         );
