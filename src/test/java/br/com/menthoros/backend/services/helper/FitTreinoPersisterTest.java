@@ -188,6 +188,48 @@ class FitTreinoPersisterTest {
         }
 
         @Test
+        @DisplayName("lap com distância e duração deriva velocidadeMedia e paceMedia (insumo do decoupling Pa:HR)")
+        void lapDerivaVelocidadeEPace() {
+            // 2,5 km em 15 min → 10,00 km/h e pace 6:00 min/km
+            FitSessionData dados = sessionCorrida(1L, 1751360400L);
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            var etapa = captor.getValue().getEtapasRealizadas().get(0);
+            assertThat(etapa.getVelocidadeMedia()).isEqualByComparingTo(new java.math.BigDecimal("10.00"));
+            assertThat(etapa.getPaceMedia()).isEqualTo(Duration.ofMinutes(6));
+        }
+
+        @Test
+        @DisplayName("lap sem distância ou com duração zero não fabrica velocidade/pace — persiste null")
+        void lapSemMetricaNaoFabricaVelocidade() {
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    List.of(
+                            new FitLapData(1, Duration.ofMinutes(15), null, 148, 160),
+                            new FitLapData(2, Duration.ZERO, 0.5, 150, 162),
+                            new FitLapData(3, Duration.ofMinutes(10), 0.0, 152, 164)));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            assertThat(captor.getValue().getEtapasRealizadas())
+                    .allSatisfy(etapa -> {
+                        assertThat(etapa.getVelocidadeMedia()).isNull();
+                        assertThat(etapa.getPaceMedia()).isNull();
+                    });
+        }
+
+        @Test
         @DisplayName("atleta não encontrado no tenant lança DomainNotFoundException")
         void atletaNaoEncontrado() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
