@@ -50,14 +50,21 @@ public class FitTreinoPersister {
     private static final int POTENCIA_MAX_WATTS = 2_500;
 
     // Running dynamics (design D2 de fit-running-dynamics-ingestion) — mesma lógica de descarte
-    // silencioso; oscilação vertical, proporção vertical, temperatura, tempo em movimento e
-    // calorias não têm faixa de sanidade própria no design (passam direto, sem fabricar).
+    // silencioso; temperatura, tempo em movimento e calorias não têm faixa de sanidade própria
+    // no design (passam direto, sem fabricar) — nenhum dos dois tem risco de overflow de coluna
+    // (temperatura vem de Byte, sempre cabe em NUMERIC(4,1); tempo em movimento/calorias não são
+    // NUMERIC). Oscilação e proporção vertical ganharam faixa aqui (achado do QA gate, 2026-07-13):
+    // sem cap, um valor adversarial (a FIT entrega oscilação em mm, uint16 até 6553,5cm convertido)
+    // estoura NUMERIC(4,1) (máx 999,9) e derruba a transação inteira do import por causa de um
+    // único campo opcional.
     private static final int GCT_MIN_MS = 100;
     private static final int GCT_MAX_MS = 500;
     private static final BigDecimal GCT_EQUILIBRIO_MIN_PCT = BigDecimal.valueOf(30.0);
     private static final BigDecimal GCT_EQUILIBRIO_MAX_PCT = BigDecimal.valueOf(70.0);
     private static final BigDecimal PASSADA_MIN_M = BigDecimal.valueOf(0.3);
     private static final BigDecimal PASSADA_MAX_M = BigDecimal.valueOf(3.0);
+    private static final BigDecimal OSCILACAO_MAX_CM = BigDecimal.valueOf(50.0);
+    private static final BigDecimal PROPORCAO_MAX_PCT = BigDecimal.valueOf(50.0);
 
     private final AtletaRepository atletaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
@@ -152,8 +159,8 @@ public class FitTreinoPersister {
         treino.setGctMedioMs(sanitizarGct(dados.gctMedioMs()));
         treino.setGctEquilibrioPct(sanitizarGctEquilibrio(dados.gctEquilibrioPct()));
         treino.setPassadaMediaM(sanitizarPassada(dados.passadaMediaM()));
-        treino.setOscilacaoVerticalCm(dados.oscilacaoVerticalCm());
-        treino.setProporcaoVerticalPct(dados.proporcaoVerticalPct());
+        treino.setOscilacaoVerticalCm(sanitizarOscilacao(dados.oscilacaoVerticalCm()));
+        treino.setProporcaoVerticalPct(sanitizarProporcao(dados.proporcaoVerticalPct()));
         treino.setTemperaturaMediaC(dados.temperaturaMediaC());
 
         if (dados.tssCalculado() != null) {
@@ -186,8 +193,8 @@ public class FitTreinoPersister {
                     .gctMedioMs(sanitizarGct(lap.gctMedioMs()))
                     .gctEquilibrioPct(sanitizarGctEquilibrio(lap.gctEquilibrioPct()))
                     .passadaMediaM(sanitizarPassada(lap.passadaMediaM()))
-                    .oscilacaoVerticalCm(lap.oscilacaoVerticalCm())
-                    .proporcaoVerticalPct(lap.proporcaoVerticalPct())
+                    .oscilacaoVerticalCm(sanitizarOscilacao(lap.oscilacaoVerticalCm()))
+                    .proporcaoVerticalPct(sanitizarProporcao(lap.proporcaoVerticalPct()))
                     .temperaturaMediaC(lap.temperaturaMediaC())
                     .build();
             treino.getEtapasRealizadas().add(etapa);
@@ -293,5 +300,26 @@ public class FitTreinoPersister {
             return null;
         }
         return metros;
+    }
+
+    /**
+     * Oscilação vertical: negativa ou acima do teto de sanidade é lixo de firmware. Guarda
+     * também contra overflow de {@code NUMERIC(4,1)} (máx 999,9) — a FIT entrega o dado bruto em
+     * mm (uint16, até 6553,5cm convertido); sem cap, um valor adversarial derrubaria a transação
+     * inteira do import na constraint do banco em vez de simplesmente descartar o campo opcional.
+     */
+    private static BigDecimal sanitizarOscilacao(BigDecimal cm) {
+        if (cm == null || cm.signum() < 0 || cm.compareTo(OSCILACAO_MAX_CM) > 0) {
+            return null;
+        }
+        return cm;
+    }
+
+    /** Proporção vertical: mesma lógica e mesmo motivo de {@link #sanitizarOscilacao}. */
+    private static BigDecimal sanitizarProporcao(BigDecimal pct) {
+        if (pct == null || pct.signum() < 0 || pct.compareTo(PROPORCAO_MAX_PCT) > 0) {
+            return null;
+        }
+        return pct;
     }
 }

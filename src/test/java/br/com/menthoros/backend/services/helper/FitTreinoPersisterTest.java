@@ -115,6 +115,18 @@ class FitTreinoPersisterTest {
                 null, null, null, new java.math.BigDecimal(passadaMediaM), null, null, null);
     }
 
+    /** Lap padrão variando só a oscilação vertical — para os testes de sanitização (BVA). */
+    private static FitLapData lapComOscilacao(int ordem, String oscilacaoVerticalCm) {
+        return new FitLapData(ordem, Duration.ofMinutes(5), 1.0, 148, 160, null, null, null, null,
+                null, null, null, null, new java.math.BigDecimal(oscilacaoVerticalCm), null, null);
+    }
+
+    /** Lap padrão variando só a proporção vertical — para os testes de sanitização (BVA). */
+    private static FitLapData lapComProporcao(int ordem, String proporcaoVerticalPct) {
+        return new FitLapData(ordem, Duration.ofMinutes(5), 1.0, 148, 160, null, null, null, null,
+                null, null, null, null, null, new java.math.BigDecimal(proporcaoVerticalPct), null);
+    }
+
     @Nested
     @DisplayName("persistir")
     class Persistir {
@@ -534,6 +546,58 @@ class FitTreinoPersisterTest {
             assertThat(etapas.get(1).getPassadaMediaM()).isEqualByComparingTo("0.30");
             assertThat(etapas.get(2).getPassadaMediaM()).isEqualByComparingTo("3.0");
             assertThat(etapas.get(3).getPassadaMediaM()).isNull();
+        }
+
+        @Test
+        @DisplayName("oscilação vertical negativa ou acima do teto de sanidade é descartada — protege contra overflow de NUMERIC(4,1) (achado do QA gate)")
+        void oscilacaoForaDaFaixaDescartada() {
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null, null, null, null, null, null, null, null, null,
+                    List.of(
+                            lapComOscilacao(1, "-0.1"),
+                            lapComOscilacao(2, "0.0"),
+                            lapComOscilacao(3, "50.0"),
+                            lapComOscilacao(4, "50.1")));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            var etapas = captor.getValue().getEtapasRealizadas();
+            assertThat(etapas.get(0).getOscilacaoVerticalCm()).isNull();
+            assertThat(etapas.get(1).getOscilacaoVerticalCm()).isEqualByComparingTo("0.0");
+            assertThat(etapas.get(2).getOscilacaoVerticalCm()).isEqualByComparingTo("50.0");
+            assertThat(etapas.get(3).getOscilacaoVerticalCm()).isNull();
+        }
+
+        @Test
+        @DisplayName("proporção vertical negativa ou acima do teto de sanidade é descartada — protege contra overflow de NUMERIC(4,1) (achado do QA gate)")
+        void proporcaoForaDaFaixaDescartada() {
+            FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null, null, null, null, null, null, null, null, null,
+                    List.of(
+                            lapComProporcao(1, "-0.1"),
+                            lapComProporcao(2, "0.0"),
+                            lapComProporcao(3, "50.0"),
+                            lapComProporcao(4, "50.1")));
+            when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, dados);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+            var etapas = captor.getValue().getEtapasRealizadas();
+            assertThat(etapas.get(0).getProporcaoVerticalPct()).isNull();
+            assertThat(etapas.get(1).getProporcaoVerticalPct()).isEqualByComparingTo("0.0");
+            assertThat(etapas.get(2).getProporcaoVerticalPct()).isEqualByComparingTo("50.0");
+            assertThat(etapas.get(3).getProporcaoVerticalPct()).isNull();
         }
 
         @Test

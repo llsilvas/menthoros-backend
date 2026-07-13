@@ -152,6 +152,16 @@ public class FitParseServiceImpl implements FitParseService {
 
         try {
             new Decode().read(in, broadcaster);
+
+            SessaoBruta s = sessao.get();
+            if (s == null) {
+                throw new FitParseException("Nenhuma mensagem Session encontrada no arquivo FIT.");
+            }
+            // montarResultado fica dentro do try: campos de running dynamics (float) de um
+            // binário adversarial podem carregar NaN/Infinity — sentinelas que o SDK não
+            // resolve para null e que BigDecimal.valueOf() rejeita com NumberFormatException.
+            // Tratar como .fit inválido (mesmo path do catch abaixo) em vez de vazar um 500.
+            return montarResultado(s, lapsBrutos, serialNumber.get());
         } catch (FitParseException e) {
             // Já é a exceção/mensagem certa (lançada pelos nossos próprios listeners) — não reenvelopar.
             throw e;
@@ -162,12 +172,6 @@ public class FitParseServiceImpl implements FitParseService {
             log.warn("Falha ao decodificar arquivo .fit: {}", e.getMessage());
             throw new FitParseException("Arquivo inválido ou corrompido — não é um .fit válido.", e);
         }
-
-        SessaoBruta s = sessao.get();
-        if (s == null) {
-            throw new FitParseException("Nenhuma mensagem Session encontrada no arquivo FIT.");
-        }
-        return montarResultado(s, lapsBrutos, serialNumber.get());
     }
 
     /** Sessão crua capturada no listener — resultado final montado após o decode (ver {@link LapBruto}). */
