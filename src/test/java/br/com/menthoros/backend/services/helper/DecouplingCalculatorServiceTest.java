@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.MotivoNullDecoupling;
 import br.com.menthoros.backend.enums.TipoTreino;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -277,6 +278,176 @@ class DecouplingCalculatorServiceTest {
     }
 
     @Nested
+    @DisplayName("calcularCompleto (Pa:HR + Pw:HR com motivos de null)")
+    class CalcularCompleto {
+
+        @Test
+        @DisplayName("treino steady com potência em todas as voltas calcula as duas métricas")
+        void calculaAmbasAsMetricas() {
+            List<EtapaRealizada> etapas = List.of(
+                    etapaPot(1, 10, 150, 12.0, 360),
+                    etapaPot(2, 10, 150, 12.0, 360),
+                    etapaPot(3, 10, 155, 11.5, 340),
+                    etapaPot(4, 10, 155, 11.5, 340)
+            );
+
+            DecouplingResultado r = service.calcularCompleto(etapas, TipoTreino.CONTINUO);
+
+            assertThat(r.percentual()).isEqualTo(7.3);
+            assertThat(r.motivoNull()).isNull();
+            // EF1=360/150=2.4 ; EF2=340/155=2.19355 -> 8.6021 -> 8.6
+            assertThat(r.potenciaPercentual()).isEqualTo(8.6);
+            assertThat(r.motivoNullPotencia()).isNull();
+        }
+
+        @Test
+        @DisplayName("cobertura global de potência alta mas concentrada fora de uma metade → Pw:HR null")
+        void coberturaConcentradaNumaMetadeReprovaPwHr() {
+            // 50min; potência ausente só na L1 (10min) — global 80%, mas 1ª metade (25min) tem 60%.
+            List<EtapaRealizada> etapas = List.of(
+                    etapaPot(1, 10, 150, 12.0, null),
+                    etapaPot(2, 10, 150, 12.0, 360),
+                    etapaPot(3, 10, 150, 12.0, 360),
+                    etapaPot(4, 10, 151, 12.0, 360),
+                    etapaPot(5, 10, 151, 12.0, 360)
+            );
+
+            DecouplingResultado r = service.calcularCompleto(etapas, TipoTreino.CONTINUO);
+
+            assertThat(r.percentual()).isNotNull();
+            assertThat(r.potenciaPercentual()).isNull();
+            assertThat(r.motivoNullPotencia()).isEqualTo(MotivoNullDecoupling.COBERTURA_POTENCIA_INSUFICIENTE);
+        }
+
+        @Test
+        @DisplayName("cobertura de potência exatamente 80% em cada metade → Pw:HR calculado (BVA)")
+        void coberturaNoLimiteDe80PorMetadeCalcula() {
+            // 40min; 2ª metade (1200s) = L3(600s) + L4(360s) + L5(240s sem potência) → 960/1200 = 80%.
+            List<EtapaRealizada> etapas = List.of(
+                    etapaPot(1, 10, 150, 12.0, 360),
+                    etapaPot(2, 10, 150, 12.0, 360),
+                    etapaPot(3, 10, 150, 12.0, 360),
+                    etapaSegPot(4, 360, 150, 12.0, 360),
+                    etapaSegPot(5, 240, 150, 12.0, null)
+            );
+
+            DecouplingResultado r = service.calcularCompleto(etapas, TipoTreino.CONTINUO);
+
+            assertThat(r.potenciaPercentual()).isEqualTo(0.0);
+            assertThat(r.motivoNullPotencia()).isNull();
+        }
+
+        @Test
+        @DisplayName("cobertura de potência logo abaixo de 80% numa metade → Pw:HR null (BVA)")
+        void coberturaAbaixoDe80NumaMetadeReprova() {
+            // 2ª metade (1200s) = L3(600s) + L4(350s) + L5(250s sem potência) → 950/1200 = 79,2%.
+            List<EtapaRealizada> etapas = List.of(
+                    etapaPot(1, 10, 150, 12.0, 360),
+                    etapaPot(2, 10, 150, 12.0, 360),
+                    etapaPot(3, 10, 150, 12.0, 360),
+                    etapaSegPot(4, 350, 150, 12.0, 360),
+                    etapaSegPot(5, 250, 150, 12.0, null)
+            );
+
+            DecouplingResultado r = service.calcularCompleto(etapas, TipoTreino.CONTINUO);
+
+            assertThat(r.potenciaPercentual()).isNull();
+            assertThat(r.motivoNullPotencia()).isEqualTo(MotivoNullDecoupling.COBERTURA_POTENCIA_INSUFICIENTE);
+        }
+
+        @Test
+        @DisplayName("CV de potência acima de 0.15 → Pw:HR null sem afetar o Pa:HR")
+        void cvDePotenciaAltoReprovaSoPwHr() {
+            // pot [290,290,410,410] -> media 350, sd 60, CV 0.171 (> 0.15). Vel/FC steady.
+            List<EtapaRealizada> etapas = List.of(
+                    etapaPot(1, 10, 150, 12.0, 290),
+                    etapaPot(2, 10, 150, 12.0, 290),
+                    etapaPot(3, 10, 150, 12.0, 410),
+                    etapaPot(4, 10, 150, 12.0, 410)
+            );
+
+            DecouplingResultado r = service.calcularCompleto(etapas, TipoTreino.CONTINUO);
+
+            assertThat(r.percentual()).isEqualTo(0.0);
+            assertThat(r.potenciaPercentual()).isNull();
+            assertThat(r.motivoNullPotencia()).isEqualTo(MotivoNullDecoupling.VARIABILIDADE_ALTA);
+        }
+
+        @Test
+        @DisplayName("voltas sem velocidade mas com potência → Pw:HR calculado com Pa:HR null")
+        void pwHrCalculadoSemVelocidade() {
+            List<EtapaRealizada> etapas = List.of(
+                    etapaPot(1, 10, 150, null, 360),
+                    etapaPot(2, 10, 150, null, 360),
+                    etapaPot(3, 10, 155, null, 340),
+                    etapaPot(4, 10, 155, null, 340)
+            );
+
+            DecouplingResultado r = service.calcularCompleto(etapas, TipoTreino.CONTINUO);
+
+            assertThat(r.percentual()).isNull();
+            assertThat(r.motivoNull()).isEqualTo(MotivoNullDecoupling.SEGMENTOS_INSUFICIENTES);
+            assertThat(r.potenciaPercentual()).isEqualTo(8.6);
+        }
+
+        @Test
+        @DisplayName("tipo não-contínuo anula as duas métricas com o mesmo motivo")
+        void tipoNaoContinuoAnulaAmbas() {
+            List<EtapaRealizada> etapas = List.of(
+                    etapaPot(1, 10, 150, 12.0, 360),
+                    etapaPot(2, 10, 150, 12.0, 360),
+                    etapaPot(3, 10, 155, 11.5, 340),
+                    etapaPot(4, 10, 155, 11.5, 340)
+            );
+
+            DecouplingResultado r = service.calcularCompleto(etapas, TipoTreino.INTERVALADO);
+
+            assertThat(r.percentual()).isNull();
+            assertThat(r.motivoNull()).isEqualTo(MotivoNullDecoupling.TIPO_NAO_CONTINUO);
+            assertThat(r.potenciaPercentual()).isNull();
+            assertThat(r.motivoNullPotencia()).isEqualTo(MotivoNullDecoupling.TIPO_NAO_CONTINUO);
+        }
+
+        @Test
+        @DisplayName("duração total abaixo de 20min anula as duas com DURACAO_INSUFICIENTE")
+        void duracaoInsuficienteAnulaAmbas() {
+            List<EtapaRealizada> etapas = List.of(
+                    etapaPot(1, 9, 150, 12.0, 360),
+                    etapaPot(2, 9, 150, 12.0, 360)
+            );
+
+            DecouplingResultado r = service.calcularCompleto(etapas, TipoTreino.CONTINUO);
+
+            assertThat(r.motivoNull()).isEqualTo(MotivoNullDecoupling.DURACAO_INSUFICIENTE);
+            assertThat(r.motivoNullPotencia()).isEqualTo(MotivoNullDecoupling.DURACAO_INSUFICIENTE);
+        }
+
+        @Test
+        @DisplayName("lista vazia ou nula → SEM_ETAPAS nas duas métricas")
+        void listaVaziaOuNula() {
+            assertThat(service.calcularCompleto(List.of(), TipoTreino.CONTINUO).motivoNull())
+                    .isEqualTo(MotivoNullDecoupling.SEM_ETAPAS);
+            assertThat(service.calcularCompleto(null, TipoTreino.CONTINUO).motivoNullPotencia())
+                    .isEqualTo(MotivoNullDecoupling.SEM_ETAPAS);
+        }
+
+        @Test
+        @DisplayName("legado calcular() retorna exatamente o percentual do calcularCompleto()")
+        void legadoDelegaAoCompleto() {
+            List<EtapaRealizada> etapas = List.of(
+                    etapa(1, 10, 150, 12.0),
+                    etapa(2, 10, 150, 12.0),
+                    etapa(3, 10, 155, 11.5),
+                    etapa(4, 10, 155, 11.5)
+            );
+
+            assertThat(service.calcular(etapas, TipoTreino.CONTINUO))
+                    .isEqualTo(service.calcularCompleto(etapas, TipoTreino.CONTINUO).percentual())
+                    .isEqualTo(7.3);
+        }
+    }
+
+    @Nested
     @DisplayName("golden — fixture real (corrida 15 km, 16 laps)")
     class GoldenFixtureReal {
 
@@ -351,6 +522,28 @@ class DecouplingCalculatorServiceTest {
                 .duracao(Duration.ofMinutes(durMin))
                 .fcMedia(fc)
                 .velocidadeMedia(BigDecimal.valueOf(velKmh))
+                .build();
+    }
+
+    private static EtapaRealizada etapaPot(int ordem, int durMin, Integer fc, Double velKmh, Integer potencia) {
+        return EtapaRealizada.builder()
+                .ordem(ordem)
+                .tipoEtapa("PRINCIPAL")
+                .duracao(Duration.ofMinutes(durMin))
+                .fcMedia(fc)
+                .velocidadeMedia(velKmh != null ? BigDecimal.valueOf(velKmh) : null)
+                .potenciaMedia(potencia)
+                .build();
+    }
+
+    private static EtapaRealizada etapaSegPot(int ordem, int durSeg, Integer fc, Double velKmh, Integer potencia) {
+        return EtapaRealizada.builder()
+                .ordem(ordem)
+                .tipoEtapa("PRINCIPAL")
+                .duracao(Duration.ofSeconds(durSeg))
+                .fcMedia(fc)
+                .velocidadeMedia(velKmh != null ? BigDecimal.valueOf(velKmh) : null)
+                .potenciaMedia(potencia)
                 .build();
     }
 

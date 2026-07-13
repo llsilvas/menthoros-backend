@@ -84,9 +84,13 @@ public record TreinoRealizadoOutputDto(
         Double intensidadeReal,
 
         @Schema(description = "Decoupling aeróbico Pa:HR (% de queda de eficiência da 1ª p/ 2ª metade); "
-                        + "null quando não aplicável (esforço não contínuo ou dados insuficientes)",
+                        + "null quando não aplicável (esforço não contínuo ou dados insuficientes). "
+                        + "Campo legado — o envelope 'decoupling' traz o mesmo valor com proveniência",
                 example = "4.2")
         Double decouplingPercentual,
+
+        @Schema(description = "Envelope do decoupling com Pw:HR, proveniência e motivos de null por métrica")
+        DecouplingResultadoDto decoupling,
 
         // ===== FEEDBACK DO ATLETA =====
 

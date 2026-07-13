@@ -562,7 +562,7 @@ class TreinoServiceImplTest {
                 id, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, null,
-                null
+                null, null
         );
     }
 }

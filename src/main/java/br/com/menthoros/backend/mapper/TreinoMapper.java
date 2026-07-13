@@ -169,6 +169,7 @@ public interface TreinoMapper {
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     @Mapping(target = "sugestaoReclassificacao", ignore = true)
     @Mapping(target = "decouplingPercentual", source = ".", qualifiedByName = "decouplingDeTreino")
+    @Mapping(target = "decoupling", source = ".", qualifiedByName = "decouplingResultadoDeTreino")
     TreinoRealizadoOutputDto toOutputDto(TreinoRealizado treinoRealizado);
 
     // ===== EtapaRealizada: Input -> Entity =====

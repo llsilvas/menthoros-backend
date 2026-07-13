@@ -42,6 +42,34 @@ class TreinoMapperDecouplingTest {
 
         assertThat(mapper.toOutputDto(treino).decouplingPercentual()).isNull();
     }
+
+    @Test
+    @DisplayName("envelope decoupling carrega Pa:HR igual ao legado, origem POR_VOLTA e Pw:HR quando há potência")
+    void devePreencherEnvelopeComProveniencia() {
+        TreinoRealizado treino = treino(TipoTreino.CONTINUO, etapasSteadyComPotencia());
+
+        var dto = mapper.toOutputDto(treino);
+
+        assertThat(dto.decoupling()).isNotNull();
+        assertThat(dto.decoupling().percentual()).isEqualTo(dto.decouplingPercentual()).isEqualTo(7.3);
+        assertThat(dto.decoupling().motivoNull()).isNull();
+        assertThat(dto.decoupling().potenciaPercentual()).isEqualTo(8.6);
+        assertThat(dto.decoupling().origem()).isEqualTo(br.com.menthoros.backend.enums.OrigemCalculo.POR_VOLTA);
+    }
+
+    @Test
+    @DisplayName("envelope explica o null: intervalado carrega TIPO_NAO_CONTINUO nas duas métricas")
+    void deveExplicarNullNoEnvelope() {
+        TreinoRealizado treino = treino(TipoTreino.INTERVALADO, etapasSteady());
+
+        var dto = mapper.toOutputDto(treino);
+
+        assertThat(dto.decoupling().percentual()).isNull();
+        assertThat(dto.decoupling().motivoNull())
+                .isEqualTo(br.com.menthoros.backend.enums.MotivoNullDecoupling.TIPO_NAO_CONTINUO);
+        assertThat(dto.decoupling().motivoNullPotencia())
+                .isEqualTo(br.com.menthoros.backend.enums.MotivoNullDecoupling.TIPO_NAO_CONTINUO);
+    }
     }
 
     private static TreinoRealizado treino(TipoTreino tipo, List<EtapaRealizada> etapas) {
@@ -58,6 +86,26 @@ class TreinoMapperDecouplingTest {
                 etapa(3, 155, 11.5),
                 etapa(4, 155, 11.5)
         );
+    }
+
+    private static List<EtapaRealizada> etapasSteadyComPotencia() {
+        return List.of(
+                etapaPot(1, 150, 12.0, 360),
+                etapaPot(2, 150, 12.0, 360),
+                etapaPot(3, 155, 11.5, 340),
+                etapaPot(4, 155, 11.5, 340)
+        );
+    }
+
+    private static EtapaRealizada etapaPot(int ordem, Integer fc, Double velKmh, Integer potencia) {
+        return EtapaRealizada.builder()
+                .ordem(ordem)
+                .tipoEtapa("PRINCIPAL")
+                .duracao(Duration.ofMinutes(10))
+                .fcMedia(fc)
+                .velocidadeMedia(BigDecimal.valueOf(velKmh))
+                .potenciaMedia(potencia)
+                .build();
     }
 
     private static EtapaRealizada etapa(int ordem, Integer fc, Double velKmh) {
