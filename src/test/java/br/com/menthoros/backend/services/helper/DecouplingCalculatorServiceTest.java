@@ -448,6 +448,74 @@ class DecouplingCalculatorServiceTest {
     }
 
     @Nested
+    @DisplayName("gate de CV GAP-ajustado (condicionado ao hard gate — GapCalculator.HABILITADO)")
+    class GateCvGapAjustado {
+
+        /**
+         * Corrida steady em terreno ondulado: velocidade bruta varia com o gradiente
+         * (CV 0.19 > 0.15 → reprovado hoje), mas a velocidade GAP-ajustada é constante (12.0).
+         */
+        private List<EtapaRealizada> onduladoSteady() {
+            return List.of(
+                    etapaGap(1, 10, 150, 9.45, 30, 0, 1.0),   // subida 3% → ajustada 12.0
+                    etapaGap(2, 10, 150, 13.87, 0, 30, 1.0),  // descida 3% → ajustada 12.0
+                    etapaGap(3, 10, 150, 9.45, 30, 0, 1.0),
+                    etapaGap(4, 10, 150, 13.87, 0, 30, 1.0)
+            );
+        }
+
+        @Test
+        @DisplayName("flag DESLIGADA (produção): ondulado steady continua null — byte a byte com o comportamento atual")
+        void flagDesligadaReproduzComportamentoAtual() {
+            assertThat(GapCalculator.HABILITADO).isFalse();
+            assertThat(service.calcularCompleto(onduladoSteady(), TipoTreino.CONTINUO).percentual()).isNull();
+            assertThat(service.calcular(onduladoSteady(), TipoTreino.CONTINUO)).isNull();
+        }
+
+        @Test
+        @DisplayName("flag ligada: ondulado steady passa a calcular (velocidade GAP-ajustada estabiliza o CV)")
+        void flagLigadaDestravaOndulado() {
+            DecouplingResultado r = service.calcularCompleto(onduladoSteady(), TipoTreino.CONTINUO, true);
+
+            // ajustadas todas 12.0 com FC constante → decoupling 0.0
+            assertThat(r.percentual()).isEqualTo(0.0);
+            assertThat(r.motivoNull()).isNull();
+        }
+
+        @Test
+        @DisplayName("flag ligada em treino plano: resultado idêntico ao da flag desligada")
+        void flagLigadaNaoMudaTreinoPlano() {
+            List<EtapaRealizada> planas = List.of(
+                    etapaGap(1, 10, 150, 12.0, 2, 2, 1.0),
+                    etapaGap(2, 10, 150, 12.0, 2, 2, 1.0),
+                    etapaGap(3, 10, 155, 11.5, 2, 2, 1.0),
+                    etapaGap(4, 10, 155, 11.5, 2, 2, 1.0)
+            );
+
+            assertThat(service.calcularCompleto(planas, TipoTreino.CONTINUO, true).percentual())
+                    .isEqualTo(service.calcularCompleto(planas, TipoTreino.CONTINUO, false).percentual())
+                    .isEqualTo(7.3);
+        }
+
+        @Test
+        @DisplayName("flag ligada mas alguma volta sem elevação → cai para velocidade bruta (sem GAP parcial)")
+        void voltaSemElevacaoCaiParaVelocidadeBruta() {
+            List<EtapaRealizada> comBuraco = List.of(
+                    etapaGap(1, 10, 150, 9.45, 30, 0, 1.0),
+                    etapaGap(2, 10, 150, 13.87, 0, 30, 1.0),
+                    etapaGap(3, 10, 150, 9.45, null, null, 1.0), // sem barômetro nesta volta
+                    etapaGap(4, 10, 150, 13.87, 0, 30, 1.0)
+            );
+
+            // Sem GAP em TODAS as voltas, o gate usa a velocidade bruta → CV alto → null.
+            DecouplingResultado r = service.calcularCompleto(comBuraco, TipoTreino.CONTINUO, true);
+
+            assertThat(r.percentual()).isNull();
+            assertThat(r.motivoNull()).isEqualTo(MotivoNullDecoupling.VARIABILIDADE_ALTA);
+        }
+    }
+
+    @Nested
     @DisplayName("golden — fixture real (corrida 15 km, 16 laps)")
     class GoldenFixtureReal {
 
@@ -522,6 +590,20 @@ class DecouplingCalculatorServiceTest {
                 .duracao(Duration.ofMinutes(durMin))
                 .fcMedia(fc)
                 .velocidadeMedia(BigDecimal.valueOf(velKmh))
+                .build();
+    }
+
+    private static EtapaRealizada etapaGap(int ordem, int durMin, Integer fc, Double velKmh,
+                                           Integer subida, Integer descida, Double distKm) {
+        return EtapaRealizada.builder()
+                .ordem(ordem)
+                .tipoEtapa("PRINCIPAL")
+                .duracao(Duration.ofMinutes(durMin))
+                .fcMedia(fc)
+                .velocidadeMedia(velKmh != null ? BigDecimal.valueOf(velKmh) : null)
+                .elevacaoGanhoMetros(subida)
+                .elevacaoPerdaMetros(descida)
+                .distanciaKm(distKm != null ? BigDecimal.valueOf(distKm) : null)
                 .build();
     }
 

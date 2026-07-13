@@ -63,8 +63,15 @@ public class DecouplingCalculatorService {
     /**
      * Segmento com métricas normalizadas (duração em segundos, velocidade em km/h, potência em W).
      * Velocidade e potência são opcionais — cada métrica filtra os segmentos que a suportam.
+     * Elevação/distância alimentam o gate de CV GAP-ajustado quando o hard gate estiver liberado.
      */
-    private record Segmento(int ordem, double duracaoSeg, double fc, Double velocidade, Double potencia) {}
+    private record Segmento(int ordem, double duracaoSeg, double fc, Double velocidade, Double potencia,
+                            Integer subidaMetros, Integer descidaMetros, Double distanciaKm) {
+
+        Double velocidadeGapAjustada() {
+            return GapCalculator.velocidadeAjustada(velocidade, subidaMetros, descidaMetros, distanciaKm);
+        }
+    }
 
     /** Resultado de um pipeline de métrica: valor calculado OU motivo do null. */
     private record Metrica(Double valor, MotivoNullDecoupling motivo) {
@@ -154,6 +161,15 @@ public class DecouplingCalculatorService {
      * <p>Idempotent: YES — cálculo puro, sem estado. Side Effects: NONE. Tenant-aware: NO.
      */
     public DecouplingResultado calcularCompleto(List<EtapaRealizada> etapas, TipoTreino tipoTreino) {
+        return calcularCompleto(etapas, tipoTreino, GapCalculator.HABILITADO);
+    }
+
+    /**
+     * Variante com o gate de CV GAP-ajustado controlável — package-private para os testes
+     * exercitarem o comportamento "ligado" sem violar o hard gate de produção
+     * ({@link GapCalculator#HABILITADO}).
+     */
+    DecouplingResultado calcularCompleto(List<EtapaRealizada> etapas, TipoTreino tipoTreino, boolean gapCvHabilitado) {
         if (etapas == null || etapas.isEmpty()) {
             return DecouplingResultado.ambosNull(MotivoNullDecoupling.SEM_ETAPAS);
         }
@@ -173,9 +189,27 @@ public class DecouplingCalculatorService {
                 .sorted(Comparator.comparingInt(Segmento::ordem))
                 .toList();
 
-        Metrica paHr = calcularMetrica(base, Segmento::velocidade, CV_VEL_MAX, false);
+        Metrica paHr = calcularMetrica(base, extratorVelocidade(base, gapCvHabilitado), CV_VEL_MAX, false);
         Metrica pwHr = calcularMetrica(base, Segmento::potencia, CV_POT_MAX, true);
         return new DecouplingResultado(paHr.valor(), paHr.motivo(), pwHr.valor(), pwHr.motivo());
+    }
+
+    /**
+     * Extrator de intensidade do Pa:HR: velocidade bruta por padrão; velocidade GAP-ajustada
+     * somente quando o hard gate estiver liberado E TODAS as voltas com velocidade tiverem GAP
+     * computável — GAP parcial misturaria escalas de velocidade dentro do mesmo esforço.
+     */
+    private static Function<Segmento, Double> extratorVelocidade(List<Segmento> base, boolean gapCvHabilitado) {
+        if (!gapCvHabilitado) {
+            return Segmento::velocidade;
+        }
+        boolean todasComGap = base.stream()
+                .filter(s -> s.velocidade() != null)
+                .allMatch(s -> s.velocidadeGapAjustada() != null);
+        if (!todasComGap) {
+            return Segmento::velocidade;
+        }
+        return s -> s.velocidade() != null ? s.velocidadeGapAjustada() : null;
     }
 
     /**
@@ -321,7 +355,9 @@ public class DecouplingCalculatorService {
         Integer potenciaMedia = etapa.getPotenciaMedia();
         Double potencia = potenciaMedia != null && potenciaMedia > 0 ? potenciaMedia.doubleValue() : null;
         return new Segmento(etapa.getOrdem() != null ? etapa.getOrdem() : 0,
-                duracao.toSeconds(), fc, velocidade, potencia);
+                duracao.toSeconds(), fc, velocidade, potencia,
+                etapa.getElevacaoGanhoMetros(), etapa.getElevacaoPerdaMetros(),
+                etapa.getDistanciaKm() != null ? etapa.getDistanciaKm().doubleValue() : null);
     }
 
     /** Velocidade em km/h: direto de {@code velocidadeMedia}, senão convertida de {@code paceMedia}. */
