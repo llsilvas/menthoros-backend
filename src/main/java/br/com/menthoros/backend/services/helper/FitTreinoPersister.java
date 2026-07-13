@@ -126,6 +126,10 @@ public class FitTreinoPersister {
         treino.setStatus(TreinoExecucaoStatus.REALIZADO);
         treino.setCriadoPor(CRIADO_POR_GARMIN);
         treino.setExternalId(externalId);
+        treino.setElevacaoGanhoMetros(dados.subidaMetros());
+        treino.setElevacaoPerdaMetros(dados.descidaMetros());
+        treino.setPotenciaMedia(dados.potenciaMediaWatts());
+        treino.setCadenciaMedia(sanitizarCadencia(dados.cadenciaMediaPpm()));
 
         if (dados.tssCalculado() != null) {
             treino.setTssCalculado(dados.tssCalculado());
@@ -149,6 +153,10 @@ public class FitTreinoPersister {
                     .fcMax(lap.fcMax())
                     .velocidadeMedia(velocidadeMediaKmh(lap))
                     .paceMedia(paceMedia(lap))
+                    .elevacaoGanhoMetros(lap.subidaMetros())
+                    .elevacaoPerdaMetros(lap.descidaMetros())
+                    .potenciaMedia(lap.potenciaMediaWatts())
+                    .cadenciaMedia(sanitizarCadencia(lap.cadenciaMediaPpm()))
                     .build();
             treino.getEtapasRealizadas().add(etapa);
         }
@@ -191,5 +199,16 @@ public class FitTreinoPersister {
     private static boolean temMetricaDeVelocidade(FitLapData lap) {
         return lap.distanciaKm() != null && lap.distanciaKm() > 0
                 && lap.duracao() != null && !lap.duracao().isZero() && !lap.duracao().isNegative();
+    }
+
+    /** Faixa fisiológica de cadência de corrida — mesma regra do import Strava (fora dela → null). */
+    private static final int CADENCIA_MIN_PPM = 60;
+    private static final int CADENCIA_MAX_PPM = 200;
+
+    private static Integer sanitizarCadencia(Integer ppm) {
+        if (ppm == null || ppm < CADENCIA_MIN_PPM || ppm > CADENCIA_MAX_PPM) {
+            return null;
+        }
+        return ppm;
     }
 }
