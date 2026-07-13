@@ -74,7 +74,8 @@ class FitTreinoPersisterTest {
     private FitSessionData sessionCorrida(Long serial, long startEpoch) {
         return new FitSessionData(serial, LocalDate.of(2026, 7, 1), startEpoch,
                 Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
-                List.of(new FitLapData(1, Duration.ofMinutes(15), 2.5, 148, 160)));
+                null, null, null, null,
+                List.of(new FitLapData(1, Duration.ofMinutes(15), 2.5, 148, 160, null, null, null, null)));
     }
 
     @Nested
@@ -138,7 +139,8 @@ class FitTreinoPersisterTest {
         @DisplayName("esporte não-corrida usa tipoTreino=CONTINUO e anota o esporte em descricao")
         void esporteNaoCorridaUsaContinuoEDescricao() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
-                    Duration.ofHours(1), 30.0, 140, 165, 80, false, "CYCLING", List.of());
+                    Duration.ofHours(1), 30.0, 140, 165, 80, false, "CYCLING",
+                    null, null, null, null, List.of());
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
@@ -155,7 +157,8 @@ class FitTreinoPersisterTest {
         @DisplayName("TSS ausente no .fit é calculado via TssCalculatorService (fallback D0.3)")
         void tssAusenteUsaFallback() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
-                    Duration.ofMinutes(30), 5.0, 150, 175, null, true, "RUNNING", List.of());
+                    Duration.ofMinutes(30), 5.0, 150, 175, null, true, "RUNNING",
+                    null, null, null, null, List.of());
             when(tssCalculatorService.calcularTss(any())).thenReturn(70);
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
@@ -173,7 +176,8 @@ class FitTreinoPersisterTest {
         @DisplayName("dados parciais (sem distância/FC) não fabrica valores — persiste null")
         void dadosParciaisNaoFabricaValores() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
-                    Duration.ofMinutes(20), null, null, null, 40, true, "RUNNING", List.of());
+                    Duration.ofMinutes(20), null, null, null, 40, true, "RUNNING",
+                    null, null, null, null, List.of());
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
@@ -210,10 +214,11 @@ class FitTreinoPersisterTest {
         void lapSemMetricaNaoFabricaVelocidade() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
                     Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null,
                     List.of(
-                            new FitLapData(1, Duration.ofMinutes(15), null, 148, 160),
-                            new FitLapData(2, Duration.ZERO, 0.5, 150, 162),
-                            new FitLapData(3, Duration.ofMinutes(10), 0.0, 152, 164)));
+                            new FitLapData(1, Duration.ofMinutes(15), null, 148, 160, null, null, null, null),
+                            new FitLapData(2, Duration.ZERO, 0.5, 150, 162, null, null, null, null),
+                            new FitLapData(3, Duration.ofMinutes(10), 0.0, 152, 164, null, null, null, null)));
             when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));

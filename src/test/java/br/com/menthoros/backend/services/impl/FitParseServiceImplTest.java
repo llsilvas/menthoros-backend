@@ -91,6 +91,91 @@ class FitParseServiceImplTest {
         }
 
         @Test
+        @DisplayName("extrai elevação, potência e cadência (ppm de duas pernas) por lap e sessão")
+        void extraiElevacaoPotenciaCadencia() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg session = new SessionMesg();
+                session.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+                session.setSport(Sport.RUNNING);
+                session.setTotalElapsedTime(1800f);
+                session.setTotalDistance(5000f);
+                session.setTotalAscent(65);
+                session.setTotalDescent(57);
+                session.setAvgPower(362);
+                session.setAvgRunningCadence((short) 82);
+                session.setAvgFractionalCadence(0.5f);
+                builder.mesgs.add(session);
+
+                LapMesg lap = new LapMesg();
+                lap.setTotalElapsedTime(900f);
+                lap.setTotalDistance(2500f);
+                lap.setTotalAscent(4);
+                lap.setTotalDescent(2);
+                lap.setAvgPower(351);
+                lap.setAvgRunningCadence((short) 80);
+                lap.setAvgFractionalCadence(0.5f);
+                builder.mesgs.add(lap);
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.subidaMetros()).isEqualTo(65);
+            assertThat(dados.descidaMetros()).isEqualTo(57);
+            assertThat(dados.potenciaMediaWatts()).isEqualTo(362);
+            // 82 passos de uma perna + 0.5 fracional → (82.5) * 2 = 165 ppm
+            assertThat(dados.cadenciaMediaPpm()).isEqualTo(165);
+
+            assertThat(dados.laps().get(0).subidaMetros()).isEqualTo(4);
+            assertThat(dados.laps().get(0).descidaMetros()).isEqualTo(2);
+            assertThat(dados.laps().get(0).potenciaMediaWatts()).isEqualTo(351);
+            assertThat(dados.laps().get(0).cadenciaMediaPpm()).isEqualTo(161);
+        }
+
+        @Test
+        @DisplayName("cadência sem fracional converte só o valor inteiro (duas pernas)")
+        void cadenciaSemFracional() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg session = new SessionMesg();
+                session.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+                session.setSport(Sport.RUNNING);
+                session.setTotalElapsedTime(1800f);
+                session.setAvgRunningCadence((short) 83);
+                builder.mesgs.add(session);
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.cadenciaMediaPpm()).isEqualTo(166);
+        }
+
+        @Test
+        @DisplayName("lap e sessão sem elevação/potência/cadência (sem sensores) ficam null — nunca fabrica 0")
+        void semSensoresFicaNull() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg session = new SessionMesg();
+                session.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+                session.setSport(Sport.RUNNING);
+                session.setTotalElapsedTime(1800f);
+                builder.mesgs.add(session);
+
+                LapMesg lap = new LapMesg();
+                lap.setTotalElapsedTime(900f);
+                builder.mesgs.add(lap);
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.subidaMetros()).isNull();
+            assertThat(dados.descidaMetros()).isNull();
+            assertThat(dados.potenciaMediaWatts()).isNull();
+            assertThat(dados.cadenciaMediaPpm()).isNull();
+            assertThat(dados.laps().get(0).subidaMetros()).isNull();
+            assertThat(dados.laps().get(0).descidaMetros()).isNull();
+            assertThat(dados.laps().get(0).potenciaMediaWatts()).isNull();
+            assertThat(dados.laps().get(0).cadenciaMediaPpm()).isNull();
+        }
+
+        @Test
         @DisplayName("esporte não-corrida é detectado como tal (corrida=false)")
         void esporteNaoCorrida() throws IOException {
             byte[] fit = gerarFit(builder -> {

@@ -59,7 +59,12 @@ public class FitParseServiceImpl implements FitParseService {
                     duracaoDeSegundos(mesg.getTotalElapsedTime()),
                     distanciaKmDeMetros(mesg.getTotalDistance()),
                     inteiroOuNulo(mesg.getAvgHeartRate()),
-                    inteiroOuNulo(mesg.getMaxHeartRate())
+                    inteiroOuNulo(mesg.getMaxHeartRate()),
+                    mesg.getTotalAscent(),
+                    mesg.getTotalDescent(),
+                    mesg.getAvgPower(),
+                    cadenciaPpm(primeiroNaoNulo(mesg.getAvgRunningCadence(), mesg.getAvgCadence()),
+                            mesg.getAvgFractionalCadence())
             ));
         });
 
@@ -90,6 +95,11 @@ public class FitParseServiceImpl implements FitParseService {
                     mesg.getTrainingStressScore() != null ? Math.round(mesg.getTrainingStressScore()) : null,
                     corrida,
                     sport != null ? sport.name() : "GENERIC",
+                    mesg.getTotalAscent(),
+                    mesg.getTotalDescent(),
+                    mesg.getAvgPower(),
+                    cadenciaPpm(primeiroNaoNulo(mesg.getAvgRunningCadence(), mesg.getAvgCadence()),
+                            mesg.getAvgFractionalCadence()),
                     laps
             ));
         });
@@ -125,5 +135,27 @@ public class FitParseServiceImpl implements FitParseService {
 
     private static Integer inteiroOuNulo(Short valor) {
         return valor != null ? valor.intValue() : null;
+    }
+
+    /**
+     * {@code avgRunningCadence} é um SUBFIELD de {@code avg_cadence} que só resolve quando a
+     * mensagem tem {@code sport} preenchido — dispositivos que omitem o sport no lap fariam a
+     * cadência sumir; o fallback lê o campo bruto (mesmo valor físico).
+     */
+    private static Short primeiroNaoNulo(Short preferido, Short fallback) {
+        return preferido != null ? preferido : fallback;
+    }
+
+    /**
+     * A FIT grava cadência de corrida em passos de UMA perna/min ({@code avgRunningCadence}),
+     * com a parte fracionária em {@code avgFractionalCadence} — o valor exibido pelos relógios
+     * (e esperado pelo domínio) é o de duas pernas: {@code (inteiro + fração) * 2}.
+     */
+    private static Integer cadenciaPpm(Short cadenciaUmaPerna, Float fracional) {
+        if (cadenciaUmaPerna == null) {
+            return null;
+        }
+        float passosUmaPerna = cadenciaUmaPerna + (fracional != null ? fracional : 0f);
+        return Math.round(passosUmaPerna * 2f);
     }
 }
