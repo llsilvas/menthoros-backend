@@ -52,12 +52,15 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
     List<Prova> findByAtletaAndProvaAlvoTrue(@Param("atleta") Atleta atleta);
 
     /**
-     * Busca todas as provas de todos os atletas nos próximos 15 dias,
+     * Busca as provas dos atletas do tenant nos próximos 15 dias,
      * ordenadas pela data ascendente (mais próximas primeiro).
      * Usa JOIN FETCH para eager-load o relacionamento com Atleta.
+     *
+     * Tenant-aware: YES — filtra por assessoria.id (o dashboard do coach só
+     * enxerga a própria assessoria; a versão global vazava provas cross-tenant).
      */
-    @Query("SELECT DISTINCT p FROM Prova p JOIN FETCH p.atleta WHERE p.dataProva >= CURRENT_DATE AND p.dataProva <= :endDate AND p.statusProva != 'CANCELADA' ORDER BY p.dataProva ASC")
-    List<Prova> findUpcomingProvasNext15Days(@Param("endDate") LocalDate endDate);
+    @Query("SELECT DISTINCT p FROM Prova p JOIN FETCH p.atleta WHERE p.assessoria.id = :tenantId AND p.dataProva >= CURRENT_DATE AND p.dataProva <= :endDate AND p.statusProva != 'CANCELADA' ORDER BY p.dataProva ASC")
+    List<Prova> findUpcomingProvasNext15DaysByTenant(@Param("endDate") LocalDate endDate, @Param("tenantId") UUID tenantId);
 
     /**
      * Busca uma Prova filtrando por id e tenantId (assessoria.id).
