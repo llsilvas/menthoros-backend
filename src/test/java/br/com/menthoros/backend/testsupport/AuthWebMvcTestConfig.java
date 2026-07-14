@@ -15,7 +15,8 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 /**
  * Ativa a cadeia de segurança REAL num {@code @WebMvcTest}: sem este import o slice usa a
  * security default do Boot e {@code @PreAuthorize}/{@code @RequireTenant} são silenciosamente
- * ignorados (falso verde — ver observação de 2026-06-23 "root cause @EnableMethodSecurity").
+ * ignorados — o teste passa em falso verde (contexto completo no tasks.md da change OpenSpec
+ * complete-authorization-controllers).
  *
  * O teste que importar esta config precisa mockar ({@code @MockitoBean}): {@code JwtDecoder},
  * {@code UsuarioSyncService}, {@code UsuarioRepository} (deps do JwtTenantFilter) e

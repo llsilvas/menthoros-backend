@@ -27,6 +27,8 @@ public class UsuarioController {
 
     private final UsuarioService usuarioService;
 
+    @GetMapping("/me")
+    @PreAuthorize("isAuthenticated()")
     @Operation(summary = "Retorna a identidade do usuário autenticado (role, dados básicos, "
             + "assessoria e atletaId quando ATLETA vinculado)")
     @ApiResponses({
@@ -37,8 +39,6 @@ public class UsuarioController {
             @ApiResponse(responseCode = "404", description = "Usuário não encontrado no tenant atual",
                     content = @Content)
     })
-    @GetMapping("/me")
-    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<UsuarioMeOutputDto> getMe() {
         return ResponseEntity.ok(usuarioService.getCurrentUser());
     }
