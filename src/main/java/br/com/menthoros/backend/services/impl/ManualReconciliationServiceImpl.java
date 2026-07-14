@@ -11,6 +11,7 @@ import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.TreinoReconciliacaoRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
+import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -184,6 +185,7 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
         TreinoRealizado realizado = treinoRealizadoRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("TreinoRealizado não encontrado: " + id));
 
+        Hibernate.initialize(realizado.getEtapasRealizadas());
         if (!realizado.getTenantId().equals(tenantId)) {
             throw new IllegalArgumentException("Tenant mismatch para TreinoRealizado");
         }
