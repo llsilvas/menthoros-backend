@@ -3,6 +3,7 @@ package br.com.menthoros.backend.controller;
 import br.com.menthoros.backend.dto.output.StravaSyncResponseDto;
 import br.com.menthoros.backend.dto.output.StravaSyncStatusDto;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.security.RequireTenant;
 import br.com.menthoros.backend.services.StravaActivityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -29,13 +30,16 @@ public class StravaActivityController {
     private final StravaActivityService stravaActivityService;
 
     @PostMapping("/sync/{atletaId}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Dispara sincronização manual de atividades do atleta")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Sincronização concluída"),
         @ApiResponse(responseCode = "404", description = "Integração Strava não encontrada para o atleta"),
         @ApiResponse(responseCode = "409", description = "Sincronização já em progresso"),
         @ApiResponse(responseCode = "429", description = "Limite de requisições Strava atingido"),
-        @ApiResponse(responseCode = "401", description = "Não autenticado")
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Sem papel TECNICO/ADMIN ou atleta de outro tenant")
     })
     public ResponseEntity<StravaSyncResponseDto> sync(@Parameter(description = "ID único do atleta") @PathVariable UUID atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
@@ -43,11 +47,14 @@ public class StravaActivityController {
     }
 
     @GetMapping("/sync-status/{atletaId}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Retorna status da última/atual sincronização")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Status retornado com sucesso"),
         @ApiResponse(responseCode = "404", description = "Integração Strava não encontrada"),
-        @ApiResponse(responseCode = "401", description = "Não autenticado")
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Sem papel TECNICO/ADMIN ou atleta de outro tenant")
     })
     public ResponseEntity<StravaSyncStatusDto> getSyncStatus(@Parameter(description = "ID único do atleta") @PathVariable UUID atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
