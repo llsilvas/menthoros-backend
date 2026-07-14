@@ -178,15 +178,17 @@ public class ProvaServiceImpl implements ProvaService {
      *
      * Idempotent: YES — Operação de leitura, sem alteração de estado.
      * Side Effects: NONE
-     * Tenant-aware: NO — retorna provas de todos os tenants para dashboard global.
+     * Tenant-aware: YES — retorna apenas provas de atletas da assessoria atual
+     * (TenantContext). A versão anterior era global e vazava dados cross-tenant.
      *
-     * @return ProvasProximasResponseDto com provas dos próximos 15 dias
+     * @return ProvasProximasResponseDto com provas dos próximos 15 dias do tenant
      */
     @Override
     @Transactional(readOnly = true)
     public ProvasProximasResponseDto getProvasProximas() {
+        UUID tenantId = TenantContext.getRequiredTenantId();
         LocalDate endDate = LocalDate.now().plusDays(15);
-        List<Prova> provas = provaRepository.findUpcomingProvasNext15Days(endDate);
+        List<Prova> provas = provaRepository.findUpcomingProvasNext15DaysByTenant(endDate, tenantId);
 
         List<ProvaProximaDto> dtoList = provas.stream()
             .map(p -> {

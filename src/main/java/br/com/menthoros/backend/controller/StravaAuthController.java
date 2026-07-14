@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.security.RequireTenant;
 import br.com.menthoros.backend.services.StravaOAuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -33,10 +34,13 @@ public class StravaAuthController {
     private String frontendUrl;
 
     @GetMapping("/auth")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Inicia autorização OAuth2 com Strava")
     @ApiResponses({
         @ApiResponse(responseCode = "302", description = "Redirecionamento para Strava OAuth"),
-        @ApiResponse(responseCode = "401", description = "Não autenticado")
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Sem papel TECNICO/ADMIN ou atleta de outro tenant")
     })
     public ResponseEntity<Void> startAuth(@Parameter(description = "ID do atleta para iniciar autenticação Strava") @RequestParam("atletaId") UUID atletaId) {
         String authorizationUrl = stravaOAuthService.getAuthorizationUrl(atletaId);
@@ -46,16 +50,21 @@ public class StravaAuthController {
     }
 
     @GetMapping("/auth/url/{atletaId}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Retorna URL de autorização OAuth2 do Strava")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "URL de autorização retornada com sucesso"),
-        @ApiResponse(responseCode = "401", description = "Não autenticado")
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Sem papel TECNICO/ADMIN ou atleta de outro tenant")
     })
     public ResponseEntity<Map<String, String>> getAuthorizationUrl(@Parameter(description = "ID único do atleta") @PathVariable UUID atletaId) {
         String authorizationUrl = stravaOAuthService.getAuthorizationUrl(atletaId);
         return ResponseEntity.ok(Map.of("authorizationUrl", authorizationUrl));
     }
 
+    // Sem @PreAuthorize: chamado pelos servidores do Strava (nao ha JWT). Publico por config
+    // (CoreSecurityProperties.stravaPaths -> permitAll); validacao via code/state do OAuth.
     @GetMapping("/callback")
     @Operation(summary = "Processa callback OAuth2 do Strava")
     @ApiResponses({
@@ -85,22 +94,28 @@ public class StravaAuthController {
     }
 
     @GetMapping("/status/{atletaId}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Consulta status de conexão Strava do atleta")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "Status de conexão retornado com sucesso"),
         @ApiResponse(responseCode = "404", description = "Atleta não encontrado"),
-        @ApiResponse(responseCode = "401", description = "Não autenticado")
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Sem papel TECNICO/ADMIN ou atleta de outro tenant")
     })
     public ResponseEntity<Map<String, Object>> status(@Parameter(description = "ID único do atleta") @PathVariable UUID atletaId) {
         return ResponseEntity.ok(stravaOAuthService.getStatus(atletaId));
     }
 
     @DeleteMapping("/disconnect/{atletaId}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Desconecta integração Strava do atleta")
     @ApiResponses({
         @ApiResponse(responseCode = "204", description = "Desconexão executada com sucesso"),
         @ApiResponse(responseCode = "404", description = "Atleta não encontrado"),
-        @ApiResponse(responseCode = "401", description = "Não autenticado")
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Sem papel TECNICO/ADMIN ou atleta de outro tenant")
     })
     public ResponseEntity<Void> disconnect(@Parameter(description = "ID único do atleta") @PathVariable UUID atletaId) {
         stravaOAuthService.disconnect(atletaId);

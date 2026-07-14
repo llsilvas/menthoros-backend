@@ -213,4 +213,27 @@ class ProvaServiceImplTest {
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(provaId.toString());
     }
+
+    @Test
+    @DisplayName("getProvasProximas deve filtrar pelo tenant atual — nunca listar provas globais")
+    void getProvasProximas_deveFiltrarPeloTenantAtual() {
+        Prova provaProxima = Prova.builder()
+                .id(provaId)
+                .nomeProva("Maratona SP")
+                .dataProva(LocalDate.now().plusDays(10))
+                .distancia(DistanciaProva.KM_42)
+                .tipoProva(TipoProva.CORRIDA_RUA)
+                .statusProva(ProvaStatus.PLANEJADA)
+                .atleta(atleta)
+                .build();
+        when(provaRepository.findUpcomingProvasNext15DaysByTenant(any(LocalDate.class), eq(tenantId)))
+                .thenReturn(List.of(provaProxima));
+
+        var response = provaService.getProvasProximas();
+
+        assertThat(response.total()).isEqualTo(1);
+        assertThat(response.provas()).hasSize(1);
+        verify(provaRepository).findUpcomingProvasNext15DaysByTenant(any(LocalDate.class), eq(tenantId));
+        verifyNoMoreInteractions(provaRepository);
+    }
 }
