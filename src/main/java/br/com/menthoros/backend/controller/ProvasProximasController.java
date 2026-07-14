@@ -24,6 +24,7 @@ public class ProvasProximasController {
     private final ProvaService provaService;
 
     @GetMapping("/proximas")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Listar provas próximas de todos os atletas",
                description = "Retorna todas as provas de todos os atletas nos próximos 15 dias, ordenadas pela data mais próxima")
     @ApiResponses(value = {
@@ -31,7 +32,8 @@ public class ProvasProximasController {
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ProvasProximasResponseDto.class))),
         @ApiResponse(responseCode = "500", description = "Erro ao buscar provas",
                 content = @Content(mediaType = "application/json")),
-        @ApiResponse(responseCode = "401", description = "Não autenticado")
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Sem papel TECNICO/ADMIN")
     })
     public ResponseEntity<ProvasProximasResponseDto> getProvasProximas() {
         ProvasProximasResponseDto response = provaService.getProvasProximas();
