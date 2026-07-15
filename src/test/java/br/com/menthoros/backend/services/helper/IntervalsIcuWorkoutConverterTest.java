@@ -145,6 +145,91 @@ class IntervalsIcuWorkoutConverterTest {
         }
 
         @Test
+        @DisplayName("etapas todas degeneradas com duração própria do treino exportam como step único")
+        void etapasDegeneradasComDuracaoDoTreino() {
+            // etapa sem duração/distância (só ritmoAlvo) não é prescritiva:
+            // deve cair no mesmo caminho do treino sem etapas
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "PRINCIPAL", "Rodagem em Z2", null, null, "5:30-5:45", null, null, null)
+            );
+            TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),
+                    Duration.ofMinutes(40), null, "z2", null, etapas);
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+
+            assertThat(resultado.steps()).hasSize(1);
+            WorkoutStep step = resultado.steps().get(0);
+            assertThat(step.durationSeconds()).isEqualTo(2400);
+            assertThat(step.hr()).isEqualTo(new HrTarget(HrTarget.Unidade.ZONE, 2, 2));
+        }
+
+        @Test
+        @DisplayName("blocos A e B adjacentes viram dois blocos reps independentes")
+        void blocosAdjacentesIndependentes() {
+            UUID blocoA = UUID.randomUUID();
+            UUID blocoB = UUID.randomUUID();
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "INTERVALADO", "Tiro A", 3, null, null, null, blocoA, 2),
+                    etapa(2, "INTERVALADO", "Tiro A", 3, null, null, null, blocoA, 2),
+                    etapa(3, "INTERVALADO", "Tiro B", 1, null, null, null, blocoB, 3),
+                    etapa(4, "INTERVALADO", "Tiro B", 1, null, null, null, blocoB, 3),
+                    etapa(5, "INTERVALADO", "Tiro B", 1, null, null, null, blocoB, 3)
+            );
+            TreinoPlanejado treino = treino(TipoTreino.INTERVALADO, LocalDate.of(2026, 7, 15),
+                    Duration.ZERO, null, null, null, etapas);
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+
+            assertThat(resultado.steps()).hasSize(2);
+            assertThat(resultado.steps().get(0).reps()).isEqualTo(2);
+            assertThat(resultado.steps().get(0).steps()).hasSize(1);
+            assertThat(resultado.steps().get(1).reps()).isEqualTo(3);
+            assertThat(resultado.steps().get(1).steps()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("etapa com blocoId mas blocoRepeticoes=1 ou nulo não vira bloco")
+        void blocoRepeticoesUmOuNuloNaoViraBloco() {
+            UUID blocoUm = UUID.randomUUID();
+            UUID blocoNulo = UUID.randomUUID();
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "PRINCIPAL", "Reps 1", 10, null, null, null, blocoUm, 1),
+                    etapa(2, "PRINCIPAL", "Reps nulo", 10, null, null, null, blocoNulo, null)
+            );
+            TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),
+                    Duration.ZERO, null, null, null, etapas);
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+
+            assertThat(resultado.steps()).hasSize(2);
+            assertThat(resultado.steps()).allSatisfy(step -> {
+                assertThat(step.reps()).isNull();
+                assertThat(step.steps()).isNull();
+            });
+        }
+
+        @Test
+        @DisplayName("grupo não divisível por N cai no fallback: steps individuais sem reps")
+        void grupoNaoDivisivelPorNCaiNoFallback() {
+            UUID blocoId = UUID.randomUUID();
+            // 5 etapas físicas com blocoRepeticoes=4: 5 % 4 != 0 -> impossível des-expandir
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "INTERVALADO", "Tiro", 3, null, null, null, blocoId, 4),
+                    etapa(2, "INTERVALADO", "Tiro", 3, null, null, null, blocoId, 4),
+                    etapa(3, "INTERVALADO", "Tiro", 3, null, null, null, blocoId, 4),
+                    etapa(4, "INTERVALADO", "Tiro", 3, null, null, null, blocoId, 4),
+                    etapa(5, "INTERVALADO", "Tiro", 3, null, null, null, blocoId, 4)
+            );
+            TreinoPlanejado treino = treino(TipoTreino.INTERVALADO, LocalDate.of(2026, 7, 15),
+                    Duration.ZERO, null, null, null, etapas);
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+
+            assertThat(resultado.steps()).hasSize(5);
+            assertThat(resultado.steps()).allSatisfy(step -> assertThat(step.reps()).isNull());
+        }
+
+        @Test
         @DisplayName("treino sem etapas e sem duração/distância não é exportável")
         void naoExportavelSemConteudo() {
             TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),

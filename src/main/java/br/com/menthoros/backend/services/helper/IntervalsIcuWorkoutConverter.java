@@ -57,12 +57,10 @@ public class IntervalsIcuWorkoutConverter {
             return Optional.empty();
         }
 
+        // Etapas sem nenhuma duração/distância positiva não são prescritivas: cai no mesmo
+        // caminho do treino sem etapas (step único com duração/distância do próprio treino).
         List<EtapaTreino> etapas = etapasValidas(treino);
-        if (!temConteudoPrescritivo(treino, etapas)) {
-            return Optional.empty();
-        }
-
-        List<WorkoutStep> steps = etapas.isEmpty() ? stepUnico(treino) : desExpandir(etapas);
+        List<WorkoutStep> steps = temEtapaPrescritiva(etapas) ? desExpandir(etapas) : stepUnico(treino);
         if (steps.isEmpty()) {
             return Optional.empty();
         }
@@ -78,11 +76,8 @@ public class IntervalsIcuWorkoutConverter {
 
     // ===== Exportabilidade =====
 
-    private boolean temConteudoPrescritivo(TreinoPlanejado treino, List<EtapaTreino> etapas) {
-        if (!etapas.isEmpty()) {
-            return etapas.stream().anyMatch(this::etapaComDuracaoOuDistanciaPositiva);
-        }
-        return duracaoPositiva(treino.getDuracaoMin()) || distanciaPositiva(treino.getDistanciaKm());
+    private boolean temEtapaPrescritiva(List<EtapaTreino> etapas) {
+        return etapas.stream().anyMatch(this::etapaComDuracaoOuDistanciaPositiva);
     }
 
     private boolean etapaComDuracaoOuDistanciaPositiva(EtapaTreino etapa) {
@@ -261,15 +256,16 @@ public class IntervalsIcuWorkoutConverter {
         if (!distanciaPositiva(distanciaKm)) {
             return null;
         }
-        return distanciaKm.multiply(METROS_POR_KM).setScale(0, RoundingMode.HALF_UP).intValueExact();
+        try {
+            return distanciaKm.multiply(METROS_POR_KM).setScale(0, RoundingMode.HALF_UP).intValueExact();
+        } catch (ArithmeticException e) {
+            // valor fora do range de int é dado degenerado, não incidente: step fica sem distance
+            return null;
+        }
     }
 
     private boolean distanciaPositiva(BigDecimal distanciaKm) {
         return distanciaKm != null && distanciaKm.signum() > 0;
-    }
-
-    private boolean duracaoPositiva(Duration duracao) {
-        return duracao != null && !duracao.isZero() && !duracao.isNegative();
     }
 
     private boolean isPresente(String valor) {
@@ -283,7 +279,8 @@ public class IntervalsIcuWorkoutConverter {
     // ===== Nome do evento =====
 
     private String nome(TreinoPlanejado treino) {
+        String tipo = treino.getTipoTreino() != null ? treino.getTipoTreino().name() : "TREINO";
         String data = treino.getDataTreino() != null ? treino.getDataTreino().format(FORMATO_DATA) : "";
-        return (treino.getTipoTreino().name() + " " + data).trim();
+        return (tipo + " " + data).trim();
     }
 }
