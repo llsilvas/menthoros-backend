@@ -49,7 +49,8 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
      * Transiciona o plano de AGUARDANDO_REVISAO para APROVADO.
      *
      * Idempotent: NO — altera o estado do plano.
-     * Side Effects: Database update (reviewStatus, reviewComment)
+     * Side Effects: Database update (reviewStatus, reviewComment) + publica {@link PlanoAprovadoEvent}
+     * (dispara o push assíncrono dos treinos para o intervals.icu)
      * Tenant-aware: YES — valida pertencimento via findByIdAndTenantId
      *
      * @throws DomainNotFoundException     se o plano não existir no tenant

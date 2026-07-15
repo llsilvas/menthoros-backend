@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
@@ -19,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -57,8 +59,9 @@ public class IntervalsIcuPushListener {
      * treino estruturado; re-executar após falha parcial converge para o mesmo estado final
      * (upsert no canal externo).
      * <p><b>Side Effects:</b> chamada HTTP externa (push e remoção de órfãos no intervals.icu) +
-     * atualização de {@link TreinoPlanejado} (status/tentativas/externalId) e, em erro de
-     * autenticação, de {@link IntegracaoExterna#getLastSyncError()}.
+     * atualização de {@link TreinoPlanejado} (status/tentativas/externalId) e, quando houver ao
+     * menos um push bem-sucedido no lote, de {@link IntegracaoExterna#getUltimaSincronizacao()};
+     * em erro de autenticação, de {@link IntegracaoExterna#getLastSyncError()}.
      * <p><b>Tenant-aware:</b> YES — todas as queries usam {@code event.tenantId()}; um treino cujo
      * tenant não bate com o evento é ignorado com log de segurança.
      *
@@ -93,10 +96,12 @@ public class IntervalsIcuPushListener {
 
         Set<String> externalIdsAtuais = new HashSet<>();
         boolean[] autenticacaoFalhou = {false};
+        boolean[] algumPushComSucesso = {false};
 
         for (TreinoPlanejado treinoOrigem : treinos) {
             try {
-                processarTreino(treinoOrigem, tenantId, conexao, externalIdsAtuais, autenticacaoFalhou);
+                processarTreino(treinoOrigem, tenantId, conexao, externalIdsAtuais, autenticacaoFalhou,
+                        algumPushComSucesso);
             } catch (Exception e) {
                 // Regra 6: erro em um treino não pode abortar o processamento dos demais.
                 log.error("Erro inesperado ao processar push do treino {}: {}",
@@ -104,8 +109,16 @@ public class IntervalsIcuPushListener {
             }
         }
 
+        boolean precisaSalvarConexao = false;
+        if (algumPushComSucesso[0]) {
+            conexao.setUltimaSincronizacao(Instant.now());
+            precisaSalvarConexao = true;
+        }
         if (autenticacaoFalhou[0]) {
             conexao.setLastSyncError("Falha de autenticação intervals.icu ao sincronizar plano " + planoId);
+            precisaSalvarConexao = true;
+        }
+        if (precisaSalvarConexao) {
             integracaoExternaRepository.save(conexao);
         }
 
@@ -113,7 +126,8 @@ public class IntervalsIcuPushListener {
     }
 
     private void processarTreino(TreinoPlanejado treinoOrigem, UUID tenantId, IntegracaoExterna conexao,
-                                  Set<String> externalIdsAtuais, boolean[] autenticacaoFalhou) {
+                                  Set<String> externalIdsAtuais, boolean[] autenticacaoFalhou,
+                                  boolean[] algumPushComSucesso) {
         UUID treinoId = treinoOrigem.getId();
 
         // Regra 9: tenant do treino (herdado do plano) deve bater com o tenant do evento.
@@ -131,7 +145,8 @@ public class IntervalsIcuPushListener {
         ProcessamentoResultado resultado = pushProcessor.processar(treino, conexao);
 
         // Regra 4: treino não exportável (NAO_EXPORTAVEL) é pulado sem qualquer mutação de estado
-        // e sem entrar no conjunto de externalIds atuais — o antigo evento, se houver, vira órfão.
+        // e sem entrar no conjunto de externalIds atuais — o antigo evento, se houver, vira órfão
+        // (ex.: coach transformou o treino em DESCANSO e o evento antigo precisa ser reconciliado).
         if (resultado == ProcessamentoResultado.NAO_EXPORTAVEL) {
             return;
         }
@@ -140,8 +155,15 @@ public class IntervalsIcuPushListener {
             autenticacaoFalhou[0] = true;
         }
 
-        if (treino.getExternalId() != null) {
-            externalIdsAtuais.add(treino.getExternalId());
+        if (treino.getStatusSincronizacao() == StatusSincronizacao.SINCRONIZADO) {
+            algumPushComSucesso[0] = true;
         }
+
+        // Regra 7: o external_id do evento no intervals.icu é SEMPRE "menthoros-<treinoId>" — o
+        // adapter (IntervalsIcuAdapter#removerOrfaos) compara contra esse valor canônico, nunca
+        // contra treino.getExternalId() (que após um push bem-sucedido vira o id numérico do
+        // evento). TODO treino exportável entra no set — inclusive claim perdido e erro no push:
+        // o evento antigo dele continua válido e não pode ser reconciliado como órfão.
+        externalIdsAtuais.add("menthoros-" + treinoId);
     }
 }

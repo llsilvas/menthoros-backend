@@ -244,7 +244,8 @@ class IntervalsIcuPushListenerTest {
         }
 
         @Test
-        @DisplayName("regra 7: após os pushes chama removerOrfaos com a janela do plano e os externalIds atuais")
+        @DisplayName("regra 7: após os pushes chama removerOrfaos com a janela do plano e os externalIds "
+                + "canônicos (menthoros-<treinoId>), nunca o eventId numérico do treino")
         void chamaRemoverOrfaosComExternalIdsAtuais() {
             TreinoPlanejado t1 = treino(UUID.randomUUID(), tenantId, null); // exportável, vai sincronizar agora
             TreinoPlanejado t2 = treino(UUID.randomUUID(), tenantId, "555"); // não mais exportável (ex.: virou descanso)
@@ -263,7 +264,34 @@ class IntervalsIcuPushListenerTest {
 
             listener.onPlanoAprovado(event);
 
-            verify(workoutChannel).removerOrfaos(conexao, inicio, fim, Set.of("321"));
+            // IntervalsIcuAdapter#removerOrfaos compara contra o external_id canônico do evento
+            // ("menthoros-<treinoId>"), nunca contra o eventId numérico que passa a ocupar
+            // treino.getExternalId() após um push bem-sucedido (aqui, "321").
+            verify(workoutChannel).removerOrfaos(conexao, inicio, fim, Set.of("menthoros-" + t1.getId()));
+        }
+
+        @Test
+        @DisplayName("costura C1: push bem-sucedido alimenta removerOrfaos com \"menthoros-<treinoId>\", "
+                + "nunca com o eventId numérico gravado em treino.getExternalId()")
+        void pushSucessoAlimentaReconciliacaoComExternalIdCanonico() {
+            TreinoPlanejado t = treino(UUID.randomUUID(), tenantId, null);
+            PlanoSemanal plano = planoCom(List.of(t));
+            StructuredWorkout workout = workout();
+
+            mocarConexaoEPlano(plano);
+            when(treinoPlanejadoRepository.findByIdAndTenantId(t.getId(), tenantId)).thenReturn(Optional.of(t));
+            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
+            when(workoutChannel.push(conexao, workout, null)).thenReturn(PushResult.ok(111L));
+
+            listener.onPlanoAprovado(event);
+
+            assertThat(t.getExternalId()).isEqualTo("111");
+            ArgumentCaptor<Set<String>> setCaptor = ArgumentCaptor.forClass(Set.class);
+            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture());
+            assertThat(setCaptor.getValue())
+                    .containsExactly("menthoros-" + t.getId())
+                    .doesNotContain("111");
         }
 
         @Test
@@ -285,6 +313,48 @@ class IntervalsIcuPushListenerTest {
             ArgumentCaptor<IntegracaoExterna> captor = ArgumentCaptor.forClass(IntegracaoExterna.class);
             verify(integracaoExternaRepository).save(captor.capture());
             assertThat(captor.getValue().getLastSyncError()).containsIgnoringCase("autenticação");
+        }
+
+        @Test
+        @DisplayName("I1: push com sucesso grava ultimaSincronizacao na conexao")
+        void pushSucessoGravaUltimaSincronizacao() {
+            TreinoPlanejado t = treino(UUID.randomUUID(), tenantId, null);
+            PlanoSemanal plano = planoCom(List.of(t));
+            StructuredWorkout workout = workout();
+
+            mocarConexaoEPlano(plano);
+            when(treinoPlanejadoRepository.findByIdAndTenantId(t.getId(), tenantId)).thenReturn(Optional.of(t));
+            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
+            when(workoutChannel.push(conexao, workout, null)).thenReturn(PushResult.ok(654L));
+
+            assertThat(conexao.getUltimaSincronizacao()).isNull();
+
+            listener.onPlanoAprovado(event);
+
+            ArgumentCaptor<IntegracaoExterna> captor = ArgumentCaptor.forClass(IntegracaoExterna.class);
+            verify(integracaoExternaRepository).save(captor.capture());
+            assertThat(captor.getValue().getUltimaSincronizacao()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("I1: lote todo com falha (não-autenticação) não grava ultimaSincronizacao nem toca a conexao")
+        void loteTodoComFalhaNaoGravaUltimaSincronizacao() {
+            TreinoPlanejado t = treino(UUID.randomUUID(), tenantId, null);
+            PlanoSemanal plano = planoCom(List.of(t));
+            StructuredWorkout workout = workout();
+
+            mocarConexaoEPlano(plano);
+            when(treinoPlanejadoRepository.findByIdAndTenantId(t.getId(), tenantId)).thenReturn(Optional.of(t));
+            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
+            when(workoutChannel.push(conexao, workout, null))
+                    .thenReturn(PushResult.erro(StatusSincronizacao.ERRO_TEMPORARIO, "timeout"));
+
+            listener.onPlanoAprovado(event);
+
+            assertThat(conexao.getUltimaSincronizacao()).isNull();
+            verify(integracaoExternaRepository, never()).save(any());
         }
 
         @Test
