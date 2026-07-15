@@ -31,6 +31,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -263,6 +264,46 @@ class IntervalsIcuAdapterTest {
             ArgumentCaptor<JsonNode> captor2 = ArgumentCaptor.forClass(JsonNode.class);
             verify(client).atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(11L), captor2.capture());
             assertThat(captor2.getValue().get("name").asText()).isEqualTo("CONTINUO 15/07");
+        }
+    }
+
+    @Nested
+    @DisplayName("tocarEvento")
+    class TocarEvento {
+
+        @Test
+        @DisplayName("faz PUT com payload mínimo contendo APENAS external_id com o valor canônico")
+        void putComPayloadMinimo() {
+            when(client.atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(999L), any()))
+                    .thenReturn(new IcuEventDto(999L, "menthoros-abc", "X", "2026-07-15T00:00:00"));
+
+            adapter.tocarEvento(conexao, 999L, "menthoros-abc");
+
+            ArgumentCaptor<JsonNode> captor = ArgumentCaptor.forClass(JsonNode.class);
+            verify(client).atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(999L), captor.capture());
+            JsonNode payload = captor.getValue();
+            assertThat(payload.size()).isEqualTo(1);
+            assertThat(payload.get("external_id").asText()).isEqualTo("menthoros-abc");
+        }
+
+        @Test
+        @DisplayName("exceção da API (inclusive 404) é absorvida, nunca propaga")
+        void excecaoDaApiNaoPropaga() {
+            when(client.atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(999L), any()))
+                    .thenThrow(new IntervalsIcuApiException(HttpStatus.NOT_FOUND, "evento não encontrado"));
+
+            assertThatCode(() -> adapter.tocarEvento(conexao, 999L, "menthoros-abc"))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("exceção inesperada (não vinda da API) também é absorvida")
+        void excecaoInesperadaNaoPropaga() {
+            when(client.atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(999L), any()))
+                    .thenThrow(new RuntimeException("boom"));
+
+            assertThatCode(() -> adapter.tocarEvento(conexao, 999L, "menthoros-abc"))
+                    .doesNotThrowAnyException();
         }
     }
 

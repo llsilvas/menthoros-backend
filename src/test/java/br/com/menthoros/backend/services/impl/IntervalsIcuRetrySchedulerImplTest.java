@@ -6,6 +6,7 @@ import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -28,7 +30,9 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -39,6 +43,7 @@ class IntervalsIcuRetrySchedulerImplTest {
     @Mock private IntervalsIcuConnectionService connectionService;
     @Mock private IntervalsIcuPushProcessor pushProcessor;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
+    @Mock private IntegracaoExternaRepository integracaoExternaRepository;
 
     @InjectMocks private IntervalsIcuRetrySchedulerImpl scheduler;
 
@@ -85,7 +90,7 @@ class IntervalsIcuRetrySchedulerImplTest {
 
             scheduler.reprocessarPendentes();
 
-            verify(pushProcessor).processar(t, conexao);
+            verify(pushProcessor).processar(t.getId(), tenantId, conexao);
         }
 
         @Test
@@ -135,7 +140,7 @@ class IntervalsIcuRetrySchedulerImplTest {
 
             scheduler.reprocessarPendentes();
 
-            verify(pushProcessor).processar(t, conexao);
+            verify(pushProcessor).processar(t.getId(), tenantId, conexao);
         }
 
         @Test
@@ -185,11 +190,11 @@ class IntervalsIcuRetrySchedulerImplTest {
             TreinoPlanejado t2 = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t1, t2));
             when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
-            when(pushProcessor.processar(t1, conexao)).thenThrow(new RuntimeException("boom"));
+            when(pushProcessor.processar(t1.getId(), tenantId, conexao)).thenThrow(new RuntimeException("boom"));
 
             scheduler.reprocessarPendentes();
 
-            verify(pushProcessor).processar(t2, conexao);
+            verify(pushProcessor).processar(t2.getId(), tenantId, conexao);
         }
 
         @Test
@@ -199,13 +204,76 @@ class IntervalsIcuRetrySchedulerImplTest {
             TreinoPlanejado t2 = treino(StatusSincronizacao.AGUARDANDO_RETRY, 1, null);
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t1, t2));
             when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
-            when(pushProcessor.processar(t1, conexao))
-                    .thenReturn(IntervalsIcuPushProcessor.ProcessamentoResultado.CLAIM_PERDIDO);
+            when(pushProcessor.processar(t1.getId(), tenantId, conexao))
+                    .thenReturn(IntervalsIcuPushProcessor.ResultadoPush.simples(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.CLAIM_PERDIDO));
 
             scheduler.reprocessarPendentes();
 
-            verify(pushProcessor).processar(t1, conexao);
-            verify(pushProcessor).processar(t2, conexao);
+            verify(pushProcessor).processar(t1.getId(), tenantId, conexao);
+            verify(pushProcessor).processar(t2.getId(), tenantId, conexao);
+        }
+    }
+
+    @Nested
+    @DisplayName("ultimaSincronizacao no retry (CA3)")
+    class UltimaSincronizacaoNoRetry {
+
+        @Test
+        @DisplayName("retry com sucesso grava ultimaSincronizacao e salva a conexão exatamente uma vez")
+        void retrySucessoGravaESalvaUmaVez() {
+            TreinoPlanejado t = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
+            when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t));
+            when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
+            when(pushProcessor.processar(t.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, false, 100L));
+
+            scheduler.reprocessarPendentes();
+
+            ArgumentCaptor<IntegracaoExterna> captor = ArgumentCaptor.forClass(IntegracaoExterna.class);
+            verify(integracaoExternaRepository, times(1)).save(captor.capture());
+            assertThat(captor.getValue().getId()).isEqualTo(conexao.getId());
+            assertThat(conexao.getUltimaSincronizacao()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("ciclo todo-falha (só CLAIM_PERDIDO/PROCESSADO_ERRO) nunca salva a conexão")
+        void cicloTodoFalhaNuncaSalvaConexao() {
+            TreinoPlanejado t1 = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
+            TreinoPlanejado t2 = treino(StatusSincronizacao.AGUARDANDO_RETRY, 1, null);
+            when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t1, t2));
+            when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
+            when(pushProcessor.processar(t1.getId(), tenantId, conexao))
+                    .thenReturn(IntervalsIcuPushProcessor.ResultadoPush.simples(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_ERRO));
+            when(pushProcessor.processar(t2.getId(), tenantId, conexao))
+                    .thenReturn(IntervalsIcuPushProcessor.ResultadoPush.simples(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.CLAIM_PERDIDO));
+
+            scheduler.reprocessarPendentes();
+
+            verify(integracaoExternaRepository, never()).save(any());
+            assertThat(conexao.getUltimaSincronizacao()).isNull();
+        }
+
+        @Test
+        @DisplayName("2 treinos do MESMO atleta com sucesso no ciclo salvam a conexão uma única vez")
+        void doisTreinosMesmoAtletaSucessoSalvaUmaVez() {
+            TreinoPlanejado t1 = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
+            TreinoPlanejado t2 = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
+            when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t1, t2));
+            when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
+            when(pushProcessor.processar(t1.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, false, 100L));
+            when(pushProcessor.processar(t2.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, true, 200L));
+
+            scheduler.reprocessarPendentes();
+
+            verify(integracaoExternaRepository, times(1)).save(any());
         }
     }
 

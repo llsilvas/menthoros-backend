@@ -4,15 +4,20 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
+import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.impl.IntervalsIcuPushProcessor.ProcessamentoResultado;
+import br.com.menthoros.backend.services.impl.IntervalsIcuPushProcessor.ResultadoPush;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -44,6 +49,7 @@ public class IntervalsIcuRetrySchedulerImpl {
     private final IntervalsIcuConnectionService connectionService;
     private final IntervalsIcuPushProcessor pushProcessor;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
+    private final IntegracaoExternaRepository integracaoExternaRepository;
 
     /**
      * Varre e reprocessa treinos planejados nos estados de retry do push intervals.icu.
@@ -51,22 +57,28 @@ public class IntervalsIcuRetrySchedulerImpl {
      * <p><b>Idempotente:</b> YES — mesmo claim atômico do {@link IntervalsIcuPushProcessor}
      * (transição condicional + {@code @Version}); reexecutar sobre o mesmo treino converge para o
      * mesmo estado final.
-     * <p><b>Side Effects:</b> chamada HTTP externa (push) + atualização de {@link TreinoPlanejado}.
+     * <p><b>Side Effects:</b> chamada HTTP externa (push, fora de TX) + atualização de
+     * {@link TreinoPlanejado} em TXs próprias e curtas do processor — este método NÃO abre
+     * transação de lote (CA1 do hardening): claim perdido em um treino não arrasta os demais.
+     * Ao final do ciclo, toda {@link IntegracaoExterna} com ao menos um retry
+     * {@code PROCESSADO_SUCESSO} tem {@link IntegracaoExterna#setUltimaSincronizacao(Instant)}
+     * gravado e é salva exatamente uma vez, mesmo com múltiplos treinos bem-sucedidos da mesma
+     * conexão no ciclo (CA3 do hardening).
      * <p><b>Tenant-aware:</b> YES — job de sistema sem contexto de requisição HTTP; cada treino usa
      * o próprio {@code tenantId} ({@code treino.getTenantId()}) nas operações, nunca
      * {@code TenantContext}. Mismatch entre o tenant do treino e a assessoria do atleta é logado
      * como violação de segurança e o treino é pulado.
      */
     @Scheduled(fixedDelayString = "PT15M", initialDelayString = "PT5M")
-    @Transactional
     public void reprocessarPendentes() {
         List<TreinoPlanejado> candidatos = treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu();
         log.info("Retry intervals.icu: {} treinos candidatos a reprocessamento", candidatos.size());
 
+        Map<UUID, IntegracaoExterna> conexoesComSucesso = new HashMap<>();
         int processados = 0;
         for (TreinoPlanejado treino : candidatos) {
             try {
-                if (processarRetry(treino)) {
+                if (processarRetry(treino, conexoesComSucesso)) {
                     processados++;
                 }
             } catch (Exception e) {
@@ -74,6 +86,7 @@ public class IntervalsIcuRetrySchedulerImpl {
                 log.error("Erro inesperado no retry do treino {}: {}", treino.getId(), e.getMessage(), e);
             }
         }
+        atualizarUltimaSincronizacao(conexoesComSucesso);
         log.info("Retry intervals.icu concluído: {} de {} treinos processados", processados, candidatos.size());
     }
 
@@ -81,7 +94,7 @@ public class IntervalsIcuRetrySchedulerImpl {
      * @return true se o treino chegou a ser processado (push tentado via
      *         {@link IntervalsIcuPushProcessor}), false se pulado sem mutação de estado.
      */
-    private boolean processarRetry(TreinoPlanejado treino) {
+    private boolean processarRetry(TreinoPlanejado treino, Map<UUID, IntegracaoExterna> conexoesComSucesso) {
         UUID treinoId = treino.getId();
 
         // Limite de tentativas já esgotado finaliza como estado final sem nova chamada de rede —
@@ -110,9 +123,29 @@ public class IntervalsIcuRetrySchedulerImpl {
             log.info("Retry intervals.icu pulado: atleta {} sem conexão ativa. treino={}", atletaId, treinoId);
             return false;
         }
+        IntegracaoExterna conexao = conexaoOpt.get();
 
-        pushProcessor.processar(treino, conexaoOpt.get());
+        ResultadoPush resultado = pushProcessor.processar(treinoId, tenantId, conexao);
+        if (resultado.tipo() == ProcessamentoResultado.PROCESSADO_SUCESSO) {
+            conexoesComSucesso.putIfAbsent(conexao.getId(), conexao);
+        }
         return true;
+    }
+
+    /**
+     * Grava {@code ultimaSincronizacao} e salva, uma única vez por conexão, todas as conexões que
+     * tiveram ao menos um retry bem-sucedido no ciclo (CA3 do hardening) — o mesmo instante é usado
+     * para todas, refletindo que pertencem ao mesmo ciclo do scheduler.
+     */
+    private void atualizarUltimaSincronizacao(Map<UUID, IntegracaoExterna> conexoesComSucesso) {
+        if (conexoesComSucesso.isEmpty()) {
+            return;
+        }
+        Instant agora = Instant.now();
+        for (IntegracaoExterna conexao : conexoesComSucesso.values()) {
+            conexao.setUltimaSincronizacao(agora);
+            integracaoExternaRepository.save(conexao);
+        }
     }
 
     /**
