@@ -20,7 +20,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -54,7 +53,11 @@ class IntervalsIcuPushListenerTest {
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock private IntegracaoExternaRepository integracaoExternaRepository;
 
-    @InjectMocks private IntervalsIcuPushListener listener;
+    // IntervalsIcuPushProcessor não é mockado: é uma instância real construída com os MESMOS
+    // mocks acima (converter/workoutChannel/treinoPlanejadoRepository) — o claim atômico e a
+    // marcação de resultado foram extraídos para lá (compartilhado com o retry scheduler), mas os
+    // testes deste listener continuam validando o fluxo ponta a ponta através dele.
+    private IntervalsIcuPushListener listener;
 
     private UUID planoId;
     private UUID atletaId;
@@ -71,6 +74,11 @@ class IntervalsIcuPushListenerTest {
         conexao = new IntegracaoExterna();
         conexao.setId(UUID.randomUUID());
         conexao.setTenantId(tenantId);
+
+        IntervalsIcuPushProcessor pushProcessor =
+                new IntervalsIcuPushProcessor(converter, workoutChannel, treinoPlanejadoRepository);
+        listener = new IntervalsIcuPushListener(connectionService, pushProcessor, workoutChannel,
+                planoSemanalRepository, treinoPlanejadoRepository, integracaoExternaRepository);
     }
 
     @Nested

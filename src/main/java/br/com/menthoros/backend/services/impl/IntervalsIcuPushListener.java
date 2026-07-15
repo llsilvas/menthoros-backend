@@ -1,22 +1,17 @@
 package br.com.menthoros.backend.services.impl;
 
-import br.com.menthoros.backend.domain.workout.StructuredWorkout;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
-import br.com.menthoros.backend.enums.FonteDados;
-import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
-import br.com.menthoros.backend.services.PushResult;
 import br.com.menthoros.backend.services.WorkoutChannel;
-import br.com.menthoros.backend.services.helper.IntervalsIcuWorkoutConverter;
+import br.com.menthoros.backend.services.impl.IntervalsIcuPushProcessor.ProcessamentoResultado;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
@@ -36,16 +31,19 @@ import java.util.UUID;
  *
  * <p>Roda fora da transação de aprovação (AFTER_COMMIT + REQUIRES_NEW): a aprovação do plano nunca
  * falha por causa do push (ver {@code PlanoReviewServiceImplTest#naoInterageComWorkoutChannelSincronamente}).
+ *
+ * <p>O claim atômico e a marcação de resultado por treino vivem em {@link IntervalsIcuPushProcessor},
+ * compartilhado com {@link IntervalsIcuRetrySchedulerImpl}. Este listener resolve o que é específico
+ * do gatilho de aprovação: recarregar plano/treino frescos, validar o tenant contra o evento e
+ * reconciliar órfãos ao final.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class IntervalsIcuPushListener {
 
-    private static final String PLATAFORMA = FonteDados.INTERVALS_ICU.name();
-
     private final IntervalsIcuConnectionService connectionService;
-    private final IntervalsIcuWorkoutConverter converter;
+    private final IntervalsIcuPushProcessor pushProcessor;
     private final WorkoutChannel workoutChannel;
     private final PlanoSemanalRepository planoSemanalRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
@@ -56,7 +54,7 @@ public class IntervalsIcuPushListener {
      *
      * <p><b>Idempotente:</b> YES — cada execução reclama (claim) apenas treinos ainda não
      * sincronizados por outro worker e re-envia o mesmo {@code externalId} determinístico do
-     * {@link StructuredWorkout}; re-executar após falha parcial converge para o mesmo estado final
+     * treino estruturado; re-executar após falha parcial converge para o mesmo estado final
      * (upsert no canal externo).
      * <p><b>Side Effects:</b> chamada HTTP externa (push e remoção de órfãos no intervals.icu) +
      * atualização de {@link TreinoPlanejado} (status/tentativas/externalId) e, em erro de
@@ -130,67 +128,20 @@ public class IntervalsIcuPushListener {
             return;
         }
 
-        // Regra 4: treino não exportável é pulado sem erro e sem qualquer mutação de estado.
-        Optional<StructuredWorkout> workoutOpt = converter.converter(treino);
-        if (workoutOpt.isEmpty()) {
+        ProcessamentoResultado resultado = pushProcessor.processar(treino, conexao);
+
+        // Regra 4: treino não exportável (NAO_EXPORTAVEL) é pulado sem qualquer mutação de estado
+        // e sem entrar no conjunto de externalIds atuais — o antigo evento, se houver, vira órfão.
+        if (resultado == ProcessamentoResultado.NAO_EXPORTAVEL) {
             return;
         }
 
-        // Regra 3: claim atômico — transição para SINCRONIZANDO persistida ANTES da chamada de rede.
-        treino.registrarTentativaSincronizacao();
-        treino.setStatusSincronizacao(StatusSincronizacao.SINCRONIZANDO);
-        try {
-            treinoPlanejadoRepository.saveAndFlush(treino);
-        } catch (OptimisticLockingFailureException e) {
-            log.info("Claim de sincronização perdido para o treino {}: outro worker assumiu", treinoId);
-            if (treino.getExternalId() != null) {
-                externalIdsAtuais.add(treino.getExternalId());
-            }
-            return;
+        if (resultado == ProcessamentoResultado.PROCESSADO_ERRO_AUTENTICACAO) {
+            autenticacaoFalhou[0] = true;
         }
-
-        // Após o claim, NENHUM throw pode escapar sem resolver o estado: um treino preso em
-        // SINCRONIZANDO fica órfão (o retry scheduler não varre esse estado). O channel promete
-        // nunca lançar, mas uma violação de contrato aqui degrada para ERRO_TEMPORARIO.
-        try {
-            PushResult resultado = workoutChannel.push(conexao, workoutOpt.get(), parseEventId(treino.getExternalId()));
-
-            // Regra 5: sucesso marca sincronizado + externalId; falha grava o erro e, ao atingir o
-            // limite de tentativas, escala para ERRO_PERMANENTE (não reprocessável automaticamente).
-            if (resultado.sucesso()) {
-                treino.marcarComoSincronizado(PLATAFORMA);
-                treino.setExternalId(String.valueOf(resultado.eventId()));
-            } else {
-                treino.marcarErroSincronizacao(resultado.statusErro(), resultado.mensagem());
-                if (treino.atingiuLimiteTentativas()) {
-                    treino.setStatusSincronizacao(StatusSincronizacao.ERRO_PERMANENTE);
-                }
-                if (resultado.statusErro() == StatusSincronizacao.ERRO_AUTENTICACAO) {
-                    autenticacaoFalhou[0] = true;
-                }
-            }
-        } catch (Exception e) {
-            log.error("Erro inesperado no push do treino {} (violação de contrato do channel): {}",
-                    treinoId, e.getMessage(), e);
-            treino.marcarErroSincronizacao(StatusSincronizacao.ERRO_TEMPORARIO,
-                    "Erro inesperado no push intervals.icu: " + e.getMessage());
-        }
-        treinoPlanejadoRepository.save(treino);
 
         if (treino.getExternalId() != null) {
             externalIdsAtuais.add(treino.getExternalId());
-        }
-    }
-
-    private Long parseEventId(String externalId) {
-        if (externalId == null) {
-            return null;
-        }
-        try {
-            return Long.valueOf(externalId);
-        } catch (NumberFormatException e) {
-            log.warn("externalId '{}' não é um eventId numérico válido, tratando como primeiro push", externalId);
-            return null;
         }
     }
 }
