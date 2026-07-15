@@ -97,7 +97,15 @@ public enum TipoTreino {
      * Recuperação: 48-96h (esforço máximo sustentado)
      * Fator Impacto: 1.3 (esforço máximo + componente mental)
      */
-    PROVA("PROVA", "Prova/Simulado", "Prova ou simulado em ritmo de competição", "#E91E63", "race", 1.3, "Zona 3-4 (Race Pace)");
+    PROVA("PROVA", "Prova/Simulado", "Prova ou simulado em ritmo de competição", "#E91E63", "race", 1.3, "Zona 3-4 (Race Pace)"),
+
+    /**
+     * Descanso: dia sem treino, recuperação passiva
+     * Ritmo: N/A
+     * Recuperação: N/A
+     * Fator Impacto: 0.0 (nenhuma carga de treino)
+     */
+    DESCANSO("DESCANSO", "Descanso", "Dia sem treino - recuperação passiva", "#9E9E9E", "rest", 0.0, "N/A");
 
     @JsonProperty("value")
     private final String value;

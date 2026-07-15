@@ -398,6 +398,7 @@ public class TssCalculatorService {
         }
 
         double intensityFactor = switch (treino.getTipoTreino()) {
+            case DESCANSO -> 0.0;
             case REGENERATIVO -> 0.50;
             case FACIL -> 0.65;
             case CONTINUO, LONGO -> 0.75;
