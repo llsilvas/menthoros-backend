@@ -124,6 +124,8 @@ public class IntervalsIcuPushListener {
         // Nudge anti-debounce (CA2): DEPOIS de removerOrfaos de propósito — é a última palavra do
         // lote. Só dispara com 2+ eventos CRIADOS (rajada), no ÚLTIMO deles; best-effort, nunca
         // altera o estado de nenhum treino.
+        // Invariante: criados só incrementa no MESMO bloco que seta ultimoEventoCriado e
+        // ultimoExternalIdCanonico — criados >= 2 implica ambos não-nulos.
         if (lote.criados >= 2) {
             try {
                 workoutChannel.tocarEvento(conexao, lote.ultimoEventoCriado, lote.ultimoExternalIdCanonico);
