@@ -4,7 +4,6 @@ import br.com.menthoros.backend.domain.workout.StructuredWorkout;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
-import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
@@ -12,12 +11,11 @@ import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
 import br.com.menthoros.backend.services.WorkoutChannel;
 import br.com.menthoros.backend.services.impl.IntervalsIcuPushProcessor.ProcessamentoResultado;
+import br.com.menthoros.backend.services.impl.IntervalsIcuPushProcessor.ResultadoPush;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -32,13 +30,15 @@ import java.util.UUID;
  * Escuta {@link PlanoAprovadoEvent} e empurra os treinos exportáveis do plano para o intervals.icu,
  * um treino por vez, com claim atômico e reconciliação de eventos órfãos ao final.
  *
- * <p>Roda fora da transação de aprovação (AFTER_COMMIT + REQUIRES_NEW): a aprovação do plano nunca
- * falha por causa do push (ver {@code PlanoReviewServiceImplTest#naoInterageComWorkoutChannelSincronamente}).
+ * <p>Roda fora da transação de aprovação (AFTER_COMMIT): a aprovação do plano nunca falha por
+ * causa do push.
  *
- * <p>O claim atômico e a marcação de resultado por treino vivem em {@link IntervalsIcuPushProcessor},
- * compartilhado com {@link IntervalsIcuRetrySchedulerImpl}. Este listener resolve o que é específico
- * do gatilho de aprovação: recarregar plano/treino frescos, validar o tenant contra o evento e
- * reconciliar órfãos ao final.
+ * <p><b>Fronteira transacional (hardening):</b> este método NÃO abre transação própria — é um
+ * orquestrador. Cada treino é processado em transações curtas e independentes dentro de
+ * {@link IntervalsIcuPushProcessor} (claim e marcação em TXs próprias; HTTP fora de TX), de modo
+ * que um claim perdido em um treino jamais arrasta por rollback as marcações dos demais (CA1 da
+ * change intervals-icu-push-hardening). As leituras daqui (plano, treinos) usam queries avulsas
+ * tenant-scoped; nenhuma coleção lazy é percorrida fora de sessão.
  */
 @Slf4j
 @Component
@@ -56,12 +56,11 @@ public class IntervalsIcuPushListener {
      * Processa o push de todos os treinos exportáveis do plano aprovado para o intervals.icu.
      *
      * <p><b>Idempotente:</b> YES — cada execução reclama (claim) apenas treinos ainda não
-     * sincronizados por outro worker e re-envia o mesmo {@code externalId} determinístico do
-     * treino estruturado; re-executar após falha parcial converge para o mesmo estado final
-     * (upsert no canal externo).
-     * <p><b>Side Effects:</b> chamada HTTP externa (push e remoção de órfãos no intervals.icu) +
-     * atualização de {@link TreinoPlanejado} (status/tentativas/externalId) e, quando houver ao
-     * menos um push bem-sucedido no lote, de {@link IntegracaoExterna#getUltimaSincronizacao()};
+     * assumidos por outro worker e re-envia o mesmo {@code externalId} determinístico; re-executar
+     * após falha parcial converge para o mesmo estado final (upsert no canal externo).
+     * <p><b>Side Effects:</b> chamada HTTP externa (push, nudge anti-debounce e remoção de órfãos)
+     * + atualização de {@link TreinoPlanejado} (via processor, em TXs próprias) e, quando houver
+     * ao menos um push bem-sucedido no lote, de {@link IntegracaoExterna#getUltimaSincronizacao()};
      * em erro de autenticação, de {@link IntegracaoExterna#getLastSyncError()}.
      * <p><b>Tenant-aware:</b> YES — todas as queries usam {@code event.tenantId()}; um treino cujo
      * tenant não bate com o evento é ignorado com log de segurança.
@@ -70,7 +69,6 @@ public class IntervalsIcuPushListener {
      */
     @Async("intervalsIcuPushExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onPlanoAprovado(PlanoAprovadoEvent event) {
         UUID planoId = event.planoId();
         UUID atletaId = event.atletaId();
@@ -83,15 +81,15 @@ public class IntervalsIcuPushListener {
         }
         IntegracaoExterna conexao = conexaoOpt.get();
 
-        // Regra 2: plano e treinos são sempre recarregados frescos aqui — nunca usar a instância
-        // da transação pai que publicou o evento (o @Version só protege entidade fresca).
+        // Janela da semana e lista de treinos por queries avulsas tenant-scoped — o reload fresco
+        // de cada treino acontece DENTRO da TX própria do processor, nunca aqui.
         PlanoSemanal plano = planoSemanalRepository.findByIdAndTenantId(planoId, tenantId).orElse(null);
         if (plano == null) {
             log.warn("Push intervals.icu abortado: plano {} não encontrado no tenant {}", planoId, tenantId);
             return;
         }
-        List<TreinoPlanejado> treinos = plano.getTreinosPlanejados();
-        if (treinos == null || treinos.isEmpty()) {
+        List<TreinoPlanejado> treinos = treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId);
+        if (treinos.isEmpty()) {
             return;
         }
 
@@ -133,40 +131,26 @@ public class IntervalsIcuPushListener {
             return;
         }
 
-        TreinoPlanejado treino = treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId).orElse(null);
-        if (treino == null) {
+        ResultadoPush resultado = pushProcessor.processar(treinoId, tenantId, conexao);
+
+        // Regra 4: treino não exportável não entra no conjunto de externalIds atuais — o antigo
+        // evento, se houver, vira órfão e a reconciliação o deleta (o reset do vínculo local
+        // acontece dentro do processor, na mesma TX do reload). Treino que sumiu entre o evento
+        // e o processamento (deleção concorrente) também fica fora do set.
+        if (resultado.tipo() == ProcessamentoResultado.NAO_EXPORTAVEL
+                || resultado.tipo() == ProcessamentoResultado.NAO_ENCONTRADO) {
             return;
         }
 
-        ProcessamentoResultado resultado = pushProcessor.processar(treino, conexao);
-
-        // Regra 4: treino não exportável (NAO_EXPORTAVEL) não entra no conjunto de externalIds
-        // atuais — o antigo evento, se houver, vira órfão e a reconciliação o deleta (ex.: coach
-        // transformou o treino em DESCANSO). Se o treino já esteve sincronizado, o estado local
-        // acompanha a deleção externa: reset completo (NAO_SINCRONIZADO + externalId limpo);
-        // treino nunca sincronizado segue sem qualquer mutação de estado.
-        if (resultado == ProcessamentoResultado.NAO_EXPORTAVEL) {
-            if (treino.getExternalId() != null
-                    || (treino.getStatusSincronizacao() != null
-                            && treino.getStatusSincronizacao().estaSincronizado())) {
-                treino.resetarSincronizacao();
-                treinoPlanejadoRepository.save(treino);
-            }
-            return;
-        }
-
-        if (resultado == ProcessamentoResultado.PROCESSADO_ERRO_AUTENTICACAO) {
+        if (resultado.tipo() == ProcessamentoResultado.PROCESSADO_ERRO_AUTENTICACAO) {
             lote.autenticacaoFalhou = true;
         }
-
-        if (treino.getStatusSincronizacao() == StatusSincronizacao.SINCRONIZADO) {
+        if (resultado.tipo() == ProcessamentoResultado.PROCESSADO_SUCESSO) {
             lote.algumPushComSucesso = true;
         }
 
         // Regra 7: o external_id do evento no intervals.icu é SEMPRE o canônico
-        // "menthoros-<treinoId>" — o adapter (IntervalsIcuAdapter#removerOrfaos) compara contra
-        // esse valor, nunca contra treino.getExternalId() (que após um push bem-sucedido vira o
-        // id numérico do evento). TODO treino exportável entra no set — inclusive claim perdido
+        // "menthoros-<treinoId>". TODO treino exportável entra no set — inclusive claim perdido
         // e erro no push: o evento antigo dele continua válido e não pode ser reconciliado como
         // órfão.
         externalIdsAtuais.add(StructuredWorkout.externalIdCanonico(treinoId));

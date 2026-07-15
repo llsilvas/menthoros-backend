@@ -85,7 +85,7 @@ class IntervalsIcuRetrySchedulerImplTest {
 
             scheduler.reprocessarPendentes();
 
-            verify(pushProcessor).processar(t, conexao);
+            verify(pushProcessor).processar(t.getId(), tenantId, conexao);
         }
 
         @Test
@@ -135,7 +135,7 @@ class IntervalsIcuRetrySchedulerImplTest {
 
             scheduler.reprocessarPendentes();
 
-            verify(pushProcessor).processar(t, conexao);
+            verify(pushProcessor).processar(t.getId(), tenantId, conexao);
         }
 
         @Test
@@ -185,11 +185,11 @@ class IntervalsIcuRetrySchedulerImplTest {
             TreinoPlanejado t2 = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t1, t2));
             when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
-            when(pushProcessor.processar(t1, conexao)).thenThrow(new RuntimeException("boom"));
+            when(pushProcessor.processar(t1.getId(), tenantId, conexao)).thenThrow(new RuntimeException("boom"));
 
             scheduler.reprocessarPendentes();
 
-            verify(pushProcessor).processar(t2, conexao);
+            verify(pushProcessor).processar(t2.getId(), tenantId, conexao);
         }
 
         @Test
@@ -199,13 +199,14 @@ class IntervalsIcuRetrySchedulerImplTest {
             TreinoPlanejado t2 = treino(StatusSincronizacao.AGUARDANDO_RETRY, 1, null);
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t1, t2));
             when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
-            when(pushProcessor.processar(t1, conexao))
-                    .thenReturn(IntervalsIcuPushProcessor.ProcessamentoResultado.CLAIM_PERDIDO);
+            when(pushProcessor.processar(t1.getId(), tenantId, conexao))
+                    .thenReturn(IntervalsIcuPushProcessor.ResultadoPush.simples(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.CLAIM_PERDIDO));
 
             scheduler.reprocessarPendentes();
 
-            verify(pushProcessor).processar(t1, conexao);
-            verify(pushProcessor).processar(t2, conexao);
+            verify(pushProcessor).processar(t1.getId(), tenantId, conexao);
+            verify(pushProcessor).processar(t2.getId(), tenantId, conexao);
         }
     }
 

@@ -139,9 +139,18 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
      */
     @Query("""
         SELECT t FROM TreinoPlanejado t
+        JOIN FETCH t.atleta a
+        JOIN FETCH a.assessoria
         WHERE t.statusSincronizacao IN (br.com.menthoros.backend.enums.StatusSincronizacao.AGUARDANDO_RETRY,
                                         br.com.menthoros.backend.enums.StatusSincronizacao.ERRO_TEMPORARIO,
                                         br.com.menthoros.backend.enums.StatusSincronizacao.ERRO_LIMITE_RATE)
         """)
     List<TreinoPlanejado> findAllAguardandoRetryIntervalsIcu();
+
+    /**
+     * Treinos de um plano semanal, tenant-scoped — usado pelo listener de push do intervals.icu
+     * para orquestrar sem percorrer a coleção lazy do plano fora de sessão (o reload fresco de
+     * cada treino acontece na TX própria do IntervalsIcuPushProcessor).
+     */
+    List<TreinoPlanejado> findAllByPlanoSemanalIdAndTenantId(UUID planoSemanalId, UUID tenantId);
 }

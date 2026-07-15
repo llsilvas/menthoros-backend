@@ -65,7 +65,7 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
                 return atualizarOuRecriar(apiKey, externalAthleteId, idExistente, payload);
             }
             IcuEventDto criado = client.criarEvento(apiKey, externalAthleteId, payload);
-            return PushResult.ok(criado.id());
+            return PushResult.okCriado(criado.id());
         } catch (IntervalsIcuApiException e) {
             return PushResult.erro(mapearStatus(e), mensagemCurada(e));
         } catch (Exception e) {
@@ -114,11 +114,11 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
     private PushResult atualizarOuRecriar(String apiKey, String externalAthleteId, long eventId, JsonNode payload) {
         try {
             IcuEventDto atualizado = client.atualizarEvento(apiKey, externalAthleteId, eventId, payload);
-            return PushResult.ok(atualizado.id());
+            return PushResult.okAtualizado(atualizado.id());
         } catch (IntervalsIcuApiException e) {
             if (isStatus(e, 404)) {
                 IcuEventDto criado = client.criarEvento(apiKey, externalAthleteId, payload);
-                return PushResult.ok(criado.id());
+                return PushResult.okCriado(criado.id());
             }
             throw e;
         }

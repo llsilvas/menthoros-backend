@@ -10,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -51,14 +50,15 @@ public class IntervalsIcuRetrySchedulerImpl {
      * <p><b>Idempotente:</b> YES — mesmo claim atômico do {@link IntervalsIcuPushProcessor}
      * (transição condicional + {@code @Version}); reexecutar sobre o mesmo treino converge para o
      * mesmo estado final.
-     * <p><b>Side Effects:</b> chamada HTTP externa (push) + atualização de {@link TreinoPlanejado}.
+     * <p><b>Side Effects:</b> chamada HTTP externa (push, fora de TX) + atualização de
+     * {@link TreinoPlanejado} em TXs próprias e curtas do processor — este método NÃO abre
+     * transação de lote (CA1 do hardening): claim perdido em um treino não arrasta os demais.
      * <p><b>Tenant-aware:</b> YES — job de sistema sem contexto de requisição HTTP; cada treino usa
      * o próprio {@code tenantId} ({@code treino.getTenantId()}) nas operações, nunca
      * {@code TenantContext}. Mismatch entre o tenant do treino e a assessoria do atleta é logado
      * como violação de segurança e o treino é pulado.
      */
     @Scheduled(fixedDelayString = "PT15M", initialDelayString = "PT5M")
-    @Transactional
     public void reprocessarPendentes() {
         List<TreinoPlanejado> candidatos = treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu();
         log.info("Retry intervals.icu: {} treinos candidatos a reprocessamento", candidatos.size());
@@ -111,7 +111,7 @@ public class IntervalsIcuRetrySchedulerImpl {
             return false;
         }
 
-        pushProcessor.processar(treino, conexaoOpt.get());
+        pushProcessor.processar(treinoId, tenantId, conexaoOpt.get());
         return true;
     }
 
