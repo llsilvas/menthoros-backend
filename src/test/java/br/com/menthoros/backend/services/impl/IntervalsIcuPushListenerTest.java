@@ -24,7 +24,13 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.OptimisticLockingFailureException;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.lang.reflect.Method;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -274,6 +280,38 @@ class IntervalsIcuPushListenerTest {
         }
 
         @Test
+        @DisplayName("guard-rail: throw inesperado do channel após o claim nunca deixa o treino em SINCRONIZANDO")
+        void throwInesperadoAposClaimNaoDeixaSincronizandoOrfao() {
+            // channel.push promete nunca lançar; se um adapter violar o contrato, o treino já
+            // reclamado (SINCRONIZANDO persistido) precisa degradar para ERRO_TEMPORARIO — o
+            // scheduler de retry (Task 10) não varre SINCRONIZANDO, então o estado ficaria órfão.
+            TreinoPlanejado t1 = treino(UUID.randomUUID(), tenantId, null);
+            TreinoPlanejado t2 = treino(UUID.randomUUID(), tenantId, null);
+            PlanoSemanal plano = planoCom(List.of(t1, t2));
+            StructuredWorkout workout = workout();
+
+            mocarConexaoEPlano(plano);
+            when(treinoPlanejadoRepository.findByIdAndTenantId(t1.getId(), tenantId)).thenReturn(Optional.of(t1));
+            when(treinoPlanejadoRepository.findByIdAndTenantId(t2.getId(), tenantId)).thenReturn(Optional.of(t2));
+            when(converter.converter(t1)).thenReturn(Optional.of(workout));
+            when(converter.converter(t2)).thenReturn(Optional.of(workout));
+            when(treinoPlanejadoRepository.saveAndFlush(t1)).thenReturn(t1);
+            when(treinoPlanejadoRepository.saveAndFlush(t2)).thenReturn(t2);
+            when(workoutChannel.push(conexao, workout, null))
+                    .thenThrow(new RuntimeException("violação de contrato"))
+                    .thenReturn(PushResult.ok(444L));
+
+            listener.onPlanoAprovado(event);
+
+            assertThat(t1.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.ERRO_TEMPORARIO);
+            assertThat(t1.getStatusSincronizacao()).isNotEqualTo(StatusSincronizacao.SINCRONIZANDO);
+            assertThat(t1.getErroSincronizacao()).contains("violação de contrato");
+            verify(treinoPlanejadoRepository).save(t1);
+            // o segundo treino continua sendo processado normalmente
+            assertThat(t2.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.SINCRONIZADO);
+        }
+
+        @Test
         @DisplayName("regra 9: treino com tenant diferente do evento é ignorado com log de segurança")
         void tenantMismatchIgnoraTreino() {
             UUID outroTenant = UUID.randomUUID();
@@ -287,6 +325,51 @@ class IntervalsIcuPushListenerTest {
             verify(treinoPlanejadoRepository, never()).findByIdAndTenantId(t.getId(), tenantId);
             verifyNoInteractions(converter);
             verify(workoutChannel, never()).push(any(), any(), any());
+        }
+    }
+
+    // =========================================================================
+    // Guard-rail spec 8.7 — a aprovação nunca falha por causa do push
+    // =========================================================================
+
+    @Nested
+    @DisplayName("guard-rail spec 8.7: anotações do listener")
+    class GuardRailAnotacoes {
+
+        // Se alguém tornar o listener síncrono (remover @Async), remover o AFTER_COMMIT ou tirar a
+        // transação própria (REQUIRES_NEW), o push passaria a rodar dentro/junto da transação de
+        // aprovação — e uma falha de push derrubaria a aprovação. Estes asserts quebram nesse caso.
+
+        private Method onPlanoAprovado() throws NoSuchMethodException {
+            return IntervalsIcuPushListener.class.getMethod("onPlanoAprovado", PlanoAprovadoEvent.class);
+        }
+
+        @Test
+        @DisplayName("@Async no executor dedicado intervalsIcuPushExecutor")
+        void asyncNoExecutorDedicado() throws NoSuchMethodException {
+            Async async = onPlanoAprovado().getAnnotation(Async.class);
+            assertThat(async).as("@Async removida: o push passaria a rodar síncrono na aprovação").isNotNull();
+            assertThat(async.value()).isEqualTo("intervalsIcuPushExecutor");
+        }
+
+        @Test
+        @DisplayName("@TransactionalEventListener com phase AFTER_COMMIT")
+        void listenerAposCommit() throws NoSuchMethodException {
+            TransactionalEventListener listener = onPlanoAprovado().getAnnotation(TransactionalEventListener.class);
+            assertThat(listener).as("@TransactionalEventListener removida").isNotNull();
+            assertThat(listener.phase())
+                    .as("sem AFTER_COMMIT o push processaria eventos de transações que sofreram rollback")
+                    .isEqualTo(TransactionPhase.AFTER_COMMIT);
+        }
+
+        @Test
+        @DisplayName("@Transactional com propagation REQUIRES_NEW")
+        void transacaoPropria() throws NoSuchMethodException {
+            Transactional transactional = onPlanoAprovado().getAnnotation(Transactional.class);
+            assertThat(transactional).as("@Transactional removida").isNotNull();
+            assertThat(transactional.propagation())
+                    .as("sem REQUIRES_NEW o listener não teria transação própria (AFTER_COMMIT não abre uma)")
+                    .isEqualTo(Propagation.REQUIRES_NEW);
         }
     }
 

@@ -149,21 +149,31 @@ public class IntervalsIcuPushListener {
             return;
         }
 
-        PushResult resultado = workoutChannel.push(conexao, workoutOpt.get(), parseEventId(treino.getExternalId()));
+        // Após o claim, NENHUM throw pode escapar sem resolver o estado: um treino preso em
+        // SINCRONIZANDO fica órfão (o retry scheduler não varre esse estado). O channel promete
+        // nunca lançar, mas uma violação de contrato aqui degrada para ERRO_TEMPORARIO.
+        try {
+            PushResult resultado = workoutChannel.push(conexao, workoutOpt.get(), parseEventId(treino.getExternalId()));
 
-        // Regra 5: sucesso marca sincronizado + externalId; falha grava o erro e, ao atingir o
-        // limite de tentativas, escala para ERRO_PERMANENTE (não reprocessável automaticamente).
-        if (resultado.sucesso()) {
-            treino.marcarComoSincronizado(PLATAFORMA);
-            treino.setExternalId(String.valueOf(resultado.eventId()));
-        } else {
-            treino.marcarErroSincronizacao(resultado.statusErro(), resultado.mensagem());
-            if (treino.atingiuLimiteTentativas()) {
-                treino.setStatusSincronizacao(StatusSincronizacao.ERRO_PERMANENTE);
+            // Regra 5: sucesso marca sincronizado + externalId; falha grava o erro e, ao atingir o
+            // limite de tentativas, escala para ERRO_PERMANENTE (não reprocessável automaticamente).
+            if (resultado.sucesso()) {
+                treino.marcarComoSincronizado(PLATAFORMA);
+                treino.setExternalId(String.valueOf(resultado.eventId()));
+            } else {
+                treino.marcarErroSincronizacao(resultado.statusErro(), resultado.mensagem());
+                if (treino.atingiuLimiteTentativas()) {
+                    treino.setStatusSincronizacao(StatusSincronizacao.ERRO_PERMANENTE);
+                }
+                if (resultado.statusErro() == StatusSincronizacao.ERRO_AUTENTICACAO) {
+                    autenticacaoFalhou[0] = true;
+                }
             }
-            if (resultado.statusErro() == StatusSincronizacao.ERRO_AUTENTICACAO) {
-                autenticacaoFalhou[0] = true;
-            }
+        } catch (Exception e) {
+            log.error("Erro inesperado no push do treino {} (violação de contrato do channel): {}",
+                    treinoId, e.getMessage(), e);
+            treino.marcarErroSincronizacao(StatusSincronizacao.ERRO_TEMPORARIO,
+                    "Erro inesperado no push intervals.icu: " + e.getMessage());
         }
         treinoPlanejadoRepository.save(treino);
 
