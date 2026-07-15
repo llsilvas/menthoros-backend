@@ -1,9 +1,11 @@
 package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
+import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
@@ -18,6 +20,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -35,15 +38,18 @@ class PlanoReviewServiceImplTest {
 
     @Mock private PlanoSemanalRepository planoSemanalRepository;
     @Mock private PlanoSemanalMapper planoSemanalMapper;
+    @Mock private ApplicationEventPublisher eventPublisher;
     @InjectMocks private PlanoReviewServiceImpl service;
 
     private UUID tenantId;
     private UUID planoId;
+    private UUID atletaId;
 
     @BeforeEach
     void setUp() {
         tenantId = UUID.randomUUID();
         planoId = UUID.randomUUID();
+        atletaId = UUID.randomUUID();
     }
 
     // =========================================================================
@@ -102,9 +108,10 @@ class PlanoReviewServiceImplTest {
     class AprovarPlano {
 
         @Test
-        @DisplayName("happy path: AGUARDANDO_REVISAO → APROVADO; reviewComment zerado")
+        @DisplayName("happy path: AGUARDANDO_REVISAO → APROVADO; reviewComment zerado; publica PlanoAprovadoEvent")
         void aprovaPlanoPendente() {
             PlanoSemanal plano = planoAguardando();
+            plano.setAtleta(Atleta.builder().id(atletaId).build());
             PlanoSemanalOutputDto dto = outputDto(PlanoReviewStatus.APROVADO);
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId))
@@ -116,10 +123,18 @@ class PlanoReviewServiceImplTest {
 
             assertThat(resultado).isEqualTo(dto);
 
-            ArgumentCaptor<PlanoSemanal> captor = ArgumentCaptor.forClass(PlanoSemanal.class);
-            verify(planoSemanalRepository).save(captor.capture());
-            assertThat(captor.getValue().getReviewStatus()).isEqualTo(PlanoReviewStatus.APROVADO);
-            assertThat(captor.getValue().getReviewComment()).isNull();
+            ArgumentCaptor<PlanoSemanal> saveCaptor = ArgumentCaptor.forClass(PlanoSemanal.class);
+            verify(planoSemanalRepository).save(saveCaptor.capture());
+            assertThat(saveCaptor.getValue().getReviewStatus()).isEqualTo(PlanoReviewStatus.APROVADO);
+            assertThat(saveCaptor.getValue().getReviewComment()).isNull();
+
+            // Verifica que o evento foi publicado com os dados corretos
+            ArgumentCaptor<PlanoAprovadoEvent> eventCaptor = ArgumentCaptor.forClass(PlanoAprovadoEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            PlanoAprovadoEvent evento = eventCaptor.getValue();
+            assertThat(evento.planoId()).isEqualTo(planoId);
+            assertThat(evento.atletaId()).isEqualTo(atletaId);
+            assertThat(evento.tenantId()).isEqualTo(tenantId);
         }
 
         @Test
@@ -135,7 +150,7 @@ class PlanoReviewServiceImplTest {
         }
 
         @Test
-        @DisplayName("lança DomainRuleViolationException quando plano já está APROVADO")
+        @DisplayName("lança DomainRuleViolationException quando plano já está APROVADO; NÃO publica evento")
         void lancaRuleViolationQuandoJaAprovado() {
             PlanoSemanal plano = planoComStatus(PlanoReviewStatus.APROVADO);
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId))
@@ -146,10 +161,11 @@ class PlanoReviewServiceImplTest {
                     .hasMessageContaining("Aprovado");
 
             verify(planoSemanalRepository, never()).save(any());
+            verifyNoInteractions(eventPublisher);
         }
 
         @Test
-        @DisplayName("lança DomainRuleViolationException quando plano está REJEITADO")
+        @DisplayName("lança DomainRuleViolationException quando plano está REJEITADO; NÃO publica evento")
         void lancaRuleViolationQuandoRejeitado() {
             PlanoSemanal plano = planoComStatus(PlanoReviewStatus.REJEITADO);
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId))
@@ -160,6 +176,7 @@ class PlanoReviewServiceImplTest {
                     .hasMessageContaining("Rejeitado");
 
             verify(planoSemanalRepository, never()).save(any());
+            verifyNoInteractions(eventPublisher);
         }
 
         @Test
