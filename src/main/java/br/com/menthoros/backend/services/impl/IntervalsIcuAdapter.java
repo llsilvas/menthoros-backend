@@ -1,0 +1,263 @@
+package br.com.menthoros.backend.services.impl;
+
+import br.com.menthoros.backend.domain.workout.HrTarget;
+import br.com.menthoros.backend.domain.workout.PaceTarget;
+import br.com.menthoros.backend.domain.workout.StructuredWorkout;
+import br.com.menthoros.backend.domain.workout.WorkoutStep;
+import br.com.menthoros.backend.dto.intervalsicu.IcuEventDto;
+import br.com.menthoros.backend.entity.IntegracaoExterna;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
+import br.com.menthoros.backend.exception.IntervalsIcuApiException;
+import br.com.menthoros.backend.services.IntervalsIcuClient;
+import br.com.menthoros.backend.services.PushResult;
+import br.com.menthoros.backend.services.WorkoutChannel;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatusCode;
+import org.springframework.stereotype.Component;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+
+/**
+ * Adapter concreto do canal intervals.icu. Monta o {@code workout_doc} a partir do modelo
+ * canônico {@link StructuredWorkout} e aplica o fluxo de idempotência (upsert por
+ * {@code external_id}, já que a API não deduplica). Nunca lança — erros de rede/API viram
+ * {@link PushResult#erro}, com mensagem curada que nunca inclui a API key.
+ */
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class IntervalsIcuAdapter implements WorkoutChannel {
+
+    private static final String PREFIXO_MENTHOROS = "menthoros-";
+
+    private final IntervalsIcuClient client;
+    private final ObjectMapper objectMapper;
+
+    /**
+     * Idempotent: NO — cria ou atualiza um evento no intervals.icu conforme o estado informado.
+     * Side Effects: External API call (POST/PUT/GET events).
+     * Tenant-aware: NO — credencial é do atleta (conexao), não do tenant.
+     */
+    @Override
+    public PushResult push(IntegracaoExterna conexao, StructuredWorkout workout, Long eventIdArmazenado) {
+        if (conexao == null) {
+            throw new IllegalArgumentException("conexao não pode ser nula");
+        }
+        if (workout == null) {
+            throw new IllegalArgumentException("workout não pode ser nulo");
+        }
+        String apiKey = conexao.getAccessToken();
+        String externalAthleteId = conexao.getExternalAthleteId();
+        JsonNode payload = montarPayload(workout);
+
+        try {
+            if (eventIdArmazenado != null) {
+                return atualizarOuRecriar(apiKey, externalAthleteId, eventIdArmazenado, payload);
+            }
+            Long idExistente = buscarIdPorExternalId(apiKey, externalAthleteId, workout);
+            if (idExistente != null) {
+                return atualizarOuRecriar(apiKey, externalAthleteId, idExistente, payload);
+            }
+            IcuEventDto criado = client.criarEvento(apiKey, externalAthleteId, payload);
+            return PushResult.ok(criado.id());
+        } catch (IntervalsIcuApiException e) {
+            return PushResult.erro(mapearStatus(e), mensagemCurada(e));
+        } catch (Exception e) {
+            log.warn("Falha inesperada ao sincronizar treino com intervals.icu: {}", e.getMessage());
+            return PushResult.erro(StatusSincronizacao.ERRO_TEMPORARIO,
+                    "Erro inesperado ao sincronizar treino com o intervals.icu");
+        }
+    }
+
+    /**
+     * Idempotent: YES — deletar duas vezes é seguro (evento já ausente).
+     * Side Effects: External API call (GET events + DELETE events/{id} por órfão encontrado).
+     * Tenant-aware: NO — credencial é do atleta (conexao), não do tenant.
+     */
+    @Override
+    public void removerOrfaos(IntegracaoExterna conexao, LocalDate inicio, LocalDate fim,
+                               Set<String> externalIdsAtuais) {
+        if (conexao == null) {
+            throw new IllegalArgumentException("conexao não pode ser nula");
+        }
+        String apiKey = conexao.getAccessToken();
+        String externalAthleteId = conexao.getExternalAthleteId();
+        Set<String> atuais = externalIdsAtuais == null ? Set.of() : externalIdsAtuais;
+
+        List<IcuEventDto> eventos = client.listarEventos(apiKey, externalAthleteId, inicio, fim);
+        for (IcuEventDto evento : eventos) {
+            String externalId = evento.externalId();
+            if (externalId == null || !externalId.startsWith(PREFIXO_MENTHOROS)) {
+                continue;
+            }
+            if (atuais.contains(externalId)) {
+                continue;
+            }
+            try {
+                client.deletarEvento(apiKey, externalAthleteId, evento.id());
+            } catch (IntervalsIcuApiException e) {
+                if (!isStatus(e, 404)) {
+                    log.warn("Falha ao remover evento órfão {} do intervals.icu: {}", evento.id(), e.getMessage());
+                }
+            }
+        }
+    }
+
+    // ===== Fluxo de idempotência =====
+
+    private PushResult atualizarOuRecriar(String apiKey, String externalAthleteId, long eventId, JsonNode payload) {
+        try {
+            IcuEventDto atualizado = client.atualizarEvento(apiKey, externalAthleteId, eventId, payload);
+            return PushResult.ok(atualizado.id());
+        } catch (IntervalsIcuApiException e) {
+            if (isStatus(e, 404)) {
+                IcuEventDto criado = client.criarEvento(apiKey, externalAthleteId, payload);
+                return PushResult.ok(criado.id());
+            }
+            throw e;
+        }
+    }
+
+    private Long buscarIdPorExternalId(String apiKey, String externalAthleteId, StructuredWorkout workout) {
+        LocalDate data = workout.scheduledDate();
+        List<IcuEventDto> existentes = client.listarEventos(apiKey, externalAthleteId, data, data);
+        Optional<IcuEventDto> match = existentes.stream()
+                .filter(ev -> workout.externalId().equals(ev.externalId()))
+                .findFirst();
+        return match.map(IcuEventDto::id).orElse(null);
+    }
+
+    private boolean isStatus(IntervalsIcuApiException e, int codigo) {
+        HttpStatusCode status = e.getStatus();
+        return status != null && status.value() == codigo;
+    }
+
+    // ===== Mapeamento de erro =====
+
+    private StatusSincronizacao mapearStatus(IntervalsIcuApiException e) {
+        HttpStatusCode status = e.getStatus();
+        if (status == null) {
+            return StatusSincronizacao.ERRO_TEMPORARIO;
+        }
+        int codigo = status.value();
+        if (codigo == 401 || codigo == 403) {
+            return StatusSincronizacao.ERRO_AUTENTICACAO;
+        }
+        if (codigo == 422) {
+            return StatusSincronizacao.ERRO_VALIDACAO;
+        }
+        if (codigo == 429) {
+            return StatusSincronizacao.ERRO_LIMITE_RATE;
+        }
+        return StatusSincronizacao.ERRO_TEMPORARIO;
+    }
+
+    private String mensagemCurada(IntervalsIcuApiException e) {
+        return switch (mapearStatus(e)) {
+            case ERRO_AUTENTICACAO -> "Falha de autenticação com o intervals.icu — verifique a API key";
+            case ERRO_VALIDACAO -> "O intervals.icu rejeitou os dados do treino (validação)";
+            case ERRO_LIMITE_RATE -> "Limite de requisições do intervals.icu atingido — nova tentativa em breve";
+            default -> "Erro temporário ao comunicar com o intervals.icu — nova tentativa em breve";
+        };
+    }
+
+    // ===== Montagem do payload =====
+
+    private JsonNode montarPayload(StructuredWorkout workout) {
+        ObjectNode evento = objectMapper.createObjectNode();
+        evento.put("category", "WORKOUT");
+        evento.put("start_date_local", workout.scheduledDate() + "T00:00:00");
+        evento.put("type", "Run");
+        evento.put("name", nomeComPrefixo(workout));
+        evento.put("external_id", workout.externalId());
+
+        ObjectNode workoutDoc = objectMapper.createObjectNode();
+        if (workout.description() != null) {
+            workoutDoc.put("description", workout.description());
+        }
+        ArrayNode steps = objectMapper.createArrayNode();
+        for (WorkoutStep step : workout.steps()) {
+            steps.add(montarStep(step));
+        }
+        workoutDoc.set("steps", steps);
+
+        evento.set("workout_doc", workoutDoc);
+        return evento;
+    }
+
+    private String nomeComPrefixo(StructuredWorkout workout) {
+        return workout.namePrefix() != null
+                ? workout.namePrefix() + " " + workout.name()
+                : workout.name();
+    }
+
+    private ObjectNode montarStep(WorkoutStep step) {
+        ObjectNode node = objectMapper.createObjectNode();
+        if (step.text() != null) {
+            node.put("text", step.text());
+        }
+        if (step.reps() != null) {
+            node.put("reps", step.reps());
+            ArrayNode subSteps = objectMapper.createArrayNode();
+            for (WorkoutStep sub : step.steps()) {
+                subSteps.add(montarStep(sub));
+            }
+            node.set("steps", subSteps);
+            return node;
+        }
+        if (step.durationSeconds() != null) {
+            node.put("duration", step.durationSeconds());
+        }
+        if (step.distanceMeters() != null) {
+            node.put("distance", step.distanceMeters());
+        }
+        if (step.pace() != null) {
+            node.set("pace", montarPace(step.pace()));
+        }
+        if (step.hr() != null) {
+            node.set("hr", montarHr(step.hr()));
+        }
+        return node;
+    }
+
+    private ObjectNode montarPace(PaceTarget pace) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("units", "secs/km");
+        if (pace.startSecsPerKm() != null && pace.startSecsPerKm().equals(pace.endSecsPerKm())) {
+            node.put("value", pace.startSecsPerKm());
+        } else {
+            node.put("start", pace.startSecsPerKm());
+            node.put("end", pace.endSecsPerKm());
+        }
+        return node;
+    }
+
+    private ObjectNode montarHr(HrTarget hr) {
+        ObjectNode node = objectMapper.createObjectNode();
+        switch (hr.unidade()) {
+            case BPM -> {
+                node.put("units", "bpm");
+                node.put("start", hr.start());
+                node.put("end", hr.end());
+            }
+            case PERCENT -> {
+                node.put("units", "%hr");
+                node.put("start", hr.start());
+                node.put("end", hr.end());
+            }
+            case ZONE -> {
+                node.put("units", "hr_zone");
+                node.put("value", hr.start());
+            }
+        }
+        return node;
+    }
+}
