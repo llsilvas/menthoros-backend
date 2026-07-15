@@ -256,6 +256,11 @@ app:
     webhook-verify-token: ${STRAVA_WEBHOOK_TOKEN:}
     sync-days-back: ${STRAVA_SYNC_DAYS_BACK:90}
 
+  # ----------------------------------------
+  # INTERVALS.ICU INTEGRATION CONFIGURATION
+  # ----------------------------------------
+  intervals-icu:
+    base-url: ${INTERVALS_ICU_BASE_URL:https://intervals.icu}
 
 # ----------------------------------------
 # KEYCLOAK ADMIN REST API

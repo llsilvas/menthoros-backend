@@ -12,7 +12,8 @@ public enum FonteDados {
     STRAVA("STRAVA", "Strava", "Importado do Strava", "#FC4C02"),
     TRAINING_PEAKS("TRAINING_PEAKS", "TrainingPeaks", "Importado do TrainingPeaks (futuro)", "#F57C00"),
     POLAR("POLAR", "Polar Flow", "Importado do Polar Flow (futuro)", "#E30613"),
-    WAHOO("WAHOO", "Wahoo Fitness", "Importado do Wahoo Fitness (futuro)", "#0066CC");
+    WAHOO("WAHOO", "Wahoo Fitness", "Importado do Wahoo Fitness (futuro)", "#0066CC"),
+    INTERVALS_ICU("INTERVALS_ICU", "intervals.icu", "Push de treinos planejados via intervals.icu", "#BF3B21");
 
     @JsonProperty("value")
     private final String value;

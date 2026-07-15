@@ -8,6 +8,7 @@ import br.com.menthoros.backend.dto.output.ProvaOutputDto;
 import br.com.menthoros.backend.dto.output.RecordeDto;
 import br.com.menthoros.backend.dto.output.SugestaoCoachOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
@@ -16,6 +17,7 @@ import br.com.menthoros.backend.enums.MotivoAtencao;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.Severidade;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.StatusSugestao;
 import br.com.menthoros.backend.enums.TipoSugestao;
 import br.com.menthoros.backend.enums.TipoTreino;
@@ -30,6 +32,7 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
+import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
 import br.com.menthoros.backend.services.PlanoService;
 import br.com.menthoros.backend.services.SugestaoCoachService;
 import org.junit.jupiter.api.AfterEach;
@@ -71,6 +74,7 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private PlanoMetadadosRepository planoMetadadosRepository;
     @Mock private ProvaRepository provaRepository;
     @Mock private ProvaMapper provaMapper;
+    @Mock private IntervalsIcuConnectionService intervalsIcuConnectionService;
 
     @InjectMocks
     private CoachAthleteProfileServiceImpl service;
@@ -220,6 +224,7 @@ class CoachAthleteProfileServiceImplTest {
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
             when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
 
             PlanoSemanal plano = planoAprovadoComTreinos();
             when(planoService.findPlanoVigenteRelevante(atletaId, tenantId))
@@ -243,6 +248,7 @@ class CoachAthleteProfileServiceImplTest {
             when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
             when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
             when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
 
             PlanoSemanal plano = planoAprovadoComTreinos();
             plano.setReviewStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
@@ -255,6 +261,58 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(planoVigente.reviewStatus()).isEqualTo(PlanoReviewStatus.AGUARDANDO_REVISAO);
             assertThat(planoVigente.treinos()).hasSize(2);
             assertThat(planoVigente.treinos().get(0).diaSemana()).isEqualTo("SEGUNDA");
+        }
+
+        @Test
+        @DisplayName("treino SINCRONIZADO com conexão intervals.icu ativa — DTO carrega status e flag true")
+        void treinoSincronizadoComConexaoAtiva() {
+            stubAtleta();
+            when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
+            when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
+            when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+            when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId))
+                    .thenReturn(Optional.of(new IntegracaoExterna()));
+
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            plano.getTreinosPlanejados().get(0).setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId))
+                    .thenReturn(Optional.of(plano));
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).statusSincronizacao()).isEqualTo("SINCRONIZADO");
+            assertThat(treinos.get(0).atletaConectadoIntervalsIcu()).isTrue();
+            assertThat(treinos.get(1).atletaConectadoIntervalsIcu()).isTrue();
+            verify(intervalsIcuConnectionService, org.mockito.Mockito.times(1))
+                    .conexaoAtiva(atletaId, tenantId);
+        }
+
+        @Test
+        @DisplayName("sem conexão intervals.icu ativa — flag atletaConectadoIntervalsIcu é false e status default NAO_SINCRONIZADO")
+        void treinoSemConexaoAtiva() {
+            stubAtleta();
+            when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
+            when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
+            when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+            when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId))
+                    .thenReturn(Optional.empty());
+
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId))
+                    .thenReturn(Optional.of(plano));
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).statusSincronizacao()).isEqualTo("NAO_SINCRONIZADO");
+            assertThat(treinos.get(0).atletaConectadoIntervalsIcu()).isFalse();
+            verify(intervalsIcuConnectionService, org.mockito.Mockito.times(1))
+                    .conexaoAtiva(atletaId, tenantId);
         }
 
         @Test

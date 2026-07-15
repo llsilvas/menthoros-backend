@@ -128,4 +128,20 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
        WHERE tp.id = :id AND tp.atleta.assessoria.id = :tenantId
        """)
     boolean existsByIdAndAtleta_TenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+
+    /**
+     * Treinos planejados aguardando retry do push para o intervals.icu. NUNCA inclui
+     * {@code SINCRONIZANDO} (treino sendo processado agora pelo listener ou por outro worker
+     * deste scheduler) nem {@code PENDENTE}/{@code NAO_SINCRONIZADO} (treino recém-aprovado ainda
+     * não tocado pelo listener) — a precedência do listener sobre o retry é uma invariante de
+     * segurança do fluxo de push (spec 3.3 + 8.2): tocar esses estados aqui duplicaria o
+     * processamento de um treino que outro worker já reclamou.
+     */
+    @Query("""
+        SELECT t FROM TreinoPlanejado t
+        WHERE t.statusSincronizacao IN (br.com.menthoros.backend.enums.StatusSincronizacao.AGUARDANDO_RETRY,
+                                        br.com.menthoros.backend.enums.StatusSincronizacao.ERRO_TEMPORARIO,
+                                        br.com.menthoros.backend.enums.StatusSincronizacao.ERRO_LIMITE_RATE)
+        """)
+    List<TreinoPlanejado> findAllAguardandoRetryIntervalsIcu();
 }

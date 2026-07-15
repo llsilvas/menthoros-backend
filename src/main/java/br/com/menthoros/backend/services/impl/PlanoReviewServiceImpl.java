@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
+import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
@@ -11,6 +12,7 @@ import br.com.menthoros.backend.services.PlanoReviewService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
 
     private final PlanoSemanalRepository planoSemanalRepository;
     private final PlanoSemanalMapper planoSemanalMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Lista todos os planos do tenant com reviewStatus = AGUARDANDO_REVISAO.
@@ -46,7 +49,8 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
      * Transiciona o plano de AGUARDANDO_REVISAO para APROVADO.
      *
      * Idempotent: NO — altera o estado do plano.
-     * Side Effects: Database update (reviewStatus, reviewComment)
+     * Side Effects: Database update (reviewStatus, reviewComment) + publica {@link PlanoAprovadoEvent}
+     * (dispara o push assíncrono dos treinos para o intervals.icu)
      * Tenant-aware: YES — valida pertencimento via findByIdAndTenantId
      *
      * @throws DomainNotFoundException     se o plano não existir no tenant
@@ -68,6 +72,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
 
         PlanoSemanal salvo = planoSemanalRepository.save(plano);
         inicializarAssociacoes(salvo);
+        eventPublisher.publishEvent(new PlanoAprovadoEvent(salvo.getId(), salvo.getAtleta().getId(), tenantId));
 
         log.info("Plano {} aprovado com sucesso para tenant {}", planoId, tenantId);
         return planoSemanalMapper.toOutputDtoSafe(salvo);

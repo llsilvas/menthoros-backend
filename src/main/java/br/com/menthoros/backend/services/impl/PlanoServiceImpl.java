@@ -11,6 +11,7 @@ import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.*;
+import br.com.menthoros.backend.events.PlanoDeletadoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.PlanoJaExistenteException;
@@ -29,6 +30,7 @@ import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -67,6 +69,7 @@ public class PlanoServiceImpl implements PlanoService {
     private final MetricasAgregadasService metricasAgregadasService;
 
     private final ProvaRepository provaRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Gera um plano de treino semanal personalizado para um atleta usando IA.
@@ -652,8 +655,16 @@ public class PlanoServiceImpl implements PlanoService {
         treinoRealizadoRepository.desvinculardeTreinosPlanejados(planoSemanalId);
         treinoRealizadoRepository.desvinculardePlanoSemanal(planoSemanalId);
 
+        // Janela capturada ANTES do delete: o CascadeType.ALL apaga os TreinoPlanejado vinculados,
+        // então esses dados não estariam mais disponíveis depois para o listener de limpeza.
+        UUID atletaId = plano.getAtleta().getId();
+        LocalDate semanaInicio = plano.getSemanaInicio();
+        LocalDate semanaFim = plano.getSemanaFim();
+
         // CascadeType.ALL propaga a exclusão para os TreinoPlanejado vinculados.
         planoSemanalRepository.delete(plano);
+        eventPublisher.publishEvent(
+                new PlanoDeletadoEvent(planoSemanalId, atletaId, tenantId, semanaInicio, semanaFim));
         log.info("✅ Plano deletado com sucesso - ID: {}", planoSemanalId);
     }
 

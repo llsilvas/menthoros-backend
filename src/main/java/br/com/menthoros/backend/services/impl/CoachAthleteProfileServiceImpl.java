@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.dto.output.*;
 import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -12,6 +13,7 @@ import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAthleteProfileService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
+import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
 import br.com.menthoros.backend.services.PlanoService;
 import br.com.menthoros.backend.services.SugestaoCoachService;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
@@ -45,6 +47,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final ProvaRepository provaRepository;
     private final ProvaMapper provaMapper;
+    private final IntervalsIcuConnectionService intervalsIcuConnectionService;
 
     /**
      * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
@@ -172,6 +175,10 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
         if (plano.getReviewStatus() == PlanoReviewStatus.APROVADO
                 || plano.getReviewStatus() == PlanoReviewStatus.AGUARDANDO_REVISAO) {
+            // conexão intervals.icu resolvida UMA vez por perfil (anti-N+1) e replicada em cada treino
+            boolean atletaConectadoIntervalsIcu = intervalsIcuConnectionService
+                    .conexaoAtiva(atletaId, tenantId).isPresent();
+
             treinos = plano.getTreinosPlanejados().stream()
                     .sorted(Comparator.comparing(TreinoPlanejado::getDataTreino))
                     .map(tp -> new AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto(
@@ -183,7 +190,11 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             tp.getDuracaoMin() != null ? tp.getDuracaoMin().toString() : null,
                             tp.getZonaAlvo(),
                             tp.getPercepcaoEsforcoEsperada(),
-                            safeGetEtapasResumo(tp)))
+                            safeGetEtapasResumo(tp),
+                            tp.getStatusSincronizacao() != null
+                                    ? tp.getStatusSincronizacao().name()
+                                    : StatusSincronizacao.NAO_SINCRONIZADO.name(),
+                            atletaConectadoIntervalsIcu))
                     .toList();
         } else {
             treinos = List.of();
