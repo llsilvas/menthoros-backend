@@ -39,6 +39,10 @@ class PlanoReviewServiceImplTest {
     @Mock private PlanoSemanalRepository planoSemanalRepository;
     @Mock private PlanoSemanalMapper planoSemanalMapper;
     @Mock private ApplicationEventPublisher eventPublisher;
+    // Não usado pelo PlanoReviewServiceImpl hoje (o push é 100% assíncrono via IntervalsIcuPushListener).
+    // Declarado aqui só para @InjectMocks capturar automaticamente caso alguém, no futuro, passe a
+    // injetar WorkoutChannel direto no service — nesse caso o guard-rail abaixo passaria a falhar.
+    @Mock private WorkoutChannel workoutChannel;
     @InjectMocks private PlanoReviewServiceImpl service;
 
     private UUID tenantId;
@@ -185,6 +189,27 @@ class PlanoReviewServiceImplTest {
             assertThatThrownBy(() -> service.aprovarPlano(null, tenantId))
                     .isInstanceOf(IllegalArgumentException.class);
             verifyNoInteractions(planoSemanalRepository);
+        }
+
+        @Test
+        @DisplayName("guard-rail (spec 8.7): aprovação nunca interage com WorkoutChannel de forma síncrona")
+        void naoInterageComWorkoutChannelSincronamente() {
+            // O push ao intervals.icu acontece via IntervalsIcuPushListener, assíncrono e após o
+            // commit (@TransactionalEventListener AFTER_COMMIT). Se alguém tornar esse fluxo
+            // síncrono — chamando WorkoutChannel diretamente dentro de aprovarPlano — este teste
+            // quebra, porque o mock acima passaria a receber a interação.
+            PlanoSemanal plano = planoAguardando();
+            plano.setAtleta(Atleta.builder().id(atletaId).build());
+            PlanoSemanalOutputDto dto = outputDto(PlanoReviewStatus.APROVADO);
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId))
+                    .thenReturn(Optional.of(plano));
+            when(planoSemanalRepository.save(any())).thenReturn(plano);
+            when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
+
+            service.aprovarPlano(planoId, tenantId);
+
+            verifyNoInteractions(workoutChannel);
         }
     }
 
