@@ -120,6 +120,18 @@ public class IntervalsIcuPushListener {
         }
 
         workoutChannel.removerOrfaos(conexao, plano.getSemanaInicio(), plano.getSemanaFim(), externalIdsAtuais);
+
+        // Nudge anti-debounce (CA2): DEPOIS de removerOrfaos de propósito — é a última palavra do
+        // lote. Só dispara com 2+ eventos CRIADOS (rajada), no ÚLTIMO deles; best-effort, nunca
+        // altera o estado de nenhum treino.
+        if (lote.criados >= 2) {
+            try {
+                workoutChannel.tocarEvento(conexao, lote.ultimoEventoCriado, lote.ultimoExternalIdCanonico);
+            } catch (Exception e) {
+                log.warn("Nudge anti-debounce falhou para o plano {} (best-effort, sem impacto nos treinos): {}",
+                        planoId, e.getMessage());
+            }
+        }
     }
 
     private void processarTreino(TreinoPlanejado treinoOrigem, UUID tenantId, IntegracaoExterna conexao,
@@ -147,6 +159,11 @@ public class IntervalsIcuPushListener {
         }
         if (resultado.tipo() == ProcessamentoResultado.PROCESSADO_SUCESSO) {
             lote.algumPushComSucesso = true;
+            if (resultado.criadoNovo()) {
+                lote.criados++;
+                lote.ultimoEventoCriado = resultado.eventId();
+                lote.ultimoExternalIdCanonico = StructuredWorkout.externalIdCanonico(treinoId);
+            }
         }
 
         // Regra 7: o external_id do evento no intervals.icu é SEMPRE o canônico
@@ -156,9 +173,12 @@ public class IntervalsIcuPushListener {
         externalIdsAtuais.add(StructuredWorkout.externalIdCanonico(treinoId));
     }
 
-    /** Flags agregados do lote de pushes de um plano, acumulados treino a treino. */
+    /** Flags e contadores agregados do lote de pushes de um plano, acumulados treino a treino. */
     private static final class ResultadoLote {
         private boolean autenticacaoFalhou;
         private boolean algumPushComSucesso;
+        private int criados;
+        private Long ultimoEventoCriado;
+        private String ultimoExternalIdCanonico;
     }
 }

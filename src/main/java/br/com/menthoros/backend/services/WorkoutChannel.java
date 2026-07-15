@@ -34,4 +34,19 @@ public interface WorkoutChannel {
      * @param externalIdsAtuais external_id de todos os treinos atuais do plano nessa janela
      */
     void removerOrfaos(IntegracaoExterna conexao, LocalDate inicio, LocalDate fim, Set<String> externalIdsAtuais);
+
+    /**
+     * "Cutuca" (nudge) um evento já criado no canal externo para contornar o debounce do uploader
+     * Garmin do intervals.icu: eventos CRIADOS em rajada (2+ no mesmo lote) podem não disparar o
+     * upload real do treino estruturado ao dispositivo Garmin do atleta, mesmo com o evento salvo
+     * corretamente. Reenviar o {@code external_id} com o MESMO valor é um PUT parcial — no-op do
+     * ponto de vista do dado — que reabre a janela do uploader e faz o disparo acontecer
+     * (comprovado empiricamente; ver {@code IntervalsIcuPushListener}, que só chama este método no
+     * ÚLTIMO evento criado de um lote com 2+ criações).
+     *
+     * @param conexao            credencial e identificador do atleta na plataforma externa
+     * @param eventId            id do evento já criado no canal a ser "cutucado"
+     * @param externalIdCanonico external_id do evento — reenviado com o valor canônico atual
+     */
+    void tocarEvento(IntegracaoExterna conexao, long eventId, String externalIdCanonico);
 }

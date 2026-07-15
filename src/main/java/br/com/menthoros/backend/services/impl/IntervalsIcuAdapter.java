@@ -109,6 +109,29 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
         }
     }
 
+    /**
+     * Idempotent: YES — reenvia sempre o mesmo external_id (o valor não muda entre chamadas).
+     * Side Effects: External API call (PUT events/{id} com payload mínimo).
+     * Tenant-aware: NO — credencial é do atleta (conexao), não do tenant.
+     *
+     * <p>Best-effort por contrato: QUALQUER exceção (inclusive 404 — evento pode ter sido apagado
+     * entre o push e o nudge) é absorvida e apenas logada — nunca propaga, para não colocar em
+     * risco o estado do treino que já foi marcado como sincronizado.
+     */
+    @Override
+    public void tocarEvento(IntegracaoExterna conexao, long eventId, String externalIdCanonico) {
+        try {
+            String apiKey = conexao.getAccessToken();
+            String externalAthleteId = conexao.getExternalAthleteId();
+            ObjectNode payload = objectMapper.createObjectNode();
+            payload.put("external_id", externalIdCanonico);
+            client.atualizarEvento(apiKey, externalAthleteId, eventId, payload);
+        } catch (Exception e) {
+            log.warn("Nudge anti-debounce falhou para o evento {} (best-effort, treino não é afetado): {}",
+                    eventId, e.getMessage());
+        }
+    }
+
     // ===== Fluxo de idempotência =====
 
     private PushResult atualizarOuRecriar(String apiKey, String externalAthleteId, long eventId, JsonNode payload) {

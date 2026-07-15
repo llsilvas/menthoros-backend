@@ -32,8 +32,12 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -273,6 +277,103 @@ class IntervalsIcuPushListenerTest {
 
             verify(pushProcessor, never()).processar(eq(mismatch.getId()), any(), any());
             verify(pushProcessor).processar(valido.getId(), tenantId, conexao);
+        }
+
+        @Test
+        @DisplayName("nudge anti-debounce (CA2): 2+ eventos criados no lote disparam tocarEvento exatamente "
+                + "uma vez, no ÚLTIMO evento criado, DEPOIS de removerOrfaos")
+        void doisOuMaisCriadosDisparaNudgeNoUltimoAposRemoverOrfaos() {
+            TreinoPlanejado t1 = treino(UUID.randomUUID());
+            TreinoPlanejado t2 = treino(UUID.randomUUID());
+            TreinoPlanejado t3 = treino(UUID.randomUUID());
+            PlanoSemanal plano = planoCom(LocalDate.now(), LocalDate.now().plusDays(6));
+
+            mocarConexaoEPlano(plano);
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(java.util.List.of(t1, t2, t3));
+            when(pushProcessor.processar(t1.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, true, 100L));
+            when(pushProcessor.processar(t2.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, false, 200L));
+            when(pushProcessor.processar(t3.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, true, 300L));
+
+            listener.onPlanoAprovado(event);
+
+            verify(workoutChannel, times(1)).tocarEvento(eq(conexao), eq(300L), eq(canonico(t3.getId())));
+            var ordem = inOrder(workoutChannel);
+            ordem.verify(workoutChannel).removerOrfaos(any(), any(), any(), any());
+            ordem.verify(workoutChannel).tocarEvento(any(), anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("nudge anti-debounce (CA2): apenas 1 evento criado no lote nunca dispara tocarEvento")
+        void umCriadoNuncaDisparaNudge() {
+            TreinoPlanejado t1 = treino(UUID.randomUUID());
+            PlanoSemanal plano = planoCom(LocalDate.now(), LocalDate.now().plusDays(6));
+
+            mocarConexaoEPlano(plano);
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(java.util.List.of(t1));
+            when(pushProcessor.processar(t1.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, true, 100L));
+
+            listener.onPlanoAprovado(event);
+
+            verify(workoutChannel, never()).tocarEvento(any(), anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("nudge anti-debounce (CA2): lote só com atualizações (criadoNovo=false) nunca dispara "
+                + "tocarEvento")
+        void soAtualizacoesNuncaDisparaNudge() {
+            TreinoPlanejado t1 = treino(UUID.randomUUID());
+            TreinoPlanejado t2 = treino(UUID.randomUUID());
+            PlanoSemanal plano = planoCom(LocalDate.now(), LocalDate.now().plusDays(6));
+
+            mocarConexaoEPlano(plano);
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(java.util.List.of(t1, t2));
+            when(pushProcessor.processar(t1.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, false, 100L));
+            when(pushProcessor.processar(t2.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, false, 200L));
+
+            listener.onPlanoAprovado(event);
+
+            verify(workoutChannel, never()).tocarEvento(any(), anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("nudge anti-debounce (CA2): tocarEvento lançando exceção não afeta os demais estados do lote")
+        void nudgeLancandoNaoAfetaEstados() {
+            TreinoPlanejado t1 = treino(UUID.randomUUID());
+            TreinoPlanejado t2 = treino(UUID.randomUUID());
+            PlanoSemanal plano = planoCom(LocalDate.now(), LocalDate.now().plusDays(6));
+
+            mocarConexaoEPlano(plano);
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(java.util.List.of(t1, t2));
+            when(pushProcessor.processar(t1.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, true, 100L));
+            when(pushProcessor.processar(t2.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, true, 200L));
+            doThrow(new RuntimeException("boom")).when(workoutChannel).tocarEvento(any(), anyLong(), any());
+
+            listener.onPlanoAprovado(event);
+
+            assertThat(conexao.getUltimaSincronizacao()).isNotNull();
+            verify(integracaoExternaRepository).save(conexao);
+            verify(workoutChannel).removerOrfaos(eq(conexao), any(), any(), any());
+            verify(workoutChannel).tocarEvento(eq(conexao), eq(200L), eq(canonico(t2.getId())));
         }
     }
 
