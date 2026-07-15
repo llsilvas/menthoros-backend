@@ -114,7 +114,13 @@ public record AtletaPerfilCoachOutputDto(
             Integer percepcaoEsforcoEsperada,
 
             @Schema(description = "Etapas do treino (aquecimento, esforço, recuperação, desaquecimento)")
-            List<EtapaTreinoDto> etapas
+            List<EtapaTreinoDto> etapas,
+
+            @Schema(description = "Status de sincronização com canal externo (intervals.icu)", example = "SINCRONIZADO")
+            String statusSincronizacao,
+
+            @Schema(description = "Atleta tem conexão intervals.icu ativa")
+            Boolean atletaConectadoIntervalsIcu
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
