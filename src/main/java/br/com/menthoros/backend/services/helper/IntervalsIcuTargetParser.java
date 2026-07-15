@@ -15,8 +15,8 @@ import java.util.regex.Pattern;
  */
 public final class IntervalsIcuTargetParser {
 
-    private static final Pattern PACE_FAIXA = Pattern.compile("^(\\d{1,2}):(\\d{2})-(\\d{1,2}):(\\d{2})(/km)?$");
-    private static final Pattern PACE_UNICO = Pattern.compile("^(\\d{1,2}):(\\d{2})(/km)?$");
+    private static final Pattern PACE_FAIXA = Pattern.compile("^(\\d{1,2}):([0-5]\\d)-(\\d{1,2}):([0-5]\\d)(/km)?$");
+    private static final Pattern PACE_UNICO = Pattern.compile("^(\\d{1,2}):([0-5]\\d)(/km)?$");
     private static final Pattern FC_BPM = Pattern.compile("^(\\d{2,3})-(\\d{2,3})\\s*bpm$");
     private static final Pattern FC_PERCENT = Pattern.compile("^(\\d{2,3})-(\\d{2,3})%.*$");
     private static final Pattern ZONA = Pattern.compile("^z([1-5])(-z?[1-5])?$");

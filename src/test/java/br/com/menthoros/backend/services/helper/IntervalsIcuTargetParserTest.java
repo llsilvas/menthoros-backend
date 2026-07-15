@@ -34,7 +34,7 @@ class IntervalsIcuTargetParserTest {
 
         @ParameterizedTest
         @NullAndEmptySource
-        @ValueSource(strings = {"  ", "ritmo confortável", "5,30/km", "Z2", "abc-def/km"})
+        @ValueSource(strings = {"  ", "ritmo confortável", "5,30/km", "Z2", "abc-def/km", "5:99/km", "5:60-5:70/km"})
         @DisplayName("não parseável retorna vazio sem lançar")
         void naoParseavelRetornaVazio(String entrada) {
             assertThat(IntervalsIcuTargetParser.parsePace(entrada)).isEmpty();
