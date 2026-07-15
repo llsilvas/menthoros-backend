@@ -8,7 +8,9 @@ import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import br.com.menthoros.backend.enums.PlanoStatus;
+import br.com.menthoros.backend.events.PlanoDeletadoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.mapper.AtletaMapper;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
@@ -24,9 +26,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -34,6 +38,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -62,6 +67,7 @@ class PlanoServiceTenantTest {
     @Mock private MetricasAlertaService metricasAlertaService;
     @Mock private MetricasAgregadasService metricasAgregadasService;
     @Mock private ProvaRepository provaRepository;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private PlanoServiceImpl planoService;
@@ -159,6 +165,59 @@ class PlanoServiceTenantTest {
         verify(planoSemanalRepository).findByIdAndTenantId(planoSemanalId, tenantA);
         verify(planoSemanalRepository, never()).findById(any());
         verify(planoSemanalRepository).delete(plano);
+    }
+
+    // =========================================================================
+    // Task 17 — deletePlanoSemanal publica PlanoDeletadoEvent para sincronizar a
+    // limpeza dos eventos menthoros-* no intervals.icu.
+    // =========================================================================
+
+    @Test
+    @DisplayName("Task 17, regra 5: deletePlanoSemanal publica PlanoDeletadoEvent com a janela correta")
+    void deletePlanoSemanal_deletaComSucesso_publicaEventoComJanelaCorreta() {
+        // ARRANGE
+        PlanoSemanal plano = buildPlanoSemanal(atleta);
+        plano.setStatus(PlanoStatus.PLANEJADO);
+        LocalDate semanaInicio = plano.getSemanaInicio();
+        LocalDate semanaFim = plano.getSemanaFim();
+
+        when(planoSemanalRepository.findByIdAndTenantId(planoSemanalId, tenantA))
+                .thenReturn(Optional.of(plano));
+        doNothing().when(treinoRealizadoRepository).desvinculardeTreinosPlanejados(any());
+        doNothing().when(treinoRealizadoRepository).desvinculardePlanoSemanal(any());
+        doNothing().when(planoSemanalRepository).delete(any());
+
+        // ACT
+        planoService.deletePlanoSemanal(planoSemanalId);
+
+        // ASSERT — o evento é publicado com a janela capturada ANTES do delete (o cascade
+        // apagaria os TreinoPlanejado e, com eles, a janela do plano).
+        ArgumentCaptor<PlanoDeletadoEvent> captor = ArgumentCaptor.forClass(PlanoDeletadoEvent.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        PlanoDeletadoEvent evento = captor.getValue();
+        assertThat(evento.planoId()).isEqualTo(planoSemanalId);
+        assertThat(evento.atletaId()).isEqualTo(atletaId);
+        assertThat(evento.tenantId()).isEqualTo(tenantA);
+        assertThat(evento.semanaInicio()).isEqualTo(semanaInicio);
+        assertThat(evento.semanaFim()).isEqualTo(semanaFim);
+    }
+
+    @Test
+    @DisplayName("Task 17, regra 5: deletePlanoSemanal com status != PLANEJADO falha na validação e NÃO publica evento")
+    void deletePlanoSemanal_statusInvalido_naoPublicaEvento() {
+        // ARRANGE
+        PlanoSemanal plano = buildPlanoSemanal(atleta);
+        plano.setStatus(PlanoStatus.ATIVO);
+
+        when(planoSemanalRepository.findByIdAndTenantId(planoSemanalId, tenantA))
+                .thenReturn(Optional.of(plano));
+
+        // ACT + ASSERT
+        assertThrows(DomainRuleViolationException.class,
+                () -> planoService.deletePlanoSemanal(planoSemanalId));
+
+        verify(planoSemanalRepository, never()).delete(any());
+        verifyNoInteractions(eventPublisher);
     }
 
     // =========================================================================
