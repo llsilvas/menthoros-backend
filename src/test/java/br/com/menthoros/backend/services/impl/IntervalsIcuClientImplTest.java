@@ -38,7 +38,7 @@ class IntervalsIcuClientImplTest {
         wireMock = new WireMockServer(WireMockConfiguration.options().dynamicPort());
         wireMock.start();
         WebClient webClient = WebClient.builder().baseUrl(wireMock.baseUrl()).build();
-        client = new IntervalsIcuClientImpl(webClient, new ObjectMapper());
+        client = new IntervalsIcuClientImpl(webClient);
 
         logCapture = new ListAppender<>();
         logCapture.start();
@@ -112,6 +112,7 @@ class IntervalsIcuClientImplTest {
         @DisplayName("GET lista eventos da janela por oldest/newest")
         void getListaEventos() {
             wireMock.stubFor(get(urlPathEqualTo("/api/v1/athlete/i641775/events"))
+                    .withBasicAuth("API_KEY", API_KEY)
                     .withQueryParam("oldest", equalTo("2026-07-14"))
                     .withQueryParam("newest", equalTo("2026-07-20"))
                     .willReturn(okJson("[{\"id\":1,\"external_id\":\"menthoros-x\",\"name\":\"A\",\"start_date_local\":\"2026-07-15T00:00:00\"}]")));
@@ -144,20 +145,33 @@ class IntervalsIcuClientImplTest {
     }
 
     @Test
-    @DisplayName("nível DEBUG não expõe o header Authorization")
+    @DisplayName("nível DEBUG não expõe o header Authorization (client e reactor.netty)")
     void debugNaoExpoeAuthorization() {
-        Logger clientLogger = (Logger) LoggerFactory.getLogger(IntervalsIcuClientImpl.class);
-        ch.qos.logback.classic.Level original = clientLogger.getLevel();
-        clientLogger.setLevel(ch.qos.logback.classic.Level.DEBUG);
+        // eleva também os loggers do HTTP client: é neles que um wiretap vazaria o header
+        List<Logger> loggers = List.of(
+                (Logger) LoggerFactory.getLogger(IntervalsIcuClientImpl.class),
+                (Logger) LoggerFactory.getLogger("reactor.netty.http.client"),
+                (Logger) LoggerFactory.getLogger("reactor.netty"));
+        List<ch.qos.logback.classic.Level> originais = loggers.stream().map(Logger::getLevel).toList();
+        loggers.forEach(l -> {
+            l.setLevel(ch.qos.logback.classic.Level.DEBUG);
+            l.addAppender(logCapture);
+        });
         try {
             wireMock.stubFor(get(urlEqualTo("/api/v1/athlete/0")).willReturn(okJson("{\"id\":\"i1\",\"name\":\"x\"}")));
             client.validarApiKey(API_KEY);
 
-            String logs = logCapture.list.stream().map(ILoggingEvent::getFormattedMessage)
+            // snapshot via toArray: os event loops do netty seguem logando em background
+            // e iterar a lista viva do ListAppender lançaria ConcurrentModificationException
+            String logs = java.util.Arrays.stream(logCapture.list.toArray(new ILoggingEvent[0]))
+                    .map(ILoggingEvent::getFormattedMessage)
                     .reduce("", (a, b) -> a + "\n" + b);
             assertThat(logs).doesNotContain("Authorization").doesNotContain(API_KEY);
         } finally {
-            clientLogger.setLevel(original);
+            for (int i = 0; i < loggers.size(); i++) {
+                loggers.get(i).detachAppender(logCapture);
+                loggers.get(i).setLevel(originais.get(i));
+            }
         }
     }
 }

@@ -5,7 +5,6 @@ import br.com.menthoros.backend.dto.intervalsicu.IcuEventDto;
 import br.com.menthoros.backend.exception.IntervalsIcuApiException;
 import br.com.menthoros.backend.services.IntervalsIcuClient;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpHeaders;
@@ -27,12 +26,9 @@ import java.util.Optional;
 public class IntervalsIcuClientImpl implements IntervalsIcuClient {
 
     private final WebClient webClient;
-    private final ObjectMapper objectMapper;
 
-    public IntervalsIcuClientImpl(@Qualifier("intervalsIcuWebClient") WebClient webClient,
-                                  ObjectMapper objectMapper) {
+    public IntervalsIcuClientImpl(@Qualifier("intervalsIcuWebClient") WebClient webClient) {
         this.webClient = webClient;
-        this.objectMapper = objectMapper;
     }
 
     /**
@@ -45,7 +41,7 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
         try {
             IcuAthleteDto atleta = webClient.get()
                     .uri("/api/v1/athlete/0")
-                    .headers(h -> h.setBasicAuth("API_KEY", apiKey))
+                    .headers(h -> basic(h, apiKey))
                     .retrieve()
                     .bodyToMono(IcuAthleteDto.class)
                     .block();
