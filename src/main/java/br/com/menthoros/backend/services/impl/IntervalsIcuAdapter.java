@@ -36,8 +36,6 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class IntervalsIcuAdapter implements WorkoutChannel {
 
-    private static final String PREFIXO_MENTHOROS = "menthoros-";
-
     private final IntervalsIcuClient client;
     private final ObjectMapper objectMapper;
 
@@ -95,7 +93,7 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
         List<IcuEventDto> eventos = client.listarEventos(apiKey, externalAthleteId, inicio, fim);
         for (IcuEventDto evento : eventos) {
             String externalId = evento.externalId();
-            if (externalId == null || !externalId.startsWith(PREFIXO_MENTHOROS)) {
+            if (externalId == null || !externalId.startsWith(StructuredWorkout.PREFIXO_EXTERNAL_ID)) {
                 continue;
             }
             if (atuais.contains(externalId)) {

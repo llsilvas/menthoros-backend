@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Component;
 
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -61,6 +62,27 @@ public class IntervalsIcuPushProcessor {
      *         {@code treino.getStatusSincronizacao()} (já atualizados) para decidir os próximos
      *         passos (ex.: reconciliação de órfãos, agregação de erro de autenticação)
      */
+    /**
+     * Valida que o tenant encontrado para o treino bate com o esperado — ponto único da validação
+     * compartilhada entre {@link IntervalsIcuPushListener} (tenant do evento × tenant do treino) e
+     * {@link IntervalsIcuRetrySchedulerImpl} (tenant do treino × assessoria do atleta).
+     *
+     * <p><b>Idempotente:</b> YES — leitura pura.
+     * <p><b>Side Effects:</b> log de segurança (padrão SECURITY) quando há mismatch.
+     * <p><b>Tenant-aware:</b> YES — é a própria defesa de isolamento multi-tenant.
+     *
+     * @return {@code true} se os tenants batem; {@code false} quando o chamador deve pular o
+     *         treino sem qualquer mutação de estado
+     */
+    public static boolean tenantValido(UUID treinoId, UUID tenantEsperado, UUID tenantEncontrado) {
+        if (Objects.equals(tenantEsperado, tenantEncontrado)) {
+            return true;
+        }
+        log.error("SECURITY: treino {} associado a tenant divergente. esperado={}, encontrado={}",
+                treinoId, tenantEsperado, tenantEncontrado);
+        return false;
+    }
+
     public ProcessamentoResultado processar(TreinoPlanejado treino, IntegracaoExterna conexao) {
         UUID treinoId = treino.getId();
 

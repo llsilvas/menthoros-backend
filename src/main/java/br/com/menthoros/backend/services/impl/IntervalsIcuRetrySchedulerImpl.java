@@ -117,8 +117,9 @@ public class IntervalsIcuRetrySchedulerImpl {
 
     /**
      * Resolve o atletaId a partir do treino, validando em profundidade que a assessoria do atleta
-     * bate com {@code treino.getTenantId()} — defesa contra dado corrompido, mesmo padrão do
-     * {@code DailyActivitySyncSchedulerImpl}.
+     * bate com {@code treino.getTenantId()} — defesa contra dado corrompido, via helper
+     * compartilhado {@link IntervalsIcuPushProcessor#tenantValido} (mesmo log SECURITY do
+     * {@link IntervalsIcuPushListener}).
      *
      * @return o atletaId validado, ou {@code null} quando o treino deve ser pulado
      */
@@ -129,9 +130,7 @@ public class IntervalsIcuRetrySchedulerImpl {
             return null;
         }
         UUID tenantDoAtleta = atleta.getAssessoria().getId();
-        if (!tenantDoAtleta.equals(treino.getTenantId())) {
-            log.error("SECURITY: treino {} tenant_id={} diverge da assessoria do atleta {}: {}",
-                    treino.getId(), treino.getTenantId(), atleta.getId(), tenantDoAtleta);
+        if (!IntervalsIcuPushProcessor.tenantValido(treino.getId(), treino.getTenantId(), tenantDoAtleta)) {
             return null;
         }
         return atleta.getId();

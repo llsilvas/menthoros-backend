@@ -230,10 +230,14 @@ public class TreinoPlanejado extends TreinoBase{
     }
 
     /**
-     * Reseta sincronização para nova tentativa
+     * Reseta a sincronização por completo: volta a {@code NAO_SINCRONIZADO} e limpa o vínculo
+     * externo ({@code externalId}) — usado quando o evento externo deixa de existir (ex.: treino
+     * sincronizado que virou não-exportável e foi reconciliado como órfão).
      */
     public void resetarSincronizacao() {
-        this.statusSincronizacao = StatusSincronizacao.PENDENTE;
+        this.statusSincronizacao = StatusSincronizacao.NAO_SINCRONIZADO;
+        this.externalId = null;
+        this.sincronizadoEm = null;
         this.tentativasSincronizacao = 0;
         this.erroSincronizacao = null;
         this.ultimaTentativaSincronizacao = null;

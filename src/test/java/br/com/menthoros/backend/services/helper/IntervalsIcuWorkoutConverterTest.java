@@ -319,6 +319,21 @@ class IntervalsIcuWorkoutConverterTest {
         }
 
         @Test
+        @DisplayName("com distanciaKm preenchida, nome vira '<distancia> Km - <tipoTreino>' "
+                + "(decisão do founder: mais útil no relógio que a data)")
+        void nomeComDistanciaSubstituiData() {
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "PRINCIPAL", "Rodagem", 30, null, null, null, null, null)
+            );
+            TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),
+                    Duration.ZERO, new BigDecimal("12.00"), null, null, etapas);
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+
+            assertThat(resultado.name()).isEqualTo("12 Km - CONTINUO");
+        }
+
+        @Test
         @DisplayName("rejeita treino nulo")
         void rejeitaTreinoNulo() {
             assertThatThrownBy(() -> converter.converter(null))

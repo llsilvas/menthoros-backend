@@ -161,6 +161,32 @@ class IntervalsIcuPushListenerTest {
         }
 
         @Test
+        @DisplayName("treino SINCRONIZADO que vira não-exportável é resetado (NAO_SINCRONIZADO, "
+                + "externalId nulo) e fica fora do set de removerOrfaos")
+        void treinoSincronizadoQueViraNaoExportavelEResetado() {
+            TreinoPlanejado t = treino(UUID.randomUUID(), tenantId, "777");
+            t.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
+            PlanoSemanal plano = planoCom(List.of(t));
+
+            mocarConexaoEPlano(plano);
+            when(treinoPlanejadoRepository.findByIdAndTenantId(t.getId(), tenantId)).thenReturn(Optional.of(t));
+            when(converter.converter(t)).thenReturn(Optional.empty());
+
+            listener.onPlanoAprovado(event);
+
+            // A reconciliação deleta o evento externo (não está no set) — o estado local acompanha.
+            assertThat(t.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.NAO_SINCRONIZADO);
+            assertThat(t.getExternalId()).isNull();
+            verify(treinoPlanejadoRepository).save(t);
+            verify(workoutChannel, never()).push(any(), any(), any());
+            ArgumentCaptor<Set<String>> setCaptor = ArgumentCaptor.forClass(Set.class);
+            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture());
+            assertThat(setCaptor.getValue())
+                    .doesNotContain("menthoros-" + t.getId())
+                    .doesNotContain("777");
+        }
+
+        @Test
         @DisplayName("regra 5: push com sucesso marca sincronizado e grava o externalId do evento")
         void pushSucessoMarcaSincronizado() {
             TreinoPlanejado t = treino(UUID.randomUUID(), tenantId, null);

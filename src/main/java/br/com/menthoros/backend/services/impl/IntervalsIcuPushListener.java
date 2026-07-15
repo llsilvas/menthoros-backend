@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.domain.workout.StructuredWorkout;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
@@ -95,13 +96,11 @@ public class IntervalsIcuPushListener {
         }
 
         Set<String> externalIdsAtuais = new HashSet<>();
-        boolean[] autenticacaoFalhou = {false};
-        boolean[] algumPushComSucesso = {false};
+        ResultadoLote lote = new ResultadoLote();
 
         for (TreinoPlanejado treinoOrigem : treinos) {
             try {
-                processarTreino(treinoOrigem, tenantId, conexao, externalIdsAtuais, autenticacaoFalhou,
-                        algumPushComSucesso);
+                processarTreino(treinoOrigem, tenantId, conexao, externalIdsAtuais, lote);
             } catch (Exception e) {
                 // Regra 6: erro em um treino não pode abortar o processamento dos demais.
                 log.error("Erro inesperado ao processar push do treino {}: {}",
@@ -110,11 +109,11 @@ public class IntervalsIcuPushListener {
         }
 
         boolean precisaSalvarConexao = false;
-        if (algumPushComSucesso[0]) {
+        if (lote.algumPushComSucesso) {
             conexao.setUltimaSincronizacao(Instant.now());
             precisaSalvarConexao = true;
         }
-        if (autenticacaoFalhou[0]) {
+        if (lote.autenticacaoFalhou) {
             conexao.setLastSyncError("Falha de autenticação intervals.icu ao sincronizar plano " + planoId);
             precisaSalvarConexao = true;
         }
@@ -126,14 +125,11 @@ public class IntervalsIcuPushListener {
     }
 
     private void processarTreino(TreinoPlanejado treinoOrigem, UUID tenantId, IntegracaoExterna conexao,
-                                  Set<String> externalIdsAtuais, boolean[] autenticacaoFalhou,
-                                  boolean[] algumPushComSucesso) {
+                                  Set<String> externalIdsAtuais, ResultadoLote lote) {
         UUID treinoId = treinoOrigem.getId();
 
         // Regra 9: tenant do treino (herdado do plano) deve bater com o tenant do evento.
-        if (!tenantId.equals(treinoOrigem.getTenantId())) {
-            log.error("SECURITY: treino {} pertence a tenant diferente do evento. esperado={}, encontrado={}",
-                    treinoId, tenantId, treinoOrigem.getTenantId());
+        if (!IntervalsIcuPushProcessor.tenantValido(treinoId, tenantId, treinoOrigem.getTenantId())) {
             return;
         }
 
@@ -144,26 +140,41 @@ public class IntervalsIcuPushListener {
 
         ProcessamentoResultado resultado = pushProcessor.processar(treino, conexao);
 
-        // Regra 4: treino não exportável (NAO_EXPORTAVEL) é pulado sem qualquer mutação de estado
-        // e sem entrar no conjunto de externalIds atuais — o antigo evento, se houver, vira órfão
-        // (ex.: coach transformou o treino em DESCANSO e o evento antigo precisa ser reconciliado).
+        // Regra 4: treino não exportável (NAO_EXPORTAVEL) não entra no conjunto de externalIds
+        // atuais — o antigo evento, se houver, vira órfão e a reconciliação o deleta (ex.: coach
+        // transformou o treino em DESCANSO). Se o treino já esteve sincronizado, o estado local
+        // acompanha a deleção externa: reset completo (NAO_SINCRONIZADO + externalId limpo);
+        // treino nunca sincronizado segue sem qualquer mutação de estado.
         if (resultado == ProcessamentoResultado.NAO_EXPORTAVEL) {
+            if (treino.getExternalId() != null
+                    || (treino.getStatusSincronizacao() != null
+                            && treino.getStatusSincronizacao().estaSincronizado())) {
+                treino.resetarSincronizacao();
+                treinoPlanejadoRepository.save(treino);
+            }
             return;
         }
 
         if (resultado == ProcessamentoResultado.PROCESSADO_ERRO_AUTENTICACAO) {
-            autenticacaoFalhou[0] = true;
+            lote.autenticacaoFalhou = true;
         }
 
         if (treino.getStatusSincronizacao() == StatusSincronizacao.SINCRONIZADO) {
-            algumPushComSucesso[0] = true;
+            lote.algumPushComSucesso = true;
         }
 
-        // Regra 7: o external_id do evento no intervals.icu é SEMPRE "menthoros-<treinoId>" — o
-        // adapter (IntervalsIcuAdapter#removerOrfaos) compara contra esse valor canônico, nunca
-        // contra treino.getExternalId() (que após um push bem-sucedido vira o id numérico do
-        // evento). TODO treino exportável entra no set — inclusive claim perdido e erro no push:
-        // o evento antigo dele continua válido e não pode ser reconciliado como órfão.
-        externalIdsAtuais.add("menthoros-" + treinoId);
+        // Regra 7: o external_id do evento no intervals.icu é SEMPRE o canônico
+        // "menthoros-<treinoId>" — o adapter (IntervalsIcuAdapter#removerOrfaos) compara contra
+        // esse valor, nunca contra treino.getExternalId() (que após um push bem-sucedido vira o
+        // id numérico do evento). TODO treino exportável entra no set — inclusive claim perdido
+        // e erro no push: o evento antigo dele continua válido e não pode ser reconciliado como
+        // órfão.
+        externalIdsAtuais.add(StructuredWorkout.externalIdCanonico(treinoId));
+    }
+
+    /** Flags agregados do lote de pushes de um plano, acumulados treino a treino. */
+    private static final class ResultadoLote {
+        private boolean autenticacaoFalhou;
+        private boolean algumPushComSucesso;
     }
 }

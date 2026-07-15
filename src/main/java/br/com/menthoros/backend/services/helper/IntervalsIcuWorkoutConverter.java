@@ -66,7 +66,7 @@ public class IntervalsIcuWorkoutConverter {
         }
 
         return Optional.of(new StructuredWorkout(
-                "menthoros-" + treino.getId(),
+                StructuredWorkout.externalIdCanonico(treino.getId()),
                 nome(treino),
                 null,
                 treino.getDataTreino(),
@@ -278,8 +278,13 @@ public class IntervalsIcuWorkoutConverter {
 
     // ===== Nome do evento =====
 
+    // Distância no nome (decisão do founder no walking skeleton): "12 Km - LONGO" é mais útil
+    // no relógio que a data, que o calendário já mostra. Sem distância, cai no formato com data.
     private String nome(TreinoPlanejado treino) {
         String tipo = treino.getTipoTreino() != null ? treino.getTipoTreino().name() : "TREINO";
+        if (treino.getDistanciaKm() != null && treino.getDistanciaKm().compareTo(BigDecimal.ZERO) > 0) {
+            return treino.getDistanciaKm().stripTrailingZeros().toPlainString() + " Km - " + tipo;
+        }
         String data = treino.getDataTreino() != null ? treino.getDataTreino().format(FORMATO_DATA) : "";
         return (tipo + " " + data).trim();
     }
