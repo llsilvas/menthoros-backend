@@ -40,7 +40,15 @@ public class IntervalsIcuConnectionServiceImpl implements IntervalsIcuConnection
     private final AtletaRepository atletaRepository;
 
     /**
-     * {@inheritDoc}
+     * Valida a API key contra o intervals.icu e persiste a conexão. Reconecta (reusa o registro
+     * existente da unique atleta+plataforma, tenant-scoped) quando o atleta já teve uma conexão.
+     *
+     * <p>Idempotent: NO — cada chamada revalida a key contra a API externa; uma key inválida
+     * lança exceção sem alterar estado, mas uma key válida repetida reescreve o registro existente.
+     * <p>Side Effects: chamada HTTP externa (validação da key) + persistência (insert ou update).
+     * <p>Tenant-aware: YES — resolve o atleta e a integração via {@code TenantContext.getRequiredTenantId()}.
+     *
+     * @throws DomainRuleViolationException se a key for inválida (422)
      */
     @Override
     @Transactional
@@ -66,7 +74,7 @@ public class IntervalsIcuConnectionServiceImpl implements IntervalsIcuConnection
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
         IntegracaoExterna integracao = integracaoRepository
-                .findByAtletaIdAndPlataforma(atletaId, INTERVALS_ICU)
+                .findByAtletaIdAndPlataformaAndTenantId(atletaId, INTERVALS_ICU, tenantId)
                 .orElseGet(IntegracaoExterna::new);
 
         integracao.setAtleta(atleta);
@@ -85,7 +93,11 @@ public class IntervalsIcuConnectionServiceImpl implements IntervalsIcuConnection
     }
 
     /**
-     * {@inheritDoc}
+     * Status atual da conexão intervals.icu do atleta — {@link Optional#empty()} quando nunca conectou.
+     *
+     * <p>Idempotent: YES — leitura pura.
+     * <p>Side Effects: NONE.
+     * <p>Tenant-aware: YES — query tenant-scoped via {@code TenantContext.getRequiredTenantId()}.
      */
     @Override
     @Transactional(readOnly = true)
@@ -101,7 +113,11 @@ public class IntervalsIcuConnectionServiceImpl implements IntervalsIcuConnection
     }
 
     /**
-     * {@inheritDoc}
+     * Soft-disconnect (padrão Strava): mantém o registro histórico, zera as credenciais e desativa.
+     *
+     * <p>Idempotent: YES — desconectar duas vezes é seguro (já desconectado / nunca conectado = no-op).
+     * <p>Side Effects: Database update (ativo=false, accessToken/refreshToken=null) quando existir conexão.
+     * <p>Tenant-aware: YES — query tenant-scoped via {@code TenantContext.getRequiredTenantId()}.
      */
     @Override
     @Transactional
@@ -124,7 +140,12 @@ public class IntervalsIcuConnectionServiceImpl implements IntervalsIcuConnection
     }
 
     /**
-     * {@inheritDoc}
+     * Conexão ativa do atleta, para colaboradores internos (ex.: listener de push) que já possuem
+     * o tenant resolvido e não devem depender do {@code TenantContext} de request.
+     *
+     * <p>Idempotent: YES — leitura pura.
+     * <p>Side Effects: NONE.
+     * <p>Tenant-aware: YES — tenant recebido explicitamente por parâmetro (não via TenantContext).
      */
     @Override
     @Transactional(readOnly = true)

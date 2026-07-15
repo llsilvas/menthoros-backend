@@ -66,7 +66,7 @@ class IntervalsIcuConnectionServiceImplTest {
                     .thenReturn(Optional.of(new IcuAthleteDto("i641775", "Leandro")));
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId))
                     .thenReturn(Optional.of(Atleta.builder().id(atletaId).build()));
-            when(integracaoRepository.findByAtletaIdAndPlataforma(atletaId, FonteDados.INTERVALS_ICU))
+            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
                     .thenReturn(Optional.empty());
             when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -108,7 +108,7 @@ class IntervalsIcuConnectionServiceImplTest {
                     .thenReturn(Optional.of(new IcuAthleteDto("i641775", "Leandro")));
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId))
                     .thenReturn(Optional.of(Atleta.builder().id(atletaId).build()));
-            when(integracaoRepository.findByAtletaIdAndPlataforma(atletaId, FonteDados.INTERVALS_ICU))
+            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
                     .thenReturn(Optional.of(existente));
             when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
