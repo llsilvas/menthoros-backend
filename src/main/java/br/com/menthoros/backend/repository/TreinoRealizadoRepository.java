@@ -85,7 +85,7 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
          and t.statusSincronizacao = :status
        order by t.dataTreino ASC
        """)
-    List<TreinoRealizado> findByAtletaIdAndDataTreinoAndReconciliationStatus(
+    List<TreinoRealizado> findByAtletaIdAndDataTreinoAndStatusSincronizacao(
             @Param("atletaId") UUID atletaId,
             @Param("dataTreino") LocalDate dataTreino,
             @Param("status") StatusSincronizacao status);

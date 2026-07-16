@@ -17,11 +17,13 @@ import br.com.menthoros.backend.repository.TreinoReconciliacaoRepository;
 import br.com.menthoros.backend.services.ActivityTypeCompatibilityMatrix;
 import br.com.menthoros.backend.services.MatchingDecisionEngine;
 import br.com.menthoros.backend.services.MatchingScoreCalculator;
+import br.com.menthoros.backend.services.helper.CandidateSelector;
+import br.com.menthoros.backend.services.helper.ReconciliationDecisionExecutor;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -41,9 +43,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Fixa o comportamento ATUAL de {@link DailyActivitySyncSchedulerImpl} (task 3.1, design.md D4)
- * ANTES da extração de {@code CandidateSelector}/{@code ReconciliationDecisionExecutor} —
- * nenhuma asserção aqui deve mudar depois da extração (task 3.2).
+ * Fixa o comportamento ATUAL de {@link DailyActivitySyncSchedulerImpl} (task 3.1, design.md D4).
+ * Após a extração (task 3.2), o scheduler delega para {@link CandidateSelector}/
+ * {@link ReconciliationDecisionExecutor} — este teste usa instâncias REAIS desses dois
+ * colaboradores (construídas sobre os mesmos mocks de repositório/serviço) em vez de mocká-los,
+ * para provar equivalência ponta a ponta com o comportamento pré-extração: nenhuma asserção
+ * abaixo mudou.
  */
 @ExtendWith(MockitoExtension.class)
 class DailyActivitySyncSchedulerImplCharacterizationTest {
@@ -56,20 +61,29 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
     @Mock private MatchingDecisionEngine matchingDecisionEngine;
     @Mock private ActivityTypeCompatibilityMatrix activityTypeCompatibilityMatrix;
 
-    @InjectMocks private DailyActivitySyncSchedulerImpl scheduler;
+    private DailyActivitySyncSchedulerImpl scheduler;
+
+    @BeforeEach
+    void setUpScheduler() {
+        CandidateSelector candidateSelector = new CandidateSelector(treinoPlanejadoRepository, activityTypeCompatibilityMatrix);
+        ReconciliationDecisionExecutor executor = new ReconciliationDecisionExecutor(
+                matchingScoreCalculator, matchingDecisionEngine, treinoRealizadoRepository,
+                treinoPlanejadoRepository, treinoReconciliacaoRepository);
+        scheduler = new DailyActivitySyncSchedulerImpl(atletaRepository, treinoRealizadoRepository, candidateSelector, executor);
+    }
 
     @Test
     @DisplayName("seleciona atletas via findAllWithStravaConnected e busca pendentes de D-1 filtrando por statusSincronizacao=PENDENTE")
     void selecionaAtletasEBuscaPendentesDeOntem() {
         Atleta atleta = atleta();
         when(atletaRepository.findAllWithStravaConnected()).thenReturn(List.of(atleta));
-        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(
                 eq(atleta.getId()), eq(LocalDate.now().minusDays(1)), eq(StatusSincronizacao.PENDENTE)))
                 .thenReturn(List.of());
 
         scheduler.executeDailySync();
 
-        verify(treinoRealizadoRepository).findByAtletaIdAndDataTreinoAndReconciliationStatus(
+        verify(treinoRealizadoRepository).findByAtletaIdAndDataTreinoAndStatusSincronizacao(
                 atleta.getId(), LocalDate.now().minusDays(1), StatusSincronizacao.PENDENTE);
     }
 
@@ -79,7 +93,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
         Atleta atleta = atleta();
         TreinoRealizado activity = activity(atleta, LocalDate.now().minusDays(1));
         when(atletaRepository.findAllWithStravaConnected()).thenReturn(List.of(atleta));
-        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(any(), any(), any()))
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(any(), any(), any()))
                 .thenReturn(List.of(activity));
         when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
                 .thenReturn(List.of());
@@ -104,7 +118,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
         incompativel.setTipoTreino(br.com.menthoros.backend.enums.TipoTreino.LONGO);
 
         when(atletaRepository.findAllWithStravaConnected()).thenReturn(List.of(atleta));
-        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(any(), any(), any()))
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(any(), any(), any()))
                 .thenReturn(List.of(activity));
         when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
                 .thenReturn(List.of(compativel, incompativel));
@@ -124,14 +138,14 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
     }
 
     @Test
-    @DisplayName("VINCULADO_AUTOMATICO: muta o planejado em memória SEM save() explícito (comportamento atual, achado pre-mortem #7)")
-    void vinculadoAutomaticoMutaPlanejadoSemSaveExplicito() {
+    @DisplayName("VINCULADO_AUTOMATICO: muta o planejado E salva EXPLICITAMENTE (achado pre-mortem #7 corrigido pela extração — task 3.2)")
+    void vinculadoAutomaticoSalvaPlanejadoExplicitamenteAposExtracao() {
         Atleta atleta = atleta();
         TreinoRealizado activity = activity(atleta, LocalDate.now().minusDays(1));
         TreinoPlanejado planejado = planejado(atleta);
 
         when(atletaRepository.findAllWithStravaConnected()).thenReturn(List.of(atleta));
-        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(any(), any(), any()))
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(any(), any(), any()))
                 .thenReturn(List.of(activity));
         when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
                 .thenReturn(List.of(planejado));
@@ -146,8 +160,9 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
         assertThat(planejado.getStatusTreino()).isEqualTo(TreinoExecucaoStatus.REALIZADO);
         assertThat(planejado.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.SINCRONIZADO);
         assertThat(activity.getTreinoPlanejado()).isSameAs(planejado);
-        // achado pre-mortem #7 fixado: NENHUM save explícito do planejado no comportamento atual
-        verify(treinoPlanejadoRepository, never()).save(any());
+        // achado pre-mortem #7: a extração (ReconciliationDecisionExecutor) agora salva
+        // explicitamente o planejado vinculado, em vez de contar com entidade gerenciada implícita
+        verify(treinoPlanejadoRepository).save(planejado);
         verify(treinoRealizadoRepository).save(activity);
         verify(treinoReconciliacaoRepository).save(any());
     }
@@ -160,7 +175,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
         TreinoPlanejado planejado = planejado(atleta);
 
         when(atletaRepository.findAllWithStravaConnected()).thenReturn(List.of(atleta));
-        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(any(), any(), any()))
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(any(), any(), any()))
                 .thenReturn(List.of(activity));
         when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
                 .thenReturn(List.of(planejado));
@@ -184,7 +199,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
         TreinoRealizado activity = activity(atleta, LocalDate.now().minusDays(1));
 
         when(atletaRepository.findAllWithStravaConnected()).thenReturn(List.of(atleta));
-        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(any(), any(), any()))
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(any(), any(), any()))
                 .thenReturn(List.of(activity));
         when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
                 .thenReturn(List.of());
@@ -205,7 +220,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
         TreinoPlanejado candidatoOutroTenant = planejadoDeOutroTenant();
 
         when(atletaRepository.findAllWithStravaConnected()).thenReturn(List.of(atleta));
-        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(any(), any(), any()))
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(any(), any(), any()))
                 .thenReturn(List.of(activity));
         when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
                 .thenReturn(List.of(candidatoOutroTenant));
@@ -225,7 +240,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
         TreinoRealizado activityOutroTenant = activityDeOutroTenant(atleta.getId());
 
         when(atletaRepository.findAllWithStravaConnected()).thenReturn(List.of(atleta));
-        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(any(), any(), any()))
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(any(), any(), any()))
                 .thenReturn(List.of(activityOutroTenant));
 
         scheduler.executeDailySync();
@@ -241,7 +256,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
         TreinoRealizado activity = activity(atleta, LocalDate.now().minusDays(1));
 
         when(atletaRepository.findAllWithStravaConnected()).thenReturn(List.of(atleta));
-        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(any(), any(), any()))
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(any(), any(), any()))
                 .thenReturn(List.of(activity));
         when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
                 .thenReturn(List.of());
@@ -274,6 +289,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
         t.setAtleta(atleta);
         t.setDataTreino(data);
         t.setDuracaoMin(Duration.ofMinutes(30));
+        t.setDistanciaKm(java.math.BigDecimal.valueOf(5));
         return t;
     }
 
@@ -297,6 +313,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
         p.setAtleta(atleta);
         p.setDataTreino(LocalDate.now().minusDays(1));
         p.setDuracaoMin(Duration.ofMinutes(30));
+        p.setDistanciaKm(java.math.BigDecimal.valueOf(5));
         return p;
     }
 

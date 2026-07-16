@@ -93,7 +93,7 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         treinoRealizadoRepository.save(activity1);
 
         // Query activities for athlete in tenant 1 should find the activity
-        var activities1 = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
+        var activities1 = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(
             athlete1_tenant1.getId(),
             LocalDate.now(),
             StatusSincronizacao.PENDENTE
@@ -101,7 +101,7 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         assertEquals(1, activities1.size(), "Should find activity for tenant1 athlete");
 
         // Query for athlete in tenant 2 should NOT find tenant1's activity
-        var activities2 = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
+        var activities2 = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(
             athlete1_tenant2.getId(),
             LocalDate.now(),
                 StatusSincronizacao.PENDENTE
@@ -121,7 +121,7 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         treinoRealizadoRepository.save(activity2);
 
         // Athlete 1 should only see their own activity
-        var athlete1Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
+        var athlete1Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(
             athlete1_tenant1.getId(),
             LocalDate.now(),
                 StatusSincronizacao.PENDENTE
@@ -130,7 +130,7 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         assertEquals("strava_201", athlete1Activities.get(0).getExternalId());
 
         // Athlete 2 should only see their own activity
-        var athlete2Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
+        var athlete2Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(
             athlete2_tenant1.getId(),
             LocalDate.now(),
                 StatusSincronizacao.PENDENTE
@@ -170,14 +170,14 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         assertNotNull(saved.getId(), "Should allow same externalId across different tenants");
 
         // Verify isolation: each athlete sees only their own activity
-        var tenant1Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
+        var tenant1Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(
             athlete1_tenant1.getId(),
             LocalDate.now(),
                 StatusSincronizacao.PENDENTE
         );
         assertEquals(1, tenant1Activities.size(), "Tenant1 athlete should see 1 activity");
 
-        var tenant2Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
+        var tenant2Activities = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(
             athlete1_tenant2.getId(),
             LocalDate.now(),
                 StatusSincronizacao.PENDENTE
@@ -198,7 +198,7 @@ class MultiTenantIsolationTest extends AbstractIntegrationTest {
         treinoRealizadoRepository.save(activity3);
 
         // Query for tenant1 athlete on specific date
-        var tenant1ActivitiesDay1 = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndReconciliationStatus(
+        var tenant1ActivitiesDay1 = treinoRealizadoRepository.findByAtletaIdAndDataTreinoAndStatusSincronizacao(
             athlete1_tenant1.getId(),
             LocalDate.of(2026, 5, 1),
                 StatusSincronizacao.PENDENTE
