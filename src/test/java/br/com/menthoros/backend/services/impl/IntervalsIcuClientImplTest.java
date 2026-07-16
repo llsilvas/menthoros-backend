@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.intervalsicu.IcuActivityDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuAthleteDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuEventDto;
 import br.com.menthoros.backend.exception.IntervalsIcuApiException;
@@ -122,6 +123,61 @@ class IntervalsIcuClientImplTest {
 
             assertThat(eventos).hasSize(1);
             assertThat(eventos.get(0).externalId()).isEqualTo("menthoros-x");
+        }
+    }
+
+    @Nested
+    @DisplayName("buscarAtividade")
+    class BuscarAtividade {
+
+        @Test
+        @DisplayName("200 retorna a activity desserializada (GET /activity/{id}, Basic API_KEY:key)")
+        void sucessoRetornaActivity() {
+            wireMock.stubFor(get(urlEqualTo("/api/v1/activity/i86400275"))
+                    .withBasicAuth("API_KEY", API_KEY)
+                    .willReturn(okJson("""
+                            {"id":"i86400275","athlete_id":"i641775","type":"Run",
+                             "start_date_local":"2026-07-16T06:30:00","moving_time":1800,
+                             "distance":5000.0}
+                            """)));
+
+            IcuActivityDto activity = client.buscarAtividade(API_KEY, "i86400275");
+
+            assertThat(activity.id()).isEqualTo("i86400275");
+            assertThat(activity.athleteId()).isEqualTo("i641775");
+            assertThat(activity.movingTimeSeg()).isEqualTo(1800);
+        }
+
+        @Test
+        @DisplayName("404 lança IntervalsIcuApiException com status 404")
+        void notFoundLancaExcecaoComStatus() {
+            wireMock.stubFor(get(urlEqualTo("/api/v1/activity/inexistente"))
+                    .willReturn(aResponse().withStatus(404)));
+
+            assertThatThrownBy(() -> client.buscarAtividade(API_KEY, "inexistente"))
+                    .isInstanceOf(IntervalsIcuApiException.class)
+                    .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus().value()).isEqualTo(404));
+        }
+
+        @Test
+        @DisplayName("403 lança IntervalsIcuApiException com status 403 (activity de outro atleta)")
+        void forbiddenLancaExcecaoComStatus() {
+            wireMock.stubFor(get(urlEqualTo("/api/v1/activity/i999"))
+                    .willReturn(aResponse().withStatus(403)));
+
+            assertThatThrownBy(() -> client.buscarAtividade(API_KEY, "i999"))
+                    .isInstanceOf(IntervalsIcuApiException.class)
+                    .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus().value()).isEqualTo(403));
+        }
+
+        @Test
+        @DisplayName("falha de transporte lança IntervalsIcuApiException sem status HTTP")
+        void falhaDeTransporteLancaExcecao() {
+            wireMock.stop();
+
+            assertThatThrownBy(() -> client.buscarAtividade(API_KEY, "i1"))
+                    .isInstanceOf(IntervalsIcuApiException.class)
+                    .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus()).isNull());
         }
     }
 

@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services;
 
+import br.com.menthoros.backend.dto.intervalsicu.IcuActivityDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuAthleteDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuEventDto;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -19,8 +20,11 @@ public interface IntervalsIcuClient {
     /** POST /api/v1/athlete/{id}/events. */
     IcuEventDto criarEvento(String apiKey, String externalAthleteId, JsonNode payload);
 
-    /** PUT /api/v1/athlete/{id}/events/{eventId} — 404 lança IntervalsIcuApiException(NOT_FOUND). */
+    /** PUT /api/v1/athlete/{id}/events/{eventId} — erro HTTP vira IntervalsIcuApiException(status, mensagem). */
     IcuEventDto atualizarEvento(String apiKey, String externalAthleteId, long eventId, JsonNode payload);
+
+    /** GET /api/v1/activity/{id} — erro HTTP vira IntervalsIcuApiException(status, mensagem). */
+    IcuActivityDto buscarAtividade(String apiKey, String activityId);
 
     /** GET /api/v1/athlete/{id}/events?oldest=&newest=. */
     List<IcuEventDto> listarEventos(String apiKey, String externalAthleteId, LocalDate oldest, LocalDate newest);

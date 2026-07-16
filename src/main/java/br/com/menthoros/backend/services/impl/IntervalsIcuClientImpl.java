@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.intervalsicu.IcuActivityDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuAthleteDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuEventDto;
 import br.com.menthoros.backend.exception.IntervalsIcuApiException;
@@ -122,6 +123,21 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
                 .headers(h -> basic(h, apiKey))
                 .retrieve()
                 .toBodilessEntity()
+                .block());
+    }
+
+    /**
+     * Idempotent: YES — leitura pura.
+     * Side Effects: External API call (GET /api/v1/activity/{id})
+     * Tenant-aware: NO — credencial é do atleta, não do tenant.
+     */
+    @Override
+    public IcuActivityDto buscarAtividade(String apiKey, String activityId) {
+        return executa("buscar atividade", () -> webClient.get()
+                .uri("/api/v1/activity/{id}", activityId)
+                .headers(h -> basic(h, apiKey))
+                .retrieve()
+                .bodyToMono(IcuActivityDto.class)
                 .block());
     }
 
