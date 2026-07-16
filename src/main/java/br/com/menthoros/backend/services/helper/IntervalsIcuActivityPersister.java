@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.dto.intervalsicu.IcuActivityDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainConflictException;
@@ -59,8 +60,7 @@ public class IntervalsIcuActivityPersister {
             salvo.setTssCalculado(tssCalculatorService.calcularTss(salvo));
             tsbService.atualizarTsbDia(atleta.getId(), salvo.getDataTreino());
 
-            List<br.com.menthoros.backend.entity.TreinoPlanejado> candidatos =
-                    candidateSelector.buscarCandidatos(salvo, tenantId);
+            List<TreinoPlanejado> candidatos = candidateSelector.buscarCandidatos(salvo, tenantId);
             reconciliationDecisionExecutor.executar(salvo, candidatos, atleta);
 
             eventPublisher.publishEvent(new TreinoRegistradoEvent(salvo.getId(), tenantId));

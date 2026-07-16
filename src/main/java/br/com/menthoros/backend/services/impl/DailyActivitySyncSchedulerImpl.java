@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.MatchingDecision;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
@@ -152,8 +153,7 @@ public class DailyActivitySyncSchedulerImpl implements DailyActivitySyncSchedule
 
             result.processedCount++;
 
-            List<br.com.menthoros.backend.entity.TreinoPlanejado> candidatos =
-                    candidateSelector.buscarCandidatos(activity, tenantId);
+            List<TreinoPlanejado> candidatos = candidateSelector.buscarCandidatos(activity, tenantId);
 
             MatchingDecision decision = reconciliationDecisionExecutor.executar(activity, candidatos, atleta);
 

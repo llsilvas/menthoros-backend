@@ -9,6 +9,7 @@ import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -19,6 +20,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -106,14 +109,24 @@ public class IntervalsIcuActivityMapper {
         return cadenciaTotal;
     }
 
+    private static final ObjectMapper METADADOS_MAPPER = new ObjectMapper();
+
+    /**
+     * {@code deviceName} vem do intervals.icu (terceiro) — usa Jackson em vez de concatenação de
+     * string (achado do QA gate, 2026-07-16): um valor contendo aspas ou barra invertida quebrava
+     * o JSON armazenado.
+     */
     private String buildMetadadosSincronizacao(IcuActivityDto dto) {
-        StringBuilder json = new StringBuilder("{");
-        json.append("\"icuTrainingLoad\":").append(dto.icuTrainingLoad() != null ? dto.icuTrainingLoad() : "null").append(",");
-        json.append("\"calories\":").append(dto.calories() != null ? dto.calories() : "null").append(",");
-        json.append("\"totalElevationGain\":").append(dto.totalElevationGain() != null ? dto.totalElevationGain() : "null").append(",");
-        json.append("\"deviceName\":").append(dto.deviceName() != null ? "\"" + dto.deviceName() + "\"" : "null");
-        json.append("}");
-        return json.toString();
+        Map<String, Object> metadados = new LinkedHashMap<>();
+        metadados.put("icuTrainingLoad", dto.icuTrainingLoad());
+        metadados.put("calories", dto.calories());
+        metadados.put("totalElevationGain", dto.totalElevationGain());
+        metadados.put("deviceName", dto.deviceName());
+        try {
+            return METADADOS_MAPPER.writeValueAsString(metadados);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("Falha ao serializar metadadosSincronizacao", e);
+        }
     }
 
     /**

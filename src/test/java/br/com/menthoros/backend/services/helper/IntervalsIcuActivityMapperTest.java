@@ -63,6 +63,21 @@ class IntervalsIcuActivityMapperTest {
         }
 
         @Test
+        @DisplayName("deviceName com aspas e barra invertida gera metadadosSincronizacao JSON válido (achado do QA gate)")
+        void deviceNameComCaracteresEspeciaisGeraJsonValido() throws com.fasterxml.jackson.core.JsonProcessingException {
+            IcuActivityDto dto = new IcuActivityDto(
+                    "i1", "i641775", "Run", "Corrida", "2026-07-16T06:00:00",
+                    1800, 1850, 5000.0, null, null, null, null, null, null, null,
+                    "Garmin \"Watch\" Pro\\v2", null);
+
+            TreinoRealizado treino = mapper.map(dto, atleta());
+
+            com.fasterxml.jackson.databind.JsonNode node = new com.fasterxml.jackson.databind.ObjectMapper()
+                    .readTree(treino.getMetadadosSincronizacao());
+            assertThat(node.get("deviceName").asText()).isEqualTo("Garmin \"Watch\" Pro\\v2");
+        }
+
+        @Test
         @DisplayName("pace derivado de moving_time/distance tem prioridade sobre average_speed")
         void paceComPrioridadeMovingTimeDistance() {
             IcuActivityDto dto = new IcuActivityDto(
