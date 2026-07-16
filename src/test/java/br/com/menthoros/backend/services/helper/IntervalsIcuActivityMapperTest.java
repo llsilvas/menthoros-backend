@@ -51,6 +51,7 @@ class IntervalsIcuActivityMapperTest {
             assertThat(treino.getElapsedTimeSeg()).isEqualTo(1850);
             assertThat(treino.getFcMedia()).isEqualTo(145);
             assertThat(treino.getFcMax()).isEqualTo(168);
+            assertThat(treino.getCadenciaMedia()).isEqualTo(161);
             assertThat(treino.getPercepcaoEsforco()).isEqualTo(6);
             assertThat(treino.getElevacaoGanhoMetros()).isEqualTo(42);
             assertThat(treino.getDeviceName()).isEqualTo("Garmin Forerunner 965");
@@ -166,6 +167,39 @@ class IntervalsIcuActivityMapperTest {
             assertThat(treino.getPercepcaoEsforco()).isNull();
         }
 
+        @Test
+        @DisplayName("cadência dobra o valor de perna única do intervals.icu (confirmado contra payload real do gate 3.0)")
+        void cadenciaDobraValorRealDoGate() {
+            IcuActivityDto dto = new IcuActivityDto(
+                    "i166338796", "i641775", "Run", "Taboão da Serra - 8.00Km CONTINUO", "2026-07-16T08:12:19",
+                    3108, 3110, 8009.18, 2.576, 152.0, 164.0, 69.87482, 80.822655, 2.0, 58,
+                    "Garmin Forerunner 970", 666);
+
+            TreinoRealizado treino = mapper.map(dto, atleta());
+
+            assertThat(treino.getCadenciaMedia()).isEqualTo(162);
+        }
+
+        @Test
+        @DisplayName("cadência fora da faixa 60-200 após dobrar vira null (dado degenerado)")
+        void cadenciaForaDaFaixaViraNull() {
+            IcuActivityDto dto = new IcuActivityDto(
+                    "i1", "i641775", "Run", "Corrida", "2026-07-16T06:00:00",
+                    1800, 1850, 5000.0, null, null, null, null, 250.0, null, null, null, null);
+
+            TreinoRealizado treino = mapper.map(dto, atleta());
+
+            assertThat(treino.getCadenciaMedia()).isNull();
+        }
+
+        @Test
+        @DisplayName("cadência ausente mantém cadenciaMedia null")
+        void cadenciaAusenteMantemNull() {
+            TreinoRealizado treino = mapper.map(activityMinima(), atleta());
+
+            assertThat(treino.getCadenciaMedia()).isNull();
+        }
+
         @ParameterizedTest
         @ValueSource(strings = {"Run", "TrailRun", "VirtualRun", "Treadmill"})
         @DisplayName("modalidades de corrida aceitas")
@@ -257,7 +291,7 @@ class IntervalsIcuActivityMapperTest {
     private IcuActivityDto activityCompleta() {
         return new IcuActivityDto(
                 "i86400275", "i641775", "Run", "Corrida matinal", "2026-07-16T06:30:00",
-                1800, 1850, 5000.0, 2.78, 145.0, 168.0, 42.0, 172.0, 6.0, 55,
+                1800, 1850, 5000.0, 2.78, 145.0, 168.0, 42.0, 80.5, 6.0, 55,
                 "Garmin Forerunner 965", 420);
     }
 

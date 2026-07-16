@@ -136,7 +136,7 @@ class IntervalsIcuClientImplTest {
             wireMock.stubFor(get(urlEqualTo("/api/v1/activity/i86400275"))
                     .withBasicAuth("API_KEY", API_KEY)
                     .willReturn(okJson("""
-                            {"id":"i86400275","athlete_id":"i641775","type":"Run",
+                            {"id":"i86400275","icu_athlete_id":"i641775","type":"Run",
                              "start_date_local":"2026-07-16T06:30:00","moving_time":1800,
                              "distance":5000.0}
                             """)));

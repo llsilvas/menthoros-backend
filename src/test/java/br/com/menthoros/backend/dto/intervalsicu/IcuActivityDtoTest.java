@@ -16,7 +16,7 @@ class IcuActivityDtoTest {
         String json = """
                 {
                   "id": "i86400275",
-                  "athlete_id": "i641775",
+                  "icu_athlete_id": "i641775",
                   "type": "Run",
                   "name": "Corrida matinal",
                   "start_date_local": "2026-07-16T06:30:00",

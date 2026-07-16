@@ -87,14 +87,23 @@ public class IntervalsIcuActivityMapper {
     }
 
     /**
-     * Cadência do intervals.icu — unidade real (rpm/spm, perna única ou total) ainda NÃO
-     * confirmada contra payload real. Isolada de propósito (não reaproveita
-     * {@code convertStravaCadence}/{@code sanitizeCadence} do sync Strava por analogia — a fórmula
-     * é diferente por fonte e não deve ser assumida igual sem validação). Revisitar no gate de
-     * smoke (D6/tasks.md 7.1 item a) antes de confiar neste valor em produção.
+     * Cadência do intervals.icu — CONFIRMADO contra payload real (smoke do gate 3.0, 2026-07-16,
+     * atleta i641775, activity `i166338796`, Garmin Forerunner 970): {@code average_cadence} vem
+     * em passos/min de UMA perna, igual à convenção do Strava/FIT — valor real observado
+     * {@code 80.82...}, plausível como cadência de perna única para um ritmo de 6:29/km (dobrado:
+     * ~161.6 spm total, faixa normal de corrida). Isolada de propósito (não chama
+     * {@code convertStravaCadence}/{@code sanitizeCadence} do Strava diretamente — mesma fórmula,
+     * mas fonte e sanitização isoladas para não acoplar as duas integrações).
      */
     private Integer sanitizeCadenciaIntervalsIcu(Double averageCadence) {
-        return roundToInt(averageCadence);
+        if (averageCadence == null) {
+            return null;
+        }
+        int cadenciaTotal = (int) Math.round(averageCadence * 2d);
+        if (cadenciaTotal < 60 || cadenciaTotal > 200) {
+            return null;
+        }
+        return cadenciaTotal;
     }
 
     private String buildMetadadosSincronizacao(IcuActivityDto dto) {

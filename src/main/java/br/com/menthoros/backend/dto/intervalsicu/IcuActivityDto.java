@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record IcuActivityDto(
         String id,
-        @JsonProperty("athlete_id") String athleteId,
+        @JsonProperty("icu_athlete_id") String athleteId,
         String type,
         String name,
         @JsonProperty("start_date_local") String startDateLocal,
