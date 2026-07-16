@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services;
 
+import br.com.menthoros.backend.dto.output.StravaSyncPauseStatusDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 
@@ -19,4 +20,10 @@ public interface StravaOAuthService {
     Map<String, Object> getStatus(UUID atletaId);
     void disconnect(UUID atletaId);
     Atleta findAtletaForCallback(UUID atletaId);
+
+    /** Override explícito do coach sobre autoSyncPausado (D5.2) — ausente → ResourceNotFoundException (404). */
+    StravaSyncPauseStatusDto pausarSync(UUID atletaId, UUID tenantId);
+
+    /** Override explícito do coach sobre autoSyncPausado (D5.2) — ausente → ResourceNotFoundException (404). */
+    StravaSyncPauseStatusDto retomarSync(UUID atletaId, UUID tenantId);
 }

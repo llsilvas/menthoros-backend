@@ -17,9 +17,12 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.UUID;
 
+import java.util.Optional;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,6 +63,8 @@ class StravaActivitySyncSchedulerTest {
 
         when(integracaoExternaRepository.findAllActiveByPlataforma(FonteDados.STRAVA))
                 .thenReturn(List.of(integracao));
+        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
+                .thenReturn(Optional.of(integracao));
         when(stravaActivityService.syncActivities(any(UUID.class))).thenReturn(1);
 
         scheduler.runDailyIncrementalSync();
@@ -68,5 +73,41 @@ class StravaActivitySyncSchedulerTest {
         verify(stravaActivityService, times(1)).syncActivities(atletaIdCaptor.capture());
         assertEquals(atletaId, atletaIdCaptor.getValue());
         assertFalse(TenantContext.hasTenant());
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("late-check: atleta pausado ENTRE a listagem e o sync é pulado no mesmo ciclo (TOCTOU, D5.2)")
+    void shouldSkipAthletePausedBetweenListingAndSync() {
+        UUID tenantId = UUID.randomUUID();
+        UUID atletaId = UUID.randomUUID();
+
+        IntegracaoExterna integracaoNaListagem = new IntegracaoExterna();
+        integracaoNaListagem.setPlataforma(FonteDados.STRAVA);
+        integracaoNaListagem.setAtivo(true);
+        integracaoNaListagem.setTenantId(tenantId);
+        integracaoNaListagem.setAutoSyncPausado(false);
+
+        Atleta atleta = new Atleta();
+        atleta.setId(atletaId);
+        Assessoria assessoria = new Assessoria();
+        assessoria.setId(tenantId);
+        atleta.setAssessoria(assessoria);
+        integracaoNaListagem.setAtleta(atleta);
+
+        // revalidação fresca (chamada logo antes do sync) já reflete autoSyncPausado=true —
+        // simula o coach pausando o atleta ENTRE a listagem inicial e o processamento dele
+        IntegracaoExterna integracaoRevalidada = new IntegracaoExterna();
+        integracaoRevalidada.setPlataforma(FonteDados.STRAVA);
+        integracaoRevalidada.setAtivo(true);
+        integracaoRevalidada.setAutoSyncPausado(true);
+
+        when(integracaoExternaRepository.findAllActiveByPlataforma(FonteDados.STRAVA))
+                .thenReturn(List.of(integracaoNaListagem));
+        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
+                .thenReturn(Optional.of(integracaoRevalidada));
+
+        scheduler.runDailyIncrementalSync();
+
+        verify(stravaActivityService, never()).syncActivities(any(UUID.class));
     }
 }

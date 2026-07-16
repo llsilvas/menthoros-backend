@@ -70,6 +70,17 @@ public class IntegracaoExterna {
     @Column(name = "last_sync_error", length = 500)
     private String lastSyncError;
 
+    /**
+     * Pausa a sincronização automática do Strava deste atleta (scheduler diário + webhook em
+     * tempo real) quando ele também está ativo no intervals.icu, evitando duplicação cross-fonte.
+     * Aplica-se à linha {@code plataforma=STRAVA} do atleta. Setada automaticamente ao conectar
+     * qualquer uma das duas integrações; {@code pausar-sync}/{@code retomar-sync} são override
+     * explícito do coach sobre a mesma flag — nunca revertida automaticamente ao desconectar o
+     * intervals.icu (decisão do founder: nunca auto-retomar).
+     */
+    @Column(name = "auto_sync_pausado", nullable = false)
+    private boolean autoSyncPausado = false;
+
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 

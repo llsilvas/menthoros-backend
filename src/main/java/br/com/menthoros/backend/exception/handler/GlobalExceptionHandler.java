@@ -2,10 +2,12 @@ package br.com.menthoros.backend.exception.handler;
 
 
 import br.com.menthoros.backend.exception.AccessDeniedException;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
 import br.com.menthoros.backend.exception.FitParseException;
+import br.com.menthoros.backend.exception.IntervalsIcuRateLimitException;
 import br.com.menthoros.backend.exception.KeycloakIntegrationException;
 import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
@@ -270,6 +272,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
     }
 
+    @ExceptionHandler(DomainConflictException.class)
+    public ResponseEntity<Map<String, Object>> handleDomainConflict(DomainConflictException ex) {
+        log.warn("Conflito de domínio: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 409,
+                "error", "Conflict",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
     @ExceptionHandler(FitParseException.class)
     public ResponseEntity<Map<String, Object>> handleFitParseException(FitParseException ex) {
         log.warn("Falha ao parsear arquivo .fit: {}", ex.getMessage());
@@ -295,6 +308,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(StravaRateLimitException.class)
     public ResponseEntity<Map<String, Object>> handleStravaRateLimit(StravaRateLimitException ex) {
         log.warn("Limite de taxa da API Strava excedido: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 429,
+                "error", "Too Many Requests",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
+    }
+
+    @ExceptionHandler(IntervalsIcuRateLimitException.class)
+    public ResponseEntity<Map<String, Object>> handleIntervalsIcuRateLimit(IntervalsIcuRateLimitException ex) {
+        log.warn("Rate limit ou instabilidade do intervals.icu: {}", ex.getMessage());
         Map<String, Object> body = Map.of(
                 "status", 429,
                 "error", "Too Many Requests",

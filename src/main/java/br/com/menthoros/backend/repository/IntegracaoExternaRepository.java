@@ -54,10 +54,32 @@ public interface IntegracaoExternaRepository extends JpaRepository<IntegracaoExt
             @Param("plataforma") FonteDados plataforma
     );
 
+    /**
+     * D5.1: todas as conexões ativas de OUTROS atletas do mesmo tenant com o mesmo
+     * {@code externalAthleteId} — usado para detectar cadastro incorreto (a mesma credencial
+     * externa vinculada a dois atletas Menthoros distintos) antes de confiar em
+     * {@code dto.athleteId() == conexao.externalAthleteId} como defesa suficiente.
+     */
+    @Query("""
+    select i from IntegracaoExterna i
+    where i.externalAthleteId = :externalAthleteId
+      and i.plataforma = :plataforma
+      and i.tenantId = :tenantId
+      and i.ativo = true
+      and i.atleta.id <> :atletaId
+    """)
+    List<IntegracaoExterna> findOtherActiveByExternalAthleteIdAndPlataformaAndTenantId(
+            @Param("externalAthleteId") String externalAthleteId,
+            @Param("plataforma") FonteDados plataforma,
+            @Param("tenantId") UUID tenantId,
+            @Param("atletaId") UUID atletaId
+    );
+
     @Query("""
     select i from IntegracaoExterna i
     where i.plataforma = :plataforma
       and i.ativo = true
+      and (i.autoSyncPausado = false or i.autoSyncPausado is null)
     """)
     List<IntegracaoExterna> findAllActiveByPlataforma(
             @Param("plataforma") FonteDados plataforma

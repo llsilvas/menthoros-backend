@@ -7,6 +7,7 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.PagingAndSortingRepository;
@@ -32,6 +33,20 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     Optional<TreinoRealizado> findByFonteDadosAndExternalId(FonteDados fonte, String externalId);
 
     Optional<TreinoRealizado> findByExternalIdAndAtletaId(String externalId, UUID atletaId);
+
+    /**
+     * Chave real da constraint {@code uk_treino_realizado_tenant_fonte_external} (V29).
+     *
+     * <p>{@code @EntityGraph} carrega {@code etapasRealizadas} (LAZY) na mesma query — achado do
+     * smoke do Bloco 7 (intervals-icu-activity-ingestion): o passo 0 (dedup) de
+     * {@code IntervalsIcuActivityIngestionServiceImpl} chama este método fora de transação
+     * (orquestrador deliberadamente não-transacional) e mapeia o resultado direto para DTO; sem o
+     * fetch eager, {@code TreinoMapperImpl.toOutputDto} → {@code DecouplingCalculatorService}
+     * acessa a coleção lazy e lança {@code LazyInitializationException} sempre que
+     * {@code open-in-view=false} (perfil {@code dev}, produção).
+     */
+    @EntityGraph(attributePaths = "etapasRealizadas")
+    Optional<TreinoRealizado> findByTenantIdAndFonteDadosAndExternalId(UUID tenantId, FonteDados fonteDados, String externalId);
 
     @Query("select coalesce(sum(t.distanciaKm),0) from TreinoRealizado t where t.planoSemanal.id = :planoSemanalId")
     double sumDistanciaByPlanoSemanalId(@Param("planoSemanalId") UUID planoSemanalId);
@@ -85,7 +100,7 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
          and t.statusSincronizacao = :status
        order by t.dataTreino ASC
        """)
-    List<TreinoRealizado> findByAtletaIdAndDataTreinoAndReconciliationStatus(
+    List<TreinoRealizado> findByAtletaIdAndDataTreinoAndStatusSincronizacao(
             @Param("atletaId") UUID atletaId,
             @Param("dataTreino") LocalDate dataTreino,
             @Param("status") StatusSincronizacao status);

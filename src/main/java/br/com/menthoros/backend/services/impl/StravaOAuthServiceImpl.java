@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.services.StravaOAuthService;
 
 import br.com.menthoros.backend.config.external.StravaProperties;
+import br.com.menthoros.backend.dto.output.StravaSyncPauseStatusDto;
 import br.com.menthoros.backend.dto.strava.StravaTokenResponse;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
@@ -71,6 +72,17 @@ public class StravaOAuthServiceImpl implements StravaOAuthService {
         integracao.setTenantId(atleta.getAssessoria().getId());
         integracao.setAtivo(true);
         applyTokenResponse(integracao, tokenResponse);
+
+        // Hook D5.2 (decisão do founder — pausa automática): Strava nasce/renasce pausado quando o
+        // atleta já tem intervals.icu ativo, eliminando a colisão cross-fonte na origem. Único
+        // save (não dois): a flag é setada no MESMO objeto antes de persistir. Monotônico — só
+        // seta true, nunca reseta para false (uma linha existente com autoSyncPausado=true herdado
+        // de pausa manual/automática anterior não é revertida ao reconectar sem intervals.icu ativo).
+        if (integracaoExternaRepository
+                .findActiveByAtletaIdAndPlataformaAndTenantId(atleta.getId(), FonteDados.INTERVALS_ICU, integracao.getTenantId())
+                .isPresent()) {
+            integracao.setAutoSyncPausado(true);
+        }
 
         return integracaoExternaRepository.save(integracao);
     }
@@ -149,6 +161,44 @@ public class StravaOAuthServiceImpl implements StravaOAuthService {
     public Atleta findAtletaForCallback(UUID atletaId) {
         return atletaRepository.findByIdBasic(atletaId)
                 .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado"));
+    }
+
+    /**
+     * Override explícito do coach sobre {@code autoSyncPausado} (D5.2) — não é mais o mecanismo
+     * primário de pausa (ver {@link #exchangeCodeForToken} e
+     * {@code IntervalsIcuConnectionServiceImpl#conectar} para os hooks automáticos).
+     *
+     * <p><b>Idempotent:</b> YES — reaplicar o mesmo valor é no-op seguro.
+     * <p><b>Side Effects:</b> Database mutation (update de {@link IntegracaoExterna}).
+     * <p><b>Tenant-aware:</b> YES — busca por {@code (atletaId, plataforma, tenantId)}.
+     */
+    @Transactional
+    public StravaSyncPauseStatusDto pausarSync(UUID atletaId, UUID tenantId) {
+        return setAutoSyncPausado(atletaId, tenantId, true);
+    }
+
+    /**
+     * Override explícito do coach sobre {@code autoSyncPausado} (D5.2) — único jeito de o coach
+     * reativar deliberadamente o Strava enquanto o intervals.icu segue ativo, aceitando o risco de
+     * duplicação cross-fonte (ver a precondição bloqueante do import de intervals.icu, D3 passo 1).
+     *
+     * <p><b>Idempotent:</b> YES — reaplicar o mesmo valor é no-op seguro.
+     * <p><b>Side Effects:</b> Database mutation (update de {@link IntegracaoExterna}).
+     * <p><b>Tenant-aware:</b> YES — busca por {@code (atletaId, plataforma, tenantId)}.
+     */
+    @Transactional
+    public StravaSyncPauseStatusDto retomarSync(UUID atletaId, UUID tenantId) {
+        return setAutoSyncPausado(atletaId, tenantId, false);
+    }
+
+    private StravaSyncPauseStatusDto setAutoSyncPausado(UUID atletaId, UUID tenantId, boolean pausado) {
+        IntegracaoExterna integracao = integracaoExternaRepository
+                .findByAtletaIdAndPlataformaAndTenantId(atletaId, STRAVA, tenantId)
+                .orElseThrow(() -> new ResourceNotFoundException("Atleta não tem integração Strava"));
+
+        integracao.setAutoSyncPausado(pausado);
+        integracao = integracaoExternaRepository.save(integracao);
+        return new StravaSyncPauseStatusDto(integracao.isAutoSyncPausado(), integracao.getAtualizadoEm());
     }
 
     private StravaTokenResponse callTokenEndpoint(MultiValueMap<String, String> formData) {

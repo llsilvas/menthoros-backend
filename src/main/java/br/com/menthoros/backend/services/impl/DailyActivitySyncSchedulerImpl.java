@@ -1,47 +1,42 @@
 package br.com.menthoros.backend.services.impl;
 
-import br.com.menthoros.backend.services.DailyActivitySyncScheduler;
-import br.com.menthoros.backend.services.MatchingScoreCalculator;
-import br.com.menthoros.backend.services.MatchingDecisionEngine;
-import br.com.menthoros.backend.services.ActivityTypeCompatibilityMatrix;
-import br.com.menthoros.backend.dto.MatchingCandidate;
 import br.com.menthoros.backend.dto.MatchingDecision;
-import br.com.menthoros.backend.dto.MatchingScoreResult;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
-import br.com.menthoros.backend.entity.TreinoReconciliacao;
-import br.com.menthoros.backend.enums.ReconciliationActionType;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
-import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.repository.AtletaRepository;
-import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.repository.TreinoReconciliacaoRepository;
+import br.com.menthoros.backend.services.DailyActivitySyncScheduler;
+import br.com.menthoros.backend.services.helper.CandidateSelector;
+import br.com.menthoros.backend.services.helper.ReconciliationDecisionExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.math.BigDecimal;
-import java.time.Instant;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Scheduler para sincronização diária incremental de atividades Strava.
+ * Scheduler de RECONCILIAÇÃO diária — decide/grava o vínculo entre {@link TreinoRealizado}
+ * já {@code PENDENTE} e {@code TreinoPlanejado} candidatos na janela D-1..D+1.
  *
- * Executa a cada dia às 2 da manhã (fora do horário de pico) e:
- * 1. Busca todos os atletas com Strava conectado
- * 2. Para cada atleta, processa atividades do dia anterior
- * 3. Aplica matching automático e cria eventos de auditoria
- * 4. Marca ambíguas/orfãs para revisão do treinador
+ * <p><b>Não é o caminho de ingestão do Strava</b> (achado de implementação do Bloco 6 da change
+ * {@code intervals-icu-activity-ingestion}, ver design.md D5.2 "Guarda no(s) scheduler(s)"): este
+ * componente nunca busca nem insere atividades novas da API do Strava — a busca/inserção diária
+ * real é feita por {@code StravaActivitySyncScheduler} (pacote {@code services}, sem sufixo
+ * {@code Impl}). Este scheduler apenas reconcilia registros que JÁ existem com
+ * {@code statusSincronizacao=PENDENTE}, sejam eles de origem Strava, {@code .fit} ou
+ * intervals.icu.
  *
- * Cron: "0 2 * * *" = 2:00 AM UTC diariamente
+ * <p>Delega a seleção de candidatos para {@link CandidateSelector} e a decisão/persistência para
+ * {@link ReconciliationDecisionExecutor} — os mesmos colaboradores usados pelo import inline do
+ * intervals.icu, garantindo que o scheduler batch e o import inline produzam sempre a mesma
+ * decisão para o mesmo caso (design.md D4).
  *
  * Multi-Tenancy:
  * - Este scheduler é um job de sistema sem contexto de requisição HTTP
@@ -59,39 +54,23 @@ public class DailyActivitySyncSchedulerImpl implements DailyActivitySyncSchedule
 
     private final AtletaRepository atletaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
-    private final TreinoPlanejadoRepository treinoPlanejadoRepository;
-    private final TreinoReconciliacaoRepository treinoReconciliacaoRepository;
-    private final MatchingScoreCalculator matchingScoreCalculator;
-    private final MatchingDecisionEngine matchingDecisionEngine;
-    private final ActivityTypeCompatibilityMatrix activityTypeCompatibilityMatrix;
+    private final CandidateSelector candidateSelector;
+    private final ReconciliationDecisionExecutor reconciliationDecisionExecutor;
 
     public DailyActivitySyncSchedulerImpl(
             AtletaRepository atletaRepository,
             TreinoRealizadoRepository treinoRealizadoRepository,
-            TreinoPlanejadoRepository treinoPlanejadoRepository,
-            TreinoReconciliacaoRepository treinoReconciliacaoRepository,
-            MatchingScoreCalculator matchingScoreCalculator,
-            MatchingDecisionEngine matchingDecisionEngine,
-            ActivityTypeCompatibilityMatrix activityTypeCompatibilityMatrix) {
+            CandidateSelector candidateSelector,
+            ReconciliationDecisionExecutor reconciliationDecisionExecutor) {
         this.atletaRepository = atletaRepository;
         this.treinoRealizadoRepository = treinoRealizadoRepository;
-        this.treinoPlanejadoRepository = treinoPlanejadoRepository;
-        this.treinoReconciliacaoRepository = treinoReconciliacaoRepository;
-        this.matchingScoreCalculator = matchingScoreCalculator;
-        this.matchingDecisionEngine = matchingDecisionEngine;
-        this.activityTypeCompatibilityMatrix = activityTypeCompatibilityMatrix;
+        this.candidateSelector = candidateSelector;
+        this.reconciliationDecisionExecutor = reconciliationDecisionExecutor;
     }
 
     /**
-     * Executa sincronização diária de atividades Strava.
+     * Executa reconciliação diária de treinos realizados pendentes.
      * Cron: 2 da manhã, todo dia (horário UTC)
-     * Formato: segundo minuto hora dia-do-mês mês dia-da-semana
-     *
-     * Observação: Implementação base. Versão final requer:
-     * - Integração com Strava API para buscar atividades
-     * - Uso do MatchingScoreCalculator + MatchingDecisionEngine
-     * - Transações e retry logic
-     * - Observabilidade (métricas de sucesso/erro)
      */
 //    @Scheduled(fixedDelay = 10000, initialDelay = 5000)  // TEST: executa a cada 10s, primeira em 5s
     @Scheduled(fixedDelayString = "PT2H", initialDelayString = "PT10M")
@@ -135,9 +114,9 @@ public class DailyActivitySyncSchedulerImpl implements DailyActivitySyncSchedule
     }
 
     /**
-     * Processa atividades de um atleta específico.
-     * Busca candidatos TreinoPlanejado na janela de ±1 dia, calcula scores
-     * e aplica decisão automática ou marca para revisão manual.
+     * Processa atividades de um atleta específico: para cada pendente do dia anterior, delega a
+     * seleção de candidatos ao {@link CandidateSelector} e a decisão/persistência ao
+     * {@link ReconciliationDecisionExecutor}.
      *
      * Multi-tenancy: Todas as queries filtram por atletaId (implicitamente por tenantId
      * através da relação athlete->assessoria). Validação adicional garante integridade.
@@ -153,17 +132,11 @@ public class DailyActivitySyncSchedulerImpl implements DailyActivitySyncSchedule
         }
 
         LocalDate yesterday = LocalDate.now().minusDays(1);
-        LocalDate windowStart = yesterday.minusDays(1);
-        LocalDate windowEnd = yesterday.plusDays(1);
         UUID tenantId = atleta.getAssessoria().getId();
 
         // Busca atividades pendentes de reconciliação do dia anterior
         List<TreinoRealizado> pendingActivities = treinoRealizadoRepository
-                .findByAtletaIdAndDataTreinoAndReconciliationStatus(
-                        atleta.getId(),
-                        yesterday,
-                        StatusSincronizacao.PENDENTE
-                );
+                .findByAtletaIdAndDataTreinoAndStatusSincronizacao(atleta.getId(), yesterday, StatusSincronizacao.PENDENTE);
 
         logger.debug("Found {} pending activities for atleta {} (tenant {}) on {}",
                 pendingActivities.size(), atleta.getId(), tenantId, yesterday);
@@ -180,135 +153,20 @@ public class DailyActivitySyncSchedulerImpl implements DailyActivitySyncSchedule
 
             result.processedCount++;
 
-            // Busca candidatos TreinoPlanejado na janela de tempo (D-1 a D+1)
-            List<TreinoPlanejado> candidatos = treinoPlanejadoRepository
-                    .findByAtletaIdAndDataBetween(
-                            atleta.getId(),
-                            windowStart,
-                            windowEnd
-                    );
+            List<TreinoPlanejado> candidatos = candidateSelector.buscarCandidatos(activity, tenantId);
 
-            logger.debug("Found {} planned workout candidates for activity {} (tenant {}) in window [{}, {}]",
-                    candidatos.size(), activity.getId(), tenantId, windowStart, windowEnd);
+            MatchingDecision decision = reconciliationDecisionExecutor.executar(activity, candidatos, atleta);
 
-            // Aplica pré-filtro: compatibilidade de tipo de treino
-            List<TreinoPlanejado> compatibleCandidatos = filterCompatibleCandidatos(activity, candidatos);
-
-            // Multi-tenant validation: verify all candidates belong to same tenant
-            for (TreinoPlanejado candidato : compatibleCandidatos) {
-                if (!candidato.getAtleta().getAssessoria().getId().equals(tenantId)) {
-                    logger.error(
-                        "SECURITY: Candidate {} belongs to different tenant. Expected: {}, Found: {}",
-                        candidato.getId(), tenantId, candidato.getAtleta().getAssessoria().getId()
-                    );
-                    // Don't process this candidate - it violates multi-tenant isolation
-                    compatibleCandidatos = compatibleCandidatos.stream()
-                            .filter(c -> c.getAtleta().getAssessoria().getId().equals(tenantId))
-                            .toList();
-                    break;
-                }
+            if (decision.getStatus() == ReconciliationStatus.VINCULADO_AUTOMATICO) {
+                result.autoMatchedCount++;
+            } else if (decision.getStatus() == ReconciliationStatus.AMBIGUO) {
+                result.ambiguousCount++;
+            } else if (decision.getStatus() == ReconciliationStatus.NAO_PLANEJADO) {
+                result.orphanedCount++;
             }
-
-            if (compatibleCandidatos.size() < candidatos.size()) {
-                logger.debug("Filtered {} -> {} compatible candidates after type check",
-                        candidatos.size(), compatibleCandidatos.size());
-            }
-
-            // Calcula scores para cada candidato
-            List<MatchingCandidate> scoredCandidates = new ArrayList<>();
-            int rank = 1;
-            for (TreinoPlanejado candidato : compatibleCandidatos) {
-                MatchingScoreResult scoreResult = matchingScoreCalculator.calculate(activity, candidato, atleta);
-                MatchingCandidate candidate = new MatchingCandidate(candidato, scoreResult, rank++);
-                scoredCandidates.add(candidate);
-            }
-
-            // Decide usando o matching engine
-            MatchingDecision decision = matchingDecisionEngine.decide(activity, scoredCandidates);
-
-            // Persiste decisão e auditoria
-            persistMatchingDecision(activity, decision, atleta, result);
         }
 
         return result;
-    }
-
-    @Transactional
-    private void persistMatchingDecision(
-            TreinoRealizado activity,
-            MatchingDecision decision,
-            Atleta atleta,
-            SyncResult result) {
-
-        BigDecimal scoreToRecord = decision.getSelectedScore() != null ? decision.getSelectedScore() : BigDecimal.ZERO;
-
-        activity.setReconciliationStatus(decision.getStatus());
-        activity.setReconciliationScore(scoreToRecord);
-        activity.setReconciliationReasonCode(decision.getReasonCode());
-        activity.setReconciledAt(Instant.now());
-        activity.setReconciledBy("SYSTEM");
-
-        if (decision.getStatus() == ReconciliationStatus.VINCULADO_AUTOMATICO) {
-            TreinoPlanejado planned = decision.getSelectedPlanned();
-            if (planned != null) {
-                planned.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
-                planned.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
-                activity.setTreinoPlanejado(planned);
-            }
-            result.autoMatchedCount++;
-            logger.info("Auto-matched activity {} to planned workout with score {}",
-                    activity.getId(), scoreToRecord);
-        } else if (decision.getStatus() == ReconciliationStatus.AMBIGUO) {
-            result.ambiguousCount++;
-            logger.info("Marked activity {} as ambiguous (score: {}), needs manual review",
-                    activity.getId(), scoreToRecord);
-        } else if (decision.getStatus() == ReconciliationStatus.NAO_PLANEJADO) {
-            result.orphanedCount++;
-            logger.info("Activity {} marked as not planned (score: {})",
-                    activity.getId(), scoreToRecord);
-        }
-
-        // Salva atividade com novo estado
-        treinoRealizadoRepository.save(activity);
-
-        // Registra evento de auditoria
-        TreinoReconciliacao auditEvent = new TreinoReconciliacao();
-        auditEvent.setTreinoRealizado(activity);
-        auditEvent.setActionType(ReconciliationActionType.RECONCILIACAO_AUTOMATICA);
-        auditEvent.setBeforeStatus(ReconciliationStatus.PENDENTE);
-        auditEvent.setAfterStatus(decision.getStatus());
-        auditEvent.setBeforePlannedId(null);
-        auditEvent.setScore(scoreToRecord);
-        auditEvent.setReasonCode(decision.getReasonCode());
-        auditEvent.setReasonText(decision.getReasonText());
-        auditEvent.setActorId("SYSTEM");
-        auditEvent.setTenantId(atleta.getAssessoria().getId().toString());
-        auditEvent.setOccurredAt(Instant.now());
-
-        treinoReconciliacaoRepository.save(auditEvent);
-    }
-
-    /**
-     * Filtra candidatos por compatibilidade de tipo de treino (pré-filtro obrigatório).
-     * Usa matriz de compatibilidade real que implementa regra MVP:
-     * todos os tipos de corrida (TipoTreino) são compatíveis entre si.
-     * Atividades sem tipo definido são compatíveis com qualquer planejado.
-     */
-    private List<TreinoPlanejado> filterCompatibleCandidatos(
-            TreinoRealizado activity,
-            List<TreinoPlanejado> candidates) {
-        if (candidates == null || candidates.isEmpty()) {
-            return candidates;
-        }
-
-        return candidates.stream()
-                .filter(planned ->
-                    activityTypeCompatibilityMatrix.isCompatible(
-                        activity.getTipoTreino(),
-                        planned.getTipoTreino()
-                    )
-                )
-                .toList();
     }
 
     /**

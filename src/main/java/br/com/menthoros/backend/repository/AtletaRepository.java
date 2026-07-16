@@ -116,6 +116,7 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
       and ie.ativo = true
       and ie.accessToken is not null
       and atl.ativo = 'ATIVO'
+      and (ie.autoSyncPausado = false or ie.autoSyncPausado is null)
     order by atl.nome ASC
     """)
     List<Atleta> findAllWithStravaConnected();
