@@ -33,6 +33,9 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
 
     Optional<TreinoRealizado> findByExternalIdAndAtletaId(String externalId, UUID atletaId);
 
+    /** Chave real da constraint {@code uk_treino_realizado_tenant_fonte_external} (V29). */
+    Optional<TreinoRealizado> findByTenantIdAndFonteDadosAndExternalId(UUID tenantId, FonteDados fonteDados, String externalId);
+
     @Query("select coalesce(sum(t.distanciaKm),0) from TreinoRealizado t where t.planoSemanal.id = :planoSemanalId")
     double sumDistanciaByPlanoSemanalId(@Param("planoSemanalId") UUID planoSemanalId);
 
