@@ -33,7 +33,6 @@ import org.springframework.security.authentication.TestingAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -59,13 +58,20 @@ import static org.mockito.Mockito.when;
  * pelo Spring (não `new Controller(...)`) preserva os aspectos reais de {@code @PreAuthorize} e
  * {@code @RequireTenant}.
  *
- * <p>{@code @Transactional} na classe (rollback automático do framework de teste ao fim de cada
- * método) mantém a sessão Hibernate aberta durante toda a chamada — sem isso, o mapeamento de
- * saída ({@code TreinoMapper.toOutputDto}, que acessa a coleção lazy {@code etapasRealizadas})
- * lançaria {@code LazyInitializationException}: em produção o filtro Open-Session-In-View cobre
- * essa janela, mas aqui não há requisição HTTP real.
+ * <p><b>Achado do smoke real do Bloco 7 (2026-07-16):</b> esta suíte originalmente rodava com
+ * {@code @Transactional} de classe, o que mascarava um bug real — mantinha a sessão Hibernate
+ * aberta artificialmente durante a chamada, escondendo a mesma
+ * {@code LazyInitializationException} que ocorreu contra dado real (perfil {@code dev},
+ * {@code open-in-view: false} — NÃO há OSIV cobrindo a janela, ao contrário do que o comentário
+ * anterior assumia). O bug real: o passo 0 (dedup) de
+ * {@code IntervalsIcuActivityIngestionServiceImpl} busca o {@code TreinoRealizado} já existente
+ * fora de transação e mapeia direto para DTO, tocando a coleção lazy {@code etapasRealizadas}.
+ * Corrigido com {@code @EntityGraph} em
+ * {@code TreinoRealizadoRepository.findByTenantIdAndFonteDadosAndExternalId} (fetch eager na
+ * mesma query) — por isso esta classe NÃO usa mais {@code @Transactional}: o teste precisa
+ * reproduzir a ausência de sessão ambiente da produção para continuar detectando essa classe de
+ * regressão.
  */
-@Transactional
 class IntervalsIcuActivityImportIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
