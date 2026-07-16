@@ -55,6 +55,7 @@ class IntervalsIcuActivityMapperTest {
             assertThat(treino.getPercepcaoEsforco()).isEqualTo(6);
             assertThat(treino.getElevacaoGanhoMetros()).isEqualTo(42);
             assertThat(treino.getDeviceName()).isEqualTo("Garmin Forerunner 965");
+            assertThat(treino.getVelocidadeMedia()).isEqualTo(10.01); // 2.78 m/s * 3.6 = km/h (achado do QA gate)
             assertThat(treino.getMetadadosSincronizacao())
                     .contains("\"icuTrainingLoad\":55")
                     .contains("\"calories\":420")

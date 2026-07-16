@@ -77,6 +77,8 @@ public class IntervalsIcuActivityMapper {
         treino.setDistanciaKm(toKm(dto.distance()));
         treino.setElapsedTimeSeg(dto.elapsedTimeSeg());
 
+        treino.setVelocidadeMedia(toKmh(dto.averageSpeed()));
+
         treino.setFcMedia(roundToInt(dto.averageHeartrate()));
         treino.setFcMax(roundToInt(dto.maxHeartrate()));
         treino.setPaceMedia(calculatePace(dto.movingTimeSeg(), dto.distance(), dto.averageSpeed()));
@@ -152,6 +154,20 @@ public class IntervalsIcuActivityMapper {
             return null;
         }
         return BigDecimal.valueOf(meters / 1000d).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * {@code average_speed} do intervals.icu vem em m/s, mesma convenção do Strava —
+     * {@code treino.velocidadeMedia} é km/h (achado do QA gate, 2026-07-16: um valor tinha sido
+     * atribuído direto sem converter, ~3.6x menor que o real). Isolada de propósito, mesmo padrão
+     * de {@code sanitizeCadenciaIntervalsIcu} (não chama {@code StravaActivityServiceImpl.toKmh}
+     * diretamente).
+     */
+    private Double toKmh(Double metersPerSecond) {
+        if (metersPerSecond == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(metersPerSecond * 3.6d).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
     private Integer roundToInt(Double value) {
