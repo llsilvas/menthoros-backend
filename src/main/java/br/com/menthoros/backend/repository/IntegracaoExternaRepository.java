@@ -58,6 +58,7 @@ public interface IntegracaoExternaRepository extends JpaRepository<IntegracaoExt
     select i from IntegracaoExterna i
     where i.plataforma = :plataforma
       and i.ativo = true
+      and (i.autoSyncPausado = false or i.autoSyncPausado is null)
     """)
     List<IntegracaoExterna> findAllActiveByPlataforma(
             @Param("plataforma") FonteDados plataforma

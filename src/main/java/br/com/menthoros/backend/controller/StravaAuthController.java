@@ -1,6 +1,8 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.output.StravaSyncPauseStatusDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.security.RequireTenant;
 import br.com.menthoros.backend.services.StravaOAuthService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -120,6 +122,40 @@ public class StravaAuthController {
     public ResponseEntity<Void> disconnect(@Parameter(description = "ID único do atleta") @PathVariable UUID atletaId) {
         stravaOAuthService.disconnect(atletaId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/pausar-sync/{atletaId}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
+    @Operation(summary = "Pausa a sincronização automática do Strava do atleta (override explícito do coach)",
+            description = "A pausa já acontece automaticamente ao conectar intervals.icu (D5.2) — este endpoint é um "
+                    + "override manual, não o mecanismo primário.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Sincronização pausada com sucesso"),
+        @ApiResponse(responseCode = "404", description = "Atleta não tem integração Strava"),
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Sem papel TECNICO/ADMIN ou atleta de outro tenant")
+    })
+    public ResponseEntity<StravaSyncPauseStatusDto> pausarSync(@Parameter(description = "ID único do atleta") @PathVariable UUID atletaId) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        return ResponseEntity.ok(stravaOAuthService.pausarSync(atletaId, tenantId));
+    }
+
+    @PatchMapping("/retomar-sync/{atletaId}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
+    @Operation(summary = "Retoma a sincronização automática do Strava do atleta (override explícito do coach)",
+            description = "Único jeito de reativar o Strava deliberadamente enquanto o intervals.icu segue ativo, "
+                    + "aceitando o risco de duplicação cross-fonte (D5.2).")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Sincronização retomada com sucesso"),
+        @ApiResponse(responseCode = "404", description = "Atleta não tem integração Strava"),
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Sem papel TECNICO/ADMIN ou atleta de outro tenant")
+    })
+    public ResponseEntity<StravaSyncPauseStatusDto> retomarSync(@Parameter(description = "ID único do atleta") @PathVariable UUID atletaId) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        return ResponseEntity.ok(stravaOAuthService.retomarSync(atletaId, tenantId));
     }
 
     private ResponseEntity<Void> redirectToFrontend(String status) {

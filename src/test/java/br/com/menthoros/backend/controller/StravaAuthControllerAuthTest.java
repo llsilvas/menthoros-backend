@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.config.core.JacksonConfig;
+import br.com.menthoros.backend.dto.output.StravaSyncPauseStatusDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.repository.TenantValidationRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
@@ -26,12 +27,14 @@ import static br.com.menthoros.backend.testsupport.JwtTestSupport.atletaJwt;
 import static br.com.menthoros.backend.testsupport.JwtTestSupport.tecnicoJwt;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -206,6 +209,62 @@ class StravaAuthControllerAuthTest {
                     .andExpect(status().isForbidden());
 
             verify(stravaOAuthService, never()).disconnect(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("pausar-sync e retomar-sync — override manual da flag autoSyncPausado (D5.2)")
+    class PausarRetomarSync {
+
+        @Test
+        @DisplayName("pausar-sync retorna 200 para TECNICO com atleta do tenant")
+        void pausarSyncRetorna200ParaTecnico() throws Exception {
+            stubAtletaNoTenant();
+            when(stravaOAuthService.pausarSync(eq(atletaId), any()))
+                    .thenReturn(new StravaSyncPauseStatusDto(true, null));
+
+            mockMvc.perform(patch("/api/v1/strava/pausar-sync/{atletaId}", atletaId).with(tecnicoJwt()))
+                    .andExpect(status().isOk());
+
+            verify(stravaOAuthService).pausarSync(eq(atletaId), any());
+        }
+
+        @Test
+        @DisplayName("pausar-sync retorna 403 para ATLETA")
+        void pausarSyncRetorna403ParaAtleta() throws Exception {
+            mockMvc.perform(patch("/api/v1/strava/pausar-sync/{atletaId}", atletaId).with(atletaJwt()))
+                    .andExpect(status().isForbidden());
+
+            verify(stravaOAuthService, never()).pausarSync(any(), any());
+        }
+
+        @Test
+        @DisplayName("pausar-sync retorna 401 sem autenticação")
+        void pausarSyncRetorna401SemAutenticacao() throws Exception {
+            mockMvc.perform(patch("/api/v1/strava/pausar-sync/{atletaId}", atletaId))
+                    .andExpect(status().isUnauthorized());
+        }
+
+        @Test
+        @DisplayName("retomar-sync retorna 200 para TECNICO com atleta do tenant")
+        void retomarSyncRetorna200ParaTecnico() throws Exception {
+            stubAtletaNoTenant();
+            when(stravaOAuthService.retomarSync(eq(atletaId), any()))
+                    .thenReturn(new StravaSyncPauseStatusDto(false, null));
+
+            mockMvc.perform(patch("/api/v1/strava/retomar-sync/{atletaId}", atletaId).with(tecnicoJwt()))
+                    .andExpect(status().isOk());
+
+            verify(stravaOAuthService).retomarSync(eq(atletaId), any());
+        }
+
+        @Test
+        @DisplayName("retomar-sync retorna 403 para ATLETA")
+        void retomarSyncRetorna403ParaAtleta() throws Exception {
+            mockMvc.perform(patch("/api/v1/strava/retomar-sync/{atletaId}", atletaId).with(atletaJwt()))
+                    .andExpect(status().isForbidden());
+
+            verify(stravaOAuthService, never()).retomarSync(any(), any());
         }
     }
 }

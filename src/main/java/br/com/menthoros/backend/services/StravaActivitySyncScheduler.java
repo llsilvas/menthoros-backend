@@ -30,6 +30,20 @@ public class StravaActivitySyncScheduler {
             UUID atletaId = integracao.getAtleta().getId();
             try {
                 TenantContext.setTenantId(tenantId);
+
+                // Late-check (D5.2, TOCTOU): revalida autoSyncPausado com query fresca — não reusa
+                // o valor lido em findAllActiveByPlataforma na listagem inicial do ciclo. Cobre o
+                // coach pausando o atleta ENTRE a listagem e o processamento dele.
+                boolean aindaPausado = integracaoExternaRepository
+                        .findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId)
+                        .map(IntegracaoExterna::isAutoSyncPausado)
+                        .orElse(false);
+                if (aindaPausado) {
+                    log.info("Strava daily sync pulado (autoSyncPausado=true no late-check): tenant={} atleta={}",
+                            tenantId, atletaId);
+                    continue;
+                }
+
                 int imported = stravaActivityService.syncActivities(atletaId);
                 log.info("Strava daily sync concluído tenant={} atleta={} imported={}", tenantId, atletaId, imported);
             } catch (Exception ex) {
