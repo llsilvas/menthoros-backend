@@ -69,12 +69,20 @@ public class StravaWebhookServiceImpl implements StravaWebhookService {
     @Transactional
     public void processCreateEvent(Long objectId, Long ownerId) {
         IntegracaoExterna integracao = requireIntegration(ownerId);
+        if (integracao.isAutoSyncPausado()) {
+            log.info("Webhook Strava pulado (autoSyncPausado=true): aspect=create object_id={} owner_id={}", objectId, ownerId);
+            return;
+        }
         stravaActivityService.syncSingleActivityById(integracao.getAtleta(), integracao, objectId);
     }
 
     @Transactional
     public void processUpdateEvent(Long objectId, Long ownerId) {
         IntegracaoExterna integracao = requireIntegration(ownerId);
+        if (integracao.isAutoSyncPausado()) {
+            log.info("Webhook Strava pulado (autoSyncPausado=true): aspect=update object_id={} owner_id={}", objectId, ownerId);
+            return;
+        }
         stravaActivityService.syncSingleActivityById(integracao.getAtleta(), integracao, objectId);
     }
 

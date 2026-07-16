@@ -29,6 +29,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -133,6 +134,74 @@ class IntervalsIcuConnectionServiceImplTest {
 
             verify(integracaoRepository, never()).save(any());
         }
+
+        @Test
+        @DisplayName("hook D5.2: Strava ativo conecta intervals.icu → Strava fica autoSyncPausado=true automaticamente")
+        void conectarPausaStravaAutomaticamente() {
+            IntegracaoExterna integracaoStrava = new IntegracaoExterna();
+            integracaoStrava.setPlataforma(FonteDados.STRAVA);
+            integracaoStrava.setAtivo(true);
+            integracaoStrava.setAutoSyncPausado(false);
+
+            when(intervalsIcuClient.validarApiKey("key-ok"))
+                    .thenReturn(Optional.of(new IcuAthleteDto("i641775", "Leandro")));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(Atleta.builder().id(atletaId).build()));
+            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
+                    .thenReturn(Optional.empty());
+            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
+                    .thenReturn(Optional.of(integracaoStrava));
+
+            service.conectar(atletaId, "key-ok");
+
+            assertThat(integracaoStrava.isAutoSyncPausado()).isTrue();
+            verify(integracaoRepository).save(integracaoStrava);
+        }
+
+        @Test
+        @DisplayName("hook D5.2: sem Strava conectado, conectar intervals.icu é no-op quanto à flag")
+        void conectarSemStravaNaoFazNada() {
+            when(intervalsIcuClient.validarApiKey("key-ok"))
+                    .thenReturn(Optional.of(new IcuAthleteDto("i641775", "Leandro")));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(Atleta.builder().id(atletaId).build()));
+            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
+                    .thenReturn(Optional.empty());
+            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
+                    .thenReturn(Optional.empty());
+
+            service.conectar(atletaId, "key-ok");
+
+            // Nenhum save adicional além do save da própria integração intervals.icu
+            verify(integracaoRepository, org.mockito.Mockito.times(1)).save(any());
+        }
+
+        @Test
+        @DisplayName("hook D5.2 (achado Baixo do 5º pre-mortem): Strava já pausado manualmente + conecta intervals.icu → permanece true, sem save duplicado")
+        void conectarComStravaJaPausadoEhIdempotente() {
+            IntegracaoExterna integracaoStrava = new IntegracaoExterna();
+            integracaoStrava.setPlataforma(FonteDados.STRAVA);
+            integracaoStrava.setAtivo(true);
+            integracaoStrava.setAutoSyncPausado(true);
+
+            when(intervalsIcuClient.validarApiKey("key-ok"))
+                    .thenReturn(Optional.of(new IcuAthleteDto("i641775", "Leandro")));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(Atleta.builder().id(atletaId).build()));
+            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
+                    .thenReturn(Optional.empty());
+            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
+                    .thenReturn(Optional.of(integracaoStrava));
+
+            service.conectar(atletaId, "key-ok");
+
+            assertThat(integracaoStrava.isAutoSyncPausado()).isTrue();
+            // Apenas o save da integração intervals.icu — o hook não salva de novo quando já true
+            verify(integracaoRepository, org.mockito.Mockito.times(1)).save(any());
+        }
     }
 
     @Nested
@@ -204,6 +273,31 @@ class IntervalsIcuConnectionServiceImplTest {
             service.desconectar(atletaId);
 
             verify(integracaoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("D5.2 (5º pre-mortem, 'nunca auto-retomar'): Strava pausado permanece autoSyncPausado=true — nenhum save na linha Strava")
+        void desconectarNaoTocaNoAutoSyncPausadoDoStrava() {
+            IntegracaoExterna integracaoIcu = new IntegracaoExterna();
+            integracaoIcu.setAccessToken("key");
+            integracaoIcu.setAtivo(true);
+            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
+                    .thenReturn(Optional.of(integracaoIcu));
+
+            IntegracaoExterna integracaoStrava = new IntegracaoExterna();
+            integracaoStrava.setPlataforma(FonteDados.STRAVA);
+            integracaoStrava.setAtivo(true);
+            integracaoStrava.setAutoSyncPausado(true);
+            when(integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
+                    .thenReturn(Optional.of(integracaoStrava));
+
+            service.desconectar(atletaId);
+
+            assertThat(integracaoStrava.isAutoSyncPausado()).isTrue();
+            // teste negativo explícito: nenhuma chamada de save com a linha Strava como argumento
+            verify(integracaoRepository, never()).save(integracaoStrava);
+            // único save é o da linha intervals.icu (soft-disconnect)
+            verify(integracaoRepository, times(1)).save(any());
         }
     }
 

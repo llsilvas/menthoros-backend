@@ -73,6 +73,17 @@ public class StravaOAuthServiceImpl implements StravaOAuthService {
         integracao.setAtivo(true);
         applyTokenResponse(integracao, tokenResponse);
 
+        // Hook D5.2 (decisão do founder — pausa automática): Strava nasce/renasce pausado quando o
+        // atleta já tem intervals.icu ativo, eliminando a colisão cross-fonte na origem. Único
+        // save (não dois): a flag é setada no MESMO objeto antes de persistir. Monotônico — só
+        // seta true, nunca reseta para false (uma linha existente com autoSyncPausado=true herdado
+        // de pausa manual/automática anterior não é revertida ao reconectar sem intervals.icu ativo).
+        if (integracaoExternaRepository
+                .findActiveByAtletaIdAndPlataformaAndTenantId(atleta.getId(), FonteDados.INTERVALS_ICU, integracao.getTenantId())
+                .isPresent()) {
+            integracao.setAutoSyncPausado(true);
+        }
+
         return integracaoExternaRepository.save(integracao);
     }
 

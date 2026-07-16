@@ -89,7 +89,26 @@ public class IntervalsIcuConnectionServiceImpl implements IntervalsIcuConnection
 
         log.info("Conexão intervals.icu criada/atualizada: atletaId={}, externalAthleteId={}",
                 atletaId, integracao.getExternalAthleteId());
+
+        pausarStravaAutomaticamente(atletaId, tenantId);
+
         return toStatusDto(integracao);
+    }
+
+    /**
+     * Hook D5.2 (decisão do founder — pausa automática, não mais um passo manual primário): ao
+     * conectar intervals.icu com Strava já ativo, pausa a sincronização automática do Strava
+     * daquele atleta para eliminar a colisão cross-fonte na origem. Sem Strava conectado, é um
+     * no-op. Se já pausado (manualmente ou por conexão anterior), não salva de novo.
+     */
+    private void pausarStravaAutomaticamente(UUID atletaId, UUID tenantId) {
+        integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId)
+                .filter(strava -> !strava.isAutoSyncPausado())
+                .ifPresent(strava -> {
+                    strava.setAutoSyncPausado(true);
+                    integracaoRepository.save(strava);
+                    log.info("Strava pausado automaticamente (intervals.icu conectado): atletaId={}", atletaId);
+                });
     }
 
     /**
@@ -136,7 +155,22 @@ public class IntervalsIcuConnectionServiceImpl implements IntervalsIcuConnection
                     integracao.setRefreshToken(null);
                     integracaoRepository.save(integracao);
                     log.info("Conexão intervals.icu desconectada: atletaId={}", atletaId);
+                    logStravaPermaneceStrava(atletaId, tenantId);
                 }, () -> log.info("Desconectar intervals.icu: nenhuma conexão encontrada, no-op. atletaId={}", atletaId));
+    }
+
+    /**
+     * D5.2 (decisão do founder — "nunca auto-retomar"): desconectar o intervals.icu NÃO reverte a
+     * pausa do Strava — apenas uma leitura para log, nenhuma escrita na linha Strava. Mitigação
+     * mínima de observabilidade para um risco residual aceito: sem isso, o coach não tem sinal
+     * algum de que o Strava segue pausado até chamar {@code retomar-sync} manualmente.
+     */
+    private void logStravaPermaneceStrava(UUID atletaId, UUID tenantId) {
+        integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId)
+                .filter(IntegracaoExterna::isAutoSyncPausado)
+                .ifPresent(strava -> log.info(
+                        "Strava permanece autoSyncPausado=true após desconectar intervals.icu (decisão: nunca "
+                                + "auto-retomar) — requer retomar-sync manual para reativar: atletaId={}", atletaId));
     }
 
     /**
