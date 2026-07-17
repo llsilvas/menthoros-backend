@@ -6,6 +6,8 @@ import br.com.menthoros.backend.enums.MotivoAtencao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.Severidade;
 import br.com.menthoros.backend.enums.StatusSugestao;
+import br.com.menthoros.backend.enums.StatusVencimentoPlano;
+import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import br.com.menthoros.backend.enums.TipoSugestao;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -62,7 +64,16 @@ public record AtletaPerfilCoachOutputDto(
         List<String> avisos,
 
         @Schema(description = "Limiares fisiológicos inferidos por dados recentes; null quando limiares estão atualizados ou sem dados suficientes")
-        LimiareisInferidosDto limiareisInferidos
+        LimiareisInferidosDto limiareisInferidos,
+
+        @Schema(description = "Tipo de plano do atleta com a assessoria; ausente quando não cadastrado", example = "MENSAL")
+        TipoPlanoAtleta tipoPlanoAtleta,
+
+        @Schema(description = "Data de vencimento do plano do atleta com a assessoria; ausente quando não cadastrado", example = "2026-08-15")
+        LocalDate dataVencimentoPlano,
+
+        @Schema(description = "Status de vencimento derivado (EM_DIA/PROXIMO_VENCIMENTO/VENCIDO); ausente quando dataVencimentoPlano não cadastrada", example = "PROXIMO_VENCIMENTO")
+        StatusVencimentoPlano statusVencimentoPlano
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

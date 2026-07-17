@@ -4,6 +4,7 @@ import br.com.menthoros.backend.dto.output.*;
 import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
+import br.com.menthoros.backend.enums.StatusVencimentoPlano;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -126,7 +127,10 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 recordes,
                 Instant.now(),
                 avisos.isEmpty() ? null : avisos,
-                limiareisInferidos
+                limiareisInferidos,
+                atleta.getTipoPlanoAtleta(),
+                atleta.getDataVencimentoPlano(),
+                StatusVencimentoPlano.resolver(atleta.getDataVencimentoPlano(), LocalDate.now())
         );
     }
 
