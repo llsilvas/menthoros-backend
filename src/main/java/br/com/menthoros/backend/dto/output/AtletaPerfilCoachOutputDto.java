@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.dto.output;
 
 import br.com.menthoros.backend.enums.ConfiancaInferencia;
+import br.com.menthoros.backend.enums.FonteLimiarInferencia;
 import br.com.menthoros.backend.enums.MotivoAtencao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.Severidade;
@@ -138,6 +139,11 @@ public record AtletaPerfilCoachOutputDto(
 
             @Schema(description = "Confiança da inferência de pace")
             ConfiancaInferencia confiancaInferenciaPace,
+
+            @Schema(description = "Fonte do paceLimiarEstimado: PROVA_REGISTRADA (derivado de uma prova real "
+                    + "recente e válida) ou MEDIA_TREINOS (mediana do quintil mais rápido dos treinos); "
+                    + "null se paceLimiarEstimado nunca foi calculado por esta lógica")
+            FonteLimiarInferencia fonteLimiarEstimado,
 
             @Schema(description = "Data em que a inferência foi executada")
             LocalDate dataInferenciaLimiar

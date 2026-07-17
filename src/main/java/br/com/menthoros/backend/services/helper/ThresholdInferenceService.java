@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.ConfiancaInferencia;
 import br.com.menthoros.backend.enums.TipoTreino;
@@ -22,6 +23,17 @@ public class ThresholdInferenceService {
 
     /** Dias sem teste oficial para considerar o limiar desatualizado. */
     public static final long DIAS_LIMIAR_DESATUALIZACAO = 90;
+
+    /** Expoente de Riegel — mesmo valor de RiegelCalculator.DEFAULT_EXPONENT, duplicado
+     * deliberadamente para não acoplar com o pipeline de projeção (ver design.md D2). */
+    static final double EXPONENTE_RIEGEL = 1.06;
+
+    /** Offset somado ao pace de 10K equivalente para estimar o pace de limiar (design.md D2). */
+    static final int OFFSET_LIMIAR_SEC_KM = 8;
+
+    /** Faixa de distância válida (metros) para uma prova ser usada como base do limiar (design.md D2). */
+    private static final int DISTANCIA_MINIMA_VALIDA_M = 5000;
+    private static final int DISTANCIA_MAXIMA_VALIDA_M = 21097;
 
     private static final Set<TipoTreino> TIPOS_CONTINUOS =
             Set.of(TipoTreino.CONTINUO, TipoTreino.LONGO, TipoTreino.TEMPO_RUN, TipoTreino.FARTLEK);
@@ -82,6 +94,64 @@ public class ThresholdInferenceService {
                 .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
 
         return Optional.of(new ThresholdEstimate<>(paceLimiar, paceSegundos.size(), confianca(paceSegundos.size())));
+    }
+
+    /**
+     * Resolve a distância em metros de uma prova, priorizando `distanciaKm` (customizada) sobre
+     * o enum `DistanciaProva`. Duplica isoladamente `RaceProjectionServiceImpl.resolveDistanceM`
+     * (linhas 202-212) em vez de extrair/importar — método `private` lá, fora do escopo desta
+     * change tocar esse arquivo por um ganho de reuso pequeno (ver design.md D2b).
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    int resolverDistanciaMetros(Prova prova) {
+        if (prova.getDistanciaKm() != null) {
+            return prova.getDistanciaKm().multiply(BigDecimal.valueOf(1000)).intValue();
+        }
+        return switch (prova.getDistancia()) {
+            case KM_5 -> 5000;
+            case KM_10 -> 10000;
+            case KM_21 -> 21097;
+            case KM_42 -> 42195;
+        };
+    }
+
+    /**
+     * Deriva `paceLimiarEstimado` (decimal minutos/km, mesmo formato de {@link #inferirPaceLimiar})
+     * a partir do resultado de uma prova válida. Fórmula de Riegel isolada, sem chamar
+     * `RiegelCalculator.calculate()` — exige `RegressionResult` do pipeline de projeção, não é
+     * função pura reaproveitável aqui (ver design.md D2). Normaliza o tempo da prova para o
+     * pace-equivalente de 10K (`t_10k = t_prova * (10000 / distancia_prova_m) ^ 1.06`), converte
+     * para pace por km e soma o offset de limiar.
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    public BigDecimal inferirPaceLimiarDeProva(Prova provaValida) {
+        int distanciaM = resolverDistanciaMetros(provaValida);
+        long tempoProvaSegundos = provaValida.getTempoRealizado().toSecondOfDay();
+
+        double tempo10kEquivalenteSegundos =
+                tempoProvaSegundos * Math.pow(10000.0 / distanciaM, EXPONENTE_RIEGEL);
+        double paceLimiarSegundosPorKm = (tempo10kEquivalenteSegundos / 10.0) + OFFSET_LIMIAR_SEC_KM;
+
+        return BigDecimal.valueOf(paceLimiarSegundosPorKm / 60.0).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Filtra a lista de provas candidatas (já ordenada por `dataProva DESC`, ver
+     * `ProvaRepository.findProvasRealizadasRecentes`) e retorna a primeira com distância
+     * resolvida dentro da faixa válida [5000, 21097]m, ou vazio se nenhuma (design.md D2/D2b).
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    public Optional<Prova> encontrarProvaValidaMaisRecente(List<Prova> provasCandidatas) {
+        if (provasCandidatas == null) return Optional.empty();
+        return provasCandidatas.stream()
+                .filter(p -> {
+                    int distanciaM = resolverDistanciaMetros(p);
+                    return distanciaM >= DISTANCIA_MINIMA_VALIDA_M && distanciaM <= DISTANCIA_MAXIMA_VALIDA_M;
+                })
+                .findFirst();
     }
 
     /** Converte pace decimal (minutos) para formato "mm:ss/km". Ex: 4.7500 → "4:45/km". */

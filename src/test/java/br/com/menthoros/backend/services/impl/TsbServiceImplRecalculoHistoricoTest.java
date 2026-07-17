@@ -45,6 +45,7 @@ class TsbServiceImplRecalculoHistoricoTest {
                 null,
                 null,
                 null,
+                null,
                 null
         );
 
@@ -93,7 +94,8 @@ class TsbServiceImplRecalculoHistoricoTest {
                 atletaRepo(atleta),
                 null,
                 metricasAlertaServiceStub(),
-                new ThresholdInferenceService()
+                new ThresholdInferenceService(),
+                null
         );
 
         service.recalcularHistoricoCompleto(atletaId);

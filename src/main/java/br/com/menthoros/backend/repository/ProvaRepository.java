@@ -96,4 +96,29 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
        WHERE p.id = :id AND p.atleta.assessoria.id = :tenantId
        """)
     boolean existsByIdAndAtleta_TenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+
+    /**
+     * Busca provas realizadas de um atleta com tempo registrado, a partir de uma data mínima,
+     * ordenadas pela mais recente primeiro. Sem filtro de distância em SQL — `Prova.distanciaKm`
+     * só é preenchido para distância customizada, então um filtro `BETWEEN` só nesse campo
+     * ignoraria toda prova cadastrada pelo enum `DistanciaProva` (caminho normal). A resolução de
+     * distância e o filtro de faixa válida acontecem em código (ver
+     * ThresholdInferenceService.resolverDistanciaMetros).
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     */
+    @Query("""
+        SELECT p FROM Prova p
+        WHERE p.atleta.id = :atletaId AND p.assessoria.id = :tenantId
+          AND p.foiRealizada = true AND p.tempoRealizado IS NOT NULL
+          AND p.dataProva >= :dataMinima AND p.statusProva != 'CANCELADA'
+        ORDER BY p.dataProva DESC
+        """)
+    List<Prova> findProvasRealizadasRecentes(
+            @Param("atletaId") UUID atletaId,
+            @Param("tenantId") UUID tenantId,
+            @Param("dataMinima") LocalDate dataMinima
+    );
 }

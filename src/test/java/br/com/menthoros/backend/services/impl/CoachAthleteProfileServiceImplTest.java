@@ -24,6 +24,7 @@ import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.enums.ConfiancaInferencia;
+import br.com.menthoros.backend.enums.FonteLimiarInferencia;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.mapper.ProvaMapper;
@@ -429,6 +430,76 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(perfil.limiareisInferidos().confiancaInferenciaFc())
                     .isEqualTo(ConfiancaInferencia.ALTA);
             assertThat(perfil.limiareisInferidos().paceLimiarEstimadoFormatado()).isNull();
+        }
+
+        @Test
+        @DisplayName("pace desatualizado com fonteLimiarPace PROVA_REGISTRADA → fonteLimiarEstimado reflete o valor persistido")
+        void paceDesatualizadoComFonteProva_retornaFonteProvaRegistrada() {
+            atleta.setPaceLimiar(null);
+            atleta.setDataUltimoTestePace(null);
+            stubAtleta();
+            stubServicosSecundarios();
+            PlanoMetaDados metaDados = PlanoMetaDados.builder()
+                    .atleta(atleta)
+                    .paceLimiarEstimado(new BigDecimal("4.6333"))
+                    .confiancaInferenciaPace(ConfiancaInferencia.ALTA)
+                    .fonteLimiarPace(FonteLimiarInferencia.PROVA_REGISTRADA)
+                    .dataInferenciaLimiar(LocalDate.of(2026, 6, 20))
+                    .build();
+            when(planoMetadadosRepository.findLatestByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(metaDados));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.limiareisInferidos()).isNotNull();
+            assertThat(perfil.limiareisInferidos().fonteLimiarEstimado())
+                    .isEqualTo(FonteLimiarInferencia.PROVA_REGISTRADA);
+        }
+
+        @Test
+        @DisplayName("pace desatualizado com fonteLimiarPace MEDIA_TREINOS → fonteLimiarEstimado reflete o valor persistido")
+        void paceDesatualizadoComFonteQuintil_retornaFonteMediaTreinos() {
+            atleta.setPaceLimiar(null);
+            atleta.setDataUltimoTestePace(null);
+            stubAtleta();
+            stubServicosSecundarios();
+            PlanoMetaDados metaDados = PlanoMetaDados.builder()
+                    .atleta(atleta)
+                    .paceLimiarEstimado(new BigDecimal("4.7500"))
+                    .confiancaInferenciaPace(ConfiancaInferencia.MEDIA)
+                    .fonteLimiarPace(FonteLimiarInferencia.MEDIA_TREINOS)
+                    .dataInferenciaLimiar(LocalDate.of(2026, 6, 20))
+                    .build();
+            when(planoMetadadosRepository.findLatestByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(metaDados));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.limiareisInferidos()).isNotNull();
+            assertThat(perfil.limiareisInferidos().fonteLimiarEstimado())
+                    .isEqualTo(FonteLimiarInferencia.MEDIA_TREINOS);
+        }
+
+        @Test
+        @DisplayName("fonteLimiarPace nunca calculado (null) → fonteLimiarEstimado null, campo omitido pelo NON_NULL")
+        void fonteLimiarPaceNulo_retornaFonteEstimadoNulo() {
+            atleta.setPaceLimiar(null);
+            atleta.setDataUltimoTestePace(null);
+            stubAtleta();
+            stubServicosSecundarios();
+            PlanoMetaDados metaDados = PlanoMetaDados.builder()
+                    .atleta(atleta)
+                    .paceLimiarEstimado(new BigDecimal("4.7500"))
+                    .confiancaInferenciaPace(ConfiancaInferencia.MEDIA)
+                    .dataInferenciaLimiar(LocalDate.of(2026, 6, 20))
+                    .build();
+            when(planoMetadadosRepository.findLatestByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(metaDados));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.limiareisInferidos()).isNotNull();
+            assertThat(perfil.limiareisInferidos().fonteLimiarEstimado()).isNull();
         }
 
         @Test
