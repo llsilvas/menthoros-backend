@@ -279,6 +279,34 @@ class ThresholdInferenceServiceTest {
         }
 
         @Test
+        @DisplayName("ignora prova 1m abaixo do limite mínimo (4999m)")
+        void ignoraProvaUmMetroAbaixoDoMinimo() {
+            Prova prova = provaCom(DistanciaProva.KM_5, BigDecimal.valueOf(4.999), LocalTime.of(0, 20, 0));
+            assertThat(service.encontrarProvaValidaMaisRecente(List.of(prova))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("considera válida prova exatamente no limite mínimo (5000m)")
+        void considerValidaNoLimiteMinimoExato() {
+            Prova prova = provaCom(DistanciaProva.KM_5, BigDecimal.valueOf(5.0), LocalTime.of(0, 20, 0));
+            assertThat(service.encontrarProvaValidaMaisRecente(List.of(prova))).contains(prova);
+        }
+
+        @Test
+        @DisplayName("considera válida prova exatamente no limite máximo (21097m)")
+        void considerValidaNoLimiteMaximoExato() {
+            Prova prova = provaCom(DistanciaProva.KM_21, BigDecimal.valueOf(21.097), LocalTime.of(1, 45, 0));
+            assertThat(service.encontrarProvaValidaMaisRecente(List.of(prova))).contains(prova);
+        }
+
+        @Test
+        @DisplayName("ignora prova 1m acima do limite máximo (21098m)")
+        void ignoraProvaUmMetroAcimaDoMaximo() {
+            Prova prova = provaCom(DistanciaProva.KM_21, BigDecimal.valueOf(21.098), LocalTime.of(1, 45, 0));
+            assertThat(service.encontrarProvaValidaMaisRecente(List.of(prova))).isEmpty();
+        }
+
+        @Test
         @DisplayName("considera válida prova de 21097m via enum KM_21 (distanciaKm nulo)")
         void considerValidaMeiaMaratonaViaEnum() {
             Prova meia = provaCom(DistanciaProva.KM_21, null, LocalTime.of(1, 45, 0));

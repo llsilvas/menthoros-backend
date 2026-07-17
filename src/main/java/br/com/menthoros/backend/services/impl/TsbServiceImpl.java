@@ -335,6 +335,8 @@ public class TsbServiceImpl implements TsbService {
             logSinalizacaoOutlierPace(atletaId, paceAntigo, paceNovo, prova.getId());
 
             metaDados.setPaceLimiarEstimado(paceNovo);
+            // ALTA fixo (não amostral como no quintil): esforço deliberado e máximo de uma prova
+            // real é sempre mais confiável que a mediana de treinos incidentais (design.md D3).
             metaDados.setConfiancaInferenciaPace(ConfiancaInferencia.ALTA);
             metaDados.setFonteLimiarPace(FonteLimiarInferencia.PROVA_REGISTRADA);
             metaDados.setDataInferenciaLimiar(hoje);

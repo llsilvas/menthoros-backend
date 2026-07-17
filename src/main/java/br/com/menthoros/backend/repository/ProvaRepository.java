@@ -113,7 +113,7 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
         SELECT p FROM Prova p
         WHERE p.atleta.id = :atletaId AND p.assessoria.id = :tenantId
           AND p.foiRealizada = true AND p.tempoRealizado IS NOT NULL
-          AND p.dataProva >= :dataMinima
+          AND p.dataProva >= :dataMinima AND p.statusProva != 'CANCELADA'
         ORDER BY p.dataProva DESC
         """)
     List<Prova> findProvasRealizadasRecentes(

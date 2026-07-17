@@ -115,6 +115,20 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         }
 
         @Test
+        @DisplayName("exclui prova com statusProva CANCELADA (mesmo com foiRealizada/tempoRealizado preenchidos)")
+        void excluiProvaCancelada() {
+            Prova prova = criarProva("Prova Cancelada", LocalDate.now().minusDays(5), DistanciaProva.KM_10, null,
+                    true, LocalTime.of(0, 50, 0));
+            prova.setStatusProva(ProvaStatus.CANCELADA);
+            provaRepository.save(prova);
+
+            List<Prova> resultado = provaRepository.findProvasRealizadasRecentes(
+                    atleta.getId(), assessoria.getId(), LocalDate.now().minusDays(90));
+
+            assertThat(resultado).isEmpty();
+        }
+
+        @Test
         @DisplayName("exclui prova sem tempoRealizado")
         void excluiProvaSemTempoRealizado() {
             Prova prova = criarProva("Prova Sem Tempo", LocalDate.now().minusDays(5), DistanciaProva.KM_10, null,
