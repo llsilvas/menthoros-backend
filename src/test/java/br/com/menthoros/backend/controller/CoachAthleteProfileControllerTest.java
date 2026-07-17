@@ -79,6 +79,6 @@ class CoachAthleteProfileControllerTest {
         return new AtletaPerfilCoachOutputDto(
                 atletaId, "Ana Silva", "Correr maratona", null, "INTERMEDIARIO", null,
                 List.of(), List.of(), null, List.of(), List.of(), List.of(),
-                Instant.now(), null, null);
+                Instant.now(), null, null, null, null, null);
     }
 }

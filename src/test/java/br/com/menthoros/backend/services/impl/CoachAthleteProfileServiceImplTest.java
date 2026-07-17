@@ -19,6 +19,8 @@ import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.Severidade;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.StatusSugestao;
+import br.com.menthoros.backend.enums.StatusVencimentoPlano;
+import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import br.com.menthoros.backend.enums.TipoSugestao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
@@ -375,6 +377,63 @@ class CoachAthleteProfileServiceImplTest {
             verify(planoService).findPlanoVigenteRelevante(atletaId, tenantId);
             verify(coachAttentionQueueService).getSinaisParaAtleta(atletaId, 3);
             verify(sugestaoCoachService).listarPorAtleta(atletaId);
+        }
+
+        @Test
+        @DisplayName("dataVencimentoPlano nulo → tipoPlanoAtleta e statusVencimentoPlano ausentes")
+        void semDadosDeCobranca() {
+            stubPerfilMinimo();
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.tipoPlanoAtleta()).isNull();
+            assertThat(perfil.dataVencimentoPlano()).isNull();
+            assertThat(perfil.statusVencimentoPlano()).isNull();
+        }
+
+        @Test
+        @DisplayName("dataVencimentoPlano no passado → VENCIDO")
+        void dataNoPassadoRetornaVencido() {
+            atleta = atleta.toBuilder()
+                    .tipoPlanoAtleta(TipoPlanoAtleta.ANUAL)
+                    .dataVencimentoPlano(LocalDate.now().minusDays(3))
+                    .build();
+            stubPerfilMinimo();
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.tipoPlanoAtleta()).isEqualTo(TipoPlanoAtleta.ANUAL);
+            assertThat(perfil.statusVencimentoPlano()).isEqualTo(StatusVencimentoPlano.VENCIDO);
+        }
+
+        @Test
+        @DisplayName("dataVencimentoPlano dentro de 7 dias → PROXIMO_VENCIMENTO")
+        void dataProximaRetornaProximoVencimento() {
+            atleta = atleta.toBuilder().dataVencimentoPlano(LocalDate.now().plusDays(2)).build();
+            stubPerfilMinimo();
+
+            assertThat(service.buscarPerfil(atletaId).statusVencimentoPlano())
+                    .isEqualTo(StatusVencimentoPlano.PROXIMO_VENCIMENTO);
+        }
+
+        @Test
+        @DisplayName("dataVencimentoPlano fora da janela de alerta → EM_DIA")
+        void dataDistanteRetornaEmDia() {
+            atleta = atleta.toBuilder().dataVencimentoPlano(LocalDate.now().plusDays(45)).build();
+            stubPerfilMinimo();
+
+            assertThat(service.buscarPerfil(atletaId).statusVencimentoPlano())
+                    .isEqualTo(StatusVencimentoPlano.EM_DIA);
+        }
+
+        private void stubPerfilMinimo() {
+            stubAtleta();
+            when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
+            when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
+            when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+            when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
         }
     }
 

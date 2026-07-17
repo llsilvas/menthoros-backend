@@ -4,6 +4,7 @@ import br.com.menthoros.backend.domain.audit.AuditableEntity;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -153,6 +154,15 @@ public class Atleta extends AuditableEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "ativo")
     private AtletaStatus ativo;
+
+    // ===== DADOS DE COBRANÇA (plano do atleta com a assessoria — distinto de PlanoAssessoria/PlanoMetaDados) =====
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_plano_atleta", length = 20)
+    private TipoPlanoAtleta tipoPlanoAtleta;
+
+    @Column(name = "data_vencimento_plano")
+    private LocalDate dataVencimentoPlano;
 
     // Métricas atuais (OneToOne)
     @OneToOne(mappedBy = "atleta", fetch = FetchType.LAZY,

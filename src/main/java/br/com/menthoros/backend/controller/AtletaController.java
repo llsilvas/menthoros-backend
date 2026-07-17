@@ -95,9 +95,14 @@ public class AtletaController {
     }
 
     @GetMapping
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Listar atletas", description = "Retorna atletas ativos com filtros opcionais por nome, nível e lesão")
-    @ApiResponse(responseCode = "200", description = "Lista de atletas retornada com sucesso",
-            content = @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = AtletaOutputDto.class))))
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Lista de atletas retornada com sucesso",
+                content = @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = AtletaOutputDto.class)))),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO/ADMIN podem listar atletas",
+                content = @Content(mediaType = "application/json"))
+    })
     public ResponseEntity<List<AtletaOutputDto>> listarAtletas(
             @Parameter(description = "Filtrar por nome (busca parcial, case-insensitive)")
             @RequestParam(required = false) String nome,
@@ -110,10 +115,13 @@ public class AtletaController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @Operation(summary = "Buscar atleta por ID", description = "Retorna os dados de um atleta específico")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Atleta encontrado com sucesso",
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = AtletaOutputDto.class))),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO/ADMIN podem buscar atleta por ID",
+                content = @Content(mediaType = "application/json")),
         @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
                 content = @Content(mediaType = "application/json"))
     })
