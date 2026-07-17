@@ -126,7 +126,7 @@ public class ThresholdInferenceService {
      *
      * Idempotent: YES · Side Effects: NONE
      */
-    BigDecimal inferirPaceLimiarDeProva(Prova provaValida) {
+    public BigDecimal inferirPaceLimiarDeProva(Prova provaValida) {
         int distanciaM = resolverDistanciaMetros(provaValida);
         long tempoProvaSegundos = provaValida.getTempoRealizado().toSecondOfDay();
 
@@ -144,7 +144,7 @@ public class ThresholdInferenceService {
      *
      * Idempotent: YES · Side Effects: NONE
      */
-    Optional<Prova> encontrarProvaValidaMaisRecente(List<Prova> provasCandidatas) {
+    public Optional<Prova> encontrarProvaValidaMaisRecente(List<Prova> provasCandidatas) {
         if (provasCandidatas == null) return Optional.empty();
         return provasCandidatas.stream()
                 .filter(p -> {

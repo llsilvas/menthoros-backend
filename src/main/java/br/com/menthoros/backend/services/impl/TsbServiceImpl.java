@@ -3,10 +3,14 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
+import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.ConfiancaInferencia;
+import br.com.menthoros.backend.enums.FonteLimiarInferencia;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
@@ -22,6 +26,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -38,6 +43,10 @@ public class TsbServiceImpl implements TsbService {
     private final TssCalculatorService tssCalculatorService;
     private final MetricasAlertaService metricasAlertaService;
     private final ThresholdInferenceService thresholdInferenceService;
+    private final ProvaRepository provaRepository;
+
+    /** Limiar de variação de paceLimiarEstimado que sinaliza outlier para revisão manual (design.md D5). */
+    private static final BigDecimal LIMIAR_OUTLIER_SEC_KM = BigDecimal.valueOf(20);
 
     private static final int CTL_TIME_CONSTANT = 42;
     private static final int ATL_TIME_CONSTANT = 7;
@@ -299,12 +308,68 @@ public class TsbServiceImpl implements TsbService {
                     });
         }
         if (paceStale) {
-            thresholdInferenceService.inferirPaceLimiar(treinos30d, hoje)
-                    .ifPresent(est -> {
-                        metaDados.setPaceLimiarEstimado(est.valor());
-                        metaDados.setConfiancaInferenciaPace(est.confianca());
-                        metaDados.setDataInferenciaLimiar(hoje);
-                    });
+            atualizarPaceLimiarInferido(atletaId, tenantId, metaDados, hoje, treinos30d);
+        }
+    }
+
+    /**
+     * Deriva `paceLimiarEstimado`: se existir uma prova válida recente (5000-21097m, dentro dos
+     * últimos {@link ThresholdInferenceService#DIAS_LIMIAR_DESATUALIZACAO} dias), ela tem
+     * precedência sobre a inferência passiva por quintil (design.md D3). Sem prova válida,
+     * comportamento idêntico ao anterior a esta change.
+     *
+     * Idempotent: NO — grava `paceLimiarEstimado`/`fonteLimiarPace` em `metaDados`.
+     * Side Effects: NONE (mutação em memória; persistência é responsabilidade do caller).
+     * Tenant-aware: YES — busca de provas restrita a `tenantId`.
+     */
+    private void atualizarPaceLimiarInferido(UUID atletaId, UUID tenantId, PlanoMetaDados metaDados,
+                                              LocalDate hoje, List<TreinoRealizado> treinos30d) {
+        List<Prova> provasCandidatas = provaRepository.findProvasRealizadasRecentes(
+                atletaId, tenantId, hoje.minusDays(ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO));
+        Optional<Prova> provaValida = thresholdInferenceService.encontrarProvaValidaMaisRecente(provasCandidatas);
+
+        if (provaValida.isPresent()) {
+            Prova prova = provaValida.get();
+            BigDecimal paceAntigo = metaDados.getPaceLimiarEstimado();
+            BigDecimal paceNovo = thresholdInferenceService.inferirPaceLimiarDeProva(prova);
+            logSinalizacaoOutlierPace(atletaId, paceAntigo, paceNovo, prova.getId());
+
+            metaDados.setPaceLimiarEstimado(paceNovo);
+            metaDados.setConfiancaInferenciaPace(ConfiancaInferencia.ALTA);
+            metaDados.setFonteLimiarPace(FonteLimiarInferencia.PROVA_REGISTRADA);
+            metaDados.setDataInferenciaLimiar(hoje);
+            return;
+        }
+
+        thresholdInferenceService.inferirPaceLimiar(treinos30d, hoje)
+                .ifPresent(est -> {
+                    metaDados.setPaceLimiarEstimado(est.valor());
+                    metaDados.setConfiancaInferenciaPace(est.confianca());
+                    metaDados.setFonteLimiarPace(FonteLimiarInferencia.MEDIA_TREINOS);
+                    metaDados.setDataInferenciaLimiar(hoje);
+                });
+    }
+
+    /**
+     * Sinaliza (log, não bloqueia) quando a variação de `paceLimiarEstimado` derivado de uma
+     * prova excede {@link #LIMIAR_OUTLIER_SEC_KM} — indica prova mal cadastrada ou offset
+     * inadequado para o perfil do atleta, para revisão manual do founder/coach (design.md D5).
+     */
+    private void logSinalizacaoOutlierPace(UUID atletaId, BigDecimal paceAntigo, BigDecimal paceNovo, UUID provaId) {
+        if (paceAntigo == null) {
+            log.info("atualizarLimiareInferidos: paceLimiarEstimado calculado pela primeira vez via prova. "
+                    + "atletaId={}, provaId={}, paceNovo={}", atletaId, provaId, paceNovo);
+            return;
+        }
+        BigDecimal deltaSegundosPorKm = paceNovo.subtract(paceAntigo).multiply(BigDecimal.valueOf(60));
+        if (deltaSegundosPorKm.abs().compareTo(LIMIAR_OUTLIER_SEC_KM) > 0) {
+            log.warn("atualizarLimiareInferidos: variação de paceLimiarEstimado acima do limiar de outlier (D5). "
+                    + "atletaId={}, paceAntigo={}, paceNovo={}, deltaSegKm={}, provaId={}",
+                    atletaId, paceAntigo, paceNovo, deltaSegundosPorKm, provaId);
+        } else {
+            log.info("atualizarLimiareInferidos: paceLimiarEstimado atualizado via prova. "
+                    + "atletaId={}, paceAntigo={}, paceNovo={}, deltaSegKm={}, provaId={}",
+                    atletaId, paceAntigo, paceNovo, deltaSegundosPorKm, provaId);
         }
     }
 
