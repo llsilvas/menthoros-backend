@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.dto.output;
 
+import br.com.menthoros.backend.enums.StatusVencimentoPlano;
+import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -45,5 +47,14 @@ public record CoachAtletaResumoDto(
         Integer aderenciaPercentual,
 
         @Schema(description = "Faixa de forma (FaixaTsb) resolvida pelo backend a partir do TSB; null quando tsb ausente. Distinto de `status` (atenção do coach)", example = "FORMA_IDEAL")
-        String statusForma
+        String statusForma,
+
+        @Schema(description = "Tipo de plano do atleta com a assessoria; ausente quando não cadastrado", example = "MENSAL")
+        TipoPlanoAtleta tipoPlanoAtleta,
+
+        @Schema(description = "Data de vencimento do plano do atleta com a assessoria; ausente quando não cadastrado", example = "2026-08-15")
+        LocalDate dataVencimentoPlano,
+
+        @Schema(description = "Status de vencimento derivado (EM_DIA/PROXIMO_VENCIMENTO/VENCIDO); ausente quando dataVencimentoPlano não cadastrada", example = "PROXIMO_VENCIMENTO")
+        StatusVencimentoPlano statusVencimentoPlano
 ) {}

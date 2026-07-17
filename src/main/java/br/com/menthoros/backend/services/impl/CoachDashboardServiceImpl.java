@@ -13,6 +13,7 @@ import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.FaixaTsb;
+import br.com.menthoros.backend.enums.StatusVencimentoPlano;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -268,7 +269,8 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
 
         return new CoachAtletaResumoDto(atletaId, nomeCompleto(atleta), ctl, atl, tsb, fase,
                 deriveStatus(atleta, tsb, lastActivity, hoje), lastActivity, weeklyVolume, aderenciaPercentual,
-                FaixaTsb.classificarNome(tsb));
+                FaixaTsb.classificarNome(tsb), atleta.getTipoPlanoAtleta(), atleta.getDataVencimentoPlano(),
+                StatusVencimentoPlano.resolver(atleta.getDataVencimentoPlano(), hoje));
     }
 
     private CoachCalendarioDto.TreinoAgendado montarTreinoAgendado(TreinoPlanejado tp, Set<UUID> atletasEmAtencao) {

@@ -18,6 +18,8 @@ import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AtletaStatus;
+import br.com.menthoros.backend.enums.StatusVencimentoPlano;
+import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -190,6 +192,90 @@ class CoachDashboardServiceImplTest {
                     .thenReturn(List.of());
 
             assertThat(service.getRoster().get(0).aderenciaPercentual()).isNull();
+        }
+
+        @Test
+        @DisplayName("dataVencimentoPlano nulo → tipoPlanoAtleta e statusVencimentoPlano ausentes")
+        void semDadosDeCobranca() {
+            Atleta a = atletaSemMetricas("Sem", "Dados");
+            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
+
+            CoachAtletaResumoDto dto = service.getRoster().get(0);
+
+            assertThat(dto.tipoPlanoAtleta()).isNull();
+            assertThat(dto.dataVencimentoPlano()).isNull();
+            assertThat(dto.statusVencimentoPlano()).isNull();
+        }
+
+        @Test
+        @DisplayName("dataVencimentoPlano no passado → VENCIDO")
+        void dataNoPassadoRetornaVencido() {
+            Atleta a = atletaSemMetricas("Ana", "Vencida").toBuilder()
+                    .tipoPlanoAtleta(TipoPlanoAtleta.ANUAL)
+                    .dataVencimentoPlano(HOJE.minusDays(5))
+                    .build();
+            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
+
+            CoachAtletaResumoDto dto = service.getRoster().get(0);
+
+            assertThat(dto.tipoPlanoAtleta()).isEqualTo(TipoPlanoAtleta.ANUAL);
+            assertThat(dto.statusVencimentoPlano()).isEqualTo(StatusVencimentoPlano.VENCIDO);
+        }
+
+        @Test
+        @DisplayName("dataVencimentoPlano dentro de 7 dias → PROXIMO_VENCIMENTO")
+        void dataProximaRetornaProximoVencimento() {
+            Atleta a = atletaSemMetricas("Bia", "Proxima").toBuilder()
+                    .dataVencimentoPlano(HOJE.plusDays(4)).build();
+            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
+
+            assertThat(service.getRoster().get(0).statusVencimentoPlano())
+                    .isEqualTo(StatusVencimentoPlano.PROXIMO_VENCIMENTO);
+        }
+
+        @Test
+        @DisplayName("dataVencimentoPlano fora da janela de alerta → EM_DIA")
+        void dataDistanteRetornaEmDia() {
+            Atleta a = atletaSemMetricas("Caio", "Distante").toBuilder()
+                    .dataVencimentoPlano(HOJE.plusDays(60)).build();
+            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
+
+            assertThat(service.getRoster().get(0).statusVencimentoPlano())
+                    .isEqualTo(StatusVencimentoPlano.EM_DIA);
+        }
+
+        @Test
+        @DisplayName("múltiplos atletas com vencimentos diferentes usam o mesmo 'hoje' no roster")
+        void multiplosAtletasVencimentosDiferentes() {
+            Atleta vencido = atletaSemMetricas("Vencido", "S").toBuilder()
+                    .dataVencimentoPlano(HOJE.minusDays(1)).build();
+            Atleta proximo = atletaSemMetricas("Proximo", "S").toBuilder()
+                    .dataVencimentoPlano(HOJE.plusDays(1)).build();
+            Atleta emDia = atletaSemMetricas("EmDia", "S").toBuilder()
+                    .dataVencimentoPlano(HOJE.plusDays(90)).build();
+            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId))
+                    .thenReturn(List.of(vencido, proximo, emDia));
+            for (Atleta a : List.of(vencido, proximo, emDia)) {
+                when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
+                when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
+            }
+
+            assertThat(service.getRoster()).extracting(CoachAtletaResumoDto::statusVencimentoPlano)
+                    .containsExactly(StatusVencimentoPlano.VENCIDO, StatusVencimentoPlano.PROXIMO_VENCIMENTO,
+                            StatusVencimentoPlano.EM_DIA);
+        }
+
+        private Atleta atletaSemMetricas(String nome, String sobrenome) {
+            return Atleta.builder().id(UUID.randomUUID()).nome(nome).sobrenome(sobrenome)
+                    .ativo(AtletaStatus.ATIVO).build();
         }
     }
 
