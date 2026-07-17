@@ -105,6 +105,8 @@ class AtletaServiceImplTest {
                 Set.of(DiaSemana.SEGUNDA, DiaSemana.QUARTA, DiaSemana.SEXTA),
                 DiaSemana.SABADO,
                 false,
+                null,
+                null,
                 null
         );
 
@@ -120,7 +122,10 @@ class AtletaServiceImplTest {
                 DiaSemana.SABADO,
                 false,
                 null,
-                List.of()
+                List.of(),
+                null,
+                null,
+                null
         );
 
         // Setup TenantContext

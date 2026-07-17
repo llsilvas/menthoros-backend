@@ -81,6 +81,8 @@ class AtletaServiceTenantTest {
                 Set.of(DiaSemana.SEGUNDA, DiaSemana.QUARTA),
                 DiaSemana.SABADO,
                 false,
+                null,
+                null,
                 null
         );
     }

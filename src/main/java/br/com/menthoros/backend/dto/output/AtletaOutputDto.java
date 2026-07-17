@@ -3,9 +3,12 @@ package br.com.menthoros.backend.dto.output;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.StatusVencimentoPlano;
+import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -47,5 +50,14 @@ public record AtletaOutputDto(
         String descricaoLesao,
 
         @Schema(description = "Lista de provas do atleta")
-        List<ProvaOutputDto> provas) {
+        List<ProvaOutputDto> provas,
+
+        @Schema(description = "Tipo de plano do atleta com a assessoria; ausente quando não cadastrado", example = "MENSAL")
+        TipoPlanoAtleta tipoPlanoAtleta,
+
+        @Schema(description = "Data de vencimento do plano do atleta com a assessoria; ausente quando não cadastrado", example = "2026-08-15")
+        LocalDate dataVencimentoPlano,
+
+        @Schema(description = "Status de vencimento derivado (EM_DIA/PROXIMO_VENCIMENTO/VENCIDO); ausente quando dataVencimentoPlano não cadastrada", example = "PROXIMO_VENCIMENTO")
+        StatusVencimentoPlano statusVencimentoPlano) {
 }
