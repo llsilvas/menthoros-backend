@@ -162,6 +162,9 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                         ? ThresholdInferenceService.formatarPace(metaDados.getPaceLimiarEstimado()) : null,
                 fcDesatualizado ? metaDados.getConfiancaInferenciaFc() : null,
                 paceDesatualizado ? metaDados.getConfiancaInferenciaPace() : null,
+                // Lê o valor persistido em PlanoMetaDados.fonteLimiarPace direto — não recomputa qual
+                // seria a fonte agora (poderia divergir do que de fato gerou o valor salvo, ver design.md D6).
+                paceDesatualizado ? metaDados.getFonteLimiarPace() : null,
                 metaDados.getDataInferenciaLimiar()
         );
     }
