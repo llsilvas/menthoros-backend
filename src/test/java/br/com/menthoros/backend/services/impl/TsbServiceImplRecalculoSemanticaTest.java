@@ -10,6 +10,7 @@ import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.services.helper.TssCalculatorService;
@@ -179,7 +180,7 @@ class TsbServiceImplRecalculoSemanticaTest {
         MetricasAlertaService alertaService = alertaServiceStub();
         TssCalculatorService tssCalc = tssCalculatorStub(0);
 
-        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, tssCalc, alertaService, new ThresholdInferenceService());
+        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, tssCalc, alertaService, new ThresholdInferenceService(), provaRepoStub());
     }
 
     private TsbServiceImpl construirServiceComPrimeiroTreino(
@@ -284,7 +285,7 @@ class TsbServiceImplRecalculoSemanticaTest {
         MetricasAlertaService alertaService = alertaServiceStub();
         TssCalculatorService tssCalc = tssCalculatorStub(0);
 
-        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, tssCalc, alertaService, new ThresholdInferenceService());
+        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, tssCalc, alertaService, new ThresholdInferenceService(), provaRepoStub());
     }
 
     private static AtletaRepository atletaRepoStub(Atleta atleta) {
@@ -294,6 +295,18 @@ class TsbServiceImplRecalculoSemanticaTest {
                 (proxy, method, args) -> {
                     if ("findById".equals(method.getName())) return Optional.of(atleta);
                     if ("toString".equals(method.getName())) return "AtletaRepositoryStub";
+                    throw new UnsupportedOperationException("Método não suportado: " + method.getName());
+                }
+        );
+    }
+
+    private static ProvaRepository provaRepoStub() {
+        return (ProvaRepository) Proxy.newProxyInstance(
+                ProvaRepository.class.getClassLoader(),
+                new Class<?>[]{ProvaRepository.class},
+                (proxy, method, args) -> {
+                    if ("findProvasRealizadasRecentes".equals(method.getName())) return Collections.emptyList();
+                    if ("toString".equals(method.getName())) return "ProvaRepositoryStub";
                     throw new UnsupportedOperationException("Método não suportado: " + method.getName());
                 }
         );
