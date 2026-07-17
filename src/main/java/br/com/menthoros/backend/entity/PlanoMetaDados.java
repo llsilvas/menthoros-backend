@@ -5,6 +5,7 @@ import br.com.menthoros.backend.enums.ConfiancaInferencia;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FaixaTsb;
 import br.com.menthoros.backend.enums.FasePeriodizacao;
+import br.com.menthoros.backend.enums.FonteLimiarInferencia;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -155,6 +156,10 @@ public class PlanoMetaDados {
     @Enumerated(EnumType.STRING)
     @Column(name = "confianca_inferencia_pace", length = 10)
     private ConfiancaInferencia confiancaInferenciaPace;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fonte_limiar_pace", length = 20)
+    private FonteLimiarInferencia fonteLimiarPace;
 
     @Column(name = "data_inferencia_limiar")
     private LocalDate dataInferenciaLimiar;
