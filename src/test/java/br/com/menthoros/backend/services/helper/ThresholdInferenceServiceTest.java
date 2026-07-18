@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.ConfiancaInferencia;
@@ -338,7 +339,113 @@ class ThresholdInferenceServiceTest {
         }
     }
 
+    @Nested
+    @DisplayName("isFcLimiarDesatualizado")
+    class IsFcLimiarDesatualizado {
+
+        @Test
+        @DisplayName("atleta null retorna false")
+        void atletaNullRetornaFalse() {
+            assertThat(service.isFcLimiarDesatualizado(null, hoje)).isFalse();
+        }
+
+        @Test
+        @DisplayName("fcLimiar null retorna true")
+        void fcLimiarNullRetornaTrue() {
+            Atleta atleta = atletaComFc(null, hoje.minusDays(10));
+            assertThat(service.isFcLimiarDesatualizado(atleta, hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("dataUltimoTesteFc null retorna true")
+        void dataUltimoTesteFcNullRetornaTrue() {
+            Atleta atleta = atletaComFc(165, null);
+            assertThat(service.isFcLimiarDesatualizado(atleta, hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("teste com mais de 90 dias retorna true")
+        void testeComMaisDe90DiasRetornaTrue() {
+            Atleta atleta = atletaComFc(165, hoje.minusDays(91));
+            assertThat(service.isFcLimiarDesatualizado(atleta, hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("teste exatamente no limite de 90 dias não é desatualizado")
+        void testeNoLimiteDe90DiasNaoEDesatualizado() {
+            Atleta atleta = atletaComFc(165, hoje.minusDays(90));
+            assertThat(service.isFcLimiarDesatualizado(atleta, hoje)).isFalse();
+        }
+
+        @Test
+        @DisplayName("teste recente (< 90 dias) não é desatualizado")
+        void testeRecenteNaoEDesatualizado() {
+            Atleta atleta = atletaComFc(165, hoje.minusDays(30));
+            assertThat(service.isFcLimiarDesatualizado(atleta, hoje)).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("isPaceLimiarDesatualizado")
+    class IsPaceLimiarDesatualizado {
+
+        @Test
+        @DisplayName("atleta null retorna false")
+        void atletaNullRetornaFalse() {
+            assertThat(service.isPaceLimiarDesatualizado(null, hoje)).isFalse();
+        }
+
+        @Test
+        @DisplayName("paceLimiar null retorna true")
+        void paceLimiarNullRetornaTrue() {
+            Atleta atleta = atletaComPace(null, hoje.minusDays(10));
+            assertThat(service.isPaceLimiarDesatualizado(atleta, hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("dataUltimoTestePace null retorna true")
+        void dataUltimoTestePaceNullRetornaTrue() {
+            Atleta atleta = atletaComPace(new BigDecimal("4.50"), null);
+            assertThat(service.isPaceLimiarDesatualizado(atleta, hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("teste com mais de 90 dias retorna true")
+        void testeComMaisDe90DiasRetornaTrue() {
+            Atleta atleta = atletaComPace(new BigDecimal("4.50"), hoje.minusDays(91));
+            assertThat(service.isPaceLimiarDesatualizado(atleta, hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("teste exatamente no limite de 90 dias não é desatualizado")
+        void testeNoLimiteDe90DiasNaoEDesatualizado() {
+            Atleta atleta = atletaComPace(new BigDecimal("4.50"), hoje.minusDays(90));
+            assertThat(service.isPaceLimiarDesatualizado(atleta, hoje)).isFalse();
+        }
+
+        @Test
+        @DisplayName("teste recente (< 90 dias) não é desatualizado")
+        void testeRecenteNaoEDesatualizado() {
+            Atleta atleta = atletaComPace(new BigDecimal("4.50"), hoje.minusDays(30));
+            assertThat(service.isPaceLimiarDesatualizado(atleta, hoje)).isFalse();
+        }
+    }
+
     // ======================== HELPERS ========================
+
+    private Atleta atletaComFc(Integer fcLimiar, LocalDate dataUltimoTesteFc) {
+        Atleta atleta = new Atleta();
+        atleta.setFcLimiar(fcLimiar);
+        atleta.setDataUltimoTesteFc(dataUltimoTesteFc);
+        return atleta;
+    }
+
+    private Atleta atletaComPace(BigDecimal paceLimiar, LocalDate dataUltimoTestePace) {
+        Atleta atleta = new Atleta();
+        atleta.setPaceLimiar(paceLimiar);
+        atleta.setDataUltimoTestePace(dataUltimoTestePace);
+        return atleta;
+    }
 
     private Prova provaCom(DistanciaProva distancia, BigDecimal distanciaKm, LocalTime tempoRealizado) {
         Prova prova = new Prova();

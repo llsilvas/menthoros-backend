@@ -36,6 +36,7 @@ import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.services.PlanoService;
 import br.com.menthoros.backend.services.SugestaoCoachService;
 import org.junit.jupiter.api.AfterEach;
@@ -78,6 +79,7 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private ProvaRepository provaRepository;
     @Mock private ProvaMapper provaMapper;
     @Mock private IntervalsIcuConnectionService intervalsIcuConnectionService;
+    @Mock private ThresholdInferenceService thresholdInferenceService;
 
     @InjectMocks
     private CoachAthleteProfileServiceImpl service;
@@ -471,6 +473,7 @@ class CoachAthleteProfileServiceImplTest {
         void fcDesatualizadoComEstimativa_retornaFcEstimado() {
             atleta.setFcLimiar(null);
             atleta.setDataUltimoTesteFc(null);
+            when(thresholdInferenceService.isFcLimiarDesatualizado(eq(atleta), any())).thenReturn(true);
             stubAtleta();
             stubServicosSecundarios();
             PlanoMetaDados metaDados = PlanoMetaDados.builder()
@@ -496,6 +499,7 @@ class CoachAthleteProfileServiceImplTest {
         void paceDesatualizadoComFonteProva_retornaFonteProvaRegistrada() {
             atleta.setPaceLimiar(null);
             atleta.setDataUltimoTestePace(null);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(eq(atleta), any())).thenReturn(true);
             stubAtleta();
             stubServicosSecundarios();
             PlanoMetaDados metaDados = PlanoMetaDados.builder()
@@ -520,6 +524,7 @@ class CoachAthleteProfileServiceImplTest {
         void paceDesatualizadoComFonteQuintil_retornaFonteMediaTreinos() {
             atleta.setPaceLimiar(null);
             atleta.setDataUltimoTestePace(null);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(eq(atleta), any())).thenReturn(true);
             stubAtleta();
             stubServicosSecundarios();
             PlanoMetaDados metaDados = PlanoMetaDados.builder()
@@ -544,6 +549,7 @@ class CoachAthleteProfileServiceImplTest {
         void fonteLimiarPaceNulo_retornaFonteEstimadoNulo() {
             atleta.setPaceLimiar(null);
             atleta.setDataUltimoTestePace(null);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(eq(atleta), any())).thenReturn(true);
             stubAtleta();
             stubServicosSecundarios();
             PlanoMetaDados metaDados = PlanoMetaDados.builder()

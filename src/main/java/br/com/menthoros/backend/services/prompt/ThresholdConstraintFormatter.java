@@ -5,15 +5,18 @@ import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.enums.ConfiancaInferencia;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.services.prompt.constraint.Constraint;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 
 @Component
+@RequiredArgsConstructor
 public class ThresholdConstraintFormatter {
+
+    private final ThresholdInferenceService thresholdInferenceService;
 
     /**
      * Idempotent: YES · Side Effects: NONE · Tenant-aware: NO
@@ -22,7 +25,7 @@ public class ThresholdConstraintFormatter {
      */
     public Optional<Constraint> constraintFc(PlanoMetaDados metaDados, Atleta atleta, LocalDate hoje) {
         if (metaDados == null || metaDados.getFcLimiarEstimado() == null) return Optional.empty();
-        if (!fcLimiarDesatualizado(atleta, hoje)) return Optional.empty();
+        if (!thresholdInferenceService.isFcLimiarDesatualizado(atleta, hoje)) return Optional.empty();
 
         Integer fc = metaDados.getFcLimiarEstimado();
         ConfiancaInferencia confianca = metaDados.getConfiancaInferenciaFc();
@@ -39,7 +42,7 @@ public class ThresholdConstraintFormatter {
      */
     public Optional<Constraint> constraintPace(PlanoMetaDados metaDados, Atleta atleta, LocalDate hoje) {
         if (metaDados == null || metaDados.getPaceLimiarEstimado() == null) return Optional.empty();
-        if (!paceLimiarDesatualizado(atleta, hoje)) return Optional.empty();
+        if (!thresholdInferenceService.isPaceLimiarDesatualizado(atleta, hoje)) return Optional.empty();
 
         BigDecimal pace = metaDados.getPaceLimiarEstimado();
         ConfiancaInferencia confianca = metaDados.getConfiancaInferenciaPace();
@@ -78,19 +81,5 @@ public class ThresholdConstraintFormatter {
             sb.append(" CONFIANÇA BAIXA (poucos dados) — ampliar margem em ±10s/km.");
         }
         return sb.toString();
-    }
-
-    private boolean fcLimiarDesatualizado(Atleta atleta, LocalDate hoje) {
-        if (atleta == null) return false;
-        if (atleta.getFcLimiar() == null || atleta.getDataUltimoTesteFc() == null) return true;
-        return ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), hoje)
-                > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
-    }
-
-    private boolean paceLimiarDesatualizado(Atleta atleta, LocalDate hoje) {
-        if (atleta == null) return false;
-        if (atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null) return true;
-        return ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje)
-                > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
     }
 }
