@@ -35,9 +35,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -354,6 +356,38 @@ class AthleteThresholdUpdaterTest {
             assertThat(logCapture.list)
                     .anyMatch(evento -> evento.getLevel() == Level.INFO
                             && evento.getFormattedMessage().contains("atualizado via prova"));
+        }
+    }
+
+    @Nested
+    @DisplayName("casos de borda")
+    class CasosDeBorda {
+
+        @Test
+        @DisplayName("atleta nulo lança IllegalArgumentException")
+        void atletaNuloLancaExcecao() {
+            PlanoMetaDados metaDados = metaDadosBase(atletaBase());
+
+            assertThatThrownBy(() -> updater.atualizarLimiares(null, metaDados, HOJE))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        @DisplayName("atleta sem assessoria retorna sem erro e sem atualizar metaDados")
+        void assessoriaNulaRetornaSemAtualizar() {
+            Atleta atleta = atletaBase();
+            atleta.setAssessoria(null);
+            atleta.setFcLimiar(null);
+            atleta.setDataUltimoTesteFc(null);
+            PlanoMetaDados metaDados = metaDadosBase(atleta);
+
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+
+            updater.atualizarLimiares(atleta, metaDados, HOJE);
+
+            assertThat(metaDados.getFcLimiarEstimado()).isNull();
+            verifyNoInteractions(treinoRealizadoRepository, provaRepository);
         }
     }
 

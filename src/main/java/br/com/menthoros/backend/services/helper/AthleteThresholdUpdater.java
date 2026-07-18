@@ -44,6 +44,9 @@ public class AthleteThresholdUpdater {
     private static final BigDecimal LIMIAR_OUTLIER_SEC_KM = BigDecimal.valueOf(20);
 
     public void atualizarLimiares(Atleta atleta, PlanoMetaDados metaDados, LocalDate hoje) {
+        if (atleta == null) {
+            throw new IllegalArgumentException("Atleta não pode ser nulo");
+        }
         UUID atletaId = atleta.getId();
         boolean fcStale = thresholdInferenceService.isFcLimiarDesatualizado(atleta, hoje);
         boolean paceStale = thresholdInferenceService.isPaceLimiarDesatualizado(atleta, hoje);
@@ -51,7 +54,7 @@ public class AthleteThresholdUpdater {
         if (!fcStale && !paceStale) return;
 
         if (atleta.getAssessoria() == null) {
-            log.warn("atualizarLimiareInferidos: atleta {} sem assessoria — inferência ignorada", atletaId);
+            log.warn("atualizarLimiares: atleta {} sem assessoria — inferência ignorada", atletaId);
             return;
         }
         UUID tenantId = atleta.getAssessoria().getId();
@@ -118,17 +121,17 @@ public class AthleteThresholdUpdater {
      */
     private void logSinalizacaoOutlierPace(UUID atletaId, BigDecimal paceAntigo, BigDecimal paceNovo, UUID provaId) {
         if (paceAntigo == null) {
-            log.info("atualizarLimiareInferidos: paceLimiarEstimado calculado pela primeira vez via prova. "
+            log.info("atualizarLimiares: paceLimiarEstimado calculado pela primeira vez via prova. "
                     + "atletaId={}, provaId={}, paceNovo={}", atletaId, provaId, paceNovo);
             return;
         }
         BigDecimal deltaSegundosPorKm = paceNovo.subtract(paceAntigo).multiply(BigDecimal.valueOf(60));
         if (deltaSegundosPorKm.abs().compareTo(LIMIAR_OUTLIER_SEC_KM) > 0) {
-            log.warn("atualizarLimiareInferidos: variação de paceLimiarEstimado acima do limiar de outlier (D5). "
+            log.warn("atualizarLimiares: variação de paceLimiarEstimado acima do limiar de outlier (D5). "
                     + "atletaId={}, paceAntigo={}, paceNovo={}, deltaSegKm={}, provaId={}",
                     atletaId, paceAntigo, paceNovo, deltaSegundosPorKm, provaId);
         } else {
-            log.info("atualizarLimiareInferidos: paceLimiarEstimado atualizado via prova. "
+            log.info("atualizarLimiares: paceLimiarEstimado atualizado via prova. "
                     + "atletaId={}, paceAntigo={}, paceNovo={}, deltaSegKm={}, provaId={}",
                     atletaId, paceAntigo, paceNovo, deltaSegundosPorKm, provaId);
         }
