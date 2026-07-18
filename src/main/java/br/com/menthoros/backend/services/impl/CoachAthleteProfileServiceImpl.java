@@ -20,7 +20,6 @@ import br.com.menthoros.backend.services.SugestaoCoachService;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
@@ -49,6 +48,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final ProvaRepository provaRepository;
     private final ProvaMapper provaMapper;
     private final IntervalsIcuConnectionService intervalsIcuConnectionService;
+    private final ThresholdInferenceService thresholdInferenceService;
 
     /**
      * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
@@ -151,12 +151,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         if (metaDados.getFcLimiarEstimado() == null && metaDados.getPaceLimiarEstimado() == null) return null;
 
         LocalDate hoje = LocalDate.now();
-        boolean fcDesatualizado = atleta.getFcLimiar() == null || atleta.getDataUltimoTesteFc() == null
-                || ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), hoje)
-                        > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
-        boolean paceDesatualizado = atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null
-                || ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje)
-                        > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
+        boolean fcDesatualizado = thresholdInferenceService.isFcLimiarDesatualizado(atleta, hoje);
+        boolean paceDesatualizado = thresholdInferenceService.isPaceLimiarDesatualizado(atleta, hoje);
 
         if (!fcDesatualizado && !paceDesatualizado) return null;
 

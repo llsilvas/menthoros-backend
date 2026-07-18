@@ -11,6 +11,7 @@ import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.services.helper.IntervaladoElegibilidadeService;
 import br.com.menthoros.backend.services.helper.PaceZoneCalculator;
+import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.ContextoTreino;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
@@ -98,7 +99,7 @@ final class PlanoPromptArquetipos {
                         new IntervaladoElegibilidadeSkill(), new br.com.menthoros.backend.config.core.ReadinessProperties()),
                 new PaceHistoricoFormatter(),
                 new PaceZoneCalculator(zona),
-                new ThresholdConstraintFormatter(),
+                new ThresholdConstraintFormatter(new ThresholdInferenceService()),
                 new ReadinessPromptFormatter());
     }
 
