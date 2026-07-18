@@ -14,7 +14,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -46,12 +45,8 @@ public class AthleteThresholdUpdater {
 
     public void atualizarLimiares(Atleta atleta, PlanoMetaDados metaDados, LocalDate hoje) {
         UUID atletaId = atleta.getId();
-        boolean fcStale = atleta.getFcLimiar() == null || atleta.getDataUltimoTesteFc() == null
-                || ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), hoje)
-                        > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
-        boolean paceStale = atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null
-                || ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje)
-                        > ThresholdInferenceService.DIAS_LIMIAR_DESATUALIZACAO;
+        boolean fcStale = thresholdInferenceService.isFcLimiarDesatualizado(atleta, hoje);
+        boolean paceStale = thresholdInferenceService.isPaceLimiarDesatualizado(atleta, hoje);
 
         if (!fcStale && !paceStale) return;
 

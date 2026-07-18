@@ -73,6 +73,8 @@ class AthleteThresholdUpdaterTest {
             PlanoMetaDados metaDados = metaDadosBase(atleta);
 
             List<TreinoRealizado> treinos = treinos10ComFcMedia(163);
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(treinos);
             when(thresholdInferenceService.inferirFcLimiar(treinos, HOJE))
@@ -97,6 +99,9 @@ class AthleteThresholdUpdaterTest {
             atleta.setDataUltimoTestePace(HOJE.minusDays(30));
             PlanoMetaDados metaDados = metaDadosBase(atleta);
 
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+
             updater.atualizarLimiares(atleta, metaDados, HOJE);
 
             assertThat(metaDados.getFcLimiarEstimado()).isNull();
@@ -113,6 +118,8 @@ class AthleteThresholdUpdaterTest {
             atleta.setDataUltimoTestePace(null);
             PlanoMetaDados metaDados = metaDadosBase(atleta);
 
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(List.of());
             when(thresholdInferenceService.inferirFcLimiar(List.of(), HOJE))
@@ -138,6 +145,8 @@ class AthleteThresholdUpdaterTest {
             PlanoMetaDados metaDados = metaDadosBase(atleta);
 
             List<TreinoRealizado> treinos = treinos10ComFcMedia(163);
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(treinos);
             when(thresholdInferenceService.inferirFcLimiar(treinos, HOJE))
@@ -171,6 +180,8 @@ class AthleteThresholdUpdaterTest {
 
             List<TreinoRealizado> treinos = treinos10ComFcMedia(150);
             BigDecimal paceEstimado = new BigDecimal("4.7500");
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(treinos);
             when(thresholdInferenceService.inferirPaceLimiar(treinos, HOJE))
@@ -193,6 +204,9 @@ class AthleteThresholdUpdaterTest {
             atleta.setDataUltimoTestePace(HOJE.minusDays(45));
             PlanoMetaDados metaDados = metaDadosBase(atleta);
 
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+
             updater.atualizarLimiares(atleta, metaDados, HOJE);
 
             assertThat(metaDados.getPaceLimiarEstimado()).isNull();
@@ -210,6 +224,8 @@ class AthleteThresholdUpdaterTest {
 
             Prova provaValida = provaBase();
             BigDecimal paceDaProva = new BigDecimal("4.6333");
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(List.of());
             when(provaRepository.findProvasRealizadasRecentes(any(), any(), any()))
@@ -240,6 +256,8 @@ class AthleteThresholdUpdaterTest {
 
             List<TreinoRealizado> treinos = treinos10ComFcMedia(150);
             BigDecimal paceEstimado = new BigDecimal("4.7500");
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(treinos);
             when(provaRepository.findProvasRealizadasRecentes(any(), any(), any()))
@@ -288,6 +306,8 @@ class AthleteThresholdUpdaterTest {
 
             Prova provaValida = provaBase();
             BigDecimal paceNovo = new BigDecimal("4.5000"); // delta = -30s/km
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(List.of());
             when(provaRepository.findProvasRealizadasRecentes(any(), any(), any()))
@@ -317,6 +337,8 @@ class AthleteThresholdUpdaterTest {
 
             Prova provaValida = provaBase();
             BigDecimal paceNovo = new BigDecimal("4.9500"); // delta = -3s/km
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
                     .thenReturn(List.of());
             when(provaRepository.findProvasRealizadasRecentes(any(), any(), any()))

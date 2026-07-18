@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.ConfiancaInferencia;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Component;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -152,6 +154,32 @@ public class ThresholdInferenceService {
                     return distanciaM >= DISTANCIA_MINIMA_VALIDA_M && distanciaM <= DISTANCIA_MAXIMA_VALIDA_M;
                 })
                 .findFirst();
+    }
+
+    /**
+     * FC limiar oficial desatualizado: ausente, sem data de teste, ou teste há mais de
+     * {@link #DIAS_LIMIAR_DESATUALIZACAO} dias. Unifica a expressão antes duplicada em
+     * {@code TsbServiceImpl}/{@code AthleteThresholdUpdater}, {@code CoachAthleteProfileServiceImpl}
+     * e {@code ThresholdConstraintFormatter} (refactor-threshold-orchestration, CA3).
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    public boolean isFcLimiarDesatualizado(Atleta atleta, LocalDate hoje) {
+        if (atleta == null) return false;
+        if (atleta.getFcLimiar() == null || atleta.getDataUltimoTesteFc() == null) return true;
+        return ChronoUnit.DAYS.between(atleta.getDataUltimoTesteFc(), hoje) > DIAS_LIMIAR_DESATUALIZACAO;
+    }
+
+    /**
+     * Pace limiar oficial desatualizado — mesma regra de {@link #isFcLimiarDesatualizado}, para o
+     * campo de pace.
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    public boolean isPaceLimiarDesatualizado(Atleta atleta, LocalDate hoje) {
+        if (atleta == null) return false;
+        if (atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null) return true;
+        return ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje) > DIAS_LIMIAR_DESATUALIZACAO;
     }
 
     /** Converte pace decimal (minutos) para formato "mm:ss/km". Ex: 4.7500 → "4:45/km". */
