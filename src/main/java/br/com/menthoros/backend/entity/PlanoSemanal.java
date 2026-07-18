@@ -5,6 +5,8 @@ import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -88,5 +90,31 @@ public class PlanoSemanal {
     @Version
     @Column(name = "versao")
     private Long versao;
+
+    // --- Auditoria PlannerEngine (shadow mode, deterministic-planner-engine) ---
+    // Populado apenas quando planner-engine.shadow=true; null em modo legado puro.
+    // Nao exposto ao atleta por default (design.md Decisao 9).
+
+    @Column(name = "planner_enabled")
+    private Boolean plannerEnabled;
+
+    @Column(name = "planner_version", length = 20)
+    private String plannerVersion;
+
+    @Column(name = "planner_phase", length = 30)
+    private String plannerPhase;
+
+    @Column(name = "planner_requires_coach_review")
+    private Boolean plannerRequiresCoachReview;
+
+    @Column(name = "planner_skeleton_hash", length = 64)
+    private String plannerSkeletonHash;
+
+    @Column(name = "planner_compliance_status", length = 30)
+    private String plannerComplianceStatus;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "planner_metadata_json", columnDefinition = "jsonb")
+    private String plannerMetadataJson;
 
 }
