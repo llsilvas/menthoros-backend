@@ -10,6 +10,7 @@ import br.com.menthoros.backend.domain.planner.TrainingPhase;
 public record PlannerAuditMetadata(
         TrainingPhase phase,
         boolean requiresCoachReview,
+        String coachReviewReason,
         PlannerComplianceStatus complianceStatus,
         int violationCount,
         String plannerVersion

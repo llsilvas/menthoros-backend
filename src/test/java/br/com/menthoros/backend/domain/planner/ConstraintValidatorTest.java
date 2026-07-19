@@ -31,7 +31,7 @@ class ConstraintValidatorTest {
             ConstraintValidationResult resultado = validator.validate(constraints, sessoes);
 
             assertThat(resultado.valid()).isFalse();
-            assertThat(resultado.violations()).anyMatch(v -> v.contains("DIA_INDISPONIVEL"));
+            assertThat(resultado.violations()).anyMatch(v -> v.key() == ConstraintViolationKey.DIA_INDISPONIVEL);
         }
 
         @Test
@@ -43,7 +43,7 @@ class ConstraintValidatorTest {
 
             ConstraintValidationResult resultado = validator.validate(constraints, sessoes);
 
-            assertThat(resultado.violations()).noneMatch(v -> v.contains("DIA_INDISPONIVEL"));
+            assertThat(resultado.violations()).noneMatch(v -> v.key() == ConstraintViolationKey.DIA_INDISPONIVEL);
         }
     }
 
@@ -63,7 +63,7 @@ class ConstraintValidatorTest {
             ConstraintValidationResult resultado = validator.validate(constraints, sessoes);
 
             assertThat(resultado.valid()).isFalse();
-            assertThat(resultado.violations()).anyMatch(v -> v.contains("MAX_SESSOES_EXCEDIDO"));
+            assertThat(resultado.violations()).anyMatch(v -> v.key() == ConstraintViolationKey.MAX_SESSOES_EXCEDIDO);
         }
     }
 
@@ -82,7 +82,7 @@ class ConstraintValidatorTest {
             ConstraintValidationResult resultado = validator.validate(constraints, sessoes);
 
             assertThat(resultado.valid()).isFalse();
-            assertThat(resultado.violations()).anyMatch(v -> v.contains("DURACAO_MAXIMA_EXCEDIDA"));
+            assertThat(resultado.violations()).anyMatch(v -> v.key() == ConstraintViolationKey.DURACAO_MAXIMA_EXCEDIDA);
         }
     }
 
@@ -101,7 +101,7 @@ class ConstraintValidatorTest {
             ConstraintValidationResult resultado = validator.validate(constraints, sessoes);
 
             assertThat(resultado.valid()).isFalse();
-            assertThat(resultado.violations()).anyMatch(v -> v.contains("EQUIPAMENTO_INDISPONIVEL"));
+            assertThat(resultado.violations()).anyMatch(v -> v.key() == ConstraintViolationKey.EQUIPAMENTO_INDISPONIVEL);
         }
     }
 

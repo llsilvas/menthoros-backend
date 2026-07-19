@@ -113,8 +113,8 @@ class PlannerShadowServiceTest {
 
             assertThat(plano.getPlannerEnabled()).isFalse();
             assertThat(plano.getPlannerVersion()).isEqualTo("planner-v1");
-            assertThat(plano.getPlannerPhase()).isNotBlank();
-            assertThat(plano.getPlannerComplianceStatus()).isNotBlank();
+            assertThat(plano.getPlannerPhase()).isEqualTo("BUILD"); // prova a 70 dias -> BUILD (deterministico)
+            assertThat(plano.getPlannerComplianceStatus()).isEqualTo("VIOLATIONS_DETECTED"); // TSS gerado (60) fora da faixa do alvo (~315)
             assertThat(plano.getPlannerSkeletonHash()).hasSize(64); // SHA-256 hex
             assertThat(plano.getPlannerMetadataJson()).contains("\"phase\"");
             assertThat(plano.getTreinosPlanejados()).isSameAs(treinosOriginais); // shadow nao mutou os treinos
@@ -134,14 +134,34 @@ class PlannerShadowServiceTest {
         }
 
         @Test
-        @DisplayName("TSB abaixo de -30 registra planner.requires_coach_review.count")
+        @DisplayName("TSB abaixo de -30 registra planner.requires_coach_review.count com o motivo fisiologico")
         void registraMetricaDeReviewQuandoTsbBaixo() {
             when(progressaoTreinoService.calcularHistorico(any())).thenReturn(historico(-35.0, 45.0, 0));
             when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("BUILD");
 
-            shadowHabilitado.aplicarShadow(planoBase(), planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(), semanaInicio, false);
+            PlanoSemanal plano = planoBase();
+            shadowHabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(), semanaInicio, false);
 
-            assertThat(meterRegistry.find("planner.requires_coach_review.count").counter()).isNotNull();
+            assertThat(meterRegistry.find("planner.requires_coach_review.count")
+                    .tag("reason", "TSB abaixo de -30 (fadiga acumulada alta)").counter()).isNotNull();
+            assertThat(plano.getPlannerMetadataJson()).contains("TSB abaixo de -30");
+        }
+
+        @Test
+        @DisplayName("lesao ativa registra planner.requires_coach_review.count com o motivo de lesao, nao 'OUTRO'")
+        void registraMetricaDeReviewComMotivoDeLesao() {
+            when(progressaoTreinoService.calcularHistorico(any())).thenReturn(historico(-2.0, 45.0, 0));
+            when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("RECOVERY");
+            Atleta atletaComLesao = atletaBase().toBuilder().temLesao(true).build();
+
+            PlanoSemanal plano = planoBase();
+            shadowHabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atletaComLesao), decisaoNeutra(), semanaInicio, false);
+
+            assertThat(meterRegistry.find("planner.requires_coach_review.count")
+                    .tag("reason", "INJURY_ACTIVE").counter()).isNotNull();
+            assertThat(meterRegistry.find("planner.requires_coach_review.count")
+                    .tag("reason", "OUTRO").counter()).isNull();
+            assertThat(plano.getPlannerMetadataJson()).contains("INJURY_ACTIVE");
         }
 
         @Test

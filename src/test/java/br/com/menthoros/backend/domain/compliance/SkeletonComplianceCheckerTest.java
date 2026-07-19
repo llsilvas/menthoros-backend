@@ -186,6 +186,7 @@ class SkeletonComplianceCheckerTest {
                 new InjuryRiskAssessment(InjuryRiskLevel.SAFE, false, null),
                 new ConstraintValidationResult(true, List.of()),
                 false,
+                null,
                 referencia,
                 null,
                 Optional.empty());

@@ -8,6 +8,6 @@ import java.util.List;
  */
 public record ConstraintValidationResult(
         boolean valid,
-        List<String> violations
+        List<ConstraintViolation> violations
 ) {
 }

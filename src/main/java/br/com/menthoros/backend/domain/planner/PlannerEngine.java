@@ -68,6 +68,10 @@ public class PlannerEngine {
         ConstraintValidationResult constraintResult = constraintValidator.validate(constraints, List.of());
 
         boolean requiresCoachReview = injuryPolicy.requiresCoachReview() || risco.requiresCoachReview();
+        // Hierarquia P0: motivo de lesao (passo 1) tem precedencia sobre motivo fisiologico (passo 2).
+        String coachReviewReason = injuryPolicy.requiresCoachReview() ? injuryPolicy.reason()
+                : risco.requiresCoachReview() ? risco.reason()
+                : null;
 
         String plannerScope = resolverPlannerScope(snapshot.athlete().modalidade());
 
@@ -78,6 +82,7 @@ public class PlannerEngine {
                 risco,
                 constraintResult,
                 requiresCoachReview,
+                coachReviewReason,
                 snapshot.referenceDate(),
                 plannerScope,
                 periodizacao.provaDeterminante());

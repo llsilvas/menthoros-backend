@@ -167,6 +167,7 @@ public class PlannerShadowService {
         ProgressaoHistoricoResumo historico = progressaoTreinoService.calcularHistorico(atleta.getId());
 
         List<ProvaSnapshot> provas = atleta.getProvas() == null ? List.of() : atleta.getProvas().stream()
+                .filter(p -> p.getDataProva() != null) // dado incompleto/legado — nao entra no calendario do planner
                 .map(this::mapProva)
                 .toList();
 
@@ -226,6 +227,7 @@ public class PlannerShadowService {
             DiaSemana diaSemana = DiaSemana.valueOf(dto.diaSemana());
             data = semanaInicio.with(TemporalAdjusters.nextOrSame(Utils.converterParaDayOfWeek(diaSemana)));
         } catch (IllegalArgumentException e) {
+            log.warn("[planner-shadow] diaSemana invalido do LLM: '{}' — usando semanaInicio como fallback", dto.diaSemana());
             data = semanaInicio; // dia invalido/inesperado do LLM — nao trava o shadow
         }
         return new GeneratedSessionSnapshot(data, dto.tipoTreino(), dto.tssPlanejado(), null);
@@ -256,7 +258,8 @@ public class PlannerShadowService {
         plano.setPlannerSkeletonHash(hashSkeleton(skeleton));
 
         PlannerAuditMetadata metadata = new PlannerAuditMetadata(
-                skeleton.phase(), skeleton.requiresCoachReview(), status, violationCount, PlannerVersion.CURRENT);
+                skeleton.phase(), skeleton.requiresCoachReview(), skeleton.coachReviewReason(),
+                status, violationCount, PlannerVersion.CURRENT);
         plano.setPlannerMetadataJson(objectMapper.writeValueAsString(metadata));
     }
 
@@ -270,7 +273,7 @@ public class PlannerShadowService {
 
         if (skeleton.requiresCoachReview()) {
             meterRegistry.counter("planner.requires_coach_review.count",
-                            "reason", skeleton.injuryRisk().reason() != null ? skeleton.injuryRisk().reason() : "OUTRO",
+                            "reason", skeleton.coachReviewReason() != null ? skeleton.coachReviewReason() : "OUTRO",
                             "phase", skeleton.phase().name())
                     .increment();
         }
