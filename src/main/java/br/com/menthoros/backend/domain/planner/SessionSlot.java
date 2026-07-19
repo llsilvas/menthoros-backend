@@ -13,6 +13,7 @@ public record SessionSlot(
         String sessionType,
         double targetTss,
         String intensityZone,
-        boolean chave
+        boolean chave,
+        Integer durationMinutes
 ) {
 }

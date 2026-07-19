@@ -49,7 +49,8 @@ public class TaperStrategy {
                         s.sessionType(),
                         s.targetTss() * (1 - reducaoPercentual),
                         s.intensityZone(),
-                        s.chave()))
+                        s.chave(),
+                        s.durationMinutes()))
                 .toList();
     }
 

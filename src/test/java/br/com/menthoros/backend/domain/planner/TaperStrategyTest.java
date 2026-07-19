@@ -98,8 +98,8 @@ class TaperStrategyTest {
         @DisplayName("reduz TSS por sessao proporcionalmente, mantendo dia, tipo e zona de intensidade")
         void reduzTssMantendoZonas() {
             List<SessionSlot> preTaper = List.of(
-                    new SessionSlot(DayOfWeek.TUESDAY, "INTERVALADO", 80.0, "Z4", false),
-                    new SessionSlot(DayOfWeek.SATURDAY, "LONGO", 120.0, "Z2", true)
+                    new SessionSlot(DayOfWeek.TUESDAY, "INTERVALADO", 80.0, "Z4", false, 60),
+                    new SessionSlot(DayOfWeek.SATURDAY, "LONGO", 120.0, "Z2", true, 90)
             );
 
             List<SessionSlot> comTaper = taper.preservarIntensidade(preTaper, 0.40);
