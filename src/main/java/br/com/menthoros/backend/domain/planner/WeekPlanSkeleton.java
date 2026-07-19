@@ -15,6 +15,7 @@ public record WeekPlanSkeleton(
         InjuryRiskAssessment injuryRisk,
         ConstraintValidationResult constraints,
         boolean requiresCoachReview,
-        LocalDate referenceDate
+        LocalDate referenceDate,
+        String plannerScope
 ) {
 }

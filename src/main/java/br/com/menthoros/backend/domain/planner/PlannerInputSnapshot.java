@@ -28,6 +28,7 @@ public record PlannerInputSnapshot(
         List<ProvaSnapshot> provas,
         List<TreinoRealizadoSnapshot> historico,
         Optional<OnboardingContext> onboardingContext,
-        LocalDate referenceDate
+        LocalDate referenceDate,
+        int injuryRecentWindowDays
 ) {
 }

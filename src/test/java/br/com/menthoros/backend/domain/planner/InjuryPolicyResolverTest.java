@@ -102,6 +102,6 @@ class InjuryPolicyResolverTest {
     }
 
     private AthleteSnapshot atleta(boolean temLesao, String descricaoLesao, LocalDate dataUltimaLesao) {
-        return new AthleteSnapshot(UUID.randomUUID(), NivelExperiencia.INTERMEDIARIO, temLesao, descricaoLesao, dataUltimaLesao, List.of());
+        return new AthleteSnapshot(UUID.randomUUID(), NivelExperiencia.INTERMEDIARIO, temLesao, descricaoLesao, dataUltimaLesao, List.of(), null);
     }
 }
