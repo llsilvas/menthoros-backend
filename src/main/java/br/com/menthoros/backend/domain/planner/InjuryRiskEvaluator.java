@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.domain.planner;
 
+import org.springframework.stereotype.Component;
+
 import br.com.menthoros.backend.dto.ProgressaoHistoricoResumo;
 
 import java.time.LocalDate;
@@ -13,6 +15,7 @@ import java.util.stream.Collectors;
  * secundario: janela de 7 dias, {@code media/desvio-padrao > 2.0} eleva o nivel de risco em
  * pelo menos um degrau (nunca rebaixa).
  */
+@Component
 public class InjuryRiskEvaluator {
 
     private static final double TSB_SAFE_THRESHOLD = -10.0;

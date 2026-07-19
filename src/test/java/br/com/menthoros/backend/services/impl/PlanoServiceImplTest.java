@@ -87,6 +87,8 @@ class PlanoServiceImplTest {
     private MetricasAlertaService metricasAlertaService;
     @Mock
     private MetricasAgregadasServiceImpl metricasAgregadasService;
+    @Mock
+    private br.com.menthoros.backend.services.helper.PlannerShadowService plannerShadowService;
 
     @InjectMocks
     private PlanoServiceImpl planoService;

@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.domain.planner;
 
 import br.com.menthoros.backend.enums.DiaSemana;
+import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
 import java.time.temporal.ChronoUnit;
@@ -16,7 +17,12 @@ import java.util.Optional;
  * (3) prova na semana / taper / pos-prova, (4) {@code DecisaoProgressao}, (5) preferencias do
  * atleta/coach. O override de fase por lesao (passo 1) tem precedencia sobre a fase resolvida
  * pela periodizacao (passo 3).
+ *
+ * <p>Registrado no Spring ({@code @Service}) mas puro — sem {@code @Transactional}, sem
+ * dependencia de infraestrutura; o registro existe apenas para o
+ * {@code PlannerShadowService} injetar via construtor.
  */
+@Service
 public class PlannerEngine {
 
     private final PeriodizationPlanner periodizationPlanner;
@@ -73,7 +79,8 @@ public class PlannerEngine {
                 constraintResult,
                 requiresCoachReview,
                 snapshot.referenceDate(),
-                plannerScope);
+                plannerScope,
+                periodizacao.provaDeterminante());
     }
 
     private WeeklyLoadTarget aplicarTaperSeAplicavel(WeeklyLoadTarget loadTarget,

@@ -187,7 +187,8 @@ class SkeletonComplianceCheckerTest {
                 new ConstraintValidationResult(true, List.of()),
                 false,
                 referencia,
-                null);
+                null,
+                Optional.empty());
     }
 
     private ComplianceContext contexto(Optional<ProvaSnapshot> provaDeterminante) {

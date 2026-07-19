@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.domain.planner;
 
+import org.springframework.stereotype.Component;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -8,6 +10,7 @@ import java.util.List;
  * snapshot legado) contra as sessoes candidatas do {@link WeekPlanSkeleton}: dia disponivel,
  * numero maximo de sessoes, duracao maxima por sessao e equipamento indisponivel.
  */
+@Component
 public class ConstraintValidator {
 
     public ConstraintValidationResult validate(AthleteConstraints constraints, List<SessionSlot> sessoes) {

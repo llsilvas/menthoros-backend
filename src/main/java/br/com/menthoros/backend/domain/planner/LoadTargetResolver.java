@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.domain.planner;
 
+import org.springframework.stereotype.Component;
+
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.ProgressaoHistoricoResumo;
 import br.com.menthoros.backend.enums.EstadoProgressao;
@@ -13,6 +15,7 @@ import br.com.menthoros.backend.enums.EstadoProgressao;
  * TSS real recente via {@code TsbService}. O alvo semanal parte de {@code ctlAtual * 7}
  * (mesma aproximacao ja usada em {@code PeriodizacaoPromptFormatter.calcularTssAlvo}).
  */
+@Component
 public class LoadTargetResolver {
 
     private static final double MAX_CTL_RAMP_PER_WEEK = 8.0; // CA1

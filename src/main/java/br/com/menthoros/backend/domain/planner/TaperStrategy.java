@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.domain.planner;
 
+import org.springframework.stereotype.Component;
+
 import java.util.List;
 
 /**
@@ -11,6 +13,7 @@ import java.util.List;
  * a reducao, ate um teto de {@link #MAX_REDUCTION}. {@code RACE_WEEK} (0-6 dias) e o trecho
  * terminal dessa mesma curva, nao um caso a parte.
  */
+@Component
 public class TaperStrategy {
 
     private static final double MAX_REDUCTION = 0.65;

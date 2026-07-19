@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.domain.planner;
 
+import org.springframework.stereotype.Component;
+
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
@@ -19,6 +21,7 @@ import java.util.Optional;
  * (`diasFaltando / 7 == 0`), cai no ramo `else` e retorna "PÓS-PROVA" para esse mesmo caso —
  * um bug latente que a metrica de divergencia deve expor, nao replicar.
  */
+@Component
 public class PeriodizationPlanner {
 
     private static final int JANELA_POS_PROVA_DIAS = 7;

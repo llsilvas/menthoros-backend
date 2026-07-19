@@ -4,6 +4,7 @@ import br.com.menthoros.backend.domain.planner.AthleteConstraints;
 import br.com.menthoros.backend.domain.planner.ProvaSnapshot;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
+import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
@@ -16,6 +17,7 @@ import java.util.List;
  * metricas ficam no caller (shadow, secao 7). Nesta change o checker so roda em shadow; o
  * wiring de retry/enforcement e escopo de {@code planner-engine-enforcement}.
  */
+@Component
 public class SkeletonComplianceChecker {
 
     private static final double TETO_LONGO_FRACAO = 0.40;
