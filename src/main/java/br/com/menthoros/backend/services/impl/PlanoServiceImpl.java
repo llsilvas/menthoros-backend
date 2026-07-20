@@ -22,6 +22,7 @@ import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.repository.*;
 import br.com.menthoros.backend.services.*;
+import br.com.menthoros.backend.services.helper.PlannerShadowService;
 import br.com.menthoros.backend.services.helper.RedistribuicaoTreinoHelper;
 import br.com.menthoros.backend.services.helper.RegraGeracaoTreino;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -70,6 +71,7 @@ public class PlanoServiceImpl implements PlanoService {
 
     private final ProvaRepository provaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final PlannerShadowService plannerShadowService;
 
     /**
      * Gera um plano de treino semanal personalizado para um atleta usando IA.
@@ -128,7 +130,7 @@ public class PlanoServiceImpl implements PlanoService {
                 throw new LLMException("Falha ao gerar plano: IA retornou resposta nula. Tente novamente.");
             }
 
-            return persistirPlanoCompleto(planoDto, dadosPlano, modoGeracao);
+            return persistirPlanoCompleto(planoDto, dadosPlano, modoGeracao, decisaoProgressao);
         } catch (LLMException | DomainRuleViolationException e) {
             // Re-lança exceções de domínio sem modificar
             log.error("Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
@@ -160,10 +162,13 @@ public class PlanoServiceImpl implements PlanoService {
      * @param planoDto DTO gerado pela LLM contendo treinos e métricas planejadas
      * @param dadosPlano dados consolidados do atleta, histórico e metadados
      * @param modoGeracao modo que determina a estratégia de redistribuição de treinos
+     * @param decisaoProgressao decisão de progressão já calculada — repassada ao shadow do
+     *        {@code PlannerEngine} (deterministic-planner-engine), que não recalcula a direção
      * @return plano semanal persistido com todas as associações carregadas
      * @throws DomainRuleViolationException se não for possível gerar treinos após redistribuição
      */
-    private PlanoSemanal persistirPlanoCompleto(PlanoSemanalLlmDto planoDto, DadosPlanoDto dadosPlano, ModoGeracaoPlano modoGeracao) {
+    private PlanoSemanal persistirPlanoCompleto(PlanoSemanalLlmDto planoDto, DadosPlanoDto dadosPlano,
+                                                 ModoGeracaoPlano modoGeracao, DecisaoProgressao decisaoProgressao) {
         Atleta atleta = dadosPlano.atleta();
         LocalDate hoje = LocalDate.now();
 
@@ -202,6 +207,14 @@ public class PlanoServiceImpl implements PlanoService {
 
         // 4. Criar plano completo com treinos
         PlanoSemanal plano = criarPlanoComTreinos(planoDto, atleta, periodo, metaDados, treinos);
+
+        // 4.5. Shadow do PlannerEngine (deterministic-planner-engine, design.md Decisao 10):
+        // roda apos a geracao legada, nunca altera plano/prompt/persistencia (CA12); qualquer
+        // falha e isolada internamente pelo proprio PlannerShadowService (CA11). Mutacao
+        // in-memory dos campos planner_* em `plano`, persistidos junto no passo 5.
+        // batch=false: este call site nao distingue chamadas interativas de lote (BatchPlanProcessor
+        // chama o mesmo gerarPlanoTreino publico) — tag de metrica aproximada, nao uma limitacao funcional.
+        plannerShadowService.aplicarShadow(plano, planoDto, dadosPlano, decisaoProgressao, periodo.inicio(), false);
 
         // 5. Persistir e retornar
         return salvarPlanoCompleto(plano, metaDados);

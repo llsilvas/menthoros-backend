@@ -263,6 +263,18 @@ app:
     base-url: ${INTERVALS_ICU_BASE_URL:https://intervals.icu}
 
 # ----------------------------------------
+# DETERMINISTIC PLANNER ENGINE (shadow mode — deterministic-planner-engine)
+#
+# Motor deterministico roda em paralelo ao pipeline legado, apenas para auditoria
+# e metricas de calibracao. planner_enabled persistido e sempre false nesta change;
+# nao existem flags enabled/fail-open aqui — nascem em planner-engine-enforcement.
+# ----------------------------------------
+planner-engine:
+  shadow: ${PLANNER_ENGINE_SHADOW:false}
+  injury:
+    recent-window-days: ${PLANNER_ENGINE_INJURY_RECENT_WINDOW_DAYS:30}
+
+# ----------------------------------------
 # KEYCLOAK ADMIN REST API
 # ----------------------------------------
 keycloak:

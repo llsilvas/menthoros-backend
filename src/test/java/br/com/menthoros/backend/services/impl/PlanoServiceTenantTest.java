@@ -68,6 +68,7 @@ class PlanoServiceTenantTest {
     @Mock private MetricasAgregadasService metricasAgregadasService;
     @Mock private ProvaRepository provaRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private br.com.menthoros.backend.services.helper.PlannerShadowService plannerShadowService;
 
     @InjectMocks
     private PlanoServiceImpl planoService;

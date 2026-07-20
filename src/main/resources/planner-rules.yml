@@ -1,0 +1,62 @@
+# =====================================================================
+# planner-rules.yml — STUB / placeholder (deterministic-planner-engine)
+#
+# Este arquivo NAO e carregado pela aplicacao. E um inventario documentado
+# dos thresholds hoje hardcoded como constantes privadas nas classes de
+# domain/planner e domain/compliance — extraidos aqui como referencia unica,
+# nao como configuracao ativa.
+#
+# Por que hardcoded e nao configuravel: os valores v1 sao hipoteses de
+# design (algumas com ancora explicita nos criterios de aceite — CA1/CA2/CA5
+# —, outras julgamento de engenharia sem CA correspondente). Extrair para
+# config real antes de ter dado do shadow so daria a falsa sensacao de que
+# sao ajustaveis com seguranca. A extracao de verdade acontece depois que
+# `planner-engine.shadow=true` em producao/staging acumular semanas de
+# `planner.phase.divergence.count`, `planner.compliance.hypothetical_failure.count`
+# e `planner.requires_coach_review.count` suficientes para calibrar (ver
+# proposal.md, "Metrica de sucesso (calibracao)").
+#
+# Convencao: `# CA<n>` ao lado do valor = ancorado em criterio de aceite
+# explicito; sem tag = escolha de engenharia registrada nesta change, sem
+# validacao externa ainda.
+# =====================================================================
+
+load_target_resolver:                        # domain/planner/LoadTargetResolver.java
+  max_ctl_ramp_per_week: 8.0                  # CA1 — teto de rampa de CTL (pontos/semana)
+  semanas_para_step_back: 3                   # CA2 — na 4a semana consecutiva de progressao
+  step_back_factor: 0.80                      # CA2 — reducao de 20%, dentro da banda 15-25% do CA
+  faixa_tolerancia: 0.10                      # min/max do WeeklyLoadTarget (+-10%)
+
+taper_strategy:                               # domain/planner/TaperStrategy.java
+  max_reduction: 0.65                         # teto da curva exponencial (~65% no dia da prova)
+  decay_tau_dias: 38.0                        # constante de decaimento — calibrada so para bater CA5
+  faixa_tolerancia: 0.10
+  duracao_maxima_dias:
+    curta_5_a_10k: 7                          # design.md proposal.md: "5-10K -> 4-7d" (usa o teto)
+    media_21k: 14                             # "21K -> 10-14d"
+    longa_42k_ironman: 21                     # "42K/Ironman -> 14-21d"
+
+injury_risk_evaluator:                        # domain/planner/InjuryRiskEvaluator.java
+  tsb_safe_threshold: -10.0                   # CA3 — acima disso, zona segura
+  tsb_high_risk_threshold: -30.0              # CA3 — abaixo disso, HIGH_RISK + requiresCoachReview
+  monotony_warning_threshold: 2.0             # media/desvio-padrao > 2.0 (Foster) eleva para WARNING
+  monotony_window_dias: 7
+
+periodization_planner:                        # domain/planner/PeriodizationPlanner.java
+  fase_por_semanas_faltando:                  # semanas = diasFaltando / 7 (divisao inteira)
+    base: "> 12 semanas"
+    build: "> 8 semanas"
+    peak: "> 3 semanas"
+    taper: "> 1 semana"
+    race_week: "<= 1 semana (inclui prova no mesmo dia)"
+  janela_pos_prova_dias: 7                    # prova nos ultimos 7 dias -> POST_RACE
+  janela_empate_selecao_prova_dias: 6         # provas na mesma "semana" desempatam por distancia
+
+skeleton_compliance_checker:                  # domain/compliance/SkeletonComplianceChecker.java
+  teto_longo_fracao: 0.40                     # sessao LONGO acima de 40% do alvo semanal -> violacao
+  teto_intervalado_fracao: 0.25               # sessao intensa acima de 25% do alvo semanal -> violacao
+  janela_pesada_pre_prova_dias_min: 2         # janela critica de 48-72h antes da prova
+  janela_pesada_pre_prova_dias_max: 3
+
+injury_policy_resolver:                       # domain/planner/InjuryPolicyResolver.java — ja configuravel
+  recent_window_days: 30                      # planner-engine.injury.recent-window-days (application.yml)
