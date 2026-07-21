@@ -6,14 +6,13 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.onboarding.BaselineCalculator;
 import br.com.menthoros.backend.services.onboarding.BaselineResult;
+import br.com.menthoros.backend.services.onboarding.HistoricoUtils;
 import br.com.menthoros.backend.services.onboarding.NormalizedActivity;
 import br.com.menthoros.backend.services.onboarding.OrigemDado;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -65,7 +64,7 @@ public class BaselineCalculatorImpl implements BaselineCalculator {
         double ctlReal = metricas != null ? metricas.getCtl() : 0.0;
         double atlReal = metricas != null ? metricas.getAtl() : 0.0;
 
-        int semanasObservadas = calcularSemanasObservadas(historicoDeduplicado);
+        int semanasObservadas = HistoricoUtils.semanasObservadas(historicoDeduplicado);
         double proporcaoHeuristica = calcularProporcaoHeuristica(semanasObservadas);
 
         double ctlHeuristico = CTL_HEURISTICO.getOrDefault(nivelExperiencia, CTL_HEURISTICO.get(NivelExperiencia.INICIANTE));
@@ -81,18 +80,6 @@ public class BaselineCalculatorImpl implements BaselineCalculator {
                 atletaId, semanasObservadas, proporcaoHeuristica, ctlFinal, atlFinal, tsbFinal, origem);
 
         return new BaselineResult(ctlFinal, origem, atlFinal, origem, tsbFinal, origem);
-    }
-
-    private int calcularSemanasObservadas(List<NormalizedActivity> historico) {
-        if (historico == null || historico.isEmpty()) {
-            return 0;
-        }
-        LocalDate maisAntiga = historico.stream()
-                .map(NormalizedActivity::date)
-                .min(LocalDate::compareTo)
-                .orElse(LocalDate.now());
-        long dias = ChronoUnit.DAYS.between(maisAntiga, LocalDate.now());
-        return (int) (dias / 7);
     }
 
     /** 0 (>= 8 semanas, Cenario A) a 1 (0 semanas, Cenario C) — interpolacao linear (mesmo padrao do Confidence Scorer). */

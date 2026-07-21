@@ -6,6 +6,7 @@ import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.repository.AtividadeProvenienciaDescartadaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.onboarding.ActivityDedupService;
+import br.com.menthoros.backend.services.onboarding.FontePriority;
 import br.com.menthoros.backend.services.onboarding.NormalizedActivity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +15,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,20 +29,6 @@ import java.util.stream.Collectors;
 @Component
 @RequiredArgsConstructor
 public class ActivityDedupServiceImpl implements ActivityDedupService {
-
-    /** Mesma ordem de design.md Decisao 2: Garmin/FIT > Coros/Polar/TrainingPeaks > Strava > Planilha > Manual > Declarado. */
-    private static final Map<FonteDados, Integer> SOURCE_PRIORITY = new EnumMap<>(FonteDados.class);
-
-    static {
-        SOURCE_PRIORITY.put(FonteDados.GARMIN, 1);
-        SOURCE_PRIORITY.put(FonteDados.POLAR, 2);
-        SOURCE_PRIORITY.put(FonteDados.WAHOO, 2);
-        SOURCE_PRIORITY.put(FonteDados.TRAINING_PEAKS, 2);
-        SOURCE_PRIORITY.put(FonteDados.STRAVA, 3);
-        SOURCE_PRIORITY.put(FonteDados.INTERVALS_ICU, 3);
-        SOURCE_PRIORITY.put(FonteDados.MANUAL, 4);
-        SOURCE_PRIORITY.put(FonteDados.IA_GERADO, 5);
-    }
 
     private static final double TOLERANCIA_SIMILARIDADE = 0.05; // +-5%, design.md Decisao 2
 
@@ -91,7 +77,7 @@ public class ActivityDedupServiceImpl implements ActivityDedupService {
 
             duplicatas.add(atual);
             NormalizedActivity vencedora = duplicatas.stream()
-                    .min((a, b) -> prioridade(a.source()).compareTo(prioridade(b.source())))
+                    .min((a, b) -> Integer.compare(prioridade(a.source()), prioridade(b.source())))
                     .orElseThrow();
             for (NormalizedActivity descartada : duplicatas) {
                 if (descartada != vencedora) {
@@ -123,8 +109,8 @@ public class ActivityDedupServiceImpl implements ActivityDedupService {
         return Math.abs(a - b) / base <= TOLERANCIA_SIMILARIDADE;
     }
 
-    private Integer prioridade(FonteDados fonte) {
-        return SOURCE_PRIORITY.getOrDefault(fonte, 10);
+    private int prioridade(FonteDados fonte) {
+        return FontePriority.de(fonte);
     }
 
     private void registrarAuditoria(NormalizedActivity vencedora, NormalizedActivity descartada, UUID tenantId) {
