@@ -84,6 +84,9 @@ public class PlanoServiceImpl implements PlanoService {
     @Value("${onboarding.auto-approve.enabled:true}")
     private boolean autoApproveEnabled;
 
+    @Value("${onboarding.migrate-existing.enabled:true}")
+    private boolean migrateExistingEnabled;
+
     /**
      * Gera um plano de treino semanal personalizado para um atleta usando IA.
      *
@@ -227,17 +230,40 @@ public class PlanoServiceImpl implements PlanoService {
         // batch=false: este call site nao distingue chamadas interativas de lote (BatchPlanProcessor
         // chama o mesmo gerarPlanoTreino publico) — tag de metrica aproximada, nao uma limitacao funcional.
         UUID tenantId = TenantContext.getRequiredTenantId();
-        OnboardingContext onboardingContext = onboardingService.montarContexto(atleta.getId(), tenantId);
+        Optional<OnboardingContext> onboardingContext = resolverOnboardingContext(atleta.getId(), tenantId);
         Optional<WeekPlanSkeleton> weekPlanSkeleton = plannerShadowService.aplicarShadow(
-                plano, planoDto, dadosPlano, decisaoProgressao, periodo.inicio(), false, Optional.of(onboardingContext));
+                plano, planoDto, dadosPlano, decisaoProgressao, periodo.inicio(), false, onboardingContext);
 
         // 4.6. Auto-approve Cenario A (CA5, design.md Decisao 7): so dispara com EXCEPTION_ONLY
         // E !requiresCoachReview E risco != HIGH_RISK — a dupla checagem com o risco e defesa em
         // profundidade, redundante por design (HIGH_RISK ja deveria forcar requiresCoachReview).
-        aplicarAutoApproveSeElegivel(plano, onboardingContext, weekPlanSkeleton, tenantId);
+        onboardingContext.ifPresent(context -> aplicarAutoApproveSeElegivel(plano, context, weekPlanSkeleton, tenantId));
 
         // 5. Persistir e retornar
         return salvarPlanoCompleto(plano, metaDados);
+    }
+
+    /**
+     * Resolve o {@code OnboardingContext} do atleta, respeitando o kill-switch
+     * {@code onboarding.migrate-existing.enabled} (tasks.md 5.7, design.md Decisao 6): atletas
+     * que JA possuem um {@code AthleteBaselineSnapshot} (ja onboarded ou ja migrados) sempre tem
+     * o contexto recalculado — necessario para o re-baseline da calibracao (CA3). Atletas
+     * legados SEM snapshot ainda so sao migrados automaticamente quando a flag esta habilitada;
+     * desabilitada, o atleta legado continua sem {@code OnboardingContext} (comportamento
+     * identico ao anterior a esta change) ate que a flag volte a ligar ou o atleta conclua o
+     * onboarding manualmente.
+     *
+     * Idempotent: NAO — pode disparar o calculo/persistencia do baseline (ver
+     * {@code OnboardingService.montarContexto}).
+     * Side Effects: ver montarContexto quando o contexto e calculado; NENHUM caso contrario.
+     * Tenant-aware: SIM — tenantId explicito.
+     */
+    private Optional<OnboardingContext> resolverOnboardingContext(UUID atletaId, UUID tenantId) {
+        boolean atletaLegado = !onboardingService.possuiBaseline(atletaId, tenantId);
+        if (atletaLegado && !migrateExistingEnabled) {
+            return Optional.empty();
+        }
+        return Optional.of(onboardingService.montarContexto(atletaId, tenantId));
     }
 
     /**

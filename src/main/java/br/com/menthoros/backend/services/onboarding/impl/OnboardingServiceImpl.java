@@ -64,6 +64,15 @@ public class OnboardingServiceImpl implements OnboardingService {
     private final PlanningPolicyResolver planningPolicyResolver;
 
     @Override
+    @Transactional(readOnly = true)
+    public boolean possuiBaseline(UUID atletaId, UUID tenantId) {
+        if (atletaId == null || tenantId == null) {
+            throw new IllegalArgumentException("atletaId e tenantId nao podem ser nulos");
+        }
+        return athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atletaId, tenantId).isPresent();
+    }
+
+    @Override
     @Transactional
     public OnboardingContext montarContexto(UUID atletaId, UUID tenantId) {
         if (atletaId == null || tenantId == null) {

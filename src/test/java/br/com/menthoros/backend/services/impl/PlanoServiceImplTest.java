@@ -116,6 +116,7 @@ class PlanoServiceImplTest {
     void setUpTenant() {
         tenantId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
+        lenient().when(onboardingService.possuiBaseline(any(), any())).thenReturn(true);
         lenient().when(onboardingService.montarContexto(any(), any())).thenReturn(
                 new OnboardingContext(
                         new AthleteBaseline(null, null),
@@ -735,6 +736,63 @@ class PlanoServiceImplTest {
                 hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
                 planoService.gerarPlanoTreino(atletaId, modoGeracao);
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("resolverOnboardingContext (migracao de atletas legados, Seção 5.7)")
+    class MigrateExisting {
+
+        @Test
+        @DisplayName("atleta legado + flag desabilitada -> nao calcula OnboardingContext")
+        void naoCalculaContextoParaAtletaLegadoComFlagDesabilitada() {
+            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "migrateExistingEnabled", false);
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            when(onboardingService.possuiBaseline(atletaId, tenantId)).thenReturn(false);
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                planoService.gerarPlanoTreino(atletaId, modoGeracao);
+            }
+
+            verify(onboardingService, never()).montarContexto(any(), any());
+            verify(planoReviewService, never()).aprovarTransicao(any(), any());
+        }
+
+        @Test
+        @DisplayName("atleta legado + flag habilitada -> calcula OnboardingContext normalmente")
+        void calculaContextoParaAtletaLegadoComFlagHabilitada() {
+            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "migrateExistingEnabled", true);
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            when(onboardingService.possuiBaseline(atletaId, tenantId)).thenReturn(false);
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                planoService.gerarPlanoTreino(atletaId, modoGeracao);
+            }
+
+            verify(onboardingService).montarContexto(atletaId, tenantId);
+        }
+
+        @Test
+        @DisplayName("atleta ja migrado (possui baseline) + flag desabilitada -> recalcula mesmo assim (CA3)")
+        void recalculaParaAtletaJaMigradoMesmoComFlagDesabilitada() {
+            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "migrateExistingEnabled", false);
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            when(onboardingService.possuiBaseline(atletaId, tenantId)).thenReturn(true);
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                planoService.gerarPlanoTreino(atletaId, modoGeracao);
+            }
+
+            verify(onboardingService).montarContexto(atletaId, tenantId);
         }
     }
 

@@ -31,6 +31,18 @@ public interface OnboardingService {
     OnboardingContext montarContexto(UUID atletaId, UUID tenantId);
 
     /**
+     * Indica se o atleta ja possui um {@code AthleteBaselineSnapshot} persistido — usado pelo
+     * kill-switch {@code onboarding.migrate-existing.enabled} (tasks.md 5.7, design.md Decisao 6)
+     * para decidir se um atleta legado (pre-onboarding) deve ter o baseline calculado na
+     * proxima geracao de plano.
+     *
+     * Idempotente: SIM — leitura pura.
+     * Efeitos colaterais: NENHUM.
+     * Tenant-aware: SIM — {@code tenantId} explicito.
+     */
+    boolean possuiBaseline(UUID atletaId, UUID tenantId);
+
+    /**
      * Cria ou atualiza a {@code Prova} alvo do atleta a partir do {@code dataProva} coletado no
      * onboarding (CA13, design.md Decisao 8) — reaproveita o CRUD de {@code Prova} ja existente
      * em vez de manter um campo solto duplicado. Quando ja existe uma {@code Prova} com a mesma
