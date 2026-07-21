@@ -190,6 +190,63 @@ class PlanoReviewServiceImplTest {
     }
 
     // =========================================================================
+    // aprovarTransicao (athlete-onboarding-baseline, extraído para reuso pelo auto-approve)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("aprovarTransicao")
+    class AprovarTransicao {
+
+        @Test
+        @DisplayName("aplica os mesmos 4 efeitos de aprovarPlano: status, comment, save, evento")
+        void aplicaOsMesmosEfeitosDeAprovarPlano() {
+            PlanoSemanal plano = planoAguardando();
+            plano.setAtleta(Atleta.builder().id(atletaId).build());
+            when(planoSemanalRepository.save(any())).thenReturn(plano);
+
+            PlanoSemanal resultado = service.aprovarTransicao(plano, tenantId);
+
+            assertThat(resultado.getReviewStatus()).isEqualTo(PlanoReviewStatus.APROVADO);
+            assertThat(resultado.getReviewComment()).isNull();
+            verify(planoSemanalRepository).save(plano);
+
+            ArgumentCaptor<PlanoAprovadoEvent> eventCaptor = ArgumentCaptor.forClass(PlanoAprovadoEvent.class);
+            verify(eventPublisher).publishEvent(eventCaptor.capture());
+            assertThat(eventCaptor.getValue().atletaId()).isEqualTo(atletaId);
+            assertThat(eventCaptor.getValue().tenantId()).isEqualTo(tenantId);
+        }
+
+        @Test
+        @DisplayName("nao valida transicao — chamador e responsavel (usado pelo auto-approve em plano novo)")
+        void naoValidaTransicaoDeOrigem() {
+            PlanoSemanal planoNovo = planoComStatus(null); // plano recem-criado, sem reviewStatus ainda
+            planoNovo.setAtleta(Atleta.builder().id(atletaId).build());
+            when(planoSemanalRepository.save(any())).thenReturn(planoNovo);
+
+            PlanoSemanal resultado = service.aprovarTransicao(planoNovo, tenantId);
+
+            assertThat(resultado.getReviewStatus()).isEqualTo(PlanoReviewStatus.APROVADO);
+        }
+
+        @Test
+        @DisplayName("lança IllegalArgumentException quando plano é nulo")
+        void lancaExcecaoParaPlanoNulo() {
+            assertThatThrownBy(() -> service.aprovarTransicao(null, tenantId))
+                    .isInstanceOf(IllegalArgumentException.class);
+            verifyNoInteractions(planoSemanalRepository, eventPublisher);
+        }
+
+        @Test
+        @DisplayName("lança IllegalArgumentException quando tenantId é nulo")
+        void lancaExcecaoParaTenantIdNulo() {
+            PlanoSemanal plano = planoAguardando();
+            assertThatThrownBy(() -> service.aprovarTransicao(plano, null))
+                    .isInstanceOf(IllegalArgumentException.class);
+            verifyNoInteractions(planoSemanalRepository, eventPublisher);
+        }
+    }
+
+    // =========================================================================
     // rejeitarPlano
     // =========================================================================
 

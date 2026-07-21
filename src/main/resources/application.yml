@@ -275,6 +275,16 @@ planner-engine:
     recent-window-days: ${PLANNER_ENGINE_INJURY_RECENT_WINDOW_DAYS:30}
 
 # ----------------------------------------
+# ATHLETE ONBOARDING BASELINE (athlete-onboarding-baseline)
+#
+# Kill-switch do auto-approve do Cenario A (CA5, design.md Decisao 7) — quando
+# desabilitado, todo plano volta a nascer AGUARDANDO_REVISAO independente do score.
+# ----------------------------------------
+onboarding:
+  auto-approve:
+    enabled: ${ONBOARDING_AUTO_APPROVE_ENABLED:true}
+
+# ----------------------------------------
 # KEYCLOAK ADMIN REST API
 # ----------------------------------------
 keycloak:

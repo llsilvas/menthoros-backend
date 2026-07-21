@@ -67,6 +67,18 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         PlanoSemanal plano = buscarPlanoDoTenant(planoId, tenantId);
         validarTransicao(plano, PlanoReviewStatus.APROVADO);
 
+        PlanoSemanal salvo = aprovarTransicao(plano, tenantId);
+
+        log.info("Plano {} aprovado com sucesso para tenant {}", planoId, tenantId);
+        return planoSemanalMapper.toOutputDtoSafe(salvo);
+    }
+
+    @Override
+    @Transactional
+    public PlanoSemanal aprovarTransicao(PlanoSemanal plano, UUID tenantId) {
+        if (plano == null) throw new IllegalArgumentException("plano não pode ser nulo");
+        if (tenantId == null) throw new IllegalArgumentException("tenantId não pode ser nulo");
+
         plano.setReviewStatus(PlanoReviewStatus.APROVADO);
         plano.setReviewComment(null);
 
@@ -74,8 +86,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         inicializarAssociacoes(salvo);
         eventPublisher.publishEvent(new PlanoAprovadoEvent(salvo.getId(), salvo.getAtleta().getId(), tenantId));
 
-        log.info("Plano {} aprovado com sucesso para tenant {}", planoId, tenantId);
-        return planoSemanalMapper.toOutputDtoSafe(salvo);
+        return salvo;
     }
 
     /**
