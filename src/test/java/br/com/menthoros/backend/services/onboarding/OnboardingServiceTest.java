@@ -10,9 +10,11 @@ import br.com.menthoros.backend.entity.AthleteBaselineState;
 import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.TipoProva;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.repository.AthleteBaselineHistoryRepository;
 import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
@@ -31,7 +33,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -315,6 +320,147 @@ class OnboardingServiceTest {
                     null, tenantId, LocalDate.now(), TipoProva.CORRIDA_RUA, DistanciaProva.KM_10, null, "X"))
                     .isInstanceOf(IllegalArgumentException.class);
         }
+    }
+
+    @Nested
+    @DisplayName("salvarRascunho")
+    class SalvarRascunho {
+
+        @Test
+        @DisplayName("cria novo PerfilOnboardingAtleta sem tocar Atleta")
+        void criaNovoRascunhoSemTocarAtleta() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            PerfilOnboardingAtleta salvo = service.salvarRascunho(atletaId, tenantId, draftInput());
+
+            assertThat(salvo.getObjetivo()).isEqualTo("Correr uma maratona");
+            assertThat(salvo.getNivelExperiencia()).isEqualTo(NivelExperiencia.INTERMEDIARIO);
+            assertThat(salvo.getDiasDisponiveis()).containsExactly(DiaSemana.SEGUNDA, DiaSemana.QUARTA);
+            assertThat(salvo.getVolumeSemanalMax()).isEqualTo(40);
+            assertThat(salvo.getTemLesao()).isFalse();
+            verify(atletaRepository, org.mockito.Mockito.never()).save(any());
+        }
+
+        @Test
+        @DisplayName("atualiza rascunho existente (upsert — nao duplica)")
+        void atualizaRascunhoExistente() {
+            PerfilOnboardingAtleta existente = new PerfilOnboardingAtleta();
+            existente.setId(UUID.randomUUID());
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(existente));
+            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            PerfilOnboardingAtleta salvo = service.salvarRascunho(atletaId, tenantId, draftInput());
+
+            assertThat(salvo.getId()).isEqualTo(existente.getId());
+            assertThat(salvo.getObjetivo()).isEqualTo("Correr uma maratona");
+        }
+
+        @Test
+        @DisplayName("lanca DomainNotFoundException quando atleta nao existe no tenant")
+        void lancaExcecaoQuandoAtletaNaoExiste() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.salvarRascunho(atletaId, tenantId, draftInput()))
+                    .isInstanceOf(DomainNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("lanca IllegalArgumentException quando algum argumento e nulo")
+        void lancaExcecaoParaArgumentosNulos() {
+            assertThatThrownBy(() -> service.salvarRascunho(null, tenantId, draftInput()))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> service.salvarRascunho(atletaId, null, draftInput()))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> service.salvarRascunho(atletaId, tenantId, null))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("concluirOnboarding")
+    class ConcluirOnboarding {
+
+        @Test
+        @DisplayName("migra os campos do rascunho para Atleta e marca perfil COMPLETO, na mesma transacao")
+        void migraCamposEMarcaCompleto() {
+            Instant agora = Instant.now();
+            atleta.setUpdatedAt(LocalDateTime.now().minusDays(2));
+            PerfilOnboardingAtleta perfil = rascunhoPreenchido(agora.minusSeconds(3600));
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
+            when(atletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            PerfilOnboardingAtleta resultado = service.concluirOnboarding(atletaId, tenantId);
+
+            assertThat(resultado.getStatus()).isEqualTo("COMPLETO");
+            ArgumentCaptor<Atleta> captor = ArgumentCaptor.forClass(Atleta.class);
+            verify(atletaRepository).save(captor.capture());
+            assertThat(captor.getValue().getObjetivo()).isEqualTo("Correr uma maratona");
+            assertThat(captor.getValue().getNivelExperiencia()).isEqualTo(NivelExperiencia.INTERMEDIARIO);
+            assertThat(captor.getValue().getVolumeSemanalMax()).isEqualTo(40);
+        }
+
+        @Test
+        @DisplayName("lanca DomainConflictException quando Atleta foi editado depois do inicio do rascunho")
+        void lancaConflitoQuandoAtletaEditadoDepoisDoRascunho() {
+            Instant inicioRascunho = Instant.now().minusSeconds(3600);
+            atleta.setUpdatedAt(LocalDateTime.ofInstant(inicioRascunho.plusSeconds(60), ZoneId.systemDefault()));
+            PerfilOnboardingAtleta perfil = rascunhoPreenchido(inicioRascunho);
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
+
+            assertThatThrownBy(() -> service.concluirOnboarding(atletaId, tenantId))
+                    .isInstanceOf(DomainConflictException.class);
+            verify(atletaRepository, org.mockito.Mockito.never()).save(any());
+            verify(perfilOnboardingAtletaRepository, org.mockito.Mockito.never()).save(any());
+        }
+
+        @Test
+        @DisplayName("lanca DomainNotFoundException quando rascunho nao existe")
+        void lancaExcecaoQuandoRascunhoNaoExiste() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.concluirOnboarding(atletaId, tenantId))
+                    .isInstanceOf(DomainNotFoundException.class);
+        }
+
+        private PerfilOnboardingAtleta rascunhoPreenchido(Instant criadoEm) {
+            PerfilOnboardingAtleta perfil = new PerfilOnboardingAtleta();
+            perfil.setId(UUID.randomUUID());
+            perfil.setCriadoEm(criadoEm);
+            perfil.setObjetivo("Correr uma maratona");
+            perfil.setNivelExperiencia(NivelExperiencia.INTERMEDIARIO);
+            perfil.setDiasDisponiveis(List.of(DiaSemana.SEGUNDA, DiaSemana.QUARTA));
+            perfil.setVolumeSemanalMax(40);
+            perfil.setTemLesao(false);
+            return perfil;
+        }
+    }
+
+    private OnboardingDraftInput draftInput() {
+        return new OnboardingDraftInput(
+                "Correr uma maratona",
+                NivelExperiencia.INTERMEDIARIO,
+                List.of(DiaSemana.SEGUNDA, DiaSemana.QUARTA),
+                40,
+                false,
+                null,
+                null,
+                null,
+                null,
+                60,
+                null,
+                "CORRIDA",
+                "BOA",
+                false
+        );
     }
 
     private NormalizedActivity normalizedActivity() {

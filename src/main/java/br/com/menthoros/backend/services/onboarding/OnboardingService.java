@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.onboarding;
 
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
+import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.TipoProva;
@@ -63,4 +64,41 @@ public interface OnboardingService {
     Prova criarOuAtualizarProvaAlvo(UUID atletaId, UUID tenantId, LocalDate dataProva,
                                      TipoProva tipoProva, DistanciaProva distancia,
                                      BigDecimal distanciaKm, String nomeProva);
+
+    /**
+     * Salva (cria ou atualiza) o rascunho de onboarding — retrofit 10.3, substitui a Decisao 10
+     * original que escrevia os campos espelhados direto em {@code Atleta}. NUNCA toca
+     * {@code Atleta}; todo o formulario, enquanto em {@code RASCUNHO}, vive apenas em
+     * {@code PerfilOnboardingAtleta} (CA8 — retomar onboarding interrompido).
+     *
+     * Idempotente: SIM — upsert por atleta+tenant, chamadas repetidas sobrescrevem o mesmo
+     * rascunho.
+     * Efeitos colaterais: persiste/atualiza {@code PerfilOnboardingAtleta} com status
+     * {@code RASCUNHO} (nao altera o status se ja estiver {@code COMPLETO}).
+     * Tenant-aware: SIM — {@code tenantId} explicito.
+     *
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o atleta nao existir no tenant
+     */
+    PerfilOnboardingAtleta salvarRascunho(UUID atletaId, UUID tenantId, OnboardingDraftInput input);
+
+    /**
+     * Conclui o onboarding: migra os campos espelhados do rascunho para {@code Atleta} e marca
+     * o perfil como {@code COMPLETO}, numa unica transacao (retrofit 10.3, ADR-0002).
+     *
+     * <p>Checagem de conflito: se {@code Atleta.updatedAt} for posterior ao {@code criadoEm} do
+     * rascunho, alguem editou o atleta diretamente (ex.: coach via CRUD generico) depois que o
+     * rascunho comecou — lanca {@code DomainConflictException} em vez de sobrescrever a edicao
+     * concorrente.
+     *
+     * Idempotente: NAO — muda o status do perfil e os campos do atleta a cada chamada
+     * (chamar de novo apos concluido re-executa a migracao, sobrescrevendo os campos com o
+     * mesmo rascunho).
+     * Efeitos colaterais: persiste {@code Atleta} (7 campos migrados) + {@code PerfilOnboardingAtleta}
+     * (status -&gt; COMPLETO).
+     * Tenant-aware: SIM — {@code tenantId} explicito.
+     *
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o atleta ou o rascunho nao existirem no tenant
+     * @throws br.com.menthoros.backend.exception.DomainConflictException se {@code Atleta} foi editado depois do inicio do rascunho
+     */
+    PerfilOnboardingAtleta concluirOnboarding(UUID atletaId, UUID tenantId);
 }

@@ -13,6 +13,7 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoProva;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.repository.AthleteBaselineHistoryRepository;
 import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
@@ -28,6 +29,7 @@ import br.com.menthoros.backend.services.onboarding.ConfidenceScoreResult;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScorer;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScorerInput;
 import br.com.menthoros.backend.services.onboarding.NormalizedActivity;
+import br.com.menthoros.backend.services.onboarding.OnboardingDraftInput;
 import br.com.menthoros.backend.services.onboarding.OnboardingService;
 import br.com.menthoros.backend.services.onboarding.PlanningPolicyResolver;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +40,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -152,6 +155,79 @@ public class OnboardingServiceImpl implements OnboardingService {
                 });
 
         return salva;
+    }
+
+    @Override
+    @Transactional
+    public PerfilOnboardingAtleta salvarRascunho(UUID atletaId, UUID tenantId, OnboardingDraftInput input) {
+        if (atletaId == null || tenantId == null || input == null) {
+            throw new IllegalArgumentException("atletaId, tenantId e input nao podem ser nulos");
+        }
+        atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Atleta nao encontrado: " + atletaId));
+
+        PerfilOnboardingAtleta perfil = perfilOnboardingAtletaRepository
+                .findByAtletaIdAndTenantId(atletaId, tenantId)
+                .orElseGet(() -> {
+                    PerfilOnboardingAtleta novo = new PerfilOnboardingAtleta();
+                    Atleta ref = new Atleta();
+                    ref.setId(atletaId);
+                    novo.setAtleta(ref);
+                    novo.setTenantId(tenantId);
+                    return novo;
+                });
+
+        perfil.setObjetivo(input.objetivo());
+        perfil.setNivelExperiencia(input.nivelExperiencia());
+        perfil.setDiasDisponiveis(input.diasDisponiveis());
+        perfil.setVolumeSemanalMax(input.volumeSemanalMax());
+        perfil.setTemLesao(input.temLesao());
+        perfil.setDescricaoLesao(input.descricaoLesao());
+        perfil.setDataUltimaLesao(input.dataUltimaLesao());
+        perfil.setHistoricoLesoes(input.historicoLesoes());
+        perfil.setMaiorTreinoRecenteKm(input.maiorTreinoRecenteKm());
+        perfil.setDuracaoDisponivelMin(input.duracaoDisponivelMin());
+        perfil.setRestricoes(input.restricoes());
+        perfil.setModalidade(input.modalidade());
+        perfil.setPercepcaoCondicionamento(input.percepcaoCondicionamento());
+        perfil.setPreenchidoPorCoach(input.preenchidoPorCoach());
+
+        return perfilOnboardingAtletaRepository.save(perfil);
+    }
+
+    @Override
+    @Transactional
+    public PerfilOnboardingAtleta concluirOnboarding(UUID atletaId, UUID tenantId) {
+        if (atletaId == null || tenantId == null) {
+            throw new IllegalArgumentException("atletaId e tenantId nao podem ser nulos");
+        }
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Atleta nao encontrado: " + atletaId));
+        PerfilOnboardingAtleta perfil = perfilOnboardingAtletaRepository
+                .findByAtletaIdAndTenantId(atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Rascunho de onboarding nao encontrado para atleta: " + atletaId));
+
+        if (atleta.getUpdatedAt() != null) {
+            Instant atletaAtualizadoEm = atleta.getUpdatedAt().atZone(ZoneId.systemDefault()).toInstant();
+            if (atletaAtualizadoEm.isAfter(perfil.getCriadoEm())) {
+                throw new DomainConflictException(
+                        "Atleta " + atletaId + " foi editado depois do inicio do rascunho de onboarding — "
+                                + "conclua novamente apos revisar os dados atuais.");
+            }
+        }
+
+        atleta.setObjetivo(perfil.getObjetivo());
+        atleta.setNivelExperiencia(perfil.getNivelExperiencia());
+        atleta.setDiasDisponiveis(perfil.getDiasDisponiveis());
+        atleta.setVolumeSemanalMax(perfil.getVolumeSemanalMax());
+        atleta.setTemLesao(perfil.getTemLesao());
+        atleta.setDescricaoLesao(perfil.getDescricaoLesao());
+        atleta.setDataUltimaLesao(perfil.getDataUltimaLesao());
+        atleta.setHistoricoLesoes(perfil.getHistoricoLesoes());
+        atletaRepository.save(atleta);
+
+        perfil.setStatus("COMPLETO");
+        return perfilOnboardingAtletaRepository.save(perfil);
     }
 
     private List<NormalizedActivity> normalizarEDeduplicarHistorico(UUID atletaId, UUID tenantId) {
