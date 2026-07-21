@@ -5,6 +5,7 @@ import br.com.menthoros.backend.domain.planner.AthleteConstraints;
 import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.domain.planner.PlanningPolicy;
+import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.AthleteBaselineHistory;
 import br.com.menthoros.backend.entity.AthleteBaselineState;
@@ -15,6 +16,7 @@ import br.com.menthoros.backend.enums.DispositivoMarca;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoProva;
+import br.com.menthoros.backend.exception.AccessDeniedException;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.repository.AthleteBaselineHistoryRepository;
@@ -23,17 +25,21 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.onboarding.ActivityDedupService;
 import br.com.menthoros.backend.services.onboarding.ActivityNormalizer;
 import br.com.menthoros.backend.services.onboarding.BaselineCalculator;
 import br.com.menthoros.backend.services.onboarding.BaselineResult;
 import br.com.menthoros.backend.services.onboarding.CalibrationEvaluation;
 import br.com.menthoros.backend.services.onboarding.CalibrationService;
+import br.com.menthoros.backend.services.onboarding.CalibrationStage;
+import br.com.menthoros.backend.services.onboarding.CalibrationStatusResult;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScoreResult;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScorer;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScorerInput;
 import br.com.menthoros.backend.services.onboarding.ConfidenceTier;
 import br.com.menthoros.backend.services.onboarding.NormalizedActivity;
+import br.com.menthoros.backend.services.onboarding.OnboardingConclusionResult;
 import br.com.menthoros.backend.services.onboarding.OnboardingDraftInput;
 import br.com.menthoros.backend.services.onboarding.OnboardingService;
 import br.com.menthoros.backend.services.onboarding.PlanningPolicyResolver;
@@ -76,6 +82,7 @@ public class OnboardingServiceImpl implements OnboardingService {
     private final ConfidenceScorer confidenceScorer;
     private final PlanningPolicyResolver planningPolicyResolver;
     private final CalibrationService calibrationService;
+    private final AtletaProgressService atletaProgressService;
 
     @Override
     @Transactional(readOnly = true)
@@ -166,10 +173,12 @@ public class OnboardingServiceImpl implements OnboardingService {
 
     @Override
     @Transactional
-    public PerfilOnboardingAtleta salvarRascunho(UUID atletaId, UUID tenantId, OnboardingDraftInput input) {
+    public PerfilOnboardingAtleta salvarRascunho(
+            UUID atletaId, UUID tenantId, OnboardingDraftInput input, boolean chamadorEhCoach) {
         if (atletaId == null || tenantId == null || input == null) {
             throw new IllegalArgumentException("atletaId, tenantId e input nao podem ser nulos");
         }
+        validarPosseOuCoach(atletaId, chamadorEhCoach);
         atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta nao encontrado: " + atletaId));
 
@@ -206,11 +215,23 @@ public class OnboardingServiceImpl implements OnboardingService {
     }
 
     @Override
-    @Transactional
-    public PerfilOnboardingAtleta concluirOnboarding(UUID atletaId, UUID tenantId) {
+    @Transactional(readOnly = true)
+    public Optional<PerfilOnboardingAtleta> buscarRascunho(UUID atletaId, UUID tenantId, boolean chamadorEhCoach) {
         if (atletaId == null || tenantId == null) {
             throw new IllegalArgumentException("atletaId e tenantId nao podem ser nulos");
         }
+        validarPosseOuCoach(atletaId, chamadorEhCoach);
+        return perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId);
+    }
+
+    @Override
+    @Transactional
+    public OnboardingConclusionResult concluirOnboarding(UUID atletaId, UUID tenantId, boolean chamadorEhCoach,
+            LocalDate dataProva, TipoProva tipoProva, DistanciaProva distancia, BigDecimal distanciaKm, String nomeProva) {
+        if (atletaId == null || tenantId == null) {
+            throw new IllegalArgumentException("atletaId e tenantId nao podem ser nulos");
+        }
+        validarPosseOuCoach(atletaId, chamadorEhCoach);
         Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta nao encontrado: " + atletaId));
         PerfilOnboardingAtleta perfil = perfilOnboardingAtletaRepository
@@ -237,7 +258,55 @@ public class OnboardingServiceImpl implements OnboardingService {
         atletaRepository.save(atleta);
 
         perfil.setStatus("COMPLETO");
-        return perfilOnboardingAtletaRepository.save(perfil);
+        PerfilOnboardingAtleta perfilConcluido = perfilOnboardingAtletaRepository.save(perfil);
+
+        Prova provaAlvo = criarOuAtualizarProvaAlvo(atletaId, tenantId, dataProva, tipoProva, distancia, distanciaKm, nomeProva);
+        OnboardingContext context = montarContexto(atletaId, tenantId);
+        ConfidenceTier tier = athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)
+                .map(AthleteBaselineState::getConfidenceTier)
+                .map(ConfidenceTier::valueOf)
+                .orElse(null);
+
+        return new OnboardingConclusionResult(perfilConcluido, provaAlvo, context, tier);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<CalibrationStatusResult> obterStatusCalibracao(UUID atletaId, UUID tenantId, boolean chamadorEhCoach) {
+        if (atletaId == null || tenantId == null) {
+            throw new IllegalArgumentException("atletaId e tenantId nao podem ser nulos");
+        }
+        validarPosseOuCoach(atletaId, chamadorEhCoach);
+
+        AthleteBaselineState estado = athleteBaselineStateRepository
+                .findByAtletaIdAndTenantId(atletaId, tenantId)
+                .orElse(null);
+        if (estado == null || estado.getCalibracaoIniciadaEm() == null) {
+            return Optional.empty();
+        }
+
+        LocalDate inicioCalibracao = estado.getCalibracaoIniciadaEm().atZone(ZoneId.systemDefault()).toLocalDate();
+        int semanaDesdeInicioCalibracao = (int) ChronoUnit.WEEKS.between(inicioCalibracao, LocalDate.now()) + 1;
+        CalibrationStage stage = calibrationService.determinarEstagio(semanaDesdeInicioCalibracao);
+
+        return Optional.of(new CalibrationStatusResult(
+                TrainingPhase.CALIBRATION, stage, semanaDesdeInicioCalibracao, estado.getConfidenceScore()));
+    }
+
+    /**
+     * Bloqueia acesso de um atleta ao onboarding de outro atleta do mesmo tenant (IDOR) — mesmo
+     * padrao de {@code CheckinProntidaoServiceImpl.validarPosseOuAdmin}. {@code @RequireTenant}
+     * no controller so valida que {@code atletaId} pertence ao tenant, nao que pertence ao
+     * chamador. TECNICO/ADMIN (coach-como-proxy, design.md Decisao 3) tem acesso irrestrito.
+     */
+    private void validarPosseOuCoach(UUID atletaId, boolean chamadorEhCoach) {
+        if (chamadorEhCoach) {
+            return;
+        }
+        UUID atletaIdAtual = atletaProgressService.resolverAtletaIdAtual();
+        if (!atletaIdAtual.equals(atletaId)) {
+            throw new AccessDeniedException("Atleta so pode acessar o proprio onboarding");
+        }
     }
 
     @Override

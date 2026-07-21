@@ -73,6 +73,11 @@ public interface OnboardingService {
      * {@code Atleta}; todo o formulario, enquanto em {@code RASCUNHO}, vive apenas em
      * {@code PerfilOnboardingAtleta} (CA8 — retomar onboarding interrompido).
      *
+     * <p>{@code chamadorEhCoach} (task 6.0.1/6.0.5): quando {@code false}, valida que
+     * {@code atletaId} pertence ao proprio chamador (via {@code AtletaProgressService}) — atleta
+     * so pode editar o proprio rascunho. TECNICO/ADMIN (coach-como-proxy, Decisao 3) tem acesso
+     * irrestrito dentro do tenant, ja garantido por {@code @RequireTenant} no controller.
+     *
      * Idempotente: SIM — upsert por atleta+tenant, chamadas repetidas sobrescrevem o mesmo
      * rascunho.
      * Efeitos colaterais: persiste/atualiza {@code PerfilOnboardingAtleta} com status
@@ -80,12 +85,30 @@ public interface OnboardingService {
      * Tenant-aware: SIM — {@code tenantId} explicito.
      *
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o atleta nao existir no tenant
+     * @throws br.com.menthoros.backend.exception.AccessDeniedException se o chamador (atleta) tentar editar o rascunho de outro atleta
      */
-    PerfilOnboardingAtleta salvarRascunho(UUID atletaId, UUID tenantId, OnboardingDraftInput input);
+    PerfilOnboardingAtleta salvarRascunho(UUID atletaId, UUID tenantId, OnboardingDraftInput input, boolean chamadorEhCoach);
 
     /**
-     * Conclui o onboarding: migra os campos espelhados do rascunho para {@code Atleta} e marca
-     * o perfil como {@code COMPLETO}, numa unica transacao (retrofit 10.3, ADR-0002).
+     * Recupera o rascunho salvo (task 6.0.2, CA8 — retomar onboarding interrompido). Mesmo
+     * controle de acesso de {@link #salvarRascunho}.
+     *
+     * Idempotente: SIM — leitura pura.
+     * Efeitos colaterais: NENHUM.
+     * Tenant-aware: SIM — {@code tenantId} explicito.
+     *
+     * @return vazio quando o atleta ainda nao iniciou o onboarding
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o atleta nao existir no tenant
+     * @throws br.com.menthoros.backend.exception.AccessDeniedException se o chamador (atleta) tentar ler o rascunho de outro atleta
+     */
+    Optional<PerfilOnboardingAtleta> buscarRascunho(UUID atletaId, UUID tenantId, boolean chamadorEhCoach);
+
+    /**
+     * Conclui o onboarding (task 6.0.3): migra os campos espelhados do rascunho para
+     * {@code Atleta} e marca o perfil como {@code COMPLETO} numa unica transacao (retrofit 10.3,
+     * ADR-0002); em seguida cria/atualiza a {@code Prova} alvo a partir de {@code dataProva}
+     * (CA13, Decisao 8) e calcula o {@code OnboardingContext} inicial (baseline + score + tier,
+     * via {@link #montarContexto}).
      *
      * <p>Checagem de conflito: se {@code Atleta.updatedAt} for posterior ao {@code criadoEm} do
      * rascunho, alguem editou o atleta diretamente (ex.: coach via CRUD generico) depois que o
@@ -94,15 +117,32 @@ public interface OnboardingService {
      *
      * Idempotente: NAO — muda o status do perfil e os campos do atleta a cada chamada
      * (chamar de novo apos concluido re-executa a migracao, sobrescrevendo os campos com o
-     * mesmo rascunho).
+     * mesmo rascunho, e recalcula baseline/score/prova).
      * Efeitos colaterais: persiste {@code Atleta} (7 campos migrados) + {@code PerfilOnboardingAtleta}
-     * (status -&gt; COMPLETO).
+     * (status -&gt; COMPLETO) + {@code Prova} (cria/atualiza prova-alvo) + {@code AthleteBaselineState}/
+     * {@code AthleteBaselineHistory} (via {@code montarContexto}).
      * Tenant-aware: SIM — {@code tenantId} explicito.
      *
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o atleta ou o rascunho nao existirem no tenant
      * @throws br.com.menthoros.backend.exception.DomainConflictException se {@code Atleta} foi editado depois do inicio do rascunho
+     * @throws br.com.menthoros.backend.exception.AccessDeniedException se o chamador (atleta) tentar concluir o onboarding de outro atleta
      */
-    PerfilOnboardingAtleta concluirOnboarding(UUID atletaId, UUID tenantId);
+    OnboardingConclusionResult concluirOnboarding(UUID atletaId, UUID tenantId, boolean chamadorEhCoach,
+            LocalDate dataProva, TipoProva tipoProva, DistanciaProva distancia, BigDecimal distanciaKm, String nomeProva);
+
+    /**
+     * Status de calibracao para o {@code CalibrationBanner} do front (task 6.0.4). Mesmo
+     * controle de acesso de {@link #salvarRascunho}.
+     *
+     * Idempotente: SIM — leitura pura, nao avalia nem muda o estado de calibracao (isso e feito
+     * por {@link #avaliarCalibracaoSeAplicavel}, chamado na geracao de plano).
+     * Efeitos colaterais: NENHUM.
+     * Tenant-aware: SIM — {@code tenantId} explicito.
+     *
+     * @return vazio quando o atleta nao esta em {@code TrainingPhase.CALIBRATION}
+     * @throws br.com.menthoros.backend.exception.AccessDeniedException se o chamador (atleta) tentar ler o status de outro atleta
+     */
+    Optional<CalibrationStatusResult> obterStatusCalibracao(UUID atletaId, UUID tenantId, boolean chamadorEhCoach);
 
     /**
      * Avalia a semana de calibracao do atleta, se ele estiver em

@@ -66,6 +66,7 @@ class OnboardingServiceTest {
     @Mock private ConfidenceScorer confidenceScorer;
     @Mock private PlanningPolicyResolver planningPolicyResolver;
     @Mock private CalibrationService calibrationService;
+    @Mock private br.com.menthoros.backend.services.AtletaProgressService atletaProgressService;
 
     private OnboardingServiceImpl service;
 
@@ -79,7 +80,8 @@ class OnboardingServiceTest {
                 atletaRepository, treinoRealizadoRepository, perfilOnboardingAtletaRepository,
                 athleteBaselineStateRepository, athleteBaselineHistoryRepository, provaRepository,
                 activityNormalizer, activityDedupService,
-                baselineCalculator, confidenceScorer, planningPolicyResolver, calibrationService);
+                baselineCalculator, confidenceScorer, planningPolicyResolver, calibrationService,
+                atletaProgressService);
         atletaId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
         atleta = Atleta.builder().id(atletaId).nome("João").nivelExperiencia(NivelExperiencia.INTERMEDIARIO).build();
@@ -337,7 +339,7 @@ class OnboardingServiceTest {
             when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
             when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            PerfilOnboardingAtleta salvo = service.salvarRascunho(atletaId, tenantId, draftInput());
+            PerfilOnboardingAtleta salvo = service.salvarRascunho(atletaId, tenantId, draftInput(), true);
 
             assertThat(salvo.getObjetivo()).isEqualTo("Correr uma maratona");
             assertThat(salvo.getNivelExperiencia()).isEqualTo(NivelExperiencia.INTERMEDIARIO);
@@ -356,10 +358,34 @@ class OnboardingServiceTest {
             when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(existente));
             when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            PerfilOnboardingAtleta salvo = service.salvarRascunho(atletaId, tenantId, draftInput());
+            PerfilOnboardingAtleta salvo = service.salvarRascunho(atletaId, tenantId, draftInput(), true);
 
             assertThat(salvo.getId()).isEqualTo(existente.getId());
             assertThat(salvo.getObjetivo()).isEqualTo("Correr uma maratona");
+        }
+
+        @Test
+        @DisplayName("atleta autentica como o proprio dono (chamadorEhCoach=false) -> permitido")
+        void atletaAcessaProprioRascunho() {
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(atletaId);
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            PerfilOnboardingAtleta salvo = service.salvarRascunho(atletaId, tenantId, draftInput(), false);
+
+            assertThat(salvo.getObjetivo()).isEqualTo("Correr uma maratona");
+        }
+
+        @Test
+        @DisplayName("atleta tenta editar rascunho de outro atleta (chamadorEhCoach=false) -> AccessDeniedException")
+        void atletaNaoAcessaRascunhoDeOutro() {
+            UUID outroAtletaId = UUID.randomUUID();
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(outroAtletaId);
+
+            assertThatThrownBy(() -> service.salvarRascunho(atletaId, tenantId, draftInput(), false))
+                    .isInstanceOf(br.com.menthoros.backend.exception.AccessDeniedException.class);
+            verify(perfilOnboardingAtletaRepository, org.mockito.Mockito.never()).save(any());
         }
 
         @Test
@@ -367,19 +393,53 @@ class OnboardingServiceTest {
         void lancaExcecaoQuandoAtletaNaoExiste() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.salvarRascunho(atletaId, tenantId, draftInput()))
+            assertThatThrownBy(() -> service.salvarRascunho(atletaId, tenantId, draftInput(), true))
                     .isInstanceOf(DomainNotFoundException.class);
         }
 
         @Test
         @DisplayName("lanca IllegalArgumentException quando algum argumento e nulo")
         void lancaExcecaoParaArgumentosNulos() {
-            assertThatThrownBy(() -> service.salvarRascunho(null, tenantId, draftInput()))
+            assertThatThrownBy(() -> service.salvarRascunho(null, tenantId, draftInput(), true))
                     .isInstanceOf(IllegalArgumentException.class);
-            assertThatThrownBy(() -> service.salvarRascunho(atletaId, null, draftInput()))
+            assertThatThrownBy(() -> service.salvarRascunho(atletaId, null, draftInput(), true))
                     .isInstanceOf(IllegalArgumentException.class);
-            assertThatThrownBy(() -> service.salvarRascunho(atletaId, tenantId, null))
+            assertThatThrownBy(() -> service.salvarRascunho(atletaId, tenantId, null, true))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("buscarRascunho")
+    class BuscarRascunho {
+
+        @Test
+        @DisplayName("retorna o rascunho salvo")
+        void retornaRascunhoSalvo() {
+            PerfilOnboardingAtleta perfil = new PerfilOnboardingAtleta();
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
+
+            Optional<PerfilOnboardingAtleta> resultado = service.buscarRascunho(atletaId, tenantId, true);
+
+            assertThat(resultado).contains(perfil);
+        }
+
+        @Test
+        @DisplayName("retorna vazio quando o atleta ainda nao iniciou o onboarding")
+        void retornaVazioSemRascunho() {
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThat(service.buscarRascunho(atletaId, tenantId, true)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("atleta tenta ler rascunho de outro atleta -> AccessDeniedException")
+        void atletaNaoLeRascunhoDeOutro() {
+            UUID outroAtletaId = UUID.randomUUID();
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(outroAtletaId);
+
+            assertThatThrownBy(() -> service.buscarRascunho(atletaId, tenantId, false))
+                    .isInstanceOf(br.com.menthoros.backend.exception.AccessDeniedException.class);
         }
     }
 
@@ -388,20 +448,21 @@ class OnboardingServiceTest {
     class ConcluirOnboarding {
 
         @Test
-        @DisplayName("migra os campos do rascunho para Atleta e marca perfil COMPLETO, na mesma transacao")
-        void migraCamposEMarcaCompleto() {
+        @DisplayName("migra os campos do rascunho para Atleta, marca perfil COMPLETO, cria Prova e calcula OnboardingContext")
+        void migraCamposCriaProvaECalculaContexto() {
             Instant agora = Instant.now();
             atleta.setUpdatedAt(LocalDateTime.now().minusDays(2));
             PerfilOnboardingAtleta perfil = rascunhoPreenchido(agora.minusSeconds(3600));
+            stubFluxoDeConclusao(perfil);
 
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
-            when(atletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            OnboardingConclusionResult resultado = service.concluirOnboarding(
+                    atletaId, tenantId, true, LocalDate.now().plusMonths(3),
+                    TipoProva.CORRIDA_RUA, DistanciaProva.KM_21, null, "Meia SP");
 
-            PerfilOnboardingAtleta resultado = service.concluirOnboarding(atletaId, tenantId);
-
-            assertThat(resultado.getStatus()).isEqualTo("COMPLETO");
+            assertThat(resultado.perfil().getStatus()).isEqualTo("COMPLETO");
+            assertThat(resultado.provaAlvo().isProvaAlvo()).isTrue();
+            assertThat(resultado.context()).isNotNull();
+            assertThat(resultado.confidenceTier()).isEqualTo(ConfidenceTier.A);
             ArgumentCaptor<Atleta> captor = ArgumentCaptor.forClass(Atleta.class);
             verify(atletaRepository).save(captor.capture());
             assertThat(captor.getValue().getObjetivo()).isEqualTo("Correr uma maratona");
@@ -419,7 +480,9 @@ class OnboardingServiceTest {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
 
-            assertThatThrownBy(() -> service.concluirOnboarding(atletaId, tenantId))
+            assertThatThrownBy(() -> service.concluirOnboarding(
+                    atletaId, tenantId, true, LocalDate.now().plusMonths(3),
+                    TipoProva.CORRIDA_RUA, DistanciaProva.KM_21, null, "Meia SP"))
                     .isInstanceOf(DomainConflictException.class);
             verify(atletaRepository, org.mockito.Mockito.never()).save(any());
             verify(perfilOnboardingAtletaRepository, org.mockito.Mockito.never()).save(any());
@@ -431,8 +494,50 @@ class OnboardingServiceTest {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.concluirOnboarding(atletaId, tenantId))
+            assertThatThrownBy(() -> service.concluirOnboarding(
+                    atletaId, tenantId, true, LocalDate.now().plusMonths(3),
+                    TipoProva.CORRIDA_RUA, DistanciaProva.KM_21, null, "Meia SP"))
                     .isInstanceOf(DomainNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("atleta tenta concluir onboarding de outro atleta -> AccessDeniedException")
+        void atletaNaoConcluiOnboardingDeOutro() {
+            UUID outroAtletaId = UUID.randomUUID();
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(outroAtletaId);
+
+            assertThatThrownBy(() -> service.concluirOnboarding(
+                    atletaId, tenantId, false, LocalDate.now().plusMonths(3),
+                    TipoProva.CORRIDA_RUA, DistanciaProva.KM_21, null, "Meia SP"))
+                    .isInstanceOf(br.com.menthoros.backend.exception.AccessDeniedException.class);
+            verify(atletaRepository, org.mockito.Mockito.never()).save(any());
+        }
+
+        private void stubFluxoDeConclusao(PerfilOnboardingAtleta perfil) {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
+            when(atletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            // criarOuAtualizarProvaAlvo
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atleta)).thenReturn(List.of());
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> {
+                Prova p = inv.getArgument(0);
+                if (p.getId() == null) p.setId(UUID.randomUUID());
+                return p;
+            });
+            // montarContexto
+            when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(List.of());
+            when(activityDedupService.deduplicar(List.of(), tenantId)).thenReturn(List.of());
+            when(baselineCalculator.calcular(any(), any(), any()))
+                    .thenReturn(new BaselineResult(50, OrigemDado.MEASURED, 45, OrigemDado.MEASURED, 5, OrigemDado.MEASURED));
+            when(confidenceScorer.calcular(any())).thenReturn(new ConfidenceScoreResult(80, ConfidenceTier.A, false));
+            when(planningPolicyResolver.resolver(ConfidenceTier.A))
+                    .thenReturn(new PlanningPolicy(ReviewMode.EXCEPTION_ONLY, 1.0, true));
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenAnswer(inv -> {
+                AthleteBaselineState estado = new AthleteBaselineState();
+                estado.setConfidenceTier(ConfidenceTier.A.name());
+                return Optional.of(estado);
+            });
         }
 
         private PerfilOnboardingAtleta rascunhoPreenchido(Instant criadoEm) {
@@ -445,6 +550,48 @@ class OnboardingServiceTest {
             perfil.setVolumeSemanalMax(40);
             perfil.setTemLesao(false);
             return perfil;
+        }
+    }
+
+    @Nested
+    @DisplayName("obterStatusCalibracao")
+    class ObterStatusCalibracao {
+
+        @Test
+        @DisplayName("retorna vazio quando o atleta nao esta em calibracao")
+        void retornaVazioQuandoNaoEstaEmCalibracao() {
+            AthleteBaselineState estado = new AthleteBaselineState();
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(estado));
+
+            assertThat(service.obterStatusCalibracao(atletaId, tenantId, true)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("retorna phase/stage/weekNumber/confidenceScore quando em calibracao")
+        void retornaStatusQuandoEmCalibracao() {
+            AthleteBaselineState estado = new AthleteBaselineState();
+            estado.setCalibracaoIniciadaEm(LocalDate.now().minusWeeks(1).atStartOfDay(ZoneId.systemDefault()).toInstant());
+            estado.setConfidenceScore(40);
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(estado));
+            when(calibrationService.determinarEstagio(2)).thenReturn(CalibrationStage.CALIBRATION);
+
+            Optional<CalibrationStatusResult> resultado = service.obterStatusCalibracao(atletaId, tenantId, true);
+
+            assertThat(resultado).isPresent();
+            assertThat(resultado.get().phase()).isEqualTo(br.com.menthoros.backend.domain.planner.TrainingPhase.CALIBRATION);
+            assertThat(resultado.get().stage()).isEqualTo(CalibrationStage.CALIBRATION);
+            assertThat(resultado.get().weekNumber()).isEqualTo(2);
+            assertThat(resultado.get().confidenceScore()).isEqualTo(40);
+        }
+
+        @Test
+        @DisplayName("atleta tenta ler status de calibracao de outro atleta -> AccessDeniedException")
+        void atletaNaoLeStatusDeOutro() {
+            UUID outroAtletaId = UUID.randomUUID();
+            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(outroAtletaId);
+
+            assertThatThrownBy(() -> service.obterStatusCalibracao(atletaId, tenantId, false))
+                    .isInstanceOf(br.com.menthoros.backend.exception.AccessDeniedException.class);
         }
     }
 
