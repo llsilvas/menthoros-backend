@@ -1,14 +1,18 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
+import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.AthleteBaselineSnapshot;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
+import br.com.menthoros.backend.repository.AthleteBaselineSnapshotRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.services.PlanoReviewService;
+import br.com.menthoros.backend.services.onboarding.ConfidenceTier;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
@@ -17,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,6 +33,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
     private final PlanoSemanalRepository planoSemanalRepository;
     private final PlanoSemanalMapper planoSemanalMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final AthleteBaselineSnapshotRepository athleteBaselineSnapshotRepository;
 
     /**
      * Lista todos os planos do tenant com reviewStatus = AGUARDANDO_REVISAO.
@@ -142,7 +148,35 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         planos.forEach(this::inicializarAssociacoes);
 
         log.info("Encontrados {} planos com status {} para tenant {}", planos.size(), reviewStatus, tenantId);
-        return planos.stream().map(planoSemanalMapper::toOutputDtoSafe).toList();
+        List<PlanoSemanalOutputDto> dtos = planos.stream().map(planoSemanalMapper::toOutputDtoSafe).toList();
+        return enriquecerComConfidenceTier(planos, dtos, tenantId);
+    }
+
+    /**
+     * Enriquece cada DTO com o {@code ConfidenceTier} do baseline de onboarding do atleta dono
+     * do plano (athlete-onboarding-baseline, design.md Decisao 7 — badge de baixa confianca no
+     * Cenario B/C da fila de revisao do coach). {@code null} quando o atleta ainda nao passou
+     * pelo onboarding (sem {@code AthleteBaselineSnapshot}) ou nao esta carregado no plano.
+     */
+    private List<PlanoSemanalOutputDto> enriquecerComConfidenceTier(
+            List<PlanoSemanal> planos, List<PlanoSemanalOutputDto> dtos, UUID tenantId) {
+        List<PlanoSemanalOutputDto> enriquecidos = new ArrayList<>(dtos.size());
+        for (int i = 0; i < planos.size(); i++) {
+            enriquecidos.add(dtos.get(i).toBuilder()
+                    .confidenceTier(resolverConfidenceTier(planos.get(i).getAtleta(), tenantId))
+                    .build());
+        }
+        return enriquecidos;
+    }
+
+    private ConfidenceTier resolverConfidenceTier(Atleta atleta, UUID tenantId) {
+        if (atleta == null || atleta.getId() == null) {
+            return null;
+        }
+        return athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atleta.getId(), tenantId)
+                .map(AthleteBaselineSnapshot::getConfidenceTier)
+                .map(ConfidenceTier::valueOf)
+                .orElse(null);
     }
 
     private PlanoSemanal buscarPlanoDoTenant(UUID planoId, UUID tenantId) {

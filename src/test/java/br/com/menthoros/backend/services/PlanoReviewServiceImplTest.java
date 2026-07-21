@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.AthleteBaselineSnapshot;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
@@ -9,8 +10,10 @@ import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
+import br.com.menthoros.backend.repository.AthleteBaselineSnapshotRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.services.impl.PlanoReviewServiceImpl;
+import br.com.menthoros.backend.services.onboarding.ConfidenceTier;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -39,6 +42,7 @@ class PlanoReviewServiceImplTest {
     @Mock private PlanoSemanalRepository planoSemanalRepository;
     @Mock private PlanoSemanalMapper planoSemanalMapper;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private AthleteBaselineSnapshotRepository athleteBaselineSnapshotRepository;
     @InjectMocks private PlanoReviewServiceImpl service;
 
     private UUID tenantId;
@@ -408,6 +412,64 @@ class PlanoReviewServiceImplTest {
                     .hasMessageContaining("reviewStatus");
             verifyNoInteractions(planoSemanalRepository);
         }
+
+        @Test
+        @DisplayName("enriquece o DTO com confidenceTier do baseline de onboarding do atleta (Cenario B/C)")
+        void enriqueceComConfidenceTierQuandoAtletaTemSnapshot() {
+            PlanoSemanal plano = planoComStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            plano.setAtleta(Atleta.builder().id(atletaId).build());
+            PlanoSemanalOutputDto dto = outputDto(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            AthleteBaselineSnapshot snapshot = new AthleteBaselineSnapshot();
+            snapshot.setConfidenceTier("B");
+
+            when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
+                    eq(tenantId), eq(PlanoReviewStatus.AGUARDANDO_REVISAO), any(LocalDate.class)))
+                    .thenReturn(List.of(plano));
+            when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
+            when(athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(snapshot));
+
+            List<PlanoSemanalOutputDto> resultado = service.listarPlanosPorStatus(tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO);
+
+            assertThat(resultado).hasSize(1);
+            assertThat(resultado.get(0).confidenceTier()).isEqualTo(ConfidenceTier.B);
+        }
+
+        @Test
+        @DisplayName("confidenceTier fica nulo quando o atleta ainda não tem AthleteBaselineSnapshot")
+        void confidenceTierNuloSemSnapshot() {
+            PlanoSemanal plano = planoComStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            plano.setAtleta(Atleta.builder().id(atletaId).build());
+            PlanoSemanalOutputDto dto = outputDto(PlanoReviewStatus.AGUARDANDO_REVISAO);
+
+            when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
+                    eq(tenantId), eq(PlanoReviewStatus.AGUARDANDO_REVISAO), any(LocalDate.class)))
+                    .thenReturn(List.of(plano));
+            when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
+            when(athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.empty());
+
+            List<PlanoSemanalOutputDto> resultado = service.listarPlanosPorStatus(tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO);
+
+            assertThat(resultado.get(0).confidenceTier()).isNull();
+        }
+
+        @Test
+        @DisplayName("confidenceTier fica nulo quando o plano não tem atleta carregado")
+        void confidenceTierNuloSemAtletaCarregado() {
+            PlanoSemanal plano = planoComStatus(PlanoReviewStatus.AGUARDANDO_REVISAO); // sem setAtleta
+            PlanoSemanalOutputDto dto = outputDto(PlanoReviewStatus.AGUARDANDO_REVISAO);
+
+            when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
+                    eq(tenantId), eq(PlanoReviewStatus.AGUARDANDO_REVISAO), any(LocalDate.class)))
+                    .thenReturn(List.of(plano));
+            when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
+
+            List<PlanoSemanalOutputDto> resultado = service.listarPlanosPorStatus(tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO);
+
+            assertThat(resultado.get(0).confidenceTier()).isNull();
+            verifyNoInteractions(athleteBaselineSnapshotRepository);
+        }
     }
 
     // =========================================================================
@@ -432,6 +494,6 @@ class PlanoReviewServiceImplTest {
         return new PlanoSemanalOutputDto(
                 planoId.toString(), LocalDate.now(), LocalDate.now().plusDays(6),
                 40.0, 0.0, 40.0, null, null, PlanoStatus.PLANEJADO,
-                null, "Semana base", List.of(), reviewStatus, null, null, "Ana Silva");
+                null, "Semana base", List.of(), reviewStatus, null, null, "Ana Silva", null);
     }
 }
