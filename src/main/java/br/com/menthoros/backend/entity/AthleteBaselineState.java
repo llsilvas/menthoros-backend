@@ -22,9 +22,13 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Persiste o baseline calculado no onboarding (design.md Decisao 6/10,
- * athlete-onboarding-baseline, V59) — CTL/ATL/TSB + flags ESTIMATED/MEASURED
- * por componente + score/tier de confianca. Uma linha por atleta.
+ * Estado ATUAL do baseline calculado no onboarding (design.md Decisao 6/10,
+ * athlete-onboarding-baseline, V59/V64) — CTL/ATL/TSB + flags ESTIMATED/MEASURED
+ * por componente + score/tier de confianca. Uma linha por atleta, sobrescrita
+ * a cada re-baseline — nao um historico (renomeado de AthleteBaselineSnapshot
+ * na sessao de grilling 2026-07-21; "Snapshot" sugeria um recorte imutavel no
+ * tempo, que nunca foi o caso). Trilha de auditoria de verdade fica em
+ * {@link AthleteBaselineHistory} (append-only), gravada junto a cada recalculo.
  *
  * <p>NAO e o mesmo tipo do record {@code AthleteBaseline} (contrato minimo
  * de leitura reservado por {@code deterministic-planner-engine}, 2 campos)
@@ -32,11 +36,11 @@ import java.util.UUID;
  * mapeado a partir dela na borda do {@code OnboardingContext}.
  */
 @Entity
-@Table(name = "tb_athlete_baseline_snapshot")
+@Table(name = "tb_athlete_baseline_state")
 @Getter
 @Setter
 @NoArgsConstructor
-public class AthleteBaselineSnapshot {
+public class AthleteBaselineState {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

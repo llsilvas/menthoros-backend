@@ -2,15 +2,16 @@ package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
-import br.com.menthoros.backend.entity.AthleteBaselineSnapshot;
+import br.com.menthoros.backend.entity.AthleteBaselineState;
 import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.enums.OrigemAprovacao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
-import br.com.menthoros.backend.repository.AthleteBaselineSnapshotRepository;
+import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.services.impl.PlanoReviewServiceImpl;
 import br.com.menthoros.backend.services.onboarding.ConfidenceTier;
@@ -42,7 +43,7 @@ class PlanoReviewServiceImplTest {
     @Mock private PlanoSemanalRepository planoSemanalRepository;
     @Mock private PlanoSemanalMapper planoSemanalMapper;
     @Mock private ApplicationEventPublisher eventPublisher;
-    @Mock private AthleteBaselineSnapshotRepository athleteBaselineSnapshotRepository;
+    @Mock private AthleteBaselineStateRepository athleteBaselineStateRepository;
     @InjectMocks private PlanoReviewServiceImpl service;
 
     private UUID tenantId;
@@ -131,6 +132,7 @@ class PlanoReviewServiceImplTest {
             verify(planoSemanalRepository).save(saveCaptor.capture());
             assertThat(saveCaptor.getValue().getReviewStatus()).isEqualTo(PlanoReviewStatus.APROVADO);
             assertThat(saveCaptor.getValue().getReviewComment()).isNull();
+            assertThat(saveCaptor.getValue().getOrigemAprovacao()).isEqualTo(OrigemAprovacao.COACH);
 
             // Verifica que o evento foi publicado com os dados corretos
             ArgumentCaptor<PlanoAprovadoEvent> eventCaptor = ArgumentCaptor.forClass(PlanoAprovadoEvent.class);
@@ -202,16 +204,17 @@ class PlanoReviewServiceImplTest {
     class AprovarTransicao {
 
         @Test
-        @DisplayName("aplica os mesmos 4 efeitos de aprovarPlano: status, comment, save, evento")
+        @DisplayName("aplica os mesmos 4 efeitos de aprovarPlano: status, comment, save, evento — mais a origem")
         void aplicaOsMesmosEfeitosDeAprovarPlano() {
             PlanoSemanal plano = planoAguardando();
             plano.setAtleta(Atleta.builder().id(atletaId).build());
             when(planoSemanalRepository.save(any())).thenReturn(plano);
 
-            PlanoSemanal resultado = service.aprovarTransicao(plano, tenantId);
+            PlanoSemanal resultado = service.aprovarTransicao(plano, tenantId, OrigemAprovacao.COACH);
 
             assertThat(resultado.getReviewStatus()).isEqualTo(PlanoReviewStatus.APROVADO);
             assertThat(resultado.getReviewComment()).isNull();
+            assertThat(resultado.getOrigemAprovacao()).isEqualTo(OrigemAprovacao.COACH);
             verify(planoSemanalRepository).save(plano);
 
             ArgumentCaptor<PlanoAprovadoEvent> eventCaptor = ArgumentCaptor.forClass(PlanoAprovadoEvent.class);
@@ -221,13 +224,26 @@ class PlanoReviewServiceImplTest {
         }
 
         @Test
+        @DisplayName("grava AUTO_CONFIANCA_ALTA quando chamado pelo auto-approve")
+        void gravaOrigemAutoConfiancaAlta() {
+            PlanoSemanal planoNovo = planoComStatus(null); // plano recem-criado, sem reviewStatus ainda
+            planoNovo.setAtleta(Atleta.builder().id(atletaId).build());
+            when(planoSemanalRepository.save(any())).thenReturn(planoNovo);
+
+            PlanoSemanal resultado = service.aprovarTransicao(planoNovo, tenantId, OrigemAprovacao.AUTO_CONFIANCA_ALTA);
+
+            assertThat(resultado.getReviewStatus()).isEqualTo(PlanoReviewStatus.APROVADO);
+            assertThat(resultado.getOrigemAprovacao()).isEqualTo(OrigemAprovacao.AUTO_CONFIANCA_ALTA);
+        }
+
+        @Test
         @DisplayName("nao valida transicao — chamador e responsavel (usado pelo auto-approve em plano novo)")
         void naoValidaTransicaoDeOrigem() {
             PlanoSemanal planoNovo = planoComStatus(null); // plano recem-criado, sem reviewStatus ainda
             planoNovo.setAtleta(Atleta.builder().id(atletaId).build());
             when(planoSemanalRepository.save(any())).thenReturn(planoNovo);
 
-            PlanoSemanal resultado = service.aprovarTransicao(planoNovo, tenantId);
+            PlanoSemanal resultado = service.aprovarTransicao(planoNovo, tenantId, OrigemAprovacao.AUTO_CONFIANCA_ALTA);
 
             assertThat(resultado.getReviewStatus()).isEqualTo(PlanoReviewStatus.APROVADO);
         }
@@ -235,7 +251,7 @@ class PlanoReviewServiceImplTest {
         @Test
         @DisplayName("lança IllegalArgumentException quando plano é nulo")
         void lancaExcecaoParaPlanoNulo() {
-            assertThatThrownBy(() -> service.aprovarTransicao(null, tenantId))
+            assertThatThrownBy(() -> service.aprovarTransicao(null, tenantId, OrigemAprovacao.COACH))
                     .isInstanceOf(IllegalArgumentException.class);
             verifyNoInteractions(planoSemanalRepository, eventPublisher);
         }
@@ -244,7 +260,16 @@ class PlanoReviewServiceImplTest {
         @DisplayName("lança IllegalArgumentException quando tenantId é nulo")
         void lancaExcecaoParaTenantIdNulo() {
             PlanoSemanal plano = planoAguardando();
-            assertThatThrownBy(() -> service.aprovarTransicao(plano, null))
+            assertThatThrownBy(() -> service.aprovarTransicao(plano, null, OrigemAprovacao.COACH))
+                    .isInstanceOf(IllegalArgumentException.class);
+            verifyNoInteractions(planoSemanalRepository, eventPublisher);
+        }
+
+        @Test
+        @DisplayName("lança IllegalArgumentException quando origem é nula")
+        void lancaExcecaoParaOrigemNula() {
+            PlanoSemanal plano = planoAguardando();
+            assertThatThrownBy(() -> service.aprovarTransicao(plano, tenantId, null))
                     .isInstanceOf(IllegalArgumentException.class);
             verifyNoInteractions(planoSemanalRepository, eventPublisher);
         }
@@ -419,14 +444,14 @@ class PlanoReviewServiceImplTest {
             PlanoSemanal plano = planoComStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
             plano.setAtleta(Atleta.builder().id(atletaId).build());
             PlanoSemanalOutputDto dto = outputDto(PlanoReviewStatus.AGUARDANDO_REVISAO);
-            AthleteBaselineSnapshot snapshot = new AthleteBaselineSnapshot();
+            AthleteBaselineState snapshot = new AthleteBaselineState();
             snapshot.setConfidenceTier("B");
 
             when(planoSemanalRepository.findByAssessoriaIdAndReviewStatusOrderBySemanaInicioAsc(
                     eq(tenantId), eq(PlanoReviewStatus.AGUARDANDO_REVISAO), any(LocalDate.class)))
                     .thenReturn(List.of(plano));
             when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
-            when(athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
                     .thenReturn(Optional.of(snapshot));
 
             List<PlanoSemanalOutputDto> resultado = service.listarPlanosPorStatus(tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO);
@@ -436,7 +461,7 @@ class PlanoReviewServiceImplTest {
         }
 
         @Test
-        @DisplayName("confidenceTier fica nulo quando o atleta ainda não tem AthleteBaselineSnapshot")
+        @DisplayName("confidenceTier fica nulo quando o atleta ainda não tem AthleteBaselineState")
         void confidenceTierNuloSemSnapshot() {
             PlanoSemanal plano = planoComStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
             plano.setAtleta(Atleta.builder().id(atletaId).build());
@@ -446,7 +471,7 @@ class PlanoReviewServiceImplTest {
                     eq(tenantId), eq(PlanoReviewStatus.AGUARDANDO_REVISAO), any(LocalDate.class)))
                     .thenReturn(List.of(plano));
             when(planoSemanalMapper.toOutputDtoSafe(plano)).thenReturn(dto);
-            when(athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
                     .thenReturn(Optional.empty());
 
             List<PlanoSemanalOutputDto> resultado = service.listarPlanosPorStatus(tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO);
@@ -468,7 +493,7 @@ class PlanoReviewServiceImplTest {
             List<PlanoSemanalOutputDto> resultado = service.listarPlanosPorStatus(tenantId, PlanoReviewStatus.AGUARDANDO_REVISAO);
 
             assertThat(resultado.get(0).confidenceTier()).isNull();
-            verifyNoInteractions(athleteBaselineSnapshotRepository);
+            verifyNoInteractions(athleteBaselineStateRepository);
         }
     }
 

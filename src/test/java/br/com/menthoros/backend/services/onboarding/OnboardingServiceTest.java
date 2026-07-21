@@ -5,7 +5,8 @@ import br.com.menthoros.backend.domain.planner.PlanningPolicy;
 import br.com.menthoros.backend.domain.planner.ReviewMode;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
-import br.com.menthoros.backend.entity.AthleteBaselineSnapshot;
+import br.com.menthoros.backend.entity.AthleteBaselineHistory;
+import br.com.menthoros.backend.entity.AthleteBaselineState;
 import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
@@ -13,7 +14,8 @@ import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.TipoProva;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
-import br.com.menthoros.backend.repository.AthleteBaselineSnapshotRepository;
+import br.com.menthoros.backend.repository.AthleteBaselineHistoryRepository;
+import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
@@ -47,7 +49,8 @@ class OnboardingServiceTest {
     @Mock private AtletaRepository atletaRepository;
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private PerfilOnboardingAtletaRepository perfilOnboardingAtletaRepository;
-    @Mock private AthleteBaselineSnapshotRepository athleteBaselineSnapshotRepository;
+    @Mock private AthleteBaselineStateRepository athleteBaselineStateRepository;
+    @Mock private AthleteBaselineHistoryRepository athleteBaselineHistoryRepository;
     @Mock private ProvaRepository provaRepository;
     @Mock private ActivityNormalizer activityNormalizer;
     @Mock private ActivityDedupService activityDedupService;
@@ -65,7 +68,8 @@ class OnboardingServiceTest {
     void setUp() {
         service = new OnboardingServiceImpl(
                 atletaRepository, treinoRealizadoRepository, perfilOnboardingAtletaRepository,
-                athleteBaselineSnapshotRepository, provaRepository, activityNormalizer, activityDedupService,
+                athleteBaselineStateRepository, athleteBaselineHistoryRepository, provaRepository,
+                activityNormalizer, activityDedupService,
                 baselineCalculator, confidenceScorer, planningPolicyResolver);
         atletaId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
@@ -93,7 +97,7 @@ class OnboardingServiceTest {
             when(confidenceScorer.calcular(any())).thenReturn(new ConfidenceScoreResult(80, ConfidenceTier.A, false));
             when(planningPolicyResolver.resolver(ConfidenceTier.A))
                     .thenReturn(new PlanningPolicy(ReviewMode.EXCEPTION_ONLY, 1.0, true));
-            when(athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
 
             OnboardingContext contexto = service.montarContexto(atletaId, tenantId);
 
@@ -104,33 +108,53 @@ class OnboardingServiceTest {
         }
 
         @Test
-        @DisplayName("persiste AthleteBaselineSnapshot (cria quando nao existe)")
+        @DisplayName("persiste AthleteBaselineState (cria quando nao existe)")
         void persisteSnapshotNovo() {
             stubFluxoMinimo();
-            when(athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
 
             service.montarContexto(atletaId, tenantId);
 
-            ArgumentCaptor<AthleteBaselineSnapshot> captor = ArgumentCaptor.forClass(AthleteBaselineSnapshot.class);
-            verify(athleteBaselineSnapshotRepository).save(captor.capture());
+            ArgumentCaptor<AthleteBaselineState> captor = ArgumentCaptor.forClass(AthleteBaselineState.class);
+            verify(athleteBaselineStateRepository).save(captor.capture());
             assertThat(captor.getValue().getCtlEstimado()).isEqualTo(50.0);
             assertThat(captor.getValue().getConfidenceScore()).isEqualTo(80);
             assertThat(captor.getValue().getConfidenceTier()).isEqualTo("A");
         }
 
         @Test
-        @DisplayName("persiste AthleteBaselineSnapshot (atualiza quando ja existe — upsert)")
+        @DisplayName("persiste AthleteBaselineState (atualiza quando ja existe — upsert)")
         void atualizaSnapshotExistente() {
             stubFluxoMinimo();
-            AthleteBaselineSnapshot existente = new AthleteBaselineSnapshot();
+            AthleteBaselineState existente = new AthleteBaselineState();
             existente.setId(UUID.randomUUID());
-            when(athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(existente));
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(existente));
 
             service.montarContexto(atletaId, tenantId);
 
-            ArgumentCaptor<AthleteBaselineSnapshot> captor = ArgumentCaptor.forClass(AthleteBaselineSnapshot.class);
-            verify(athleteBaselineSnapshotRepository).save(captor.capture());
+            ArgumentCaptor<AthleteBaselineState> captor = ArgumentCaptor.forClass(AthleteBaselineState.class);
+            verify(athleteBaselineStateRepository).save(captor.capture());
             assertThat(captor.getValue().getId()).isEqualTo(existente.getId()); // mesma linha, nao duplicou
+        }
+
+        @Test
+        @DisplayName("grava uma linha nova em AthleteBaselineHistory a cada recalculo (nunca sobrescreve)")
+        void gravaLinhaDeHistoricoACadaRecalculo() {
+            stubFluxoMinimo();
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            service.montarContexto(atletaId, tenantId);
+            service.montarContexto(atletaId, tenantId);
+
+            ArgumentCaptor<AthleteBaselineHistory> captor = ArgumentCaptor.forClass(AthleteBaselineHistory.class);
+            verify(athleteBaselineHistoryRepository, times(2)).save(captor.capture());
+            for (AthleteBaselineHistory linha : captor.getAllValues()) {
+                assertThat(linha.getAtletaId()).isEqualTo(atletaId);
+                assertThat(linha.getTenantId()).isEqualTo(tenantId);
+                assertThat(linha.getEvento()).isEqualTo("RECALCULO_ONBOARDING_CONTEXT");
+                assertThat(linha.getCtlEstimado()).isEqualTo(50.0);
+                assertThat(linha.getConfidenceScore()).isEqualTo(80);
+            }
         }
 
         @Test
@@ -141,7 +165,7 @@ class OnboardingServiceTest {
             perfil.setStatus("COMPLETO");
             perfil.setPreenchidoPorCoach(true);
             when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
-            when(athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
 
             service.montarContexto(atletaId, tenantId);
 
@@ -163,7 +187,7 @@ class OnboardingServiceTest {
             when(confidenceScorer.calcular(any())).thenReturn(new ConfidenceScoreResult(0, ConfidenceTier.C, false));
             when(planningPolicyResolver.resolver(ConfidenceTier.C))
                     .thenReturn(new PlanningPolicy(ReviewMode.MANDATORY_BLOCKING, 0.0, true));
-            when(athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
 
             OnboardingContext contexto = service.montarContexto(atletaId, tenantId);
 

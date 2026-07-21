@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.enums.OrigemAprovacao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 
 import java.util.List;
@@ -80,7 +81,11 @@ public interface PlanoReviewService {
      *
      * @param plano    plano já carregado (novo ou existente) a aprovar
      * @param tenantId tenant do plano
+     * @param origem   quem disparou a aprovação — {@code COACH} (revisão manual) ou
+     *                 {@code AUTO_CONFIANCA_ALTA} (auto-approve, athlete-onboarding-baseline).
+     *                 Persistido em {@code origemAprovacao} para não perder essa distinção
+     *                 (sessão de grilling, 2026-07-21).
      * @return o plano salvo, com associações inicializadas
      */
-    PlanoSemanal aprovarTransicao(PlanoSemanal plano, UUID tenantId);
+    PlanoSemanal aprovarTransicao(PlanoSemanal plano, UUID tenantId, OrigemAprovacao origem);
 }

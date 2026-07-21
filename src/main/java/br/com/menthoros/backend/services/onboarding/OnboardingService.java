@@ -14,15 +14,15 @@ import java.util.UUID;
  * {@link ActivityNormalizer} -&gt; {@link ActivityDedupService} -&gt;
  * {@link BaselineCalculator} -&gt; {@link ConfidenceScorer} -&gt;
  * {@link PlanningPolicyResolver} -&gt; {@code OnboardingContext} (tipo reservado por
- * {@code deterministic-planner-engine}). Persiste o {@code AthleteBaselineSnapshot}
+ * {@code deterministic-planner-engine}). Persiste o {@code AthleteBaselineState}
  * calculado.
  */
 public interface OnboardingService {
 
     /**
-     * Idempotente: NAO — persiste/atualiza {@code AthleteBaselineSnapshot} a cada chamada
+     * Idempotente: NAO — persiste/atualiza {@code AthleteBaselineState} a cada chamada
      * (upsert por atleta+tenant; chamadas repetidas recalculam e sobrescrevem, sem duplicar).
-     * Efeitos colaterais: persiste {@code AthleteBaselineSnapshot}; le
+     * Efeitos colaterais: persiste {@code AthleteBaselineState}; le
      * {@code TreinoRealizado}/{@code PerfilOnboardingAtleta}/{@code Atleta}.
      * Tenant-aware: SIM — {@code tenantId} explicito.
      *
@@ -31,7 +31,7 @@ public interface OnboardingService {
     OnboardingContext montarContexto(UUID atletaId, UUID tenantId);
 
     /**
-     * Indica se o atleta ja possui um {@code AthleteBaselineSnapshot} persistido — usado pelo
+     * Indica se o atleta ja possui um {@code AthleteBaselineState} persistido — usado pelo
      * kill-switch {@code onboarding.migrate-existing.enabled} (tasks.md 5.7, design.md Decisao 6)
      * para decidir se um atleta legado (pre-onboarding) deve ter o baseline calculado na
      * proxima geracao de plano.

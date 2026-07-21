@@ -246,7 +246,7 @@ public class PlanoServiceImpl implements PlanoService {
     /**
      * Resolve o {@code OnboardingContext} do atleta, respeitando o kill-switch
      * {@code onboarding.migrate-existing.enabled} (tasks.md 5.7, design.md Decisao 6): atletas
-     * que JA possuem um {@code AthleteBaselineSnapshot} (ja onboarded ou ja migrados) sempre tem
+     * que JA possuem um {@code AthleteBaselineState} (ja onboarded ou ja migrados) sempre tem
      * o contexto recalculado — necessario para o re-baseline da calibracao (CA3). Atletas
      * legados SEM snapshot ainda so sao migrados automaticamente quando a flag esta habilitada;
      * desabilitada, o atleta legado continua sem {@code OnboardingContext} (comportamento
@@ -291,7 +291,7 @@ public class PlanoServiceImpl implements PlanoService {
         if (skeleton.requiresCoachReview() || skeleton.injuryRisk().level() == InjuryRiskLevel.HIGH_RISK) {
             return;
         }
-        planoReviewService.aprovarTransicao(plano, tenantId);
+        planoReviewService.aprovarTransicao(plano, tenantId, OrigemAprovacao.AUTO_CONFIANCA_ALTA);
     }
 
     /**

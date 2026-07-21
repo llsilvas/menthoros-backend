@@ -614,7 +614,7 @@ class PlanoServiceImplTest {
 
             executarGeracaoDePlano(atletaId, modoGeracao);
 
-            verify(planoReviewService).aprovarTransicao(any(PlanoSemanal.class), eq(tenantId));
+            verify(planoReviewService).aprovarTransicao(any(PlanoSemanal.class), eq(tenantId), eq(OrigemAprovacao.AUTO_CONFIANCA_ALTA));
         }
 
         @Test
@@ -628,7 +628,7 @@ class PlanoServiceImplTest {
 
             executarGeracaoDePlano(atletaId, modoGeracao);
 
-            verify(planoReviewService, never()).aprovarTransicao(any(), any());
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
         }
 
         @Test
@@ -642,7 +642,7 @@ class PlanoServiceImplTest {
 
             executarGeracaoDePlano(atletaId, modoGeracao);
 
-            verify(planoReviewService, never()).aprovarTransicao(any(), any());
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
         }
 
         @Test
@@ -656,7 +656,7 @@ class PlanoServiceImplTest {
 
             executarGeracaoDePlano(atletaId, modoGeracao);
 
-            verify(planoReviewService, never()).aprovarTransicao(any(), any());
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
         }
 
         @Test
@@ -670,7 +670,7 @@ class PlanoServiceImplTest {
 
             executarGeracaoDePlano(atletaId, modoGeracao);
 
-            verify(planoReviewService, never()).aprovarTransicao(any(), any());
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
         }
 
         @Test
@@ -685,7 +685,7 @@ class PlanoServiceImplTest {
 
             executarGeracaoDePlano(atletaId, modoGeracao);
 
-            verify(planoReviewService, never()).aprovarTransicao(any(), any());
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
         }
 
         @Test
@@ -700,7 +700,7 @@ class PlanoServiceImplTest {
 
             executarGeracaoDePlano(atletaId, modoGeracao);
 
-            verify(planoReviewService, never()).aprovarTransicao(any(), any());
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
         }
 
         private void stubOnboardingContext(ReviewMode reviewMode) {
@@ -758,7 +758,7 @@ class PlanoServiceImplTest {
             }
 
             verify(onboardingService, never()).montarContexto(any(), any());
-            verify(planoReviewService, never()).aprovarTransicao(any(), any());
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
         }
 
         @Test

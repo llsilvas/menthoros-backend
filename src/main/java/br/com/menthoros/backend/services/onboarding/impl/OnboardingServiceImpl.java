@@ -5,7 +5,8 @@ import br.com.menthoros.backend.domain.planner.AthleteConstraints;
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.domain.planner.PlanningPolicy;
 import br.com.menthoros.backend.entity.Atleta;
-import br.com.menthoros.backend.entity.AthleteBaselineSnapshot;
+import br.com.menthoros.backend.entity.AthleteBaselineHistory;
+import br.com.menthoros.backend.entity.AthleteBaselineState;
 import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
@@ -13,7 +14,8 @@ import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoProva;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
-import br.com.menthoros.backend.repository.AthleteBaselineSnapshotRepository;
+import br.com.menthoros.backend.repository.AthleteBaselineHistoryRepository;
+import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
@@ -51,11 +53,13 @@ import java.util.UUID;
 public class OnboardingServiceImpl implements OnboardingService {
 
     private static final int JANELA_PROVA_RECENTE_DIAS = 90;
+    private static final String EVENTO_RECALCULO_ONBOARDING_CONTEXT = "RECALCULO_ONBOARDING_CONTEXT";
 
     private final AtletaRepository atletaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final PerfilOnboardingAtletaRepository perfilOnboardingAtletaRepository;
-    private final AthleteBaselineSnapshotRepository athleteBaselineSnapshotRepository;
+    private final AthleteBaselineStateRepository athleteBaselineStateRepository;
+    private final AthleteBaselineHistoryRepository athleteBaselineHistoryRepository;
     private final ProvaRepository provaRepository;
     private final ActivityNormalizer activityNormalizer;
     private final ActivityDedupService activityDedupService;
@@ -69,7 +73,7 @@ public class OnboardingServiceImpl implements OnboardingService {
         if (atletaId == null || tenantId == null) {
             throw new IllegalArgumentException("atletaId e tenantId nao podem ser nulos");
         }
-        return athleteBaselineSnapshotRepository.findByAtletaIdAndTenantId(atletaId, tenantId).isPresent();
+        return athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId).isPresent();
     }
 
     @Override
@@ -208,27 +212,51 @@ public class OnboardingServiceImpl implements OnboardingService {
         };
     }
 
+    /**
+     * Persiste o estado ATUAL do baseline (upsert, 1 linha por atleta) e uma linha nova no
+     * histórico append-only (sessão de grilling 2026-07-21) — o estado sozinho não preserva a
+     * evolução do score durante a calibração, dado necessário para calibrar as próprias
+     * heurísticas hardcoded desta change com dado real de produção.
+     */
     private void persistirBaselineSnapshot(UUID atletaId, UUID tenantId, BaselineResult baseline, ConfidenceScoreResult confidenceScore) {
-        AthleteBaselineSnapshot snapshot = athleteBaselineSnapshotRepository
-                .findByAtletaIdAndTenantId(atletaId, tenantId)
-                .orElseGet(AthleteBaselineSnapshot::new);
+        Instant calculatedAt = Instant.now();
 
-        if (snapshot.getAtleta() == null) {
+        AthleteBaselineState estado = athleteBaselineStateRepository
+                .findByAtletaIdAndTenantId(atletaId, tenantId)
+                .orElseGet(AthleteBaselineState::new);
+
+        if (estado.getAtleta() == null) {
             Atleta ref = new Atleta();
             ref.setId(atletaId);
-            snapshot.setAtleta(ref);
+            estado.setAtleta(ref);
         }
-        snapshot.setTenantId(tenantId);
-        snapshot.setCtlEstimado(baseline.ctl());
-        snapshot.setAtlEstimado(baseline.atl());
-        snapshot.setTsbEstimado(baseline.tsb());
-        snapshot.setCtlFlag(baseline.ctlOrigem());
-        snapshot.setAtlFlag(baseline.atlOrigem());
-        snapshot.setTsbFlag(baseline.tsbOrigem());
-        snapshot.setConfidenceScore(confidenceScore.scoreBruto());
-        snapshot.setConfidenceTier(confidenceScore.tier().name());
-        snapshot.setCalculatedAt(Instant.now());
+        estado.setTenantId(tenantId);
+        estado.setCtlEstimado(baseline.ctl());
+        estado.setAtlEstimado(baseline.atl());
+        estado.setTsbEstimado(baseline.tsb());
+        estado.setCtlFlag(baseline.ctlOrigem());
+        estado.setAtlFlag(baseline.atlOrigem());
+        estado.setTsbFlag(baseline.tsbOrigem());
+        estado.setConfidenceScore(confidenceScore.scoreBruto());
+        estado.setConfidenceTier(confidenceScore.tier().name());
+        estado.setCalculatedAt(calculatedAt);
 
-        athleteBaselineSnapshotRepository.save(snapshot);
+        athleteBaselineStateRepository.save(estado);
+
+        AthleteBaselineHistory historico = new AthleteBaselineHistory();
+        historico.setAtletaId(atletaId);
+        historico.setTenantId(tenantId);
+        historico.setEvento(EVENTO_RECALCULO_ONBOARDING_CONTEXT);
+        historico.setCtlEstimado(baseline.ctl());
+        historico.setAtlEstimado(baseline.atl());
+        historico.setTsbEstimado(baseline.tsb());
+        historico.setCtlFlag(baseline.ctlOrigem());
+        historico.setAtlFlag(baseline.atlOrigem());
+        historico.setTsbFlag(baseline.tsbOrigem());
+        historico.setConfidenceScore(confidenceScore.scoreBruto());
+        historico.setConfidenceTier(confidenceScore.tier().name());
+        historico.setCalculatedAt(calculatedAt);
+
+        athleteBaselineHistoryRepository.save(historico);
     }
 }
