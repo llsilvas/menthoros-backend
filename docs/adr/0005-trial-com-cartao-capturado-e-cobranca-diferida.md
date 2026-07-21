@@ -1,0 +1,7 @@
+# Trial B2B com cartão capturado e cobrança diferida (nextDueDate), sem scheduler de expiração
+
+Cogitamos um trial de 60 dias sem meio de pagamento, com um job próprio migrando a assessoria automaticamente para o plano `BASIC` ao expirar — e um campo `trial`/`dataFimTrial` em `Assessoria` (já existente) marcando esse prazo. Descartamos essa abordagem: sem cartão capturado, "migrar para BASIC" no fim do trial seria só uma etiqueta, sem cobrança real de fato — o risco de a assessoria nunca pagar (calote) permanecia todo no time comercial, sem alavanca automática.
+
+Decisão: toda assessoria em trial já tem `Assinatura` criada desde o dia 1, com cartão capturado no Asaas e `nextDueDate` = início do trial + 60 dias (`PlanoAssessoria` já nasce como o tier vendido, não `GRATUITO`). O Asaas valida o cartão na criação mas só cobra na data configurada (confirmado na doc oficial: https://docs.asaas.com/docs/criando-assinatura-com-cartao-de-credito). Não existe estado `TRIAL` em `Assinatura` — é uma `ATIVA` comum com primeira cobrança agendada no futuro. Se a cobrança do dia 60 falhar, cai no mesmo fluxo de qualquer inadimplência (`PAYMENT_OVERDUE` → 5 dias de carência → `SUSPENSA`), sem mecanismo paralelo.
+
+Consequência: os campos `trial`/`dataFimTrial` de `Assessoria` são removidos sem substituto — trial deixa de ser um conceito rastreado no Menthoros, é só um detalhe de agendamento de cobrança dentro do Asaas. Um trial sem captura de cartão (ex.: negociação enterprise à parte) fica fora do escopo desta change, como caso manual excepcional.

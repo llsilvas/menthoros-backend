@@ -1,0 +1,7 @@
+# Assinatura sem histórico local — Asaas é o sistema de registro de cobrança
+
+Ao desenhar a cobrança B2B das assessorias (Asaas), consideramos manter um histórico local de mudanças de status/plano em `Assinatura`, no mesmo padrão adotado horas antes para `AthleteBaselineState`/`AthleteBaselineHistory` (estado atual + trilha append-only). Decidimos **não** replicar esse padrão aqui: `Assinatura` é 1:1 com `Assessoria`, uma linha sobrescrita a cada evento do Asaas, sem tabela de histórico própria.
+
+A diferença do caso `AthleteBaseline` é que lá a Menthoros precisa do histórico para calibrar as próprias heurísticas com dado real de produção — não há esse uso aqui. O Asaas já é o sistema de registro de cobrança (faturas, tentativas de pagamento, nota fiscal, mudanças de assinatura ficam no dashboard/API dele). Duplicar isso localmente seria trabalho redundante sem consumidor definido. Se no futuro for necessário mostrar histórico de cobrança na UI da assessoria, a leitura é uma chamada à API do Asaas sob demanda, não uma tabela espelhada.
+
+Consequência: mudança de tier (`PlanoAssessoria`) e cancelamento de `Assinatura` são sempre ações administrativas originadas no Menthoros (nunca inferidas de eventos do Asaas como `SUBSCRIPTION_UPDATED`) — o Asaas não tem o vocabulário de tier do Menthoros, só um `value` monetário. O Menthoros é a fonte da verdade de *qual* tier; o Asaas é a fonte da verdade de status de pagamento.
