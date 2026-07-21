@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.onboarding.impl;
 
 import br.com.menthoros.backend.domain.planner.AthleteBaseline;
 import br.com.menthoros.backend.domain.planner.AthleteConstraints;
+import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.domain.planner.PlanningPolicy;
 import br.com.menthoros.backend.entity.Atleta;
@@ -25,9 +26,12 @@ import br.com.menthoros.backend.services.onboarding.ActivityDedupService;
 import br.com.menthoros.backend.services.onboarding.ActivityNormalizer;
 import br.com.menthoros.backend.services.onboarding.BaselineCalculator;
 import br.com.menthoros.backend.services.onboarding.BaselineResult;
+import br.com.menthoros.backend.services.onboarding.CalibrationEvaluation;
+import br.com.menthoros.backend.services.onboarding.CalibrationService;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScoreResult;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScorer;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScorerInput;
+import br.com.menthoros.backend.services.onboarding.ConfidenceTier;
 import br.com.menthoros.backend.services.onboarding.NormalizedActivity;
 import br.com.menthoros.backend.services.onboarding.OnboardingDraftInput;
 import br.com.menthoros.backend.services.onboarding.OnboardingService;
@@ -41,6 +45,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -69,6 +74,7 @@ public class OnboardingServiceImpl implements OnboardingService {
     private final BaselineCalculator baselineCalculator;
     private final ConfidenceScorer confidenceScorer;
     private final PlanningPolicyResolver planningPolicyResolver;
+    private final CalibrationService calibrationService;
 
     @Override
     @Transactional(readOnly = true)
@@ -230,6 +236,45 @@ public class OnboardingServiceImpl implements OnboardingService {
         return perfilOnboardingAtletaRepository.save(perfil);
     }
 
+    @Override
+    @Transactional
+    public Optional<CalibrationEvaluation> avaliarCalibracaoSeAplicavel(
+            UUID atletaId, UUID tenantId, LocalDate dataReferenciaSemana, InjuryRiskLevel injuryRiskLevel) {
+        if (atletaId == null || tenantId == null || dataReferenciaSemana == null || injuryRiskLevel == null) {
+            throw new IllegalArgumentException(
+                    "atletaId, tenantId, dataReferenciaSemana e injuryRiskLevel nao podem ser nulos");
+        }
+
+        AthleteBaselineState estado = athleteBaselineStateRepository
+                .findByAtletaIdAndTenantId(atletaId, tenantId)
+                .orElse(null);
+        if (estado == null || estado.getCalibracaoIniciadaEm() == null) {
+            return Optional.empty();
+        }
+
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Atleta nao encontrado: " + atletaId));
+
+        LocalDate inicioCalibracao = estado.getCalibracaoIniciadaEm().atZone(ZoneId.systemDefault()).toLocalDate();
+        int semanaDesdeInicioCalibracao = (int) ChronoUnit.WEEKS.between(inicioCalibracao, dataReferenciaSemana) + 1;
+
+        List<NormalizedActivity> historicoDeduplicado = normalizarEDeduplicarHistorico(atletaId, tenantId);
+        Optional<PerfilOnboardingAtleta> perfil = perfilOnboardingAtletaRepository
+                .findByAtletaIdAndTenantId(atletaId, tenantId);
+        ConfidenceScorerInput confidenceInput = montarConfidenceInput(atleta, perfil, historicoDeduplicado);
+
+        CalibrationEvaluation evaluation = calibrationService.avaliarSemana(
+                atletaId, tenantId, semanaDesdeInicioCalibracao, dataReferenciaSemana,
+                atleta.getNivelExperiencia(), historicoDeduplicado, confidenceInput, injuryRiskLevel);
+
+        if (evaluation.elegivelParaSairDaCalibracao()) {
+            estado.setCalibracaoIniciadaEm(null);
+            athleteBaselineStateRepository.save(estado);
+        }
+
+        return Optional.of(evaluation);
+    }
+
     private List<NormalizedActivity> normalizarEDeduplicarHistorico(UUID atletaId, UUID tenantId) {
         List<TreinoRealizado> historicoBruto = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId);
         List<NormalizedActivity> normalizado = historicoBruto.stream()
@@ -316,6 +361,10 @@ public class OnboardingServiceImpl implements OnboardingService {
         estado.setConfidenceScore(confidenceScore.scoreBruto());
         estado.setConfidenceTier(confidenceScore.tier().name());
         estado.setCalculatedAt(calculatedAt);
+
+        if (confidenceScore.tier() != ConfidenceTier.A && estado.getCalibracaoIniciadaEm() == null) {
+            estado.setCalibracaoIniciadaEm(calculatedAt);
+        }
 
         athleteBaselineStateRepository.save(estado);
 

@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.onboarding;
 
+import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
 import br.com.menthoros.backend.entity.Prova;
@@ -8,6 +9,7 @@ import br.com.menthoros.backend.enums.TipoProva;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -101,4 +103,27 @@ public interface OnboardingService {
      * @throws br.com.menthoros.backend.exception.DomainConflictException se {@code Atleta} foi editado depois do inicio do rascunho
      */
     PerfilOnboardingAtleta concluirOnboarding(UUID atletaId, UUID tenantId);
+
+    /**
+     * Avalia a semana de calibracao do atleta, se ele estiver em
+     * {@code TrainingPhase.CALIBRATION} (retrofit 10.4, sessao de grilling 2026-07-21) — entrada
+     * na fase e disparada em {@code montarContexto} na 1a vez que {@code confidenceTier != A}
+     * (persistido em {@code AthleteBaselineState.calibracaoIniciadaEm}); este metodo so avalia
+     * quando esse campo esta preenchido, e limpa-o quando
+     * {@code CalibrationEvaluation.elegivelParaSairDaCalibracao()} for {@code true}. Chamado a
+     * cada geracao de plano ({@code PlanoServiceImpl.persistirPlanoCompleto}), mesmo ponto onde
+     * o shadow do {@code PlannerEngine} roda — "uma semana de calibracao" = um ciclo de
+     * {@code gerarPlanoTreino}, sem scheduler novo.
+     *
+     * Idempotente: NAO — pode limpar {@code calibracaoIniciadaEm} e publicar
+     * {@code AtletaPresoEmCalibracaoEvent} (via {@link CalibrationService}).
+     * Efeitos colaterais: atualiza {@code AthleteBaselineState} quando sai da calibracao; le
+     * {@code TreinoRealizado}/{@code PerfilOnboardingAtleta}/{@code Atleta}.
+     * Tenant-aware: SIM — {@code tenantId} explicito.
+     *
+     * @return vazio quando o atleta nao esta em calibracao (campo nao setado)
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o atleta nao existir no tenant
+     */
+    Optional<CalibrationEvaluation> avaliarCalibracaoSeAplicavel(
+            UUID atletaId, UUID tenantId, LocalDate dataReferenciaSemana, InjuryRiskLevel injuryRiskLevel);
 }

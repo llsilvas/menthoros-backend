@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.onboarding;
 
+import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.domain.planner.PlanningPolicy;
 import br.com.menthoros.backend.domain.planner.ReviewMode;
@@ -62,6 +63,7 @@ class OnboardingServiceTest {
     @Mock private BaselineCalculator baselineCalculator;
     @Mock private ConfidenceScorer confidenceScorer;
     @Mock private PlanningPolicyResolver planningPolicyResolver;
+    @Mock private CalibrationService calibrationService;
 
     private OnboardingServiceImpl service;
 
@@ -75,7 +77,7 @@ class OnboardingServiceTest {
                 atletaRepository, treinoRealizadoRepository, perfilOnboardingAtletaRepository,
                 athleteBaselineStateRepository, athleteBaselineHistoryRepository, provaRepository,
                 activityNormalizer, activityDedupService,
-                baselineCalculator, confidenceScorer, planningPolicyResolver);
+                baselineCalculator, confidenceScorer, planningPolicyResolver, calibrationService);
         atletaId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
         atleta = Atleta.builder().id(atletaId).nome("João").nivelExperiencia(NivelExperiencia.INTERMEDIARIO).build();
@@ -441,6 +443,100 @@ class OnboardingServiceTest {
             perfil.setVolumeSemanalMax(40);
             perfil.setTemLesao(false);
             return perfil;
+        }
+    }
+
+    @Nested
+    @DisplayName("avaliarCalibracaoSeAplicavel")
+    class AvaliarCalibracaoSeAplicavel {
+
+        @Test
+        @DisplayName("retorna vazio quando o atleta nao esta em calibracao (calibracaoIniciadaEm nulo)")
+        void retornaVazioQuandoNaoEstaEmCalibracao() {
+            AthleteBaselineState estado = new AthleteBaselineState();
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(estado));
+
+            Optional<CalibrationEvaluation> resultado = service.avaliarCalibracaoSeAplicavel(
+                    atletaId, tenantId, LocalDate.now(), InjuryRiskLevel.SAFE);
+
+            assertThat(resultado).isEmpty();
+            org.mockito.Mockito.verifyNoInteractions(calibrationService);
+        }
+
+        @Test
+        @DisplayName("retorna vazio quando nao ha AthleteBaselineState (atleta nunca passou pelo onboarding)")
+        void retornaVazioSemBaseline() {
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            Optional<CalibrationEvaluation> resultado = service.avaliarCalibracaoSeAplicavel(
+                    atletaId, tenantId, LocalDate.now(), InjuryRiskLevel.SAFE);
+
+            assertThat(resultado).isEmpty();
+        }
+
+        @Test
+        @DisplayName("avalia a semana e mantem calibracaoIniciadaEm quando ainda nao elegivel para sair")
+        void avaliaSemanaSemSairDaCalibracao() {
+            Instant inicioCalibracao = LocalDate.now().minusWeeks(2).atStartOfDay(ZoneId.systemDefault()).toInstant();
+            AthleteBaselineState estado = new AthleteBaselineState();
+            estado.setCalibracaoIniciadaEm(inicioCalibracao);
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(estado));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(List.of());
+            when(activityDedupService.deduplicar(List.of(), tenantId)).thenReturn(List.of());
+            CalibrationEvaluation evaluation = new CalibrationEvaluation(
+                    CalibrationStage.STABILIZATION,
+                    new BaselineResult(50, OrigemDado.MEASURED, 45, OrigemDado.MEASURED, 5, OrigemDado.MEASURED),
+                    new ConfidenceScoreResult(40, ConfidenceTier.B, false),
+                    false);
+            when(calibrationService.avaliarSemana(any(), any(), org.mockito.ArgumentMatchers.anyInt(), any(), any(), any(), any(), any()))
+                    .thenReturn(evaluation);
+
+            Optional<CalibrationEvaluation> resultado = service.avaliarCalibracaoSeAplicavel(
+                    atletaId, tenantId, LocalDate.now(), InjuryRiskLevel.SAFE);
+
+            assertThat(resultado).contains(evaluation);
+            org.mockito.Mockito.verify(athleteBaselineStateRepository, org.mockito.Mockito.never()).save(any());
+            assertThat(estado.getCalibracaoIniciadaEm()).isEqualTo(inicioCalibracao);
+        }
+
+        @Test
+        @DisplayName("limpa calibracaoIniciadaEm quando elegivel para sair da calibracao")
+        void limpaCalibracaoQuandoElegivel() {
+            Instant inicioCalibracao = LocalDate.now().minusWeeks(3).atStartOfDay(ZoneId.systemDefault()).toInstant();
+            AthleteBaselineState estado = new AthleteBaselineState();
+            estado.setCalibracaoIniciadaEm(inicioCalibracao);
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(estado));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(List.of());
+            when(activityDedupService.deduplicar(List.of(), tenantId)).thenReturn(List.of());
+            CalibrationEvaluation evaluation = new CalibrationEvaluation(
+                    CalibrationStage.STABILIZATION,
+                    new BaselineResult(60, OrigemDado.MEASURED, 50, OrigemDado.MEASURED, 10, OrigemDado.MEASURED),
+                    new ConfidenceScoreResult(70, ConfidenceTier.B, false),
+                    true);
+            when(calibrationService.avaliarSemana(any(), any(), org.mockito.ArgumentMatchers.anyInt(), any(), any(), any(), any(), any()))
+                    .thenReturn(evaluation);
+            when(athleteBaselineStateRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.avaliarCalibracaoSeAplicavel(atletaId, tenantId, LocalDate.now(), InjuryRiskLevel.SAFE);
+
+            ArgumentCaptor<AthleteBaselineState> captor = ArgumentCaptor.forClass(AthleteBaselineState.class);
+            verify(athleteBaselineStateRepository).save(captor.capture());
+            assertThat(captor.getValue().getCalibracaoIniciadaEm()).isNull();
+        }
+
+        @Test
+        @DisplayName("lanca IllegalArgumentException quando algum argumento e nulo")
+        void lancaExcecaoParaArgumentosNulos() {
+            assertThatThrownBy(() -> service.avaliarCalibracaoSeAplicavel(null, tenantId, LocalDate.now(), InjuryRiskLevel.SAFE))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> service.avaliarCalibracaoSeAplicavel(atletaId, tenantId, null, InjuryRiskLevel.SAFE))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> service.avaliarCalibracaoSeAplicavel(atletaId, tenantId, LocalDate.now(), null))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 

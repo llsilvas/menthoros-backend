@@ -83,6 +83,9 @@ public class AthleteBaselineState {
     @Column(name = "calculated_at", nullable = false)
     private Instant calculatedAt;
 
+    @Column(name = "calibracao_iniciada_em")
+    private Instant calibracaoIniciadaEm;
+
     @Column(name = "criado_em", nullable = false, updatable = false)
     private Instant criadoEm;
 

@@ -796,6 +796,62 @@ class PlanoServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("avaliarCalibracaoSeAplicavel (retrofit 10.4, athlete-onboarding-baseline)")
+    class AvaliarCalibracaoNaGeracaoDePlano {
+
+        @Test
+        @DisplayName("skeleton presente -> chama avaliarCalibracaoSeAplicavel com o injuryRisk do shadow")
+        void chamaAvaliarCalibracaoQuandoSkeletonPresente() {
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            WeekPlanSkeleton skeleton = criarSkeletonCalibracao(InjuryRiskLevel.WARNING);
+            when(plannerShadowService.aplicarShadow(any(), any(), any(), any(), any(), anyBoolean(), any()))
+                    .thenReturn(Optional.of(skeleton));
+
+            executarGeracaoDePlanoCalibracao(atletaId, modoGeracao);
+
+            verify(onboardingService).avaliarCalibracaoSeAplicavel(
+                    eq(atletaId), eq(tenantId), any(LocalDate.class), eq(InjuryRiskLevel.WARNING));
+        }
+
+        @Test
+        @DisplayName("shadow vazio (Optional.empty) -> nao chama avaliarCalibracaoSeAplicavel")
+        void naoChamaAvaliarCalibracaoQuandoShadowVazio() {
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            when(plannerShadowService.aplicarShadow(any(), any(), any(), any(), any(), anyBoolean(), any()))
+                    .thenReturn(Optional.empty());
+
+            executarGeracaoDePlanoCalibracao(atletaId, modoGeracao);
+
+            verify(onboardingService, never()).avaliarCalibracaoSeAplicavel(any(), any(), any(), any());
+        }
+
+        private WeekPlanSkeleton criarSkeletonCalibracao(InjuryRiskLevel risco) {
+            return new WeekPlanSkeleton(
+                    TrainingPhase.CALIBRATION,
+                    new WeeklyLoadTarget(300.0, 270.0, 330.0, "teste"),
+                    List.of(),
+                    new InjuryRiskAssessment(risco, risco == InjuryRiskLevel.HIGH_RISK, "motivo teste"),
+                    new ConstraintValidationResult(true, List.of()),
+                    false,
+                    null,
+                    LocalDate.now(),
+                    "escopo-teste",
+                    Optional.empty());
+        }
+
+        private void executarGeracaoDePlanoCalibracao(UUID atletaId, ModoGeracaoPlano modoGeracao) {
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                planoService.gerarPlanoTreino(atletaId, modoGeracao);
+            }
+        }
+    }
+
     private void configurarCenarioFelizDeGeracao(UUID atletaId, ModoGeracaoPlano modoGeracao) {
         Atleta atleta = criarAtletaMock(atletaId);
         PlanoMetaDados metaDados = criarPlanoMetaDadosMock();

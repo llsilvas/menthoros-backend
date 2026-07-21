@@ -239,6 +239,14 @@ public class PlanoServiceImpl implements PlanoService {
         // profundidade, redundante por design (HIGH_RISK ja deveria forcar requiresCoachReview).
         onboardingContext.ifPresent(context -> aplicarAutoApproveSeElegivel(plano, context, weekPlanSkeleton, tenantId));
 
+        // 4.7. Avaliacao semanal de calibracao (retrofit 10.4, sessao de grilling 2026-07-21):
+        // so avalia quando o atleta esta de fato em TrainingPhase.CALIBRATION (AthleteBaselineState.
+        // calibracaoIniciadaEm preenchido, setado em montarContexto na 1a vez que confidenceTier != A).
+        // Precisa do InjuryRiskLevel calculado pelo shadow (4.5) — sem skeleton, nao ha risco para
+        // avaliar nesta semana; tenta de novo no proximo ciclo.
+        weekPlanSkeleton.ifPresent(skeleton -> onboardingService.avaliarCalibracaoSeAplicavel(
+                atleta.getId(), tenantId, semanaInicio.minusDays(1), skeleton.injuryRisk().level()));
+
         // 5. Persistir e retornar
         return salvarPlanoCompleto(plano, metaDados);
     }
