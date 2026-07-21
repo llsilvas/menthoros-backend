@@ -3,15 +3,20 @@ package br.com.menthoros.backend.services.onboarding;
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.domain.planner.PlanningPolicy;
 import br.com.menthoros.backend.domain.planner.ReviewMode;
+import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.AthleteBaselineSnapshot;
 import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
+import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.TipoProva;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.repository.AthleteBaselineSnapshotRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
+import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.onboarding.impl.OnboardingServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +37,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,6 +48,7 @@ class OnboardingServiceTest {
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private PerfilOnboardingAtletaRepository perfilOnboardingAtletaRepository;
     @Mock private AthleteBaselineSnapshotRepository athleteBaselineSnapshotRepository;
+    @Mock private ProvaRepository provaRepository;
     @Mock private ActivityNormalizer activityNormalizer;
     @Mock private ActivityDedupService activityDedupService;
     @Mock private BaselineCalculator baselineCalculator;
@@ -58,7 +65,7 @@ class OnboardingServiceTest {
     void setUp() {
         service = new OnboardingServiceImpl(
                 atletaRepository, treinoRealizadoRepository, perfilOnboardingAtletaRepository,
-                athleteBaselineSnapshotRepository, activityNormalizer, activityDedupService,
+                athleteBaselineSnapshotRepository, provaRepository, activityNormalizer, activityDedupService,
                 baselineCalculator, confidenceScorer, planningPolicyResolver);
         atletaId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
@@ -183,6 +190,106 @@ class OnboardingServiceTest {
             when(confidenceScorer.calcular(any())).thenReturn(new ConfidenceScoreResult(80, ConfidenceTier.A, false));
             when(planningPolicyResolver.resolver(ConfidenceTier.A))
                     .thenReturn(new PlanningPolicy(ReviewMode.EXCEPTION_ONLY, 1.0, true));
+        }
+    }
+
+    @Nested
+    @DisplayName("criarOuAtualizarProvaAlvo")
+    class CriarOuAtualizarProvaAlvo {
+
+        private Atleta atletaComAssessoria;
+
+        @BeforeEach
+        void setUpAtleta() {
+            atletaComAssessoria = Atleta.builder().id(atletaId).nome("João")
+                    .assessoria(Assessoria.builder().id(tenantId).build())
+                    .build();
+            org.mockito.Mockito.lenient().when(atletaRepository.findByIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(atletaComAssessoria));
+        }
+
+        @Test
+        @DisplayName("cria nova Prova quando o atleta nao tem prova-alvo")
+        void criaNovaProvaQuandoNaoHaProvaAlvo() {
+            LocalDate dataProva = LocalDate.now().plusMonths(3);
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atletaComAssessoria)).thenReturn(List.of());
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> {
+                Prova p = inv.getArgument(0);
+                if (p.getId() == null) p.setId(UUID.randomUUID());
+                return p;
+            });
+
+            Prova resultado = service.criarOuAtualizarProvaAlvo(
+                    atletaId, tenantId, dataProva, TipoProva.CORRIDA_RUA, DistanciaProva.KM_21, null, "Meia SP");
+
+            assertThat(resultado.isProvaAlvo()).isTrue();
+            assertThat(resultado.getDataProva()).isEqualTo(dataProva);
+            assertThat(resultado.getDistancia()).isEqualTo(DistanciaProva.KM_21);
+            assertThat(resultado.getNomeProva()).isEqualTo("Meia SP");
+            assertThat(resultado.getAtleta()).isEqualTo(atletaComAssessoria);
+            verify(provaRepository).save(any(Prova.class));
+        }
+
+        @Test
+        @DisplayName("atualiza a Prova existente quando dataProva/distancia coincidem com a prova-alvo atual")
+        void atualizaProvaExistenteQuandoCoincide() {
+            LocalDate dataProva = LocalDate.now().plusMonths(3);
+            Prova existente = Prova.builder()
+                    .id(UUID.randomUUID()).dataProva(dataProva).distancia(DistanciaProva.KM_21)
+                    .provaAlvo(true).nomeProva("Nome antigo").build();
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atletaComAssessoria)).thenReturn(List.of(existente));
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            Prova resultado = service.criarOuAtualizarProvaAlvo(
+                    atletaId, tenantId, dataProva, TipoProva.CORRIDA_RUA, DistanciaProva.KM_21, null, "Nome novo");
+
+            assertThat(resultado.getId()).isEqualTo(existente.getId());
+            assertThat(resultado.getNomeProva()).isEqualTo("Nome novo");
+            verify(provaRepository, times(1)).save(any(Prova.class)); // so a propria prova, nao ha outra pra desmarcar
+        }
+
+        @Test
+        @DisplayName("desmarca provaAlvo de outra Prova quando dataProva/distancia mudam (unicidade, pre-mortem rodada 2)")
+        void desmarcaOutraProvaAlvoQuandoMudaDataOuDistancia() {
+            LocalDate dataAntiga = LocalDate.now().plusMonths(1);
+            LocalDate dataNova = LocalDate.now().plusMonths(4);
+            Prova provaAntiga = Prova.builder()
+                    .id(UUID.randomUUID()).dataProva(dataAntiga).distancia(DistanciaProva.KM_10)
+                    .provaAlvo(true).nomeProva("Prova antiga").build();
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atletaComAssessoria)).thenReturn(List.of(provaAntiga));
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> {
+                Prova p = inv.getArgument(0);
+                if (p.getId() == null) p.setId(UUID.randomUUID());
+                return p;
+            });
+
+            Prova resultado = service.criarOuAtualizarProvaAlvo(
+                    atletaId, tenantId, dataNova, TipoProva.MARATONA, DistanciaProva.KM_42, null, "Maratona nova");
+
+            assertThat(resultado.getId()).isNotEqualTo(provaAntiga.getId());
+            assertThat(provaAntiga.isProvaAlvo()).isFalse(); // desmarcada na mesma chamada
+
+            ArgumentCaptor<Prova> captor = ArgumentCaptor.forClass(Prova.class);
+            verify(provaRepository, times(2)).save(captor.capture());
+            assertThat(captor.getAllValues()).extracting(Prova::isProvaAlvo).containsExactly(true, false);
+        }
+
+        @Test
+        @DisplayName("lanca DomainNotFoundException quando atleta nao existe no tenant")
+        void lancaExcecaoQuandoAtletaNaoExiste() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.criarOuAtualizarProvaAlvo(
+                    atletaId, tenantId, LocalDate.now(), TipoProva.CORRIDA_RUA, DistanciaProva.KM_10, null, "X"))
+                    .isInstanceOf(DomainNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("lanca IllegalArgumentException quando campos obrigatorios sao nulos")
+        void lancaExcecaoParaCamposObrigatoriosNulos() {
+            assertThatThrownBy(() -> service.criarOuAtualizarProvaAlvo(
+                    null, tenantId, LocalDate.now(), TipoProva.CORRIDA_RUA, DistanciaProva.KM_10, null, "X"))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 

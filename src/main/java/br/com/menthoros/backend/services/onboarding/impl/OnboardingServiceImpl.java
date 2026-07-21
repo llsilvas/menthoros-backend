@@ -9,10 +9,14 @@ import br.com.menthoros.backend.entity.AthleteBaselineSnapshot;
 import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.DistanciaProva;
+import br.com.menthoros.backend.enums.ProvaStatus;
+import br.com.menthoros.backend.enums.TipoProva;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.repository.AthleteBaselineSnapshotRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
+import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.onboarding.ActivityDedupService;
 import br.com.menthoros.backend.services.onboarding.ActivityNormalizer;
@@ -29,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -51,6 +56,7 @@ public class OnboardingServiceImpl implements OnboardingService {
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final PerfilOnboardingAtletaRepository perfilOnboardingAtletaRepository;
     private final AthleteBaselineSnapshotRepository athleteBaselineSnapshotRepository;
+    private final ProvaRepository provaRepository;
     private final ActivityNormalizer activityNormalizer;
     private final ActivityDedupService activityDedupService;
     private final BaselineCalculator baselineCalculator;
@@ -90,6 +96,49 @@ public class OnboardingServiceImpl implements OnboardingService {
                 atletaId, baseline.ctl(), confidenceScoreNormalizado, confidenceScore.tier());
 
         return new OnboardingContext(athleteBaseline, confidenceScoreNormalizado, planningPolicy, constraints);
+    }
+
+    @Override
+    @Transactional
+    public Prova criarOuAtualizarProvaAlvo(UUID atletaId, UUID tenantId, LocalDate dataProva,
+                                            TipoProva tipoProva, DistanciaProva distancia,
+                                            BigDecimal distanciaKm, String nomeProva) {
+        if (atletaId == null || tenantId == null || dataProva == null || tipoProva == null || distancia == null) {
+            throw new IllegalArgumentException(
+                    "atletaId, tenantId, dataProva, tipoProva e distancia nao podem ser nulos");
+        }
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Atleta nao encontrado: " + atletaId));
+
+        List<Prova> provasAlvoAtuais = provaRepository.findByAtletaAndProvaAlvoTrue(atleta);
+
+        Prova provaAlvo = provasAlvoAtuais.stream()
+                .filter(p -> dataProva.equals(p.getDataProva()) && distancia == p.getDistancia())
+                .findFirst()
+                .orElseGet(Prova::new);
+
+        if (provaAlvo.getId() == null) {
+            provaAlvo.setAtleta(atleta);
+            provaAlvo.setAssessoria(atleta.getAssessoria());
+            provaAlvo.setDataProva(dataProva);
+            provaAlvo.setDistancia(distancia);
+            provaAlvo.setStatusProva(ProvaStatus.PLANEJADA);
+        }
+        provaAlvo.setTipoProva(tipoProva);
+        provaAlvo.setDistanciaKm(distanciaKm);
+        provaAlvo.setNomeProva(nomeProva != null && !nomeProva.isBlank() ? nomeProva : "Prova alvo (onboarding)");
+        provaAlvo.setProvaAlvo(true);
+
+        Prova salva = provaRepository.save(provaAlvo);
+
+        provasAlvoAtuais.stream()
+                .filter(p -> !p.getId().equals(salva.getId()))
+                .forEach(p -> {
+                    p.setProvaAlvo(false);
+                    provaRepository.save(p);
+                });
+
+        return salva;
     }
 
     private List<NormalizedActivity> normalizarEDeduplicarHistorico(UUID atletaId, UUID tenantId) {
