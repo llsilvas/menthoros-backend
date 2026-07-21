@@ -70,6 +70,30 @@ public class MetricasAdesaoService {
         );
     }
 
+    /**
+     * Aderencia de uma semana especifica, identificada por qualquer data dentro dela — nao
+     * necessariamente a semana corrente. Aditivo (athlete-onboarding-baseline, design.md Decisao 5):
+     * {@link #getAdesaoSemanal(String)} sempre usa {@code LocalDate.now()}, o que nao serve para
+     * avaliar "a semana mais recente de calibracao" quando ela nao e a semana corrente (ex.: job de
+     * encerramento avaliando D+1). Nao altera o metodo existente.
+     *
+     * <p>Idempotente: SIM — leitura, sem efeito colateral.
+     * Efeitos colaterais: NENHUM.
+     * Tenant-aware: SIM — via {@code TenantContext.getRequiredTenantId()}.
+     *
+     * @param atletaId ID do atleta
+     * @param dataReferencia qualquer data dentro da semana desejada
+     * @return aderencia da semana que contem {@code dataReferencia}
+     * @throws ResourceNotFoundException se o atleta nao existir no tenant corrente
+     */
+    public SemanaAdesaoDto getAdesaoSemana(String atletaId, LocalDate dataReferencia) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(UUID.fromString(atletaId), tenantId)
+            .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado: " + atletaId));
+
+        return calcularSemana(atleta, dataReferencia);
+    }
+
     public AdesaoDiariaDto getAdesaoDiaria(String atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         Atleta atleta = atletaRepository.findByIdAndTenantId(UUID.fromString(atletaId), tenantId)

@@ -154,6 +154,38 @@ class MetricasAdesaoServiceTest {
     }
 
     @Nested
+    @DisplayName("getAdesaoSemana")
+    class GetAdesaoSemana {
+
+        @Test
+        @DisplayName("calcula a semana que contem a data de referencia, nao a semana corrente (athlete-onboarding-baseline)")
+        void calculaSemanaDaDataReferencia() {
+            LocalDate dataPassada = LocalDate.of(2026, 5, 4); // segunda de uma semana passada
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(treinoPlanejadoRepository.countPlannedTrainings(eq(atletaId), any(), any())).thenReturn(10);
+            when(treinoRealizadoRepository.countRealizedTrainings(eq(atletaId), any(), any())).thenReturn(7);
+            when(treinoRealizadoRepository.findRealizedTrainingsByWeek(eq(atletaId), any(), any()))
+                    .thenReturn(List.of(treinoRealizado(dataPassada)));
+
+            var semana = service.getAdesaoSemana(atletaId.toString(), dataPassada);
+
+            assertEquals(70.0, semana.percentualRealizacao()); // 7/10
+            LocalDate inicio = LocalDate.parse(semana.dataInicio());
+            assertEquals(DayOfWeek.SUNDAY, inicio.getDayOfWeek());
+            assertTrue(!inicio.isAfter(dataPassada) && !inicio.plusDays(6).isBefore(dataPassada));
+        }
+
+        @Test
+        @DisplayName("lança ResourceNotFoundException quando o atleta não existe no tenant")
+        void atletaInexistente() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThrows(ResourceNotFoundException.class,
+                    () -> service.getAdesaoSemana(atletaId.toString(), LocalDate.of(2026, 5, 4)));
+        }
+    }
+
+    @Nested
     @DisplayName("getAdesaoDiaria")
     class GetAdesaoDiaria {
 
