@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.onboarding.impl;
 
+import br.com.menthoros.backend.enums.DispositivoMarca;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScoreResult;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScorer;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScorerInput;
@@ -54,7 +55,7 @@ public class ConfidenceScorerImpl implements ConfidenceScorer {
         double pontosRpe = pontuarRpe(historico);
         double pontosConsistencia = pontuarConsistenciaSemanal(historico);
         double pontosProva = input.temProvaRecente() ? PESO_PROVA_RECENTE : 0;
-        double pontosFonte = pontuarFonteConfiavel(historico);
+        double pontosFonte = pontuarFonteConfiavel(historico, input.dispositivoMarca());
 
         int scoreBruto = (int) Math.round(pontosHistorico + pontosOnboarding + pontosFc + pontosRitmo
                 + pontosRpe + pontosConsistencia + pontosProva + pontosFonte);
@@ -116,9 +117,18 @@ public class ConfidenceScorerImpl implements ConfidenceScorer {
         return data.toEpochDay() / 7;
     }
 
-    private double pontuarFonteConfiavel(List<NormalizedActivity> historico) {
+    /**
+     * Sem historico real ainda, usa {@code dispositivoMarca} como PRIOR (retrofit 10.6, sessao
+     * de grilling 2026-07-21) — mesma escala de prioridade de {@link FontePriority}, mesmo peso
+     * do criterio. Assim que houver atividade real, o dado real sempre substitui o prior.
+     */
+    private double pontuarFonteConfiavel(List<NormalizedActivity> historico, DispositivoMarca dispositivoMarca) {
         if (historico.isEmpty()) {
-            return 0;
+            if (dispositivoMarca == null) {
+                return 0;
+            }
+            return FontePriority.deDispositivo(dispositivoMarca) <= PRIORIDADE_FONTE_CONFIAVEL_MAXIMA
+                    ? PESO_FONTE_CONFIAVEL : 0;
         }
         long confiaveis = historico.stream()
                 .filter(a -> FontePriority.de(a.source()) <= PRIORIDADE_FONTE_CONFIAVEL_MAXIMA)

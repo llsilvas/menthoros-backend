@@ -11,7 +11,9 @@ import br.com.menthoros.backend.entity.AthleteBaselineState;
 import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.CanalIntegracao;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.DispositivoMarca;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.TipoProva;
@@ -555,7 +557,10 @@ class OnboardingServiceTest {
                 null,
                 "CORRIDA",
                 "BOA",
-                false
+                false,
+                CanalIntegracao.INTERVALS_ICU,
+                DispositivoMarca.GARMIN,
+                null
         );
     }
 

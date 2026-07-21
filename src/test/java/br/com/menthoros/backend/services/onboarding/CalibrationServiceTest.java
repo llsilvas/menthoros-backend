@@ -235,7 +235,7 @@ class CalibrationServiceTest {
     }
 
     private ConfidenceScorerInput confidenceInput(List<NormalizedActivity> historico) {
-        return new ConfidenceScorerInput(historico, true, null, null, null, false, false);
+        return new ConfidenceScorerInput(historico, true, null, null, null, false, false, null);
     }
 
     private SemanaAdesaoDto semanaAdesao(double percentual) {

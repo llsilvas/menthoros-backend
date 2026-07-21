@@ -1,6 +1,8 @@
 package br.com.menthoros.backend.entity;
 
+import br.com.menthoros.backend.enums.CanalIntegracao;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.DispositivoMarca;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import jakarta.persistence.CollectionTable;
 import jakarta.persistence.Column;
@@ -108,6 +110,19 @@ public class PerfilOnboardingAtleta {
 
     @Column(name = "historico_lesoes", columnDefinition = "TEXT")
     private String historicoLesoes;
+
+    // ===== Canal de integracao + dispositivo (retrofit 10.6) =====
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "canal_integracao", length = 20)
+    private CanalIntegracao canalIntegracao;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "dispositivo_marca", length = 20)
+    private DispositivoMarca dispositivoMarca;
+
+    @Column(name = "dispositivo_modelo", length = 100)
+    private String dispositivoModelo;
 
     @Column(name = "criado_em", nullable = false, updatable = false)
     private Instant criadoEm;

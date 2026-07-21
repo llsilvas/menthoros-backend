@@ -11,6 +11,7 @@ import br.com.menthoros.backend.entity.AthleteBaselineState;
 import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.DispositivoMarca;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoProva;
@@ -197,6 +198,9 @@ public class OnboardingServiceImpl implements OnboardingService {
         perfil.setModalidade(input.modalidade());
         perfil.setPercepcaoCondicionamento(input.percepcaoCondicionamento());
         perfil.setPreenchidoPorCoach(input.preenchidoPorCoach());
+        perfil.setCanalIntegracao(input.canalIntegracao());
+        perfil.setDispositivoMarca(input.dispositivoMarca());
+        perfil.setDispositivoModelo(input.dispositivoModelo());
 
         return perfilOnboardingAtletaRepository.save(perfil);
     }
@@ -288,6 +292,7 @@ public class OnboardingServiceImpl implements OnboardingService {
         boolean onboardingCompleto = perfil.map(PerfilOnboardingAtleta::isCompleto).orElse(false);
         boolean preenchidoPorCoach = perfil.map(PerfilOnboardingAtleta::isPreenchidoPorCoach).orElse(false);
         boolean temProvaRecente = temProvaRecente(atleta);
+        DispositivoMarca dispositivoMarca = perfil.map(PerfilOnboardingAtleta::getDispositivoMarca).orElse(null);
 
         return new ConfidenceScorerInput(
                 historico,
@@ -296,7 +301,8 @@ public class OnboardingServiceImpl implements OnboardingService {
                 atleta.getFcRepouso(),
                 atleta.getPaceLimiar(),
                 temProvaRecente,
-                preenchidoPorCoach
+                preenchidoPorCoach,
+                dispositivoMarca
         );
     }
 
