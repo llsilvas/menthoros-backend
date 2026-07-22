@@ -117,6 +117,16 @@ public interface OnboardingService {
      * "curar" quando o atleta revisita e salva o rascunho de novo apos a edicao direta (CA8 —
      * onboarding em multiplas sessoes; correcao QA 2026-07-21, achado do clean-code-reviewer).
      *
+     * <p><b>Debito conhecido (QA 2026-07-21, achado do security-reviewer):</b> a checagem acima e
+     * check-then-act sem lock — {@code Atleta} (via {@code AuditableEntity}) nao tem
+     * {@code @Version}, entao duas conclusoes concorrentes para o MESMO atleta, ou uma edicao
+     * direta simultanea a uma conclusao, podem intercalar e um lost-update passar sem o 409
+     * disparar. Janela estreita (dois requests quase simultaneos pro mesmo atleta) e aceita como
+     * risco residual nesta fase (baixa concorrencia real, pre-launch) — decisao registrada, nao
+     * corrigida agora. Se isso se tornar um problema real, resolver com lock pessimista
+     * (`@Lock(PESSIMISTIC_WRITE)`) escopado so a este fluxo, sem tocar `AuditableEntity` (que e
+     * compartilhada por todas as entidades do sistema).
+     *
      * Idempotente: NAO — muda o status do perfil e os campos do atleta a cada chamada
      * (chamar de novo apos concluido re-executa a migracao, sobrescrevendo os campos com o
      * mesmo rascunho, e recalcula baseline/score/prova).
