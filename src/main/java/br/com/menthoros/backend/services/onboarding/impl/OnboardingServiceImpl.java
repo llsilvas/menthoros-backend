@@ -45,6 +45,7 @@ import br.com.menthoros.backend.services.onboarding.OnboardingService;
 import br.com.menthoros.backend.services.onboarding.PlanningPolicyResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.Hibernate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -221,7 +222,14 @@ public class OnboardingServiceImpl implements OnboardingService {
             throw new IllegalArgumentException("atletaId e tenantId nao podem ser nulos");
         }
         validarPosseOuCoach(atletaId, chamadorEhCoach);
-        return perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId);
+        Optional<PerfilOnboardingAtleta> perfil = perfilOnboardingAtletaRepository
+                .findByAtletaIdAndTenantId(atletaId, tenantId);
+        // diasDisponiveis e @ElementCollection LAZY: sem open-in-view (application.yml), o controller
+        // serializa a resposta fora da transacao — inicializa aqui, mesmo padrao de
+        // AtletaServiceImpl.Hibernate.initialize(atleta.getDiasDisponiveis()), para evitar
+        // LazyInitializationException/HttpMessageNotWritableException no GET.
+        perfil.ifPresent(p -> Hibernate.initialize(p.getDiasDisponiveis()));
+        return perfil;
     }
 
     @Override
