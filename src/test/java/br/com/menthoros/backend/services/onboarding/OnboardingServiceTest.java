@@ -471,7 +471,7 @@ class OnboardingServiceTest {
         }
 
         @Test
-        @DisplayName("lanca DomainConflictException quando Atleta foi editado depois do inicio do rascunho")
+        @DisplayName("lanca DomainConflictException quando Atleta foi editado depois da ultima atualizacao do rascunho")
         void lancaConflitoQuandoAtletaEditadoDepoisDoRascunho() {
             Instant inicioRascunho = Instant.now().minusSeconds(3600);
             atleta.setUpdatedAt(LocalDateTime.ofInstant(inicioRascunho.plusSeconds(60), ZoneId.systemDefault()));
@@ -486,6 +486,23 @@ class OnboardingServiceTest {
                     .isInstanceOf(DomainConflictException.class);
             verify(atletaRepository, org.mockito.Mockito.never()).save(any());
             verify(perfilOnboardingAtletaRepository, org.mockito.Mockito.never()).save(any());
+        }
+
+        @Test
+        @DisplayName("conflito 'cura' quando o atleta revisita e resalva o rascunho apos a edicao direta (CA8, correcao QA 2026-07-21)")
+        void naoLancaConflitoQuandoRascunhoResalvoDepoisDaEdicaoDireta() {
+            Instant inicioRascunho = Instant.now().minusSeconds(7200);
+            Instant edicaoDiretaDoAtleta = inicioRascunho.plusSeconds(60);
+            Instant resalvoDoRascunho = edicaoDiretaDoAtleta.plusSeconds(60); // atleta revisita e salva de novo
+            atleta.setUpdatedAt(LocalDateTime.ofInstant(edicaoDiretaDoAtleta, ZoneId.systemDefault()));
+            PerfilOnboardingAtleta perfil = rascunhoPreenchido(inicioRascunho, resalvoDoRascunho);
+            stubFluxoDeConclusao(perfil);
+
+            OnboardingConclusionResult resultado = service.concluirOnboarding(
+                    atletaId, tenantId, true, LocalDate.now().plusMonths(3),
+                    TipoProva.CORRIDA_RUA, DistanciaProva.KM_21, null, "Meia SP");
+
+            assertThat(resultado.perfil().getStatus()).isEqualTo("COMPLETO");
         }
 
         @Test
@@ -541,9 +558,14 @@ class OnboardingServiceTest {
         }
 
         private PerfilOnboardingAtleta rascunhoPreenchido(Instant criadoEm) {
+            return rascunhoPreenchido(criadoEm, criadoEm);
+        }
+
+        private PerfilOnboardingAtleta rascunhoPreenchido(Instant criadoEm, Instant atualizadoEm) {
             PerfilOnboardingAtleta perfil = new PerfilOnboardingAtleta();
             perfil.setId(UUID.randomUUID());
             perfil.setCriadoEm(criadoEm);
+            perfil.setAtualizadoEm(atualizadoEm);
             perfil.setObjetivo("Correr uma maratona");
             perfil.setNivelExperiencia(NivelExperiencia.INTERMEDIARIO);
             perfil.setDiasDisponiveis(List.of(DiaSemana.SEGUNDA, DiaSemana.QUARTA));

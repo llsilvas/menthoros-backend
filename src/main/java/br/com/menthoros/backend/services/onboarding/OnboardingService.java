@@ -110,10 +110,12 @@ public interface OnboardingService {
      * (CA13, Decisao 8) e calcula o {@code OnboardingContext} inicial (baseline + score + tier,
      * via {@link #montarContexto}).
      *
-     * <p>Checagem de conflito: se {@code Atleta.updatedAt} for posterior ao {@code criadoEm} do
-     * rascunho, alguem editou o atleta diretamente (ex.: coach via CRUD generico) depois que o
-     * rascunho comecou — lanca {@code DomainConflictException} em vez de sobrescrever a edicao
-     * concorrente.
+     * <p>Checagem de conflito: se {@code Atleta.updatedAt} for posterior ao {@code atualizadoEm} do
+     * rascunho, alguem editou o atleta diretamente (ex.: coach via CRUD generico) depois da ultima
+     * vez que o rascunho foi salvo — lanca {@code DomainConflictException} em vez de sobrescrever a
+     * edicao concorrente. Usar {@code atualizadoEm} (nao {@code criadoEm}) e o que faz o conflito
+     * "curar" quando o atleta revisita e salva o rascunho de novo apos a edicao direta (CA8 —
+     * onboarding em multiplas sessoes; correcao QA 2026-07-21, achado do clean-code-reviewer).
      *
      * Idempotente: NAO — muda o status do perfil e os campos do atleta a cada chamada
      * (chamar de novo apos concluido re-executa a migracao, sobrescrevendo os campos com o

@@ -4,6 +4,7 @@ import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.TipoProva;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -27,6 +28,7 @@ public record OnboardingConclusaoInputDto(
         BigDecimal distanciaKm,
 
         @Schema(description = "Nome da prova alvo", example = "Maratona Internacional de São Paulo")
+        @Size(max = 200, message = "Nome da prova deve ter no máximo 200 caracteres")
         String nomeProva
 ) {
 }

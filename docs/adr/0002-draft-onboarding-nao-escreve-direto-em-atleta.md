@@ -22,6 +22,9 @@ campos migram para `Atleta`, numa unica transação. Mais escrita duplicada dura
 
 **Risco simétrico aceito e mitigado:** essa escolha reabre o risco oposto — o coach edita `Atleta`
 via CRUD normal enquanto o atleta está em rascunho, e a conclusão sobrescreve com dado desatualizado
-do formulário. Mitigação: na conclusão, comparar `Atleta.atualizadoEm` com o início do rascunho; se
-`Atleta` foi modificada depois, bloquear a migração com erro em vez de aplicar last-write-wins
-silencioso (ver design.md Decisão 10).
+do formulário. Mitigação: na conclusão, comparar `Atleta.atualizadoEm` com a última atualização do
+rascunho (`PerfilOnboardingAtleta.atualizadoEm`, não o início — correção QA 2026-07-21: comparar
+contra o início travaria a conclusão permanentemente após qualquer edição direta, mesmo se o atleta
+revisitasse e salvasse o rascunho de novo reconhecendo o estado atual); se `Atleta` foi modificada
+depois da última vez que o rascunho foi salvo, bloquear a migração com erro em vez de aplicar
+last-write-wins silencioso (ver design.md Decisão 10).

@@ -8,5 +8,11 @@ import java.util.UUID;
 
 public interface AtividadeProvenienciaDescartadaRepository extends CrudRepository<AtividadeProvenienciaDescartada, UUID> {
 
-    List<AtividadeProvenienciaDescartada> findByAtividadeId(UUID atividadeId);
+    /**
+     * Tenant-scoped por design (correcao QA 2026-07-21, achado do security-reviewer) — sem
+     * chamador ainda (auditoria de proveniencia descartada, ver Decisao 2 do design.md), mas
+     * ja nasce tenant-safe para nao virar uma landmine cross-tenant quando um consumidor futuro
+     * (ex.: tela de auditoria) for adicionado.
+     */
+    List<AtividadeProvenienciaDescartada> findByAtividadeIdAndTenantId(UUID atividadeId, UUID tenantId);
 }

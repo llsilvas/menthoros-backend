@@ -5,6 +5,8 @@ import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.DispositivoMarca;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.PastOrPresent;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -26,6 +28,7 @@ public record AtletaOnboardingInputDto(
         List<DiaSemana> diasDisponiveis,
 
         @Schema(description = "Volume semanal máximo confortável (km)", example = "40")
+        @Positive(message = "Volume semanal máximo deve ser positivo")
         Integer volumeSemanalMax,
 
         @Schema(description = "Indica se o atleta possui alguma lesão", example = "false")
@@ -36,24 +39,31 @@ public record AtletaOnboardingInputDto(
         String descricaoLesao,
 
         @Schema(description = "Data da última lesão", example = "2026-01-15")
+        @PastOrPresent(message = "Data da última lesão não pode ser no futuro")
         LocalDate dataUltimaLesao,
 
         @Schema(description = "Histórico de lesões do atleta")
+        @Size(max = 5000, message = "Histórico de lesões deve ter no máximo 5000 caracteres")
         String historicoLesoes,
 
         @Schema(description = "Maior treino recente do atleta (km)", example = "21.5")
+        @Positive(message = "Maior treino recente deve ser positivo")
         BigDecimal maiorTreinoRecenteKm,
 
         @Schema(description = "Duração disponível por sessão de treino (minutos)", example = "60")
+        @Positive(message = "Duração disponível deve ser positiva")
         Integer duracaoDisponivelMin,
 
         @Schema(description = "Restrições de treino informadas pelo atleta")
+        @Size(max = 5000, message = "Restrições deve ter no máximo 5000 caracteres")
         String restricoes,
 
         @Schema(description = "Modalidade principal do atleta", example = "CORRIDA")
+        @Size(max = 30, message = "Modalidade deve ter no máximo 30 caracteres")
         String modalidade,
 
         @Schema(description = "Percepção subjetiva de condicionamento atual", example = "BOA")
+        @Size(max = 30, message = "Percepção de condicionamento deve ter no máximo 30 caracteres")
         String percepcaoCondicionamento,
 
         @Schema(description = "Canal de integração de treinos (Strava não é oferecido para atletas novos, ADR-0003)", example = "INTERVALS_ICU")

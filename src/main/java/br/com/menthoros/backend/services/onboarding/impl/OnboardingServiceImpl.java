@@ -240,10 +240,10 @@ public class OnboardingServiceImpl implements OnboardingService {
 
         if (atleta.getUpdatedAt() != null) {
             Instant atletaAtualizadoEm = atleta.getUpdatedAt().atZone(ZoneId.systemDefault()).toInstant();
-            if (atletaAtualizadoEm.isAfter(perfil.getCriadoEm())) {
+            if (atletaAtualizadoEm.isAfter(perfil.getAtualizadoEm())) {
                 throw new DomainConflictException(
-                        "Atleta " + atletaId + " foi editado depois do inicio do rascunho de onboarding — "
-                                + "conclua novamente apos revisar os dados atuais.");
+                        "Atleta " + atletaId + " foi editado depois da ultima atualizacao do rascunho de onboarding — "
+                                + "revise o rascunho (ele reflete os dados atuais) e conclua novamente.");
             }
         }
 
@@ -285,8 +285,7 @@ public class OnboardingServiceImpl implements OnboardingService {
             return Optional.empty();
         }
 
-        LocalDate inicioCalibracao = estado.getCalibracaoIniciadaEm().atZone(ZoneId.systemDefault()).toLocalDate();
-        int semanaDesdeInicioCalibracao = (int) ChronoUnit.WEEKS.between(inicioCalibracao, LocalDate.now()) + 1;
+        int semanaDesdeInicioCalibracao = calcularSemanaDesdeInicioCalibracao(estado.getCalibracaoIniciadaEm(), LocalDate.now());
         CalibrationStage stage = calibrationService.determinarEstagio(semanaDesdeInicioCalibracao);
 
         return Optional.of(new CalibrationStatusResult(
@@ -309,6 +308,18 @@ public class OnboardingServiceImpl implements OnboardingService {
         }
     }
 
+    /**
+     * Semana desde o inicio da calibracao — 1 na propria semana de {@code calibracaoIniciadaEm},
+     * incrementando a cada semana seguinte. Extraido para um unico ponto (correcao QA 2026-07-21,
+     * achado do clean-code-reviewer) — antes duplicado entre {@code obterStatusCalibracao} e
+     * {@code avaliarCalibracaoSeAplicavel}, com risco de divergencia silenciosa se o timezone ou
+     * arredondamento mudasse em um lugar so.
+     */
+    private int calcularSemanaDesdeInicioCalibracao(Instant calibracaoIniciadaEm, LocalDate dataReferencia) {
+        LocalDate inicioCalibracao = calibracaoIniciadaEm.atZone(ZoneId.systemDefault()).toLocalDate();
+        return (int) ChronoUnit.WEEKS.between(inicioCalibracao, dataReferencia) + 1;
+    }
+
     @Override
     @Transactional
     public Optional<CalibrationEvaluation> avaliarCalibracaoSeAplicavel(
@@ -328,8 +339,7 @@ public class OnboardingServiceImpl implements OnboardingService {
         Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta nao encontrado: " + atletaId));
 
-        LocalDate inicioCalibracao = estado.getCalibracaoIniciadaEm().atZone(ZoneId.systemDefault()).toLocalDate();
-        int semanaDesdeInicioCalibracao = (int) ChronoUnit.WEEKS.between(inicioCalibracao, dataReferenciaSemana) + 1;
+        int semanaDesdeInicioCalibracao = calcularSemanaDesdeInicioCalibracao(estado.getCalibracaoIniciadaEm(), dataReferenciaSemana);
 
         List<NormalizedActivity> historicoDeduplicado = normalizarEDeduplicarHistorico(atletaId, tenantId);
         Optional<PerfilOnboardingAtleta> perfil = perfilOnboardingAtletaRepository
