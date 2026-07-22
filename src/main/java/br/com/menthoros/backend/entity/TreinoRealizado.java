@@ -75,6 +75,17 @@ public class TreinoRealizado extends TreinoBase{
     @Column(name = "nivel_estresse")
     private Integer nivelEstresse; // 1-10
 
+    // ===== CAMPOS DE CALIBRACAO (V62) =====
+
+    @Column(name = "nivel_dor")
+    private Integer nivelDor; // 1-10
+
+    @Column(name = "nivel_fadiga")
+    private Integer nivelFadiga; // 1-10
+
+    @Column(name = "nivel_recuperacao")
+    private Integer nivelRecuperacao; // 1-10
+
     @Enumerated(EnumType.STRING)
     @Column(name = "fonte_dados")
     private FonteDados fonteDados;

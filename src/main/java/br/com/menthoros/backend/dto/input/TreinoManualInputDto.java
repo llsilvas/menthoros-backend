@@ -37,5 +37,29 @@ public record TreinoManualInputDto(
 
     @Schema(description = "Observações livres sobre o treino (máx 500 caracteres)")
     @Size(max = 500, message = "Observações devem ter no máximo 500 caracteres")
-    String observacoes
+    String observacoes,
+
+    // ===== CAMPOS DE CALIBRACAO (TrainingPhase.CALIBRATION) =====
+    // Opcionais — coletados apenas durante a fase de calibração do atleta (design.md,
+    // athlete-onboarding-baseline). Fora de CALIBRATION, o front envia apenas RPE.
+
+    @Schema(description = "Nível de dor percebido pelo atleta (1–10, opcional, coletado durante calibração)", example = "3")
+    @Min(value = 1, message = "Nível de dor mínimo é 1")
+    @Max(value = 10, message = "Nível de dor máximo é 10")
+    Integer nivelDor,
+
+    @Schema(description = "Nível de fadiga percebido pelo atleta (1–10, opcional, coletado durante calibração)", example = "4")
+    @Min(value = 1, message = "Nível de fadiga mínimo é 1")
+    @Max(value = 10, message = "Nível de fadiga máximo é 10")
+    Integer nivelFadiga,
+
+    @Schema(description = "Qualidade do sono na noite anterior ao treino (1–10, opcional, coletado durante calibração)", example = "7")
+    @Min(value = 1, message = "Qualidade do sono mínima é 1")
+    @Max(value = 10, message = "Qualidade do sono máxima é 10")
+    Integer qualidadeSonoNoiteAnterior,
+
+    @Schema(description = "Nível de recuperação percebido pelo atleta (1–10, opcional, coletado durante calibração)", example = "6")
+    @Min(value = 1, message = "Nível de recuperação mínimo é 1")
+    @Max(value = 10, message = "Nível de recuperação máximo é 10")
+    Integer nivelRecuperacao
 ) {}

@@ -986,11 +986,14 @@ class PlanoServiceImplTest {
                 null, // 27 feedbackAtleta
                 null, // 28 qualidadeSonoNoiteAnterior
                 null, // 29 nivelEstresse
-                null, // 30 fonteDados
-                null, // 31 status
-                null, // 32 externalId
-                null, // 33 etapasRealizadas
-                null  // 34 sugestaoReclassificacao
+                null, // 30 nivelDor
+                null, // 31 nivelFadiga
+                null, // 32 nivelRecuperacao
+                null, // 33 fonteDados
+                null, // 34 status
+                null, // 35 externalId
+                null, // 36 etapasRealizadas
+                null  // 37 sugestaoReclassificacao
         );
     }
 

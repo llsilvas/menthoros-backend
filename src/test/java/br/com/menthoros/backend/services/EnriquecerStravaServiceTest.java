@@ -267,7 +267,9 @@ class EnriquecerStravaServiceTest {
                 null, null, null, // intensidadeReal
                 null, // runningDynamics
                 null, null, null,
-                null, null, null, null,
+                null, null, null, // feedbackAtleta, qualidadeSonoNoiteAnterior, nivelEstresse
+                null, null, null, // nivelDor, nivelFadiga, nivelRecuperacao
+                null,
                 null, null, null, null
         );
     }

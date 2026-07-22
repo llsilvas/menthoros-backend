@@ -229,6 +229,7 @@ class TreinoServiceConsistenciaValidatorTest {
         //         percepcaoEsforco, tssCalculado, metodoCalculoTss, intensidadeReal,
         //         runningDynamics (V53), decouplingPercentual, decoupling, serieEficiencia,
         //         feedbackAtleta, qualidadeSonoNoiteAnterior, nivelEstresse,
+        //         nivelDor, nivelFadiga, nivelRecuperacao (V62),
         //         fonteDados, status, externalId, etapasRealizadas, sugestaoReclassificacao
         return new TreinoRealizadoOutputDto(
                 UUID.randomUUID(), LocalDate.now(), DiaSemana.SEGUNDA,
@@ -239,6 +240,7 @@ class TreinoServiceConsistenciaValidatorTest {
                 null, // runningDynamics
                 null, null, null,
                 null, null, null,
+                null, null, null, // nivelDor, nivelFadiga, nivelRecuperacao
                 null, null, null, null, null
         );
     }
