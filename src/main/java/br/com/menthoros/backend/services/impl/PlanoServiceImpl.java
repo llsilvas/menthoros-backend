@@ -784,7 +784,33 @@ public class PlanoServiceImpl implements PlanoService {
         }
 
         Hibernate.initialize(planoSemanal.getTreinosPlanejados());
-        return planoSemanalMapper.toOutputDto(planoSemanal);
+        double volumeRealizadoKm = calcularVolumeRealizadoKm(
+                atletaId, tenantId, planoSemanal.getSemanaInicio(), planoSemanal.getSemanaFim());
+        return planoSemanalMapper.toOutputDto(planoSemanal).toBuilder()
+                .volumeRealizadoKm(volumeRealizadoKm)
+                .build();
+    }
+
+    /**
+     * Soma a distância dos treinos realizados pelo atleta dentro da janela da semana do plano.
+     *
+     * <p>Calculado dinamicamente por atletaId + janela de datas (não pela FK
+     * {@code TreinoRealizado.planoSemanal}) porque nem todo fluxo de registro de treino
+     * (sync Strava, upload .fit, lançamento do coach, reconciliação) vincula essa FK — somar
+     * por data evita que esses treinos fiquem invisíveis ao volume realizado.
+     *
+     * Idempotent: YES — pure read, no side effects.
+     * Side Effects: NONE
+     * Tenant-aware: YES — query filtra por tenantId explicitamente.
+     */
+    private double calcularVolumeRealizadoKm(
+            UUID atletaId, UUID tenantId, LocalDate semanaInicio, LocalDate semanaFim) {
+        return treinoRealizadoRepository
+                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, semanaInicio, semanaFim)
+                .stream()
+                .map(t -> Optional.ofNullable(t.getDistanciaKm()).orElse(BigDecimal.ZERO))
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .doubleValue();
     }
 
     @Override
