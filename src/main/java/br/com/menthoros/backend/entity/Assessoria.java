@@ -92,22 +92,13 @@ public class Assessoria {
     private Integer maxTecnicos; // Limite de técnicos
 
     // ===== PLANO E COBRANÇA =====
+    // Estado de cobrança (datas, trial, expiração) migrou para a entidade Assinatura
+    // (assessoria-billing-asaas, design.md Decisão 8 / ADR-0004/0005). Aqui fica só o
+    // tier (entitlement); Assessoria.ativo passa a ser escrito só pela sincronização
+    // a partir do status de Assinatura.
     @Enumerated(EnumType.STRING)
     @Column(name = "plano", nullable = false)
     private PlanoAssessoria plano; // BASIC, PRO, ENTERPRISE
-
-    @Column(name = "data_assinatura")
-    private LocalDateTime dataAssinatura;
-
-    @Column(name = "data_expiracao")
-    private LocalDateTime dataExpiracao;
-
-    @Builder.Default
-    @Column(name = "trial", nullable = false)
-    private Boolean trial = false;
-
-    @Column(name = "data_fim_trial")
-    private LocalDateTime dataFimTrial;
 
     // ===== CONTROLE =====
     @Builder.Default
@@ -149,16 +140,12 @@ public class Assessoria {
     }
 
     /**
-     * Verifica se a assessoria está ativa e dentro do período de validade
+     * Verifica se a assessoria está ativa. A validade de cobrança (expiração/trial) não vive mais
+     * aqui — {@code ativo} é sincronizado a partir do status de {@code Assinatura}
+     * (assessoria-billing-asaas, design.md Decisão 8).
      */
     public boolean isValida() {
-        if (!ativo) return false;
-
-        if (trial && dataFimTrial != null) {
-            return LocalDateTime.now().isBefore(dataFimTrial);
-        }
-
-        return dataExpiracao == null || LocalDateTime.now().isBefore(dataExpiracao);
+        return ativo;
     }
 
     /**
