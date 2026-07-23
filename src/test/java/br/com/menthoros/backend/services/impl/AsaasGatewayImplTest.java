@@ -76,6 +76,7 @@ class AsaasGatewayImplTest {
         void criaClienteEAssinatura() {
             Assessoria assessoria = assessoria();
             stubBuscaCliente(assessoria.getId(), "{\"data\":[],\"totalCount\":0}");
+            stubBuscaAssinatura(assessoria.getId(), "{\"data\":[],\"totalCount\":0}");
             wireMock.stubFor(post(urlEqualTo("/customers"))
                     .withHeader("access_token", equalTo(API_KEY))
                     .willReturn(okJson("{\"id\":\"cus_novo\"}")));
@@ -100,6 +101,7 @@ class AsaasGatewayImplTest {
         void reaproveitaClienteExistente() {
             Assessoria assessoria = assessoria();
             stubBuscaCliente(assessoria.getId(), "{\"data\":[{\"id\":\"cus_existente\"}],\"totalCount\":1}");
+            stubBuscaAssinatura(assessoria.getId(), "{\"data\":[],\"totalCount\":0}");
             wireMock.stubFor(post(urlEqualTo("/subscriptions"))
                     .willReturn(okJson("{\"id\":\"sub_9\",\"status\":\"ACTIVE\"}")));
 
@@ -108,6 +110,21 @@ class AsaasGatewayImplTest {
 
             assertThat(resultado.asaasCustomerId()).isEqualTo("cus_existente");
             wireMock.verify(0, postRequestedFor(urlEqualTo("/customers")));
+        }
+
+        @Test
+        @DisplayName("subscription já existe (retry sobre PENDENTE): reaproveita e NÃO cria outra (C2/CA14)")
+        void reaproveitaAssinaturaExistente() {
+            Assessoria assessoria = assessoria();
+            stubBuscaCliente(assessoria.getId(), "{\"data\":[{\"id\":\"cus_existente\"}],\"totalCount\":1}");
+            stubBuscaAssinatura(assessoria.getId(),
+                    "{\"data\":[{\"id\":\"sub_existente\",\"status\":\"ACTIVE\"}],\"totalCount\":1}");
+
+            AsaasAssinaturaCriada resultado = gateway.criarClienteEAssinatura(
+                    assessoria, CARD_TOKEN, LocalDate.of(2026, 9, 1), new BigDecimal("199.90"));
+
+            assertThat(resultado.asaasSubscriptionId()).isEqualTo("sub_existente");
+            wireMock.verify(0, postRequestedFor(urlEqualTo("/subscriptions")));
         }
 
         @Test
@@ -128,6 +145,7 @@ class AsaasGatewayImplTest {
         void segredosNuncaVazam() {
             Assessoria assessoria = assessoria();
             stubBuscaCliente(assessoria.getId(), "{\"data\":[],\"totalCount\":0}");
+            stubBuscaAssinatura(assessoria.getId(), "{\"data\":[],\"totalCount\":0}");
             wireMock.stubFor(post(urlEqualTo("/customers")).willReturn(okJson("{\"id\":\"cus_x\"}")));
             wireMock.stubFor(post(urlEqualTo("/subscriptions"))
                     .willReturn(aResponse().withStatus(500).withBody("boom")));
@@ -198,6 +216,12 @@ class AsaasGatewayImplTest {
 
     private void stubBuscaCliente(UUID assessoriaId, String jsonBody) {
         wireMock.stubFor(get(urlPathEqualTo("/customers"))
+                .withQueryParam("externalReference", equalTo(assessoriaId.toString()))
+                .willReturn(okJson(jsonBody)));
+    }
+
+    private void stubBuscaAssinatura(UUID assessoriaId, String jsonBody) {
+        wireMock.stubFor(get(urlPathEqualTo("/subscriptions"))
                 .withQueryParam("externalReference", equalTo(assessoriaId.toString()))
                 .willReturn(okJson(jsonBody)));
     }

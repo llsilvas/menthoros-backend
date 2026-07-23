@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -48,7 +49,14 @@ public class AsaasWebhookController {
             log.warn("[asaas-webhook] requisição rejeitada: header asaas-access-token ausente ou inválido");
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        asaasWebhookEventService.processar(event);
+        try {
+            asaasWebhookEventService.processar(event);
+        } catch (DataIntegrityViolationException e) {
+            // Corrida de idempotência (CA10): entregas concorrentes do mesmo evento; o registro de
+            // idempotência (PK evento_id) rejeita a duplicata e a transação perdedora reverte. O
+            // vencedor já aplicou a transição — responder 200 para o Asaas não reenviar.
+            log.info("[asaas-webhook] evento {} processado concorrentemente (idempotência)", event.id());
+        }
         return ResponseEntity.ok().build();
     }
 

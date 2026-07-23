@@ -136,6 +136,15 @@ public class AsaasGatewayImpl implements AsaasGateway {
 
     private SubscriptionResponse criarAssinatura(
             String customerId, String creditCardToken, LocalDate nextDueDate, BigDecimal valor, UUID assessoriaId) {
+        // Idempotência (CA14): num retry sobre a âncora PENDENTE, reaproveita a assinatura já criada
+        // no Asaas (lookup por externalReference) antes de criar outra — evita cobrança duplicada.
+        SubscriptionResponse existente = buscarAssinaturaExistente(assessoriaId);
+        if (existente != null) {
+            log.info("Asaas: assinatura reaproveitada assessoriaId={}, subscriptionId={}",
+                    assessoriaId, existente.id());
+            return existente;
+        }
+
         Map<String, Object> body = new HashMap<>();
         body.put("customer", customerId);
         body.put("billingType", BILLING_CARTAO);
@@ -165,6 +174,23 @@ public class AsaasGatewayImpl implements AsaasGateway {
         }
     }
 
+    /** Reaproveita a assinatura já criada no Asaas para a assessoria (lookup por externalReference). */
+    private SubscriptionResponse buscarAssinaturaExistente(UUID assessoriaId) {
+        try {
+            SubscriptionListResponse existentes = restClient.get()
+                    .uri(b -> b.path("/subscriptions").queryParam("externalReference", assessoriaId.toString()).build())
+                    .retrieve()
+                    .body(SubscriptionListResponse.class);
+
+            if (existentes != null && existentes.data() != null && !existentes.data().isEmpty()) {
+                return existentes.data().get(0);
+            }
+            return null;
+        } catch (Exception e) {
+            throw falha("buscar assinatura por externalReference (assessoriaId=" + assessoriaId + ")", e);
+        }
+    }
+
     /** Envolve a falha sem vazar API key/token de cartão (a mensagem original do RestClient pode conter headers). */
     private AsaasIntegrationException falha(String operacao, Throwable causa) {
         log.error("Falha na integração com o Asaas ao {}", operacao, causa);
@@ -176,6 +202,9 @@ public class AsaasGatewayImpl implements AsaasGateway {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record CustomerResponse(String id) {}
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record SubscriptionListResponse(List<SubscriptionResponse> data, Integer totalCount) {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     private record SubscriptionResponse(String id, String status) {}

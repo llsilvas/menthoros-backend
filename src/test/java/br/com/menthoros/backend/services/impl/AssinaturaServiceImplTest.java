@@ -25,6 +25,7 @@ import org.mockito.InjectMocks;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -50,6 +51,7 @@ class AssinaturaServiceImplTest {
     @Mock private AssessoriaRepository assessoriaRepository;
     @Mock private AsaasGateway asaasGateway;
     @Mock private AssinaturaMapper assinaturaMapper;
+    @Mock private PlatformTransactionManager transactionManager;
 
     @InjectMocks private AssinaturaServiceImpl service;
 
@@ -145,11 +147,36 @@ class AssinaturaServiceImplTest {
 
             service.criar(assessoriaId, input("tok_x", PlanoAssessoria.PRO));
 
-            // apenas o save de confirmação (ATIVA) — sem novo insert PENDENTE
+            // Sem novo insert PENDENTE: todos os saves são na MESMA linha (o id da PENDENTE existente),
+            // e o estado final é ATIVA.
             ArgumentCaptor<Assinatura> captor = ArgumentCaptor.forClass(Assinatura.class);
-            verify(assinaturaRepository).save(captor.capture());
-            assertThat(captor.getValue().getId()).isEqualTo(pendente.getId());
+            verify(assinaturaRepository, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
+            assertThat(captor.getAllValues()).allSatisfy(a -> assertThat(a.getId()).isEqualTo(pendente.getId()));
             assertThat(captor.getValue().getStatus()).isEqualTo(StatusAssinatura.ATIVA);
+        }
+
+        @Test
+        @DisplayName("retry com valor/nextDueDate corrigidos sincroniza a PENDENTE antes de confirmar (I2)")
+        void retrySincronizaValorCorrigido() {
+            Assinatura pendente = new Assinatura();
+            pendente.setId(UUID.randomUUID());
+            pendente.setAssessoriaId(assessoriaId);
+            pendente.setStatus(StatusAssinatura.PENDENTE);
+            pendente.setValor(new BigDecimal("99.00")); // valor da tentativa anterior
+            when(assessoriaRepository.findById(assessoriaId)).thenReturn(Optional.of(assessoria));
+            when(assinaturaRepository.findByAssessoriaId(assessoriaId)).thenReturn(Optional.of(pendente));
+            when(assinaturaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(asaasGateway.criarClienteEAssinatura(any(), any(), any(), any()))
+                    .thenReturn(new AsaasAssinaturaCriada("cus_1", "sub_1", "ACTIVE"));
+            when(assinaturaMapper.toOutputDto(any(), any())).thenReturn(outputStub);
+
+            // input corrente com valor diferente do original
+            AssinaturaInputDto corrigido = new AssinaturaInputDto(
+                    "tok_x", LocalDate.of(2026, 12, 1), new BigDecimal("299.90"), PlanoAssessoria.PRO);
+            service.criar(assessoriaId, corrigido);
+
+            assertThat(pendente.getValor()).isEqualByComparingTo("299.90");
+            assertThat(pendente.getStatus()).isEqualTo(StatusAssinatura.ATIVA);
         }
 
         @Test
@@ -233,6 +260,21 @@ class AssinaturaServiceImplTest {
 
             verifyNoInteractions(asaasGateway);
         }
+
+        @Test
+        @DisplayName("assinatura CANCELADA não pode trocar tier — conflito, sem chamar o Asaas (I1)")
+        void canceladaConflita() {
+            Assinatura cancelada = assinaturaAtiva("sub_1");
+            cancelada.setStatus(StatusAssinatura.CANCELADA);
+            when(assessoriaRepository.findById(assessoriaId)).thenReturn(Optional.of(assessoria));
+            when(assinaturaRepository.findByAssessoriaId(assessoriaId)).thenReturn(Optional.of(cancelada));
+
+            assertThatThrownBy(() -> service.atualizarTier(assessoriaId,
+                    new AssinaturaTierInputDto(PlanoAssessoria.PRO, new BigDecimal("1.00"))))
+                    .isInstanceOf(DomainConflictException.class);
+
+            verifyNoInteractions(asaasGateway);
+        }
     }
 
     @Nested
@@ -269,6 +311,20 @@ class AssinaturaServiceImplTest {
             assertThat(pendente.getStatus()).isEqualTo(StatusAssinatura.CANCELADA);
             assertThat(assessoria.getAtivo()).isFalse();
             verifyNoInteractions(asaasGateway);
+        }
+
+        @Test
+        @DisplayName("assinatura já CANCELADA é no-op — não rechama o Asaas (I1)")
+        void jaCanceladaNoOp() {
+            Assinatura cancelada = assinaturaAtiva("sub_1");
+            cancelada.setStatus(StatusAssinatura.CANCELADA);
+            when(assessoriaRepository.findById(assessoriaId)).thenReturn(Optional.of(assessoria));
+            when(assinaturaRepository.findByAssessoriaId(assessoriaId)).thenReturn(Optional.of(cancelada));
+
+            service.cancelar(assessoriaId);
+
+            verifyNoInteractions(asaasGateway);
+            verify(assinaturaRepository, never()).save(any());
         }
 
         @Test

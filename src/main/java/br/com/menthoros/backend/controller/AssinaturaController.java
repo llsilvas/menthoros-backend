@@ -25,6 +25,16 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+/**
+ * Endpoints administrativos de cobrança das assessorias (tenants).
+ *
+ * <p><strong>Autorização:</strong> {@code hasRole('ADMIN')} aqui é o role de <em>staff da
+ * plataforma Menthoros</em> (não o admin por-tenant de uma assessoria) — mesma premissa e padrão do
+ * {@code AssessoriaController} (que cria/gerencia tenants sob {@code /api/admin/**}). Por isso não há
+ * tenant-scoping por {@code TenantContext}: são operações cross-tenant de back-office. Se o role
+ * {@code ADMIN} vier a ser emitido também para admins de assessoria, estes endpoints (e o
+ * {@code AssessoriaController}) precisarão de um role de plataforma distinto.
+ */
 @RestController
 @RequestMapping("/api/admin/assessorias/{id}/assinatura")
 @RequiredArgsConstructor
