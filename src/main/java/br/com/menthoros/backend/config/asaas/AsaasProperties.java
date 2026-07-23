@@ -19,6 +19,12 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "asaas")
 public class AsaasProperties {
 
+    /**
+     * Quando {@code true} (default atual), usa o {@code AsaasGatewayMock} em vez da integração real —
+     * ainda não há ligação com o provider. Virar para {@code false} quando o Asaas estiver conectado.
+     */
+    private boolean mock = true;
+
     /** Base URL da API (sandbox: https://api-sandbox.asaas.com/v3, prod: https://api.asaas.com/v3). */
     private String baseUrl;
 

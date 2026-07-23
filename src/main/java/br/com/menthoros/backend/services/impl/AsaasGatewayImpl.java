@@ -5,6 +5,7 @@ import br.com.menthoros.backend.exception.AsaasIntegrationException;
 import br.com.menthoros.backend.services.AsaasGateway;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -24,6 +25,7 @@ import java.util.UUID;
  */
 @Slf4j
 @Service
+@ConditionalOnProperty(prefix = "asaas", name = "mock", havingValue = "false")
 public class AsaasGatewayImpl implements AsaasGateway {
 
     private static final String CYCLE_MENSAL = "MONTHLY";

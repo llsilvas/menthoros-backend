@@ -242,6 +242,8 @@ app:
     strava-paths:
       - "/api/v1/strava/webhook"
       - "/api/v1/strava/callback"
+    asaas-paths:
+      - "/api/v1/asaas/webhook"
 
   # ----------------------------------------
   # STRAVA INTEGRATION CONFIGURATION
@@ -299,6 +301,9 @@ onboarding:
 # sempre via variavel de ambiente, nunca hardcoded.
 # ----------------------------------------
 asaas:
+  # mock=true (default) usa AsaasGatewayMock — ainda sem ligação real com o provider.
+  # Virar para false (ASAAS_MOCK=false) quando o Asaas estiver conectado.
+  mock: ${ASAAS_MOCK:true}
   base-url: ${ASAAS_BASE_URL:https://api-sandbox.asaas.com/v3}
   api-key: ${ASAAS_API_KEY:}
   user-agent: ${ASAAS_USER_AGENT:menthoros-backend}
