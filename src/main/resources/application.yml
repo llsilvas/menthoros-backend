@@ -292,6 +292,20 @@ onboarding:
     enabled: ${ONBOARDING_MIGRATE_EXISTING_ENABLED:true}
 
 # ----------------------------------------
+# ASAAS BILLING INTEGRATION (assessoria-billing-asaas)
+#
+# Cobranca B2B das assessorias. base-url por profile (sandbox: api-sandbox,
+# producao: api.asaas.com). api-key e webhook.access-token sao segredos —
+# sempre via variavel de ambiente, nunca hardcoded.
+# ----------------------------------------
+asaas:
+  base-url: ${ASAAS_BASE_URL:https://api-sandbox.asaas.com/v3}
+  api-key: ${ASAAS_API_KEY:}
+  user-agent: ${ASAAS_USER_AGENT:menthoros-backend}
+  webhook:
+    access-token: ${ASAAS_WEBHOOK_ACCESS_TOKEN:}
+
+# ----------------------------------------
 # KEYCLOAK ADMIN REST API
 # ----------------------------------------
 keycloak:
