@@ -16,6 +16,8 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -48,6 +50,7 @@ public class AtividadeProvenienciaDescartada {
     @Enumerated(EnumType.STRING)
     private FonteDados fonteDescartada;
 
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "dados_descartados", nullable = false, columnDefinition = "jsonb")
     private String dadosDescartados;
 

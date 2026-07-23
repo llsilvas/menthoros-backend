@@ -54,6 +54,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -257,7 +258,11 @@ public class OnboardingServiceImpl implements OnboardingService {
 
         atleta.setObjetivo(perfil.getObjetivo());
         atleta.setNivelExperiencia(perfil.getNivelExperiencia());
-        atleta.setDiasDisponiveis(perfil.getDiasDisponiveis());
+        // copia para uma nova lista — reusar a mesma instancia (colecao gerenciada do Hibernate)
+        // entre Atleta.diasDisponiveis e PerfilOnboardingAtleta.diasDisponiveis causa
+        // "Found shared references to a collection" no flush (achado ao testar manualmente a
+        // conclusao do onboarding, task 9.1)
+        atleta.setDiasDisponiveis(perfil.getDiasDisponiveis() == null ? null : new ArrayList<>(perfil.getDiasDisponiveis()));
         atleta.setVolumeSemanalMax(perfil.getVolumeSemanalMax());
         atleta.setTemLesao(perfil.getTemLesao());
         atleta.setDescricaoLesao(perfil.getDescricaoLesao());
