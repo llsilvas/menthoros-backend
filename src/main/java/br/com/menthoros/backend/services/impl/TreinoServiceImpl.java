@@ -558,6 +558,10 @@ public class TreinoServiceImpl implements TreinoService {
         treino.setDistanciaKm(input.distanciaKm());
         treino.setPercepcaoEsforco(input.percepcaoEsforco());
         treino.setObservacao(input.observacoes());
+        treino.setNivelDor(input.nivelDor());
+        treino.setNivelFadiga(input.nivelFadiga());
+        treino.setQualidadeSonoNoiteAnterior(input.qualidadeSonoNoiteAnterior());
+        treino.setNivelRecuperacao(input.nivelRecuperacao());
         treino.setFonteDados(FonteDados.MANUAL);
         treino.setStatus(TreinoExecucaoStatus.REALIZADO);
         treino.setCriadoPor(CRIADO_POR_ATLETA);

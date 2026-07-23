@@ -110,6 +110,17 @@ public record TreinoRealizadoOutputDto(
         @Schema(description = "Nível de estresse antes do treino (1-10)", example = "5")
         Integer nivelEstresse,
 
+        // ===== CAMPOS DE CALIBRACAO (V62) =====
+
+        @Schema(description = "Nível de dor percebido pelo atleta (1-10)", example = "3")
+        Integer nivelDor,
+
+        @Schema(description = "Nível de fadiga percebido pelo atleta (1-10)", example = "4")
+        Integer nivelFadiga,
+
+        @Schema(description = "Nível de recuperação percebido pelo atleta (1-10)", example = "6")
+        Integer nivelRecuperacao,
+
         // ===== METADADOS =====
 
         @Schema(description = "Fonte dos dados", example = "GARMIN")

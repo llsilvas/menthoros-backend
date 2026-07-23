@@ -1,6 +1,8 @@
 package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
+import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.enums.OrigemAprovacao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 
 import java.util.List;
@@ -63,4 +65,27 @@ public interface PlanoReviewService {
      * @return lista de planos com o status informado, mais antigos primeiro
      */
     List<PlanoSemanalOutputDto> listarPlanosPorStatus(UUID tenantId, PlanoReviewStatus reviewStatus);
+
+    /**
+     * Aplica os efeitos de aprovação (status, comment, save, evento) a um {@link PlanoSemanal}
+     * já carregado em memória — sem re-fetch por ID nem validação de transição (o chamador é
+     * responsável por garantir que a transição faz sentido). Extraído de {@link #aprovarPlano}
+     * para ser reutilizado pelo auto-approve do onboarding (athlete-onboarding-baseline, CA5),
+     * garantindo que planos que nascem já aprovados publiquem o MESMO {@code PlanoAprovadoEvent}
+     * do fluxo manual — sem isso, a sincronização com intervals.icu nunca dispararia para eles.
+     *
+     * Idempotent: NÃO — altera o estado do plano e publica evento a cada chamada.
+     * Side Effects: Database update (reviewStatus = APROVADO, reviewComment = null) + save +
+     * publica {@link br.com.menthoros.backend.events.PlanoAprovadoEvent}.
+     * Tenant-aware: SIM — {@code tenantId} explícito, usado no evento.
+     *
+     * @param plano    plano já carregado (novo ou existente) a aprovar
+     * @param tenantId tenant do plano
+     * @param origem   quem disparou a aprovação — {@code COACH} (revisão manual) ou
+     *                 {@code AUTO_CONFIANCA_ALTA} (auto-approve, athlete-onboarding-baseline).
+     *                 Persistido em {@code origemAprovacao} para não perder essa distinção
+     *                 (sessão de grilling, 2026-07-21).
+     * @return o plano salvo, com associações inicializadas
+     */
+    PlanoSemanal aprovarTransicao(PlanoSemanal plano, UUID tenantId, OrigemAprovacao origem);
 }

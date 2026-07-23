@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import br.com.menthoros.backend.enums.OrigemEncerramento;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
+import br.com.menthoros.backend.services.onboarding.ConfidenceTier;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 
@@ -11,7 +12,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 @Schema(description = "Dados de saída de um plano semanal de treino")
-@Builder
+@Builder(toBuilder = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record PlanoSemanalOutputDto(
 
@@ -60,5 +61,11 @@ public record PlanoSemanalOutputDto(
         String reviewComment,
 
         @Schema(description = "Nome completo do atleta dono do plano")
-        String atletaNome
+        String atletaNome,
+
+        @Schema(description = "Nível de confiança do baseline de onboarding do atleta (A/B/C) — " +
+                "B/C indicam que o plano não foi auto-aprovado por baixa confiança (Cenário B/C, " +
+                "athlete-onboarding-baseline); null se o atleta ainda não passou pelo onboarding",
+                example = "B")
+        ConfidenceTier confidenceTier
 ) {}

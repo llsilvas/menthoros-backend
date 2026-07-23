@@ -1,5 +1,9 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
+import br.com.menthoros.backend.domain.planner.OnboardingContext;
+import br.com.menthoros.backend.domain.planner.ReviewMode;
+import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.ProgressaoHistoricoResumo;
 import br.com.menthoros.backend.dto.input.DadosPlanoDto;
@@ -25,12 +29,14 @@ import br.com.menthoros.backend.services.*;
 import br.com.menthoros.backend.services.helper.PlannerShadowService;
 import br.com.menthoros.backend.services.helper.RedistribuicaoTreinoHelper;
 import br.com.menthoros.backend.services.helper.RegraGeracaoTreino;
+import br.com.menthoros.backend.services.onboarding.OnboardingService;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.util.Utils;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -72,6 +78,14 @@ public class PlanoServiceImpl implements PlanoService {
     private final ProvaRepository provaRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final PlannerShadowService plannerShadowService;
+    private final OnboardingService onboardingService;
+    private final PlanoReviewService planoReviewService;
+
+    @Value("${onboarding.auto-approve.enabled:true}")
+    private boolean autoApproveEnabled;
+
+    @Value("${onboarding.migrate-existing.enabled:true}")
+    private boolean migrateExistingEnabled;
 
     /**
      * Gera um plano de treino semanal personalizado para um atleta usando IA.
@@ -208,16 +222,84 @@ public class PlanoServiceImpl implements PlanoService {
         // 4. Criar plano completo com treinos
         PlanoSemanal plano = criarPlanoComTreinos(planoDto, atleta, periodo, metaDados, treinos);
 
-        // 4.5. Shadow do PlannerEngine (deterministic-planner-engine, design.md Decisao 10):
-        // roda apos a geracao legada, nunca altera plano/prompt/persistencia (CA12); qualquer
-        // falha e isolada internamente pelo proprio PlannerShadowService (CA11). Mutacao
-        // in-memory dos campos planner_* em `plano`, persistidos junto no passo 5.
+        // 4.5. OnboardingContext (athlete-onboarding-baseline) + Shadow do PlannerEngine
+        // (deterministic-planner-engine, design.md Decisao 10): roda apos a geracao legada,
+        // nunca altera plano/prompt/persistencia (CA12); qualquer falha e isolada internamente
+        // pelo proprio PlannerShadowService (CA11). Mutacao in-memory dos campos planner_* em
+        // `plano`, persistidos junto no passo 5.
         // batch=false: este call site nao distingue chamadas interativas de lote (BatchPlanProcessor
         // chama o mesmo gerarPlanoTreino publico) — tag de metrica aproximada, nao uma limitacao funcional.
-        plannerShadowService.aplicarShadow(plano, planoDto, dadosPlano, decisaoProgressao, periodo.inicio(), false);
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Optional<OnboardingContext> onboardingContext = resolverOnboardingContext(atleta.getId(), tenantId);
+        Optional<WeekPlanSkeleton> weekPlanSkeleton = plannerShadowService.aplicarShadow(
+                plano, planoDto, dadosPlano, decisaoProgressao, periodo.inicio(), false, onboardingContext);
+
+        // 4.6. Auto-approve Cenario A (CA5, design.md Decisao 7): so dispara com EXCEPTION_ONLY
+        // E !requiresCoachReview E risco != HIGH_RISK — a dupla checagem com o risco e defesa em
+        // profundidade, redundante por design (HIGH_RISK ja deveria forcar requiresCoachReview).
+        onboardingContext.ifPresent(context -> aplicarAutoApproveSeElegivel(plano, context, weekPlanSkeleton, tenantId));
+
+        // 4.7. Avaliacao semanal de calibracao (retrofit 10.4, sessao de grilling 2026-07-21):
+        // so avalia quando o atleta esta de fato em TrainingPhase.CALIBRATION (AthleteBaselineState.
+        // calibracaoIniciadaEm preenchido, setado em montarContexto na 1a vez que confidenceTier != A).
+        // Precisa do InjuryRiskLevel calculado pelo shadow (4.5) — sem skeleton, nao ha risco para
+        // avaliar nesta semana; tenta de novo no proximo ciclo.
+        weekPlanSkeleton.ifPresent(skeleton -> onboardingService.avaliarCalibracaoSeAplicavel(
+                atleta.getId(), tenantId, semanaInicio.minusDays(1), skeleton.injuryRisk().level()));
 
         // 5. Persistir e retornar
         return salvarPlanoCompleto(plano, metaDados);
+    }
+
+    /**
+     * Resolve o {@code OnboardingContext} do atleta, respeitando o kill-switch
+     * {@code onboarding.migrate-existing.enabled} (tasks.md 5.7, design.md Decisao 6): atletas
+     * que JA possuem um {@code AthleteBaselineState} (ja onboarded ou ja migrados) sempre tem
+     * o contexto recalculado — necessario para o re-baseline da calibracao (CA3). Atletas
+     * legados SEM snapshot ainda so sao migrados automaticamente quando a flag esta habilitada;
+     * desabilitada, o atleta legado continua sem {@code OnboardingContext} (comportamento
+     * identico ao anterior a esta change) ate que a flag volte a ligar ou o atleta conclua o
+     * onboarding manualmente.
+     *
+     * Idempotent: NAO — pode disparar o calculo/persistencia do baseline (ver
+     * {@code OnboardingService.montarContexto}).
+     * Side Effects: ver montarContexto quando o contexto e calculado; NENHUM caso contrario.
+     * Tenant-aware: SIM — tenantId explicito.
+     */
+    private Optional<OnboardingContext> resolverOnboardingContext(UUID atletaId, UUID tenantId) {
+        boolean atletaLegado = !onboardingService.possuiBaseline(atletaId, tenantId);
+        if (atletaLegado && !migrateExistingEnabled) {
+            return Optional.empty();
+        }
+        return Optional.of(onboardingService.montarContexto(atletaId, tenantId));
+    }
+
+    /**
+     * Auto-aprova o plano quando o atleta esta em Cenario A (alta confianca, design.md
+     * Decisao 7) e o ciclo corrente nao apresenta risco. Kill-switch via
+     * {@code onboarding.auto-approve.enabled} (default true); se qualquer condicao falhar,
+     * o plano permanece {@code AGUARDANDO_REVISAO} (comportamento padrao).
+     *
+     * Idempotent: NAO — pode transicionar o plano para APROVADO e publicar evento.
+     * Side Effects: Database update (via aprovarTransicao) + PlanoAprovadoEvent, quando elegivel.
+     * Tenant-aware: SIM — tenantId explicito.
+     */
+    private void aplicarAutoApproveSeElegivel(PlanoSemanal plano, OnboardingContext onboardingContext,
+                                               Optional<WeekPlanSkeleton> weekPlanSkeleton, UUID tenantId) {
+        if (!autoApproveEnabled) {
+            return;
+        }
+        if (onboardingContext.planningPolicy().reviewMode() != ReviewMode.EXCEPTION_ONLY) {
+            return;
+        }
+        if (weekPlanSkeleton.isEmpty()) {
+            return;
+        }
+        WeekPlanSkeleton skeleton = weekPlanSkeleton.get();
+        if (skeleton.requiresCoachReview() || skeleton.injuryRisk().level() == InjuryRiskLevel.HIGH_RISK) {
+            return;
+        }
+        planoReviewService.aprovarTransicao(plano, tenantId, OrigemAprovacao.AUTO_CONFIANCA_ALTA);
     }
 
     /**

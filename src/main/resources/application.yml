@@ -275,6 +275,23 @@ planner-engine:
     recent-window-days: ${PLANNER_ENGINE_INJURY_RECENT_WINDOW_DAYS:30}
 
 # ----------------------------------------
+# ATHLETE ONBOARDING BASELINE (athlete-onboarding-baseline)
+#
+# Kill-switch do auto-approve do Cenario A (CA5, design.md Decisao 7) — quando
+# desabilitado, todo plano volta a nascer AGUARDANDO_REVISAO independente do score.
+#
+# migrate-existing: kill-switch da migracao automatica de atletas legados (design.md
+# Decisao 6, tasks.md 5.7) — quando desabilitado, atletas SEM AthleteBaselineSnapshot
+# ainda continuam sem OnboardingContext (comportamento anterior a esta change); atletas
+# ja migrados/onboarded continuam recalculando normalmente (necessario para CA3).
+# ----------------------------------------
+onboarding:
+  auto-approve:
+    enabled: ${ONBOARDING_AUTO_APPROVE_ENABLED:true}
+  migrate-existing:
+    enabled: ${ONBOARDING_MIGRATE_EXISTING_ENABLED:true}
+
+# ----------------------------------------
 # KEYCLOAK ADMIN REST API
 # ----------------------------------------
 keycloak:

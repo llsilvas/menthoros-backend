@@ -266,6 +266,52 @@ class AtletaTreinoServiceImplTest {
         }
 
         @Test
+        @DisplayName("mapeia nivelDor/nivelFadiga/qualidadeSonoNoiteAnterior/nivelRecuperacao para a entidade quando informados (fase de calibração)")
+        void mapeiaCamposDeCalibracaoParaEntidadeQuandoPresentes() {
+            var input = novoInputComCalibracao(LocalDate.now(), 3, 4, 7, 6);
+            var treinoSalvo = stubTreinoRealizado();
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
+                    .thenReturn(Optional.empty());
+            when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());
+
+            service.registrarTreinoManualAtleta(atletaId, input);
+
+            ArgumentCaptor<TreinoRealizado> captor = forClass(TreinoRealizado.class);
+            verify(treinoRealizadoRepository).save(captor.capture());
+            TreinoRealizado salvo = captor.getValue();
+            assertThat(salvo.getNivelDor()).isEqualTo(3);
+            assertThat(salvo.getNivelFadiga()).isEqualTo(4);
+            assertThat(salvo.getQualidadeSonoNoiteAnterior()).isEqualTo(7);
+            assertThat(salvo.getNivelRecuperacao()).isEqualTo(6);
+        }
+
+        @Test
+        @DisplayName("mantém nivelDor/nivelFadiga/qualidadeSonoNoiteAnterior/nivelRecuperacao nulos quando ausentes (fora da calibração)")
+        void mantemCamposDeCalibracaoNulosQuandoAusentes() {
+            var input = novoInput(LocalDate.now());
+            var treinoSalvo = stubTreinoRealizado();
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
+                    .thenReturn(Optional.empty());
+            when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());
+
+            service.registrarTreinoManualAtleta(atletaId, input);
+
+            ArgumentCaptor<TreinoRealizado> captor = forClass(TreinoRealizado.class);
+            verify(treinoRealizadoRepository).save(captor.capture());
+            TreinoRealizado salvo = captor.getValue();
+            assertThat(salvo.getNivelDor()).isNull();
+            assertThat(salvo.getNivelFadiga()).isNull();
+            assertThat(salvo.getQualidadeSonoNoiteAnterior()).isNull();
+            assertThat(salvo.getNivelRecuperacao()).isNull();
+        }
+
+        @Test
         @DisplayName("consulta findFirstForManualMatch com statuses PENDENTE e PERDIDO")
         void consultaMatchComStatusesElegiveis() {
             var input = novoInput(LocalDate.now());
@@ -352,7 +398,16 @@ class AtletaTreinoServiceImplTest {
     // -------------------------------------------------------------------------
 
     private TreinoManualInputDto novoInput(LocalDate data) {
-        return new TreinoManualInputDto(TipoTreino.CONTINUO, data, 45, BigDecimal.valueOf(8.5), 6, null);
+        return new TreinoManualInputDto(
+                TipoTreino.CONTINUO, data, 45, BigDecimal.valueOf(8.5), 6, null,
+                null, null, null, null); // nivelDor, nivelFadiga, qualidadeSonoNoiteAnterior, nivelRecuperacao
+    }
+
+    private TreinoManualInputDto novoInputComCalibracao(LocalDate data, Integer nivelDor, Integer nivelFadiga,
+                                                          Integer qualidadeSonoNoiteAnterior, Integer nivelRecuperacao) {
+        return new TreinoManualInputDto(
+                TipoTreino.CONTINUO, data, 45, BigDecimal.valueOf(8.5), 6, null,
+                nivelDor, nivelFadiga, qualidadeSonoNoiteAnterior, nivelRecuperacao);
     }
 
     private TreinoRealizado stubTreinoRealizado() {
@@ -377,6 +432,7 @@ class AtletaTreinoServiceImplTest {
                 6, null, null, null, // percepcaoEsforco..intensidadeReal
                 null, // runningDynamics
                 null, null, null, null, null, null, // decouplingPercentual..nivelEstresse
+                null, null, null, // nivelDor, nivelFadiga, nivelRecuperacao
                 FonteDados.MANUAL, TreinoExecucaoStatus.REALIZADO, null, null, null);
     }
 }

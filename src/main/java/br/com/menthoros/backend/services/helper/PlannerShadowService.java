@@ -94,34 +94,58 @@ public class PlannerShadowService {
      * salva); metricas Micrometer. Sem I/O externo alem da leitura read-only de
      * {@code ProgressaoTreinoService}.
      * Tenant-aware: NAO — opera inteiramente sobre objetos ja resolvidos pelo caller.
+     *
+     * @return o {@code WeekPlanSkeleton} calculado (para o caller decidir auto-approve do
+     *         onboarding, athlete-onboarding-baseline CA5) — {@code Optional.empty()} quando o
+     *         shadow esta desligado ou quando o calculo falha (CA11: a falha e engolida e
+     *         contabilizada, nunca propaga; o caller trata a ausencia como "sem informacao de
+     *         risco", nao auto-aprovando por seguranca).
      */
-    public void aplicarShadow(PlanoSemanal plano,
+    public Optional<WeekPlanSkeleton> aplicarShadow(PlanoSemanal plano,
                                PlanoSemanalLlmDto planoGeradoPeloLlm,
                                DadosPlanoDto dadosPlano,
                                DecisaoProgressao decisaoProgressao,
                                LocalDate semanaInicio,
                                boolean batch) {
+        return aplicarShadow(plano, planoGeradoPeloLlm, dadosPlano, decisaoProgressao, semanaInicio, batch, Optional.empty());
+    }
+
+    /**
+     * Sobrecarga que aceita o {@code OnboardingContext} (athlete-onboarding-baseline,
+     * design.md Decisao 2) para popular {@code PlannerInputSnapshot.onboardingContext} —
+     * hoje sempre {@code Optional.empty()} na sobrecarga acima. Mesmas garantias de
+     * isolamento de falha (CA11).
+     */
+    public Optional<WeekPlanSkeleton> aplicarShadow(PlanoSemanal plano,
+                               PlanoSemanalLlmDto planoGeradoPeloLlm,
+                               DadosPlanoDto dadosPlano,
+                               DecisaoProgressao decisaoProgressao,
+                               LocalDate semanaInicio,
+                               boolean batch,
+                               Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext) {
         plano.setPlannerEnabled(false); // shadow nunca habilita de fato nesta change
         if (!shadowEnabled) {
-            return;
+            return Optional.empty();
         }
         try {
-            executar(plano, planoGeradoPeloLlm, dadosPlano, decisaoProgressao, semanaInicio, batch);
+            return Optional.of(executar(plano, planoGeradoPeloLlm, dadosPlano, decisaoProgressao, semanaInicio, batch, onboardingContext));
         } catch (Exception e) {
             Atleta atleta = dadosPlano.atleta();
             log.error("[planner-shadow] erro ao processar atleta {}: {}", atleta != null ? atleta.getId() : null, e.getMessage(), e);
             meterRegistry.counter("planner.shadow.error.count", "reason", e.getClass().getSimpleName()).increment();
+            return Optional.empty();
         }
     }
 
-    private void executar(PlanoSemanal plano,
+    private WeekPlanSkeleton executar(PlanoSemanal plano,
                            PlanoSemanalLlmDto planoGeradoPeloLlm,
                            DadosPlanoDto dadosPlano,
                            DecisaoProgressao decisaoProgressao,
                            LocalDate semanaInicio,
-                           boolean batch) throws Exception {
+                           boolean batch,
+                           Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext) throws Exception {
         Atleta atleta = dadosPlano.atleta();
-        PlannerInputSnapshot snapshot = mapToSnapshot(atleta, dadosPlano, decisaoProgressao, semanaInicio);
+        PlannerInputSnapshot snapshot = mapToSnapshot(atleta, dadosPlano, decisaoProgressao, semanaInicio, onboardingContext);
 
         WeekPlanSkeleton skeleton = plannerEngine.planWeek(snapshot);
 
@@ -147,6 +171,8 @@ public class PlannerShadowService {
         persistirAuditoria(plano, skeleton, status, todasViolacoes.size());
         registrarMetricas(skeleton, status, violacoesPre, violacoesPost, batch);
         registrarDivergenciaDeFase(skeleton, atleta, semanaInicio);
+
+        return skeleton;
     }
 
     // --- Mapeamento entity -> record (anti-corruption layer, design.md Decisao 17) ---
@@ -154,7 +180,8 @@ public class PlannerShadowService {
     private PlannerInputSnapshot mapToSnapshot(Atleta atleta,
                                                 DadosPlanoDto dadosPlano,
                                                 DecisaoProgressao decisaoProgressao,
-                                                LocalDate semanaInicio) {
+                                                LocalDate semanaInicio,
+                                                Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext) {
         AthleteSnapshot athleteSnapshot = new AthleteSnapshot(
                 atleta.getId(),
                 atleta.getNivelExperiencia(),
@@ -177,7 +204,7 @@ public class PlannerShadowService {
 
         return new PlannerInputSnapshot(
                 athleteSnapshot, decisaoProgressao, historico, provas, historicoDiario,
-                Optional.empty(), semanaInicio, injuryRecentWindowDays);
+                onboardingContext, semanaInicio, injuryRecentWindowDays);
     }
 
     private ProvaSnapshot mapProva(Prova prova) {

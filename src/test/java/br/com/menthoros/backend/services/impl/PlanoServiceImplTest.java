@@ -1,5 +1,16 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.domain.planner.AthleteBaseline;
+import br.com.menthoros.backend.domain.planner.AthleteConstraints;
+import br.com.menthoros.backend.domain.planner.ConstraintValidationResult;
+import br.com.menthoros.backend.domain.planner.InjuryRiskAssessment;
+import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
+import br.com.menthoros.backend.domain.planner.OnboardingContext;
+import br.com.menthoros.backend.domain.planner.PlanningPolicy;
+import br.com.menthoros.backend.domain.planner.ReviewMode;
+import br.com.menthoros.backend.domain.planner.TrainingPhase;
+import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
+import br.com.menthoros.backend.domain.planner.WeeklyLoadTarget;
 import br.com.menthoros.backend.dto.input.DadosPlanoDto;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
@@ -32,6 +43,7 @@ import org.hibernate.Hibernate;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -46,6 +58,7 @@ import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
@@ -89,6 +102,10 @@ class PlanoServiceImplTest {
     private MetricasAgregadasServiceImpl metricasAgregadasService;
     @Mock
     private br.com.menthoros.backend.services.helper.PlannerShadowService plannerShadowService;
+    @Mock
+    private br.com.menthoros.backend.services.onboarding.OnboardingService onboardingService;
+    @Mock
+    private br.com.menthoros.backend.services.PlanoReviewService planoReviewService;
 
     @InjectMocks
     private PlanoServiceImpl planoService;
@@ -99,6 +116,13 @@ class PlanoServiceImplTest {
     void setUpTenant() {
         tenantId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
+        lenient().when(onboardingService.possuiBaseline(any(), any())).thenReturn(true);
+        lenient().when(onboardingService.montarContexto(any(), any())).thenReturn(
+                new OnboardingContext(
+                        new AthleteBaseline(null, null),
+                        0.0,
+                        new PlanningPolicy(ReviewMode.MANDATORY_BLOCKING, 0.0, true),
+                        new AthleteConstraints(List.of(), null, null, List.of())));
     }
 
     @AfterEach
@@ -570,6 +594,289 @@ class PlanoServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("aplicarAutoApproveSeElegivel (CA5, athlete-onboarding-baseline)")
+    class AutoApproveCenarioA {
+
+        @BeforeEach
+        void habilitarAutoApprove() {
+            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "autoApproveEnabled", true);
+        }
+
+        @Test
+        @DisplayName("EXCEPTION_ONLY + skeleton sem risco -> auto-aprova o plano")
+        void autoAprovaComExceptionOnlyESemRisco() {
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            stubOnboardingContext(ReviewMode.EXCEPTION_ONLY);
+            stubShadow(criarSkeleton(false, InjuryRiskLevel.SAFE));
+
+            executarGeracaoDePlano(atletaId, modoGeracao);
+
+            verify(planoReviewService).aprovarTransicao(any(PlanoSemanal.class), eq(tenantId), eq(OrigemAprovacao.AUTO_CONFIANCA_ALTA));
+        }
+
+        @Test
+        @DisplayName("MANDATORY_NON_BLOCKING (Cenario B) -> mantem AGUARDANDO_REVISAO")
+        void naoAutoAprovaComMandatoryNonBlocking() {
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            stubOnboardingContext(ReviewMode.MANDATORY_NON_BLOCKING);
+            stubShadow(criarSkeleton(false, InjuryRiskLevel.SAFE));
+
+            executarGeracaoDePlano(atletaId, modoGeracao);
+
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("MANDATORY_BLOCKING (Cenario C) -> mantem AGUARDANDO_REVISAO")
+        void naoAutoAprovaComMandatoryBlocking() {
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            stubOnboardingContext(ReviewMode.MANDATORY_BLOCKING);
+            stubShadow(criarSkeleton(false, InjuryRiskLevel.SAFE));
+
+            executarGeracaoDePlano(atletaId, modoGeracao);
+
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("EXCEPTION_ONLY mas requiresCoachReview=true -> nao auto-aprova (score alto nao basta)")
+        void naoAutoAprovaQuandoRequerRevisaoDoCoach() {
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            stubOnboardingContext(ReviewMode.EXCEPTION_ONLY);
+            stubShadow(criarSkeleton(true, InjuryRiskLevel.SAFE));
+
+            executarGeracaoDePlano(atletaId, modoGeracao);
+
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("EXCEPTION_ONLY mas injuryRisk=HIGH_RISK -> nao auto-aprova (defesa em profundidade)")
+        void naoAutoAprovaQuandoRiscoAlto() {
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            stubOnboardingContext(ReviewMode.EXCEPTION_ONLY);
+            stubShadow(criarSkeleton(false, InjuryRiskLevel.HIGH_RISK));
+
+            executarGeracaoDePlano(atletaId, modoGeracao);
+
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("flag onboarding.auto-approve.enabled=false -> nunca auto-aprova mesmo elegivel")
+        void naoAutoAprovaQuandoFlagDesabilitada() {
+            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "autoApproveEnabled", false);
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            stubOnboardingContext(ReviewMode.EXCEPTION_ONLY);
+            stubShadow(criarSkeleton(false, InjuryRiskLevel.SAFE));
+
+            executarGeracaoDePlano(atletaId, modoGeracao);
+
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("shadow sem resultado (Optional vazio) -> nao auto-aprova mesmo com EXCEPTION_ONLY")
+        void naoAutoAprovaQuandoShadowVazio() {
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            stubOnboardingContext(ReviewMode.EXCEPTION_ONLY);
+            when(plannerShadowService.aplicarShadow(any(), any(), any(), any(), any(), anyBoolean(), any()))
+                    .thenReturn(Optional.empty());
+
+            executarGeracaoDePlano(atletaId, modoGeracao);
+
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
+        }
+
+        private void stubOnboardingContext(ReviewMode reviewMode) {
+            when(onboardingService.montarContexto(any(), any())).thenReturn(
+                    new OnboardingContext(
+                            new AthleteBaseline(50.0, LocalDate.now()),
+                            0.8,
+                            new PlanningPolicy(reviewMode, 1.0, false),
+                            new AthleteConstraints(List.of(), null, null, List.of())));
+        }
+
+        private void stubShadow(WeekPlanSkeleton skeleton) {
+            when(plannerShadowService.aplicarShadow(any(), any(), any(), any(), any(), anyBoolean(), any()))
+                    .thenReturn(Optional.of(skeleton));
+        }
+
+        private WeekPlanSkeleton criarSkeleton(boolean requiresCoachReview, InjuryRiskLevel risco) {
+            return new WeekPlanSkeleton(
+                    TrainingPhase.BUILD,
+                    new WeeklyLoadTarget(300.0, 270.0, 330.0, "teste"),
+                    List.of(),
+                    new InjuryRiskAssessment(risco, risco == InjuryRiskLevel.HIGH_RISK, "motivo teste"),
+                    new ConstraintValidationResult(true, List.of()),
+                    requiresCoachReview,
+                    requiresCoachReview ? "requer revisao do coach" : null,
+                    LocalDate.now(),
+                    "escopo-teste",
+                    Optional.empty());
+        }
+
+        private void executarGeracaoDePlano(UUID atletaId, ModoGeracaoPlano modoGeracao) {
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                planoService.gerarPlanoTreino(atletaId, modoGeracao);
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("resolverOnboardingContext (migracao de atletas legados, Seção 5.7)")
+    class MigrateExisting {
+
+        @Test
+        @DisplayName("atleta legado + flag desabilitada -> nao calcula OnboardingContext")
+        void naoCalculaContextoParaAtletaLegadoComFlagDesabilitada() {
+            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "migrateExistingEnabled", false);
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            when(onboardingService.possuiBaseline(atletaId, tenantId)).thenReturn(false);
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                planoService.gerarPlanoTreino(atletaId, modoGeracao);
+            }
+
+            verify(onboardingService, never()).montarContexto(any(), any());
+            verify(planoReviewService, never()).aprovarTransicao(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("atleta legado + flag habilitada -> calcula OnboardingContext normalmente")
+        void calculaContextoParaAtletaLegadoComFlagHabilitada() {
+            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "migrateExistingEnabled", true);
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            when(onboardingService.possuiBaseline(atletaId, tenantId)).thenReturn(false);
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                planoService.gerarPlanoTreino(atletaId, modoGeracao);
+            }
+
+            verify(onboardingService).montarContexto(atletaId, tenantId);
+        }
+
+        @Test
+        @DisplayName("atleta ja migrado (possui baseline) + flag desabilitada -> recalcula mesmo assim (CA3)")
+        void recalculaParaAtletaJaMigradoMesmoComFlagDesabilitada() {
+            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "migrateExistingEnabled", false);
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            when(onboardingService.possuiBaseline(atletaId, tenantId)).thenReturn(true);
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                planoService.gerarPlanoTreino(atletaId, modoGeracao);
+            }
+
+            verify(onboardingService).montarContexto(atletaId, tenantId);
+        }
+    }
+
+    @Nested
+    @DisplayName("avaliarCalibracaoSeAplicavel (retrofit 10.4, athlete-onboarding-baseline)")
+    class AvaliarCalibracaoNaGeracaoDePlano {
+
+        @Test
+        @DisplayName("skeleton presente -> chama avaliarCalibracaoSeAplicavel com o injuryRisk do shadow")
+        void chamaAvaliarCalibracaoQuandoSkeletonPresente() {
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            WeekPlanSkeleton skeleton = criarSkeletonCalibracao(InjuryRiskLevel.WARNING);
+            when(plannerShadowService.aplicarShadow(any(), any(), any(), any(), any(), anyBoolean(), any()))
+                    .thenReturn(Optional.of(skeleton));
+
+            executarGeracaoDePlanoCalibracao(atletaId, modoGeracao);
+
+            verify(onboardingService).avaliarCalibracaoSeAplicavel(
+                    eq(atletaId), eq(tenantId), any(LocalDate.class), eq(InjuryRiskLevel.WARNING));
+        }
+
+        @Test
+        @DisplayName("shadow vazio (Optional.empty) -> nao chama avaliarCalibracaoSeAplicavel")
+        void naoChamaAvaliarCalibracaoQuandoShadowVazio() {
+            UUID atletaId = UUID.randomUUID();
+            ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+            configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
+            when(plannerShadowService.aplicarShadow(any(), any(), any(), any(), any(), anyBoolean(), any()))
+                    .thenReturn(Optional.empty());
+
+            executarGeracaoDePlanoCalibracao(atletaId, modoGeracao);
+
+            verify(onboardingService, never()).avaliarCalibracaoSeAplicavel(any(), any(), any(), any());
+        }
+
+        private WeekPlanSkeleton criarSkeletonCalibracao(InjuryRiskLevel risco) {
+            return new WeekPlanSkeleton(
+                    TrainingPhase.CALIBRATION,
+                    new WeeklyLoadTarget(300.0, 270.0, 330.0, "teste"),
+                    List.of(),
+                    new InjuryRiskAssessment(risco, risco == InjuryRiskLevel.HIGH_RISK, "motivo teste"),
+                    new ConstraintValidationResult(true, List.of()),
+                    false,
+                    null,
+                    LocalDate.now(),
+                    "escopo-teste",
+                    Optional.empty());
+        }
+
+        private void executarGeracaoDePlanoCalibracao(UUID atletaId, ModoGeracaoPlano modoGeracao) {
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                planoService.gerarPlanoTreino(atletaId, modoGeracao);
+            }
+        }
+    }
+
+    private void configurarCenarioFelizDeGeracao(UUID atletaId, ModoGeracaoPlano modoGeracao) {
+        Atleta atleta = criarAtletaMock(atletaId);
+        PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
+        PlanoSemanalLlmDto planoDto = criarPlanoSemanalLlmDto();
+        PlanoSemanal planoSalvo = criarPlanoSemanalMock();
+        TreinoPlanejado treinoPlanejado = criarTreinoPlanejadoMock();
+
+        mockMetricasAgregadasEAlertas(metaDados);
+
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
+        when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
+        when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
+                any(), any(), any())).thenReturn(Optional.empty());
+
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao), any())).thenReturn(planoDto);
+        when(planoMetadadosRepository.findByIdAndTenantId(any(), any())).thenReturn(Optional.of(metaDados));
+
+        when(planoSemanalMapper.toEntity(planoDto)).thenReturn(planoSalvo);
+        when(treinoMapper.toEntity(any(TreinoPlanejadoLlmDto.class))).thenReturn(treinoPlanejado);
+        when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenReturn(planoSalvo);
+        when(planoMetadadosRepository.save(any(PlanoMetaDados.class))).thenReturn(metaDados);
+    }
+
     // Helper methods to create mock objects
     private Atleta criarAtletaMock(UUID atletaId) {
         Assessoria assessoria = new Assessoria();
@@ -679,11 +986,14 @@ class PlanoServiceImplTest {
                 null, // 27 feedbackAtleta
                 null, // 28 qualidadeSonoNoiteAnterior
                 null, // 29 nivelEstresse
-                null, // 30 fonteDados
-                null, // 31 status
-                null, // 32 externalId
-                null, // 33 etapasRealizadas
-                null  // 34 sugestaoReclassificacao
+                null, // 30 nivelDor
+                null, // 31 nivelFadiga
+                null, // 32 nivelRecuperacao
+                null, // 33 fonteDados
+                null, // 34 status
+                null, // 35 externalId
+                null, // 36 etapasRealizadas
+                null  // 37 sugestaoReclassificacao
         );
     }
 
