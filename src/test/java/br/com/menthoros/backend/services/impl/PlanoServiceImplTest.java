@@ -15,6 +15,7 @@ import br.com.menthoros.backend.dto.input.DadosPlanoDto;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.dto.output.MetricasSemanaisMedias;
+import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.dto.output.PadroesTreino;
 import br.com.menthoros.backend.dto.output.ResultadoAnalise;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
@@ -26,6 +27,7 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.*;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.LLMException;
+import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.mapper.AtletaMapper;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
@@ -1005,5 +1007,130 @@ class PlanoServiceImplTest {
         treino.setDistanciaKm(BigDecimal.valueOf(10.0));
         treino.setDataTreino(LocalDate.now().plusDays(1));
         return treino;
+    }
+
+    private TreinoRealizado criarTreinoRealizadoComDistancia(BigDecimal distanciaKm) {
+        TreinoRealizado treino = new TreinoRealizado();
+        treino.setDistanciaKm(distanciaKm);
+        return treino;
+    }
+
+    private PlanoSemanalOutputDto planoSemanalOutputDtoStub(double volumeRealizadoKm) {
+        return PlanoSemanalOutputDto.builder()
+                .id(UUID.randomUUID().toString())
+                .volumeRealizadoKm(volumeRealizadoKm)
+                .build();
+    }
+
+    @Nested
+    @DisplayName("buscarPlanoPorAtleta")
+    class BuscarPlanoPorAtleta {
+
+        @Test
+        @DisplayName("recalcula volumeRealizadoKm somando treinos reais na janela da semana, ignorando o campo persistido")
+        void recalculaVolumeRealizadoSomandoTreinosDaSemana() {
+            UUID atletaId = UUID.randomUUID();
+            PlanoSemanal plano = criarPlanoSemanalMock();
+            // Campo persistido propositalmente desatualizado/congelado — deve ser ignorado.
+            plano.setVolumeRealizadoKm(BigDecimal.ZERO);
+
+            when(planoSemanalRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(plano));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    atletaId, tenantId, plano.getSemanaInicio(), plano.getSemanaFim()))
+                    .thenReturn(List.of(
+                            criarTreinoRealizadoComDistancia(BigDecimal.valueOf(10.0)),
+                            criarTreinoRealizadoComDistancia(BigDecimal.valueOf(5.5))));
+            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(planoSemanalOutputDtoStub(0.0));
+
+            PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, false);
+
+            assertEquals(15.5, resultado.volumeRealizadoKm());
+        }
+
+        @Test
+        @DisplayName("retorna volumeRealizadoKm zero quando nao ha treinos realizados na semana")
+        void retornaZeroQuandoSemTreinosNaSemana() {
+            UUID atletaId = UUID.randomUUID();
+            PlanoSemanal plano = criarPlanoSemanalMock();
+
+            when(planoSemanalRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(plano));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    atletaId, tenantId, plano.getSemanaInicio(), plano.getSemanaFim()))
+                    .thenReturn(List.of());
+            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(planoSemanalOutputDtoStub(99.0));
+
+            PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, false);
+
+            assertEquals(0.0, resultado.volumeRealizadoKm());
+        }
+
+        @Test
+        @DisplayName("trata distanciaKm nula como zero na soma")
+        void trataDistanciaNulaComoZero() {
+            UUID atletaId = UUID.randomUUID();
+            PlanoSemanal plano = criarPlanoSemanalMock();
+
+            when(planoSemanalRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(plano));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    atletaId, tenantId, plano.getSemanaInicio(), plano.getSemanaFim()))
+                    .thenReturn(List.of(
+                            criarTreinoRealizadoComDistancia(null),
+                            criarTreinoRealizadoComDistancia(BigDecimal.valueOf(7.0))));
+            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(planoSemanalOutputDtoStub(0.0));
+
+            PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, false);
+
+            assertEquals(7.0, resultado.volumeRealizadoKm());
+        }
+
+        @Test
+        @DisplayName("apenasAprovados=true busca o plano aprovado mais recente e recalcula o volume")
+        void apenasAprovadosBuscaPlanoAprovadoMaisRecente() {
+            UUID atletaId = UUID.randomUUID();
+            PlanoSemanal plano = criarPlanoSemanalMock();
+
+            when(planoSemanalRepository.findTopByAtletaIdAndAssessoriaIdAndReviewStatusOrderBySemanaInicioDesc(
+                    atletaId, tenantId, PlanoReviewStatus.APROVADO))
+                    .thenReturn(Optional.of(plano));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    atletaId, tenantId, plano.getSemanaInicio(), plano.getSemanaFim()))
+                    .thenReturn(List.of(criarTreinoRealizadoComDistancia(BigDecimal.valueOf(9.0))));
+            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(planoSemanalOutputDtoStub(0.0));
+
+            PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, true);
+
+            assertEquals(9.0, resultado.volumeRealizadoKm());
+            verify(planoSemanalRepository, never()).findByAtletaIdAndTenantId(any(), any());
+        }
+
+        @Test
+        @DisplayName("apenasAprovados=true lanca ResourceNotFoundException quando nao ha plano aprovado")
+        void apenasAprovadosLancaExcecaoQuandoNaoHaPlanoAprovado() {
+            UUID atletaId = UUID.randomUUID();
+
+            when(planoSemanalRepository.findTopByAtletaIdAndAssessoriaIdAndReviewStatusOrderBySemanaInicioDesc(
+                    atletaId, tenantId, PlanoReviewStatus.APROVADO))
+                    .thenReturn(Optional.empty());
+
+            assertThrows(ResourceNotFoundException.class,
+                    () -> planoService.buscarPlanoPorAtleta(atletaId, true));
+            verifyNoInteractions(treinoRealizadoRepository);
+        }
+
+        @Test
+        @DisplayName("apenasAprovados=false lanca ResourceNotFoundException quando atleta nao tem plano")
+        void apenasAprovadosFalseLancaExcecaoQuandoAtletaNaoTemPlano() {
+            UUID atletaId = UUID.randomUUID();
+
+            when(planoSemanalRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.empty());
+
+            assertThrows(ResourceNotFoundException.class,
+                    () -> planoService.buscarPlanoPorAtleta(atletaId, false));
+            verifyNoInteractions(treinoRealizadoRepository);
+        }
     }
 }
