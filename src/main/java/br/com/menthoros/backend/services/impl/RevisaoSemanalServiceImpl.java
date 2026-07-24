@@ -4,12 +4,17 @@ import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.RevisaoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.NivelAderencia;
+import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.RecommendationType;
+import br.com.menthoros.backend.repository.PlanoSemanalRepository;
+import br.com.menthoros.backend.repository.RevisaoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.services.RevisaoSemanalService;
 import br.com.menthoros.backend.services.helper.RevisaoSemanalCalculator;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -17,15 +22,17 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Consolidação determinística da revisão (bloco 2). Conta aderência na janela EXATA do plano
- * ({@code findComRealizadoByAtletaAndJanela}) e delega a decisão ao {@link RevisaoSemanalCalculator}.
- * Não persiste — o hook de encerramento e a idempotência entram no bloco 3.
+ * Consolidação determinística da revisão (blocos 2–3). Conta aderência na janela EXATA do plano,
+ * delega a decisão ao {@link RevisaoSemanalCalculator} e congela o resultado no encerramento.
  */
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class RevisaoSemanalServiceImpl implements RevisaoSemanalService {
 
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
+    private final RevisaoSemanalRepository revisaoSemanalRepository;
+    private final PlanoSemanalRepository planoSemanalRepository;
 
     @Override
     public RevisaoSemanal consolidar(PlanoSemanal plano) {
@@ -64,5 +71,19 @@ public class RevisaoSemanalServiceImpl implements RevisaoSemanalService {
                 .dadosSuficientes(dadosSuficientes)
                 .geradaEm(Instant.now())
                 .build();
+    }
+
+    @Override
+    @Transactional
+    public void gerarNoEncerramento(UUID planoId, UUID tenantId) {
+        PlanoSemanal plano = planoSemanalRepository.findByIdAndTenantId(planoId, tenantId).orElse(null);
+        if (plano == null || plano.getStatus() != PlanoStatus.CONCLUIDO) {
+            return; // plano inexistente ou evento de perdidos-only (semana não fechada)
+        }
+        if (revisaoSemanalRepository.findByPlanoSemanalIdAndTenant(planoId, tenantId).isPresent()) {
+            return; // já congelada — idempotente, preserva o congelamento (ADR-0006 / CA6)
+        }
+        revisaoSemanalRepository.save(consolidar(plano));
+        log.info("[revisao-semanal] revisão gerada no encerramento do plano {} (tenant {})", planoId, tenantId);
     }
 }

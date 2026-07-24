@@ -9,6 +9,8 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.NivelAderencia;
 import br.com.menthoros.backend.enums.RecommendationType;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.repository.PlanoSemanalRepository;
+import br.com.menthoros.backend.repository.RevisaoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -36,6 +38,10 @@ class RevisaoSemanalServiceImplTest {
 
     @Mock
     private TreinoPlanejadoRepository treinoPlanejadoRepository;
+    @Mock
+    private RevisaoSemanalRepository revisaoSemanalRepository;
+    @Mock
+    private PlanoSemanalRepository planoSemanalRepository;
 
     @InjectMocks
     private RevisaoSemanalServiceImpl service;
