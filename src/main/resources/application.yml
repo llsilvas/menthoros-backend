@@ -242,6 +242,8 @@ app:
     strava-paths:
       - "/api/v1/strava/webhook"
       - "/api/v1/strava/callback"
+    asaas-paths:
+      - "/api/v1/asaas/webhook"
 
   # ----------------------------------------
   # STRAVA INTEGRATION CONFIGURATION
@@ -290,6 +292,23 @@ onboarding:
     enabled: ${ONBOARDING_AUTO_APPROVE_ENABLED:true}
   migrate-existing:
     enabled: ${ONBOARDING_MIGRATE_EXISTING_ENABLED:true}
+
+# ----------------------------------------
+# ASAAS BILLING INTEGRATION (assessoria-billing-asaas)
+#
+# Cobranca B2B das assessorias. base-url por profile (sandbox: api-sandbox,
+# producao: api.asaas.com). api-key e webhook.access-token sao segredos —
+# sempre via variavel de ambiente, nunca hardcoded.
+# ----------------------------------------
+asaas:
+  # mock=true (default) usa AsaasGatewayMock — ainda sem ligação real com o provider.
+  # Virar para false (ASAAS_MOCK=false) quando o Asaas estiver conectado.
+  mock: ${ASAAS_MOCK:true}
+  base-url: ${ASAAS_BASE_URL:https://api-sandbox.asaas.com/v3}
+  api-key: ${ASAAS_API_KEY:}
+  user-agent: ${ASAAS_USER_AGENT:menthoros-backend}
+  webhook:
+    access-token: ${ASAAS_WEBHOOK_ACCESS_TOKEN:}
 
 # ----------------------------------------
 # KEYCLOAK ADMIN REST API

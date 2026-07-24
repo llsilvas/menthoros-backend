@@ -2,6 +2,7 @@ package br.com.menthoros.backend.exception.handler;
 
 
 import br.com.menthoros.backend.exception.AccessDeniedException;
+import br.com.menthoros.backend.exception.AsaasIntegrationException;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -157,6 +158,26 @@ public class GlobalExceptionHandler {
                 "status", 502,
                 "error", "Bad Gateway",
                 "message", "Falha na integração com o servidor de identidade. Tente novamente em alguns instantes."
+        );
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
+    }
+
+    /**
+     * Handler para falhas na integração com a API do Asaas (customer/subscription).
+     *
+     * Mapeamento: 502 Bad Gateway
+     * Gerada por: AsaasGatewayImpl (criar cliente/assinatura, atualizar valor, cancelar).
+     *
+     * O Asaas é um serviço externo; uma falha sua não é erro interno (500), e sim
+     * falha de gateway a montante.
+     */
+    @ExceptionHandler(AsaasIntegrationException.class)
+    public ResponseEntity<Map<String, Object>> handleAsaasIntegration(AsaasIntegrationException ex) {
+        log.error("Falha na integração com o Asaas: {}", ex.getMessage(), ex);
+        Map<String, Object> body = Map.of(
+                "status", 502,
+                "error", "Bad Gateway",
+                "message", "Falha na integração com o provedor de pagamento. Tente novamente em alguns instantes."
         );
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
     }

@@ -33,4 +33,9 @@ public class CoreSecurityProperties {
         "/api/v1/strava/webhook",
         "/api/v1/strava/callback"
     ));
+
+    @NotEmpty(message = "asaasPaths cannot be empty")
+    private List<String> asaasPaths = new ArrayList<>(List.of(
+        "/api/v1/asaas/webhook"
+    ));
 }

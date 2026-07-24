@@ -44,6 +44,8 @@ public class CoreSecurityConfig {
                             .permitAll()
                         .requestMatchers(securityProperties.getStravaPaths().toArray(new String[0]))
                             .permitAll()
+                        .requestMatchers(securityProperties.getAsaasPaths().toArray(new String[0]))
+                            .permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
