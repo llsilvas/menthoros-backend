@@ -6,10 +6,7 @@ import br.com.menthoros.backend.enums.FocusSource;
 import br.com.menthoros.backend.enums.NivelAderencia;
 import br.com.menthoros.backend.enums.RecommendationType;
 import br.com.menthoros.backend.repository.RevisaoSemanalRepository;
-import br.com.menthoros.backend.routing.ModelRouter;
-import br.com.menthoros.backend.routing.TaskComplexity;
 import br.com.menthoros.backend.services.helper.RevisaoSemanalCalculator;
-import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
 import br.com.menthoros.backend.services.quality.WeeklyFocusConsistencyChecker;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -23,7 +20,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import org.springframework.ai.chat.client.ChatClient;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -32,8 +28,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -47,8 +42,7 @@ import static org.mockito.Mockito.when;
 class WeeklyFocusNarrativeServiceTest {
 
     @Mock private RevisaoSemanalRepository revisaoSemanalRepository;
-    @Mock private ModelRouter modelRouter;
-    @Mock private PromptTemplateLoader templateLoader;
+    @Mock private WeeklyFocusModelClient modelClient;
 
     private final WeeklyFocusConsistencyChecker checker = new WeeklyFocusConsistencyChecker();
     private MeterRegistry meterRegistry;
@@ -65,7 +59,7 @@ class WeeklyFocusNarrativeServiceTest {
 
     private WeeklyFocusNarrativeService service(boolean flagLigada) {
         return new WeeklyFocusNarrativeService(
-                revisaoSemanalRepository, modelRouter, templateLoader, checker, meterRegistry, flagLigada);
+                revisaoSemanalRepository, modelClient, checker, meterRegistry, flagLigada);
     }
 
     @Nested
@@ -77,7 +71,7 @@ class WeeklyFocusNarrativeServiceTest {
         void flagDesligadaNaoChamaLlm() {
             service(false).gerarNarrativa(revisaoId, UUID.randomUUID());
 
-            verifyNoInteractions(modelRouter, templateLoader, revisaoSemanalRepository);
+            verifyNoInteractions(modelClient, revisaoSemanalRepository);
             assertThat(revisao.getFocusSource()).isEqualTo(FocusSource.TEMPLATE);
         }
     }
@@ -115,10 +109,9 @@ class WeeklyFocusNarrativeServiceTest {
         @Test
         @DisplayName("falha do LLM preserva o template e não propaga exceção (D8)")
         void falhaDoLlmPreservaTemplate() {
-            when(revisaoSemanalRepository.findById(revisaoId)).thenReturn(Optional.of(revisao));
-            when(templateLoader.loadAndFormat(anyString(), anyString())).thenReturn("prompt");
-            when(modelRouter.route(any(TaskComplexity.class)))
-                    .thenThrow(new IllegalStateException("modelo indisponível"));
+            when(revisaoSemanalRepository.findByIdAndTenant(eq(revisaoId), any())).thenReturn(Optional.of(revisao));
+            when(modelClient.redigirFoco(revisao))
+                    .thenThrow(new IllegalStateException("modelo indisponível após o retry"));
 
             service(true).gerarNarrativa(revisaoId, UUID.randomUUID());
 
@@ -131,21 +124,18 @@ class WeeklyFocusNarrativeServiceTest {
         @Test
         @DisplayName("revisão inexistente é no-op silencioso")
         void revisaoInexistente() {
-            when(revisaoSemanalRepository.findById(revisaoId)).thenReturn(Optional.empty());
+            when(revisaoSemanalRepository.findByIdAndTenant(eq(revisaoId), any())).thenReturn(Optional.empty());
 
             service(true).gerarNarrativa(revisaoId, UUID.randomUUID());
 
             verify(revisaoSemanalRepository, never()).save(any());
-            verifyNoInteractions(modelRouter);
+            verifyNoInteractions(modelClient);
         }
 
         private void stubLlm(String resposta) {
-            when(revisaoSemanalRepository.findById(revisaoId)).thenReturn(Optional.of(revisao));
-            when(templateLoader.loadAndFormat(anyString(), anyString())).thenReturn("prompt");
-
-            ChatClient chatClient = mock(ChatClient.class, org.mockito.Mockito.RETURNS_DEEP_STUBS);
-            when(modelRouter.route(any(TaskComplexity.class))).thenReturn(chatClient);
-            when(chatClient.prompt().user(anyString()).call().content()).thenReturn(resposta);
+            when(revisaoSemanalRepository.findByIdAndTenant(eq(revisaoId), any()))
+                    .thenReturn(Optional.of(revisao));
+            when(modelClient.redigirFoco(revisao)).thenReturn(resposta);
         }
     }
 

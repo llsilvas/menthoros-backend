@@ -251,14 +251,18 @@ public class PlanoServiceImpl implements PlanoService {
                 atleta.getId(), tenantId, semanaInicio.minusDays(1), skeleton.injuryRisk().level()));
 
         // 4.8. Revisao da semana anterior consumida como insumo (add-weekly-review-llm-focus,
-        // D9/D11): mesmo resolver do prompt, entao o vinculo gravado aqui nunca diverge do que o
-        // LLM realmente viu. Sem revisao consumivel (ausente, fora da janela ou injecao desligada)
-        // o plano nasce NOT_CONSUMED — ausencia de dado, nao julgamento negativo do coach.
-        // Mutacao in-memory, persistida no passo 5 (mesmo padrao dos campos planner_*).
-        registrarRevisaoConsumida(plano, atleta.getId(), tenantId, periodo.inicio());
+        // D9/D11): resolvida UMA vez em 3.x e reutilizada aqui, para o vinculo gravado nunca
+        // divergir da revisao que o LLM realmente viu. Sem revisao consumivel (ausente, fora da
+        // janela ou injecao desligada) o plano nasce NOT_CONSUMED — ausencia de dado, nao
+        // julgamento negativo do coach. Mutacao in-memory, persistida no passo 5.
+        Optional<RevisaoSemanal> revisaoConsumida = weeklyReviewPromptProvider.resolverParaGeracao(
+                atleta.getId(), tenantId, periodo.inicio());
+        registrarRevisaoConsumida(plano, revisaoConsumida);
 
         // 5. Persistir e retornar
-        return salvarPlanoCompleto(plano, metaDados);
+        PlanoSemanal salvo = salvarPlanoCompleto(plano, metaDados);
+        publicarRevisaoConsumida(salvo, tenantId);
+        return salvo;
     }
 
     /**
@@ -269,18 +273,34 @@ public class PlanoServiceImpl implements PlanoService {
      * Side Effects: publicacao de evento (a persistencia acontece no salvarPlanoCompleto).
      * Tenant-aware: YES
      */
-    private void registrarRevisaoConsumida(PlanoSemanal plano, UUID atletaId, UUID tenantId,
-                                           LocalDate semanaInicio) {
-        Optional<RevisaoSemanal> revisao =
-                weeklyReviewPromptProvider.resolverParaGeracao(atletaId, tenantId, semanaInicio);
+    private void registrarRevisaoConsumida(PlanoSemanal plano, Optional<RevisaoSemanal> revisao) {
         if (revisao.isEmpty()) {
             plano.setConsumedReviewOutcome(ConsumedReviewOutcome.NOT_CONSUMED);
             return;
         }
         plano.setConsumedReview(revisao.get());
         plano.setConsumedReviewOutcome(ConsumedReviewOutcome.PENDING);
+    }
+
+    /**
+     * Publica o {@link RevisaoConsumidaEvent} DEPOIS da persistencia — o {@code id} do plano e
+     * {@code @GeneratedValue}, entao publicar antes do save mandaria {@code planoId} sempre nulo e
+     * o consumidor do proxy de adocao receberia o vinculo vazio.
+     *
+     * Idempotent: NAO — publica um evento por chamada.
+     * Side Effects: publicacao de evento.
+     * Tenant-aware: YES
+     */
+    private void publicarRevisaoConsumida(PlanoSemanal planoSalvo, UUID tenantId) {
+        if (planoSalvo.getConsumedReview() == null) {
+            return;
+        }
         eventPublisher.publishEvent(new RevisaoConsumidaEvent(
-                tenantId, atletaId, semanaInicio, revisao.get().getId(), plano.getId()));
+                tenantId,
+                planoSalvo.getAtleta().getId(),
+                planoSalvo.getSemanaInicio(),
+                planoSalvo.getConsumedReview().getId(),
+                planoSalvo.getId()));
     }
 
     /**

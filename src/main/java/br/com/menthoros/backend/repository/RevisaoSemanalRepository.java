@@ -28,6 +28,19 @@ public interface RevisaoSemanalRepository extends JpaRepository<RevisaoSemanal, 
                                                            @Param("tenantId") UUID tenantId);
 
     /**
+     * Busca por id <b>com predicado de tenant</b> — obrigatória no caminho {@code @Async}, onde o
+     * {@code TenantContext} (ThreadLocal não-herdável) não chega e o {@code findById} genérico do
+     * {@code JpaRepository} não valida nada.
+     */
+    @Query("""
+            SELECT r FROM RevisaoSemanal r
+            WHERE r.id = :revisaoId
+              AND r.planoSemanal.assessoria.id = :tenantId
+            """)
+    Optional<RevisaoSemanal> findByIdAndTenant(@Param("revisaoId") UUID revisaoId,
+                                               @Param("tenantId") UUID tenantId);
+
+    /**
      * Revisões do atleta (tenant-scoped) da mais recente para a mais antiga, por
      * {@code semanaInicio}. A leitura usa {@code Pageable} de tamanho 2 — [0] é a última revisão,
      * [1] (se houver) é a anterior, base do {@code weekOverWeekDelta} (CA9).

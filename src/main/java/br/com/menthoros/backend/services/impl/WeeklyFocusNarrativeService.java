@@ -3,15 +3,10 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.entity.RevisaoSemanal;
 import br.com.menthoros.backend.enums.FocusSource;
 import br.com.menthoros.backend.repository.RevisaoSemanalRepository;
-import br.com.menthoros.backend.routing.ModelRouter;
-import br.com.menthoros.backend.routing.TaskComplexity;
-import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
 import br.com.menthoros.backend.services.quality.WeeklyFocusConsistencyChecker;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.retry.annotation.Backoff;
-import org.springframework.retry.annotation.Retryable;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -41,25 +36,23 @@ import java.util.UUID;
 @Slf4j
 public class WeeklyFocusNarrativeService {
 
-    private static final String PROMPT_TEMPLATE = "weekly-focus-user-prompt.txt";
     private static final String METRICA_REPROVADA = "weekly_review.focus.rejected";
+    /** Teto de segurança: o prompt pede ≤200 chars, mas nada no modelo garante isso. */
+    private static final int LIMITE_NARRATIVA = 280;
 
     private final RevisaoSemanalRepository revisaoSemanalRepository;
-    private final ModelRouter modelRouter;
-    private final PromptTemplateLoader templateLoader;
+    private final WeeklyFocusModelClient modelClient;
     private final WeeklyFocusConsistencyChecker checker;
     private final MeterRegistry meterRegistry;
     private final boolean llmHabilitado;
 
     public WeeklyFocusNarrativeService(RevisaoSemanalRepository revisaoSemanalRepository,
-                                       ModelRouter modelRouter,
-                                       PromptTemplateLoader templateLoader,
+                                       WeeklyFocusModelClient modelClient,
                                        WeeklyFocusConsistencyChecker checker,
                                        MeterRegistry meterRegistry,
                                        @Value("${menthoros.weekly-review.llm.enabled:false}") boolean llmHabilitado) {
         this.revisaoSemanalRepository = revisaoSemanalRepository;
-        this.modelRouter = modelRouter;
-        this.templateLoader = templateLoader;
+        this.modelClient = modelClient;
         this.checker = checker;
         this.meterRegistry = meterRegistry;
         this.llmHabilitado = llmHabilitado;
@@ -67,33 +60,35 @@ public class WeeklyFocusNarrativeService {
 
     /**
      * Substitui o foco template pela narrativa por IA, quando ela é consistente com o
-     * {@code recommendationType} congelado.
+     * {@code recommendationType} congelado da revisão.
      *
      * <p><b>Idempotent:</b> YES — reexecutar reescreve o mesmo campo; o sinal determinístico da
      * Fatia 1 nunca é tocado.
      * <p><b>Side Effects:</b> Database update ({@code next_week_focus}, {@code focus_source}),
      * External API call (LLM), métrica Micrometer.
-     * <p><b>Tenant-aware:</b> YES — o {@code tenantId} vem do evento de encerramento e é usado no log.
+     * <p><b>Tenant-aware:</b> YES — a revisão é buscada com predicado de tenant. O
+     * {@code TenantContext} é ThreadLocal não-herdável e não sobrevive à fronteira {@code @Async},
+     * então o {@code tenantId} do parâmetro é a única fonte de escopo aqui.
      */
     @Async("weeklyFocusExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    @Retryable(retryFor = Exception.class, maxAttempts = 2, backoff = @Backoff(delay = 2000))
     public void gerarNarrativa(UUID revisaoId, UUID tenantId) {
         if (!llmHabilitado) {
             return; // kill-switch: fica no template, sem custo de LLM
         }
-        RevisaoSemanal revisao = revisaoSemanalRepository.findById(revisaoId).orElse(null);
+        RevisaoSemanal revisao = revisaoSemanalRepository.findByIdAndTenant(revisaoId, tenantId).orElse(null);
         if (revisao == null) {
-            log.warn("[weekly-focus] revisão {} não encontrada (tenant {})", revisaoId, tenantId);
+            log.warn("[weekly-focus] revisão {} não encontrada no tenant {}", revisaoId, tenantId);
             return;
         }
 
         String narrativa;
         try {
-            narrativa = chamarModelo(revisao);
+            narrativa = modelClient.redigirFoco(revisao);
         } catch (Exception e) {
-            // Engolido de propósito: a revisão já tem o template coerente, e propagar aqui só
-            // encheria o log do executor. Mesma filosofia do try/catch do RevisaoSemanalListener.
+            // Chega aqui só depois de o retry do WeeklyFocusModelClient esgotar. Engolido de
+            // propósito: a revisão já tem o template coerente e propagar só encheria o log do
+            // executor. Mesma filosofia do try/catch do RevisaoSemanalListener.
             log.warn("[weekly-focus] falha ao gerar narrativa da revisão {} — mantém template", revisaoId, e);
             return;
         }
@@ -105,31 +100,19 @@ public class WeeklyFocusNarrativeService {
             return;
         }
 
-        revisao.setNextWeekFocus(narrativa.trim());
+        revisao.setNextWeekFocus(truncar(narrativa.trim()));
         revisao.setFocusSource(FocusSource.LLM);
         revisaoSemanalRepository.save(revisao);
         log.info("[weekly-focus] narrativa gravada na revisão {} (tenant {})", revisaoId, tenantId);
     }
 
-    private String chamarModelo(RevisaoSemanal revisao) {
-        String prompt = templateLoader.loadAndFormat(PROMPT_TEMPLATE, dadosDoPrompt(revisao));
-        return modelRouter.route(TaskComplexity.SIMPLE)
-                .prompt()
-                .user(prompt)
-                .call()
-                .content();
-    }
-
-    /** Só o sinal já consolidado — o LLM redige, não recalcula (non-goal explícito da change). */
-    private String dadosDoPrompt(RevisaoSemanal revisao) {
-        return """
-                {"recommendationType":"%s","adherenceStatus":"%s","completionRate":%s,\
-                "sufficientData":%s,"tsbFim":%s}"""
-                .formatted(
-                        revisao.getRecommendationType(),
-                        revisao.getAdherenceStatus(),
-                        revisao.getCompletionRate(),
-                        revisao.isSufficientData(),
-                        revisao.getPlanoSemanal().getTsbFim());
+    /**
+     * A narrativa vira contexto de um segundo prompt (o de geração de plano), então o tamanho é
+     * limitado no código e não só pedido ao modelo — saída de LLM não é dado confiável.
+     */
+    private String truncar(String narrativa) {
+        return narrativa.length() <= LIMITE_NARRATIVA
+                ? narrativa
+                : narrativa.substring(0, LIMITE_NARRATIVA).trim();
     }
 }
