@@ -43,7 +43,7 @@ Específico deste módulo:
 - For domain or persistence changes, prefer adding code over risky refactors.
 - Do not introduce new dependencies without clear technical justification.
 
-## Identifier Language (decisão 2026-07-25)
+## Identifier Language (decisão 2026-07-25, ver ADR-0007)
 
 **Código novo — campos, enums, DTOs, colunas, tipos — nasce em inglês.** O idioma de resposta,
 comentários, JavaDoc e mensagens de commit permanece PT-BR (inalterado, ver `CLAUDE.md` da raiz).
