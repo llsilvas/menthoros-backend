@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services;
 
+import br.com.menthoros.backend.dto.output.RevisaoSemanalOutputDto;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.RevisaoSemanal;
 
@@ -24,4 +25,14 @@ public interface RevisaoSemanalService {
      * Escopado ao tenant (CA7).
      */
     void gerarNoEncerramento(UUID planoId, UUID tenantId);
+
+    /**
+     * Última revisão do atleta (tenant corrente via {@code TenantContext}), com
+     * {@code weekOverWeekDelta} computado. Devolve o sinal <b>persistido</b> — não recomputa
+     * (CA-Congelamento). Coach-only na camada de controller.
+     *
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o atleta não tem
+     *         revisão (nenhuma semana fechada) — mapeado para 404.
+     */
+    RevisaoSemanalOutputDto buscarUltima(UUID atletaId);
 }

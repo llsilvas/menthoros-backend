@@ -12,8 +12,8 @@ import java.util.UUID;
  * Saída da revisão semanal do coach (Fatia 1 — determinística).
  *
  * <p>Campos congelados vêm da {@code RevisaoSemanal}; janela e {@code tsbFim} vêm do
- * {@code PlanoSemanal} associado. {@code weekOverWeekDelta} (computado na leitura) é adicionado
- * pela leitura (Fatia 1, bloco 4); {@code nextWeekFocus} entra na Fatia 2.
+ * {@code PlanoSemanal} associado. {@code weekOverWeekDelta} é computado na leitura (CA9);
+ * {@code nextWeekFocus} entra na Fatia 2.
  */
 public record RevisaoSemanalOutputDto(
         UUID planoSemanalId,
@@ -24,5 +24,6 @@ public record RevisaoSemanalOutputDto(
         BigDecimal percentualRealizacao,
         BigDecimal tsbFim,
         boolean dadosSuficientes,
+        WeekOverWeekDelta weekOverWeekDelta,
         Instant geradaEm
 ) {}

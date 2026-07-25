@@ -1,11 +1,15 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.output.RevisaoSemanalOutputDto;
+import br.com.menthoros.backend.dto.output.WeekOverWeekDelta;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.RevisaoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.NivelAderencia;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.RecommendationType;
+import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.RevisaoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
@@ -13,6 +17,7 @@ import br.com.menthoros.backend.services.RevisaoSemanalService;
 import br.com.menthoros.backend.services.helper.RevisaoSemanalCalculator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -85,5 +90,50 @@ public class RevisaoSemanalServiceImpl implements RevisaoSemanalService {
         }
         revisaoSemanalRepository.save(consolidar(plano));
         log.info("[revisao-semanal] revisão gerada no encerramento do plano {} (tenant {})", planoId, tenantId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public RevisaoSemanalOutputDto buscarUltima(UUID atletaId) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        List<RevisaoSemanal> recentes = revisaoSemanalRepository.findRecentesByAtletaAndTenant(
+                atletaId, tenantId, PageRequest.of(0, 2));
+        if (recentes.isEmpty()) {
+            throw new DomainNotFoundException("Revisão semanal não disponível para o atleta");
+        }
+        RevisaoSemanal atual = recentes.get(0);
+        RevisaoSemanal anterior = recentes.size() > 1 ? recentes.get(1) : null;
+        return toOutputDto(atual, anterior);
+    }
+
+    /** Monta o DTO a partir do sinal PERSISTIDO (não recomputa — CA-Congelamento) + o delta. */
+    private RevisaoSemanalOutputDto toOutputDto(RevisaoSemanal atual, RevisaoSemanal anterior) {
+        PlanoSemanal plano = atual.getPlanoSemanal();
+        return new RevisaoSemanalOutputDto(
+                plano.getId(),
+                plano.getSemanaInicio(),
+                plano.getSemanaFim(),
+                atual.getRecommendationType(),
+                atual.getAdherenceStatus(),
+                atual.getPercentualRealizacao(),
+                plano.getTsbFim(),
+                atual.isDadosSuficientes(),
+                delta(atual, anterior),
+                atual.getGeradaEm());
+    }
+
+    private WeekOverWeekDelta delta(RevisaoSemanal atual, RevisaoSemanal anterior) {
+        if (anterior == null) {
+            return WeekOverWeekDelta.semAnterior();
+        }
+        return new WeekOverWeekDelta(
+                false,
+                subtrair(atual.getPercentualRealizacao(), anterior.getPercentualRealizacao()),
+                subtrair(atual.getPlanoSemanal().getTsbFim(), anterior.getPlanoSemanal().getTsbFim()),
+                anterior.getRecommendationType());
+    }
+
+    private BigDecimal subtrair(BigDecimal a, BigDecimal b) {
+        return (a == null || b == null) ? null : a.subtract(b);
     }
 }
