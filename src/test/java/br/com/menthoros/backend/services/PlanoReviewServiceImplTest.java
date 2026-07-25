@@ -22,7 +22,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
+import org.mockito.Spy;
+import br.com.menthoros.backend.entity.RevisaoSemanal;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.enums.ConsumedReviewOutcome;
+import br.com.menthoros.backend.enums.FocusSource;
 import org.mockito.Mock;
+import br.com.menthoros.backend.services.helper.ConsumedReviewOutcomeResolver;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -44,6 +52,10 @@ class PlanoReviewServiceImplTest {
     @Mock private PlanoSemanalMapper planoSemanalMapper;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private AthleteBaselineStateRepository athleteBaselineStateRepository;
+    // Reais, não mocks: o resolver é lógica pura e o registry em memória deixa a métrica
+    // observável — mockar aqui esconderia o desfecho em vez de exercitá-lo.
+    @Spy private ConsumedReviewOutcomeResolver outcomeResolver = new ConsumedReviewOutcomeResolver();
+    @Spy private MeterRegistry meterRegistry = new SimpleMeterRegistry();
     @InjectMocks private PlanoReviewServiceImpl service;
 
     private UUID tenantId;
@@ -111,6 +123,48 @@ class PlanoReviewServiceImplTest {
     @Nested
     @DisplayName("aprovarPlano")
     class AprovarPlano {
+
+        @Test
+        @DisplayName("plano que consumiu revisão sem ajuste do coach registra NO_ADJUSTMENT (CA8)")
+        void registraDesfechoSemAjuste() {
+            PlanoSemanal plano = planoAguardando();
+            plano.setAtleta(Atleta.builder().id(atletaId).build());
+            plano.setConsumedReview(RevisaoSemanal.builder()
+                    .id(UUID.randomUUID()).focusSource(FocusSource.TEMPLATE).build());
+            plano.setConsumedReviewOutcome(ConsumedReviewOutcome.PENDING);
+            plano.setTreinosPlanejados(List.of(new TreinoPlanejado()));
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId))
+                    .thenReturn(Optional.of(plano));
+            when(planoSemanalRepository.save(any())).thenReturn(plano);
+            when(planoSemanalMapper.toOutputDtoSafe(plano))
+                    .thenReturn(outputDto(PlanoReviewStatus.APROVADO));
+
+            service.aprovarPlano(planoId, tenantId);
+
+            assertThat(plano.getConsumedReviewOutcome()).isEqualTo(ConsumedReviewOutcome.NO_ADJUSTMENT);
+            assertThat(meterRegistry.counter("weekly_review.outcome",
+                    "outcome", "NO_ADJUSTMENT", "focus_source", "TEMPLATE").count()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("plano sem revisão consumida não recebe desfecho nem métrica")
+        void semRevisaoNaoRegistraDesfecho() {
+            PlanoSemanal plano = planoAguardando();
+            plano.setAtleta(Atleta.builder().id(atletaId).build());
+            plano.setConsumedReviewOutcome(ConsumedReviewOutcome.NOT_CONSUMED);
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId))
+                    .thenReturn(Optional.of(plano));
+            when(planoSemanalRepository.save(any())).thenReturn(plano);
+            when(planoSemanalMapper.toOutputDtoSafe(plano))
+                    .thenReturn(outputDto(PlanoReviewStatus.APROVADO));
+
+            service.aprovarPlano(planoId, tenantId);
+
+            assertThat(plano.getConsumedReviewOutcome()).isEqualTo(ConsumedReviewOutcome.NOT_CONSUMED);
+            assertThat(meterRegistry.find("weekly_review.outcome").counters()).isEmpty();
+        }
 
         @Test
         @DisplayName("happy path: AGUARDANDO_REVISAO → APROVADO; reviewComment zerado; publica PlanoAprovadoEvent")

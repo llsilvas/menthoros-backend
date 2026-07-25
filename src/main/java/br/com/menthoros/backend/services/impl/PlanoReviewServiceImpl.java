@@ -6,7 +6,11 @@ import br.com.menthoros.backend.entity.AthleteBaselineState;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.OrigemAprovacao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
+import br.com.menthoros.backend.enums.ConsumedReviewOutcome;
+import br.com.menthoros.backend.enums.FocusSource;
 import br.com.menthoros.backend.events.PlanoAprovadoEvent;
+import br.com.menthoros.backend.services.helper.ConsumedReviewOutcomeResolver;
+import io.micrometer.core.instrument.MeterRegistry;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
@@ -35,6 +39,8 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
     private final PlanoSemanalMapper planoSemanalMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final AthleteBaselineStateRepository athleteBaselineStateRepository;
+    private final ConsumedReviewOutcomeResolver outcomeResolver;
+    private final MeterRegistry meterRegistry;
 
     /**
      * Lista todos os planos do tenant com reviewStatus = AGUARDANDO_REVISAO.
@@ -93,9 +99,38 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
 
         PlanoSemanal salvo = planoSemanalRepository.save(plano);
         inicializarAssociacoes(salvo);
+        // Desfecho da revisão consumida (D9) — depois de inicializarAssociacoes, que carrega os
+        // treinos de onde vêm os sinais editadoPeloCoach/adicionadoPeloCoach.
+        registrarDesfecho(salvo, outcomeResolver.naAprovacao(salvo, origem));
         eventPublisher.publishEvent(new PlanoAprovadoEvent(salvo.getId(), salvo.getAtleta().getId(), tenantId));
 
         return salvo;
+    }
+
+    /**
+     * Grava o desfecho no plano e publica a métrica segmentada por origem do foco.
+     *
+     * <p>Só escreve quando há revisão consumida: plano com {@code NOT_CONSUMED} já nasceu assim na
+     * geração, e reescrever ali só geraria ruído. A {@code RevisaoSemanal} NÃO é tocada — ela é
+     * estritamente a proposta (ADR-0006).
+     *
+     * Idempotent: YES — reexecutar grava o mesmo valor.
+     * Side Effects: Database update (consumed_review_outcome) + contador Micrometer.
+     * Tenant-aware: YES — o plano já vem resolvido no tenant.
+     */
+    private void registrarDesfecho(PlanoSemanal plano, ConsumedReviewOutcome desfecho) {
+        if (plano.getConsumedReview() == null) {
+            return;
+        }
+        plano.setConsumedReviewOutcome(desfecho);
+        planoSemanalRepository.save(plano);
+
+        FocusSource origemFoco = plano.getConsumedReview().getFocusSource();
+        meterRegistry.counter("weekly_review.outcome",
+                "outcome", desfecho.name(),
+                "focus_source", origemFoco != null ? origemFoco.name() : "UNKNOWN").increment();
+        log.info("[weekly-review] desfecho {} registrado no plano {} (foco {})",
+                desfecho, plano.getId(), origemFoco);
     }
 
     /**
@@ -125,6 +160,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
 
         PlanoSemanal salvo = planoSemanalRepository.save(plano);
         inicializarAssociacoes(salvo);
+        registrarDesfecho(salvo, outcomeResolver.naRejeicao(salvo));
 
         log.info("Plano {} rejeitado para tenant {}", planoId, tenantId);
         return planoSemanalMapper.toOutputDtoSafe(salvo);
