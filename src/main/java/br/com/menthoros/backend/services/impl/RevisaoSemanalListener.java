@@ -26,8 +26,10 @@ public class RevisaoSemanalListener {
         try {
             revisaoSemanalService.gerarNoEncerramento(event.planoId(), event.tenantId());
         } catch (Exception e) {
-            log.warn("[revisao-semanal] falha ao gerar revisão do plano {}: {}",
-                    event.planoId(), e.getMessage());
+            // Engole para não desfazer o encerramento já comitado; loga com stacktrace (causa raiz).
+            // Débito conhecido (pilot): falha aqui deixa a revisão ausente até o próximo encerramento
+            // do mesmo plano — sem reconciliação automática ainda.
+            log.warn("[revisao-semanal] falha ao gerar revisão do plano {}", event.planoId(), e);
         }
     }
 }

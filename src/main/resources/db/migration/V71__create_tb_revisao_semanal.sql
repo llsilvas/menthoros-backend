@@ -11,6 +11,11 @@
 -- next_week_focus / focus_outcome (narrativa LLM + edicao do coach) sao da
 -- Fatia 2 (add-weekly-review-llm-focus) — colunas aditivas futuras nesta tabela.
 --
+-- Sem coluna tenant_id propria (excecao consciente ao Table Design Standard):
+-- filho 1:1 de tb_plano_semanal, o isolamento vem do join plano_semanal->assessoria
+-- nas queries do repositorio (findByPlanoSemanalIdAndTenant/findRecentesByAtletaAndTenant);
+-- duplicar tenant_id aqui so criaria risco de divergencia. Ver ADR-0006.
+--
 -- Rollback: DROP TABLE IF EXISTS tb_revisao_semanal;
 -- Feature aditiva pura -- sem impacto em dado existente; reversao segura.
 -- =====================================================================

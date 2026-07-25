@@ -15,21 +15,34 @@ public interface RevisaoSemanalService {
      * Consolida — <b>sem persistir</b> — o sinal determinístico da revisão a partir de um
      * {@code PlanoSemanal} encerrado: aderência por contagem na janela do plano,
      * {@code dadosSuficientes} e {@code recommendationType} sobre {@code tsbFim} (ADR-0006).
+     *
+     * <p><b>Idempotent:</b> YES — função pura sobre o plano + treinos da janela.
+     * <b>Side Effects:</b> NONE (não persiste).
+     * <b>Tenant-aware:</b> YES — busca de treinos escopada pelo tenant do próprio plano.
+     * <b>Pré-condição:</b> deve rodar dentro de uma transação — acessa relações lazy do plano.
      */
     RevisaoSemanal consolidar(PlanoSemanal plano);
 
     /**
      * Gera e <b>congela</b> a revisão de um plano recém-encerrado (hook do
-     * {@code SemanaEncerradaEvent}). Insert-if-absent: se o plano não está {@code CONCLUIDO}
-     * (evento de perdidos-only) ou já tem revisão, é no-op — preserva o congelamento (CA1, CA6).
-     * Escopado ao tenant (CA7).
+     * {@code SemanaEncerradaEvent}).
+     *
+     * <p><b>Idempotent:</b> YES — insert-if-absent: se o plano não está {@code CONCLUIDO}
+     * (evento de perdidos-only) ou já tem revisão, é no-op (preserva o congelamento).
+     * <b>Side Effects:</b> Database insert (uma {@code RevisaoSemanal} quando ausente).
+     * <b>Tenant-aware:</b> YES — carrega o plano por {@code (id, tenantId)} e consulta a revisão
+     * existente tenant-scoped (CA6, CA7).
      */
     void gerarNoEncerramento(UUID planoId, UUID tenantId);
 
     /**
-     * Última revisão do atleta (tenant corrente via {@code TenantContext}), com
-     * {@code weekOverWeekDelta} computado. Devolve o sinal <b>persistido</b> — não recomputa
-     * (CA-Congelamento). Coach-only na camada de controller.
+     * Última revisão do atleta, com {@code weekOverWeekDelta} computado. Devolve o sinal
+     * <b>persistido</b> — não recomputa (CA-Congelamento). Coach-only na camada de controller.
+     *
+     * <p><b>Idempotent:</b> YES — leitura pura.
+     * <b>Side Effects:</b> NONE.
+     * <b>Tenant-aware:</b> YES — resolve o tenant via {@code TenantContext.getRequiredTenantId()}
+     * e filtra a query por ele.
      *
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o atleta não tem
      *         revisão (nenhuma semana fechada) — mapeado para 404.

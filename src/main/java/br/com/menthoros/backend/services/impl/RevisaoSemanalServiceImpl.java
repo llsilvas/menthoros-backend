@@ -88,6 +88,8 @@ public class RevisaoSemanalServiceImpl implements RevisaoSemanalService {
         if (revisaoSemanalRepository.findByPlanoSemanalIdAndTenant(planoId, tenantId).isPresent()) {
             return; // já congelada — idempotente, preserva o congelamento (ADR-0006 / CA6)
         }
+        // O check acima não é atômico; sob replay/retry concorrente do mesmo plano, a constraint
+        // única uk_revisao_semanal_plano é o último recurso (a 2ª escrita falha e é engolida no listener).
         revisaoSemanalRepository.save(consolidar(plano));
         log.info("[revisao-semanal] revisão gerada no encerramento do plano {} (tenant {})", planoId, tenantId);
     }
