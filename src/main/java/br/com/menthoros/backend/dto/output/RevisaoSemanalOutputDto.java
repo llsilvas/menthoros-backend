@@ -36,13 +36,13 @@ public record RevisaoSemanalOutputDto(
         NivelAderencia adherenceStatus,
 
         @Schema(description = "% de treinos realizados/planejados na janela (0–100)", example = "75.00")
-        BigDecimal percentualRealizacao,
+        BigDecimal completionRate,
 
         @Schema(description = "TSB ao fim da semana (do PlanoSemanal)", example = "-5.00")
         BigDecimal tsbFim,
 
         @Schema(description = "Se a semana teve dado suficiente para conclusão forte")
-        boolean dadosSuficientes,
+        boolean sufficientData,
 
         @Schema(description = "Comparação com a revisão anterior (computada na leitura)")
         WeekOverWeekDelta weekOverWeekDelta,

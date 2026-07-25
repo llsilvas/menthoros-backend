@@ -185,8 +185,8 @@ class RevisaoSemanalLeituraIT extends AbstractIntegrationTest {
                 .planoSemanal(plano)
                 .recommendationType(recommendationType)
                 .adherenceStatus(status)
-                .percentualRealizacao(percentual)
-                .dadosSuficientes(true)
+                .completionRate(percentual)
+                .sufficientData(true)
                 .geradaEm(Instant.now())
                 .build());
     }

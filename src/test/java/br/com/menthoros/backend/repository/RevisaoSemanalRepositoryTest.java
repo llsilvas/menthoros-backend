@@ -7,7 +7,9 @@ import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.RevisaoSemanal;
 import br.com.menthoros.backend.enums.AtletaStatus;
+import br.com.menthoros.backend.enums.ConsumedReviewOutcome;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.FocusSource;
 import br.com.menthoros.backend.enums.NivelAderencia;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.PlanoAssessoria;
@@ -68,8 +70,8 @@ class RevisaoSemanalRepositoryTest extends AbstractIntegrationTest {
                     .planoSemanal(plano)
                     .recommendationType(RecommendationType.RECOVERY)
                     .adherenceStatus(NivelAderencia.BAIXA)
-                    .percentualRealizacao(new BigDecimal("42.50"))
-                    .dadosSuficientes(true)
+                    .completionRate(new BigDecimal("42.50"))
+                    .sufficientData(true)
                     .geradaEm(Instant.now())
                     .build());
             flushClear();
@@ -81,9 +83,30 @@ class RevisaoSemanalRepositoryTest extends AbstractIntegrationTest {
             assertThat(recarregada.get().getId()).isEqualTo(revisao.getId());
             assertThat(recarregada.get().getRecommendationType()).isEqualTo(RecommendationType.RECOVERY);
             assertThat(recarregada.get().getAdherenceStatus()).isEqualTo(NivelAderencia.BAIXA);
-            assertThat(recarregada.get().getPercentualRealizacao()).isEqualByComparingTo("42.50");
-            assertThat(recarregada.get().isDadosSuficientes()).isTrue();
+            assertThat(recarregada.get().getCompletionRate()).isEqualByComparingTo("42.50");
+            assertThat(recarregada.get().isSufficientData()).isTrue();
             assertThat(recarregada.get().getPlanoSemanal().getId()).isEqualTo(plano.getId());
+        }
+
+        @Test
+        @DisplayName("round-trip da narrativa e da origem do foco (V72)")
+        void roundTripFocoEOrigem() {
+            Atleta atleta = seedAtleta();
+            UUID tenantId = atleta.getAssessoria().getId();
+            PlanoSemanal plano = salvarPlano(atleta);
+            revisaoSemanalRepository.save(novaRevisao(plano).toBuilder()
+                    .nextWeekFocus("Consolidar volume aeróbico, sem intensidade.")
+                    .focusSource(FocusSource.TEMPLATE)
+                    .build());
+            flushClear();
+
+            Optional<RevisaoSemanal> recarregada =
+                    revisaoSemanalRepository.findByPlanoSemanalIdAndTenant(plano.getId(), tenantId);
+
+            assertThat(recarregada).isPresent();
+            assertThat(recarregada.get().getNextWeekFocus())
+                    .isEqualTo("Consolidar volume aeróbico, sem intensidade.");
+            assertThat(recarregada.get().getFocusSource()).isEqualTo(FocusSource.TEMPLATE);
         }
 
         @Test
@@ -125,6 +148,62 @@ class RevisaoSemanalRepositoryTest extends AbstractIntegrationTest {
         }
     }
 
+    @Nested
+    @DisplayName("vínculo plano → revisão consumida (V72)")
+    class RevisaoConsumida {
+
+        @Test
+        @DisplayName("plano guarda a revisão que consumiu e o desfecho")
+        void planoGuardaVinculoEDesfecho() {
+            Atleta atleta = seedAtleta();
+            PlanoSemanal planoRevisado = salvarPlano(atleta, 1);
+            RevisaoSemanal revisao = revisaoSemanalRepository.save(novaRevisao(planoRevisado));
+
+            PlanoSemanal planoSeguinte = salvarPlano(atleta, 0);
+            planoSeguinte.setConsumedReview(revisao);
+            planoSeguinte.setConsumedReviewOutcome(ConsumedReviewOutcome.PENDING);
+            planoSemanalRepository.save(planoSeguinte);
+            flushClear();
+
+            PlanoSemanal recarregado = planoSemanalRepository.findById(planoSeguinte.getId()).orElseThrow();
+            assertThat(recarregado.getConsumedReview().getId()).isEqualTo(revisao.getId());
+            assertThat(recarregado.getConsumedReviewOutcome()).isEqualTo(ConsumedReviewOutcome.PENDING);
+        }
+
+        @Test
+        @DisplayName("plano que não consumiu revisão fica com vínculo nulo")
+        void planoSemRevisaoConsumida() {
+            PlanoSemanal plano = salvarPlano(seedAtleta());
+            flushClear();
+
+            PlanoSemanal recarregado = planoSemanalRepository.findById(plano.getId()).orElseThrow();
+            assertThat(recarregado.getConsumedReview()).isNull();
+        }
+
+        @Test
+        @DisplayName("dois planos consumindo a mesma revisão preservam desfechos independentes")
+        void doisPlanosMesmaRevisao() {
+            Atleta atleta = seedAtleta();
+            RevisaoSemanal revisao = revisaoSemanalRepository.save(novaRevisao(salvarPlano(atleta, 2)));
+
+            PlanoSemanal rejeitado = salvarPlano(atleta, 1);
+            rejeitado.setConsumedReview(revisao);
+            rejeitado.setConsumedReviewOutcome(ConsumedReviewOutcome.PLAN_REJECTED);
+            planoSemanalRepository.save(rejeitado);
+
+            PlanoSemanal aprovado = salvarPlano(atleta, 0);
+            aprovado.setConsumedReview(revisao);
+            aprovado.setConsumedReviewOutcome(ConsumedReviewOutcome.NO_ADJUSTMENT);
+            planoSemanalRepository.save(aprovado);
+            flushClear();
+
+            assertThat(planoSemanalRepository.findById(rejeitado.getId()).orElseThrow()
+                    .getConsumedReviewOutcome()).isEqualTo(ConsumedReviewOutcome.PLAN_REJECTED);
+            assertThat(planoSemanalRepository.findById(aprovado.getId()).orElseThrow()
+                    .getConsumedReviewOutcome()).isEqualTo(ConsumedReviewOutcome.NO_ADJUSTMENT);
+        }
+    }
+
     // ---- helpers ----
 
     private void flushClear() {
@@ -137,8 +216,8 @@ class RevisaoSemanalRepositoryTest extends AbstractIntegrationTest {
                 .planoSemanal(plano)
                 .recommendationType(RecommendationType.MAINTAIN)
                 .adherenceStatus(NivelAderencia.MEDIA)
-                .percentualRealizacao(new BigDecimal("75.00"))
-                .dadosSuficientes(true)
+                .completionRate(new BigDecimal("75.00"))
+                .sufficientData(true)
                 .geradaEm(Instant.now())
                 .build();
     }
@@ -160,13 +239,21 @@ class RevisaoSemanalRepositoryTest extends AbstractIntegrationTest {
     }
 
     private PlanoSemanal salvarPlano(Atleta atleta) {
+        return salvarPlano(atleta, 0);
+    }
+
+    /**
+     * {@code semanasAtras} desloca a janela: o índice único uk_plano_semanal_atleta_semana_ativo
+     * impede dois planos ativos do mesmo atleta na mesma semana.
+     */
+    private PlanoSemanal salvarPlano(Atleta atleta, int semanasAtras) {
         PlanoMetaDados meta = new PlanoMetaDados();
         meta.setAtleta(atleta);
         meta.setAssessoria(atleta.getAssessoria());
         meta.setDiaPreferidoLongo(DiaSemana.SABADO);
         meta = planoMetadadosRepository.save(meta);
 
-        LocalDate semanaFim = LocalDate.now();
+        LocalDate semanaFim = LocalDate.now().minusWeeks(semanasAtras);
         PlanoSemanal plano = new PlanoSemanal();
         plano.setAtleta(atleta);
         plano.setAssessoria(atleta.getAssessoria());

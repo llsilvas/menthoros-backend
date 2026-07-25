@@ -60,9 +60,9 @@ class RevisaoSemanalServiceImplTest {
 
             RevisaoSemanal r = service.consolidar(plano);
 
-            assertThat(r.getPercentualRealizacao()).isEqualByComparingTo("75.00");
+            assertThat(r.getCompletionRate()).isEqualByComparingTo("75.00");
             assertThat(r.getAdherenceStatus()).isEqualTo(NivelAderencia.MEDIA);
-            assertThat(r.isDadosSuficientes()).isTrue();
+            assertThat(r.isSufficientData()).isTrue();
             assertThat(r.getRecommendationType()).isEqualTo(RecommendationType.MAINTAIN);
             assertThat(r.getPlanoSemanal()).isSameAs(plano);
             assertThat(r.getGeradaEm()).isNotNull();
@@ -91,13 +91,13 @@ class RevisaoSemanalServiceImplTest {
 
             RevisaoSemanal r = service.consolidar(plano);
 
-            assertThat(r.getPercentualRealizacao()).isEqualByComparingTo("100.00");
+            assertThat(r.getCompletionRate()).isEqualByComparingTo("100.00");
             assertThat(r.getAdherenceStatus()).isEqualTo(NivelAderencia.ALTA);
             assertThat(r.getRecommendationType()).isEqualTo(RecommendationType.PROGRESS);
         }
 
         @Test
-        @DisplayName("tsbFim nulo → dadosSuficientes false e MAINTAIN")
+        @DisplayName("tsbFim nulo → sufficientData false e MAINTAIN")
         void tsbNuloMaintain() {
             PlanoSemanal plano = plano(null);
             mockTreinos(List.of(
@@ -105,7 +105,7 @@ class RevisaoSemanalServiceImplTest {
 
             RevisaoSemanal r = service.consolidar(plano);
 
-            assertThat(r.isDadosSuficientes()).isFalse();
+            assertThat(r.isSufficientData()).isFalse();
             assertThat(r.getRecommendationType()).isEqualTo(RecommendationType.MAINTAIN);
         }
 
@@ -121,7 +121,7 @@ class RevisaoSemanalServiceImplTest {
             RevisaoSemanal r = service.consolidar(plano);
 
             // só os 2 dentro da janela contam (ambos realizados) → 100%, não 66,67%
-            assertThat(r.getPercentualRealizacao()).isEqualByComparingTo("100.00");
+            assertThat(r.getCompletionRate()).isEqualByComparingTo("100.00");
             assertThat(r.getAdherenceStatus()).isEqualTo(NivelAderencia.ALTA);
         }
     }

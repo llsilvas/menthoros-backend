@@ -76,7 +76,7 @@ class RevisaoSemanalGeracaoIT extends AbstractIntegrationTest {
             assertThat(r).isPresent();
             assertThat(r.get().getAdherenceStatus()).isEqualTo(NivelAderencia.BAIXA);
             assertThat(r.get().getRecommendationType()).isEqualTo(RecommendationType.MAINTAIN);
-            assertThat(r.get().isDadosSuficientes()).isFalse();
+            assertThat(r.get().isSufficientData()).isFalse();
             assertThat(r.get().getGeradaEm()).isNotNull();
         }
 

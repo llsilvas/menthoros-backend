@@ -62,18 +62,18 @@ public class RevisaoSemanalServiceImpl implements RevisaoSemanalService {
                         && RevisaoSemanalCalculator.treinoCritico(t.getTipoTreino().getFatorImpacto()));
 
         BigDecimal tsbFim = plano.getTsbFim();
-        BigDecimal percentual = RevisaoSemanalCalculator.percentualRealizacao(planejados, realizados);
+        BigDecimal percentual = RevisaoSemanalCalculator.completionRate(planejados, realizados);
         NivelAderencia aderencia = RevisaoSemanalCalculator.nivelAderencia(percentual, criticoFaltando);
-        boolean dadosSuficientes = RevisaoSemanalCalculator.dadosSuficientes(realizados, tsbFim);
+        boolean sufficientData = RevisaoSemanalCalculator.sufficientData(realizados, tsbFim);
         RecommendationType recommendationType =
-                RevisaoSemanalCalculator.recommendationType(aderencia, tsbFim, dadosSuficientes);
+                RevisaoSemanalCalculator.recommendationType(aderencia, tsbFim, sufficientData);
 
         return RevisaoSemanal.builder()
                 .planoSemanal(plano)
                 .recommendationType(recommendationType)
                 .adherenceStatus(aderencia)
-                .percentualRealizacao(percentual)
-                .dadosSuficientes(dadosSuficientes)
+                .completionRate(percentual)
+                .sufficientData(sufficientData)
                 .geradaEm(Instant.now())
                 .build();
     }
@@ -117,9 +117,9 @@ public class RevisaoSemanalServiceImpl implements RevisaoSemanalService {
                 plano.getSemanaFim(),
                 atual.getRecommendationType(),
                 atual.getAdherenceStatus(),
-                atual.getPercentualRealizacao(),
+                atual.getCompletionRate(),
                 plano.getTsbFim(),
-                atual.isDadosSuficientes(),
+                atual.isSufficientData(),
                 delta(atual, anterior),
                 atual.getGeradaEm());
     }
@@ -130,7 +130,7 @@ public class RevisaoSemanalServiceImpl implements RevisaoSemanalService {
         }
         return new WeekOverWeekDelta(
                 false,
-                subtrair(atual.getPercentualRealizacao(), anterior.getPercentualRealizacao()),
+                subtrair(atual.getCompletionRate(), anterior.getCompletionRate()),
                 subtrair(atual.getPlanoSemanal().getTsbFim(), anterior.getPlanoSemanal().getTsbFim()),
                 anterior.getRecommendationType());
     }

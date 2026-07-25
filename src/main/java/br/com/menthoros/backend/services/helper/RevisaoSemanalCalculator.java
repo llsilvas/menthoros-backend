@@ -37,7 +37,7 @@ public final class RevisaoSemanalCalculator {
     }
 
     /** % de aderência (0–100, 2 casas) por contagem realizados/planejados. 0 planejados → 0 (degenerado). */
-    public static BigDecimal percentualRealizacao(int planejados, int realizados) {
+    public static BigDecimal completionRate(int planejados, int realizados) {
         if (planejados <= 0) {
             return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
         }
@@ -61,7 +61,7 @@ public final class RevisaoSemanalCalculator {
     }
 
     /** {@code false} se &lt;2 treinos realizados ou sem ponto de TSB válido (tsbFim nulo) — CA3. */
-    public static boolean dadosSuficientes(int realizados, BigDecimal tsbFim) {
+    public static boolean sufficientData(int realizados, BigDecimal tsbFim) {
         return realizados >= MIN_TREINOS_SUFICIENTE && tsbFim != null;
     }
 
@@ -70,12 +70,12 @@ public final class RevisaoSemanalCalculator {
      * <ol>
      *   <li>{@code tsbFim} nulo → MAINTAIN (ramos numéricos não se aplicam — CA3b);</li>
      *   <li>RECOVERY se {@code tsbFim ≤ −25} ou ({@code BAIXA} e {@code tsbFim ≤ −10});</li>
-     *   <li>PROGRESS se {@code ALTA} e {@code tsbFim ≥ −10} e {@code dadosSuficientes};</li>
+     *   <li>PROGRESS se {@code ALTA} e {@code tsbFim ≥ −10} e {@code sufficientData};</li>
      *   <li>MAINTAIN caso contrário.</li>
      * </ol>
      */
     public static RecommendationType recommendationType(NivelAderencia status, BigDecimal tsbFim,
-                                                        boolean dadosSuficientes) {
+                                                        boolean sufficientData) {
         if (tsbFim == null) {
             return RecommendationType.MAINTAIN;
         }
@@ -84,7 +84,7 @@ public final class RevisaoSemanalCalculator {
         if (fadigaAltaPiso || baixaComFadiga) {
             return RecommendationType.RECOVERY;
         }
-        if (status == NivelAderencia.ALTA && tsbFim.compareTo(TSB_FADIGA) >= 0 && dadosSuficientes) {
+        if (status == NivelAderencia.ALTA && tsbFim.compareTo(TSB_FADIGA) >= 0 && sufficientData) {
             return RecommendationType.PROGRESS;
         }
         return RecommendationType.MAINTAIN;

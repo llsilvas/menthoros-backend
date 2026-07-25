@@ -23,19 +23,19 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 class RevisaoSemanalCalculatorTest {
 
     @Nested
-    @DisplayName("percentualRealizacao")
+    @DisplayName("completionRate")
     class PercentualRealizacao {
 
         @Test
         @DisplayName("razão realizados/planejados em 0–100 com 2 casas")
         void razaoSimples() {
-            assertThat(RevisaoSemanalCalculator.percentualRealizacao(4, 3)).isEqualByComparingTo("75.00");
+            assertThat(RevisaoSemanalCalculator.completionRate(4, 3)).isEqualByComparingTo("75.00");
         }
 
         @Test
-        @DisplayName("sem treinos planejados → 0 (degenerado; o gate de dadosSuficientes cobre)")
+        @DisplayName("sem treinos planejados → 0 (degenerado; o gate de sufficientData cobre)")
         void semPlanejados() {
-            assertThat(RevisaoSemanalCalculator.percentualRealizacao(0, 0)).isEqualByComparingTo("0.00");
+            assertThat(RevisaoSemanalCalculator.completionRate(0, 0)).isEqualByComparingTo("0.00");
         }
     }
 
@@ -70,25 +70,25 @@ class RevisaoSemanalCalculatorTest {
     }
 
     @Nested
-    @DisplayName("dadosSuficientes (CA3)")
+    @DisplayName("sufficientData (CA3)")
     class DadosSuficientes {
 
         @Test
         @DisplayName("true com ≥2 treinos realizados e tsbFim presente")
         void suficiente() {
-            assertThat(RevisaoSemanalCalculator.dadosSuficientes(2, new BigDecimal("-5"))).isTrue();
+            assertThat(RevisaoSemanalCalculator.sufficientData(2, new BigDecimal("-5"))).isTrue();
         }
 
         @Test
         @DisplayName("false com <2 treinos realizados")
         void poucosTreinos() {
-            assertThat(RevisaoSemanalCalculator.dadosSuficientes(1, new BigDecimal("-5"))).isFalse();
+            assertThat(RevisaoSemanalCalculator.sufficientData(1, new BigDecimal("-5"))).isFalse();
         }
 
         @Test
         @DisplayName("false quando tsbFim é nulo (sem ponto de TSB válido)")
         void tsbNulo() {
-            assertThat(RevisaoSemanalCalculator.dadosSuficientes(3, null)).isFalse();
+            assertThat(RevisaoSemanalCalculator.sufficientData(3, null)).isFalse();
         }
     }
 
@@ -123,8 +123,8 @@ class RevisaoSemanalCalculatorTest {
 
         @ParameterizedTest(name = "aderência={0}, tsbFim={1}, dados={2} → {3}")
         @MethodSource("casos")
-        void arvore(NivelAderencia status, BigDecimal tsbFim, boolean dadosSuficientes, RecommendationType esperado) {
-            assertThat(RevisaoSemanalCalculator.recommendationType(status, tsbFim, dadosSuficientes))
+        void arvore(NivelAderencia status, BigDecimal tsbFim, boolean sufficientData, RecommendationType esperado) {
+            assertThat(RevisaoSemanalCalculator.recommendationType(status, tsbFim, sufficientData))
                     .isEqualTo(esperado);
         }
     }
