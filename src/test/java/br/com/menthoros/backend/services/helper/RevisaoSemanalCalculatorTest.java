@@ -8,12 +8,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 /**
@@ -126,6 +128,51 @@ class RevisaoSemanalCalculatorTest {
         void arvore(NivelAderencia status, BigDecimal tsbFim, boolean sufficientData, RecommendationType esperado) {
             assertThat(RevisaoSemanalCalculator.recommendationType(status, tsbFim, sufficientData))
                     .isEqualTo(esperado);
+        }
+    }
+
+    @Nested
+    @DisplayName("nextWeekFocusTemplate — fallback determinístico da narrativa (CA-LLM)")
+    class TemplateDeFoco {
+
+        @Test
+        @DisplayName("RECOVERY fala em reduzir carga, nunca em progredir")
+        void recoveryNaoSugereProgressao() {
+            String texto = RevisaoSemanalCalculator.nextWeekFocusTemplate(RecommendationType.RECOVERY);
+
+            assertThat(texto).containsIgnoringCase("recuper");
+            assertThat(texto).doesNotContainIgnoringCase("aument");
+        }
+
+        @Test
+        @DisplayName("MAINTAIN fala em manter, nunca em progredir")
+        void maintainNaoSugereProgressao() {
+            String texto = RevisaoSemanalCalculator.nextWeekFocusTemplate(RecommendationType.MAINTAIN);
+
+            assertThat(texto).containsIgnoringCase("manter");
+            assertThat(texto).doesNotContainIgnoringCase("aument");
+        }
+
+        @Test
+        @DisplayName("PROGRESS propõe evolução gradual")
+        void progressPropoeEvolucao() {
+            String texto = RevisaoSemanalCalculator.nextWeekFocusTemplate(RecommendationType.PROGRESS);
+
+            assertThat(texto).containsIgnoringCase("gradual");
+        }
+
+        @ParameterizedTest
+        @EnumSource(RecommendationType.class)
+        @DisplayName("todo tipo tem template não-vazio — nenhuma revisão nasce sem foco")
+        void todoTipoTemTemplate(RecommendationType tipo) {
+            assertThat(RevisaoSemanalCalculator.nextWeekFocusTemplate(tipo)).isNotBlank();
+        }
+
+        @Test
+        @DisplayName("rejeita tipo nulo em vez de devolver texto vazio")
+        void rejeitaTipoNulo() {
+            assertThatThrownBy(() -> RevisaoSemanalCalculator.nextWeekFocusTemplate(null))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 }

@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.output.WeekOverWeekDelta;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.RevisaoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.enums.FocusSource;
 import br.com.menthoros.backend.enums.NivelAderencia;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.RecommendationType;
@@ -74,6 +75,10 @@ public class RevisaoSemanalServiceImpl implements RevisaoSemanalService {
                 .adherenceStatus(aderencia)
                 .completionRate(percentual)
                 .sufficientData(sufficientData)
+                // A revisão nasce sempre com o template; a narrativa por LLM, quando habilitada,
+                // substitui esse texto depois, fora da thread do encerramento (D8).
+                .nextWeekFocus(RevisaoSemanalCalculator.nextWeekFocusTemplate(recommendationType))
+                .focusSource(FocusSource.TEMPLATE)
                 .geradaEm(Instant.now())
                 .build();
     }
@@ -120,6 +125,8 @@ public class RevisaoSemanalServiceImpl implements RevisaoSemanalService {
                 atual.getCompletionRate(),
                 plano.getTsbFim(),
                 atual.isSufficientData(),
+                atual.getNextWeekFocus(),
+                atual.getFocusSource(),
                 delta(atual, anterior),
                 atual.getGeradaEm());
     }

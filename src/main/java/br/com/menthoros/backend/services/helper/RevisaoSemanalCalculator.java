@@ -89,4 +89,26 @@ public final class RevisaoSemanalCalculator {
         }
         return RecommendationType.MAINTAIN;
     }
+
+    /**
+     * Foco da próxima semana em forma determinística, derivado só do {@code recommendationType}.
+     *
+     * <p>É o fallback da narrativa por LLM: vale com a flag desligada, quando a chamada falha e
+     * quando o checker de consistência reprova a narrativa. Como o texto deriva do tipo, ele nunca
+     * pode contrariá-lo — que é exatamente a garantia que o checker precisa impor sobre o LLM.
+     * Nenhuma revisão nasce sem foco.
+     */
+    public static String nextWeekFocusTemplate(RecommendationType recommendationType) {
+        if (recommendationType == null) {
+            throw new IllegalArgumentException("recommendationType não pode ser nulo");
+        }
+        return switch (recommendationType) {
+            case RECOVERY -> "Prioridade: recuperação. Reduza o volume da semana e evite treinos "
+                    + "de intensidade até a fadiga ceder.";
+            case MAINTAIN -> "Prioridade: manter a carga atual e consolidar a consistência antes "
+                    + "de qualquer evolução.";
+            case PROGRESS -> "Prioridade: evolução gradual do volume, preservando a qualidade dos "
+                    + "treinos-chave.";
+        };
+    }
 }

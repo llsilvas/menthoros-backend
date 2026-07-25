@@ -8,12 +8,14 @@ import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.RevisaoSemanal;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.FocusSource;
 import br.com.menthoros.backend.enums.NivelAderencia;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.PlanoAssessoria;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.RecommendationType;
+import br.com.menthoros.backend.services.helper.RevisaoSemanalCalculator;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
@@ -78,6 +80,22 @@ class RevisaoSemanalGeracaoIT extends AbstractIntegrationTest {
             assertThat(r.get().getRecommendationType()).isEqualTo(RecommendationType.MAINTAIN);
             assertThat(r.get().isSufficientData()).isFalse();
             assertThat(r.get().getGeradaEm()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("revisão nasce com o foco template, coerente com o recommendationType (CA-LLM)")
+        void nasceComFocoTemplate() {
+            PlanoSemanal plano = salvarPlano(PlanoStatus.CONCLUIDO, new BigDecimal("-5"));
+            UUID tenantId = plano.getAssessoria().getId();
+
+            revisaoSemanalService.gerarNoEncerramento(plano.getId(), tenantId);
+            flushClear();
+
+            RevisaoSemanal r = revisaoSemanalRepository
+                    .findByPlanoSemanalIdAndTenant(plano.getId(), tenantId).orElseThrow();
+            assertThat(r.getFocusSource()).isEqualTo(FocusSource.TEMPLATE);
+            assertThat(r.getNextWeekFocus())
+                    .isEqualTo(RevisaoSemanalCalculator.nextWeekFocusTemplate(r.getRecommendationType()));
         }
 
         @Test
