@@ -43,6 +43,22 @@ Específico deste módulo:
 - For domain or persistence changes, prefer adding code over risky refactors.
 - Do not introduce new dependencies without clear technical justification.
 
+## Identifier Language (decisão 2026-07-25)
+
+**Código novo — campos, enums, DTOs, colunas, tipos — nasce em inglês.** O idioma de resposta,
+comentários, JavaDoc e mensagens de commit permanece PT-BR (inalterado, ver `CLAUDE.md` da raiz).
+
+Campo legado em português encontrado numa entidade que a change **já está modificando por outro
+motivo** é normalizado junto, com migration de rename e PR coordenado nos repos afetados. Não abrir
+change só para renomear, e não sair caçando campo PT em código que a task não toca — vale a regra de
+escopo já existente ("stay within task scope").
+
+O glossário (`CONTEXT.md`) permanece em PT-BR, com o identificador do código entre parênteses.
+
+Consequência aceita: a base fica bilíngue por tempo indefinido — entidades tocadas com frequência
+convergem rápido, entidades estáveis ficam em PT. É deliberado; o custo de uma renomeação global
+(369 campos, migrations de rename em todas as tabelas, contrato do front refeito) não se paga.
+
 ## Controller Standards
 
 Rules enforced across all controllers. Violations must be corrected in the same PR that introduces new controller code.
