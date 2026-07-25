@@ -16,6 +16,8 @@ import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.*;
 import br.com.menthoros.backend.events.PlanoDeletadoEvent;
+import br.com.menthoros.backend.events.RevisaoConsumidaEvent;
+import br.com.menthoros.backend.services.prompt.WeeklyReviewPromptProvider;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.PlanoJaExistenteException;
@@ -77,6 +79,7 @@ public class PlanoServiceImpl implements PlanoService {
 
     private final ProvaRepository provaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final WeeklyReviewPromptProvider weeklyReviewPromptProvider;
     private final PlannerShadowService plannerShadowService;
     private final OnboardingService onboardingService;
     private final PlanoReviewService planoReviewService;
@@ -247,8 +250,37 @@ public class PlanoServiceImpl implements PlanoService {
         weekPlanSkeleton.ifPresent(skeleton -> onboardingService.avaliarCalibracaoSeAplicavel(
                 atleta.getId(), tenantId, semanaInicio.minusDays(1), skeleton.injuryRisk().level()));
 
+        // 4.8. Revisao da semana anterior consumida como insumo (add-weekly-review-llm-focus,
+        // D9/D11): mesmo resolver do prompt, entao o vinculo gravado aqui nunca diverge do que o
+        // LLM realmente viu. Sem revisao consumivel (ausente, fora da janela ou injecao desligada)
+        // o plano nasce NOT_CONSUMED — ausencia de dado, nao julgamento negativo do coach.
+        // Mutacao in-memory, persistida no passo 5 (mesmo padrao dos campos planner_*).
+        registrarRevisaoConsumida(plano, atleta.getId(), tenantId, periodo.inicio());
+
         // 5. Persistir e retornar
         return salvarPlanoCompleto(plano, metaDados);
+    }
+
+    /**
+     * Grava no plano o vinculo com a revisao consumida e o desfecho inicial, e publica o
+     * {@link RevisaoConsumidaEvent} (proxy de adocao).
+     *
+     * Idempotent: YES — mutacao in-memory deterministica sobre o mesmo plano.
+     * Side Effects: publicacao de evento (a persistencia acontece no salvarPlanoCompleto).
+     * Tenant-aware: YES
+     */
+    private void registrarRevisaoConsumida(PlanoSemanal plano, UUID atletaId, UUID tenantId,
+                                           LocalDate semanaInicio) {
+        Optional<RevisaoSemanal> revisao =
+                weeklyReviewPromptProvider.resolverParaGeracao(atletaId, tenantId, semanaInicio);
+        if (revisao.isEmpty()) {
+            plano.setConsumedReviewOutcome(ConsumedReviewOutcome.NOT_CONSUMED);
+            return;
+        }
+        plano.setConsumedReview(revisao.get());
+        plano.setConsumedReviewOutcome(ConsumedReviewOutcome.PENDING);
+        eventPublisher.publishEvent(new RevisaoConsumidaEvent(
+                tenantId, atletaId, semanaInicio, revisao.get().getId(), plano.getId()));
     }
 
     /**

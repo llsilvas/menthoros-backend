@@ -108,6 +108,8 @@ class PlanoServiceImplTest {
     private br.com.menthoros.backend.services.onboarding.OnboardingService onboardingService;
     @Mock
     private br.com.menthoros.backend.services.PlanoReviewService planoReviewService;
+    @Mock
+    private br.com.menthoros.backend.services.prompt.WeeklyReviewPromptProvider weeklyReviewPromptProvider;
 
     @InjectMocks
     private PlanoServiceImpl planoService;

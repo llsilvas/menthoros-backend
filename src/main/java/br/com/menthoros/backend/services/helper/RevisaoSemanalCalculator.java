@@ -5,6 +5,7 @@ import br.com.menthoros.backend.enums.RecommendationType;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 
 /**
  * Lógica determinística da revisão semanal (Fatia 1 — add-weekly-review-consolidation).
@@ -27,6 +28,8 @@ public final class RevisaoSemanalCalculator {
     static final int MIN_TREINOS_SUFICIENTE = 2;
     /** Treino de "alta criticidade" — {@code TipoTreino.getFatorImpacto() ≥ 1.15} (LONGO em diante). */
     static final double FATOR_IMPACTO_CRITICO = 1.15;
+    /** Folga sobre a semana imediatamente anterior, para absorver encerramento atrasado (D11). */
+    static final int FOLGA_JANELA_DIAS = 7;
 
     private RevisaoSemanalCalculator() {
     }
@@ -88,6 +91,27 @@ public final class RevisaoSemanalCalculator {
             return RecommendationType.PROGRESS;
         }
         return RecommendationType.MAINTAIN;
+    }
+
+    /**
+     * Se uma revisão ainda é insumo válido para o plano que está sendo gerado (D11).
+     *
+     * <p>O {@code recommendationType} deriva do {@code tsbFim} daquela semana e apodrece rápido:
+     * um atleta que ficou três semanas sem plano (lesão, férias, pausa) teria "a revisão mais
+     * recente" mandando reduzir carga logo depois de um período destreinando. Como o coach não vê
+     * o prompt, ele não tem como filtrar isso — a janela filtra por ele.
+     *
+     * @param semanaFimRevisao   fim da semana revisada
+     * @param semanaInicioPlano  início da semana do plano sendo gerado
+     */
+    public static boolean withinConsumptionWindow(LocalDate semanaFimRevisao, LocalDate semanaInicioPlano) {
+        if (semanaFimRevisao == null || semanaInicioPlano == null) {
+            return false;
+        }
+        if (semanaFimRevisao.isAfter(semanaInicioPlano)) {
+            return false; // revisão do futuro — data inconsistente, não consome
+        }
+        return !semanaFimRevisao.isBefore(semanaInicioPlano.minusDays(FOLGA_JANELA_DIAS));
     }
 
     /**

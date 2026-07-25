@@ -12,6 +12,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -173,6 +174,63 @@ class RevisaoSemanalCalculatorTest {
         void rejeitaTipoNulo() {
             assertThatThrownBy(() -> RevisaoSemanalCalculator.nextWeekFocusTemplate(null))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("withinConsumptionWindow — janela de validade da revisão (D11)")
+    class JanelaDeConsumo {
+
+        @Test
+        @DisplayName("revisão da semana imediatamente anterior é consumida")
+        void semanaAnteriorEntra() {
+            LocalDate planoInicio = LocalDate.of(2026, 7, 20);   // segunda
+            LocalDate revisaoFim = LocalDate.of(2026, 7, 19);    // domingo anterior
+
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(revisaoFim, planoInicio)).isTrue();
+        }
+
+        @Test
+        @DisplayName("no limite da folga (7 dias) ainda entra — absorve encerramento atrasado")
+        void limiteDaFolgaEntra() {
+            LocalDate planoInicio = LocalDate.of(2026, 7, 20);
+            LocalDate revisaoFim = LocalDate.of(2026, 7, 13);    // 7 dias antes do início
+
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(revisaoFim, planoInicio)).isTrue();
+        }
+
+        @Test
+        @DisplayName("um dia além da folga não entra")
+        void alemDaFolgaNaoEntra() {
+            LocalDate planoInicio = LocalDate.of(2026, 7, 20);
+            LocalDate revisaoFim = LocalDate.of(2026, 7, 12);
+
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(revisaoFim, planoInicio)).isFalse();
+        }
+
+        @Test
+        @DisplayName("revisão de três semanas atrás (atleta lesionado) não entra")
+        void revisaoObsoletaNaoEntra() {
+            LocalDate planoInicio = LocalDate.of(2026, 7, 20);
+            LocalDate revisaoFim = LocalDate.of(2026, 6, 28);
+
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(revisaoFim, planoInicio)).isFalse();
+        }
+
+        @Test
+        @DisplayName("revisão do futuro não entra — protege contra data inconsistente")
+        void revisaoNoFuturoNaoEntra() {
+            LocalDate planoInicio = LocalDate.of(2026, 7, 20);
+            LocalDate revisaoFim = LocalDate.of(2026, 7, 26);
+
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(revisaoFim, planoInicio)).isFalse();
+        }
+
+        @Test
+        @DisplayName("datas nulas não consomem")
+        void datasNulasNaoEntram() {
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(null, LocalDate.now())).isFalse();
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(LocalDate.now(), null)).isFalse();
         }
     }
 }

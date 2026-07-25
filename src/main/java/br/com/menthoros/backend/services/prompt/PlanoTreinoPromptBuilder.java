@@ -54,6 +54,8 @@ public class PlanoTreinoPromptBuilder {
     private final PaceZoneCalculator paceZoneCalculator;
     private final ThresholdConstraintFormatter thresholdConstraintFormatter;
     private final ReadinessPromptFormatter readinessPromptFormatter;
+    private final WeeklyReviewPromptProvider weeklyReviewPromptProvider;
+    private final WeeklyReviewPromptFormatter weeklyReviewPromptFormatter;
 
     public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource,
                                     PromptTemplateLoader templateLoader,
@@ -70,7 +72,9 @@ public class PlanoTreinoPromptBuilder {
                                     PaceHistoricoFormatter paceHistoricoFormatter,
                                     PaceZoneCalculator paceZoneCalculator,
                                     ThresholdConstraintFormatter thresholdConstraintFormatter,
-                                    ReadinessPromptFormatter readinessPromptFormatter) {
+                                    ReadinessPromptFormatter readinessPromptFormatter,
+                                    WeeklyReviewPromptProvider weeklyReviewPromptProvider,
+                                    WeeklyReviewPromptFormatter weeklyReviewPromptFormatter) {
         this.templateLoader = templateLoader;
         this.metricasAlertaService = metricasAlertaService;
         this.zonaTreinoService = zonaTreinoService;
@@ -86,6 +90,8 @@ public class PlanoTreinoPromptBuilder {
         this.paceZoneCalculator = paceZoneCalculator;
         this.thresholdConstraintFormatter = thresholdConstraintFormatter;
         this.readinessPromptFormatter = readinessPromptFormatter;
+        this.weeklyReviewPromptProvider = weeklyReviewPromptProvider;
+        this.weeklyReviewPromptFormatter = weeklyReviewPromptFormatter;
         try {
             this.promptTemplate = new String(promptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -232,6 +238,17 @@ public class PlanoTreinoPromptBuilder {
         // ETAPA 1.5: Readiness (prontidão subjetiva diária) — sequência 7 dias + hoje
         historicoCompleto.append(readinessPromptFormatter.formatarReadiness(
                 ctx.sequenciaUltimos7Dias(), ctx.nivelProntidaoHoje(), ctx.readinessScoreHoje())).append("\n\n");
+
+        // ETAPA 1.6: Revisão da semana anterior — contexto, nunca comando (CA4/CA5). Bloco vazio
+        // quando não há revisão consumível (ausente, fora da janela D11 ou injeção desligada).
+        String blocoRevisao = weeklyReviewPromptFormatter.formatarRevisao(
+                weeklyReviewPromptProvider.resolverParaGeracao(
+                        atleta.getId(),
+                        atleta.getAssessoria() != null ? atleta.getAssessoria().getId() : null,
+                        inicioSemana).orElse(null));
+        if (!blocoRevisao.isEmpty()) {
+            historicoCompleto.append(blocoRevisao).append("\n\n");
+        }
 
         // ETAPA 2: Métricas de carga e fadiga (consolidadas)
         historicoCompleto.append(metricasPromptFormatter.formatarMetricas(metaDados)).append("\n\n");

@@ -16,6 +16,7 @@ import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.ContextoTreino;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.impl.MetricasAlertaService;
+import br.com.menthoros.backend.repository.RevisaoSemanalRepository;
 import br.com.menthoros.backend.services.prompt.ThresholdConstraintFormatter;
 import br.com.menthoros.backend.skills.eligibility.IntervaladoElegibilidadeSkill;
 import org.springframework.core.io.ClassPathResource;
@@ -100,7 +101,11 @@ final class PlanoPromptArquetipos {
                 new PaceHistoricoFormatter(),
                 new PaceZoneCalculator(zona),
                 new ThresholdConstraintFormatter(new ThresholdInferenceService()),
-                new ReadinessPromptFormatter());
+                new ReadinessPromptFormatter(),
+                // Injeção desligada (campo @Value fica false na construção manual) — o golden
+                // permanece byte-idêntico, provando que a revisão só entra quando habilitada.
+                new WeeklyReviewPromptProvider(org.mockito.Mockito.mock(RevisaoSemanalRepository.class)),
+                new WeeklyReviewPromptFormatter());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
