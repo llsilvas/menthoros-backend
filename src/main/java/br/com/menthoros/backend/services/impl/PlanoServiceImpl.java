@@ -39,6 +39,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Value;
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -140,14 +141,27 @@ public class PlanoServiceImpl implements PlanoService {
 
         DecisaoProgressao decisaoProgressao = calcularDecisaoProgressao(atletaId);
 
+        // Revisao da semana anterior resolvida UMA vez por geracao (add-weekly-review-llm-focus,
+        // D9/D11): o mesmo objeto alimenta o prompt e o vinculo gravado no plano. Resolver nos dois
+        // pontos abriria uma janela em que uma revisao nova, persistida entre as duas leituras, faria
+        // o LLM ver uma revisao e o plano registrar outra.
+        // A semana do plano tambem e calculada uma unica vez e repassada: recalcula-la depois da
+        // chamada ao LLM (que pode levar segundos e, em lote, esperar no semaforo) usaria um
+        // LocalDate.now() diferente, fazendo a janela D11 da revisao divergir da semana persistida.
+        LocalDate semanaInicio = calcularSemanaInicio(atletaId, LocalDate.now(), modoGeracao);
+        Optional<RevisaoSemanal> revisaoConsumida = weeklyReviewPromptProvider.resolverParaGeracao(
+                atletaId, TenantContext.getRequiredTenantId(), semanaInicio);
+
         try {
-            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano, modoGeracao, decisaoProgressao);
+            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano, modoGeracao, decisaoProgressao,
+                    revisaoConsumida.orElse(null));
 
             if (planoDto == null) {
                 throw new LLMException("Falha ao gerar plano: IA retornou resposta nula. Tente novamente.");
             }
 
-            return persistirPlanoCompleto(planoDto, dadosPlano, modoGeracao, decisaoProgressao);
+            return persistirPlanoCompleto(planoDto, dadosPlano, modoGeracao, decisaoProgressao,
+                    revisaoConsumida, semanaInicio);
         } catch (LLMException | DomainRuleViolationException e) {
             // Re-lança exceções de domínio sem modificar
             log.error("Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
@@ -181,18 +195,21 @@ public class PlanoServiceImpl implements PlanoService {
      * @param modoGeracao modo que determina a estratégia de redistribuição de treinos
      * @param decisaoProgressao decisão de progressão já calculada — repassada ao shadow do
      *        {@code PlannerEngine} (deterministic-planner-engine), que não recalcula a direção
+     * @param revisaoConsumida revisão da semana anterior resolvida em {@code gerarPlanoTreino} — a
+     *        MESMA que alimentou o prompt, para o vínculo gravado nunca divergir do que o LLM viu
+     * @param semanaInicio início da semana do plano, também resolvido em {@code gerarPlanoTreino}
      * @return plano semanal persistido com todas as associações carregadas
      * @throws DomainRuleViolationException se não for possível gerar treinos após redistribuição
      */
     private PlanoSemanal persistirPlanoCompleto(PlanoSemanalLlmDto planoDto, DadosPlanoDto dadosPlano,
-                                                 ModoGeracaoPlano modoGeracao, DecisaoProgressao decisaoProgressao) {
+                                                 ModoGeracaoPlano modoGeracao, DecisaoProgressao decisaoProgressao,
+                                                 Optional<RevisaoSemanal> revisaoConsumida,
+                                                 LocalDate semanaInicio) {
         Atleta atleta = dadosPlano.atleta();
-        LocalDate hoje = LocalDate.now();
 
         log.info("Iniciando persistência de plano completo para atleta {}", atleta.getId());
 
-        // 1. Calcular período do plano
-        LocalDate semanaInicio = calcularSemanaInicio(atleta.getId(), hoje, modoGeracao);
+        // 1. Período do plano — a semana de início vem resolvida do chamador (ver gerarPlanoTreino)
         PeriodoPlano periodo = new PeriodoPlano(semanaInicio);
 
         // ** Adição da verificação de duplicidade **
@@ -251,12 +268,10 @@ public class PlanoServiceImpl implements PlanoService {
                 atleta.getId(), tenantId, semanaInicio.minusDays(1), skeleton.injuryRisk().level()));
 
         // 4.8. Revisao da semana anterior consumida como insumo (add-weekly-review-llm-focus,
-        // D9/D11): resolvida UMA vez em 3.x e reutilizada aqui, para o vinculo gravado nunca
-        // divergir da revisao que o LLM realmente viu. Sem revisao consumivel (ausente, fora da
-        // janela ou injecao desligada) o plano nasce NOT_CONSUMED — ausencia de dado, nao
-        // julgamento negativo do coach. Mutacao in-memory, persistida no passo 5.
-        Optional<RevisaoSemanal> revisaoConsumida = weeklyReviewPromptProvider.resolverParaGeracao(
-                atleta.getId(), tenantId, periodo.inicio());
+        // D9/D11): resolvida UMA vez em gerarPlanoTreino e recebida aqui por parametro, para o
+        // vinculo gravado nunca divergir da revisao que o LLM realmente viu. Sem revisao consumivel
+        // (ausente, fora da janela ou injecao desligada) o plano nasce NOT_CONSUMED — ausencia de
+        // dado, nao julgamento negativo do coach. Mutacao in-memory, persistida no passo 5.
         registrarRevisaoConsumida(plano, revisaoConsumida);
 
         // 5. Persistir e retornar
@@ -742,7 +757,9 @@ public class PlanoServiceImpl implements PlanoService {
                 .or(() -> provasFuturas.stream().findFirst());
     }
 
-    private PlanoSemanalLlmDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto, ModoGeracaoPlano modoGeracao, DecisaoProgressao decisaoProgressao) {
+    private PlanoSemanalLlmDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto, ModoGeracaoPlano modoGeracao,
+                                                 DecisaoProgressao decisaoProgressao,
+                                                 @Nullable RevisaoSemanal revisaoConsumida) {
         try {
             log.info("Iniciando geração de plano para atleta: {}", dadosPlanoDto.atleta().getId());
 
@@ -752,7 +769,7 @@ public class PlanoServiceImpl implements PlanoService {
                         dadosPlanoDto.atleta().getId());
             }
 
-            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), prova, modoGeracao, decisaoProgressao);
+            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), prova, modoGeracao, decisaoProgressao, revisaoConsumida);
 
             validaPlanoGerado(planoDto);
             return planoDto;

@@ -8,6 +8,7 @@ import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.Prova;
+import br.com.menthoros.backend.entity.RevisaoSemanal;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.TipoTreino;
@@ -54,7 +55,6 @@ public class PlanoTreinoPromptBuilder {
     private final PaceZoneCalculator paceZoneCalculator;
     private final ThresholdConstraintFormatter thresholdConstraintFormatter;
     private final ReadinessPromptFormatter readinessPromptFormatter;
-    private final WeeklyReviewPromptProvider weeklyReviewPromptProvider;
     private final WeeklyReviewPromptFormatter weeklyReviewPromptFormatter;
 
     public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource,
@@ -73,7 +73,6 @@ public class PlanoTreinoPromptBuilder {
                                     PaceZoneCalculator paceZoneCalculator,
                                     ThresholdConstraintFormatter thresholdConstraintFormatter,
                                     ReadinessPromptFormatter readinessPromptFormatter,
-                                    WeeklyReviewPromptProvider weeklyReviewPromptProvider,
                                     WeeklyReviewPromptFormatter weeklyReviewPromptFormatter) {
         this.templateLoader = templateLoader;
         this.metricasAlertaService = metricasAlertaService;
@@ -90,7 +89,6 @@ public class PlanoTreinoPromptBuilder {
         this.paceZoneCalculator = paceZoneCalculator;
         this.thresholdConstraintFormatter = thresholdConstraintFormatter;
         this.readinessPromptFormatter = readinessPromptFormatter;
-        this.weeklyReviewPromptProvider = weeklyReviewPromptProvider;
         this.weeklyReviewPromptFormatter = weeklyReviewPromptFormatter;
         try {
             this.promptTemplate = new String(promptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -171,12 +169,24 @@ public class PlanoTreinoPromptBuilder {
 
     public PromptGerado buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo,
                                              LocalDate inicioSemana, List<DiaSemana> diasEfetivos) {
-        return buildOptimizedPrompt(atleta, metaDados, provaAlvo, inicioSemana, diasEfetivos, null);
+        return buildOptimizedPrompt(atleta, metaDados, provaAlvo, inicioSemana, diasEfetivos, null, null);
     }
 
     public PromptGerado buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo,
                                              LocalDate inicioSemana, List<DiaSemana> diasEfetivos,
                                              @Nullable DecisaoProgressao decisaoProgressao) {
+        return buildOptimizedPrompt(atleta, metaDados, provaAlvo, inicioSemana, diasEfetivos, decisaoProgressao, null);
+    }
+
+    /**
+     * @param revisaoConsumida revisão da semana anterior já resolvida pelo chamador
+     *        ({@code PlanoServiceImpl}) — o builder não a resolve por conta própria para que a
+     *        revisão vista pelo LLM e a gravada como consumida no plano sejam sempre a mesma.
+     */
+    public PromptGerado buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo,
+                                             LocalDate inicioSemana, List<DiaSemana> diasEfetivos,
+                                             @Nullable DecisaoProgressao decisaoProgressao,
+                                             @Nullable RevisaoSemanal revisaoConsumida) {
         var ctx = treinoHistoricoProvider.prepararContexto(atleta);
 
         // DECISÃO INTERVALADO — avaliação determinística pré-LLM (5 portões fisiológicos + readiness)
@@ -240,12 +250,9 @@ public class PlanoTreinoPromptBuilder {
                 ctx.sequenciaUltimos7Dias(), ctx.nivelProntidaoHoje(), ctx.readinessScoreHoje())).append("\n\n");
 
         // ETAPA 1.6: Revisão da semana anterior — contexto, nunca comando (CA4/CA5). Bloco vazio
-        // quando não há revisão consumível (ausente, fora da janela D11 ou injeção desligada).
-        String blocoRevisao = weeklyReviewPromptFormatter.formatarRevisao(
-                weeklyReviewPromptProvider.resolverParaGeracao(
-                        atleta.getId(),
-                        atleta.getAssessoria() != null ? atleta.getAssessoria().getId() : null,
-                        inicioSemana).orElse(null));
+        // quando não há revisão consumível (ausente, fora da janela D11 ou injeção desligada);
+        // a resolução é do chamador, ponto único que também grava o vínculo no plano.
+        String blocoRevisao = weeklyReviewPromptFormatter.formatarRevisao(revisaoConsumida);
         if (!blocoRevisao.isEmpty()) {
             historicoCompleto.append(blocoRevisao).append("\n\n");
         }
