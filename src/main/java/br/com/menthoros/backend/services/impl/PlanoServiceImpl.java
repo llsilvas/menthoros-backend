@@ -141,18 +141,20 @@ public class PlanoServiceImpl implements PlanoService {
 
         DecisaoProgressao decisaoProgressao = calcularDecisaoProgressao(atletaId);
 
-        // Revisao da semana anterior resolvida UMA vez por geracao (add-weekly-review-llm-focus,
-        // D9/D11): o mesmo objeto alimenta o prompt e o vinculo gravado no plano. Resolver nos dois
-        // pontos abriria uma janela em que uma revisao nova, persistida entre as duas leituras, faria
-        // o LLM ver uma revisao e o plano registrar outra.
-        // A semana do plano tambem e calculada uma unica vez e repassada: recalcula-la depois da
-        // chamada ao LLM (que pode levar segundos e, em lote, esperar no semaforo) usaria um
-        // LocalDate.now() diferente, fazendo a janela D11 da revisao divergir da semana persistida.
-        LocalDate semanaInicio = calcularSemanaInicio(atletaId, LocalDate.now(), modoGeracao);
-        Optional<RevisaoSemanal> revisaoConsumida = weeklyReviewPromptProvider.resolverParaGeracao(
-                atletaId, TenantContext.getRequiredTenantId(), semanaInicio);
-
         try {
+            // Revisao da semana anterior resolvida UMA vez por geracao (add-weekly-review-llm-focus,
+            // D9/D11): o mesmo objeto alimenta o prompt e o vinculo gravado no plano. Resolver nos dois
+            // pontos abriria uma janela em que uma revisao nova, persistida entre as duas leituras, faria
+            // o LLM ver uma revisao e o plano registrar outra.
+            // A semana do plano tambem e calculada uma unica vez e repassada: recalcula-la depois da
+            // chamada ao LLM (que pode levar segundos e, em lote, esperar no semaforo) usaria um
+            // LocalDate.now() diferente, fazendo a janela D11 da revisao divergir da semana persistida.
+            // Dentro do try: uma falha de repositorio aqui deve virar LLMException como qualquer
+            // outra falha de geracao, e nao propagar crua para o controller.
+            LocalDate semanaInicio = calcularSemanaInicio(atletaId, LocalDate.now(), modoGeracao);
+            Optional<RevisaoSemanal> revisaoConsumida = weeklyReviewPromptProvider.resolverParaGeracao(
+                    atletaId, TenantContext.getRequiredTenantId(), semanaInicio);
+
             PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano, modoGeracao, decisaoProgressao,
                     revisaoConsumida.orElse(null));
 
