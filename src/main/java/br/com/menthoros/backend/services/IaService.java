@@ -13,6 +13,7 @@ import br.com.menthoros.backend.entity.RevisaoSemanal;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import org.jspecify.annotations.Nullable;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 
@@ -23,8 +24,11 @@ public interface IaService {
     /**
      * @param revisaoConsumida revisão da semana anterior já resolvida pelo chamador — resolver aqui
      *        dentro faria o LLM ver uma revisão e o plano gravar outra (leituras não-atômicas).
+     * @param inicioSemana semana do plano, resolvida pelo mesmo chamador. Derivá-la aqui de
+     *        {@code LocalDate.now()} divergiria de {@code calcularSemanaInicio} quando o atleta já
+     *        tem plano futuro: o prompt falaria de uma semana e o plano seria salvo em outra.
      */
-    PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracao, @Nullable DecisaoProgressao decisaoProgressao, @Nullable RevisaoSemanal revisaoConsumida);
+    PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracao, @Nullable DecisaoProgressao decisaoProgressao, @Nullable RevisaoSemanal revisaoConsumida, LocalDate inicioSemana);
 
     Map<Long, PlanoTreinoOutputDto> gerarPlanosEmLote(Map<AtletaOutputDto, List<TreinoRealizadoOutputDto>> atletaDtoListMap);
 }

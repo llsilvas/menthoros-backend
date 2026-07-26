@@ -156,7 +156,7 @@ public class PlanoServiceImpl implements PlanoService {
                     atletaId, TenantContext.getRequiredTenantId(), semanaInicio);
 
             PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano, modoGeracao, decisaoProgressao,
-                    revisaoConsumida.orElse(null));
+                    revisaoConsumida.orElse(null), semanaInicio);
 
             if (planoDto == null) {
                 throw new LLMException("Falha ao gerar plano: IA retornou resposta nula. Tente novamente.");
@@ -761,7 +761,8 @@ public class PlanoServiceImpl implements PlanoService {
 
     private PlanoSemanalLlmDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto, ModoGeracaoPlano modoGeracao,
                                                  DecisaoProgressao decisaoProgressao,
-                                                 @Nullable RevisaoSemanal revisaoConsumida) {
+                                                 @Nullable RevisaoSemanal revisaoConsumida,
+                                                 LocalDate semanaInicio) {
         try {
             log.info("Iniciando geração de plano para atleta: {}", dadosPlanoDto.atleta().getId());
 
@@ -771,7 +772,7 @@ public class PlanoServiceImpl implements PlanoService {
                         dadosPlanoDto.atleta().getId());
             }
 
-            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), prova, modoGeracao, decisaoProgressao, revisaoConsumida);
+            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), prova, modoGeracao, decisaoProgressao, revisaoConsumida, semanaInicio);
 
             validaPlanoGerado(planoDto);
             return planoDto;

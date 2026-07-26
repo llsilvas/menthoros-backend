@@ -47,7 +47,6 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -307,15 +306,7 @@ public class IaServiceImpl implements IaService {
      *   opera sob o {@code TenantContext} corrente.
      */
     @Override
-    public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracaoPlano, DecisaoProgressao decisaoProgressao, RevisaoSemanal revisaoConsumida){
-        LocalDate inicioSemana;
-
-        if(ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracaoPlano)){
-            inicioSemana = LocalDate.now().with(DayOfWeek.MONDAY);
-        }else{
-            inicioSemana = LocalDate.now().plusWeeks(1).with(DayOfWeek.MONDAY);
-        }
-
+    public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracaoPlano, DecisaoProgressao decisaoProgressao, RevisaoSemanal revisaoConsumida, LocalDate inicioSemana){
         // Para SEMANA_ATUAL, filtra apenas os dias que ainda não passaram e informa o LLM.
         // Para PROXIMA_SEMANA, passa null — o prompt usa todos os dias disponíveis do atleta.
         List<DiaSemana> diasEfetivos = ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracaoPlano)
