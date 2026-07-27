@@ -39,6 +39,63 @@ class PlanoResilienceServiceTest {
     }
 
     @Nested
+    @DisplayName("deadline total")
+    class DeadlineTotal {
+
+        @Test
+        @DisplayName("1ª tentativa que estoura o orçamento não inicia a 2ª (CA4)")
+        void primeiraLentaNaoRetenta() {
+            // Deadline curto para o teste; em produção são 100s contra o teto de 120s da rota.
+            PlanoResilienceService comDeadlineCurto =
+                    new PlanoResilienceService(registry, java.time.Duration.ofMillis(50));
+            List<String> chamadas = new ArrayList<>();
+
+            Function<String, PlanoSemanalLlmDto> gerarLento = prompt -> {
+                chamadas.add(prompt);
+                try {
+                    Thread.sleep(120);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                return plano();
+            };
+            Function<PlanoSemanalLlmDto, PlanoSemanalLlmDto> rejeita = p -> {
+                throw new LLMException("estrutura invalida");
+            };
+
+            assertThatThrownBy(() -> comDeadlineCurto.gerarComResiliencia(gerarLento, rejeita, "base"))
+                    .isInstanceOf(DomainRuleViolationException.class);
+
+            assertThat(chamadas).hasSize(1);
+            assertThat(contador("plano_deadline_estourado")).isEqualTo(1.0);
+            assertThat(contador("plano_retry")).isZero();
+        }
+
+        @Test
+        @DisplayName("1ª tentativa rápida com rejeição segue retentando — o caso comum não regride")
+        void primeiraRapidaAindaRetenta() {
+            PlanoResilienceService comDeadlineFolgado =
+                    new PlanoResilienceService(registry, java.time.Duration.ofSeconds(30));
+            List<String> chamadas = new ArrayList<>();
+
+            Function<String, PlanoSemanalLlmDto> gerar = prompt -> {
+                chamadas.add(prompt);
+                return plano();
+            };
+            Function<PlanoSemanalLlmDto, PlanoSemanalLlmDto> rejeita = p -> {
+                throw new LLMException("estrutura invalida");
+            };
+
+            assertThatThrownBy(() -> comDeadlineFolgado.gerarComResiliencia(gerar, rejeita, "base"))
+                    .isInstanceOf(DomainRuleViolationException.class);
+
+            assertThat(chamadas).hasSize(2);
+            assertThat(contador("plano_retry")).isEqualTo(1.0);
+            assertThat(contador("plano_deadline_estourado")).isZero();
+        }
+    }
+
+    @Nested
     @DisplayName("gerarComResiliencia")
     class GerarComResiliencia {
 

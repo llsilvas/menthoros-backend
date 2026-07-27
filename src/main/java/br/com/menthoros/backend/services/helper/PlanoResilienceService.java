@@ -5,10 +5,10 @@ import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.LLMException;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.function.Function;
 
 /**
@@ -26,13 +26,37 @@ import java.util.function.Function;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class PlanoResilienceService {
 
     /** 1 geração + 1 retry. */
     static final int MAX_TENTATIVAS = 2;
 
+    /**
+     * Orçamento total da geração. Com o teto de 120s da rota {@code plano}, duas
+     * tentativas dariam 240s — os "~4min" que o javadoc acima já chama de
+     * inaceitável. Checado <b>antes</b> de iniciar a 2ª: se a 1ª já consumiu o
+     * orçamento, pagar outra rodada só piora a espera do treinador.
+     *
+     * <p>Não corta o caso comum: a falha que dispara esse retry é estrutural
+     * (resposta malformada) e normalmente chega bem antes dos 100s.
+     */
+    static final Duration DEADLINE_TOTAL = Duration.ofSeconds(100);
+
     private final MeterRegistry meterRegistry;
+    private final Duration deadlineTotal;
+
+    // @Autowired explícito: com mais de um construtor o Spring não elege candidato
+    // sozinho e cai no construtor default, que não existe.
+    @org.springframework.beans.factory.annotation.Autowired
+    public PlanoResilienceService(MeterRegistry meterRegistry) {
+        this(meterRegistry, DEADLINE_TOTAL);
+    }
+
+    /** Visível para teste: o orçamento real é medido em dezenas de segundos. */
+    PlanoResilienceService(MeterRegistry meterRegistry, Duration deadlineTotal) {
+        this.meterRegistry = meterRegistry;
+        this.deadlineTotal = deadlineTotal;
+    }
 
     /**
      * @param gerar    prompt → plano (chama o LLM); falhas de geração propagam (não são retry)
@@ -45,6 +69,7 @@ public class PlanoResilienceService {
         Counter.builder("plano_geracao_total").register(meterRegistry).increment(); // denominador da taxa de sucesso
         String prompt = promptBase;
         LLMException ultimaFalha = null;
+        long inicioNanos = System.nanoTime();
 
         for (int tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
             PlanoSemanalLlmDto plano = gerar.apply(prompt); // falha de geração propaga (infra → 503)
@@ -53,6 +78,13 @@ public class PlanoResilienceService {
             } catch (LLMException e) {
                 ultimaFalha = e;
                 if (tentativa >= MAX_TENTATIVAS) break;
+                Duration decorrido = Duration.ofNanos(System.nanoTime() - inicioNanos);
+                if (decorrido.compareTo(deadlineTotal) >= 0) {
+                    Counter.builder("plano_deadline_estourado").register(meterRegistry).increment();
+                    log.warn("Orcamento de {}s esgotado apos {}s na tentativa {} — 2a tentativa nao sera iniciada",
+                            deadlineTotal.toSeconds(), decorrido.toSeconds(), tentativa);
+                    break;
+                }
                 Counter.builder("plano_retry").tag("motivo", "estrutural").register(meterRegistry).increment();
                 String motivo = truncar(e.getMessage());
                 log.warn("Plano rejeitado na tentativa {} ({}); re-gerando 1x com feedback", tentativa, motivo);
