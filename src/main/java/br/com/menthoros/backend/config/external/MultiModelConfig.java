@@ -6,16 +6,25 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.anthropic.api.AnthropicApi;
 import org.springframework.ai.anthropic.api.AnthropicCacheOptions;
 import org.springframework.ai.anthropic.api.AnthropicCacheStrategy;
 import org.springframework.ai.anthropic.api.AnthropicCacheTtl;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.MessageType;
+import org.springframework.ai.model.anthropic.autoconfigure.AnthropicConnectionProperties;
+import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.api.OpenAiApi;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.retry.support.RetryTemplate;
+import org.springframework.web.client.RestClient;
+
+import java.time.Duration;
 
 /**
  * Configura os 5 beans ChatClient nomeados para roteamento multi-modelo.
@@ -46,11 +55,9 @@ public class MultiModelConfig {
      */
     @Bean
     @Qualifier("gpt4oMiniClient")
-    public ChatClient gpt4oMiniClient(OpenAiChatModel openAiChatModel) {
-        return ChatClient.builder(openAiChatModel)
-                .defaultOptions(opcoesOpenAi(props.getSimple()))
-                .defaultAdvisors(advisorDeCusto("simple"))
-                .build();
+    public ChatClient gpt4oMiniClient(OpenAiChatModel openAiChatModel, OpenAiApi openAiApi) {
+        return clienteDeRota(modeloOpenAiComTimeout(openAiChatModel, openAiApi, props.getSimple()),
+                opcoesOpenAi(props.getSimple()), "simple");
     }
 
     /**
@@ -58,11 +65,12 @@ public class MultiModelConfig {
      */
     @Bean
     @Qualifier("claudeHaikuClient")
-    public ChatClient claudeHaikuClient(AnthropicChatModel anthropicChatModel) {
-        return ChatClient.builder(anthropicChatModel)
-                .defaultOptions(opcoesAnthropic(props.getStandard()))
-                .defaultAdvisors(advisorDeCusto("standard"))
-                .build();
+    public ChatClient claudeHaikuClient(AnthropicConnectionProperties conexao,
+                                       RetryTemplate retryTemplate,
+                                       ToolCallingManager toolCallingManager) {
+        return clienteDeRota(modeloAnthropicComTimeout(conexao, retryTemplate, toolCallingManager,
+                        props.getStandard()),
+                opcoesAnthropic(props.getStandard()), "standard");
     }
 
     /**
@@ -70,11 +78,12 @@ public class MultiModelConfig {
      */
     @Bean
     @Qualifier("claudeSonnetClient")
-    public ChatClient claudeSonnetClient(AnthropicChatModel anthropicChatModel) {
-        return ChatClient.builder(anthropicChatModel)
-                .defaultOptions(opcoesAnthropic(props.getComplex()))
-                .defaultAdvisors(advisorDeCusto("complex"))
-                .build();
+    public ChatClient claudeSonnetClient(AnthropicConnectionProperties conexao,
+                                        RetryTemplate retryTemplate,
+                                        ToolCallingManager toolCallingManager) {
+        return clienteDeRota(modeloAnthropicComTimeout(conexao, retryTemplate, toolCallingManager,
+                        props.getComplex()),
+                opcoesAnthropic(props.getComplex()), "complex");
     }
 
     /**
@@ -82,11 +91,9 @@ public class MultiModelConfig {
      */
     @Bean
     @Qualifier("gpt4oClient")
-    public ChatClient gpt4oClient(OpenAiChatModel openAiChatModel) {
-        return ChatClient.builder(openAiChatModel)
-                .defaultOptions(opcoesOpenAi(props.getExpert()))
-                .defaultAdvisors(advisorDeCusto("expert"))
-                .build();
+    public ChatClient gpt4oClient(OpenAiChatModel openAiChatModel, OpenAiApi openAiApi) {
+        return clienteDeRota(modeloOpenAiComTimeout(openAiChatModel, openAiApi, props.getExpert()),
+                opcoesOpenAi(props.getExpert()), "expert");
     }
 
     /**
@@ -98,15 +105,93 @@ public class MultiModelConfig {
      */
     @Bean
     @Qualifier("gpt4oPlanoClient")
-    public ChatClient gpt4oPlanoClient(OpenAiChatModel openAiChatModel) {
-        return ChatClient.builder(openAiChatModel)
-                .defaultOptions(opcoesOpenAi(props.getPlano()))
-                .defaultAdvisors(advisorDeCusto("plano"))
+    public ChatClient gpt4oPlanoClient(OpenAiChatModel openAiChatModel, OpenAiApi openAiApi) {
+        return clienteDeRota(modeloOpenAiComTimeout(openAiChatModel, openAiApi, props.getPlano()),
+                opcoesOpenAi(props.getPlano()), "plano");
+    }
+
+    /**
+     * Monta o ChatClient de uma rota: opções default + advisor de custo com a tag
+     * da rota. Separado da derivação do model para manter uma costura testável sem
+     * cliente HTTP — o teste do advisor injeta um ChatModel mockado aqui.
+     */
+    ChatClient clienteDeRota(org.springframework.ai.chat.model.ChatModel model,
+                             org.springframework.ai.chat.prompt.ChatOptions opcoes,
+                             String nomeRota) {
+        return ChatClient.builder(model)
+                .defaultOptions(opcoes)
+                .defaultAdvisors(advisorDeCusto(nomeRota))
                 .build();
     }
 
     private CostTrackingAdvisor advisorDeCusto(String rota) {
         return CostTrackingAdvisor.paraRota(rota, pricingRegistry, meterRegistry);
+    }
+
+    /**
+     * Teto de conexão, igual para todas as rotas: abrir socket não depende do
+     * tamanho da resposta. Mesmo valor do Keycloak e do intervals.icu.
+     */
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
+
+    /**
+     * Deriva um {@link OpenAiChatModel} com o teto de leitura da rota.
+     *
+     * Usa {@code mutate()} nos dois níveis para preservar o que o auto-config
+     * montou (tool calling, retry template, observação) — só o cliente HTTP é
+     * trocado.
+     */
+    static OpenAiChatModel modeloOpenAiComTimeout(OpenAiChatModel base, OpenAiApi api,
+                                                  LlmRoutingProperties.RotaLlm rota) {
+        return base.mutate()
+                .openAiApi(api.mutate()
+                        .restClientBuilder(restClientComTimeout(rota.getTimeout()))
+                        .build())
+                .build();
+    }
+
+    /**
+     * Monta um {@link AnthropicChatModel} com o teto de leitura da rota.
+     *
+     * Diferente do OpenAI, nem {@code AnthropicApi} nem {@code AnthropicChatModel}
+     * expõem {@code mutate()} nesta versão do Spring AI, então não há como derivar
+     * do bean auto-configurado: a API é remontada a partir das mesmas connection
+     * properties que o {@code AnthropicChatAutoConfiguration} usa. Se um upgrade
+     * do Spring AI passar a oferecer {@code mutate()}, este método vira o mesmo
+     * formato do {@link #modeloOpenAiComTimeout}.
+     */
+    static AnthropicChatModel modeloAnthropicComTimeout(AnthropicConnectionProperties conexao,
+                                                        RetryTemplate retryTemplate,
+                                                        ToolCallingManager toolCallingManager,
+                                                        LlmRoutingProperties.RotaLlm rota) {
+        AnthropicApi api = AnthropicApi.builder()
+                .baseUrl(conexao.getBaseUrl())
+                .completionsPath(conexao.getCompletionsPath())
+                .apiKey(conexao.getApiKey())
+                .anthropicVersion(conexao.getVersion())
+                .anthropicBetaFeatures(conexao.getBetaVersion())
+                .restClientBuilder(restClientComTimeout(rota.getTimeout()))
+                .build();
+
+        return AnthropicChatModel.builder()
+                .anthropicApi(api)
+                .defaultOptions(opcoesAnthropic(rota))
+                .toolCallingManager(toolCallingManager)
+                .retryTemplate(retryTemplate)
+                .build();
+    }
+
+    /**
+     * Só o timeout de leitura varia por rota — ver {@code LlmRoutingProperties.RotaLlm#timeout}.
+     *
+     * Cobre apenas o caminho síncrono ({@code RestClient}). O streaming usa
+     * {@code WebClient}, que segue sem teto — nenhuma rota do sistema faz streaming hoje.
+     */
+    private static RestClient.Builder restClientComTimeout(Duration timeoutDeLeitura) {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout((int) CONNECT_TIMEOUT.toMillis());
+        factory.setReadTimeout((int) timeoutDeLeitura.toMillis());
+        return RestClient.builder().requestFactory(factory);
     }
 
     static OpenAiChatOptions opcoesOpenAi(LlmRoutingProperties.RotaLlm rota) {
