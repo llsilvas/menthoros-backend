@@ -8,12 +8,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
 
 /**
@@ -23,19 +26,19 @@ import static org.junit.jupiter.params.provider.Arguments.arguments;
 class RevisaoSemanalCalculatorTest {
 
     @Nested
-    @DisplayName("percentualRealizacao")
+    @DisplayName("completionRate")
     class PercentualRealizacao {
 
         @Test
         @DisplayName("razão realizados/planejados em 0–100 com 2 casas")
         void razaoSimples() {
-            assertThat(RevisaoSemanalCalculator.percentualRealizacao(4, 3)).isEqualByComparingTo("75.00");
+            assertThat(RevisaoSemanalCalculator.completionRate(4, 3)).isEqualByComparingTo("75.00");
         }
 
         @Test
-        @DisplayName("sem treinos planejados → 0 (degenerado; o gate de dadosSuficientes cobre)")
+        @DisplayName("sem treinos planejados → 0 (degenerado; o gate de sufficientData cobre)")
         void semPlanejados() {
-            assertThat(RevisaoSemanalCalculator.percentualRealizacao(0, 0)).isEqualByComparingTo("0.00");
+            assertThat(RevisaoSemanalCalculator.completionRate(0, 0)).isEqualByComparingTo("0.00");
         }
     }
 
@@ -70,25 +73,25 @@ class RevisaoSemanalCalculatorTest {
     }
 
     @Nested
-    @DisplayName("dadosSuficientes (CA3)")
+    @DisplayName("sufficientData (CA3)")
     class DadosSuficientes {
 
         @Test
         @DisplayName("true com ≥2 treinos realizados e tsbFim presente")
         void suficiente() {
-            assertThat(RevisaoSemanalCalculator.dadosSuficientes(2, new BigDecimal("-5"))).isTrue();
+            assertThat(RevisaoSemanalCalculator.sufficientData(2, new BigDecimal("-5"))).isTrue();
         }
 
         @Test
         @DisplayName("false com <2 treinos realizados")
         void poucosTreinos() {
-            assertThat(RevisaoSemanalCalculator.dadosSuficientes(1, new BigDecimal("-5"))).isFalse();
+            assertThat(RevisaoSemanalCalculator.sufficientData(1, new BigDecimal("-5"))).isFalse();
         }
 
         @Test
         @DisplayName("false quando tsbFim é nulo (sem ponto de TSB válido)")
         void tsbNulo() {
-            assertThat(RevisaoSemanalCalculator.dadosSuficientes(3, null)).isFalse();
+            assertThat(RevisaoSemanalCalculator.sufficientData(3, null)).isFalse();
         }
     }
 
@@ -123,9 +126,111 @@ class RevisaoSemanalCalculatorTest {
 
         @ParameterizedTest(name = "aderência={0}, tsbFim={1}, dados={2} → {3}")
         @MethodSource("casos")
-        void arvore(NivelAderencia status, BigDecimal tsbFim, boolean dadosSuficientes, RecommendationType esperado) {
-            assertThat(RevisaoSemanalCalculator.recommendationType(status, tsbFim, dadosSuficientes))
+        void arvore(NivelAderencia status, BigDecimal tsbFim, boolean sufficientData, RecommendationType esperado) {
+            assertThat(RevisaoSemanalCalculator.recommendationType(status, tsbFim, sufficientData))
                     .isEqualTo(esperado);
+        }
+    }
+
+    @Nested
+    @DisplayName("nextWeekFocusTemplate — fallback determinístico da narrativa (CA-LLM)")
+    class TemplateDeFoco {
+
+        @Test
+        @DisplayName("RECOVERY fala em reduzir carga, nunca em progredir")
+        void recoveryNaoSugereProgressao() {
+            String texto = RevisaoSemanalCalculator.nextWeekFocusTemplate(RecommendationType.RECOVERY);
+
+            assertThat(texto).containsIgnoringCase("recuper");
+            assertThat(texto).doesNotContainIgnoringCase("aument");
+        }
+
+        @Test
+        @DisplayName("MAINTAIN fala em manter, nunca em progredir")
+        void maintainNaoSugereProgressao() {
+            String texto = RevisaoSemanalCalculator.nextWeekFocusTemplate(RecommendationType.MAINTAIN);
+
+            assertThat(texto).containsIgnoringCase("manter");
+            assertThat(texto).doesNotContainIgnoringCase("aument");
+        }
+
+        @Test
+        @DisplayName("PROGRESS propõe evolução gradual")
+        void progressPropoeEvolucao() {
+            String texto = RevisaoSemanalCalculator.nextWeekFocusTemplate(RecommendationType.PROGRESS);
+
+            assertThat(texto).containsIgnoringCase("gradual");
+        }
+
+        @ParameterizedTest
+        @EnumSource(RecommendationType.class)
+        @DisplayName("todo tipo tem template não-vazio — nenhuma revisão nasce sem foco")
+        void todoTipoTemTemplate(RecommendationType tipo) {
+            assertThat(RevisaoSemanalCalculator.nextWeekFocusTemplate(tipo)).isNotBlank();
+        }
+
+        @Test
+        @DisplayName("rejeita tipo nulo em vez de devolver texto vazio")
+        void rejeitaTipoNulo() {
+            assertThatThrownBy(() -> RevisaoSemanalCalculator.nextWeekFocusTemplate(null))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("withinConsumptionWindow — janela de validade da revisão (D11)")
+    class JanelaDeConsumo {
+
+        @Test
+        @DisplayName("revisão da semana imediatamente anterior é consumida")
+        void semanaAnteriorEntra() {
+            LocalDate planoInicio = LocalDate.of(2026, 7, 20);   // segunda
+            LocalDate revisaoFim = LocalDate.of(2026, 7, 19);    // domingo anterior
+
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(revisaoFim, planoInicio)).isTrue();
+        }
+
+        @Test
+        @DisplayName("no limite da folga (7 dias) ainda entra — absorve encerramento atrasado")
+        void limiteDaFolgaEntra() {
+            LocalDate planoInicio = LocalDate.of(2026, 7, 20);
+            LocalDate revisaoFim = LocalDate.of(2026, 7, 13);    // 7 dias antes do início
+
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(revisaoFim, planoInicio)).isTrue();
+        }
+
+        @Test
+        @DisplayName("um dia além da folga não entra")
+        void alemDaFolgaNaoEntra() {
+            LocalDate planoInicio = LocalDate.of(2026, 7, 20);
+            LocalDate revisaoFim = LocalDate.of(2026, 7, 12);
+
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(revisaoFim, planoInicio)).isFalse();
+        }
+
+        @Test
+        @DisplayName("revisão de três semanas atrás (atleta lesionado) não entra")
+        void revisaoObsoletaNaoEntra() {
+            LocalDate planoInicio = LocalDate.of(2026, 7, 20);
+            LocalDate revisaoFim = LocalDate.of(2026, 6, 28);
+
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(revisaoFim, planoInicio)).isFalse();
+        }
+
+        @Test
+        @DisplayName("revisão do futuro não entra — protege contra data inconsistente")
+        void revisaoNoFuturoNaoEntra() {
+            LocalDate planoInicio = LocalDate.of(2026, 7, 20);
+            LocalDate revisaoFim = LocalDate.of(2026, 7, 26);
+
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(revisaoFim, planoInicio)).isFalse();
+        }
+
+        @Test
+        @DisplayName("datas nulas não consomem")
+        void datasNulasNaoEntram() {
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(null, LocalDate.now())).isFalse();
+            assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(LocalDate.now(), null)).isFalse();
         }
     }
 }

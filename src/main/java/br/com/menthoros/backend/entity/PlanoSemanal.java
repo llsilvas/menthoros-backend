@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.entity;
 
+import br.com.menthoros.backend.enums.ConsumedReviewOutcome;
 import br.com.menthoros.backend.enums.OrigemAprovacao;
 import br.com.menthoros.backend.enums.OrigemEncerramento;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
@@ -82,6 +83,20 @@ public class PlanoSemanal {
     @Enumerated(EnumType.STRING)
     @Column(name = "origem_aprovacao", length = 30)
     private OrigemAprovacao origemAprovacao;
+
+    // --- Revisão semanal consumida como insumo (add-weekly-review-llm-focus) ---
+    // Gravados na geração; o desfecho é resolvido na aprovação/rejeição.
+    // Ficam no plano (e não na revisão) porque uma revisão é 1:N com os planos que a consomem.
+
+    /** Revisão usada como insumo na geração deste plano; nulo quando nenhuma foi consumida. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "consumed_review_id")
+    private RevisaoSemanal consumedReview;
+
+    /** O que este plano fez com a revisão consumida — proxy agregado de adoção, não julgamento individual. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "consumed_review_outcome", length = 20)
+    private ConsumedReviewOutcome consumedReviewOutcome;
 
     @Column(name = "objetivo_semana")
     private String objetivoSemanal;

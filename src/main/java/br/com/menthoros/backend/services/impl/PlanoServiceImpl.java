@@ -16,6 +16,8 @@ import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.*;
 import br.com.menthoros.backend.events.PlanoDeletadoEvent;
+import br.com.menthoros.backend.events.RevisaoConsumidaEvent;
+import br.com.menthoros.backend.services.prompt.WeeklyReviewPromptProvider;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.PlanoJaExistenteException;
@@ -37,6 +39,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
 import org.springframework.beans.factory.annotation.Value;
+import org.jspecify.annotations.Nullable;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
@@ -77,6 +80,7 @@ public class PlanoServiceImpl implements PlanoService {
 
     private final ProvaRepository provaRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final WeeklyReviewPromptProvider weeklyReviewPromptProvider;
     private final PlannerShadowService plannerShadowService;
     private final OnboardingService onboardingService;
     private final PlanoReviewService planoReviewService;
@@ -138,13 +142,28 @@ public class PlanoServiceImpl implements PlanoService {
         DecisaoProgressao decisaoProgressao = calcularDecisaoProgressao(atletaId);
 
         try {
-            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano, modoGeracao, decisaoProgressao);
+            // Revisao da semana anterior resolvida UMA vez por geracao (add-weekly-review-llm-focus,
+            // D9/D11): o mesmo objeto alimenta o prompt e o vinculo gravado no plano. Resolver nos dois
+            // pontos abriria uma janela em que uma revisao nova, persistida entre as duas leituras, faria
+            // o LLM ver uma revisao e o plano registrar outra.
+            // A semana do plano tambem e calculada uma unica vez e repassada: recalcula-la depois da
+            // chamada ao LLM (que pode levar segundos e, em lote, esperar no semaforo) usaria um
+            // LocalDate.now() diferente, fazendo a janela D11 da revisao divergir da semana persistida.
+            // Dentro do try: uma falha de repositorio aqui deve virar LLMException como qualquer
+            // outra falha de geracao, e nao propagar crua para o controller.
+            LocalDate semanaInicio = calcularSemanaInicio(atletaId, LocalDate.now(), modoGeracao);
+            Optional<RevisaoSemanal> revisaoConsumida = weeklyReviewPromptProvider.resolverParaGeracao(
+                    atletaId, TenantContext.getRequiredTenantId(), semanaInicio);
+
+            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(dadosPlano, modoGeracao, decisaoProgressao,
+                    revisaoConsumida.orElse(null), semanaInicio);
 
             if (planoDto == null) {
                 throw new LLMException("Falha ao gerar plano: IA retornou resposta nula. Tente novamente.");
             }
 
-            return persistirPlanoCompleto(planoDto, dadosPlano, modoGeracao, decisaoProgressao);
+            return persistirPlanoCompleto(planoDto, dadosPlano, modoGeracao, decisaoProgressao,
+                    revisaoConsumida, semanaInicio);
         } catch (LLMException | DomainRuleViolationException e) {
             // Re-lança exceções de domínio sem modificar
             log.error("Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
@@ -178,18 +197,21 @@ public class PlanoServiceImpl implements PlanoService {
      * @param modoGeracao modo que determina a estratégia de redistribuição de treinos
      * @param decisaoProgressao decisão de progressão já calculada — repassada ao shadow do
      *        {@code PlannerEngine} (deterministic-planner-engine), que não recalcula a direção
+     * @param revisaoConsumida revisão da semana anterior resolvida em {@code gerarPlanoTreino} — a
+     *        MESMA que alimentou o prompt, para o vínculo gravado nunca divergir do que o LLM viu
+     * @param semanaInicio início da semana do plano, também resolvido em {@code gerarPlanoTreino}
      * @return plano semanal persistido com todas as associações carregadas
      * @throws DomainRuleViolationException se não for possível gerar treinos após redistribuição
      */
     private PlanoSemanal persistirPlanoCompleto(PlanoSemanalLlmDto planoDto, DadosPlanoDto dadosPlano,
-                                                 ModoGeracaoPlano modoGeracao, DecisaoProgressao decisaoProgressao) {
+                                                 ModoGeracaoPlano modoGeracao, DecisaoProgressao decisaoProgressao,
+                                                 Optional<RevisaoSemanal> revisaoConsumida,
+                                                 LocalDate semanaInicio) {
         Atleta atleta = dadosPlano.atleta();
-        LocalDate hoje = LocalDate.now();
 
         log.info("Iniciando persistência de plano completo para atleta {}", atleta.getId());
 
-        // 1. Calcular período do plano
-        LocalDate semanaInicio = calcularSemanaInicio(atleta.getId(), hoje, modoGeracao);
+        // 1. Período do plano — a semana de início vem resolvida do chamador (ver gerarPlanoTreino)
         PeriodoPlano periodo = new PeriodoPlano(semanaInicio);
 
         // ** Adição da verificação de duplicidade **
@@ -247,8 +269,55 @@ public class PlanoServiceImpl implements PlanoService {
         weekPlanSkeleton.ifPresent(skeleton -> onboardingService.avaliarCalibracaoSeAplicavel(
                 atleta.getId(), tenantId, semanaInicio.minusDays(1), skeleton.injuryRisk().level()));
 
+        // 4.8. Revisao da semana anterior consumida como insumo (add-weekly-review-llm-focus,
+        // D9/D11): resolvida UMA vez em gerarPlanoTreino e recebida aqui por parametro, para o
+        // vinculo gravado nunca divergir da revisao que o LLM realmente viu. Sem revisao consumivel
+        // (ausente, fora da janela ou injecao desligada) o plano nasce NOT_CONSUMED — ausencia de
+        // dado, nao julgamento negativo do coach. Mutacao in-memory, persistida no passo 5.
+        registrarRevisaoConsumida(plano, revisaoConsumida);
+
         // 5. Persistir e retornar
-        return salvarPlanoCompleto(plano, metaDados);
+        PlanoSemanal salvo = salvarPlanoCompleto(plano, metaDados);
+        publicarRevisaoConsumida(salvo, tenantId);
+        return salvo;
+    }
+
+    /**
+     * Grava no plano o vinculo com a revisao consumida e o desfecho inicial, e publica o
+     * {@link RevisaoConsumidaEvent} (proxy de adocao).
+     *
+     * Idempotent: YES — mutacao in-memory deterministica sobre o mesmo plano.
+     * Side Effects: publicacao de evento (a persistencia acontece no salvarPlanoCompleto).
+     * Tenant-aware: YES
+     */
+    private void registrarRevisaoConsumida(PlanoSemanal plano, Optional<RevisaoSemanal> revisao) {
+        if (revisao.isEmpty()) {
+            plano.setConsumedReviewOutcome(ConsumedReviewOutcome.NOT_CONSUMED);
+            return;
+        }
+        plano.setConsumedReview(revisao.get());
+        plano.setConsumedReviewOutcome(ConsumedReviewOutcome.PENDING);
+    }
+
+    /**
+     * Publica o {@link RevisaoConsumidaEvent} DEPOIS da persistencia — o {@code id} do plano e
+     * {@code @GeneratedValue}, entao publicar antes do save mandaria {@code planoId} sempre nulo e
+     * o consumidor do proxy de adocao receberia o vinculo vazio.
+     *
+     * Idempotent: NAO — publica um evento por chamada.
+     * Side Effects: publicacao de evento.
+     * Tenant-aware: YES
+     */
+    private void publicarRevisaoConsumida(PlanoSemanal planoSalvo, UUID tenantId) {
+        if (planoSalvo.getConsumedReview() == null) {
+            return;
+        }
+        eventPublisher.publishEvent(new RevisaoConsumidaEvent(
+                tenantId,
+                planoSalvo.getAtleta().getId(),
+                planoSalvo.getSemanaInicio(),
+                planoSalvo.getConsumedReview().getId(),
+                planoSalvo.getId()));
     }
 
     /**
@@ -690,7 +759,10 @@ public class PlanoServiceImpl implements PlanoService {
                 .or(() -> provasFuturas.stream().findFirst());
     }
 
-    private PlanoSemanalLlmDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto, ModoGeracaoPlano modoGeracao, DecisaoProgressao decisaoProgressao) {
+    private PlanoSemanalLlmDto gerarPlanoSemanal(DadosPlanoDto dadosPlanoDto, ModoGeracaoPlano modoGeracao,
+                                                 DecisaoProgressao decisaoProgressao,
+                                                 @Nullable RevisaoSemanal revisaoConsumida,
+                                                 LocalDate semanaInicio) {
         try {
             log.info("Iniciando geração de plano para atleta: {}", dadosPlanoDto.atleta().getId());
 
@@ -700,7 +772,7 @@ public class PlanoServiceImpl implements PlanoService {
                         dadosPlanoDto.atleta().getId());
             }
 
-            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), prova, modoGeracao, decisaoProgressao);
+            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(dadosPlanoDto.atleta(), dadosPlanoDto.metaDados(), prova, modoGeracao, decisaoProgressao, revisaoConsumida, semanaInicio);
 
             validaPlanoGerado(planoDto);
             return planoDto;

@@ -41,7 +41,7 @@ public class CoachRevisaoSemanalController {
     @Operation(
             summary = "Última revisão semanal do atleta",
             description = "Retorna a revisão congelada da última semana fechada (recommendationType, "
-                    + "aderência, dadosSuficientes) com weekOverWeekDelta computado. Read-only.")
+                    + "aderência, sufficientData) com weekOverWeekDelta computado. Read-only.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Revisão carregada com sucesso",
                     content = @Content(schema = @Schema(implementation = RevisaoSemanalOutputDto.class))),

@@ -100,7 +100,10 @@ final class PlanoPromptArquetipos {
                 new PaceHistoricoFormatter(),
                 new PaceZoneCalculator(zona),
                 new ThresholdConstraintFormatter(new ThresholdInferenceService()),
-                new ReadinessPromptFormatter());
+                new ReadinessPromptFormatter(),
+                // O builder não resolve a revisão — quem chama passa `null` no golden, então o
+                // baseline permanece byte-idêntico ao de antes da injeção.
+                new WeeklyReviewPromptFormatter());
     }
 
     // ─────────────────────────────────────────────────────────────────────────

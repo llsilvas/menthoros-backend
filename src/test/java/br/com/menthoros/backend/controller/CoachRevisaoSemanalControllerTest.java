@@ -2,6 +2,7 @@ package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.output.RevisaoSemanalOutputDto;
 import br.com.menthoros.backend.dto.output.WeekOverWeekDelta;
+import br.com.menthoros.backend.enums.FocusSource;
 import br.com.menthoros.backend.enums.NivelAderencia;
 import br.com.menthoros.backend.enums.RecommendationType;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -90,6 +91,8 @@ class CoachRevisaoSemanalControllerTest {
         return new RevisaoSemanalOutputDto(
                 UUID.randomUUID(), LocalDate.now().minusDays(6), LocalDate.now(),
                 RecommendationType.MAINTAIN, NivelAderencia.MEDIA, new BigDecimal("75.00"),
-                new BigDecimal("-5"), true, WeekOverWeekDelta.semAnterior(), Instant.now());
+                new BigDecimal("-5"), true,
+                "Prioridade: manter a carga atual e consolidar a consistência antes de qualquer evolução.",
+                FocusSource.TEMPLATE, WeekOverWeekDelta.semAnterior(), Instant.now());
     }
 }
