@@ -28,6 +28,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Worker assíncrono do lote — uma virtual thread por atleta, com a concorrência
@@ -43,6 +44,22 @@ public class BatchPlanProcessor {
     static final String MOTIVO_ATLETA_NAO_ENCONTRADO = "Atleta não encontrado";
     static final String MOTIVO_PLANO_JA_EXISTE = "Plano já existe para esta semana";
     static final String MOTIVO_ERRO_GERACAO = "Erro ao gerar plano — tente novamente";
+    static final String MOTIVO_LOTE_INTERROMPIDO =
+            "Lote interrompido após falhas seguidas — verifique a integração e tente novamente";
+
+    /**
+     * Entrega o comportamento útil de um circuit breaker onde ele importa — o lote —
+     * sem dependência nova (ADR-0008): com o provider fora do ar e 50 atletas na fila,
+     * seguir em frente seria ~25 minutos segurando conexões para produzir 50 erros
+     * previsíveis.
+     *
+     * <p>"Consecutivas" é aproximado por construção: as tarefas rodam em virtual
+     * threads paralelas, então o que se conta são falhas sem nenhum sucesso entre
+     * elas, na ordem em que terminam. Basta para o propósito — parar um lote
+     * condenado —, e um sucesso zera o contador, de modo que falha esparsa de um
+     * atleta específico nunca corta o lote.
+     */
+    static final int LIMITE_FALHAS_CONSECUTIVAS = 3;
 
     private final Executor batchPlanExecutor;
     private final BatchPlanJobRepository jobRepository;
@@ -83,9 +100,11 @@ public class BatchPlanProcessor {
         try {
             jobRepository.atualizarStatus(jobId, BatchJobStatus.EM_PROGRESSO);
 
+            AtomicInteger falhasConsecutivas = new AtomicInteger();
             List<CompletableFuture<ResultadoAtleta>> futures = atletaIds.stream()
                     .map(atletaId -> CompletableFuture.supplyAsync(
-                            () -> processarAtleta(jobId, atletaId, modo, tenantId), batchPlanExecutor))
+                            () -> processarAtleta(jobId, atletaId, modo, tenantId, falhasConsecutivas),
+                            batchPlanExecutor))
                     .toList();
 
             List<ResultadoAtleta> resultados = futures.stream()
@@ -118,9 +137,15 @@ public class BatchPlanProcessor {
      * Processa um único atleta. Roda em virtual thread própria (submetida ao
      * {@code batchPlanExecutor}): seta e limpa o TenantContext no seu próprio escopo.
      */
-    private ResultadoAtleta processarAtleta(UUID jobId, UUID atletaId, ModoGeracaoPlano modo, UUID tenantId) {
+    private ResultadoAtleta processarAtleta(UUID jobId, UUID atletaId, ModoGeracaoPlano modo, UUID tenantId,
+                                            AtomicInteger falhasConsecutivas) {
         TenantContext.setTenantId(tenantId);
         try {
+            if (falhasConsecutivas.get() >= LIMITE_FALHAS_CONSECUTIVAS) {
+                log.warn("[batch-plan] lote {} interrompido: {} falhas seguidas; atleta {} nao sera tentado",
+                        jobId, LIMITE_FALHAS_CONSECUTIVAS, atletaId);
+                return registrarErro(jobId, atletaId, MOTIVO_LOTE_INTERROMPIDO);
+            }
             Optional<Atleta> atletaOpt = atletaRepository.findByIdAndTenantId(atletaId, tenantId);
             if (atletaOpt.isEmpty()) {
                 return registrarErro(jobId, atletaId, MOTIVO_ATLETA_NAO_ENCONTRADO);
@@ -134,6 +159,7 @@ public class BatchPlanProcessor {
             }
 
             PlanoSemanal plano = llmConcurrencyLimiter.executar(() -> planoService.gerarPlanoTreino(atletaId, modo));
+            falhasConsecutivas.set(0);
             jobRepository.incrementarGerados(jobId);
             return ResultadoAtleta.ok(new BatchGeradoItemDto(atletaId, plano.getId(), atletaNome));
 
@@ -145,12 +171,15 @@ public class BatchPlanProcessor {
             return registrarErro(jobId, atletaId, MOTIVO_PLANO_JA_EXISTE);
         } catch (DomainRuleViolationException e) {
             // Outras violações de regra (ex.: "sem dias disponíveis") — erro genérico.
+            falhasConsecutivas.incrementAndGet();
             return registrarErro(jobId, atletaId, MOTIVO_ERRO_GERACAO);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            falhasConsecutivas.incrementAndGet();
             return registrarErro(jobId, atletaId, MOTIVO_ERRO_GERACAO);
         } catch (Exception e) {
             log.warn("[batch-plan] erro ao gerar plano do atleta {} (job {}): {}", atletaId, jobId, e.getMessage());
+            falhasConsecutivas.incrementAndGet();
             return registrarErro(jobId, atletaId, MOTIVO_ERRO_GERACAO);
         } finally {
             TenantContext.clear();

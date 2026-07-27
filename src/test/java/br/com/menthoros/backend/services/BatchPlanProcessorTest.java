@@ -95,6 +95,79 @@ class BatchPlanProcessorTest {
     }
 
     @Nested
+    @DisplayName("corte por falhas consecutivas")
+    class CorteDoLote {
+
+        @Test
+        @DisplayName("após 3 falhas seguidas, os atletas restantes não chamam o LLM (CA6)")
+        void cortaAposLimite() {
+            UUID a1 = atletaValido("A1");
+            UUID a2 = atletaValido("A2");
+            UUID a3 = atletaValido("A3");
+            // A4 e A5 propositalmente NÃO stubados: se o corte falhar, o lookup do
+            // atleta seria chamado e o motivo viria "não encontrado" — o que faria a
+            // asserção de MOTIVO_LOTE_INTERROMPIDO abaixo quebrar.
+            UUID a4 = UUID.randomUUID();
+            UUID a5 = UUID.randomUUID();
+            when(planoService.gerarPlanoTreino(any(), any())).thenThrow(new LLMException("provider fora do ar"));
+
+            processor.processarLote(jobId, List.of(a1, a2, a3, a4, a5),
+                    ModoGeracaoPlano.PROXIMA_SEMANA, tenantId);
+
+            // 3 tentativas reais; a 4ª e a 5ª são curto-circuitadas.
+            verify(planoService, org.mockito.Mockito.times(3)).gerarPlanoTreino(any(), any());
+            verify(jobRepository, org.mockito.Mockito.times(5)).incrementarErros(jobId);
+            assertThat(statusFinalPersistido()).isEqualTo(BatchJobStatus.CONCLUIDO_COM_ERROS);
+            assertThat(errosPersistidos())
+                    .extracting(br.com.menthoros.backend.dto.output.BatchJobStatusOutputDto.BatchErroItemDto::motivo)
+                    .filteredOn(m -> m.equals(BatchPlanProcessor.MOTIVO_LOTE_INTERROMPIDO))
+                    .hasSize(2);
+        }
+
+        @Test
+        @DisplayName("sucesso no meio zera o contador — falhas esparsas não cortam o lote")
+        void sucessoZeraContador() {
+            UUID f1 = atletaValido("F1");
+            UUID f2 = atletaValido("F2");
+            UUID ok = atletaValido("OK");
+            UUID f3 = atletaValido("F3");
+            UUID f4 = atletaValido("F4");
+            when(planoService.gerarPlanoTreino(eq(ok), any())).thenReturn(planoComId());
+            when(planoService.gerarPlanoTreino(eq(f1), any())).thenThrow(new LLMException("x"));
+            when(planoService.gerarPlanoTreino(eq(f2), any())).thenThrow(new LLMException("x"));
+            when(planoService.gerarPlanoTreino(eq(f3), any())).thenThrow(new LLMException("x"));
+            when(planoService.gerarPlanoTreino(eq(f4), any())).thenThrow(new LLMException("x"));
+
+            processor.processarLote(jobId, List.of(f1, f2, ok, f3, f4),
+                    ModoGeracaoPlano.PROXIMA_SEMANA, tenantId);
+
+            // Nenhum corte: a sequência nunca chega a 3 falhas seguidas.
+            verify(planoService, org.mockito.Mockito.times(5)).gerarPlanoTreino(any(), any());
+            assertThat(errosPersistidos())
+                    .extracting(br.com.menthoros.backend.dto.output.BatchJobStatusOutputDto.BatchErroItemDto::motivo)
+                    .doesNotContain(BatchPlanProcessor.MOTIVO_LOTE_INTERROMPIDO);
+        }
+
+        @Test
+        @DisplayName("plano já existente não conta como falha de geração")
+        void planoJaExistenteNaoConta() {
+            UUID a1 = atletaValido("A1");
+            UUID a2 = atletaValido("A2");
+            UUID a3 = atletaValido("A3");
+            UUID a4 = atletaValido("A4");
+            when(planoService.existePlanoParaSemana(any(), any())).thenReturn(true);
+
+            processor.processarLote(jobId, List.of(a1, a2, a3, a4),
+                    ModoGeracaoPlano.PROXIMA_SEMANA, tenantId);
+
+            // Resultado de negócio esperado, não degradação do provider — não corta.
+            assertThat(errosPersistidos())
+                    .extracting(br.com.menthoros.backend.dto.output.BatchJobStatusOutputDto.BatchErroItemDto::motivo)
+                    .containsOnly(BatchPlanProcessor.MOTIVO_PLANO_JA_EXISTE);
+        }
+    }
+
+    @Nested
     @DisplayName("processarLote")
     class ProcessarLote {
 
@@ -233,6 +306,10 @@ class BatchPlanProcessorTest {
 
     private List<br.com.menthoros.backend.dto.output.BatchJobStatusOutputDto.BatchGeradoItemDto> geradosPersistidos() {
         return resultadoPersistido().gerados();
+    }
+
+    private List<br.com.menthoros.backend.dto.output.BatchJobStatusOutputDto.BatchErroItemDto> errosPersistidos() {
+        return resultadoPersistido().erros();
     }
 
     private BatchResultadoJson resultadoPersistido() {

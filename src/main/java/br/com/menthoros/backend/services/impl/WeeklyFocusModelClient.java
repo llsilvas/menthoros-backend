@@ -5,6 +5,7 @@ import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
 import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
 import lombok.RequiredArgsConstructor;
+import org.springframework.ai.retry.TransientAiException;
 import org.springframework.retry.annotation.Backoff;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Component;
@@ -32,9 +33,14 @@ public class WeeklyFocusModelClient {
      * Side Effects: External API call (LLM).
      * Tenant-aware: N/A — recebe a revisão já resolvida no tenant.
      *
+     * <p>Retenta só {@link TransientAiException} (5xx/429), nunca timeout (ADR-0008):
+     * 5xx falha rápido e barato, então a segunda tentativa custa quase nada; timeout
+     * falha devagar por definição, e retentar pagaria o pior caso duas vezes bem quando
+     * o sistema já está sob pressão. Timeout cai direto no fallback de template.
+     *
      * @throws RuntimeException propagada de propósito: é o que dispara o retry
      */
-    @Retryable(retryFor = Exception.class, maxAttempts = 2, backoff = @Backoff(delay = 2000))
+    @Retryable(retryFor = TransientAiException.class, maxAttempts = 2, backoff = @Backoff(delay = 2000))
     public String redigirFoco(RevisaoSemanal revisao) {
         String prompt = templateLoader.loadAndFormat(PROMPT_TEMPLATE, dadosDoPrompt(revisao));
         return modelRouter.route(TaskComplexity.SIMPLE)

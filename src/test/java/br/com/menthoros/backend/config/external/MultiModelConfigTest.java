@@ -93,7 +93,10 @@ class MultiModelConfigTest {
                             .build());
             when(chatModel.call(any(Prompt.class))).thenReturn(resposta);
 
-            config.gpt4oMiniClient(chatModel).prompt().user("olá").call().content();
+            // clienteDeRota é a costura sem cliente HTTP: o timeout por rota é derivado
+            // no bean e provado em MultiModelTimeoutTest; aqui o alvo é o advisor de custo.
+            config.clienteDeRota(chatModel, MultiModelConfig.opcoesOpenAi(props.getSimple()), "simple")
+                    .prompt().user("olá").call().content();
 
             var counter = meterRegistry.find("llm.tokens.input")
                     .tags("model", "gpt-4o-mini", "route", "simple").counter();

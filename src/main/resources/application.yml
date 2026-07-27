@@ -182,29 +182,38 @@ app:
       queue-capacity: 100
     # Roteamento multi-modelo (MultiModelConfig) — RISK-01/ADR-FIN-02:
     # model IDs e parâmetros externalizados; preços em llm-pricing.yml.
+    # timeout: teto da chamada HTTP ao modelo, por rota (ADR-0008). É por rota e não
+    # por provider porque simple e plano são o mesmo provider com latências muito
+    # diferentes. Valores derivados de max-tokens — só o plano tem número observado
+    # (~80s); recalibrar com o Timer por rota do CostTrackingAdvisor.
     routing:
       simple:            # tradução, extração, classificação simples
         model: gpt-4o-mini
         temperature: 0.3
         max-tokens: 1000
+        timeout: 20s
       standard:          # análises rápidas, chatbot, sumarização
         model: claude-haiku-4-5-20251001
         temperature: 0.5
         max-tokens: 2000
+        timeout: 30s
       complex:           # análise pós-treino com skill, prescrição
         model: claude-sonnet-4-6
         temperature: 0.7
         max-tokens: 4000
+        timeout: 45s
       expert:            # deep-reasoning: lesões, casos clínicos
         model: gpt-4o
         # 0.2 (era 0.8): raciocínio especialista/clínico pede determinismo;
         # 0.8 era semântica de geração criativa, invertida para esta rota.
         temperature: 0.2
         max-tokens: 8000
+        timeout: 90s
       plano:             # geração de plano semanal — fluxo mais caro e crítico
         model: gpt-4o
         temperature: 0.2
         max-tokens: 12000
+        timeout: 120s
 
   # ----------------------------------------
   # IA SERVICE CONFIGURATION
