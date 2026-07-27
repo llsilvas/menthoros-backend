@@ -61,5 +61,19 @@ public class LlmRoutingProperties {
 
         @NotNull
         private Integer maxTokens;
+
+        /**
+         * Teto de duração da chamada HTTP ao modelo desta rota (ADR-0008).
+         *
+         * Mora aqui, e não no provider, porque {@code SIMPLE} (1k tokens) e
+         * {@code PLANO} (12k) são servidos pelo mesmo provider — um teto único
+         * acoplaria justamente o par com a maior diferença de latência.
+         *
+         * Valores atuais são derivados de {@code maxTokens}, não medidos: só o
+         * {@code PLANO} tem número (~80s, comentário em {@code PlanoResilienceService}).
+         * Recalibrar com o {@code Timer} por rota do {@code CostTrackingAdvisor}.
+         */
+        @NotNull
+        private java.time.Duration timeout;
     }
 }
