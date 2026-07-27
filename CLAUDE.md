@@ -473,14 +473,20 @@ Skills are pure, deterministic domain logic — the easiest and most important c
 
 ## External Call Resilience
 
-Every call that leaves the process (LLM via OpenAI/Anthropic, Keycloak, Strava) must be defended against latency and cascading failure. Current state: `@EnableRetry` on the LLM layer; connect/read timeouts on the Keycloak admin client (`KeycloakAdminRestClientConfig`, 5s/10s). Gaps: no response timeout on LLM calls, no timeout on the Strava `WebClient`, no circuit breaker anywhere.
+Every call that leaves the process (LLM via OpenAI/Anthropic, Keycloak, Strava, intervals.icu) must be defended against latency and cascading failure. **The strategy is decided in ADR-0008 — read it before changing anything here.**
+
+Why this matters more than "one thread gets stuck": plan generation is `@Transactional` and the LLM call happens **inside** the transaction, with the batch running 4 in parallel against a default Hikari pool of 10. A hung call holds a **database connection**, so a slow provider degrades login and athlete screens — not just the AI features.
+
+Current state (verified 2026-07-26): connect/read timeouts on Keycloak (`KeycloakAdminRestClientConfig`, 5s/10s — the reference) and intervals.icu (`IntervalsIcuWebClientConfig`, same values). Gaps being closed by `add-external-call-resilience`: no timeout on LLM calls or on the Strava `WebClient`; no latency instrumentation at all (`CostTrackingAdvisor` has only `Counter`, no `Timer`).
 
 Standards for new or modified external integrations:
 
-- **Timeouts are mandatory.** Every external client sets both a connect and a read/response timeout — no call may block indefinitely. Keycloak is the reference; the Strava `WebClient` must set `responseTimeout`; LLM calls must bound response time.
-- **Retry transient failures only** (timeouts, 5xx, 429) with capped attempts and backoff — never blindly retry non-idempotent writes. Reuse the existing retry mechanism.
-- **Circuit breaker (recommended)** around LLM, Keycloak and Strava to fail fast and isolate a failing dependency, mapped to the existing `LLMException` / `KeycloakIntegrationException` / `StravaRateLimitException` in `GlobalExceptionHandler`. Adding a circuit-breaker library (e.g. Resilience4j) is a dependency decision — do it under the OpenSpec change `add-external-call-resilience`, not ad hoc.
-- **Expose metrics.** Resilience events (timeouts, retries, open circuits) should surface through the existing Micrometer/Prometheus registry.
+- **Timeouts are mandatory.** Every external client sets both a connect and a read/response timeout — no call may block indefinitely. For plain REST clients, copy the Keycloak reference (5s/10s) **in code**; do not externalize to `application.yml` — nobody tunes those per environment.
+- **LLM timeouts are per route, not per provider.** In Spring AI the timeout lives in the `ChatModel`'s HTTP client, and there are only two (OpenAI, Anthropic) — but `SIMPLE` (1k tokens) and `PLANO` (12k tokens) are the *same* provider. A provider-level timeout would couple the pair with the widest latency gap. Values belong in `app.llm.routing.*.timeout`, next to `model`/`temperature`/`maxTokens`.
+- **Never retry a timeout.** Retry 5xx and 429 — they fail fast and cheap, so a second attempt costs almost nothing. A timeout fails *slowly by definition*: retrying pays the worst case twice, precisely when the system is already under pressure. Cap attempts, use backoff, and never blindly retry a non-idempotent write.
+- **Bound the total, not just each attempt.** Where a retry loop wraps a slow call, the worst case is `timeout × attempts`. Check the elapsed budget before starting another attempt (see `PlanoResilienceService`).
+- **No circuit breaker, by decision (ADR-0008).** Do NOT add Resilience4j or any circuit-breaker library — the re-evaluation trigger is recorded in the ADR. Where calls repeat in bursts (batch processing), stop after N consecutive failures instead: same useful behavior, no new dependency, no thresholds that can mask real errors.
+- **Expose metrics.** Timeouts, retries and call latency surface through the existing Micrometer/Prometheus registry, tagged by route.
 
 ## Database and Migration Rules
 
