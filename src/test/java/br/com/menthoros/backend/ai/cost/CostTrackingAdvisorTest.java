@@ -21,6 +21,7 @@ import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.openai.api.OpenAiApi;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.util.List;
 import java.util.Map;
@@ -71,6 +72,65 @@ class CostTrackingAdvisorTest {
     private double contador(String nome, String model, String rota) {
         var counter = meterRegistry.find(nome).tags("model", model, "route", rota).counter();
         return counter != null ? counter.count() : 0.0;
+    }
+
+    @Nested
+    @DisplayName("latência e timeout")
+    class LatenciaETimeout {
+
+        @Test
+        @DisplayName("chamada concluída registra a duração num Timer por rota (CA7)")
+        void registraDuracaoPorRota() {
+            CostTrackingAdvisor advisor = CostTrackingAdvisor.paraRota("plano", pricing, meterRegistry);
+            when(chain.nextCall(request)).thenReturn(
+                    respostaCom(new DefaultUsage(10, 5), "gpt-4o"));
+
+            advisor.adviseCall(request, chain);
+
+            var timer = meterRegistry.find("llm.call.duration").tags("route", "plano").timer();
+            assertThat(timer).isNotNull();
+            assertThat(timer.count()).isEqualTo(1L);
+        }
+
+        @Test
+        @DisplayName("timeout incrementa contador da rota e propaga a exceção")
+        void timeoutContaEPropaga() {
+            CostTrackingAdvisor advisor = CostTrackingAdvisor.paraRota("simple", pricing, meterRegistry);
+            when(chain.nextCall(request)).thenThrow(new ResourceAccessException(
+                    "timeout", new java.net.SocketTimeoutException("Read timed out")));
+
+            assertThatThrownBy(() -> advisor.adviseCall(request, chain))
+                    .isInstanceOf(ResourceAccessException.class);
+
+            var counter = meterRegistry.find("llm.timeout").tags("route", "simple").counter();
+            assertThat(counter).isNotNull();
+            assertThat(counter.count()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("erro que não é timeout não incrementa o contador de timeout")
+        void erroComumNaoContaComoTimeout() {
+            CostTrackingAdvisor advisor = CostTrackingAdvisor.paraRota("simple", pricing, meterRegistry);
+            when(chain.nextCall(request)).thenThrow(new IllegalStateException("boom"));
+
+            assertThatThrownBy(() -> advisor.adviseCall(request, chain))
+                    .isInstanceOf(IllegalStateException.class);
+
+            assertThat(meterRegistry.find("llm.timeout").tags("route", "simple").counter()).isNull();
+        }
+
+        @Test
+        @DisplayName("duração é registrada mesmo quando a chamada falha")
+        void registraDuracaoNaFalha() {
+            CostTrackingAdvisor advisor = CostTrackingAdvisor.paraRota("expert", pricing, meterRegistry);
+            when(chain.nextCall(request)).thenThrow(new IllegalStateException("boom"));
+
+            assertThatThrownBy(() -> advisor.adviseCall(request, chain)).isNotNull();
+
+            var timer = meterRegistry.find("llm.call.duration").tags("route", "expert").timer();
+            assertThat(timer).isNotNull();
+            assertThat(timer.count()).isEqualTo(1L);
+        }
     }
 
     @Nested
@@ -137,7 +197,13 @@ class CostTrackingAdvisorTest {
             CostTrackingAdvisor advisor = CostTrackingAdvisor.paraRota("expert", pricing, meterRegistry);
 
             assertThatCode(() -> advisor.adviseCall(request, chain)).doesNotThrowAnyException();
-            assertThat(meterRegistry.getMeters()).isEmpty();
+
+            // Nenhuma métrica de custo/token — não havia usage para extrair.
+            // A duração é exceção deliberada (4.1): a chamada aconteceu e o tempo
+            // dela é dado real, independente de dar para ler o usage.
+            assertThat(meterRegistry.getMeters())
+                    .extracting(m -> m.getId().getName())
+                    .containsExactly("llm.call.duration");
         }
 
         @Test
