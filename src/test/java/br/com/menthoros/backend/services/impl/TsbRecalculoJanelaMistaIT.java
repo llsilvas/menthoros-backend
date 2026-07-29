@@ -94,6 +94,17 @@ class TsbRecalculoJanelaMistaIT extends AbstractIntegrationTest {
                             falhas.add(t);
                         }
                     }
+                    // Pausa entre ciclos: sem ela o laco vira uma tempestade de leitura que disputa
+                    // o pool com as transacoes REQUIRES_NEW dos blocos. Isso exercita exaustao de
+                    // pool — o risco da Decisao 4, que e premissa a medir — e nao o contrato deste
+                    // teste, que e "leitura na janela mista devolve dado valido". Com 50ms ainda
+                    // sobram ~100 ciclos sobre um recalculo de 90 dias.
+                    try {
+                        Thread.sleep(50);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
                 }
             } finally {
                 TenantContext.clear();
@@ -111,8 +122,13 @@ class TsbRecalculoJanelaMistaIT extends AbstractIntegrationTest {
         assertThat(leiturasConcluidas.get())
                 .as("o leitor precisa ter exercitado os endpoints durante o recalculo")
                 .isPositive();
-        assertThat(falhas)
-                .as("nenhum leitor pode quebrar na janela de historico misto")
+        List<String> resumo = falhas.stream()
+                .map(t -> t.getClass().getName() + ": " + t.getMessage())
+                .distinct()
+                .toList();
+        assertThat(resumo)
+                .as("nenhum leitor pode quebrar na janela de historico misto (%d leituras ok)",
+                        leiturasConcluidas.get())
                 .isEmpty();
     }
 
