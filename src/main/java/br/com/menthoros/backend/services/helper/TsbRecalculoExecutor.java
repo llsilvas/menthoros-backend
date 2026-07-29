@@ -1,10 +1,14 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,7 +18,15 @@ import java.util.UUID;
 import java.util.function.BiConsumer;
 
 /**
- * Fronteira transacional de um bloco do recálculo histórico de TSB.
+ * Infraestrutura do recálculo histórico de TSB: fronteiras transacionais, invalidação de cache e
+ * telemetria.
+ *
+ * <p>Reúne o que o recálculo precisa que aconteça <b>fora</b> do cálculo em si — o
+ * {@code TsbServiceImpl} orquestra o algoritmo, este bean cuida das bordas: cada bloco numa
+ * transação própria, a consolidação numa transação própria, o cache de metadados invalidado ao
+ * fim, e o contador de abortos incrementado quando algo falha.</p>
+ *
+ * <h2>Fronteira transacional de um bloco</h2>
  *
  * <p><b>Por que é um bean separado, e não um método privado.</b> {@code REQUIRES_NEW} só tem efeito
  * quando a chamada atravessa o proxy do Spring. Um método privado — ou público chamado de dentro da
@@ -29,9 +41,17 @@ import java.util.function.BiConsumer;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class TsbChunkRecalculador {
+public class TsbRecalculoExecutor {
 
     private final MetricasDiariasRepository metricasDiariasRepository;
+    private final CacheManager cacheManager;
+    private final MeterRegistry meterRegistry;
+
+    /** Cache de metadados servido por {@code PlanoMetadadosServiceImpl.buscarOuCriarMetadados}. */
+    private static final String CACHE_METADADOS = "metadados-atleta";
+
+    /** Contador de recálculos abortados, tagueado pela fase em que pararam. */
+    private static final String METRICA_ABORTADO = "tsb.recalculo.abortado";
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -97,5 +117,51 @@ public class TsbChunkRecalculador {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void consolidar(Runnable fase) {
         fase.run();
+    }
+
+    /**
+     * Invalida o cache de metadados do atleta ao fim do recálculo.
+     *
+     * <p>O recálculo escreve {@code PlanoMetaDados} direto pelo repository, enquanto a geração de
+     * plano lê pelo serviço cacheado. Sem esta invalidação, o plano sairia com o CTL/TSB anteriores
+     * ao recálculo.</p>
+     *
+     * <p>A chave replica a do {@code @Cacheable}: {@code atletaId + '_' + tenantId}. O tenant é a
+     * assessoria do atleta — que é o mesmo valor que o {@code TenantContext} carrega quando a
+     * entrada foi cacheada (o {@code @Cacheable} só grava quando há tenant no contexto).</p>
+     *
+     * Idempotent: YES — invalidar duas vezes é inócuo.
+     * Side Effects: remoção de entrada de cache.
+     * Tenant-aware: YES — recebe o tenant explicitamente.
+     */
+    public void invalidarCacheMetadados(UUID atletaId, UUID tenantId) {
+        if (tenantId == null) {
+            return;
+        }
+        Cache cache = cacheManager.getCache(CACHE_METADADOS);
+        if (cache != null) {
+            cache.evict(atletaId + "_" + tenantId);
+        }
+    }
+
+    /**
+     * Registra que um recálculo foi abortado, para que o estado deixe de ser silencioso.
+     *
+     * <p>A métrica de sucesso da change é "zero atletas com histórico parcial silencioso". Sem este
+     * contador, esse zero seria uma afirmação que ninguém consegue verificar depois do deploy — a
+     * leitura correta é o contador em zero <b>com</b> recálculos ocorrendo.</p>
+     *
+     * Idempotent: NO — cada chamada incrementa.
+     * Side Effects: incremento de contador Micrometer.
+     * Tenant-aware: NO
+     *
+     * @param fase onde o recálculo parou: {@code blocos} ou {@code metadados}
+     */
+    public void registrarAborto(String fase) {
+        Counter.builder(METRICA_ABORTADO)
+                .description("Recálculos de histórico TSB que abortaram antes de concluir")
+                .tag("fase", fase)
+                .register(meterRegistry)
+                .increment();
     }
 }

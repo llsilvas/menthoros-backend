@@ -10,7 +10,7 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
-import br.com.menthoros.backend.services.helper.TsbChunkRecalculador;
+import br.com.menthoros.backend.services.helper.TsbRecalculoExecutor;
 import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,7 +38,7 @@ public class TsbServiceImpl implements TsbService {
     private final TssCalculatorService tssCalculatorService;
     private final MetricasAlertaService metricasAlertaService;
     private final AthleteThresholdUpdater athleteThresholdUpdater;
-    private final TsbChunkRecalculador tsbChunkRecalculador;
+    private final TsbRecalculoExecutor tsbRecalculoExecutor;
 
     private static final int CTL_TIME_CONSTANT = 42;
     private static final int ATL_TIME_CONSTANT = 7;
@@ -57,7 +57,7 @@ public class TsbServiceImpl implements TsbService {
      * <p><b>Este {@code @Transactional} não vale no fluxo de recálculo histórico.</b> Lá o laço chama
      * a sobrecarga privada de 3 argumentos diretamente — auto-invocação não passa pelo proxy do
      * Spring, então a anotação é ignorada. Isso é intencional: no recálculo, a fronteira transacional
-     * é o bloco de {@value #DIAS_POR_BLOCO} dias em {@link TsbChunkRecalculador}, não o dia. A
+     * é o bloco de {@value #DIAS_POR_BLOCO} dias em {@link TsbRecalculoExecutor}, não o dia. A
      * anotação existe para os chamadores externos deste método público, que precisam de transação
      * própria.</p>
      *
@@ -394,7 +394,8 @@ public class TsbServiceImpl implements TsbService {
         //    (consulta, não a lista inteira em memória) combinados com o primeiro/último treino.
         IntervaloRecalculo intervalo = determinarIntervaloRecalculo(atletaId);
         if (intervalo == null) {
-            tsbChunkRecalculador.consolidar(() -> zerarMetaDadosSemHistorico(atletaId));
+            tsbRecalculoExecutor.consolidar(() -> zerarMetaDadosSemHistorico(atletaId));
+            tsbRecalculoExecutor.invalidarCacheMetadados(atletaId, tenantDe(atletaId));
             log.info("ℹ️ Nenhum histórico relevante encontrado para atleta {}. MetaDados zerados.", atletaId);
             return;
         }
@@ -407,7 +408,7 @@ public class TsbServiceImpl implements TsbService {
         // 3. Consolidar metadados. Fase transacional própria: se falhar aqui, os blocos continuam
         //    comitados e os metadados ficam no estado anterior — stale, mas não ambíguo.
         try {
-            tsbChunkRecalculador.consolidar(() -> {
+            tsbRecalculoExecutor.consolidar(() -> {
                 MetricasDiarias ultimaMetrica = metricasDiariasRepository
                         .findByAtletaIdAndData(atletaId, intervalo.fim())
                         .orElseThrow(() -> new IllegalStateException(
@@ -416,6 +417,7 @@ public class TsbServiceImpl implements TsbService {
                 recalcularSemanasProgressao(atletaId);
             });
         } catch (Exception e) {
+            tsbRecalculoExecutor.registrarAborto("metadados");
             log.error("❌ Histórico do atleta {} foi reconstruído de {} até {} ({} blocos), "
                             + "mas a consolidação dos metadados falhou. O histórico diário permanece "
                             + "comitado; PlanoMetaDados ficou no estado anterior (stale). "
@@ -429,6 +431,8 @@ public class TsbServiceImpl implements TsbService {
                     atletaId, intervalo.inicio(), intervalo.fim(), progresso.blocos()), e);
         }
 
+        tsbRecalculoExecutor.invalidarCacheMetadados(atletaId, tenantDe(atletaId));
+
         log.info("✅ Histórico recalculado com sucesso para atleta {}: {} até {} ({} blocos)",
                 atletaId, intervalo.inicio(), intervalo.fim(), progresso.blocos());
     }
@@ -436,6 +440,13 @@ public class TsbServiceImpl implements TsbService {
     /**
      * Valida se o atleta existe no sistema
      */
+    /** Tenant do atleta — a assessoria. Necessario para a chave do cache de metadados. */
+    private UUID tenantDe(UUID atletaId) {
+        return atletaRepository.findById(atletaId)
+                .map(a -> a.getAssessoria() != null ? a.getAssessoria().getId() : null)
+                .orElse(null);
+    }
+
     private void validarAtletaExiste(UUID atletaId) {
         if (atletaId == null) {
             throw new IllegalArgumentException("atletaId não pode ser nulo");
@@ -509,9 +520,10 @@ public class TsbServiceImpl implements TsbService {
             }
 
             try {
-                tsbChunkRecalculador.recalcularBloco(atletaId, blocoInicio, blocoFim,
+                tsbRecalculoExecutor.recalcularBloco(atletaId, blocoInicio, blocoFim,
                         (id, data) -> atualizarTsbDia(id, data, false));
             } catch (Exception e) {
+                tsbRecalculoExecutor.registrarAborto("blocos");
                 String reconstruido = ultimoDiaReconstruido == null
                         ? "nenhum dia"
                         : dataInicio + " até " + ultimoDiaReconstruido;

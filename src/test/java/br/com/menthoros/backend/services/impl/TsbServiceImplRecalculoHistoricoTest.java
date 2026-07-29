@@ -12,7 +12,7 @@ import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.testsupport.TsbChunkRecalculadorInline;
+import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -50,7 +50,7 @@ class TsbServiceImplRecalculoHistoricoTest {
                 null,
                 null,
                 null,
-                new TsbChunkRecalculadorInline()
+                new TsbRecalculoExecutorInline()
         );
 
         Method m = TsbServiceImpl.class.getDeclaredMethod("determinarIntervaloRecalculo", UUID.class);
@@ -94,7 +94,7 @@ class TsbServiceImplRecalculoHistoricoTest {
                 null,
                 metricasAlertaServiceStub(),
                 new AthleteThresholdUpdater(null, null, new ThresholdInferenceService()),
-                new TsbChunkRecalculadorInline()
+                new TsbRecalculoExecutorInline()
         );
 
         service.recalcularHistoricoCompleto(atletaId);

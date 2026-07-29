@@ -2,7 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.testsupport.TsbChunkRecalculadorInline;
+import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -158,7 +158,7 @@ class TsbServiceImplDiasConsecutivosTest {
         );
 
         return new TsbServiceImpl(repo, null, null, null, null, null, null,
-                new TsbChunkRecalculadorInline());
+                new TsbRecalculoExecutorInline());
     }
 
     private int invocarContar(TsbServiceImpl service, LocalDate data, boolean hojeTemTreino) throws Exception {

@@ -17,7 +17,7 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.TsbService;
-import br.com.menthoros.backend.services.helper.TsbChunkRecalculador;
+import br.com.menthoros.backend.services.helper.TsbRecalculoExecutor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -46,7 +46,7 @@ import static org.mockito.Mockito.verify;
  * <p>Não é {@code @Transactional} — os blocos comitam por conta própria, e é justamente isso que
  * está sob teste.</p>
  */
-class TsbChunkRecalculadorIT extends AbstractIntegrationTest {
+class TsbRecalculoExecutorIT extends AbstractIntegrationTest {
 
     @Autowired
     private TsbService tsbService;
@@ -64,7 +64,7 @@ class TsbChunkRecalculadorIT extends AbstractIntegrationTest {
     private MetricasDiariasRepository metricasDiariasRepository;
 
     @MockitoSpyBean
-    private TsbChunkRecalculador tsbChunkRecalculador;
+    private TsbRecalculoExecutor tsbRecalculoExecutor;
 
     @Nested
     @DisplayName("recalcularBloco")
@@ -80,7 +80,7 @@ class TsbChunkRecalculadorIT extends AbstractIntegrationTest {
             // estivesse valendo — método privado, auto-invocação, anotação decorativa — o bloco
             // participaria desta transação e sumiria junto no rollback.
             transactionTemplate.execute(status -> {
-                tsbChunkRecalculador.recalcularBloco(atleta.getId(), dia, dia,
+                tsbRecalculoExecutor.recalcularBloco(atleta.getId(), dia, dia,
                         (id, data) -> tsbService.atualizarTsbDia(id, data));
                 status.setRollbackOnly();
                 return null;
@@ -111,7 +111,7 @@ class TsbChunkRecalculadorIT extends AbstractIntegrationTest {
                         .build());
             }
 
-            assertThatThrownBy(() -> tsbChunkRecalculador.recalcularBloco(atleta.getId(), inicio, fim,
+            assertThatThrownBy(() -> tsbRecalculoExecutor.recalcularBloco(atleta.getId(), inicio, fim,
                     (id, data) -> {
                         if (data.equals(inicio.plusDays(2))) {
                             throw new IllegalStateException("falha injetada no meio do bloco");
@@ -148,7 +148,7 @@ class TsbChunkRecalculadorIT extends AbstractIntegrationTest {
             tsbService.recalcularHistoricoCompleto(atleta.getId());
 
             // ceil(400 / 30) = 14
-            verify(tsbChunkRecalculador, times(14))
+            verify(tsbRecalculoExecutor, times(14))
                     .recalcularBloco(eq(atleta.getId()), any(), any(), any());
 
             assertThat(metricasDiariasRepository.findByAtletaIdOrderByDataAsc(atleta.getId()))
