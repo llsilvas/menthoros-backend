@@ -12,6 +12,7 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
+import br.com.menthoros.backend.testsupport.TsbChunkRecalculadorInline;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import br.com.menthoros.backend.testsupport.ProvaRepositoryTestStub;
@@ -170,6 +171,9 @@ class TsbServiceImplRecalculoSemanticaTest {
                     if ("findByAtletaIdOrderByDataAsc".equals(name)) return Collections.emptyList();
                     if ("deleteByAtletaId".equals(name)) return null;
                     if ("flush".equals(name)) return null;
+                    // Sem metricas pre-existentes: os limites do intervalo sao nulos.
+                    if ("findDataPrimeiraMetrica".equals(name)) return null;
+                    if ("findDataUltimaMetrica".equals(name)) return null;
                     if ("toString".equals(name)) return "MetricasDiariasRepositoryStub";
                     throw new UnsupportedOperationException("Método não suportado: " + name);
                 }
@@ -182,7 +186,8 @@ class TsbServiceImplRecalculoSemanticaTest {
         TssCalculatorService tssCalc = tssCalculatorStub(0);
 
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, tssCalc, alertaService,
-                new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()));
+                new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
+                new TsbChunkRecalculadorInline());
     }
 
     private TsbServiceImpl construirServiceComPrimeiroTreino(
@@ -230,6 +235,9 @@ class TsbServiceImplRecalculoSemanticaTest {
                         if (m.getData() != null) diasAtualizados.add(m.getData());
                         return m;
                     }
+                    // Sem metricas pre-existentes: os limites do intervalo sao nulos.
+                    if ("findDataPrimeiraMetrica".equals(name)) return null;
+                    if ("findDataUltimaMetrica".equals(name)) return null;
                     if ("toString".equals(name)) return "MetricasDiariasRepositoryStub";
                     throw new UnsupportedOperationException("Método não suportado: " + name);
                 }
@@ -279,6 +287,9 @@ class TsbServiceImplRecalculoSemanticaTest {
                         return m;
                     }
                     if ("findByAtletaIdOrderByDataAsc".equals(name)) return Collections.emptyList();
+                    // Sem metricas pre-existentes: os limites do intervalo sao nulos.
+                    if ("findDataPrimeiraMetrica".equals(name)) return null;
+                    if ("findDataUltimaMetrica".equals(name)) return null;
                     if ("toString".equals(name)) return "MetricasDiariasRepositoryStub";
                     throw new UnsupportedOperationException("Método não suportado: " + name);
                 }
@@ -288,7 +299,8 @@ class TsbServiceImplRecalculoSemanticaTest {
         TssCalculatorService tssCalc = tssCalculatorStub(0);
 
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, tssCalc, alertaService,
-                new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()));
+                new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
+                new TsbChunkRecalculadorInline());
     }
 
     private static AtletaRepository atletaRepoStub(Atleta atleta) {
