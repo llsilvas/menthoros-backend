@@ -12,6 +12,7 @@ import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -39,24 +40,22 @@ class TsbServiceImplRecalculoHistoricoTest {
         TreinoRealizadoRepository treinoRepo = treinoRepoParaIntervalo(atletaId,
                 LocalDate.of(2026, 1, 10), List.of(treinoMaisRecente));
 
+        // Os limites das métricas agora vêm de min/max no repositório, não de uma lista carregada
+        // inteira em memória — o intervalo continua sendo delimitado por elas.
         TsbServiceImpl service = new TsbServiceImpl(
                 treinoRepo,
                 null,
+                metricasRepoComLimites(atletaId, LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 20)),
                 null,
                 null,
                 null,
                 null,
-                null
+                new TsbRecalculoExecutorInline()
         );
 
-        List<MetricasDiarias> backup = List.of(
-                metrica(LocalDate.of(2026, 1, 1)),
-                metrica(LocalDate.of(2026, 1, 20))
-        );
-
-        Method m = TsbServiceImpl.class.getDeclaredMethod("determinarIntervaloRecalculo", UUID.class, List.class);
+        Method m = TsbServiceImpl.class.getDeclaredMethod("determinarIntervaloRecalculo", UUID.class);
         m.setAccessible(true);
-        Object intervalo = m.invoke(service, atletaId, backup);
+        Object intervalo = m.invoke(service, atletaId);
 
         Method inicio = intervalo.getClass().getDeclaredMethod("inicio");
         Method fim = intervalo.getClass().getDeclaredMethod("fim");
@@ -94,7 +93,8 @@ class TsbServiceImplRecalculoHistoricoTest {
                 atletaRepo(atleta),
                 null,
                 metricasAlertaServiceStub(),
-                new AthleteThresholdUpdater(null, null, new ThresholdInferenceService())
+                new AthleteThresholdUpdater(null, null, new ThresholdInferenceService()),
+                new TsbRecalculoExecutorInline()
         );
 
         service.recalcularHistoricoCompleto(atletaId);
@@ -137,18 +137,27 @@ class TsbServiceImplRecalculoHistoricoTest {
     }
 
     private static MetricasDiariasRepository metricasRepoSemHistorico(UUID atletaId) {
+        return metricasRepoComLimites(atletaId, null, null);
+    }
+
+    /**
+     * Stub que devolve os limites de data das métricas do atleta — é o que delimita o intervalo de
+     * recálculo desde que o carregamento da lista inteira (`backup`) foi substituído por min/max.
+     */
+    private static MetricasDiariasRepository metricasRepoComLimites(UUID atletaId,
+                                                                    LocalDate primeira, LocalDate ultima) {
         return (MetricasDiariasRepository) Proxy.newProxyInstance(
                 MetricasDiariasRepository.class.getClassLoader(),
                 new Class<?>[]{MetricasDiariasRepository.class},
                 (proxy, method, args) -> {
+                    if ("findDataPrimeiraMetrica".equals(method.getName()) && atletaId.equals(args[0])) {
+                        return primeira;
+                    }
+                    if ("findDataUltimaMetrica".equals(method.getName()) && atletaId.equals(args[0])) {
+                        return ultima;
+                    }
                     if ("findByAtletaIdOrderByDataAsc".equals(method.getName()) && atletaId.equals(args[0])) {
                         return List.of();
-                    }
-                    if ("deleteByAtletaId".equals(method.getName()) && atletaId.equals(args[0])) {
-                        return null;
-                    }
-                    if ("flush".equals(method.getName())) {
-                        return null;
                     }
                     if ("toString".equals(method.getName())) {
                         return "MetricasDiariasRepositoryProxy";

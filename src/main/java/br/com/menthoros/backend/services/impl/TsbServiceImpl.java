@@ -10,6 +10,7 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
+import br.com.menthoros.backend.services.helper.TsbRecalculoExecutor;
 import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,12 +38,33 @@ public class TsbServiceImpl implements TsbService {
     private final TssCalculatorService tssCalculatorService;
     private final MetricasAlertaService metricasAlertaService;
     private final AthleteThresholdUpdater athleteThresholdUpdater;
+    private final TsbRecalculoExecutor tsbRecalculoExecutor;
 
     private static final int CTL_TIME_CONSTANT = 42;
     private static final int ATL_TIME_CONSTANT = 7;
 
+    /** Tamanho do bloco transacional do recálculo histórico. */
+    static final int DIAS_POR_BLOCO = 30;
+
     private record IntervaloRecalculo(LocalDate inicio, LocalDate fim) {}
 
+    /** Quanto do período foi efetivamente reconstruído, para a mensagem de falha. */
+    private record ProgressoRecalculo(int blocos, LocalDate ultimoDiaReconstruido) {}
+
+    /**
+     * Atualiza o TSB de um único dia, em transação própria.
+     *
+     * <p><b>Este {@code @Transactional} não vale no fluxo de recálculo histórico.</b> Lá o laço chama
+     * a sobrecarga privada de 3 argumentos diretamente — auto-invocação não passa pelo proxy do
+     * Spring, então a anotação é ignorada. Isso é intencional: no recálculo, a fronteira transacional
+     * é o bloco de {@value #DIAS_POR_BLOCO} dias em {@link TsbRecalculoExecutor}, não o dia. A
+     * anotação existe para os chamadores externos deste método público, que precisam de transação
+     * própria.</p>
+     *
+     * Idempotent: YES — recalcular o mesmo dia produz o mesmo resultado.
+     * Side Effects: Database insert/update da métrica do dia e do PlanoMetaDados.
+     * Tenant-aware: NO
+     */
     @Transactional
     public void atualizarTsbDia(UUID atletaId, LocalDate data) {
         atualizarTsbDia(atletaId, data, true);
@@ -339,64 +361,92 @@ public class TsbServiceImpl implements TsbService {
      *   <li>Precisa garantir consistência total dos dados</li>
      * </ul>
      *
-     * <p><b>ATENÇÃO:</b> Operação custosa! Faz backup automático e rollback em caso de erro.
+     * <p><b>ATENÇÃO:</b> Operação custosa! O período é processado em blocos de
+     * {@value #DIAS_POR_BLOCO} dias, cada um numa transação própria.
+     *
+     * <p><b>Não há rollback global.</b> Blocos já comitados permanecem comitados se um bloco
+     * posterior falhar — é o preço do chunking, e é deliberado: sem ele, 400+ dias ficariam numa
+     * transação só, segurando uma conexão do pool do início ao fim. Em compensação, o delete de cada
+     * intervalo acontece dentro da transação que o reconstrói, então <b>nenhum intervalo fica apagado
+     * e não reconstruído</b>. Em caso de falha, a exceção informa até onde o histórico foi
+     * efetivamente reconstruído.
+     *
+     * <p><b>Leitores concorrentes:</b> durante o recálculo o histórico fica parcialmente
+     * reconstruído e visível. Os consumidores (PMC, home do atleta, dashboard do coach, fila de
+     * atenção, agregados semanais) servem o dado disponível, sem bloqueio — contrato explícito, não
+     * omissão.
+     *
+     * Idempotent: YES — recalcular duas vezes produz exatamente o mesmo resultado.
+     * Side Effects: Database delete + insert/update das métricas diárias e do PlanoMetaDados.
+     * Tenant-aware: NO — o atleta é resolvido pelo id.
      *
      * @param atletaId ID do atleta para recalcular
      * @throws IllegalArgumentException se atletaId for nulo ou atleta não existir
-     * @throws RuntimeException se falhar durante recálculo (dados são restaurados do backup)
+     * @throws RuntimeException se falhar durante o recálculo; a mensagem informa o intervalo
+     *         efetivamente reconstruído e o ponto de parada
      */
-    @Transactional
     public void recalcularHistoricoCompleto(UUID atletaId) {
         validarAtletaExiste(atletaId);
 
         log.warn("🔄 RECALCULANDO HISTÓRICO COMPLETO para atleta {} - operação custosa!", atletaId);
 
-        // 1. Criar backup dos dados atuais
-        List<MetricasDiarias> backup = metricasDiariasRepository
-                .findByAtletaIdOrderByDataAsc(atletaId);
-        log.info("📦 Backup criado: {} registros", backup.size());
-
-        try {
-            // 2. Deletar dados antigos
-            metricasDiariasRepository.deleteByAtletaId(atletaId);
-            metricasDiariasRepository.flush(); // Forçar delete no banco
-            log.info("🗑️ Métricas antigas deletadas");
-
-            // 3. Determinar período a recalcular
-            IntervaloRecalculo intervalo = determinarIntervaloRecalculo(atletaId, backup);
-            if (intervalo == null) {
-                zerarMetaDadosSemHistorico(atletaId);
-                log.info("ℹ️ Nenhum histórico relevante encontrado para atleta {}. MetaDados zerados.", atletaId);
-                return;
-            }
-
-            // 4. Recalcular período com tracking de progresso
-            recalcularPeriodoComProgresso(atletaId, intervalo.inicio(), intervalo.fim());
-
-            MetricasDiarias ultimaMetrica = metricasDiariasRepository
-                    .findByAtletaIdAndData(atletaId, intervalo.fim())
-                    .orElseThrow(() -> new IllegalStateException(
-                            "Última métrica não encontrada após recálculo para atleta " + atletaId));
-            atualizarMetaDados(atletaId, ultimaMetrica);
-
-            // 5. Recalcular progressão contínua de semanas com base nos treinos realizados
-            recalcularSemanasProgressao(atletaId);
-
-            log.info("✅ Histórico recalculado com sucesso para atleta {}", atletaId);
-
-        } catch (Exception e) {
-            log.error("❌ Erro ao recalcular histórico para atleta {}. A transação será revertida e o banco voltará ao estado anterior.",
-                    atletaId, e);
-
-            throw new RuntimeException(
-                    "Falha ao recalcular histórico para atleta " + atletaId +
-                    ". A transação foi revertida.", e);
+        // 1. Determinar período a recalcular. Os limites vêm de min/max das métricas existentes
+        //    (consulta, não a lista inteira em memória) combinados com o primeiro/último treino.
+        IntervaloRecalculo intervalo = determinarIntervaloRecalculo(atletaId);
+        if (intervalo == null) {
+            tsbRecalculoExecutor.consolidar(() -> zerarMetaDadosSemHistorico(atletaId));
+            tsbRecalculoExecutor.invalidarCacheMetadados(atletaId, tenantDe(atletaId));
+            log.info("ℹ️ Nenhum histórico relevante encontrado para atleta {}. MetaDados zerados.", atletaId);
+            return;
         }
+
+        // 2. Reconstruir em blocos. Cada bloco apaga e reconstrói o próprio intervalo numa
+        //    transação própria; não há delete antecipado do histórico inteiro.
+        ProgressoRecalculo progresso = recalcularPeriodoComProgresso(
+                atletaId, intervalo.inicio(), intervalo.fim());
+
+        // 3. Consolidar metadados. Fase transacional própria: se falhar aqui, os blocos continuam
+        //    comitados e os metadados ficam no estado anterior — stale, mas não ambíguo.
+        try {
+            tsbRecalculoExecutor.consolidar(() -> {
+                MetricasDiarias ultimaMetrica = metricasDiariasRepository
+                        .findByAtletaIdAndData(atletaId, intervalo.fim())
+                        .orElseThrow(() -> new IllegalStateException(
+                                "Última métrica não encontrada após recálculo para atleta " + atletaId));
+                atualizarMetaDados(atletaId, ultimaMetrica);
+                recalcularSemanasProgressao(atletaId);
+            });
+        } catch (Exception e) {
+            tsbRecalculoExecutor.registrarAborto("metadados");
+            log.error("❌ Histórico do atleta {} foi reconstruído de {} até {} ({} blocos), "
+                            + "mas a consolidação dos metadados falhou. O histórico diário permanece "
+                            + "comitado; PlanoMetaDados ficou no estado anterior (stale). "
+                            + "Re-disparar o recálculo é seguro — a operação é idempotente.",
+                    atletaId, intervalo.inicio(), intervalo.fim(), progresso.blocos(), e);
+
+            throw new RuntimeException(String.format(
+                    "Recálculo do atleta %s reconstruiu o histórico de %s até %s (%d blocos), "
+                            + "mas falhou ao consolidar os metadados. PlanoMetaDados está no estado "
+                            + "anterior ao recálculo.",
+                    atletaId, intervalo.inicio(), intervalo.fim(), progresso.blocos()), e);
+        }
+
+        tsbRecalculoExecutor.invalidarCacheMetadados(atletaId, tenantDe(atletaId));
+
+        log.info("✅ Histórico recalculado com sucesso para atleta {}: {} até {} ({} blocos)",
+                atletaId, intervalo.inicio(), intervalo.fim(), progresso.blocos());
     }
 
     /**
      * Valida se o atleta existe no sistema
      */
+    /** Tenant do atleta — a assessoria. Necessario para a chave do cache de metadados. */
+    private UUID tenantDe(UUID atletaId) {
+        return atletaRepository.findById(atletaId)
+                .map(a -> a.getAssessoria() != null ? a.getAssessoria().getId() : null)
+                .orElse(null);
+    }
+
     private void validarAtletaExiste(UUID atletaId) {
         if (atletaId == null) {
             throw new IllegalArgumentException("atletaId não pode ser nulo");
@@ -409,13 +459,16 @@ public class TsbServiceImpl implements TsbService {
     /**
      * Determina data de início para recálculo (data do primeiro treino ou 3 meses atrás)
      */
-    private IntervaloRecalculo determinarIntervaloRecalculo(UUID atletaId, List<MetricasDiarias> backup) {
+    private IntervaloRecalculo determinarIntervaloRecalculo(UUID atletaId) {
         LocalDate primeiroTreino = treinoRealizadoRepository.findDataPrimeiroTreino(atletaId);
         List<TreinoRealizado> treinosDesc = treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId);
         LocalDate ultimoTreino = treinosDesc.isEmpty() ? null : treinosDesc.getFirst().getDataTreino();
 
-        LocalDate primeiraMetrica = backup.isEmpty() ? null : backup.getFirst().getData();
-        LocalDate ultimaMetrica = backup.isEmpty() ? null : backup.get(backup.size() - 1).getData();
+        // As métricas existentes delimitam o intervalo junto com os treinos: um atleta pode ter dias
+        // de descanso materializados depois do último treino, e eles precisam continuar sendo
+        // reconstruídos. Consulta de limites em vez de carregar a lista inteira em memória.
+        LocalDate primeiraMetrica = metricasDiariasRepository.findDataPrimeiraMetrica(atletaId);
+        LocalDate ultimaMetrica = metricasDiariasRepository.findDataUltimaMetrica(atletaId);
 
         LocalDate dataInicio = menorData(primeiroTreino, primeiraMetrica);
         LocalDate dataFim = maiorData(ultimoTreino, ultimaMetrica);
@@ -440,29 +493,62 @@ public class TsbServiceImpl implements TsbService {
     }
 
     /**
-     * Recalcula período dia a dia com tracking de progresso
+     * Recalcula o período em blocos de {@value #DIAS_POR_BLOCO} dias, cada um numa transação própria.
+     *
+     * <p><b>A ordem sequencial não é opcional.</b> O CTL/ATL de um dia é calculado a partir do dia
+     * anterior, lido do banco; e o {@code rampRate} lê D-7. Um bloco só produz o valor correto se o
+     * anterior já tiver comitado. Paralelizar os blocos quebraria o cálculo.</p>
+     *
+     * <p>Se um bloco falhar, a exceção informa quantos blocos foram efetivamente reconstruídos e
+     * onde parou — os anteriores permanecem comitados, e nenhum intervalo fica apagado sem
+     * reconstrução, porque o delete de cada bloco vive na transação que o reconstrói.</p>
      */
-    private void recalcularPeriodoComProgresso(UUID atletaId, LocalDate dataInicio, LocalDate dataFim) {
+    private ProgressoRecalculo recalcularPeriodoComProgresso(UUID atletaId, LocalDate dataInicio, LocalDate dataFim) {
         long totalDias = java.time.temporal.ChronoUnit.DAYS.between(dataInicio, dataFim) + 1;
-        log.info("📊 Recalculando {} dias (de {} até {})", totalDias, dataInicio, dataFim);
+        long totalBlocos = (totalDias + DIAS_POR_BLOCO - 1) / DIAS_POR_BLOCO;
+        log.info("📊 Recalculando {} dias em {} blocos de até {} dias (de {} até {})",
+                totalDias, totalBlocos, DIAS_POR_BLOCO, dataInicio, dataFim);
 
-        LocalDate dataAtual = dataInicio;
-        long diasProcessados = 0;
-        long intervaloLog = Math.max(1, totalDias / 10); // Log a cada 10%
+        LocalDate blocoInicio = dataInicio;
+        LocalDate ultimoDiaReconstruido = null;
+        int blocosConcluidos = 0;
 
-        while (!dataAtual.isAfter(dataFim)) {
-            atualizarTsbDia(atletaId, dataAtual, false);
-            diasProcessados++;
-
-            // Log de progresso a cada 10% ou no último dia
-            if (diasProcessados % intervaloLog == 0 || diasProcessados == totalDias) {
-                double progresso = (diasProcessados * 100.0) / totalDias;
-                log.info("⏳ Progresso: {}/{} dias ({}%)",
-                        diasProcessados, totalDias, String.format("%.1f", progresso));
+        while (!blocoInicio.isAfter(dataFim)) {
+            LocalDate blocoFim = blocoInicio.plusDays(DIAS_POR_BLOCO - 1L);
+            if (blocoFim.isAfter(dataFim)) {
+                blocoFim = dataFim;
             }
 
-            dataAtual = dataAtual.plusDays(1);
+            try {
+                tsbRecalculoExecutor.recalcularBloco(atletaId, blocoInicio, blocoFim,
+                        (id, data) -> atualizarTsbDia(id, data, false));
+            } catch (Exception e) {
+                tsbRecalculoExecutor.registrarAborto("blocos");
+                String reconstruido = ultimoDiaReconstruido == null
+                        ? "nenhum dia"
+                        : dataInicio + " até " + ultimoDiaReconstruido;
+                log.error("❌ Recálculo do atleta {} falhou no bloco {} até {}. "
+                                + "Histórico reconstruído: {} ({} de {} blocos). "
+                                + "Os blocos anteriores permanecem comitados e nenhum intervalo ficou "
+                                + "apagado sem reconstrução.",
+                        atletaId, blocoInicio, blocoFim, reconstruido, blocosConcluidos, totalBlocos, e);
+
+                throw new RuntimeException(String.format(
+                        "Recálculo do atleta %s falhou no bloco %s até %s. "
+                                + "Histórico efetivamente reconstruído: %s (%d de %d blocos). "
+                                + "Os blocos anteriores permanecem comitados.",
+                        atletaId, blocoInicio, blocoFim, reconstruido, blocosConcluidos, totalBlocos), e);
+            }
+
+            ultimoDiaReconstruido = blocoFim;
+            blocosConcluidos++;
+            log.info("⏳ Progresso: bloco {}/{} ({} até {})",
+                    blocosConcluidos, totalBlocos, blocoInicio, blocoFim);
+
+            blocoInicio = blocoFim.plusDays(1);
         }
+
+        return new ProgressoRecalculo(blocosConcluidos, ultimoDiaReconstruido);
     }
 
     private void zerarMetaDadosSemHistorico(UUID atletaId) {

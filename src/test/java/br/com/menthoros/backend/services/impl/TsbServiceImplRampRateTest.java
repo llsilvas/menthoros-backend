@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
+import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
@@ -43,7 +44,8 @@ class TsbServiceImplRampRateTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                new TsbRecalculoExecutorInline()
         );
 
         Method m = TsbServiceImpl.class.getDeclaredMethod("calcularRampRate", UUID.class, LocalDate.class, double.class);
@@ -78,7 +80,8 @@ class TsbServiceImplRampRateTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                new TsbRecalculoExecutorInline()
         );
 
         Method m = TsbServiceImpl.class.getDeclaredMethod("calcularRampRate", UUID.class, LocalDate.class, double.class);

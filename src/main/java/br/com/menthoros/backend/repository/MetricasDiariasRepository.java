@@ -2,6 +2,7 @@ package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
 import java.time.LocalDate;
@@ -39,4 +40,46 @@ public interface MetricasDiariasRepository extends JpaRepository<MetricasDiarias
     List<MetricasDiarias> findByAtletaIdAndDataGreaterThanEqualOrderByDataAsc(UUID atletaId, LocalDate dataLimite);
 
     void deleteByAtletaId(UUID atletaId);
+
+    /**
+     * Apaga as métricas de um intervalo fechado, para o delete-por-bloco do recálculo histórico.
+     *
+     * <p>Substitui o {@code deleteByAtletaId} antecipado: cada bloco apaga o próprio intervalo
+     * dentro da mesma transação que o reconstrói, de modo que nunca exista uma janela em que o
+     * intervalo está apagado e não reconstruído.</p>
+     *
+     * Idempotent: YES — apagar duas vezes o mesmo intervalo é seguro.
+     * Side Effects: Database delete.
+     * Tenant-aware: NO — o caller resolve o atleta antes.
+     */
+    @Modifying
+    @Query("DELETE FROM MetricasDiarias m WHERE m.atleta.id = :atletaId "
+            + "AND m.data BETWEEN :inicio AND :fim")
+    int deleteByAtletaIdAndDataBetween(UUID atletaId, LocalDate inicio, LocalDate fim);
+
+    /**
+     * Data da primeira métrica registrada, ou {@code null} se não houver nenhuma.
+     *
+     * <p>Substitui o carregamento da lista inteira de métricas só para descobrir o limite inferior
+     * do intervalo de recálculo.</p>
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: NO
+     */
+    @Query("SELECT MIN(m.data) FROM MetricasDiarias m WHERE m.atleta.id = :atletaId")
+    LocalDate findDataPrimeiraMetrica(UUID atletaId);
+
+    /**
+     * Data da última métrica registrada, ou {@code null} se não houver nenhuma.
+     *
+     * <p>É o limite superior do intervalo quando o atleta tem dias de descanso materializados
+     * depois do último treino.</p>
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: NO
+     */
+    @Query("SELECT MAX(m.data) FROM MetricasDiarias m WHERE m.atleta.id = :atletaId")
+    LocalDate findDataUltimaMetrica(UUID atletaId);
 }
