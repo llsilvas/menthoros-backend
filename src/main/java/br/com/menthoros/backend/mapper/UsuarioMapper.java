@@ -20,32 +20,33 @@ public class UsuarioMapper {
      * Side Effects: NONE
      * Tenant-aware: NO — isolamento garantido pela camada de serviço que resolve as entidades.
      *
-     * @param usuario              entidade do usuário autenticado (obrigatório)
-     * @param atleta               atleta vinculado quando a role for ATLETA; null quando não houver vínculo
-     * @param lgpdConsentGranted   se já existe aceite das versões vigentes (derivado pelo serviço)
-     * @param policyVersionVigente data de vigência da Política em vigor
-     * @param termsVersionVigente  data de vigência dos Termos em vigor
+     * @param usuario entidade do usuário autenticado (obrigatório)
+     * @param atleta  atleta vinculado quando a role for ATLETA; null quando não houver vínculo
+     * @param lgpd    estado de consentimento já resolvido pelo serviço (obrigatório)
      * @return DTO de identidade
-     * @throws IllegalArgumentException se usuario for null
+     * @throws IllegalArgumentException se usuario ou lgpd forem null
      */
-    public UsuarioMeOutputDto toMeOutputDto(Usuario usuario,
-                                            Atleta atleta,
-                                            boolean lgpdConsentGranted,
-                                            String policyVersionVigente,
-                                            String termsVersionVigente) {
+    public UsuarioMeOutputDto toMeOutputDto(Usuario usuario, Atleta atleta, LgpdConsentStatus lgpd) {
         if (usuario == null) {
             throw new IllegalArgumentException("Usuario cannot be null");
+        }
+        if (lgpd == null) {
+            throw new IllegalArgumentException("LgpdConsentStatus cannot be null");
         }
         return new UsuarioMeOutputDto(
                 usuario.getId(),
                 usuario.getNomeCompleto(),
                 usuario.getEmail(),
+                usuario.getAvatarUrl(),
                 usuario.getRole(),
                 toAssessoria(usuario.getAssessoria()),
                 atleta != null ? atleta.getId() : null,
-                lgpdConsentGranted,
-                policyVersionVigente,
-                termsVersionVigente
+                lgpd.granted(),
+                lgpd.currentPolicyVersion(),
+                lgpd.currentTermsVersion(),
+                lgpd.consentedAt(),
+                lgpd.acceptedPolicyVersion(),
+                lgpd.acceptedTermsVersion()
         );
     }
 

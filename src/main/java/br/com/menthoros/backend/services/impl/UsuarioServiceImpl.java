@@ -9,6 +9,7 @@ import br.com.menthoros.backend.entity.UsuarioLgpdConsent;
 import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.exception.ConsentVersionStaleException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.mapper.LgpdConsentStatus;
 import br.com.menthoros.backend.mapper.UsuarioMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.UsuarioLgpdConsentRepository;
@@ -70,15 +71,34 @@ public class UsuarioServiceImpl implements UsuarioService {
             atleta = atletaService.findVinculadoAoUsuario(usuario.getId()).orElse(null);
         }
 
-        boolean consentGranted = consentRepository
-                .existsByUsuario_IdAndTenantIdAndPolicyVersionAndTermsVersion(
-                        usuario.getId(), tenantId,
-                        lgpdProperties.getPolicyVersion(), lgpdProperties.getTermsVersion());
+        LgpdConsentStatus lgpd = resolverConsentimento(usuario.getId(), tenantId);
 
         log.info("Usuário atual resolvido: id={}, role={}, atletaVinculado={}, lgpdConsentGranted={}",
-                usuario.getId(), usuario.getRole(), atleta != null, consentGranted);
-        return usuarioMapper.toMeOutputDto(usuario, atleta, consentGranted,
-                lgpdProperties.getPolicyVersion(), lgpdProperties.getTermsVersion());
+                usuario.getId(), usuario.getRole(), atleta != null, lgpd.granted());
+        return usuarioMapper.toMeOutputDto(usuario, atleta, lgpd);
+    }
+
+    /**
+     * Monta o estado de consentimento: o que está vigente (config) e o que foi de fato aceito
+     * (último registro, tenant-scoped).
+     *
+     * <p>O último aceite pode ser de versão anterior à vigente — nesse caso {@code granted} é
+     * {@code false} e a tela de privacidade mostra as duas, que é o que permite ao coach ver que
+     * os termos mudaram desde o aceite dele.
+     */
+    private LgpdConsentStatus resolverConsentimento(UUID usuarioId, UUID tenantId) {
+        String policyVigente = lgpdProperties.getPolicyVersion();
+        String termsVigente = lgpdProperties.getTermsVersion();
+
+        boolean granted = consentRepository
+                .existsByUsuario_IdAndTenantIdAndPolicyVersionAndTermsVersion(
+                        usuarioId, tenantId, policyVigente, termsVigente);
+
+        return consentRepository.findTopByUsuario_IdAndTenantIdOrderByConsentedAtDesc(usuarioId, tenantId)
+                .map(ultimo -> new LgpdConsentStatus(granted, policyVigente, termsVigente,
+                        ultimo.getConsentedAt(), ultimo.getPolicyVersion(), ultimo.getTermsVersion()))
+                .orElseGet(() -> new LgpdConsentStatus(granted, policyVigente, termsVigente,
+                        null, null, null));
     }
 
     /**

@@ -4,6 +4,7 @@ import br.com.menthoros.backend.enums.UserRole;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Schema(description = "Identidade do usuário autenticado (GET /api/v1/users/me)")
@@ -17,6 +18,10 @@ public record UsuarioMeOutputDto(
 
         @Schema(description = "Email do usuário", example = "joao.silva@exemplo.com")
         String email,
+
+        @Schema(description = "URL do avatar sincronizada do Keycloak; ausente quando não há",
+                example = "https://exemplo.com/avatar.png")
+        String avatarUrl,
 
         @Schema(description = "Role do usuário", example = "ATLETA")
         UserRole role,
@@ -40,7 +45,19 @@ public record UsuarioMeOutputDto(
 
         @Schema(description = "Data de vigência dos Termos de Uso em vigor. O cliente deve ecoá-la "
                 + "ao registrar o aceite.", example = "2026-06-30")
-        String lgpdCurrentTermsVersion) {
+        String lgpdCurrentTermsVersion,
+
+        @Schema(description = "Momento do último aceite registrado; ausente quando nunca consentiu",
+                example = "2026-07-31T19:23:43Z")
+        Instant lgpdConsentedAt,
+
+        @Schema(description = "Versão da Política efetivamente aceita no último registro. Pode ser "
+                + "ANTERIOR à vigente — nesse caso lgpdConsentGranted é false.", example = "2026-06-30")
+        String lgpdAcceptedPolicyVersion,
+
+        @Schema(description = "Versão dos Termos efetivamente aceita no último registro. Pode ser "
+                + "ANTERIOR à vigente.", example = "2026-06-30")
+        String lgpdAcceptedTermsVersion) {
 
     @Schema(description = "Dados básicos da assessoria do usuário")
     @JsonInclude(JsonInclude.Include.NON_NULL)
