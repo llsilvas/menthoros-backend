@@ -21,11 +21,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * caso {@code aplicarFatorImpactoTreino} devolve a base intacta, então {@code calcularTss} expõe
  * exatamente {@code h × IF² × 100}.
  *
- * <p><b>Por que estes testes existem.</b> Hoje o planejado usa {@code min × RPE² / 90} e o realizado
- * usa {@code h × IF² × 100} — duas fórmulas para a mesma grandeza, divergindo por um fator que
- * varia com o RPE. A classe fixa o comportamento atual (nos testes de caracterização) e afirma o
- * comportamento desejado (no teste de convergência), de modo que a correção da task 2.1 mova
- * exatamente um conjunto e não o outro.
+ * <p><b>Por que estes testes existem.</b> O planejado usava {@code min × RPE² / 90} e o realizado
+ * {@code h × IF² × 100} — duas fórmulas para a mesma grandeza, divergindo de 2,4× a 6× conforme o
+ * RPE (BUG-CONF-001). A classe fixa os valores absolutos dos dois caminhos <b>e</b> a igualdade
+ * entre eles: só a igualdade não bastaria, porque se ambos quebrassem da mesma forma ela
+ * continuaria verde.
  */
 class TssCalculatorServiceConvergenciaTest {
 
@@ -44,18 +44,20 @@ class TssCalculatorServiceConvergenciaTest {
     }
 
     @Nested
-    @DisplayName("caracterização — comportamento ANTES da correção")
-    class Caracterizacao {
+    @DisplayName("valores absolutos fixados — os dois caminhos")
+    class ValoresAbsolutos {
 
+        // Fixar os valores absolutos, e não só a igualdade entre os caminhos: se ambos quebrassem
+        // da mesma forma, o teste de convergência continuaria verde e não perceberíamos.
         @ParameterizedTest(name = "planejado {0}min RPE {1} = {2}")
         @CsvSource({
-                "60, 3,  6",
-                "60, 5, 17",
-                "60, 7, 33",
-                "60, 9, 54",
+                "60, 3,  36",
+                "60, 5,  54",
+                "60, 7,  81",
+                "60, 9, 127",
         })
-        @DisplayName("planejado usa min × RPE² / 90 — é este o valor que a correção vai mudar")
-        void planejadoHoje(int minutos, int rpe, int esperado) {
+        @DisplayName("planejado usa h × IF² × 100 (era min × RPE² / 90 — BUG-CONF-001)")
+        void planejado(int minutos, int rpe, int esperado) {
             assertThat(tssPlanejado(minutos, rpe)).isEqualTo(esperado);
         }
 
@@ -66,8 +68,8 @@ class TssCalculatorServiceConvergenciaTest {
                 "60, 7,  81",
                 "60, 9, 127",
         })
-        @DisplayName("realizado usa h × IF² × 100 — este NÃO pode mudar com a correção")
-        void realizadoHoje(int minutos, int rpe, int esperado) {
+        @DisplayName("realizado usa h × IF² × 100 — inalterado pela correção")
+        void realizado(int minutos, int rpe, int esperado) {
             assertThat(tssRealizadoPorRpe(minutos, rpe)).isEqualTo(esperado);
         }
 

@@ -50,17 +50,26 @@ public class TssCalculatorService {
     }
 
     /**
-     * Estimativa simplificada de TSS para treinos planejados, usando duração e RPE.
-     * Fórmula: round(duracaoMinutos × rpe² / 90.0), rpe default 5 quando nulo.
+     * TSS estimado para treinos planejados, usando duração e RPE.
      *
-     * Idempotent: YES — cálculo puro, sem estado.
+     * <p>Unificado com {@link #calcularTssRpe} — ambos usam o pipeline
+     * RPE → IF → TSS (h × IF² × 100). Correção BUG-CONF-001: antes usava
+     * min × RPE² / 90, que divergia ~245% do TSS realizado.</p>
+     *
+     * <p>Fórmula: TSS = round(duracaoHoras × converterRpeParaIf(rpe)² × 100).
+     * RPE default 5 quando nulo. IF clampado entre {@link #MIN_IF_RPE} e {@link #MAX_IF}.</p>
+     *
+     * <p>Idempotent: YES — cálculo puro, sem estado.
      * Side Effects: NONE
-     * Tenant-aware: NO
+     * Tenant-aware: NO</p>
      */
     public int calcularTssEstimado(Duration duracaoMin, Integer rpe) {
         long minutos = duracaoMin != null ? duracaoMin.toMinutes() : 0L;
         int r = rpe != null ? rpe : 5;
-        return (int) Math.round((double) minutos * r * r / 90.0);
+        double duracaoHoras = minutos / 60.0;
+        double if_ = converterRpeParaIf(r);
+        if_ = Math.max(MIN_IF_RPE, Math.min(MAX_IF, if_));
+        return (int) Math.round(duracaoHoras * if_ * if_ * 100.0);
     }
 
     /**

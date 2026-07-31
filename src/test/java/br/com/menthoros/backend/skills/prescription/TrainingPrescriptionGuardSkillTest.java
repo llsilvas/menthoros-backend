@@ -13,6 +13,10 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import br.com.menthoros.backend.services.helper.TssCalculatorService;
+import java.time.Duration;
+import java.util.stream.IntStream;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Testes TDD para TrainingPrescriptionGuardSkill.
@@ -59,6 +63,42 @@ class TrainingPrescriptionGuardSkillTest {
                 "BASE", // fasePeriodizacao
                 "INTERMEDIARIO" // nivelExperiencia
         );
+    }
+
+
+    // =====================================================================
+    // Escala do TSS: o guard e o calculador precisam falar a mesma língua
+    // (BUG-CONF-001 — fix-tss-planejado-divergente)
+    // =====================================================================
+
+    /**
+     * Liga o guard ao {@link TssCalculatorService} real, em vez de alimentar TSS à mão.
+     *
+     * <p>Os demais testes desta classe passam números literais, então validam a <b>regra</b> mas não
+     * a <b>escala</b>. Este liga os dois: se o TSS planejado voltar a ser calculado numa escala
+     * menor que a da meta semanal, seis sessões que devem estourar o teto passariam despercebidas.
+     *
+     * <p>Com a fórmula unificada, 6 × (60min, RPE 7) = 6 × 81 = 486 TSS, contra meta 400 × 1,15 =
+     * 460 → BLOCKER. Com a fórmula antiga eram 6 × 33 = 198, bem abaixo do teto: o mesmo plano
+     * passaria.
+     *
+     * <p>O skill não tem chamador em produção hoje; isto é teste unitário do skill, não prova de
+     * comportamento de sistema.
+     */
+    @Test
+    void tssCalculadoPelaFormulaReal_estouraOTetoQuandoDeve() {
+        var calculadora = new TssCalculatorService();
+        double tssPorSessao = calculadora.calcularTssEstimado(Duration.ofMinutes(60), 7);
+
+        List<TreinoPlanejadoResumo> semana = IntStream.range(0, 6)
+                .mapToObj(i -> sessao("RODAGEM", "DIA_" + i, 8.0, 60, tssPorSessao))
+                .toList();
+
+        SkillResult<TrainingPrescriptionGuardPayload> resultado =
+                skill.execute(inputPadrao(semana), context);
+
+        assertThat(tssPorSessao * 6).isGreaterThan(400.0 * 1.15);
+        assertThat(resultado.payload().aprovado()).isFalse();
     }
 
     // =====================================================================
