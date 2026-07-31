@@ -40,6 +40,9 @@ import java.util.UUID;
  * <p>A ordem das guardas é contrato, não estilo. Uma rota pública, tenant-less ou de outra role
  * precisa passar <b>antes</b> de qualquer consulta ao banco, e a consulta só acontece no caminho
  * estreito (escrita de coach fora da whitelist) — leitura nunca paga por ela.
+ *
+ * <p>"Escrita" aqui é semântica, não sintática: além dos verbos mutantes, alguns {@code GET}
+ * iniciam efeito colateral e entram no gate (ver {@code PADROES_GET_COM_EFEITO}).
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -56,6 +59,19 @@ public class LgpdConsentInterceptor implements HandlerInterceptor {
      */
     private static final Set<String> PADROES_ISENTOS = Set.of("/api/v1/users/me/consent");
 
+    /**
+     * GETs que, apesar do verbo, iniciam operação com efeito colateral do coach — e por isso
+     * passam pelo gate como se fossem escrita.
+     *
+     * <p>Existe porque "GET é leitura" é falso neste contrato: {@code /api/v1/strava/auth} exige
+     * {@code hasAnyRole('TECNICO','ADMIN')} e dispara o fluxo OAuth cujo callback persiste a
+     * integração do atleta. Sem esta lista, um coach sem consentimento conseguiria conectar o
+     * Strava — exatamente o tipo de brecha que a auditoria de GETs deveria ter pego.
+     */
+    private static final Set<String> PADROES_GET_COM_EFEITO = Set.of(
+            "/api/v1/strava/auth",
+            "/api/v1/strava/auth/url/{atletaId}");
+
     private final LgpdProperties lgpdProperties;
     private final UsuarioLgpdConsentRepository consentRepository;
 
@@ -66,7 +82,7 @@ public class LgpdConsentInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        if (METODOS_DE_LEITURA.contains(request.getMethod())) {
+        if (METODOS_DE_LEITURA.contains(request.getMethod()) && !iniciaEfeitoColateral(request)) {
             return true;
         }
 
@@ -125,6 +141,10 @@ public class LgpdConsentInterceptor implements HandlerInterceptor {
         return authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .anyMatch(("ROLE_" + UserRole.TECNICO.name())::equals);
+    }
+
+    private boolean iniciaEfeitoColateral(HttpServletRequest request) {
+        return PADROES_GET_COM_EFEITO.contains(padraoDe(request));
     }
 
     private boolean isIsento(HttpServletRequest request) {

@@ -84,6 +84,27 @@ class UsuarioLgpdConsentRepositoryTest extends AbstractIntegrationTest {
         }
 
         @Test
+        @DisplayName("mesmas versões em TENANTS distintos não colidem — consentimento é por tenant")
+        void tenantsDistintosNaoColidem() {
+            Usuario usuario = seedUsuario();
+            consentRepository.saveAndFlush(consent(usuario, POLICY_V1, TERMS_V1));
+
+            // Mesmo usuário, mesmas versões, outro tenant: precisa criar linha nova. Se a constraint
+            // não incluísse tenant_id, o aceite seria rejeitado e tratado como "já registrado",
+            // enquanto a consulta tenant-scoped continuaria retornando false — bloqueio permanente.
+            UsuarioLgpdConsent outroTenant = UsuarioLgpdConsent.builder()
+                    .usuario(usuario)
+                    .tenantId(UUID.randomUUID())
+                    .policyVersion(POLICY_V1)
+                    .termsVersion(TERMS_V1)
+                    .build();
+            consentRepository.saveAndFlush(outroTenant);
+            flushClear();
+
+            assertThat(consentRepository.findAll()).hasSize(2);
+        }
+
+        @Test
         @DisplayName("mesmas versões para usuários distintos não colidem")
         void usuariosDistintosNaoColidem() {
             consentRepository.saveAndFlush(consent(seedUsuario(), POLICY_V1, TERMS_V1));

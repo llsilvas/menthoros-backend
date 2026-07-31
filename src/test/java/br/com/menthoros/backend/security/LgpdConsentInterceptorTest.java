@@ -222,6 +222,36 @@ class LgpdConsentInterceptorTest {
     }
 
     @Nested
+    @DisplayName("GET com efeito colateral entra no gate")
+    class GetComEfeitoColateral {
+
+        @ParameterizedTest(name = "GET {0} exige consentimento")
+        @ValueSource(strings = {"/api/v1/strava/auth", "/api/v1/strava/auth/url/{atletaId}"})
+        @DisplayName("início de OAuth Strava é operação de coach e não escapa por ser GET")
+        void oauthStravaNaoEscapa(String padrao) {
+            autenticarComoTecnico();
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", padrao);
+            comPadrao(request, padrao);
+            comUsuario(request, usuarioTecnico());
+
+            assertThatThrownBy(() -> interceptor.preHandle(request, response, handler()))
+                    .isInstanceOf(LgpdConsentRequiredException.class);
+        }
+
+        @Test
+        @DisplayName("GET comum segue liberado")
+        void getComumSegueLiberado() {
+            autenticarComoTecnico();
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/atletas");
+            comPadrao(request, "/api/v1/atletas");
+            comUsuario(request, usuarioTecnico());
+
+            assertThat(interceptor.preHandle(request, response, handler())).isTrue();
+            verifyNoInteractions(consentRepository);
+        }
+    }
+
+    @Nested
     @DisplayName("flag de rollout")
     class FlagDeRollout {
 

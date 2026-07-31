@@ -15,6 +15,11 @@
 -- insert idempotente e arbitra a corrida de dois aceites simultaneos, sem
 -- precisar de update condicional na aplicacao.
 --
+-- tenant_id FAZ PARTE da chave: consentimento e por tenant. Sem ele, um usuario
+-- que trocasse de assessoria teria o novo aceite rejeitado pela constraint e
+-- tratado como "ja registrado", enquanto a consulta (tenant-scoped) continuaria
+-- retornando false -- deixando o coach permanentemente bloqueado no tenant novo.
+--
 -- tenant_id sem FK, conforme o Table Design Standard (gerido pela aplicacao).
 --
 -- Feature aditiva pura -- tb_usuario NAO e alterada, nenhum dado existente e
@@ -29,7 +34,7 @@ CREATE TABLE IF NOT EXISTS tb_usuario_lgpd_consent (
     terms_version   VARCHAR(20)  NOT NULL,
     consented_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     CONSTRAINT uk_usuario_lgpd_consent_versoes
-        UNIQUE (usuario_id, policy_version, terms_version)
+        UNIQUE (usuario_id, tenant_id, policy_version, terms_version)
 );
 
 CREATE INDEX IF NOT EXISTS idx_usuario_lgpd_consent_tenant_usuario

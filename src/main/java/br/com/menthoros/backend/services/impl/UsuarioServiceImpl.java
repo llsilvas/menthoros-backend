@@ -18,6 +18,7 @@ import br.com.menthoros.backend.services.AtletaService;
 import br.com.menthoros.backend.services.UsuarioService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -81,7 +82,13 @@ public class UsuarioServiceImpl implements UsuarioService {
     }
 
     /**
-     * {@inheritDoc}
+     * Registra o consentimento LGPD do usuário autenticado para as versões vigentes.
+     *
+     * Idempotent: YES — reenvio das mesmas versões é no-op; a constraint única do banco arbitra a
+     *   corrida de aceites simultâneos.
+     * Side Effects: Database insert (tb_usuario_lgpd_consent) — nunca update, nunca delete.
+     * Tenant-aware: YES — resolve o caller pelo sub do JWT e valida que o tenant do usuário bate
+     *   com o TenantContext antes de gravar.
      *
      * <p><b>Sem {@code @Transactional} de propósito</b> — cada chamada ao repositório roda na
      * própria transação. Capturar {@link DataIntegrityViolationException} dentro de uma transação
@@ -142,12 +149,31 @@ public class UsuarioServiceImpl implements UsuarioService {
             // Só é no-op se a violação for da constraint de versões (corrida entre dois aceites).
             // Qualquer outra violação de integridade é erro real — propaga, senão um insert que
             // falhou por FK ou NOT NULL viraria falso sucesso.
-            Throwable causa = e.getMostSpecificCause();
-            if (causa.getMessage() == null || !causa.getMessage().contains(UK_CONSENT_VERSOES)) {
+            if (!violouConstraintDeVersoes(e)) {
                 throw e;
             }
             log.info("Consentimento já registrado para estas versões: usuarioId={}, tenantId={}",
                     usuario.getId(), tenantId);
         }
+    }
+
+    /**
+     * A violação é da constraint de versões (corrida legítima) ou de outra coisa?
+     *
+     * <p>Prefere o nome estruturado que o Hibernate expõe em
+     * {@link ConstraintViolationException#getConstraintName()}. O fallback por texto existe porque
+     * nem todo driver/dialeto popula esse campo — mas depender só do texto seria frágil: ele varia
+     * com versão de driver e locale do servidor, e um falso negativo aqui transforma a corrida que
+     * o contrato promete ser idempotente num 500.
+     */
+    private boolean violouConstraintDeVersoes(DataIntegrityViolationException e) {
+        Throwable causa = e.getMostSpecificCause();
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof ConstraintViolationException cve
+                    && UK_CONSENT_VERSOES.equalsIgnoreCase(cve.getConstraintName())) {
+                return true;
+            }
+        }
+        return causa.getMessage() != null && causa.getMessage().contains(UK_CONSENT_VERSOES);
     }
 }
