@@ -10,6 +10,7 @@ import br.com.menthoros.backend.entity.UsuarioLgpdConsent;
 import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.exception.ConsentVersionStaleException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.mapper.LgpdConsentStatus;
 import br.com.menthoros.backend.mapper.UsuarioMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.UsuarioLgpdConsentRepository;
@@ -28,6 +29,7 @@ import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -93,7 +95,7 @@ class UsuarioServiceImplTest {
             UsuarioMeOutputDto esperado = dtoStub();
             when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId))
                     .thenReturn(Optional.of(usuario));
-            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), anyBoolean(), anyString(), anyString()))
+            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class)))
                     .thenReturn(esperado);
 
             UsuarioMeOutputDto resultado = usuarioService.getCurrentUser();
@@ -112,7 +114,7 @@ class UsuarioServiceImplTest {
                     .thenReturn(Optional.of(usuario));
             when(atletaService.findVinculadoAoUsuario(usuario.getId()))
                     .thenReturn(Optional.of(atleta));
-            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(atleta), anyBoolean(), anyString(), anyString()))
+            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(atleta), any(LgpdConsentStatus.class)))
                     .thenReturn(esperado);
 
             UsuarioMeOutputDto resultado = usuarioService.getCurrentUser();
@@ -129,12 +131,12 @@ class UsuarioServiceImplTest {
                     .thenReturn(Optional.of(usuario));
             when(atletaService.findVinculadoAoUsuario(usuario.getId()))
                     .thenReturn(Optional.empty());
-            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), anyBoolean(), anyString(), anyString()))
+            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class)))
                     .thenReturn(dtoStub());
 
             usuarioService.getCurrentUser();
 
-            verify(usuarioMapper).toMeOutputDto(eq(usuario), eq(null), anyBoolean(), anyString(), anyString());
+            verify(usuarioMapper).toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class));
         }
 
         @Test
@@ -160,14 +162,14 @@ class UsuarioServiceImplTest {
                     .thenReturn(Optional.of(usuario));
             when(atletaService.findVinculadoAoUsuario(usuario.getId()))
                     .thenReturn(Optional.empty());
-            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), anyBoolean(), anyString(), anyString()))
+            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class)))
                     .thenReturn(dtoStub());
 
             usuarioService.getCurrentUser();
 
-            verify(usuarioMapper).toMeOutputDto(eq(usuario), eq(null), anyBoolean(), anyString(), anyString());
+            verify(usuarioMapper).toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class));
             verify(usuarioMapper, never())
-                    .toMeOutputDto(any(), any(Atleta.class), anyBoolean(), anyString(), anyString());
+                    .toMeOutputDto(any(), any(Atleta.class), any(LgpdConsentStatus.class));
         }
     }
 
@@ -184,8 +186,7 @@ class UsuarioServiceImplTest {
 
             usuarioService.getCurrentUser();
 
-            verify(usuarioMapper).toMeOutputDto(any(), any(), eq(false),
-                    eq(POLICY_VIGENTE), eq(TERMS_VIGENTE));
+            assertThat(capturarLgpd().granted()).isFalse();
         }
 
         @Test
@@ -197,8 +198,7 @@ class UsuarioServiceImplTest {
 
             usuarioService.getCurrentUser();
 
-            verify(usuarioMapper).toMeOutputDto(any(), any(), eq(true),
-                    eq(POLICY_VIGENTE), eq(TERMS_VIGENTE));
+            assertThat(capturarLgpd().granted()).isTrue();
         }
 
         @Test
@@ -211,14 +211,86 @@ class UsuarioServiceImplTest {
 
             usuarioService.getCurrentUser();
 
-            verify(usuarioMapper).toMeOutputDto(any(), any(), eq(false), anyString(), anyString());
+            assertThat(capturarLgpd().granted()).isFalse();
         }
 
         private void prepararUsuario() {
             Usuario usuario = usuario(UserRole.TECNICO);
             when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId))
                     .thenReturn(Optional.of(usuario));
-            when(usuarioMapper.toMeOutputDto(any(), any(), anyBoolean(), anyString(), anyString()))
+            when(usuarioMapper.toMeOutputDto(any(), any(), any(LgpdConsentStatus.class)))
+                    .thenReturn(dtoStub());
+        }
+    }
+
+    @Nested
+    @DisplayName("getCurrentUser — último aceite exposto")
+    class UltimoAceiteExposto {
+
+        @Test
+        @DisplayName("propaga data e versões do último aceite")
+        void propagaUltimoAceite() {
+            prepararUsuario();
+            Instant quando = Instant.parse("2026-07-31T19:23:43Z");
+            when(consentRepository.findTopByUsuario_IdAndTenantIdOrderByConsentedAtDesc(any(), eq(tenantId)))
+                    .thenReturn(Optional.of(UsuarioLgpdConsent.builder()
+                            .tenantId(tenantId)
+                            .policyVersion(POLICY_VIGENTE)
+                            .termsVersion(TERMS_VIGENTE)
+                            .consentedAt(quando)
+                            .build()));
+
+            usuarioService.getCurrentUser();
+
+            LgpdConsentStatus lgpd = capturarLgpd();
+            assertThat(lgpd.consentedAt()).isEqualTo(quando);
+            assertThat(lgpd.acceptedPolicyVersion()).isEqualTo(POLICY_VIGENTE);
+            assertThat(lgpd.acceptedTermsVersion()).isEqualTo(TERMS_VIGENTE);
+        }
+
+        @Test
+        @DisplayName("sem nenhum aceite, os três campos vêm nulos sem quebrar")
+        void semAceiteNaoQuebra() {
+            prepararUsuario();
+            when(consentRepository.findTopByUsuario_IdAndTenantIdOrderByConsentedAtDesc(any(), eq(tenantId)))
+                    .thenReturn(Optional.empty());
+
+            usuarioService.getCurrentUser();
+
+            LgpdConsentStatus lgpd = capturarLgpd();
+            assertThat(lgpd.consentedAt()).isNull();
+            assertThat(lgpd.acceptedPolicyVersion()).isNull();
+            assertThat(lgpd.acceptedTermsVersion()).isNull();
+        }
+
+        @Test
+        @DisplayName("aceite de versão antiga: granted false, mas a versão ACEITA é exposta")
+        void versaoAceitaAntigaAindaEExposta() {
+            prepararUsuario();
+            // É este o caso que a tela precisa mostrar: houve bump, o coach consentiu com o texto
+            // antigo, e ele tem de conseguir ver COM O QUÊ consentiu — não só que está pendente.
+            when(consentRepository.existsByUsuario_IdAndTenantIdAndPolicyVersionAndTermsVersion(
+                    any(), eq(tenantId), anyString(), anyString())).thenReturn(false);
+            when(consentRepository.findTopByUsuario_IdAndTenantIdOrderByConsentedAtDesc(any(), eq(tenantId)))
+                    .thenReturn(Optional.of(UsuarioLgpdConsent.builder()
+                            .tenantId(tenantId)
+                            .policyVersion("2020-01-01")
+                            .termsVersion("2020-01-01")
+                            .consentedAt(Instant.parse("2020-01-01T00:00:00Z"))
+                            .build()));
+
+            usuarioService.getCurrentUser();
+
+            LgpdConsentStatus lgpd = capturarLgpd();
+            assertThat(lgpd.granted()).isFalse();
+            assertThat(lgpd.acceptedPolicyVersion()).isEqualTo("2020-01-01");
+            assertThat(lgpd.currentPolicyVersion()).isEqualTo(POLICY_VIGENTE);
+        }
+
+        private void prepararUsuario() {
+            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId))
+                    .thenReturn(Optional.of(usuario(UserRole.TECNICO)));
+            when(usuarioMapper.toMeOutputDto(any(), any(), any(LgpdConsentStatus.class)))
                     .thenReturn(dtoStub());
         }
     }
@@ -331,6 +403,13 @@ class UsuarioServiceImplTest {
         }
     }
 
+    /** Captura o LgpdConsentStatus que o service montou e entregou ao mapper. */
+    private LgpdConsentStatus capturarLgpd() {
+        ArgumentCaptor<LgpdConsentStatus> captor = ArgumentCaptor.forClass(LgpdConsentStatus.class);
+        verify(usuarioMapper).toMeOutputDto(any(), any(), captor.capture());
+        return captor.getValue();
+    }
+
     private Usuario usuario(UserRole role) {
         return Usuario.builder()
                 .id(UUID.fromString(sub))
@@ -343,7 +422,7 @@ class UsuarioServiceImplTest {
     }
 
     private UsuarioMeOutputDto dtoStub() {
-        return new UsuarioMeOutputDto(UUID.fromString(sub), "Usuário", "usuario@exemplo.com",
-                UserRole.TECNICO, null, null, false, POLICY_VIGENTE, TERMS_VIGENTE);
+        return new UsuarioMeOutputDto(UUID.fromString(sub), "Usuário", "usuario@exemplo.com", null,
+                UserRole.TECNICO, null, null, false, POLICY_VIGENTE, TERMS_VIGENTE, null, null, null);
     }
 }

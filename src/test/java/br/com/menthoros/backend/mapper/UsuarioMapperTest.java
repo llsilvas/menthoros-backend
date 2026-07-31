@@ -17,6 +17,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class UsuarioMapperTest {
 
+    private static final LgpdConsentStatus LGPD = new LgpdConsentStatus(
+            true, "2026-06-30", "2026-06-30", null, null, null);
+
     private UsuarioMapper mapper;
 
     @BeforeEach
@@ -31,7 +34,7 @@ class UsuarioMapperTest {
         @Test
         @DisplayName("lança IllegalArgumentException quando usuario é null")
         void rejeitaUsuarioNull() {
-            assertThatThrownBy(() -> mapper.toMeOutputDto(null, null, false, "2026-06-30", "2026-06-30"))
+            assertThatThrownBy(() -> mapper.toMeOutputDto(null, null, LGPD))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("Usuario");
         }
@@ -41,7 +44,7 @@ class UsuarioMapperTest {
         void mapeiaSemAtleta() {
             Usuario usuario = usuarioTecnico();
 
-            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, null, false, "2026-06-30", "2026-06-30");
+            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, null, LGPD);
 
             assertThat(dto.id()).isEqualTo(usuario.getId());
             assertThat(dto.nome()).isEqualTo("João Silva"); // nome completo (nome + sobrenome)
@@ -60,7 +63,7 @@ class UsuarioMapperTest {
             Usuario usuario = usuarioAtleta();
             Atleta atleta = Atleta.builder().id(UUID.randomUUID()).nome("Atleta").build();
 
-            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, atleta, false, "2026-06-30", "2026-06-30");
+            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, atleta, LGPD);
 
             assertThat(dto.role()).isEqualTo(UserRole.ATLETA);
             assertThat(dto.atletaId()).isEqualTo(atleta.getId());
@@ -71,7 +74,7 @@ class UsuarioMapperTest {
         void omiteAssessoriaQuandoNula() {
             Usuario usuario = usuario(UserRole.TECNICO, null);
 
-            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, null, false, "2026-06-30", "2026-06-30");
+            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, null, LGPD);
 
             assertThat(dto.assessoria()).isNull();
         }
