@@ -20,12 +20,19 @@ public class UsuarioMapper {
      * Side Effects: NONE
      * Tenant-aware: NO — isolamento garantido pela camada de serviço que resolve as entidades.
      *
-     * @param usuario entidade do usuário autenticado (obrigatório)
-     * @param atleta  atleta vinculado quando a role for ATLETA; null quando não houver vínculo
+     * @param usuario              entidade do usuário autenticado (obrigatório)
+     * @param atleta               atleta vinculado quando a role for ATLETA; null quando não houver vínculo
+     * @param lgpdConsentGranted   se já existe aceite das versões vigentes (derivado pelo serviço)
+     * @param policyVersionVigente data de vigência da Política em vigor
+     * @param termsVersionVigente  data de vigência dos Termos em vigor
      * @return DTO de identidade
      * @throws IllegalArgumentException se usuario for null
      */
-    public UsuarioMeOutputDto toMeOutputDto(Usuario usuario, Atleta atleta) {
+    public UsuarioMeOutputDto toMeOutputDto(Usuario usuario,
+                                            Atleta atleta,
+                                            boolean lgpdConsentGranted,
+                                            String policyVersionVigente,
+                                            String termsVersionVigente) {
         if (usuario == null) {
             throw new IllegalArgumentException("Usuario cannot be null");
         }
@@ -35,7 +42,10 @@ public class UsuarioMapper {
                 usuario.getEmail(),
                 usuario.getRole(),
                 toAssessoria(usuario.getAssessoria()),
-                atleta != null ? atleta.getId() : null
+                atleta != null ? atleta.getId() : null,
+                lgpdConsentGranted,
+                policyVersionVigente,
+                termsVersionVigente
         );
     }
 

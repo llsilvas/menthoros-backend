@@ -3,6 +3,7 @@ package br.com.menthoros.backend.exception.handler;
 
 import br.com.menthoros.backend.exception.AccessDeniedException;
 import br.com.menthoros.backend.exception.AsaasIntegrationException;
+import br.com.menthoros.backend.exception.ConsentVersionStaleException;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -113,6 +114,25 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = Map.of(
                 "status", 409,
                 "error", "Conflict",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    /**
+     * Aceite declarando versão de documento que não é mais a vigente.
+     *
+     * <p>Código próprio ({@code CONSENT_VERSION_STALE}) para o frontend distinguir isto de um
+     * conflito genérico: aqui a ação correta é recarregar e reapresentar o texto atualizado, não
+     * exibir erro ao usuário.
+     */
+    @ExceptionHandler(ConsentVersionStaleException.class)
+    public ResponseEntity<Map<String, Object>> handleConsentVersionStale(ConsentVersionStaleException ex) {
+        log.warn("Consentimento com versão defasada: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 409,
+                "error", "Conflict",
+                "code", "CONSENT_VERSION_STALE",
                 "message", ex.getMessage()
         );
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);

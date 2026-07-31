@@ -26,7 +26,21 @@ public record UsuarioMeOutputDto(
 
         @Schema(description = "Identificador do atleta vinculado, presente apenas para a role ATLETA com vínculo",
                 example = "123e4567-e89b-12d3-a456-426614174000")
-        UUID atletaId) {
+        UUID atletaId,
+
+        @Schema(description = "Se o usuário já aceitou as versões VIGENTES da Política e dos Termos. "
+                + "Derivado da existência de registro em tb_usuario_lgpd_consent — não é campo "
+                + "persistido. Volta a false quando uma das versões vigentes muda.",
+                example = "true")
+        boolean lgpdConsentGranted,
+
+        @Schema(description = "Data de vigência da Política de Privacidade em vigor. O cliente deve "
+                + "ecoá-la ao registrar o aceite.", example = "2026-06-30")
+        String lgpdCurrentPolicyVersion,
+
+        @Schema(description = "Data de vigência dos Termos de Uso em vigor. O cliente deve ecoá-la "
+                + "ao registrar o aceite.", example = "2026-06-30")
+        String lgpdCurrentTermsVersion) {
 
     @Schema(description = "Dados básicos da assessoria do usuário")
     @JsonInclude(JsonInclude.Include.NON_NULL)

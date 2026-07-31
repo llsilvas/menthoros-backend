@@ -145,6 +145,18 @@ app:
     url: ${FRONTEND_URL:http://localhost:5174}
 
   # ----------------------------------------
+  # LGPD / CONSENTIMENTO DO COACH
+  # ----------------------------------------
+  lgpd:
+    # off | report-only | on — default off de propósito: o deploy não liga o bloqueio sozinho.
+    # Virar para `on` sem passar por `report-only` trava a escrita de TODOS os coaches de uma vez.
+    consent-enforcement: ${LGPD_CONSENT_ENFORCEMENT:off}
+    # Datas de vigência dos documentos publicados. Precisam bater com o que a página exibe:
+    # divergência = registro apontando para um texto que o coach não viu.
+    policy-version: ${LGPD_POLICY_VERSION:2026-06-30}
+    terms-version: ${LGPD_TERMS_VERSION:2026-06-30}
+
+  # ----------------------------------------
   # OPENAPI DOCUMENTATION CONFIGURATION
   # ----------------------------------------
   openapi:
