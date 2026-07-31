@@ -85,6 +85,15 @@ public class UsuarioServiceImpl implements UsuarioService {
      * <p>O último aceite pode ser de versão anterior à vigente — nesse caso {@code granted} é
      * {@code false} e a tela de privacidade mostra as duas, que é o que permite ao coach ver que
      * os termos mudaram desde o aceite dele.
+     *
+     * <p><b>As duas consultas não são redundantes — não colapse em uma.</b> Já foi sugerido derivar
+     * {@code granted} comparando o último aceite com as versões vigentes, poupando o {@code exists}.
+     * Isso quebra num cenário real: se a Política for revertida para uma versão anterior (correção
+     * de configuração publicada por engano), um coach que aceitou a versão antiga <b>e depois</b> a
+     * nova teria seu último aceite apontando para a nova, e a comparação diria "não consentiu" —
+     * quando ele consentiu com o texto que voltou a vigorar. Consentimento com uma versão não
+     * expira porque outra foi aceita depois: a pergunta certa é "existe aceite da versão vigente?",
+     * e só o {@code exists} responde isso.
      */
     private LgpdConsentStatus resolverConsentimento(UUID usuarioId, UUID tenantId) {
         String policyVigente = lgpdProperties.getPolicyVersion();
