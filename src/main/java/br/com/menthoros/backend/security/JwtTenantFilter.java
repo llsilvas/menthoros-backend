@@ -34,6 +34,18 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class JwtTenantFilter extends OncePerRequestFilter {
 
+    /**
+     * Atributo da request onde o {@link Usuario} já resolvido é depositado, para consumo por
+     * interceptors posteriores (hoje, o {@code LgpdConsentInterceptor}).
+     *
+     * <p>É <b>contrato</b> entre filtro e interceptor, não um atributo interno: evita uma segunda
+     * query por request e garante que ambos decidam sobre a mesma instância. Regra que acompanha o
+     * contrato: o atributo <b>só é depositado quando o usuário foi de fato resolvido</b> — a
+     * ausência é o sinal de "não resolvido", e quem lê deve tratá-la como falha de resolução, nunca
+     * como ausência de permissão ou de consentimento.
+     */
+    public static final String USUARIO_ATTR = JwtTenantFilter.class.getName() + ".usuario";
+
     private final UsuarioSyncService usuarioSyncService;
     private final UsuarioRepository usuarioRepository;
 
@@ -126,6 +138,12 @@ public class JwtTenantFilter extends OncePerRequestFilter {
                             usuario.getId(), tenantId, request.getRequestURI());
                     writeJsonError(response, HttpStatus.LOCKED, "Usuário inativo");
                     return;
+                }
+
+                // Só deposita quando resolveu de fato: a ausência do atributo é o sinal que o
+                // LgpdConsentInterceptor usa para responder 503 em vez de decidir no escuro.
+                if (usuario != null) {
+                    request.setAttribute(USUARIO_ATTR, usuario);
                 }
             }
 
