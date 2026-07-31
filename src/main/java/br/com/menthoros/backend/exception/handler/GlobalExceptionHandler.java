@@ -3,7 +3,10 @@ package br.com.menthoros.backend.exception.handler;
 
 import br.com.menthoros.backend.exception.AccessDeniedException;
 import br.com.menthoros.backend.exception.AsaasIntegrationException;
+import br.com.menthoros.backend.exception.ConsentResolutionUnavailableException;
+import br.com.menthoros.backend.exception.ConsentVersionStaleException;
 import br.com.menthoros.backend.exception.DomainConflictException;
+import br.com.menthoros.backend.exception.LgpdConsentRequiredException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
@@ -113,6 +116,61 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = Map.of(
                 "status", 409,
                 "error", "Conflict",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    /**
+     * Coach sem consentimento tentando escrever.
+     *
+     * <p>Código próprio ({@code LGPD_CONSENT_REQUIRED}) porque a ação do frontend aqui é exibir o
+     * modal de consentimento — não a tela de "sem permissão" de um 403 de autorização comum.
+     */
+    @ExceptionHandler(LgpdConsentRequiredException.class)
+    public ResponseEntity<Map<String, Object>> handleLgpdConsentRequired(LgpdConsentRequiredException ex) {
+        Map<String, Object> body = Map.of(
+                "status", 403,
+                "error", "Forbidden",
+                "code", "LGPD_CONSENT_REQUIRED",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
+    }
+
+    /**
+     * Falha ao resolver o usuário para avaliar consentimento.
+     *
+     * <p>503 e não 403 de propósito: "não consegui verificar" não é "não consentiu". Devolver 403
+     * aqui mandaria o coach para o modal por causa de uma falha de infraestrutura e esconderia o
+     * defeito real.
+     */
+    @ExceptionHandler(ConsentResolutionUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> handleConsentResolutionUnavailable(
+            ConsentResolutionUnavailableException ex) {
+        log.error("Falha ao resolver usuário para verificação de consentimento: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 503,
+                "error", "Service Unavailable",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    /**
+     * Aceite declarando versão de documento que não é mais a vigente.
+     *
+     * <p>Código próprio ({@code CONSENT_VERSION_STALE}) para o frontend distinguir isto de um
+     * conflito genérico: aqui a ação correta é recarregar e reapresentar o texto atualizado, não
+     * exibir erro ao usuário.
+     */
+    @ExceptionHandler(ConsentVersionStaleException.class)
+    public ResponseEntity<Map<String, Object>> handleConsentVersionStale(ConsentVersionStaleException ex) {
+        log.warn("Consentimento com versão defasada: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 409,
+                "error", "Conflict",
+                "code", "CONSENT_VERSION_STALE",
                 "message", ex.getMessage()
         );
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
