@@ -51,10 +51,19 @@ class TssCalculatorServiceConvergenciaTest {
         // da mesma forma, o teste de convergência continuaria verde e não perceberíamos.
         @ParameterizedTest(name = "planejado {0}min RPE {1} = {2}")
         @CsvSource({
-                "60, 3,  36",
-                "60, 5,  54",
-                "60, 7,  81",
-                "60, 9, 127",
+                // Bordas da faixa primeiro: RPE 1 e 10 são onde o clamp de IF viveria. Ele é inerte
+                // aqui (RPE 1 -> IF 0,45 = MIN_IF_RPE; RPE 10 -> IF 1,25 < MAX_IF 1,50), e fixar os
+                // valores é o que prova isso — se o mapeamento mudar e o clamp passar a morder, cai.
+                "60,  1,  20",
+                "60,  3,  36",
+                "60,  5,  54",
+                "60,  7,  81",
+                "60,  9, 127",
+                "60, 10, 156",
+                // Durações fora de 60min: sem elas, um bug no fator horas passaria despercebido,
+                // porque em 1h a duração some da conta.
+                "30,  5,  27",
+                "90,  7, 122",
         })
         @DisplayName("planejado usa h × IF² × 100 (era min × RPE² / 90 — BUG-CONF-001)")
         void planejado(int minutos, int rpe, int esperado) {
@@ -63,10 +72,19 @@ class TssCalculatorServiceConvergenciaTest {
 
         @ParameterizedTest(name = "realizado {0}min RPE {1} = {2}")
         @CsvSource({
-                "60, 3,  36",
-                "60, 5,  54",
-                "60, 7,  81",
-                "60, 9, 127",
+                // Bordas da faixa primeiro: RPE 1 e 10 são onde o clamp de IF viveria. Ele é inerte
+                // aqui (RPE 1 -> IF 0,45 = MIN_IF_RPE; RPE 10 -> IF 1,25 < MAX_IF 1,50), e fixar os
+                // valores é o que prova isso — se o mapeamento mudar e o clamp passar a morder, cai.
+                "60,  1,  20",
+                "60,  3,  36",
+                "60,  5,  54",
+                "60,  7,  81",
+                "60,  9, 127",
+                "60, 10, 156",
+                // Durações fora de 60min: sem elas, um bug no fator horas passaria despercebido,
+                // porque em 1h a duração some da conta.
+                "30,  5,  27",
+                "90,  7, 122",
         })
         @DisplayName("realizado usa h × IF² × 100 — inalterado pela correção")
         void realizado(int minutos, int rpe, int esperado) {

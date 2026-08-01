@@ -99,6 +99,13 @@ class TrainingPrescriptionGuardSkillTest {
 
         assertThat(tssPorSessao * 6).isGreaterThan(400.0 * 1.15);
         assertThat(resultado.payload().aprovado()).isFalse();
+
+        // Afirmar QUAL violação disparou. O guard tem cinco regras e `aprovado()` é falso se
+        // qualquer uma delas cair — sem isto, mexer no inputPadrao faria o teste seguir verde
+        // pelo motivo errado, que é justamente o modo de falha que este teste deveria pegar.
+        assertThat(resultado.payload().violacoes())
+                .as("a violação deve ser de TSS, não outra regra do guard")
+                .anyMatch(v -> v.toLowerCase().contains("tss excessivo"));
     }
 
     // =====================================================================

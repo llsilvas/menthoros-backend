@@ -509,7 +509,10 @@ class TreinoPlanejadoServiceTest {
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
             when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)).thenReturn(Optional.of(treino));
-            when(tssCalculatorService.calcularTssEstimado(Duration.ofMinutes(90), 7)).thenReturn(49);
+            // 122 = o que o calculador real devolve para 90min RPE 7. Este teste é de wiring, então
+            // o valor é stub — mas usar 49 aqui (o resultado da fórmula ANTIGA) plantava a escala
+            // errada na cara de quem lê. A escala em si é afirmada em tssRecalculadoSaiNaEscalaDoRealizado.
+            when(tssCalculatorService.calcularTssEstimado(Duration.ofMinutes(90), 7)).thenReturn(122);
             when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
@@ -521,7 +524,7 @@ class TreinoPlanejadoServiceTest {
 
             ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
             verify(treinoPlanejadoRepository).save(captor.capture());
-            assertThat(captor.getValue().getTssPlanejado()).isEqualTo(49);
+            assertThat(captor.getValue().getTssPlanejado()).isEqualTo(122);
         }
 
         @Test
