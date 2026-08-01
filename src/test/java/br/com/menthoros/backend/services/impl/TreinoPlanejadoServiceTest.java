@@ -7,6 +7,7 @@ import br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto;
 import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
@@ -521,6 +522,50 @@ class TreinoPlanejadoServiceTest {
             ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
             verify(treinoPlanejadoRepository).save(captor.capture());
             assertThat(captor.getValue().getTssPlanejado()).isEqualTo(49);
+        }
+
+        @Test
+        @DisplayName("TSS recalculado sai na escala do realizado, não na da fórmula antiga (CA2)")
+        void tssRecalculadoSaiNaEscalaDoRealizado() {
+            // Calculador REAL de propósito. Com o mock, o valor recalculado é um stub arbitrário e a
+            // asserção não prova escala nenhuma — e escala é exatamente o que o BUG-CONF-001 quebrava.
+            TreinoPlanejadoServiceImpl servicoComCalculadorReal = new TreinoPlanejadoServiceImpl(
+                    planoSemanalRepository, treinoPlanejadoRepository, new TssCalculatorService(),
+                    treinoMapper, etapaMapper);
+
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setDuracaoMin(Duration.ofMinutes(60));
+            treino.setPercepcaoEsforcoEsperada(7);
+            treino.setTssPlanejado(81); // veio do gerador de plano, já na escala certa
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)).thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, Duration.ofMinutes(90), null, null, null, null, null
+            );
+
+            servicoComCalculadorReal.editarTreino(planoId, treinoId, patch);
+
+            ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
+            verify(treinoPlanejadoRepository).save(captor.capture());
+            int recalculado = captor.getValue().getTssPlanejado();
+
+            // 1,5h × IF(7)=0,90² × 100 = 121,5 -> 122. A fórmula antiga daria 90 × 7² / 90 = 49,
+            // ou seja, um treino MAIS longo valendo MENOS que os 81 que o gerador tinha posto.
+            assertThat(recalculado).isEqualTo(122);
+
+            // O CA2 propriamente dito: o recalculado é o mesmo que o caminho realizado produz para
+            // a mesma duração e esforço (RPE puro, sem tipo de treino — sem fator de impacto).
+            TreinoRealizado realizadoMesmoEsforco = new TreinoRealizado();
+            realizadoMesmoEsforco.setDuracaoMin(Duration.ofMinutes(90));
+            realizadoMesmoEsforco.setPercepcaoEsforco(7);
+            assertThat(recalculado)
+                    .as("recalculado (%d) deve bater com o realizado equivalente", recalculado)
+                    .isEqualTo(new TssCalculatorService().calcularTss(realizadoMesmoEsforco));
         }
 
         @Test
