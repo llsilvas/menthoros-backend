@@ -4,6 +4,7 @@ import br.com.menthoros.backend.dto.input.ReconciliacaoAcaoRequestDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FonteDados;
@@ -12,9 +13,11 @@ import br.com.menthoros.backend.enums.PlanoAssessoria;
 import br.com.menthoros.backend.enums.ReconciliationActionType;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.repository.UsuarioRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,8 +27,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import br.com.menthoros.backend.AbstractIntegrationTest;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
-import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -33,23 +37,35 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.*;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * Integration tests for Task 5.1 Manual Reconciliation endpoints.
+ * Contrato HTTP dos 3 endpoints de reconciliação manual — o fluxo em que o treinador vincula uma
+ * atividade externa (Strava) ao treino planejado do atleta.
  *
- * Validates HTTP contract for 3 endpoints:
- * 1. GET /api/v1/reconciliation/atletas/{atletaId}/pendentes - list pending activities
- * 2. GET /api/v1/reconciliation/{treinoRealizadoId}/candidatos - list candidate matches
- * 3. POST /api/v1/reconciliation/{treinoRealizadoId}/acao - dispatch reconciliation action
+ * <ol>
+ *   <li>{@code GET  /api/v1/reconciliation/atletas/{atletaId}/pendentes}</li>
+ *   <li>{@code GET  /api/v1/reconciliation/{treinoRealizadoId}/candidatos}</li>
+ *   <li>{@code POST /api/v1/reconciliation/{treinoRealizadoId}/acao}</li>
+ * </ol>
  *
- * Uses @SpringBootTest with MockMvc (not standalone) and real Spring context.
- * Tests HTTP contract validation, security, error handling, and status codes.
+ * <p><b>Autenticação: JWT, não {@code @WithMockUser}.</b> Esta classe ficou vermelha de 2026-05-14 a
+ * 2026-08-02, com 14 dos 19 testes em 403, por dois defeitos empilhados — os dois no teste, nenhum na
+ * produção. Primeiro, autenticava com {@code roles = {"USER"}}, e {@code ROLE_USER} não existe no
+ * domínio: os endpoints exigem {@code TECNICO} ou {@code ADMIN}. Segundo, e decisivo,
+ * {@code JwtTenantFilter} só popula o {@code TenantContext} quando o principal é um {@code Jwt};
+ * {@code @WithMockUser} produz um {@code User}, então o filtro virava no-op e
+ * {@code getRequiredTenantId()} lançava — 403.
+ *
+ * <p>O header {@code X-Tenant-ID} <b>não</b> aparece aqui: a produção resolve o tenant pelo claim do
+ * JWT, nunca por header. O teste original o enviava porque foi escrito quando o controller o lia na
+ * mão; o commit {@code 9cf6d20} mudou isso e não atualizou o teste.
  */
 @AutoConfigureMockMvc
-@DisplayName("Task 5.1 - Manual Reconciliation Endpoints")
-class Task5p1ControllerIT extends AbstractIntegrationTest {
+@DisplayName("Reconciliação manual — contrato HTTP")
+class ManualReconciliationControllerIT extends AbstractIntegrationTest {
 
     @Autowired
     private MockMvc mockMvc;
@@ -66,11 +82,16 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
     @Autowired
     private TreinoRealizadoRepository treinoRealizadoRepository;
 
+    @Autowired
+    private UsuarioRepository usuarioRepository;
+
     private Assessoria assessoria;
     private Atleta atleta;
     private UUID tenantId;
     private UUID atletaId;
     private TreinoRealizado treinoRealizado;
+    private UUID subTecnico;
+    private UUID subAtleta;
 
     @BeforeEach
     void setUp() {
@@ -106,6 +127,59 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
         treinoRealizado.setReconciliationScore(new BigDecimal("0.75"));
         treinoRealizado.setTenantId(tenantId);
         treinoRealizado = treinoRealizadoRepository.save(treinoRealizado);
+
+        // Usuários semeados para que o JwtTenantFilter siga o caminho de SUCESSO ao sincronizar.
+        // Sem a linha correspondente ao subject, o sync cai no branch de fail-safe e os testes
+        // ficariam verdes exercitando um caminho degradado — que não é o que se quer provar.
+        subTecnico = UUID.randomUUID();
+        subAtleta = UUID.randomUUID();
+        criarUsuario(subTecnico, UserRole.TECNICO);
+        criarUsuario(subAtleta, UserRole.ATLETA);
+    }
+
+    // ===== Helpers =====
+
+    /**
+     * JWT no formato que a produção espera: subject <b>UUID</b> (o
+     * {@code UsuarioSyncServiceImpl.createNewUsuario} faz {@code UUID.fromString(keycloakId)}),
+     * claim {@code tenant_id} e authority {@code ROLE_<papel>}.
+     *
+     * <p>As authorities vão explícitas porque o post-processor {@code jwt()} não usa o
+     * {@code JwtAuthenticationConverter} da aplicação — o default dele mapearia scopes para
+     * {@code SCOPE_*}, e o {@code @PreAuthorize} exige {@code ROLE_*}.
+     */
+    private RequestPostProcessor jwtDe(UUID subject, UUID tenant, String papel) {
+        return jwt()
+                .authorities(new SimpleGrantedAuthority("ROLE_" + papel))
+                .jwt(j -> j.subject(subject.toString()).claim("tenant_id", tenant.toString()));
+    }
+
+    /** Atalho para o caso dominante: técnico do tenant sob teste. */
+    private RequestPostProcessor comoTecnico() {
+        return jwtDe(subTecnico, tenantId, "TECNICO");
+    }
+
+    /**
+     * JWT autenticado e com a role certa, mas <b>sem</b> {@code tenant_id} e sem {@code organization}
+     * — o {@code JwtTenantFilter} não tem de onde resolver o tenant.
+     */
+    private RequestPostProcessor jwtSemTenant() {
+        return jwt()
+                .authorities(new SimpleGrantedAuthority("ROLE_TECNICO"))
+                .jwt(j -> j.subject(subTecnico.toString()));
+    }
+
+    private Usuario criarUsuario(UUID subject, UserRole role) {
+        Usuario usuario = Usuario.builder()
+                .id(subject)
+                .keycloakId(subject.toString())
+                .assessoria(assessoria)
+                .email(subject + "@menthoros.test")
+                .nome("Usuario " + subject)
+                .role(role)
+                .ativo(true)
+                .build();
+        return usuarioRepository.save(usuario);
     }
 
     @Nested
@@ -114,10 +188,9 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("Happy path: 200 OK with paginated results")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldReturnOkWithPaginatedPendingActivities() throws Exception {
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .param("page", "0")
                     .param("size", "20")
                     .contentType(MediaType.APPLICATION_JSON))
@@ -134,10 +207,9 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("Filter by single status (AMBIGUO)")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldFilterByStatusAmbiguo() throws Exception {
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .param("statuses", "AMBIGUO")
                     .param("page", "0")
                     .param("size", "20")
@@ -148,7 +220,6 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("Filter by multiple statuses (AMBIGUO,NAO_PLANEJADO)")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldFilterByMultipleStatuses() throws Exception {
             // Create NAO_PLANEJADO activity
             TreinoRealizado orfao = new TreinoRealizado();
@@ -165,7 +236,7 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
             treinoRealizadoRepository.save(orfao);
 
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .param("statuses", "AMBIGUO", "NAO_PLANEJADO")
                     .param("page", "0")
                     .param("size", "20")
@@ -177,10 +248,9 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("400 Bad Request when invalid status provided")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldReturn400ForInvalidStatus() throws Exception {
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .param("statuses", "INVALID_STATUS")
                     .param("page", "0")
                     .param("size", "20")
@@ -190,10 +260,9 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("400 Bad Request when non-pending status provided (e.g., VINCULADO_AUTOMATICO)")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldReturn400ForNonPendingStatus() throws Exception {
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .param("statuses", "VINCULADO_AUTOMATICO")
                     .param("page", "0")
                     .param("size", "20")
@@ -202,23 +271,23 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
         }
 
         @Test
-        @DisplayName("Missing X-Tenant-ID header returns 400 Bad Request")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
-        void shouldHandleWhenTenantHeaderMissing() throws Exception {
-            // Missing X-Tenant-ID header triggers MissingRequestHeaderException → GlobalExceptionHandler returns 400
+        @DisplayName("JWT sem claim de tenant é rejeitado com 403, mesmo com paginação válida")
+        void jwtSemTenantEhRejeitadoNoPendentes() throws Exception {
+            // Antes afirmava "sem X-Tenant-ID => 400". Esse header nunca foi lido pela produção;
+            // o tenant vem do claim do JWT.
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
+                    .with(jwtSemTenant())
                     .param("page", "0")
                     .param("size", "20")
                     .contentType(MediaType.APPLICATION_JSON))
-                    .andExpect(status().isBadRequest());
+                    .andExpect(status().isForbidden());
         }
 
         @Test
         @DisplayName("Pagination: page and size parameters work correctly")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldRespectPaginationParameters() throws Exception {
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .param("page", "0")
                     .param("size", "10")
                     .contentType(MediaType.APPLICATION_JSON))
@@ -228,10 +297,9 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("Response DTO has all required fields")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldHaveAllRequiredFieldsInDto() throws Exception {
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .param("page", "0")
                     .param("size", "20")
                     .contentType(MediaType.APPLICATION_JSON))
@@ -252,10 +320,9 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("Happy path: 200 OK with candidate list")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldReturnOkWithCandidatesList() throws Exception {
             mockMvc.perform(get("/api/v1/reconciliation/{treinoRealizadoId}/candidatos", treinoRealizado.getId())
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isOk())
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON))
@@ -264,10 +331,9 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("Response DTO has all required score breakdown fields")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldHaveScoreBreakdownFields() throws Exception {
             mockMvc.perform(get("/api/v1/reconciliation/{treinoRealizadoId}/candidatos", treinoRealizado.getId())
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$").isArray());
@@ -276,7 +342,6 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("Empty candidates list when no matches found")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldReturnEmptyListWhenNoMatches() throws Exception {
             // Create activity with no candidates (future date)
             TreinoRealizado noMatchActivity = new TreinoRealizado();
@@ -293,7 +358,7 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
             noMatchActivity = treinoRealizadoRepository.save(noMatchActivity);
 
             mockMvc.perform(get("/api/v1/reconciliation/{treinoRealizadoId}/candidatos", noMatchActivity.getId())
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .contentType(MediaType.APPLICATION_JSON))
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$").isArray())
@@ -308,12 +373,11 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("400 Bad Request when action is missing (null)")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldReturn400WhenActionIsNull() throws Exception {
             String invalidJson = "{\"action\": null}";
 
             mockMvc.perform(post("/api/v1/reconciliation/{treinoRealizadoId}/acao", treinoRealizado.getId())
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(invalidJson))
                     .andExpect(status().isBadRequest());
@@ -321,7 +385,6 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("400 Bad Request when VINCULAR_MANUALMENTE without treinoPlanejadoId")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldReturn400WhenVincularWithoutTreinoPlanejadoId() throws Exception {
             ReconciliacaoAcaoRequestDto request = new ReconciliacaoAcaoRequestDto(
                     ReconciliationActionType.VINCULAR_MANUALMENTE,
@@ -330,7 +393,7 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
             );
 
             mockMvc.perform(post("/api/v1/reconciliation/{treinoRealizadoId}/acao", treinoRealizado.getId())
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isBadRequest());
@@ -349,7 +412,6 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
             );
 
             mockMvc.perform(post("/api/v1/reconciliation/{treinoRealizadoId}/acao", treinoRealizado.getId())
-                    .header("X-Tenant-ID", tenantId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isUnauthorized());
@@ -362,16 +424,28 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
     class SecurityAndMultiTenancy {
 
         @Test
-        @DisplayName("X-Tenant-ID header is required (missing header returns 400)")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
-        void shouldEnforceTenantHeaderRequirement() throws Exception {
-            // Without X-Tenant-ID header, MissingRequestHeaderException caught by GlobalExceptionHandler → 400 Bad Request
-            mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId))
-                    .andExpect(status().isBadRequest());
+        @DisplayName("JWT sem claim de tenant é rejeitado com 403")
+        void jwtSemTenantEhRejeitado() throws Exception {
+            // Substitui o antigo "X-Tenant-ID ausente => 400", que afirmava um contrato inexistente:
+            // a produção nunca leu esse header. O tenant vem do JWT, e sem ele o
+            // TenantContext.getRequiredTenantId() lança — o GlobalExceptionHandler mapeia para 403.
+            mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
+                    .with(jwtSemTenant()))
+                    .andExpect(status().isForbidden());
         }
 
         @Test
-        @DisplayName("Authentication required: 401 without @WithMockUser on POST /acao")
+        @DisplayName("403 por role sem permissão: ATLETA não acessa endpoint de TECNICO/ADMIN")
+        void atletaNaoAcessaEndpointDeTecnico() throws Exception {
+            // Sem este caso, nada prova que o @PreAuthorize BLOQUEIA — os testes de 401 só cobrem
+            // ausência de autenticação, e todos os demais usam uma role que passa.
+            mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
+                    .with(jwtDe(subAtleta, tenantId, "ATLETA")))
+                    .andExpect(status().isForbidden());
+        }
+
+        @Test
+        @DisplayName("401 quando a request nao esta autenticada (POST /acao)")
         void shouldReturn401WhenUnauthenticatedOnPostAcao() throws Exception {
             ReconciliacaoAcaoRequestDto request = new ReconciliacaoAcaoRequestDto(
                     ReconciliationActionType.MARCAR_NAO_PLANEJADO,
@@ -380,7 +454,6 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
             );
 
             mockMvc.perform(post("/api/v1/reconciliation/{treinoRealizadoId}/acao", treinoRealizado.getId())
-                    .header("X-Tenant-ID", tenantId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(status().isUnauthorized());
@@ -394,10 +467,9 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("GET returns application/json Content-Type")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldReturnJsonContentTypeOnGet() throws Exception {
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .param("page", "0")
                     .param("size", "20"))
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON));
@@ -405,7 +477,6 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("POST returns application/json Content-Type")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldReturnJsonContentTypeOnPost() throws Exception {
             ReconciliacaoAcaoRequestDto request = new ReconciliacaoAcaoRequestDto(
                     ReconciliationActionType.MARCAR_NAO_PLANEJADO,
@@ -414,7 +485,7 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
             );
 
             mockMvc.perform(post("/api/v1/reconciliation/{treinoRealizadoId}/acao", treinoRealizado.getId())
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(request)))
                     .andExpect(content().contentType(MediaType.APPLICATION_JSON));
@@ -422,10 +493,9 @@ class Task5p1ControllerIT extends AbstractIntegrationTest {
 
         @Test
         @DisplayName("Error response includes proper status code and message structure")
-        @WithMockUser(username = "coach@example.com", roles = {"USER"})
         void shouldReturnStructuredErrorResponse() throws Exception {
             mockMvc.perform(get("/api/v1/reconciliation/atletas/{atletaId}/pendentes", atletaId)
-                    .header("X-Tenant-ID", tenantId)
+                    .with(comoTecnico())
                     .param("statuses", "INVALID_STATUS")
                     .param("page", "0")
                     .param("size", "20"))
