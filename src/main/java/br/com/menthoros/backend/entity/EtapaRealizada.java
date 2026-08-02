@@ -112,4 +112,18 @@ public class EtapaRealizada {
     @Column(name = "tempo_movimento")
     private Duration tempoMovimento;
 
+    // ===== ZONA / INTENSIDADE / INCLINAÇÃO (V74) =====
+    // Nomes em inglês por ADR-0007 (código novo nasce em inglês).
+
+    @Column(name = "zone")
+    private Integer zone;
+
+    /** % do limiar. A fonte entrega inteiro (75, 82, 93). */
+    @Column(name = "intensity_pct", precision = 5, scale = 2)
+    private BigDecimal intensityPct;
+
+    /** Percentual. O intervals.icu entrega fração (0.0011977 = 0,1%) — converter no mapper. */
+    @Column(name = "avg_gradient_pct", precision = 4, scale = 1)
+    private BigDecimal avgGradientPct;
+
 }
