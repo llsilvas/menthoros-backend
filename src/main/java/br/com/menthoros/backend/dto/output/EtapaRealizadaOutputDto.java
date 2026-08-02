@@ -56,13 +56,13 @@ public record EtapaRealizadaOutputDto(
         String observacao,
 
         @Schema(description = "Zona de FC predominante na etapa", example = "3")
-        Integer zone,
+        Integer zona,
 
         @Schema(description = "Intensidade da etapa em % do limiar", example = "91.00")
-        BigDecimal intensityPct,
+        BigDecimal intensidadePct,
 
         @Schema(description = "Inclinação média da etapa em %", example = "-0.6")
-        BigDecimal avgGradientPct,
+        BigDecimal inclinacaoMediaPct,
 
         @Schema(description = "Running dynamics da etapa (GCT, equilíbrio, passada, oscilação, proporção "
                         + "vertical, temperatura, tempo em movimento) — calorias sempre ausente aqui, só "
