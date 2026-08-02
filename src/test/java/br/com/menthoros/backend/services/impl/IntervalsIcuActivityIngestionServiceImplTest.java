@@ -38,12 +38,14 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -192,7 +194,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(integracaoExternaRepository.findOtherActiveByExternalAthleteIdAndPlataformaAndTenantId(any(), any(), any(), any()))
                     .thenReturn(List.of());
-            when(intervalsIcuClient.buscarAtividade(API_KEY, ACTIVITY_ID)).thenReturn(dto);
+            when(intervalsIcuClient.buscarAtividade(API_KEY, ACTIVITY_ID, true)).thenReturn(dto);
             when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
             when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoRealizado());
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mockOutputDto());
@@ -251,7 +253,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
         @DisplayName("404 do client vira DomainNotFoundException")
         void notFoundViraDomainNotFound() {
             stubAteAntesDoClient();
-            when(intervalsIcuClient.buscarAtividade(anyString(), anyString()))
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean()))
                     .thenThrow(new IntervalsIcuApiException(HttpStatusCode.valueOf(404), "não encontrado"));
 
             assertThatThrownBy(() -> service.importarAtividade(atletaId, ACTIVITY_ID, tenantId))
@@ -263,7 +265,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
         @DisplayName("401/403 do client vira DomainConflictException (reconexão necessária) — distinto de 404")
         void authInvalidaViraDomainConflict(int status) {
             stubAteAntesDoClient();
-            when(intervalsIcuClient.buscarAtividade(anyString(), anyString()))
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean()))
                     .thenThrow(new IntervalsIcuApiException(HttpStatusCode.valueOf(status), "auth inválida"));
 
             assertThatThrownBy(() -> service.importarAtividade(atletaId, ACTIVITY_ID, tenantId))
@@ -274,7 +276,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
         @DisplayName("422 do provedor vira DomainRuleViolationException")
         void provedor422ViraDomainRuleViolation() {
             stubAteAntesDoClient();
-            when(intervalsIcuClient.buscarAtividade(anyString(), anyString()))
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean()))
                     .thenThrow(new IntervalsIcuApiException(HttpStatusCode.valueOf(422), "rejeitado"));
 
             assertThatThrownBy(() -> service.importarAtividade(atletaId, ACTIVITY_ID, tenantId))
@@ -285,7 +287,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
         @DisplayName("429 do client vira IntervalsIcuRateLimitException — NUNCA 409")
         void rateLimit429ViraIntervalsIcuRateLimitException() {
             stubAteAntesDoClient();
-            when(intervalsIcuClient.buscarAtividade(anyString(), anyString()))
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean()))
                     .thenThrow(new IntervalsIcuApiException(HttpStatusCode.valueOf(429), "rate limit"));
 
             assertThatThrownBy(() -> service.importarAtividade(atletaId, ACTIVITY_ID, tenantId))
@@ -297,7 +299,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
         @DisplayName("5xx do client vira IntervalsIcuRateLimitException (mesmo tratamento de 429)")
         void erro5xxViraIntervalsIcuRateLimitException() {
             stubAteAntesDoClient();
-            when(intervalsIcuClient.buscarAtividade(anyString(), anyString()))
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean()))
                     .thenThrow(new IntervalsIcuApiException(HttpStatusCode.valueOf(503), "instável"));
 
             assertThatThrownBy(() -> service.importarAtividade(atletaId, ACTIVITY_ID, tenantId))
@@ -308,7 +310,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
         @DisplayName("falha de transporte (status nulo) vira IntervalsIcuRateLimitException")
         void falhaDeTransporteViraIntervalsIcuRateLimitException() {
             stubAteAntesDoClient();
-            when(intervalsIcuClient.buscarAtividade(anyString(), anyString()))
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean()))
                     .thenThrow(new IntervalsIcuApiException("timeout", new RuntimeException("io")));
 
             assertThatThrownBy(() -> service.importarAtividade(atletaId, ACTIVITY_ID, tenantId))
@@ -326,8 +328,8 @@ class IntervalsIcuActivityIngestionServiceImplTest {
             stubAteAntesDoClient();
             IcuActivityDto dtoDivergente = new IcuActivityDto(
                     ACTIVITY_ID, "i999999", "Run", "Corrida", "2026-07-16T08:00:00",
-                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null);
-            when(intervalsIcuClient.buscarAtividade(anyString(), anyString())).thenReturn(dtoDivergente);
+                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dtoDivergente);
 
             assertThatThrownBy(() -> service.importarAtividade(atletaId, ACTIVITY_ID, tenantId))
                     .isInstanceOf(DomainNotFoundException.class);
@@ -340,7 +342,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
         void modalidadeNaoSuportadaRetorna422() {
             stubAteAntesDoClient();
             IcuActivityDto dto = icuDto();
-            when(intervalsIcuClient.buscarAtividade(anyString(), anyString())).thenReturn(dto);
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
             when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(false);
 
             assertThatThrownBy(() -> service.importarAtividade(atletaId, ACTIVITY_ID, tenantId))
@@ -359,7 +361,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
         void fluxoCompletoDelegaAoPersisterERetornaDto() {
             stubAteAntesDoClient();
             IcuActivityDto dto = icuDto();
-            when(intervalsIcuClient.buscarAtividade(anyString(), anyString())).thenReturn(dto);
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
             when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
             TreinoRealizado salvo = new TreinoRealizado();
             when(persister.persistir(eq(dto), eq(atleta), eq(tenantId), eq(ACTIVITY_ID))).thenReturn(salvo);
@@ -370,6 +372,24 @@ class IntervalsIcuActivityIngestionServiceImplTest {
 
             assertThat(resultado).isSameAs(outputDto);
             verify(persister).persistir(dto, atleta, tenantId, ACTIVITY_ID);
+        }
+
+        @Test
+        @DisplayName("faz UMA unica chamada externa, pedindo os intervalos (CA4)")
+        void umaUnicaChamadaComIntervalos() {
+            stubAteAntesDoClient();
+            IcuActivityDto dto = icuDto();
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
+            when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
+            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoRealizado());
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mockOutputDto());
+
+            service.importarAtividade(atletaId, ACTIVITY_ID, tenantId);
+
+            // comIntervalos=true nao e opcional: sem ele a activity volta sem icu_intervals e o
+            // treino nasce sem etapas — exatamente o defeito que esta change conserta.
+            verify(intervalsIcuClient).buscarAtividade(anyString(), eq(ACTIVITY_ID), eq(true));
+            verifyNoMoreInteractions(intervalsIcuClient);
         }
     }
 
@@ -438,7 +458,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
     private IcuActivityDto icuDto() {
         return new IcuActivityDto(
                 ACTIVITY_ID, "i641775", "Run", "Corrida", "2026-07-16T08:00:00",
-                1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null);
+                1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private TreinoRealizadoOutputDto mockOutputDto() {

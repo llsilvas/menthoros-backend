@@ -23,8 +23,16 @@ public interface IntervalsIcuClient {
     /** PUT /api/v1/athlete/{id}/events/{eventId} — erro HTTP vira IntervalsIcuApiException(status, mensagem). */
     IcuEventDto atualizarEvento(String apiKey, String externalAthleteId, long eventId, JsonNode payload);
 
-    /** GET /api/v1/activity/{id} — erro HTTP vira IntervalsIcuApiException(status, mensagem). */
-    IcuActivityDto buscarAtividade(String apiKey, String activityId);
+    /**
+     * GET /api/v1/activity/{id}?intervals={comIntervalos} — erro HTTP vira
+     * IntervalsIcuApiException(status, mensagem).
+     *
+     * <p>Sem {@code comIntervalos=true} a chave {@code icu_intervals} <b>nem aparece</b> no corpo —
+     * não é uma lista vazia, é ausência. Não há sobrecarga sem o parâmetro de propósito: um
+     * chamador que esquecesse de pedir os intervalos reintroduziria silenciosamente o defeito de
+     * treinos sem etapas.
+     */
+    IcuActivityDto buscarAtividade(String apiKey, String activityId, boolean comIntervalos);
 
     /** GET /api/v1/athlete/{id}/events?oldest=&newest=. */
     List<IcuEventDto> listarEventos(String apiKey, String externalAthleteId, LocalDate oldest, LocalDate newest);

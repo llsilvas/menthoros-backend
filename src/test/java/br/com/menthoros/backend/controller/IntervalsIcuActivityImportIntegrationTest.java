@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.intervalsicu.IcuActivityDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoRealizado;
@@ -42,6 +43,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -129,7 +131,7 @@ class IntervalsIcuActivityImportIntegrationTest extends AbstractIntegrationTest 
             UUID tenantId = atleta.getAssessoria().getId();
             seedIntervalsIcuConexao(atleta, tenantId, "999888");
             autenticarComoTecnico(tenantId);
-            when(intervalsIcuClient.buscarAtividade(any(), any())).thenReturn(activityDto("i166338796", "999888"));
+            when(intervalsIcuClient.buscarAtividade(any(), any(), anyBoolean())).thenReturn(activityDto("i166338796", "999888"));
 
             var resposta = controller.importarAtividade(atleta.getId(), "i166338796");
 
@@ -146,7 +148,7 @@ class IntervalsIcuActivityImportIntegrationTest extends AbstractIntegrationTest 
             seedIntervalsIcuConexao(atleta, tenantId, "999888");
             seedStravaConexao(atleta, tenantId, true);
             autenticarComoTecnico(tenantId);
-            when(intervalsIcuClient.buscarAtividade(any(), any())).thenReturn(activityDto("i166338796", "999888"));
+            when(intervalsIcuClient.buscarAtividade(any(), any(), anyBoolean())).thenReturn(activityDto("i166338796", "999888"));
 
             var resposta = controller.importarAtividade(atleta.getId(), "i166338796");
 
@@ -249,6 +251,136 @@ class IntervalsIcuActivityImportIntegrationTest extends AbstractIntegrationTest 
 
     private IcuActivityDto activityDto(String activityId, String athleteId) {
         return new IcuActivityDto(activityId, athleteId, "Run", "Corrida de teste", "2026-07-16T08:00:00",
-                1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null);
+                1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
+    }
+    @Nested
+    @DisplayName("etapas do intervals.icu (change intervals-icu-activity-laps)")
+    class Etapas {
+
+        @Test
+        @DisplayName("CA1: import grava as etapas em tb_etapa_realizada com ordem sequencial e FK")
+        void importGravaEtapas() {
+            Atleta atleta = seedAtleta();
+            UUID tenantId = atleta.getAssessoria().getId();
+            seedIntervalsIcuConexao(atleta, tenantId, "999888");
+            autenticarComoTecnico(tenantId);
+            when(intervalsIcuClient.buscarAtividade(any(), any(), anyBoolean()))
+                    .thenReturn(activityComIntervalos("i171415754", "999888"));
+
+            controller.importarAtividade(atleta.getId(), "i171415754");
+
+            TreinoRealizado salvo = treinoRealizadoRepository.findByTenantIdAndFonteDadosAndExternalId(
+                    tenantId, FonteDados.INTERVALS_ICU, "i171415754").orElseThrow();
+            assertThat(salvo.getEtapasRealizadas()).hasSize(2);
+            assertThat(salvo.getEtapasRealizadas()).extracting(EtapaRealizada::getOrdem)
+                    .containsExactly(1, 2);
+            assertThat(salvo.getEtapasRealizadas()).allSatisfy(e ->
+                    assertThat(e.getTreinoRealizado().getId()).isEqualTo(salvo.getId()));
+        }
+
+        @Test
+        @DisplayName("CA9: zona, intensidade e inclinacao chegam ao banco — inclinacao em percentual")
+        void gravaZonaIntensidadeInclinacao() {
+            Atleta atleta = seedAtleta();
+            UUID tenantId = atleta.getAssessoria().getId();
+            seedIntervalsIcuConexao(atleta, tenantId, "999888");
+            autenticarComoTecnico(tenantId);
+            when(intervalsIcuClient.buscarAtividade(any(), any(), anyBoolean()))
+                    .thenReturn(activityComIntervalos("i171415754", "999888"));
+
+            controller.importarAtividade(atleta.getId(), "i171415754");
+
+            EtapaRealizada etapa = treinoRealizadoRepository.findByTenantIdAndFonteDadosAndExternalId(
+                    tenantId, FonteDados.INTERVALS_ICU, "i171415754").orElseThrow()
+                    .getEtapasRealizadas().get(0);
+            assertThat(etapa.getZona()).isEqualTo(1);
+            assertThat(etapa.getIntensidadePct()).isEqualByComparingTo(new java.math.BigDecimal("75.00"));
+            // 0.0011977126 na fonte -> 0,1% no banco
+            assertThat(etapa.getInclinacaoMediaPct()).isEqualByComparingTo(new java.math.BigDecimal("0.1"));
+            // 113.24149 mm na fonte -> 11,3 cm no banco (NUMERIC(4,1) nao comportaria o valor cru)
+            assertThat(etapa.getOscilacaoVerticalCm()).isEqualByComparingTo(new java.math.BigDecimal("11.3"));
+        }
+
+        @Test
+        @DisplayName("re-import serializa o treino COM etapas sem LazyInitializationException")
+        void reimportNaoLancaLazyInitialization() {
+            Atleta atleta = seedAtleta();
+            UUID tenantId = atleta.getAssessoria().getId();
+            seedIntervalsIcuConexao(atleta, tenantId, "999888");
+            autenticarComoTecnico(tenantId);
+            when(intervalsIcuClient.buscarAtividade(any(), any(), anyBoolean()))
+                    .thenReturn(activityComIntervalos("i171415754", "999888"));
+            controller.importarAtividade(atleta.getId(), "i171415754");
+
+            // Passo 0 (dedup): roda FORA de transacao e mapeia direto para DTO. A colecao de etapas
+            // e LAZY — sem o @EntityGraph do repositorio isto estoura em open-in-view=false.
+            var resposta = controller.importarAtividade(atleta.getId(), "i171415754");
+
+            assertThat(resposta.getStatusCode().is2xxSuccessful()).isTrue();
+            assertThat(resposta.getBody()).isNotNull();
+            assertThat(resposta.getBody().etapasRealizadas()).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("backfill completa um treino importado sem etapas, sem tocar no summary")
+        void backfillCompletaTreinoAntigo() {
+            Atleta atleta = seedAtleta();
+            UUID tenantId = atleta.getAssessoria().getId();
+            seedIntervalsIcuConexao(atleta, tenantId, "999888");
+            autenticarComoTecnico(tenantId);
+            // Treino "legado": importado antes da ingestao de etapas existir.
+            when(intervalsIcuClient.buscarAtividade(any(), any(), anyBoolean()))
+                    .thenReturn(activityDto("i171415754", "999888"));
+            controller.importarAtividade(atleta.getId(), "i171415754");
+            TreinoRealizado antes = treinoRealizadoRepository.findByTenantIdAndFonteDadosAndExternalId(
+                    tenantId, FonteDados.INTERVALS_ICU, "i171415754").orElseThrow();
+            assertThat(antes.getEtapasRealizadas()).isEmpty();
+            var distanciaAntes = antes.getDistanciaKm();
+
+            when(intervalsIcuClient.buscarAtividade(any(), any(), anyBoolean()))
+                    .thenReturn(activityComIntervalos("i171415754", "999888"));
+            var resultado = controller.backfillEtapas(atleta.getId());
+
+            assertThat(resultado.getBody()).isNotNull();
+            assertThat(resultado.getBody().candidatos()).isEqualTo(1);
+            assertThat(resultado.getBody().atualizados()).isEqualTo(1);
+
+            TreinoRealizado depois = treinoRealizadoRepository.findByTenantIdAndFonteDadosAndExternalId(
+                    tenantId, FonteDados.INTERVALS_ICU, "i171415754").orElseThrow();
+            assertThat(depois.getEtapasRealizadas()).hasSize(2);
+            // O summary nao foi remapeado.
+            assertThat(depois.getDistanciaKm()).isEqualByComparingTo(distanciaAntes);
+        }
+
+        @Test
+        @DisplayName("backfill e idempotente: segunda execucao nao acha candidatos")
+        void backfillIdempotente() {
+            Atleta atleta = seedAtleta();
+            UUID tenantId = atleta.getAssessoria().getId();
+            seedIntervalsIcuConexao(atleta, tenantId, "999888");
+            autenticarComoTecnico(tenantId);
+            when(intervalsIcuClient.buscarAtividade(any(), any(), anyBoolean()))
+                    .thenReturn(activityComIntervalos("i171415754", "999888"));
+            controller.importarAtividade(atleta.getId(), "i171415754");
+
+            var resultado = controller.backfillEtapas(atleta.getId());
+
+            assertThat(resultado.getBody()).isNotNull();
+            assertThat(resultado.getBody().candidatos()).isZero();
+        }
+    }
+
+    private IcuActivityDto activityComIntervalos(String activityId, String athleteId) {
+        var intervalo1 = new br.com.menthoros.backend.dto.intervalsicu.IcuActivityIntervalDto(
+                7130765L, "WORK", null, 0, 1001.92, 388, 388, 2.582268, 127.0, 145.0, 81.3866,
+                null, 2.4000244, 0.95185256, 249.62077, 51.06683, 113.24149, 11.984201, 24.425259,
+                1, 75.0, 0.0011977126);
+        var intervalo2 = new br.com.menthoros.backend.dto.intervalsicu.IcuActivityIntervalDto(
+                1483778L, "RECOVERY", null, 389, 500.67, 195, 195, 2.5675383, 139.0, 145.0, 81.34359,
+                null, 0.0, 0.94692343, 253.0, 50.8, 103.7, 11.06, 19.0,
+                1, 82.0, -0.003195669);
+        return new IcuActivityDto(activityId, athleteId, "Run", "Corrida de teste", "2026-07-16T08:00:00",
+                1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null,
+                2, java.util.List.of(intervalo1, intervalo2));
     }
 }

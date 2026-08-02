@@ -141,7 +141,7 @@ class IntervalsIcuClientImplTest {
                              "distance":5000.0}
                             """)));
 
-            IcuActivityDto activity = client.buscarAtividade(API_KEY, "i86400275");
+            IcuActivityDto activity = client.buscarAtividade(API_KEY, "i86400275", false);
 
             assertThat(activity.id()).isEqualTo("i86400275");
             assertThat(activity.athleteId()).isEqualTo("i641775");
@@ -149,12 +149,67 @@ class IntervalsIcuClientImplTest {
         }
 
         @Test
+        @DisplayName("comIntervalos=true acrescenta ?intervals=true a URI")
+        void comIntervalosAcrescentaQueryParam() {
+            wireMock.stubFor(get(urlEqualTo("/api/v1/activity/i171415754?intervals=true"))
+                    .withBasicAuth("API_KEY", API_KEY)
+                    .willReturn(okJson("""
+                            {"id":"i171415754","icu_athlete_id":"i641775","type":"Run",
+                             "icu_lap_count":2,
+                             "icu_intervals":[
+                               {"id":7130765,"type":"WORK","distance":1001.92,"moving_time":388,
+                                "average_speed":2.582268,"average_cadence":81.3866,
+                                "average_vertical_oscillation":113.24149,"zone":1,
+                                "intensity":75,"average_gradient":0.0011977126},
+                               {"id":1483778,"type":"RECOVERY","distance":500.67,"moving_time":195}
+                             ]}
+                            """)));
+
+            IcuActivityDto activity = client.buscarAtividade(API_KEY, "i171415754", true);
+
+            assertThat(activity.lapCount()).isEqualTo(2);
+            assertThat(activity.intervalos()).hasSize(2);
+            assertThat(activity.intervalos().get(0).type()).isEqualTo("WORK");
+            assertThat(activity.intervalos().get(0).zone()).isEqualTo(1);
+            assertThat(activity.intervalos().get(0).averageGradient()).isEqualTo(0.0011977126);
+        }
+
+        @Test
+        @DisplayName("comIntervalos=false nao acrescenta o query param e a lista vem nula")
+        void semIntervalosNaoAcrescentaQueryParam() {
+            wireMock.stubFor(get(urlEqualTo("/api/v1/activity/i171415754"))
+                    .willReturn(okJson("""
+                            {"id":"i171415754","icu_athlete_id":"i641775","type":"Run"}
+                            """)));
+
+            IcuActivityDto activity = client.buscarAtividade(API_KEY, "i171415754", false);
+
+            assertThat(activity.intervalos()).isNull();
+            // urlEqualTo e exato: um ?intervals=... enviado por engano nao casaria com o stub.
+            wireMock.verify(getRequestedFor(urlEqualTo("/api/v1/activity/i171415754")));
+        }
+
+        @Test
+        @DisplayName("activity sem intervalos no corpo desserializa com lista nula, sem NPE")
+        void corpoSemIntervalosNaoQuebra() {
+            wireMock.stubFor(get(urlEqualTo("/api/v1/activity/i2?intervals=true"))
+                    .willReturn(okJson("""
+                            {"id":"i2","icu_athlete_id":"i641775","type":"Run","moving_time":600}
+                            """)));
+
+            IcuActivityDto activity = client.buscarAtividade(API_KEY, "i2", true);
+
+            assertThat(activity.intervalos()).isNull();
+            assertThat(activity.lapCount()).isNull();
+        }
+
+        @Test
         @DisplayName("404 lança IntervalsIcuApiException com status 404")
         void notFoundLancaExcecaoComStatus() {
-            wireMock.stubFor(get(urlEqualTo("/api/v1/activity/inexistente"))
+            wireMock.stubFor(get(urlEqualTo("/api/v1/activity/inexistente?intervals=true"))
                     .willReturn(aResponse().withStatus(404)));
 
-            assertThatThrownBy(() -> client.buscarAtividade(API_KEY, "inexistente"))
+            assertThatThrownBy(() -> client.buscarAtividade(API_KEY, "inexistente", true))
                     .isInstanceOf(IntervalsIcuApiException.class)
                     .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus().value()).isEqualTo(404));
         }
@@ -162,10 +217,10 @@ class IntervalsIcuClientImplTest {
         @Test
         @DisplayName("403 lança IntervalsIcuApiException com status 403 (activity de outro atleta)")
         void forbiddenLancaExcecaoComStatus() {
-            wireMock.stubFor(get(urlEqualTo("/api/v1/activity/i999"))
+            wireMock.stubFor(get(urlEqualTo("/api/v1/activity/i999?intervals=true"))
                     .willReturn(aResponse().withStatus(403)));
 
-            assertThatThrownBy(() -> client.buscarAtividade(API_KEY, "i999"))
+            assertThatThrownBy(() -> client.buscarAtividade(API_KEY, "i999", true))
                     .isInstanceOf(IntervalsIcuApiException.class)
                     .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus().value()).isEqualTo(403));
         }
@@ -175,7 +230,7 @@ class IntervalsIcuClientImplTest {
         void falhaDeTransporteLancaExcecao() {
             wireMock.stop();
 
-            assertThatThrownBy(() -> client.buscarAtividade(API_KEY, "i1"))
+            assertThatThrownBy(() -> client.buscarAtividade(API_KEY, "i1", true))
                     .isInstanceOf(IntervalsIcuApiException.class)
                     .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus()).isNull());
         }

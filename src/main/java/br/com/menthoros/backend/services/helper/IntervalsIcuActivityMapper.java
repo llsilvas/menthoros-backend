@@ -1,7 +1,9 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.dto.intervalsicu.IcuActivityDto;
+import br.com.menthoros.backend.dto.intervalsicu.IcuActivityIntervalDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FonteDados;
@@ -10,6 +12,7 @@ import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -20,7 +23,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -35,8 +40,16 @@ import java.util.Set;
  * {@code duracao_min} é {@code NOT NULL} — {@code TreinoBase.java:45} — {@code null} literal não é
  * representável). {@code distanciaKm} usa {@code null} literal (coluna nullable).
  */
+@Slf4j
 @Component
 public class IntervalsIcuActivityMapper {
+
+    /** Abaixo destes limiares o intervalo é lixo da fonte, não uma volta. Ver isDegenerado. */
+    private static final int MIN_DURACAO_SEG = 5;
+    private static final double MIN_DISTANCIA_METROS = 20d;
+
+    /** Tamanho de {@code EtapaRealizada.descricao} — a label da fonte não tem limite. */
+    private static final int MAX_DESCRICAO_ETAPA = 500;
 
     private static final Set<String> MODALIDADES_SUPORTADAS = Set.of("Run", "TrailRun", "VirtualRun", "Treadmill");
 
@@ -88,7 +101,143 @@ public class IntervalsIcuActivityMapper {
         treino.setDeviceName(dto.deviceName());
         treino.setMetadadosSincronizacao(buildMetadadosSincronizacao(dto));
 
+        anexarEtapas(treino, dto);
+
         return treino;
+    }
+
+    /**
+     * Converte {@code icu_intervals} em {@link EtapaRealizada} e anexa ao treino.
+     *
+     * <p>Fica dentro do {@code map} porque os intervalos chegam no mesmo payload da activity — não
+     * há segunda chamada HTTP, então nada precisa atravessar o orquestrador. As etapas persistem
+     * por {@code cascade = CascadeType.ALL} quando o treino é salvo.
+     */
+    private void anexarEtapas(TreinoRealizado treino, IcuActivityDto dto) {
+        for (EtapaRealizada etapa : mapEtapas(dto)) {
+            etapa.setTreinoRealizado(treino);
+            treino.getEtapasRealizadas().add(etapa);
+        }
+    }
+
+    /**
+     * Converte {@code icu_intervals} em etapas SEM vínculo com treino — o chamador anexa.
+     *
+     * <p>Público porque o backfill (D9) precisa das etapas isoladas: ele completa um treino que já
+     * existe e NÃO pode sobrescrever o summary, então não pode usar {@link #map}.
+     */
+    public List<EtapaRealizada> mapEtapas(IcuActivityDto dto) {
+        List<IcuActivityIntervalDto> intervalos = dto != null ? dto.intervalos() : null;
+        if (intervalos == null || intervalos.isEmpty()) {
+            return List.of();
+        }
+
+        List<EtapaRealizada> etapas = new ArrayList<>();
+        for (IcuActivityIntervalDto intervalo : intervalos) {
+            if (intervalo == null || isDegenerado(intervalo)) {
+                continue;
+            }
+            etapas.add(mapEtapa(intervalo, etapas.size() + 1));
+        }
+
+        if (dto.lapCount() != null && dto.lapCount() != etapas.size()) {
+            log.debug("Contagem de etapas divergiu de icu_lap_count: mapeadas={}, icu_lap_count={}, activityId={}",
+                    etapas.size(), dto.lapCount(), dto.id());
+        }
+        return etapas;
+    }
+
+    /**
+     * O payload real traz intervalos-lixo — o smoke encontrou um de 1 s e 2,4 m, que
+     * {@code icu_lap_count} não conta. Persistido, ele entraria nos cálculos de drift de FC e
+     * progressão de pace das skills como se fosse uma volta.
+     *
+     * <p>Limiares conservadores de propósito: o tiro legítimo mais curto que um treinador prescreve
+     * (strides de 15–20 s) fica com folga acima.
+     */
+    private boolean isDegenerado(IcuActivityIntervalDto intervalo) {
+        int movingTime = intervalo.movingTimeSeg() != null ? intervalo.movingTimeSeg() : 0;
+        double distancia = intervalo.distance() != null ? intervalo.distance() : 0d;
+        return movingTime < MIN_DURACAO_SEG || distancia < MIN_DISTANCIA_METROS;
+    }
+
+    private EtapaRealizada mapEtapa(IcuActivityIntervalDto intervalo, int ordem) {
+        EtapaRealizada etapa = new EtapaRealizada();
+
+        // ordem e splitIndex vêm da POSIÇÃO: o `id` do intervals.icu é opaco e não ordena nada.
+        etapa.setOrdem(ordem);
+        etapa.setSplitIndex(ordem);
+        etapa.setTipoEtapa(mapTipoEtapa(intervalo.type()));
+        etapa.setDescricao(descricaoDe(intervalo, ordem));
+
+        // duracao SEMPRE de moving_time: elapsed_time incluiria tempo parado, que o
+        // TssCalculatorService, o tempo em zona e o decoupling leem como tempo de treino.
+        Duration duracao = intervalo.movingTimeSeg() != null
+                ? Duration.ofSeconds(intervalo.movingTimeSeg())
+                : null;
+        etapa.setDuracao(duracao);
+        etapa.setTempoMovimento(duracao);
+
+        etapa.setDistanciaKm(toKmEscala3(intervalo.distance()));
+        etapa.setFcMedia(roundToInt(intervalo.averageHeartrate()));
+        etapa.setFcMax(roundToInt(intervalo.maxHeartrate()));
+        etapa.setVelocidadeMedia(toBigDecimal(toKmh(intervalo.averageSpeed()), 2));
+        etapa.setPaceMedia(calculatePace(intervalo.movingTimeSeg(), intervalo.distance(), intervalo.averageSpeed()));
+        etapa.setCadenciaMedia(sanitizeCadenciaIntervalsIcu(intervalo.averageCadence()));
+        etapa.setPotenciaMedia(roundToInt(intervalo.averageWatts()));
+
+        // A fonte não expõe perda de elevação por intervalo — deixar null, não zerar.
+        etapa.setElevacaoGanhoMetros(roundToInt(intervalo.totalElevationGain()));
+
+        etapa.setPassadaMediaM(toBigDecimal(intervalo.averageStride(), 2));
+        etapa.setGctMedioMs(roundToInt(intervalo.averageStanceTime()));
+        etapa.setGctEquilibrioPct(toBigDecimal(intervalo.averageStanceTimeBalance(), 1));
+        etapa.setOscilacaoVerticalCm(toBigDecimal(mmParaCm(intervalo.averageVerticalOscillation()), 1));
+        etapa.setProporcaoVerticalPct(toBigDecimal(intervalo.averageVerticalRatio(), 1));
+        etapa.setTemperaturaMediaC(toBigDecimal(intervalo.averageTemp(), 1));
+
+        etapa.setZona(intervalo.zone());
+        etapa.setIntensidadePct(toBigDecimal(intervalo.intensity(), 2));
+        etapa.setInclinacaoMediaPct(toBigDecimal(fracaoParaPercentual(intervalo.averageGradient()), 1));
+
+        return etapa;
+    }
+
+    /** {@code average_vertical_oscillation} vem em milímetros; a coluna é em centímetros. */
+    private Double mmParaCm(Double milimetros) {
+        return milimetros != null ? milimetros / 10d : null;
+    }
+
+    /** {@code average_gradient} vem em fração ({@code 0.0011977} = 0,1%). */
+    private Double fracaoParaPercentual(Double fracao) {
+        return fracao != null ? fracao * 100d : null;
+    }
+
+    private String mapTipoEtapa(String type) {
+        if (type == null) {
+            return null;
+        }
+        return switch (type.toUpperCase()) {
+            case "WORK" -> "PRINCIPAL";
+            case "RECOVERY" -> "RECUPERACAO";
+            case "WARMUP" -> "AQUECIMENTO";
+            case "COOLDOWN" -> "DESAQUECIMENTO";
+            default -> null;
+        };
+    }
+
+    private BigDecimal toKmEscala3(Double meters) {
+        if (meters == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(meters / 1000d).setScale(3, RoundingMode.HALF_UP);
+    }
+
+    private BigDecimal toBigDecimal(Double valor, int escala) {
+        if (valor == null) {
+            return null;
+        }
+        return BigDecimal.valueOf(valor).setScale(escala, RoundingMode.HALF_UP);
     }
 
     /**
@@ -234,5 +383,23 @@ public class IntervalsIcuActivityMapper {
                 }
             }
         }
+    }
+
+    /**
+     * {@code label} vem de terceiro e não tem limite de tamanho na origem; a coluna tem 500.
+     * Sem truncar, uma label longa falha no flush e reverte a persistência do TREINO INTEIRO,
+     * porque as etapas entram por cascade na mesma transação — o dado bom vai junto com o ruim.
+     */
+    private String descricaoDe(IcuActivityIntervalDto intervalo, int ordem) {
+        String label = intervalo.label();
+        if (label == null || label.isBlank()) {
+            return "Lap " + ordem;
+        }
+        if (label.length() > MAX_DESCRICAO_ETAPA) {
+            log.warn("Label de intervalo do intervals.icu truncada de {} para {} caracteres",
+                    label.length(), MAX_DESCRICAO_ETAPA);
+            return label.substring(0, MAX_DESCRICAO_ETAPA);
+        }
+        return label;
     }
 }

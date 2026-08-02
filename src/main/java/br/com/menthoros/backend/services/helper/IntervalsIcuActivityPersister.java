@@ -8,6 +8,8 @@ import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
 import br.com.menthoros.backend.services.TsbService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -43,6 +45,7 @@ public class IntervalsIcuActivityPersister {
     private final CandidateSelector candidateSelector;
     private final ReconciliationDecisionExecutor reconciliationDecisionExecutor;
     private final ApplicationEventPublisher eventPublisher;
+    private final MeterRegistry meterRegistry;
 
     @Transactional
     public TreinoRealizado persistir(IcuActivityDto dto, Atleta atleta, UUID tenantId, String externalId) {
@@ -64,13 +67,35 @@ public class IntervalsIcuActivityPersister {
             reconciliationDecisionExecutor.executar(salvo, candidatos, atleta);
 
             eventPublisher.publishEvent(new TreinoRegistradoEvent(salvo.getId(), tenantId));
-            log.info("Activity intervals.icu importada: treinoId={}, atletaId={}, externalId={}",
-                    salvo.getId(), atleta.getId(), externalId);
+            registrarCoberturaDeEtapas(salvo, tenantId);
+            log.info("Activity intervals.icu importada: treinoId={}, atletaId={}, externalId={}, etapas={}",
+                    salvo.getId(), atleta.getId(), externalId, salvo.getEtapasRealizadas().size());
         } else {
             log.info("Corrida de concorrência no import intervals.icu — registro já persistido por outra requisição: treinoId={}, atletaId={}, externalId={}",
                     salvo.getId(), atleta.getId(), externalId);
         }
 
         return salvo;
+    }
+
+    /**
+     * Cobertura de etapas por assessoria — a métrica de sucesso da change
+     * {@code intervals-icu-activity-laps}. É o instrumento que torna a lacuna observável: sem ele,
+     * o treinador não teria como saber que deveria reclamar, porque não tem com o que comparar.
+     *
+     * <p>Só conta import NOVO: numa corrida de concorrência quem inseriu já contou.
+     *
+     * <p>A tag {@code tenant} tem cardinalidade igual ao número de assessorias. É aceitável no
+     * piloto e foi um pedido explícito do product review; se a base crescer para milhares de
+     * tenants, trocar por uma métrica agregada com breakdown fora do Prometheus.
+     */
+    private void registrarCoberturaDeEtapas(TreinoRealizado salvo, UUID tenantId) {
+        String resultado = salvo.getEtapasRealizadas().isEmpty() ? "sem_etapas" : "com_etapas";
+        Counter.builder("intervals_icu.import.etapas")
+                .tag("tenant", tenantId.toString())
+                .tag("resultado", resultado)
+                .description("Imports do intervals.icu por cobertura de etapas, segmentado por assessoria")
+                .register(meterRegistry)
+                .increment();
     }
 }

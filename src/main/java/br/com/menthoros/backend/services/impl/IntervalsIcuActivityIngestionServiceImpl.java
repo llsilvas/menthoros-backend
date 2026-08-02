@@ -127,7 +127,7 @@ public class IntervalsIcuActivityIngestionServiceImpl implements IntervalsIcuAct
 
     private IcuActivityDto buscarAtividade(IntegracaoExterna conexao, String activityId) {
         try {
-            return intervalsIcuClient.buscarAtividade(conexao.getAccessToken(), activityId);
+            return intervalsIcuClient.buscarAtividade(conexao.getAccessToken(), activityId, true);
         } catch (IntervalsIcuApiException e) {
             HttpStatusCode status = e.getStatus();
             if (status == null) {

@@ -19,6 +19,8 @@ import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import br.com.menthoros.backend.dto.output.BackfillEtapasOutputDto;
+
 import java.util.UUID;
 
 import static br.com.menthoros.backend.testsupport.JwtTestSupport.atletaJwt;
@@ -29,6 +31,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -60,6 +63,9 @@ class IntervalsIcuActivityControllerAuthTest {
     private static final UUID TENANT_ID = JwtTestSupport.TENANT_ID;
     private final UUID atletaId = UUID.fromString("aaaaaaaa-0000-0000-0000-000000000001");
 
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private br.com.menthoros.backend.services.IntervalsIcuLapsBackfillService intervalsIcuLapsBackfillService;
+
     @BeforeEach
     void stubUsuarioAtivo() {
         JwtTestSupport.stubUsuarioAtivo(usuarioSyncService);
@@ -67,6 +73,57 @@ class IntervalsIcuActivityControllerAuthTest {
 
     private void stubAtletaNoTenant() {
         when(tenantValidationRepository.resourceBelongsToTenant(atletaId, TENANT_ID)).thenReturn(true);
+    }
+
+    @Nested
+    @DisplayName("backfillEtapas — POST /api/v1/intervals-icu/atletas/{atletaId}/activities/backfill-laps")
+    class BackfillEtapas {
+
+        @Test
+        @DisplayName("retorna 200 para TECNICO com atleta do tenant")
+        void retorna200ParaTecnico() throws Exception {
+            stubAtletaNoTenant();
+            when(intervalsIcuLapsBackfillService.backfillEtapas(atletaId, TENANT_ID))
+                    .thenReturn(new BackfillEtapasOutputDto(3, 2, 1, 0, 0));
+
+            mockMvc.perform(post("/api/v1/intervals-icu/atletas/{atletaId}/activities/backfill-laps", atletaId)
+                            .with(tecnicoJwt()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.candidatos").value(3))
+                    .andExpect(jsonPath("$.atualizados").value(2))
+                    .andExpect(jsonPath("$.semIntervalos").value(1));
+        }
+
+        @Test
+        @DisplayName("retorna 403 para ATLETA — backfill e acao do coach")
+        void retorna403ParaAtleta() throws Exception {
+            mockMvc.perform(post("/api/v1/intervals-icu/atletas/{atletaId}/activities/backfill-laps", atletaId)
+                            .with(atletaJwt()))
+                    .andExpect(status().isForbidden());
+
+            verifyNoInteractions(intervalsIcuLapsBackfillService);
+        }
+
+        @Test
+        @DisplayName("retorna 401 sem autenticacao")
+        void retorna401SemAutenticacao() throws Exception {
+            mockMvc.perform(post("/api/v1/intervals-icu/atletas/{atletaId}/activities/backfill-laps", atletaId))
+                    .andExpect(status().isUnauthorized());
+
+            verifyNoInteractions(intervalsIcuLapsBackfillService);
+        }
+
+        @Test
+        @DisplayName("retorna 403 quando o atleta e de outro tenant")
+        void retorna403CrossTenant() throws Exception {
+            when(tenantValidationRepository.resourceBelongsToTenant(any(), any())).thenReturn(false);
+
+            mockMvc.perform(post("/api/v1/intervals-icu/atletas/{atletaId}/activities/backfill-laps", atletaId)
+                            .with(tecnicoJwt()))
+                    .andExpect(status().isForbidden());
+
+            verifyNoInteractions(intervalsIcuLapsBackfillService);
+        }
     }
 
     @Nested

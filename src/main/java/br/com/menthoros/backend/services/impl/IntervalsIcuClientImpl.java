@@ -132,9 +132,15 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
      * Tenant-aware: NO — credencial é do atleta, não do tenant.
      */
     @Override
-    public IcuActivityDto buscarAtividade(String apiKey, String activityId) {
+    public IcuActivityDto buscarAtividade(String apiKey, String activityId, boolean comIntervalos) {
         return executa("buscar atividade", () -> webClient.get()
-                .uri("/api/v1/activity/{id}", activityId)
+                .uri(uriBuilder -> {
+                    uriBuilder.path("/api/v1/activity/{id}");
+                    if (comIntervalos) {
+                        uriBuilder.queryParam("intervals", "true");
+                    }
+                    return uriBuilder.build(activityId);
+                })
                 .headers(h -> basic(h, apiKey))
                 .retrieve()
                 .bodyToMono(IcuActivityDto.class)
