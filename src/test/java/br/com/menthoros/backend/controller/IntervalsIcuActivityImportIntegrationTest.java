@@ -42,6 +42,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -129,7 +130,7 @@ class IntervalsIcuActivityImportIntegrationTest extends AbstractIntegrationTest 
             UUID tenantId = atleta.getAssessoria().getId();
             seedIntervalsIcuConexao(atleta, tenantId, "999888");
             autenticarComoTecnico(tenantId);
-            when(intervalsIcuClient.buscarAtividade(any(), any())).thenReturn(activityDto("i166338796", "999888"));
+            when(intervalsIcuClient.buscarAtividade(any(), any(), anyBoolean())).thenReturn(activityDto("i166338796", "999888"));
 
             var resposta = controller.importarAtividade(atleta.getId(), "i166338796");
 
@@ -146,7 +147,7 @@ class IntervalsIcuActivityImportIntegrationTest extends AbstractIntegrationTest 
             seedIntervalsIcuConexao(atleta, tenantId, "999888");
             seedStravaConexao(atleta, tenantId, true);
             autenticarComoTecnico(tenantId);
-            when(intervalsIcuClient.buscarAtividade(any(), any())).thenReturn(activityDto("i166338796", "999888"));
+            when(intervalsIcuClient.buscarAtividade(any(), any(), anyBoolean())).thenReturn(activityDto("i166338796", "999888"));
 
             var resposta = controller.importarAtividade(atleta.getId(), "i166338796");
 
