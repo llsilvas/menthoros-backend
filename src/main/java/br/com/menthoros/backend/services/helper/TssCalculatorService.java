@@ -81,7 +81,13 @@ public class TssCalculatorService {
     private int calcularTssPorRpe(double duracaoHoras, double rpe) {
         double intensityFactor = converterRpeParaIf(rpe);
         intensityFactor = Math.max(MIN_IF_RPE, Math.min(MAX_IF, intensityFactor));
-        return (int) Math.round(duracaoHoras * intensityFactor * intensityFactor * 100.0);
+        // A ordem `h × IF × 100 × IF` é a do caminho realizado e é preservada de propósito.
+        // Multiplicação em ponto flutuante não é associativa: reordenar para `h × IF² × 100` muda o
+        // último bit e vira o arredondamento em 8 pares (duração, RPE) da faixa válida — todos em
+        // treinos longos, ex. RPE 9 / 288min, cujo produto exato cai em 607,4999999999999 em vez de
+        // 607,5. Manter a ordem torna a extração neutra para o realizado e o planejado idêntico a
+        // ele por construção, que é o CA1.
+        return (int) Math.round(duracaoHoras * intensityFactor * 100 * intensityFactor);
     }
 
     /**

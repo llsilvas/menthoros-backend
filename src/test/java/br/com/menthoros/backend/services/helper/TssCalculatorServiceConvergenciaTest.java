@@ -64,6 +64,12 @@ class TssCalculatorServiceConvergenciaTest {
                 // porque em 1h a duração some da conta.
                 "30,  5,  27",
                 "90,  7, 122",
+                // Sentinelas de ordem de multiplicação. Nestes dois pares o produto exato cai em
+                // ...,4999999999999 em vez de ...,5, então reordenar `h × IF × 100 × IF` para
+                // `h × IF² × 100` muda o arredondamento em 1. Existem para travar a ordem da
+                // expressão em calcularTssPorRpe — sem eles, "simplificar" a conta passa verde.
+                "288, 9, 608",
+                "410, 7, 554",
         })
         @DisplayName("planejado usa h × IF² × 100 (era min × RPE² / 90 — BUG-CONF-001)")
         void planejado(int minutos, int rpe, int esperado) {
@@ -85,6 +91,12 @@ class TssCalculatorServiceConvergenciaTest {
                 // porque em 1h a duração some da conta.
                 "30,  5,  27",
                 "90,  7, 122",
+                // Sentinelas de ordem de multiplicação. Nestes dois pares o produto exato cai em
+                // ...,4999999999999 em vez de ...,5, então reordenar `h × IF × 100 × IF` para
+                // `h × IF² × 100` muda o arredondamento em 1. Existem para travar a ordem da
+                // expressão em calcularTssPorRpe — sem eles, "simplificar" a conta passa verde.
+                "288, 9, 608",
+                "410, 7, 554",
         })
         @DisplayName("realizado usa h × IF² × 100 — inalterado pela correção")
         void realizado(int minutos, int rpe, int esperado) {
