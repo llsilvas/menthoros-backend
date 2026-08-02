@@ -50,17 +50,44 @@ public class TssCalculatorService {
     }
 
     /**
-     * Estimativa simplificada de TSS para treinos planejados, usando duração e RPE.
-     * Fórmula: round(duracaoMinutos × rpe² / 90.0), rpe default 5 quando nulo.
+     * TSS estimado para treinos planejados, usando duração e RPE.
      *
-     * Idempotent: YES — cálculo puro, sem estado.
+     * <p>Unificado com {@link #calcularTssRpe} — ambos usam o pipeline
+     * RPE → IF → TSS (h × IF² × 100). Correção BUG-CONF-001: antes usava
+     * min × RPE² / 90, que divergia ~245% do TSS realizado.</p>
+     *
+     * <p>Fórmula: TSS = round(duracaoHoras × converterRpeParaIf(rpe)² × 100).
+     * RPE default 5 quando nulo. IF clampado entre {@link #MIN_IF_RPE} e {@link #MAX_IF}.</p>
+     *
+     * <p>Idempotent: YES — cálculo puro, sem estado.
      * Side Effects: NONE
-     * Tenant-aware: NO
+     * Tenant-aware: NO</p>
      */
     public int calcularTssEstimado(Duration duracaoMin, Integer rpe) {
         long minutos = duracaoMin != null ? duracaoMin.toMinutes() : 0L;
         int r = rpe != null ? rpe : 5;
-        return (int) Math.round((double) minutos * r * r / 90.0);
+        return calcularTssPorRpe(minutos / 60.0, r);
+    }
+
+    /**
+     * Núcleo único do pipeline RPE → IF → TSS: {@code h × IF² × 100}, com o IF clampado entre
+     * {@link #MIN_IF_RPE} e {@link #MAX_IF}.
+     *
+     * <p>Existe para que o caminho planejado e o realizado não mantenham cópias próprias da mesma
+     * conta. Foi exatamente essa duplicação que produziu o BUG-CONF-001: as duas evoluíram
+     * separadamente até divergirem 2,4×–6×. Alterar a fórmula aqui muda os dois caminhos de uma vez,
+     * que é a propriedade que se quer preservar.</p>
+     */
+    private int calcularTssPorRpe(double duracaoHoras, double rpe) {
+        double intensityFactor = converterRpeParaIf(rpe);
+        intensityFactor = Math.max(MIN_IF_RPE, Math.min(MAX_IF, intensityFactor));
+        // A ordem `h × IF × 100 × IF` é a do caminho realizado e é preservada de propósito.
+        // Multiplicação em ponto flutuante não é associativa: reordenar para `h × IF² × 100` muda o
+        // último bit e vira o arredondamento em 8 pares (duração, RPE) da faixa válida — todos em
+        // treinos longos, ex. RPE 9 / 288min, cujo produto exato cai em 607,4999999999999 em vez de
+        // 607,5. Manter a ordem torna a extração neutra para o realizado e o planejado idêntico a
+        // ele por construção, que é o CA1.
+        return (int) Math.round(duracaoHoras * intensityFactor * 100 * intensityFactor);
     }
 
     /**
@@ -320,24 +347,14 @@ public class TssCalculatorService {
             return calcularTssEstimado(treino, duracaoHoras);
         }
 
-        double rpe = rpeValor; // Escala 1-10
-
-        // Converter RPE para IF com mapeamento fisiológico (ISSUE-02)
-        // Referências aproximadas:
+        // Mapeamento fisiológico RPE → IF (ISSUE-02), referências aproximadas:
         // - RPE 3-4: zona aeróbica fácil (IF ~0.55-0.65)
         // - RPE 5-6: zona aeróbica moderada (IF ~0.70-0.80)
         // - RPE 7: tempo/sublimiar (IF ~0.88-0.93)
         // - RPE 8: limiar anaeróbico (IF ~1.00 por definição)
         // - RPE 9: VO2max (IF ~1.10-1.15)
         // - RPE 10: máximo/sprint (IF ~1.20-1.30)
-        double intensityFactor = converterRpeParaIf(rpe);
-
-        // Limitar IF entre 0.5 e 1.5 (consistente com outros métodos)
-        intensityFactor = Math.max(MIN_IF_RPE, Math.min(MAX_IF, intensityFactor));
-
-        double tss = duracaoHoras * intensityFactor * 100 * intensityFactor;
-
-        return (int) Math.round(tss);
+        return calcularTssPorRpe(duracaoHoras, rpeValor); // rpeValor na escala 1-10
     }
 
     private int calcularTssRpeOuTipoEtapa(TreinoRealizado treino, EtapaRealizada etapa) {
