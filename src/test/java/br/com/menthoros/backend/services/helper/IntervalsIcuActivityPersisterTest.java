@@ -46,6 +46,7 @@ class IntervalsIcuActivityPersisterTest {
     @Mock private ApplicationEventPublisher eventPublisher;
 
     private IntervalsIcuActivityPersister persister;
+    private io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     private UUID tenantId;
     private Atleta atleta;
@@ -54,9 +55,10 @@ class IntervalsIcuActivityPersisterTest {
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
         persister = new IntervalsIcuActivityPersister(intervalsIcuConnectionService, intervalsIcuActivityMapper,
                 treinoDedupHelper, tssCalculatorService, tsbService, candidateSelector, reconciliationDecisionExecutor,
-                eventPublisher);
+                eventPublisher, meterRegistry);
 
         tenantId = UUID.randomUUID();
         Assessoria assessoria = new Assessoria();
@@ -246,5 +248,64 @@ class IntervalsIcuActivityPersisterTest {
             treino.getEtapasRealizadas().add(etapa);
         }
         return treino;
+    }
+    @Nested
+    @DisplayName("persistir — metrica de cobertura de etapas")
+    class MetricaCobertura {
+
+        @Test
+        @DisplayName("import COM etapas conta como coberto, com tag do tenant")
+        void importComEtapasContaCoberto() {
+            stubInsertNovo(treinoComEtapas(3));
+
+            persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
+
+            assertThat(contador("com_etapas")).isEqualTo(1.0);
+            assertThat(contador("sem_etapas")).isZero();
+        }
+
+        @Test
+        @DisplayName("import SEM etapas conta como descoberto — e o que expoe a lacuna por assessoria")
+        void importSemEtapasContaDescoberto() {
+            stubInsertNovo(treinoComEtapas(0));
+
+            persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
+
+            assertThat(contador("sem_etapas")).isEqualTo(1.0);
+            assertThat(contador("com_etapas")).isZero();
+        }
+
+        @Test
+        @DisplayName("corrida de concorrencia nao conta duas vezes")
+        void corridaNaoContaDuasVezes() {
+            when(intervalsIcuConnectionService.conexaoAtiva(atleta.getId(), tenantId))
+                    .thenReturn(Optional.of(new IntegracaoExterna()));
+            TreinoRealizado mapeado = treinoComEtapas(2);
+            when(intervalsIcuActivityMapper.map(dto, atleta)).thenReturn(mapeado);
+            when(treinoDedupHelper.saveIdempotent(mapeado, EXTERNAL_ID, atleta.getId()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoComEtapas(2), false));
+
+            persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
+
+            assertThat(contador("com_etapas")).isZero();
+            assertThat(contador("sem_etapas")).isZero();
+        }
+
+        private void stubInsertNovo(TreinoRealizado mapeado) {
+            when(intervalsIcuConnectionService.conexaoAtiva(atleta.getId(), tenantId))
+                    .thenReturn(Optional.of(new IntegracaoExterna()));
+            when(intervalsIcuActivityMapper.map(dto, atleta)).thenReturn(mapeado);
+            when(treinoDedupHelper.saveIdempotent(mapeado, EXTERNAL_ID, atleta.getId()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(mapeado, true));
+            when(candidateSelector.buscarCandidatos(mapeado, tenantId)).thenReturn(List.of());
+        }
+
+        private double contador(String resultado) {
+            io.micrometer.core.instrument.Counter c = meterRegistry.find("intervals_icu.import.etapas")
+                    .tag("tenant", tenantId.toString())
+                    .tag("resultado", resultado)
+                    .counter();
+            return c == null ? 0.0 : c.count();
+        }
     }
 }
