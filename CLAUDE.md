@@ -30,7 +30,7 @@ Git"). A raiz é a fonte canônica — não duplicar o fluxo aqui.
 
 Específico deste módulo:
 - Branch no repo `apps/menthoros-backend`.
-- Validar antes de entregar: `./mvnw clean test` (ver "Testing and Validation").
+- Validar antes de entregar: `./mvnw clean verify` (ver "Testing and Validation" — `test` não roda os `*IT`).
 
 ## Coding Rules (Backend)
 
@@ -335,6 +335,39 @@ public Atleta createAtleta(AtletaInputDto input) {
 }
 ```
 
+### Catching `DataIntegrityViolationException` requires a NON-`@Transactional` method (mandatory)
+
+The idempotent-write idiom — try to insert, catch the unique-constraint violation, treat it as
+success — **silently breaks** when the method is `@Transactional`. Spring marks the transaction
+rollback-only the moment the constraint fires. The `catch` swallows the exception, the method
+returns normally, and then the commit fails *outside* the try block: the caller gets a 500 on
+exactly the path the contract promises is safe to retry.
+
+Rule: a method whose contract is "insert-or-ignore" must **not** carry `@Transactional`. Let each
+repository call run in its own transaction, so a failed insert rolls back alone and the catch is
+meaningful. Document the omission in the JavaDoc — otherwise the next person "fixes" it by adding
+the annotation back.
+
+```java
+/**
+ * Idempotent: YES — reaplicar o mesmo consentimento é no-op.
+ * Side Effects: Database insert (append-only)
+ *
+ * Deliberadamente SEM @Transactional: o catch de DataIntegrityViolationException só funciona fora
+ * de uma transação — dentro dela o commit falharia depois do catch, devolvendo 500 num caminho
+ * contratualmente idempotente.
+ */
+public void registerConsent(...) {
+    try {
+        repository.save(entity);
+    } catch (DataIntegrityViolationException e) {
+        log.debug("Consentimento já registrado, ignorando: {}", e.getMessage());
+    }
+}
+```
+
+Precedent: `WaitlistServiceImpl`, `UsuarioServiceImpl.registerConsent`.
+
 ### Logging (mandatory)
 - Log entry point and exit with relevant context (ID, tenant, operation result).
 - Use structured logging with SLF4J + MDC when available.
@@ -545,17 +578,24 @@ END$$;
 
 Run from `apps/menthoros-backend`.
 
-Required before delivery:
+Inner loop (fast — Surefire only, `*Test`):
 
 ```bash
 ./mvnw clean test
 ```
 
+Required before delivery — **`verify` is the gate, not `test`**. It is the only command that runs
+the `*IT` integration tests (see *Test class suffix* under **Test Standards**); `test` alone leaves
+eleven classes unexecuted:
+
+```bash
+./mvnw clean verify
+```
+
 Useful checks when needed:
 
 ```bash
-./mvnw test
-./mvnw verify
+./mvnw test -Dtest=XxxTest
 ./mvnw clean compile
 ```
 
@@ -679,9 +719,50 @@ Coverage % is necessary but not sufficient — a line can be covered by a test w
 Use the lightest test that covers the behavior (the `springboot-tdd` skill from everything-claude-code provides the templates):
 
 - **Service / business rule:** Mockito unit test (`@ExtendWith(MockitoExtension.class)`, `@Nested`) — the dominant pattern in this module.
-- **Controller:** `@WebMvcTest(XxxController.class)` + `MockMvc` + `@MockBean` on the service — validates route/status/JSON without booting the full context. (Not yet used here; prefer it over a full `@SpringBootTest` for controller-only checks.)
+- **Controller:** `@WebMvcTest(XxxController.class)` + `MockMvc` + `@MockBean` on the service — validates route/status/JSON without booting the full context. Prefer it over a full `@SpringBootTest` for controller-only checks; it is now the dominant controller pattern (22+ slices).
 - **Repository / JPA query:** `@DataJpaTest` + Testcontainers (wire via `@DynamicPropertySource`).
 - **End-to-end integration:** `@SpringBootTest` + `@AutoConfigureMockMvc` + `@ActiveProfiles("test")` — reserve for flows that need the real context.
+
+#### Test class suffix drives WHICH command runs the test (mandatory)
+
+The suffix is not cosmetic — it selects the plugin, and therefore the Maven phase:
+
+| Suffix | Plugin | Runs in | Command |
+|---|---|---|---|
+| `*Test`, `*Tests`, `*TestCase` | Surefire | `test` | `./mvnw test` |
+| `*IT`, `*ITCase` | Failsafe | `integration-test` / `verify` | `./mvnw verify` |
+
+Both are configured in `pom.xml` (Surefire at `:346`, Failsafe at `:361` — the latter also forces
+`spring.profiles.active=test`). Use `*IT` for what it means: tests that boot the full context or
+Testcontainers and are too slow for the inner loop.
+
+**The trap:** `./mvnw clean test` stops at the `test` phase and never runs a single `*IT`. Eleven
+`*IT` classes exist in this module and none of them execute under the inner-loop command. Anything
+`*IT` is verified **only** by `./mvnw verify` — before delivering a change that touches integration
+behavior, run `verify`, not just `test`, and say which one you ran (see **Testing and Validation**).
+
+Do not "fix" an unexecuted `*IT` by renaming it to `*Test` — that drags a slow, container-dependent
+test into every inner-loop run. Run the right command instead.
+
+**Known red (verificado 2026-08-01, em `develop`):** `./mvnw clean verify` falha — 61 testes de
+integração, 14 falhas, **todas** em `Task5p1ControllerIT`. Causa: os testes autenticam com
+`@WithMockUser`, que não produz um `Jwt`; o `JwtTenantFilter` então não popula o `TenantContext` e
+todo request responde 403. Os outros dez `*IT` passam. Enquanto isso não é corrigido, `verify` não
+serve como gate automático — rode-o e confirme que as únicas falhas são essas 14, conhecidas. Ao
+corrigir, **remova esta nota**; ela existe para impedir que a próxima pessoa volte a usar `test`
+como gate só porque `verify` estava vermelho.
+
+#### `@WebMvcTest` auto-includes `HandlerInterceptor` and `WebMvcConfigurer` (mandatory)
+
+The `@WebMvcTest` slice filter does not stop at controllers: it also picks up every
+`HandlerInterceptor` and `WebMvcConfigurer` in the context. Declaring either as `@Component` drags
+its whole dependency graph into **all** slices at once — a single `@Component` interceptor with a
+service dependency broke 22 slices with 136 errors, none of them related to the interceptor's own
+behavior.
+
+Declare cross-cutting web components as `@Bean` in a plain `@Configuration` class instead — the
+slice ignores them, and the interceptor is exercised where it belongs (its own unit test plus a
+`@SpringBootTest`). Reference: `LgpdConsentInterceptor` and its configuration.
 
 ### Assertions
 
@@ -697,7 +778,7 @@ A backend task is done only if:
 1. Implementation matches the active OpenSpec change scope.
 2. Corresponding `tasks.md` item is updated.
 3. API/spec docs are updated when behavior changed.
-4. `./mvnw clean test` passes.
+4. `./mvnw clean verify` passes (`test` alone does not run the `*IT` suite).
 5. No intentional out-of-scope modifications were introduced.
 
 ## Delivery Checklist
@@ -750,7 +831,7 @@ MANDATORY: Follow these rules from apps/menthoros-backend/CLAUDE.md:
    - Never read @RequestHeader("X-Tenant-ID") directly
    - Mark controller with @RequireTenant annotation
 
-Test generated code with: ./mvnw clean test
+Test generated code with: ./mvnw clean verify
 ```
 
 ### Validating AI-Generated Code
@@ -776,8 +857,8 @@ grep -A5 "public.*toOutputDto\|public.*toDomain" \
   src/main/java/br/com/menthoros/backend/mapper/*.java \
   | grep -v "if.*null\|throw.*Illegal"
 
-# 5. Run full test suite (required for all generated code)
-./mvnw clean test
+# 5. Run full test suite, including the *IT integration tests (required for all generated code)
+./mvnw clean verify
 ```
 
 ### Code Review Checklist for AI-Generated Code
@@ -811,7 +892,7 @@ Use this checklist when reviewing AI-generated code:
   - [ ] No silent null returns
 
 - [ ] **Tests**
-  - [ ] `./mvnw clean test` passes (100% success)
+  - [ ] `./mvnw clean verify` passes (100% success — inclui os `*IT`)
   - [ ] No test failures or errors
 
 ### Red Flags in AI-Generated Code
