@@ -48,6 +48,28 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     @EntityGraph(attributePaths = "etapasRealizadas")
     Optional<TreinoRealizado> findByTenantIdAndFonteDadosAndExternalId(UUID tenantId, FonteDados fonteDados, String externalId);
 
+    /**
+     * Treinos de uma fonte externa que ficaram SEM etapas — candidatos ao backfill (D9 da change
+     * {@code intervals-icu-activity-laps}).
+     *
+     * <p>São os importados antes da ingestão de etapas existir. O guard de dedup do import impede
+     * corrigi-los reimportando: por isso o backfill atualiza o registro em vez de inserir outro.
+     *
+     * <p>{@code externalId} não-nulo é obrigatório — sem ele não há o que buscar na fonte.
+     */
+    @Query("""
+            select t from TreinoRealizado t
+            where t.tenantId = :tenantId
+              and t.atleta.id = :atletaId
+              and t.fonteDados = :fonteDados
+              and t.externalId is not null
+              and not exists (select 1 from EtapaRealizada e where e.treinoRealizado = t)
+            order by t.dataTreino desc
+            """)
+    List<TreinoRealizado> findSemEtapasByAtletaAndFonte(@Param("tenantId") UUID tenantId,
+                                                        @Param("atletaId") UUID atletaId,
+                                                        @Param("fonteDados") FonteDados fonteDados);
+
     @Query("select coalesce(sum(t.distanciaKm),0) from TreinoRealizado t where t.planoSemanal.id = :planoSemanalId")
     double sumDistanciaByPlanoSemanalId(@Param("planoSemanalId") UUID planoSemanalId);
 

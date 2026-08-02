@@ -23,6 +23,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -110,25 +111,37 @@ public class IntervalsIcuActivityMapper {
      * por {@code cascade = CascadeType.ALL} quando o treino é salvo.
      */
     private void anexarEtapas(TreinoRealizado treino, IcuActivityDto dto) {
-        List<IcuActivityIntervalDto> intervalos = dto.intervalos();
+        for (EtapaRealizada etapa : mapEtapas(dto)) {
+            etapa.setTreinoRealizado(treino);
+            treino.getEtapasRealizadas().add(etapa);
+        }
+    }
+
+    /**
+     * Converte {@code icu_intervals} em etapas SEM vínculo com treino — o chamador anexa.
+     *
+     * <p>Público porque o backfill (D9) precisa das etapas isoladas: ele completa um treino que já
+     * existe e NÃO pode sobrescrever o summary, então não pode usar {@link #map}.
+     */
+    public List<EtapaRealizada> mapEtapas(IcuActivityDto dto) {
+        List<IcuActivityIntervalDto> intervalos = dto != null ? dto.intervalos() : null;
         if (intervalos == null || intervalos.isEmpty()) {
-            return;
+            return List.of();
         }
 
-        int ordem = 0;
+        List<EtapaRealizada> etapas = new ArrayList<>();
         for (IcuActivityIntervalDto intervalo : intervalos) {
             if (intervalo == null || isDegenerado(intervalo)) {
                 continue;
             }
-            EtapaRealizada etapa = mapEtapa(intervalo, ++ordem);
-            etapa.setTreinoRealizado(treino);
-            treino.getEtapasRealizadas().add(etapa);
+            etapas.add(mapEtapa(intervalo, etapas.size() + 1));
         }
 
-        if (dto.lapCount() != null && dto.lapCount() != ordem) {
+        if (dto.lapCount() != null && dto.lapCount() != etapas.size()) {
             log.debug("Contagem de etapas divergiu de icu_lap_count: mapeadas={}, icu_lap_count={}, activityId={}",
-                    ordem, dto.lapCount(), dto.id());
+                    etapas.size(), dto.lapCount(), dto.id());
         }
+        return etapas;
     }
 
     /**

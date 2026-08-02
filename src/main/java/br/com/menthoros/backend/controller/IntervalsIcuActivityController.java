@@ -3,7 +3,9 @@ package br.com.menthoros.backend.controller;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.security.RequireTenant;
+import br.com.menthoros.backend.dto.output.BackfillEtapasOutputDto;
 import br.com.menthoros.backend.services.IntervalsIcuActivityIngestionService;
+import br.com.menthoros.backend.services.IntervalsIcuLapsBackfillService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -32,6 +34,7 @@ import java.util.UUID;
 public class IntervalsIcuActivityController {
 
     private final IntervalsIcuActivityIngestionService intervalsIcuActivityIngestionService;
+    private final IntervalsIcuLapsBackfillService intervalsIcuLapsBackfillService;
 
     @PostMapping("/atletas/{atletaId}/activities/import")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
@@ -52,5 +55,22 @@ public class IntervalsIcuActivityController {
             @RequestParam String activityId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         return ResponseEntity.ok(intervalsIcuActivityIngestionService.importarAtividade(atletaId, activityId, tenantId));
+    }
+    @PostMapping("/atletas/{atletaId}/activities/backfill-laps")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
+    @Operation(summary = "Completa com etapas os treinos intervals.icu importados antes da ingestão de etapas existir",
+            description = "Atualiza os treinos do atleta que ficaram sem etapas. Grava apenas as etapas — "
+                    + "o resumo do treino não é sobrescrito. Idempotente: treinos já corrigidos são ignorados.")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Backfill executado; o corpo traz o resumo do que foi feito"),
+        @ApiResponse(responseCode = "401", description = "Não autenticado"),
+        @ApiResponse(responseCode = "403", description = "Sem papel TECNICO/ADMIN ou atleta de outro tenant"),
+        @ApiResponse(responseCode = "409", description = "Atleta sem conexão intervals.icu ativa")
+    })
+    public ResponseEntity<BackfillEtapasOutputDto> backfillEtapas(
+            @Parameter(description = "ID único do atleta") @PathVariable UUID atletaId) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        return ResponseEntity.ok(intervalsIcuLapsBackfillService.backfillEtapas(atletaId, tenantId));
     }
 }
