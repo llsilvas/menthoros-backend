@@ -249,6 +249,6 @@ class IntervalsIcuActivityImportIntegrationTest extends AbstractIntegrationTest 
 
     private IcuActivityDto activityDto(String activityId, String athleteId) {
         return new IcuActivityDto(activityId, athleteId, "Run", "Corrida de teste", "2026-07-16T08:00:00",
-                1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null);
+                1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
     }
 }

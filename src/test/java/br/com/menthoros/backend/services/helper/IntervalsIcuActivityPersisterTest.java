@@ -65,7 +65,7 @@ class IntervalsIcuActivityPersisterTest {
         atleta.setId(UUID.randomUUID());
         atleta.setAssessoria(assessoria);
         dto = new IcuActivityDto(EXTERNAL_ID, "i641775", "Run", "Corrida", "2026-07-16T08:00:00",
-                1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null);
+                1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     @Nested

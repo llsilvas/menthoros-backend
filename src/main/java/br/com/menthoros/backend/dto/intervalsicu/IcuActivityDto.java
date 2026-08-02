@@ -3,6 +3,8 @@ package br.com.menthoros.backend.dto.intervalsicu;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.List;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record IcuActivityDto(
         String id,
@@ -21,5 +23,12 @@ public record IcuActivityDto(
         @JsonProperty("icu_rpe") Double icuRpe,
         @JsonProperty("icu_training_load") Integer icuTrainingLoad,
         @JsonProperty("device_name") String deviceName,
-        Integer calories
+        Integer calories,
+
+        /*
+         * Só vem quando a activity é buscada com ?intervals=true; ausente/null caso contrário.
+         * O mapper trata null como lista vazia.
+         */
+        @JsonProperty("icu_lap_count") Integer lapCount,
+        @JsonProperty("icu_intervals") List<IcuActivityIntervalDto> intervalos
 ) {}

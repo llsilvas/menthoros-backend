@@ -69,7 +69,7 @@ class IntervalsIcuActivityMapperTest {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Run", "Corrida", "2026-07-16T06:00:00",
                     1800, 1850, 5000.0, null, null, null, null, null, null, null,
-                    "Garmin \"Watch\" Pro\\v2", null);
+                    "Garmin \"Watch\" Pro\\v2", null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -84,7 +84,7 @@ class IntervalsIcuActivityMapperTest {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Run", "Corrida", "2026-07-16T06:00:00",
                     1800, 1850, 5000.0, 3.0, // average_speed diferente do que moving_time/distance dariam
-                    null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -98,7 +98,7 @@ class IntervalsIcuActivityMapperTest {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Run", "Corrida", "2026-07-16T06:00:00",
                     null, null, null, 2.5, // 2.5 m/s = 400s/km
-                    null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -111,7 +111,7 @@ class IntervalsIcuActivityMapperTest {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Run", "Corrida", "2026-07-16T06:00:00",
                     null, null, null, null,
-                    null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -124,7 +124,7 @@ class IntervalsIcuActivityMapperTest {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Treadmill", "Esteira", "2026-07-16T06:00:00",
                     null, null, 5000.0, null,
-                    null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -137,7 +137,7 @@ class IntervalsIcuActivityMapperTest {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Run", "Corrida", "2026-07-16T06:00:00",
                     1800, 1850, null, null,
-                    null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -150,7 +150,7 @@ class IntervalsIcuActivityMapperTest {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Run", "Corrida", "2026-07-16T06:00:00",
                     1800, null, 5000.0, null,
-                    null, null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -168,7 +168,7 @@ class IntervalsIcuActivityMapperTest {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Run", "Corrida", "2026-07-16T06:00:00",
                     1800, 1850, 5000.0, null,
-                    null, null, null, null, 7.6, null, null, null);
+                    null, null, null, null, 7.6, null, null, null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -189,7 +189,7 @@ class IntervalsIcuActivityMapperTest {
             IcuActivityDto dto = new IcuActivityDto(
                     "i166338796", "i641775", "Run", "Taboão da Serra - 8.00Km CONTINUO", "2026-07-16T08:12:19",
                     3108, 3110, 8009.18, 2.576, 152.0, 164.0, 69.87482, 80.822655, 2.0, 58,
-                    "Garmin Forerunner 970", 666);
+                    "Garmin Forerunner 970", 666, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -201,7 +201,7 @@ class IntervalsIcuActivityMapperTest {
         void cadenciaForaDaFaixaViraNull() {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Run", "Corrida", "2026-07-16T06:00:00",
-                    1800, 1850, 5000.0, null, null, null, null, 250.0, null, null, null, null);
+                    1800, 1850, 5000.0, null, null, null, null, 250.0, null, null, null, null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -222,7 +222,7 @@ class IntervalsIcuActivityMapperTest {
         void modalidadesAceitas(String type) {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", type, "Atividade", "2026-07-16T06:00:00",
-                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null);
+                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -235,7 +235,7 @@ class IntervalsIcuActivityMapperTest {
         void modalidadeNaoSuportadaLancaExcecao() {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Ride", "Pedal", "2026-07-16T06:00:00",
-                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null);
+                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
 
             assertThatThrownBy(() -> mapper.map(dto, atleta()))
                     .isInstanceOf(DomainRuleViolationException.class);
@@ -260,7 +260,7 @@ class IntervalsIcuActivityMapperTest {
         void viradaDeDiaProximaAMeiaNoite() {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Run", "Corrida noturna", "2026-07-16T23:45:00",
-                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null);
+                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -272,7 +272,7 @@ class IntervalsIcuActivityMapperTest {
         void viradaDeDiaLogoApósAMeiaNoite() {
             IcuActivityDto dto = new IcuActivityDto(
                     "i1", "i641775", "Run", "Corrida de madrugada", "2026-07-16T00:15:00",
-                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null);
+                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
 
             TreinoRealizado treino = mapper.map(dto, atleta());
 
@@ -308,13 +308,13 @@ class IntervalsIcuActivityMapperTest {
         return new IcuActivityDto(
                 "i86400275", "i641775", "Run", "Corrida matinal", "2026-07-16T06:30:00",
                 1800, 1850, 5000.0, 2.78, 145.0, 168.0, 42.0, 80.5, 6.0, 55,
-                "Garmin Forerunner 965", 420);
+                "Garmin Forerunner 965", 420, null, null);
     }
 
     private IcuActivityDto activityMinima() {
         return new IcuActivityDto(
                 "i1", "i641775", "Run", "Corrida", "2026-07-16T06:00:00",
-                1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null);
+                1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
     }
 
     private Atleta atleta() {
