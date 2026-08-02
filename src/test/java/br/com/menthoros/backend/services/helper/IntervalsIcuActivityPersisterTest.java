@@ -175,4 +175,76 @@ class IntervalsIcuActivityPersisterTest {
         t.setDataTreino(LocalDate.of(2026, 7, 16));
         return t;
     }
+    @Nested
+    @DisplayName("persistir — etapas vindas do mapper")
+    class Etapas {
+
+        @Test
+        @DisplayName("as etapas do treino mapeado chegam intactas ao save — persistem por cascade")
+        void etapasPersistemPorCascade() {
+            when(intervalsIcuConnectionService.conexaoAtiva(atleta.getId(), tenantId))
+                    .thenReturn(Optional.of(new IntegracaoExterna()));
+            TreinoRealizado mapeado = treinoComEtapas(3);
+            when(intervalsIcuActivityMapper.map(dto, atleta)).thenReturn(mapeado);
+            when(treinoDedupHelper.saveIdempotent(mapeado, EXTERNAL_ID, atleta.getId()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(mapeado, true));
+            when(candidateSelector.buscarCandidatos(mapeado, tenantId)).thenReturn(List.of());
+
+            TreinoRealizado salvo = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
+
+            // O persister nao mexe em etapas: quem anexa e o mapper, e o cascade persiste.
+            assertThat(salvo.getEtapasRealizadas()).hasSize(3);
+            verify(treinoDedupHelper).saveIdempotent(
+                    org.mockito.ArgumentMatchers.argThat(t -> t.getEtapasRealizadas().size() == 3),
+                    eq(EXTERNAL_ID), eq(atleta.getId()));
+        }
+
+        @Test
+        @DisplayName("corrida de concorrencia: nao duplica etapas no registro vencedor")
+        void corridaDeConcorrenciaNaoDuplicaEtapas() {
+            when(intervalsIcuConnectionService.conexaoAtiva(atleta.getId(), tenantId))
+                    .thenReturn(Optional.of(new IntegracaoExterna()));
+            TreinoRealizado mapeado = treinoComEtapas(3);
+            TreinoRealizado vencedor = treinoComEtapas(3);   // ja persistido por outra requisicao
+            when(intervalsIcuActivityMapper.map(dto, atleta)).thenReturn(mapeado);
+            when(treinoDedupHelper.saveIdempotent(mapeado, EXTERNAL_ID, atleta.getId()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(vencedor, false));
+
+            TreinoRealizado salvo = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
+
+            assertThat(salvo).isSameAs(vencedor);
+            assertThat(salvo.getEtapasRealizadas()).hasSize(3);
+            verify(tsbService, never()).atualizarTsbDia(any(), any());
+        }
+
+        @Test
+        @DisplayName("activity sem intervalos preserva o comportamento anterior — treino sem etapas")
+        void semIntervalosComportamentoInalterado() {
+            when(intervalsIcuConnectionService.conexaoAtiva(atleta.getId(), tenantId))
+                    .thenReturn(Optional.of(new IntegracaoExterna()));
+            TreinoRealizado mapeado = treinoComEtapas(0);
+            when(intervalsIcuActivityMapper.map(dto, atleta)).thenReturn(mapeado);
+            when(treinoDedupHelper.saveIdempotent(mapeado, EXTERNAL_ID, atleta.getId()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(mapeado, true));
+            when(candidateSelector.buscarCandidatos(mapeado, tenantId)).thenReturn(List.of());
+
+            TreinoRealizado salvo = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
+
+            assertThat(salvo.getEtapasRealizadas()).isEmpty();
+            verify(tsbService).atualizarTsbDia(eq(atleta.getId()), any());
+        }
+    }
+
+    private TreinoRealizado treinoComEtapas(int quantidade) {
+        TreinoRealizado treino = new TreinoRealizado();
+        treino.setId(UUID.randomUUID());
+        treino.setDataTreino(LocalDate.of(2026, 7, 16));
+        for (int i = 1; i <= quantidade; i++) {
+            br.com.menthoros.backend.entity.EtapaRealizada etapa = new br.com.menthoros.backend.entity.EtapaRealizada();
+            etapa.setOrdem(i);
+            etapa.setTreinoRealizado(treino);
+            treino.getEtapasRealizadas().add(etapa);
+        }
+        return treino;
+    }
 }

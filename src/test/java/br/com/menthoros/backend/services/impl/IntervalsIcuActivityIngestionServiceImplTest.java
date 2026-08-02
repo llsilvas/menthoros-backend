@@ -45,6 +45,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -371,6 +372,24 @@ class IntervalsIcuActivityIngestionServiceImplTest {
 
             assertThat(resultado).isSameAs(outputDto);
             verify(persister).persistir(dto, atleta, tenantId, ACTIVITY_ID);
+        }
+
+        @Test
+        @DisplayName("faz UMA unica chamada externa, pedindo os intervalos (CA4)")
+        void umaUnicaChamadaComIntervalos() {
+            stubAteAntesDoClient();
+            IcuActivityDto dto = icuDto();
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
+            when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
+            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoRealizado());
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mockOutputDto());
+
+            service.importarAtividade(atletaId, ACTIVITY_ID, tenantId);
+
+            // comIntervalos=true nao e opcional: sem ele a activity volta sem icu_intervals e o
+            // treino nasce sem etapas — exatamente o defeito que esta change conserta.
+            verify(intervalsIcuClient).buscarAtividade(anyString(), eq(ACTIVITY_ID), eq(true));
+            verifyNoMoreInteractions(intervalsIcuClient);
         }
     }
 
