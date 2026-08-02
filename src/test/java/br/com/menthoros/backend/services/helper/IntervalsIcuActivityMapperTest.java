@@ -490,6 +490,24 @@ class IntervalsIcuActivityMapperTest {
         }
 
         @Test
+        @DisplayName("label longa da fonte e truncada — senao derruba o treino inteiro no flush")
+        void labelLongaEhTruncada() {
+            String label = "x".repeat(700);
+
+            EtapaRealizada etapa = umaEtapa(intervalo().comLabel(label));
+
+            assertThat(etapa.getDescricao()).hasSize(500);
+        }
+
+        @Test
+        @DisplayName("label no limite de 500 passa intacta; ausente ou em branco vira \"Lap N\"")
+        void labelNoLimiteEAusente() {
+            assertThat(umaEtapa(intervalo().comLabel("y".repeat(500))).getDescricao()).hasSize(500);
+            assertThat(umaEtapa(intervalo().comLabel(null)).getDescricao()).isEqualTo("Lap 1");
+            assertThat(umaEtapa(intervalo().comLabel("   ")).getDescricao()).isEqualTo("Lap 1");
+        }
+
+        @Test
         @DisplayName("cada etapa aponta de volta para o treino que a contem")
         void backReferenceSetado() {
             TreinoRealizado treino = mapper.map(payloadReal(), atleta());
@@ -542,16 +560,18 @@ class IntervalsIcuActivityMapperTest {
         private Double speed = 3.0;
         private Double cadence = 82.0;
         private Double gradient = 0.0;
+        private String label = null;
 
         IntervaloBuilder comTipo(String v) { this.type = v; return this; }
         IntervaloBuilder comDistancia(Double v) { this.distance = v; return this; }
         IntervaloBuilder comTempo(Integer v) { this.movingTime = v; return this; }
         IntervaloBuilder comCadencia(Double v) { this.cadence = v; return this; }
         IntervaloBuilder comInclinacao(Double v) { this.gradient = v; return this; }
+        IntervaloBuilder comLabel(String v) { this.label = v; return this; }
 
         IcuActivityIntervalDto build() {
             return new IcuActivityIntervalDto(
-                    1L, type, null, 0, distance, movingTime, movingTime, speed,
+                    1L, type, label, 0, distance, movingTime, movingTime, speed,
                     140.0, 150.0, cadence, null, 1.0, 0.95,
                     250.0, 50.0, 100.0, 10.0, 20.0,
                     2, 80.0, gradient);

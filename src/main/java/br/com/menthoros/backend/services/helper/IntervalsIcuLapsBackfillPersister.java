@@ -23,6 +23,12 @@ import java.util.UUID;
  * candidato deixa de existir.
  * <p>Side Effects: Database insert das etapas (por cascade). O summary do treino NÃO é alterado.
  * <p>Tenant-aware: YES — o treino é recarregado por {@code (id, tenantId)}.
+ *
+ * <p><b>Janela de corrida aceita:</b> o guard "já tem etapas" é check-then-act sem lock. Dois
+ * disparos simultâneos do backfill para o mesmo atleta poderiam duplicar etapas sob
+ * {@code READ COMMITTED}. Aceito: é ação manual do coach sobre um passivo finito, e o custo de um
+ * lock ou de uma constraint de unicidade não se paga para essa probabilidade. Se o backfill virar
+ * job automático, fechar a janela antes.
  */
 @Slf4j
 @Component

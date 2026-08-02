@@ -48,6 +48,9 @@ public class IntervalsIcuActivityMapper {
     private static final int MIN_DURACAO_SEG = 5;
     private static final double MIN_DISTANCIA_METROS = 20d;
 
+    /** Tamanho de {@code EtapaRealizada.descricao} — a label da fonte não tem limite. */
+    private static final int MAX_DESCRICAO_ETAPA = 500;
+
     private static final Set<String> MODALIDADES_SUPORTADAS = Set.of("Run", "TrailRun", "VirtualRun", "Treadmill");
 
     public boolean isModalidadeSuportada(String type) {
@@ -165,9 +168,7 @@ public class IntervalsIcuActivityMapper {
         etapa.setOrdem(ordem);
         etapa.setSplitIndex(ordem);
         etapa.setTipoEtapa(mapTipoEtapa(intervalo.type()));
-        etapa.setDescricao(intervalo.label() != null && !intervalo.label().isBlank()
-                ? intervalo.label()
-                : "Lap " + ordem);
+        etapa.setDescricao(descricaoDe(intervalo, ordem));
 
         // duracao SEMPRE de moving_time: elapsed_time incluiria tempo parado, que o
         // TssCalculatorService, o tempo em zona e o decoupling leem como tempo de treino.
@@ -382,5 +383,23 @@ public class IntervalsIcuActivityMapper {
                 }
             }
         }
+    }
+
+    /**
+     * {@code label} vem de terceiro e não tem limite de tamanho na origem; a coluna tem 500.
+     * Sem truncar, uma label longa falha no flush e reverte a persistência do TREINO INTEIRO,
+     * porque as etapas entram por cascade na mesma transação — o dado bom vai junto com o ruim.
+     */
+    private String descricaoDe(IcuActivityIntervalDto intervalo, int ordem) {
+        String label = intervalo.label();
+        if (label == null || label.isBlank()) {
+            return "Lap " + ordem;
+        }
+        if (label.length() > MAX_DESCRICAO_ETAPA) {
+            log.warn("Label de intervalo do intervals.icu truncada de {} para {} caracteres",
+                    label.length(), MAX_DESCRICAO_ETAPA);
+            return label.substring(0, MAX_DESCRICAO_ETAPA);
+        }
+        return label;
     }
 }

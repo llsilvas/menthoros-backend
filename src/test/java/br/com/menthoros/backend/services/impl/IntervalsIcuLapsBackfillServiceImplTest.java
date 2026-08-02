@@ -157,7 +157,7 @@ class IntervalsIcuLapsBackfillServiceImplTest {
 
             BackfillEtapasOutputDto resultado = service.backfillEtapas(atletaId, tenantId);
 
-            assertThat(resultado).isEqualTo(new BackfillEtapasOutputDto(0, 0, 0, 0));
+            assertThat(resultado).isEqualTo(new BackfillEtapasOutputDto(0, 0, 0, 0, 0));
             verifyNoInteractions(persister);
         }
     }

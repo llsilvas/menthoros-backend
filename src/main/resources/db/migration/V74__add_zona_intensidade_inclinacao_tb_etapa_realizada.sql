@@ -22,11 +22,19 @@
 --   inclinacao_media_pct  inclinação em PERCENTUAL; a fonte entrega FRAÇÃO
 --                         (0.0011977 = 0,1%), o mapper multiplica por 100
 --
+-- CHECKs seguem o padrão das colunas vizinhas desta tabela (ck_*_fc_media,
+-- ck_*_potencia, ck_*_cadencia, da V7): o dado vem de terceiro e alimenta
+-- cálculo de zona e carga — um valor fora de faixa entrando em silêncio
+-- contamina a análise rio abaixo.
+--
 -- Colunas nullable: dependem de zonas configuradas e de barômetro/GPS,
 -- e nenhuma fonte além do intervals.icu as preenche hoje.
 --
 -- Rollback:
 --   ALTER TABLE tb_etapa_realizada
+--       DROP CONSTRAINT IF EXISTS ck_etapa_realizada_zona,
+--       DROP CONSTRAINT IF EXISTS ck_etapa_realizada_intensidade_pct,
+--       DROP CONSTRAINT IF EXISTS ck_etapa_realizada_inclinacao_media_pct,
 --       DROP COLUMN IF EXISTS zona,
 --       DROP COLUMN IF EXISTS intensidade_pct,
 --       DROP COLUMN IF EXISTS inclinacao_media_pct;
@@ -37,6 +45,27 @@ ALTER TABLE tb_etapa_realizada
     ADD COLUMN IF NOT EXISTS zona                 INTEGER,
     ADD COLUMN IF NOT EXISTS intensidade_pct      NUMERIC(5,2),
     ADD COLUMN IF NOT EXISTS inclinacao_media_pct NUMERIC(4,1);
+
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_etapa_realizada_zona') THEN
+        ALTER TABLE tb_etapa_realizada
+            ADD CONSTRAINT ck_etapa_realizada_zona
+            CHECK (zona IS NULL OR zona BETWEEN 1 AND 10);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_etapa_realizada_intensidade_pct') THEN
+        ALTER TABLE tb_etapa_realizada
+            ADD CONSTRAINT ck_etapa_realizada_intensidade_pct
+            CHECK (intensidade_pct IS NULL OR intensidade_pct BETWEEN 0 AND 200);
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ck_etapa_realizada_inclinacao_media_pct') THEN
+        ALTER TABLE tb_etapa_realizada
+            ADD CONSTRAINT ck_etapa_realizada_inclinacao_media_pct
+            CHECK (inclinacao_media_pct IS NULL OR inclinacao_media_pct BETWEEN -100 AND 100);
+    END IF;
+END$$;
 
 DO $$
 BEGIN

@@ -17,5 +17,9 @@ public record BackfillEtapasOutputDto(
         int semIntervalos,
 
         @Schema(description = "Treinos cuja busca na fonte falhou — seguem elegíveis na próxima execução", example = "1")
-        int falhas
+        int falhas,
+
+        @Schema(description = "Treinos que ficaram de fora desta execução, por limite de lote. "
+                        + "Basta disparar o backfill de novo para continuar de onde parou.", example = "0")
+        int restantes
 ) {}

@@ -84,7 +84,7 @@ class IntervalsIcuActivityControllerAuthTest {
         void retorna200ParaTecnico() throws Exception {
             stubAtletaNoTenant();
             when(intervalsIcuLapsBackfillService.backfillEtapas(atletaId, TENANT_ID))
-                    .thenReturn(new BackfillEtapasOutputDto(3, 2, 1, 0));
+                    .thenReturn(new BackfillEtapasOutputDto(3, 2, 1, 0, 0));
 
             mockMvc.perform(post("/api/v1/intervals-icu/atletas/{atletaId}/activities/backfill-laps", atletaId)
                             .with(tecnicoJwt()))
