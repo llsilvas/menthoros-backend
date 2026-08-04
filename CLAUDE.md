@@ -744,13 +744,39 @@ behavior, run `verify`, not just `test`, and say which one you ran (see **Testin
 Do not "fix" an unexecuted `*IT` by renaming it to `*Test` — that drags a slow, container-dependent
 test into every inner-loop run. Run the right command instead.
 
-**Known red (verificado 2026-08-01, em `develop`):** `./mvnw clean verify` falha — 61 testes de
-integração, 14 falhas, **todas** em `Task5p1ControllerIT`. Causa: os testes autenticam com
-`@WithMockUser`, que não produz um `Jwt`; o `JwtTenantFilter` então não popula o `TenantContext` e
-todo request responde 403. Os outros dez `*IT` passam. Enquanto isso não é corrigido, `verify` não
-serve como gate automático — rode-o e confirme que as únicas falhas são essas 14, conhecidas. Ao
-corrigir, **remova esta nota**; ela existe para impedir que a próxima pessoa volte a usar `test`
-como gate só porque `verify` estava vermelho.
+**Estado (verificado 2026-08-02, em `develop`):** `./mvnw clean verify` passa integralmente — 62
+testes de integração, 0 falhas. Ele é gate utilizável; se falhar, é regressão sua, não ruído
+herdado.
+
+#### Autenticação em `*IT` de controller: JWT, nunca `@WithMockUser` (mandatory)
+
+`@WithMockUser` produz um principal `User`. O `JwtTenantFilter` só popula o `TenantContext` quando o
+principal é um `Jwt` — então com `@WithMockUser` o filtro vira no-op, `getRequiredTenantId()` lança e
+**todo request responde 403**, independentemente da role. Some-se a isso que `ROLE_USER` não existe
+no domínio (os papéis são `TECNICO`, `ATLETA`, `ADMIN`) e o teste falha por dois motivos ao mesmo
+tempo, nenhum deles óbvio na mensagem.
+
+Foi o que manteve `ManualReconciliationControllerIT` vermelho por 2,5 meses, deixando três endpoints
+sem cobertura de contrato. Use o post-processor `jwt()` por request:
+
+```java
+private RequestPostProcessor jwtDe(UUID subject, UUID tenant, String papel) {
+    return jwt()
+            .authorities(new SimpleGrantedAuthority("ROLE_" + papel))
+            .jwt(j -> j.subject(subject.toString()).claim("tenant_id", tenant.toString()));
+}
+```
+
+Dois detalhes que fazem o teste passar **por acidente** se ignorados:
+
+- **O subject tem de ser um UUID** e a linha de `Usuario` precisa existir. `createNewUsuario` faz
+  `UUID.fromString(keycloakId)`; com subject não-UUID o sync cai no fail-safe do `JwtTenantFilter` e
+  o teste fica verde exercitando um caminho degradado.
+- **As authorities vão explícitas.** O post-processor `jwt()` não usa o `JwtAuthenticationConverter`
+  da aplicação; o default dele mapeia scopes para `SCOPE_*`, e `@PreAuthorize` exige `ROLE_*`.
+
+Não envie `X-Tenant-ID`: a produção resolve tenant pelo claim do JWT, nunca por header. Referências:
+`ManualReconciliationControllerIT`, `OnboardingSensitiveDataAccessIT`.
 
 #### `@WebMvcTest` auto-includes `HandlerInterceptor` and `WebMvcConfigurer` (mandatory)
 
