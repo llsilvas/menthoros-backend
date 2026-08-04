@@ -148,13 +148,16 @@ app:
   # LGPD / CONSENTIMENTO DO COACH
   # ----------------------------------------
   lgpd:
-    # off | report-only | on — default off de propósito: o deploy não liga o bloqueio sozinho.
-    # Virar para `on` sem passar por `report-only` trava a escrita de TODOS os coaches de uma vez.
-    consent-enforcement: ${LGPD_CONSENT_ENFORCEMENT:off}
+    # off | report-only | on — `report-only` desde 2026-08-03: não bloqueia ninguém, só registra
+    # quem seria bloqueado. É o insumo para decidir quando `on` é seguro.
+    # NÃO virar para `on` enquanto os gates do bloco 5 de `add-coach-lgpd-consent` estiverem abertos
+    # (validação jurídica do texto e comunicação prévia aos coaches).
+    consent-enforcement: ${LGPD_CONSENT_ENFORCEMENT:report-only}
     # Datas de vigência dos documentos publicados. Precisam bater com o que a página exibe:
     # divergência = registro apontando para um texto que o coach não viu.
-    policy-version: ${LGPD_POLICY_VERSION:2026-06-30}
-    terms-version: ${LGPD_TERMS_VERSION:2026-06-30}
+    # Sincronizadas com POLITICA_VERSAO/TERMOS_VERSAO do frontend — mudar aqui exige mudar lá.
+    policy-version: ${LGPD_POLICY_VERSION:2026-08-03}
+    terms-version: ${LGPD_TERMS_VERSION:2026-08-03}
 
   # ----------------------------------------
   # OPENAPI DOCUMENTATION CONFIGURATION
