@@ -16,6 +16,9 @@
 -- UNIQUE existente, e a corrida entre dois cadastros simultâneos resolve
 -- nela — não em verificação prévia, que sempre tem janela.
 --
+-- Identificadores em INGLES (ADR-0007): tabela nova, sem vizinhanca PT que
+-- justifique desvio como o da V74.
+--
 -- Rollback:
 --   DROP TABLE IF EXISTS tb_signup_provisioning;
 -- Migração puramente aditiva — nenhuma tabela existente é alterada.
@@ -35,11 +38,11 @@ CREATE TABLE IF NOT EXISTS tb_signup_provisioning (
 
     -- Corpo devolvido na primeira execução, replicado no reenvio.
     -- NUNCA contém senha, access token ou refresh token.
-    resultado                JSONB,
+    result                   JSONB,
 
-    -- Larguras espelham CoachSignupInputDto: nada além do que o DTO valida
-    -- chega até aqui. `slug` acompanha tb_assessoria.dominio — varchar(100).
-    email                    VARCHAR(180) NOT NULL,
+    -- Larguras espelham as colunas de destino: `email` acompanha tb_usuario.email
+    -- e `slug` acompanha tb_assessoria.dominio — ambas varchar(100).
+    email                    VARCHAR(100) NOT NULL,
     slug                     VARCHAR(100) NOT NULL,
 
     status                   VARCHAR(40)  NOT NULL,
@@ -99,7 +102,7 @@ CREATE INDEX IF NOT EXISTS idx_signup_provisioning_email_created
 
 COMMENT ON TABLE tb_signup_provisioning IS
     'Rastro do auto-cadastro público de assessoria. Sobrevive à compensação: a Assessoria é apagada, esta linha permanece.';
-COMMENT ON COLUMN tb_signup_provisioning.resultado IS
+COMMENT ON COLUMN tb_signup_provisioning.result IS
     'Corpo devolvido na 1a execucao, replicado no reenvio idempotente. Nunca contem senha nem token.';
 COMMENT ON COLUMN tb_signup_provisioning.request_hash IS
     'Hash do payload sem a senha. Distingue reenvio identico (200/201) de chave reusada com outro payload (409).';

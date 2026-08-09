@@ -44,6 +44,15 @@ public interface UsuarioRepository extends JpaRepository<Usuario, UUID> {
     Optional<Usuario> findByEmailAndAssessoriaId(String email, UUID tenantId);
 
     /**
+     * Busca global por e-mail, sem recorte de tenant.
+     *
+     * <p>Existe para o auto-cadastro público, que roda <strong>antes</strong> de haver tenant —
+     * não há {@code assessoriaId} para filtrar. É seguro porque {@code tb_usuario.email} é UNIQUE
+     * no schema desde a V2: o e-mail identifica um usuário no sistema inteiro, não por assessoria.</p>
+     */
+    boolean existsByEmail(String email);
+
+    /**
      * Lista todos os usuários ativos de um tenant
      */
     @Query("SELECT u FROM Usuario u WHERE u.assessoria.id = :tenantId AND u.ativo = true ORDER BY u.nome")

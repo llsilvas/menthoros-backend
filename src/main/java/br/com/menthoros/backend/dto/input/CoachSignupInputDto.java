@@ -21,7 +21,9 @@ public record CoachSignupInputDto(
         @Schema(description = "E-mail do coach — vira o username no Keycloak", example = "maria@exemplo.com", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank
         @Email
-        @Size(max = 180)
+        // 100 espelha tb_usuario.email; um e-mail maior passaria na validação e
+        // estouraria a coluna na hora de persistir.
+        @Size(max = 100)
         String email,
 
         @Schema(description = "Senha inicial", requiredMode = Schema.RequiredMode.REQUIRED, format = "password")
