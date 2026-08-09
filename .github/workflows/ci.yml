@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: CI
+
+# `pull_request`, nunca `pull_request_target`: este último roda com o token do repositório-base e
+# acesso a secrets, mesmo em PR de fork — combinação que transforma um PR num vetor de execução.
+on:
+  pull_request:
+    branches: [develop]
+  # Rede para o que chegar em `develop` fora de um PR. Depois da branch protection isto vira quase
+  # redundante, mas ainda cobre o resultado real do merge — e não a simulação que o PR testou.
+  push:
+    branches: [develop]
+  # Não é enfeite: `Task5p1ControllerIT` ficou vermelho por 2,5 meses porque nada o executava. CI
+  # só-em-PR tem a mesma cegueira em períodos sem PR, e quebra por causa externa (imagem fora do ar,
+  # limite de pull do Docker Hub) não gera sinal nenhum.
+  # Dias úteis: falha no sábado que ninguém lê na segunda não acrescenta nada.
+  schedule:
+    - cron: '0 9 * * 1-5'
+
+# Sem escrita: o CI só precisa ler o código. Um primeiro CI que amplia a superfície de ataque troca
+# um problema por outro.
+permissions:
+  contents: read
+
+# Push novo no mesmo PR cancela a execução anterior — economiza runner e evita status de commit
+# velho chegando depois do novo.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ⚠️ O NOME DESTE JOB É CONTRATO. A branch protection de `develop` exige o contexto
+  # "Build e testes (verify)". Renomear aqui sem atualizar a proteção faz o gate esperar um check
+  # que nunca chega — e o merge trava em silêncio, ou pior, passa a não exigir nada.
+  verify:
+    name: Build e testes (verify)
+    runs-on: ubuntu-latest
+    # Baseline local é ~2min com cache e Docker quentes. 30min é folga para runner de 2 vCPU com
+    # cache frio e pull da imagem do Postgres, sem deixar uma trava queimar minutos até o teto da
+    # plataforma.
+    timeout-minutes: 30
+
+    steps:
+      # Actions fixadas por SHA de commit: tag, mesmo exata, é mutável — quem controla o repositório
+      # da action pode reapontá-la. O comentário ao lado é o que torna o SHA legível.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - uses: actions/setup-java@3a4f6e1af504cf6a31855fa899c6aa5355ba6c12 # v4.7.0
+        with:
+          java-version: '21'
+          distribution: temurin
+          # Cacheia ~/.m2 com chave derivada do hash do pom.xml.
+          cache: maven
+
+      # `verify`, não `test`: `test` para na fase do Surefire e não executa nenhum dos 11 `*IT`, que
+      # é precisamente como o defeito de 2,5 meses sobreviveu. Um CI rodando `test` reproduziria o
+      # problema com aparência de solução.
+      #
+      # Os `*IT` sobem Postgres via Testcontainers (`pgvector/pgvector:pg17`), usando o Docker que o
+      # runner já traz. Nenhum secret é necessário: o profile `integration` stuba as chaves de IA e
+      # usa JWKS dummy; o profile `test` stuba as credenciais do Strava.
+      #
+      # Ruído esperado no log: o `springdoc-openapi-maven-plugin` roda na fase `integration-test` e
+      # tenta ler `http://localhost:<porta>/v3/api-docs` sem nenhuma app no ar, imprimindo um
+      # `java.net.ConnectException: Connection refused` com stack trace. Ele NÃO quebra o build
+      # (verificado: `BUILD SUCCESS`, exit 0). Se o job falhar, a causa está em outro lugar.
+      - name: Build e testes (unitários + integração)
+        run: ./mvnw --batch-mode --no-transfer-progress clean verify
+
+      # Sem isto o primeiro CI é caixa preta: "falhou" não distingue quebra de Maven, de Docker, de
+      # Testcontainers ou de asserção — e a resposta natural de quem não conhece o log vira
+      # "roda de novo".
+      - name: Publicar relatórios de teste em caso de falha
+        if: failure()
+        uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882 # v4.4.3
+        with:
+          name: relatorios-de-teste
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
+          retention-days: 7
+          if-no-files-found: warn
