@@ -15,7 +15,17 @@ import org.springframework.test.context.TestPropertySource;
     "app.openapi.title=Test API",
     "app.openapi.description=Test Description",
     "app.openapi.contact-name=Menthoros Team",
-    "app.openapi.contact-email=contact@menthoros.com"
+    "app.openapi.contact-email=contact@menthoros.com",
+    // Sobe o contexto inteiro só para inspecionar o bean OpenAPI — e o contexto inteiro arrasta
+    // Flyway e JPA. Sem H2, o datasource default aponta para localhost:5432 e o teste passa apenas
+    // onde já existe um Postgres no ar: verde na máquina do dev, vermelho em qualquer runner limpo.
+    // Mesmo tratamento de HealthConfigTest e AuditConfigTest.
+    "spring.datasource.url=jdbc:h2:mem:openapidb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false",
+    "spring.datasource.driver-class-name=org.h2.Driver",
+    "spring.datasource.username=sa",
+    "spring.datasource.password=",
+    "spring.flyway.enabled=false",
+    "spring.jpa.hibernate.ddl-auto=create-drop"
 })
 class OpenApiConfigTest {
 
