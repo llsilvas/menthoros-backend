@@ -13,6 +13,8 @@ import br.com.menthoros.backend.repository.SignupProvisioningRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.services.KeycloakOrganizationGateway;
 import br.com.menthoros.backend.services.NovoUsuarioKeycloak;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -57,13 +59,15 @@ class CoachSignupServiceImplTest {
     private static final String ORG_ID = "org-1";
     private UUID assessoriaId;
     private UUID usuarioKeycloakId;
+    private MeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
         assessoriaId = UUID.randomUUID();
         usuarioKeycloakId = UUID.randomUUID();
+        meterRegistry = new SimpleMeterRegistry();
         service = new CoachSignupServiceImpl(assessoriaRepository, usuarioRepository,
-                provisioningRepository, keycloak, LIMITE_POR_EMAIL_DIA, TETO_DIARIO);
+                provisioningRepository, keycloak, meterRegistry, LIMITE_POR_EMAIL_DIA, TETO_DIARIO);
     }
 
     /**
@@ -401,6 +405,76 @@ class CoachSignupServiceImplTest {
                     .isInstanceOf(SignupRateLimitException.class);
 
             verify(assessoriaRepository, never()).findByDominio(anyString());
+        }
+    }
+
+    @Nested
+    @DisplayName("Observabilidade")
+    class Observabilidade {
+
+        private double contagem(String desfecho) {
+            var contador = meterRegistry.find("signup.coach").tag("desfecho", desfecho).counter();
+            return contador == null ? 0 : contador.count();
+        }
+
+        @Test
+        @DisplayName("sucesso e desfechos de falha são contados separadamente")
+        void contaDesfechos() {
+            stubProvisionamentoFeliz();
+            service.cadastrar(entrada(), CHAVE, CORR);
+
+            assertThat(contagem("sucesso")).isEqualTo(1);
+            assertThat(contagem("falha_compensada")).isZero();
+        }
+
+        @Test
+        @DisplayName("compensação bem-sucedida e reconciliação necessária são desfechos DISTINTOS")
+        void distingueFalhaDeReconciliacao() {
+            stubAteOrganizacao();
+            when(keycloak.criarUsuario(any())).thenThrow(new KeycloakIntegrationException("boom"));
+
+            assertThatThrownBy(() -> service.cadastrar(entrada(), CHAVE, CORR))
+                    .isInstanceOf(RuntimeException.class);
+
+            // Um cadastro que falhou e limpou tudo é rotina; um que deixou órfão exige gente.
+            assertThat(contagem("falha_compensada")).isEqualTo(1);
+            assertThat(contagem("reconciliacao_necessaria")).isZero();
+        }
+
+        @Test
+        @DisplayName("reconciliação necessária tem seu próprio contador — é o que dispara alerta")
+        void contaReconciliacao() {
+            stubAteOrganizacao();
+            when(keycloak.criarUsuario(any())).thenThrow(new KeycloakIntegrationException("boom"));
+            doThrow(new KeycloakIntegrationException("keycloak fora"))
+                    .when(keycloak).removerOrganization(anyString());
+
+            assertThatThrownBy(() -> service.cadastrar(entrada(), CHAVE, CORR))
+                    .isInstanceOf(RuntimeException.class);
+
+            assertThat(contagem("reconciliacao_necessaria")).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("nenhuma tag carrega e-mail — cardinalidade alta derruba o Prometheus, e e-mail em métrica é dado pessoal exposto")
+        void tagsSemDadoPessoal() {
+            stubProvisionamentoFeliz();
+            service.cadastrar(entrada(), CHAVE, CORR);
+
+            assertThat(meterRegistry.getMeters())
+                    .flatExtracting(m -> m.getId().getTags())
+                    .allSatisfy(tag -> assertThat(tag.getValue())
+                            .doesNotContain("@")
+                            .doesNotContain("senha"));
+        }
+
+        @Test
+        @DisplayName("o MDC não vaza tenantId para fora da requisição")
+        void mdcLimpo() {
+            stubProvisionamentoFeliz();
+            service.cadastrar(entrada(), CHAVE, CORR);
+
+            assertThat(org.slf4j.MDC.get("tenantId")).isNull();
         }
     }
 }

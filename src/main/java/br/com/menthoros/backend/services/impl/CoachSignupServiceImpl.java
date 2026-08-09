@@ -16,7 +16,10 @@ import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.services.CoachSignupService;
 import br.com.menthoros.backend.services.KeycloakOrganizationGateway;
 import br.com.menthoros.backend.services.NovoUsuarioKeycloak;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -56,11 +59,16 @@ public class CoachSignupServiceImpl implements CoachSignupService {
     private static final String ROLE_COACH = "TECNICO";
     private static final String ACAO_VERIFICAR_EMAIL = "VERIFY_EMAIL";
 
+    private static final String METRICA = "signup.coach";
+    private static final String MDC_TENANT_ID = "tenantId";
+    private static final String MDC_SIGNUP_STATUS = "signupStatus";
+
     private final AssessoriaRepository assessoriaRepository;
     private final UsuarioRepository usuarioRepository;
     private final SignupProvisioningRepository provisioningRepository;
     private final KeycloakOrganizationGateway keycloak;
 
+    private final MeterRegistry meterRegistry;
     private final int limitePorEmailPorDia;
     private final int tetoDiarioGlobal;
 
@@ -69,12 +77,14 @@ public class CoachSignupServiceImpl implements CoachSignupService {
             UsuarioRepository usuarioRepository,
             SignupProvisioningRepository provisioningRepository,
             KeycloakOrganizationGateway keycloak,
+            MeterRegistry meterRegistry,
             @Value("${app.coach-signup.rate-limit.per-email-per-day:3}") int limitePorEmailPorDia,
             @Value("${app.coach-signup.rate-limit.daily-cap:20}") int tetoDiarioGlobal) {
         this.assessoriaRepository = assessoriaRepository;
         this.usuarioRepository = usuarioRepository;
         this.provisioningRepository = provisioningRepository;
         this.keycloak = keycloak;
+        this.meterRegistry = meterRegistry;
         this.limitePorEmailPorDia = limitePorEmailPorDia;
         this.tetoDiarioGlobal = tetoDiarioGlobal;
     }
@@ -96,6 +106,7 @@ public class CoachSignupServiceImpl implements CoachSignupService {
         // O honeypot responde como se tivesse dado certo. Devolver erro ensinaria o bot qual campo
         // o denunciou; devolver 201 sem criar nada não ensina nada.
         if (input.honeypotPreenchido()) {
+            contar("honeypot");
             log.info("Cadastro descartado pelo honeypot: correlationId={}", correlationId);
             return CoachSignupOutputDto.de(input.slug(), input.email());
         }
@@ -125,6 +136,8 @@ public class CoachSignupServiceImpl implements CoachSignupService {
         try {
             Assessoria assessoria = criarAssessoria(input);
             desfazer.push(() -> assessoriaRepository.deleteById(assessoria.getId()));
+            // A partir daqui existe tenant: todo log seguinte o carrega sem repetir o parâmetro.
+            MDC.put(MDC_TENANT_ID, assessoria.getId().toString());
             avancar(operacao, SignupProvisioningStatus.ASSESSORIA_CREATED,
                     op -> op.setAssessoriaId(assessoria.getId()));
 
@@ -157,6 +170,7 @@ public class CoachSignupServiceImpl implements CoachSignupService {
             CoachSignupOutputDto resposta = CoachSignupOutputDto.de(input.slug(), input.email());
             avancar(operacao, SignupProvisioningStatus.ACTIVE, op -> op.setResult(serializar(resposta)));
 
+            contar("sucesso");
             log.info("Auto-cadastro concluído: tenantId={}, correlationId={}",
                     assessoria.getId(), correlationId);
             return resposta;
@@ -164,6 +178,8 @@ public class CoachSignupServiceImpl implements CoachSignupService {
         } catch (RuntimeException falha) {
             compensar(operacao, desfazer, falha, correlationId);
             throw falha;
+        } finally {
+            MDC.remove(MDC_TENANT_ID);
         }
     }
 
@@ -203,12 +219,14 @@ public class CoachSignupServiceImpl implements CoachSignupService {
 
         long doEmail = provisioningRepository.countByEmailAndCreatedAtAfter(email, desdeOntem);
         if (doEmail >= limitePorEmailPorDia) {
+            contar("limite_email");
             log.warn("Limite diário por e-mail atingido: correlationId={}", correlationId);
             throw new SignupRateLimitException("Limite diário por e-mail atingido");
         }
 
         long doDia = provisioningRepository.countByCreatedAtAfter(desdeOntem);
         if (doDia >= tetoDiarioGlobal) {
+            contar("limite_teto_global");
             // ERROR, não WARN: o teto global é baixo de propósito, então batê-lo significa ou abuso
             // em curso ou crescimento real. Nos dois casos alguém precisa olhar hoje.
             log.error("TETO DIÁRIO GLOBAL DE CADASTROS ATINGIDO ({}) — abuso em curso ou "
@@ -226,10 +244,12 @@ public class CoachSignupServiceImpl implements CoachSignupService {
      */
     private void verificarDisponibilidade(CoachSignupInputDto input) {
         if (assessoriaRepository.findByDominio(input.slug()).isPresent()) {
+            contar("conflito_slug");
             throw new DuplicateResourceException("Identificador já está em uso");
         }
         if (usuarioRepository.existsByEmail(input.email())
                 || keycloak.buscarUsuarioIdPorEmail(input.email()).isPresent()) {
+            contar("conflito_email");
             throw new DuplicateResourceException("E-mail já cadastrado");
         }
     }
@@ -276,6 +296,7 @@ public class CoachSignupServiceImpl implements CoachSignupService {
         log.warn("Falha no auto-cadastro, compensando: correlationId={}, causa={}",
                 correlationId, falha.toString());
 
+        MDC.put(MDC_SIGNUP_STATUS, "compensando");
         while (!desfazer.isEmpty()) {
             Runnable passo = desfazer.pop();
             try {
@@ -283,12 +304,27 @@ public class CoachSignupServiceImpl implements CoachSignupService {
             } catch (RuntimeException erroNaCompensacao) {
                 log.error("Compensação falhou — recurso órfão exige reconciliação: correlationId={}",
                         correlationId, erroNaCompensacao);
+                contar("reconciliacao_necessaria");
                 finalizar(operacao, SignupProvisioningStatus.RECONCILIATION_REQUIRED,
                         resumo(falha) + " | compensação: " + resumo(erroNaCompensacao));
+                MDC.remove(MDC_SIGNUP_STATUS);
                 return;
             }
         }
+        contar("falha_compensada");
         finalizar(operacao, SignupProvisioningStatus.FAILED, resumo(falha));
+        MDC.remove(MDC_SIGNUP_STATUS);
+    }
+
+    /**
+     * Uma métrica só, com tag de desfecho. Variar o conjunto de tags do mesmo meter quebraria o
+     * registry, então todo desfecho passa por aqui.
+     *
+     * <p>Nada de e-mail, senha ou token vira tag: cardinalidade alta derruba o Prometheus, e e-mail
+     * em métrica é dado pessoal exposto em endpoint de scraping.</p>
+     */
+    private void contar(String desfecho) {
+        Counter.builder(METRICA).tag("desfecho", desfecho).register(meterRegistry).increment();
     }
 
     private void avancar(SignupProvisioning operacao, SignupProvisioningStatus status,
