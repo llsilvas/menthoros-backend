@@ -13,6 +13,10 @@ import br.com.menthoros.backend.repository.SignupProvisioningRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.services.KeycloakOrganizationGateway;
 import br.com.menthoros.backend.services.NovoUsuarioKeycloak;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,6 +28,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.InOrder;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -475,6 +481,155 @@ class CoachSignupServiceImplTest {
             service.cadastrar(entrada(), CHAVE, CORR);
 
             assertThat(org.slf4j.MDC.get("tenantId")).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("Corrida de slug")
+    class CorridaDeSlug {
+
+        @Test
+        @DisplayName("perder a UNIQUE vira 409 — e nada foi criado no Keycloak, porque a assessoria é o 1o passo")
+        void corridaNaConstraint() {
+            when(provisioningRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+            // Passou na pre-checagem e perdeu a corrida no INSERT: a janela que nenhuma verificacao
+            // previa fecha. Quem serializa e a constraint.
+            when(assessoriaRepository.save(any()))
+                    .thenThrow(new DataIntegrityViolationException("tb_assessoria_dominio_key"));
+
+            assertThatThrownBy(() -> service.cadastrar(entrada(), CHAVE, CORR))
+                    .isInstanceOf(DuplicateResourceException.class);
+
+            // A pre-checagem CONSULTA o Keycloak (busca por e-mail), entao "nenhuma interacao" seria
+            // forte demais. O que importa e que nada foi CRIADO la.
+            verify(keycloak, never()).criarOrganization(anyString(), anyString(), any());
+            verify(keycloak, never()).criarUsuario(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("Compensacao em cada ponto de falha")
+    class CadaPontoDeFalha {
+
+        @Test
+        @DisplayName("falha ao criar a organizacao: apaga so a assessoria")
+        void falhaNaOrganizacao() {
+            when(provisioningRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+            when(assessoriaRepository.save(any())).thenAnswer(i -> {
+                Assessoria a = i.getArgument(0);
+                a.setId(assessoriaId);
+                return a;
+            });
+            when(keycloak.criarOrganization(anyString(), anyString(), any()))
+                    .thenThrow(new KeycloakIntegrationException("boom"));
+
+            assertThatThrownBy(() -> service.cadastrar(entrada(), CHAVE, CORR))
+                    .isInstanceOf(KeycloakIntegrationException.class);
+
+            verify(assessoriaRepository).deleteById(assessoriaId);
+            verify(keycloak, never()).removerOrganization(anyString());
+            verify(keycloak, never()).removerUsuario(anyString());
+        }
+
+        @Test
+        @DisplayName("falha ao atribuir a role: desfaz usuario, organizacao e assessoria")
+        void falhaNaRole() {
+            // Sem stub do usuarioRepository.save: o fluxo falha antes de chegar la.
+            stubAteOrganizacao();
+            when(keycloak.criarUsuario(any())).thenReturn(usuarioKeycloakId.toString());
+            doThrow(new KeycloakIntegrationException("role inexistente"))
+                    .when(keycloak).atribuirRoleDeRealm(anyString(), anyString());
+
+            assertThatThrownBy(() -> service.cadastrar(entrada(), CHAVE, CORR))
+                    .isInstanceOf(KeycloakIntegrationException.class);
+
+            verify(keycloak).removerUsuario(usuarioKeycloakId.toString());
+            verify(keycloak).removerOrganization(ORG_ID);
+            verify(assessoriaRepository).deleteById(assessoriaId);
+            // O Usuario local nao chegou a ser criado — nao pode haver tentativa de apaga-lo.
+            verify(usuarioRepository, never()).deleteById(any());
+        }
+
+        @Test
+        @DisplayName("falha ao vincular a organizacao: mesma limpeza")
+        void falhaNoVinculo() {
+            // Sem stub do usuarioRepository.save: o fluxo falha antes de chegar la.
+            stubAteOrganizacao();
+            when(keycloak.criarUsuario(any())).thenReturn(usuarioKeycloakId.toString());
+            doThrow(new KeycloakIntegrationException("org sumiu"))
+                    .when(keycloak).adicionarMembroNaOrganization(anyString(), anyString());
+
+            assertThatThrownBy(() -> service.cadastrar(entrada(), CHAVE, CORR))
+                    .isInstanceOf(KeycloakIntegrationException.class);
+
+            verify(keycloak).removerUsuario(usuarioKeycloakId.toString());
+            verify(assessoriaRepository).deleteById(assessoriaId);
+        }
+
+        @Test
+        @DisplayName("falha ao persistir o Usuario local: desfaz tudo no Keycloak")
+        void falhaNoUsuarioLocal() {
+            stubAteOrganizacao();
+            when(keycloak.criarUsuario(any())).thenReturn(usuarioKeycloakId.toString());
+            when(usuarioRepository.save(any()))
+                    .thenThrow(new DataIntegrityViolationException("tb_usuario_email_key"));
+
+            assertThatThrownBy(() -> service.cadastrar(entrada(), CHAVE, CORR))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+
+            verify(keycloak).removerUsuario(usuarioKeycloakId.toString());
+            verify(keycloak).removerOrganization(ORG_ID);
+            verify(assessoriaRepository).deleteById(assessoriaId);
+        }
+    }
+
+    @Nested
+    @DisplayName("Segredos em log")
+    class SegredosEmLog {
+
+        private ListAppender<ILoggingEvent> appender;
+        private Logger logger;
+
+        @org.junit.jupiter.api.BeforeEach
+        void capturarLogs() {
+            logger = (Logger) org.slf4j.LoggerFactory.getLogger(CoachSignupServiceImpl.class);
+            appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            logger.setLevel(Level.DEBUG);
+        }
+
+        @org.junit.jupiter.api.AfterEach
+        void soltarLogs() {
+            logger.detachAppender(appender);
+        }
+
+        private void assertSemSegredo() {
+            assertThat(appender.list)
+                    .isNotEmpty()
+                    .allSatisfy(evento -> assertThat(evento.getFormattedMessage())
+                            .doesNotContain("senha-forte-o-suficiente")
+                            .doesNotContain("Bearer "));
+        }
+
+        @Test
+        @DisplayName("caminho de sucesso nao loga a senha")
+        void sucessoSemSenha() {
+            stubProvisionamentoFeliz();
+            service.cadastrar(entrada(), CHAVE, CORR);
+            assertSemSegredo();
+        }
+
+        @Test
+        @DisplayName("caminho de falha e compensacao nao loga a senha")
+        void falhaSemSenha() {
+            stubAteOrganizacao();
+            when(keycloak.criarUsuario(any())).thenThrow(new KeycloakIntegrationException("boom"));
+
+            assertThatThrownBy(() -> service.cadastrar(entrada(), CHAVE, CORR))
+                    .isInstanceOf(RuntimeException.class);
+
+            assertSemSegredo();
         }
     }
 }
