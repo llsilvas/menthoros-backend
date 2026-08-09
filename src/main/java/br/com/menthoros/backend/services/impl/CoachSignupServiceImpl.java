@@ -9,14 +9,15 @@ import br.com.menthoros.backend.enums.PlanoAssessoria;
 import br.com.menthoros.backend.enums.SignupProvisioningStatus;
 import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
+import br.com.menthoros.backend.exception.SignupRateLimitException;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.SignupProvisioningRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.services.CoachSignupService;
 import br.com.menthoros.backend.services.KeycloakOrganizationGateway;
 import br.com.menthoros.backend.services.NovoUsuarioKeycloak;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
@@ -25,6 +26,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
@@ -47,7 +49,6 @@ import java.util.UUID;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class CoachSignupServiceImpl implements CoachSignupService {
 
     private static final int MAX_ATLETAS_BASIC = 10;
@@ -59,6 +60,24 @@ public class CoachSignupServiceImpl implements CoachSignupService {
     private final UsuarioRepository usuarioRepository;
     private final SignupProvisioningRepository provisioningRepository;
     private final KeycloakOrganizationGateway keycloak;
+
+    private final int limitePorEmailPorDia;
+    private final int tetoDiarioGlobal;
+
+    public CoachSignupServiceImpl(
+            AssessoriaRepository assessoriaRepository,
+            UsuarioRepository usuarioRepository,
+            SignupProvisioningRepository provisioningRepository,
+            KeycloakOrganizationGateway keycloak,
+            @Value("${app.coach-signup.rate-limit.per-email-per-day:3}") int limitePorEmailPorDia,
+            @Value("${app.coach-signup.rate-limit.daily-cap:20}") int tetoDiarioGlobal) {
+        this.assessoriaRepository = assessoriaRepository;
+        this.usuarioRepository = usuarioRepository;
+        this.provisioningRepository = provisioningRepository;
+        this.keycloak = keycloak;
+        this.limitePorEmailPorDia = limitePorEmailPorDia;
+        this.tetoDiarioGlobal = tetoDiarioGlobal;
+    }
 
     /**
      * Provisiona assessoria, organização, usuário no Keycloak e usuário local.
@@ -88,6 +107,7 @@ public class CoachSignupServiceImpl implements CoachSignupService {
             return resolverReenvio(existente.get(), hash, correlationId);
         }
 
+        verificarLimites(input.email(), correlationId);
         verificarDisponibilidade(input);
 
         SignupProvisioning operacao = provisioningRepository.save(SignupProvisioning.builder()
@@ -165,6 +185,36 @@ public class CoachSignupServiceImpl implements CoachSignupService {
         }
         log.info("Reenvio idempotente atendido do rastro: correlationId={}", correlationId);
         return CoachSignupOutputDto.de(operacao.getSlug(), operacao.getEmail());
+    }
+
+    /**
+     * Dimensões que o filtro de rate-limit não consegue ver.
+     *
+     * <p>Um filtro de servlet não enxerga o e-mail sem consumir o corpo da requisição, e o teto
+     * global precisa de contagem persistida — memória de processo zeraria a cada deploy e se
+     * multiplicaria por instância. Por isso estas duas vivem aqui, e não lá: a divisão é por o que
+     * cada camada consegue ver, não por política.</p>
+     *
+     * <p>O recurso escasso não é linha de banco: é a <strong>cota de e-mail</strong>. Esgotá-la faz
+     * a verificação dos cadastros <em>legítimos</em> parar de sair, sem erro visível para ninguém.</p>
+     */
+    private void verificarLimites(String email, String correlationId) {
+        OffsetDateTime desdeOntem = OffsetDateTime.now().minusDays(1);
+
+        long doEmail = provisioningRepository.countByEmailAndCreatedAtAfter(email, desdeOntem);
+        if (doEmail >= limitePorEmailPorDia) {
+            log.warn("Limite diário por e-mail atingido: correlationId={}", correlationId);
+            throw new SignupRateLimitException("Limite diário por e-mail atingido");
+        }
+
+        long doDia = provisioningRepository.countByCreatedAtAfter(desdeOntem);
+        if (doDia >= tetoDiarioGlobal) {
+            // ERROR, não WARN: o teto global é baixo de propósito, então batê-lo significa ou abuso
+            // em curso ou crescimento real. Nos dois casos alguém precisa olhar hoje.
+            log.error("TETO DIÁRIO GLOBAL DE CADASTROS ATINGIDO ({}) — abuso em curso ou "
+                    + "crescimento real; ambos exigem ação. correlationId={}", tetoDiarioGlobal, correlationId);
+            throw new SignupRateLimitException("Teto diário de cadastros atingido");
+        }
     }
 
     /**

@@ -7,6 +7,7 @@ import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.SignupProvisioningStatus;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
 import br.com.menthoros.backend.exception.KeycloakIntegrationException;
+import br.com.menthoros.backend.exception.SignupRateLimitException;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.SignupProvisioningRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
@@ -18,7 +19,6 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.InOrder;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -47,7 +47,10 @@ class CoachSignupServiceImplTest {
     @Mock private SignupProvisioningRepository provisioningRepository;
     @Mock private KeycloakOrganizationGateway keycloak;
 
-    @InjectMocks private CoachSignupServiceImpl service;
+    private CoachSignupServiceImpl service;
+
+    private static final int LIMITE_POR_EMAIL_DIA = 3;
+    private static final int TETO_DIARIO = 20;
 
     private static final String CHAVE = "idem-1";
     private static final String CORR = "corr-1";
@@ -59,6 +62,8 @@ class CoachSignupServiceImplTest {
     void setUp() {
         assessoriaId = UUID.randomUUID();
         usuarioKeycloakId = UUID.randomUUID();
+        service = new CoachSignupServiceImpl(assessoriaRepository, usuarioRepository,
+                provisioningRepository, keycloak, LIMITE_POR_EMAIL_DIA, TETO_DIARIO);
     }
 
     /**
@@ -346,6 +351,56 @@ class CoachSignupServiceImplTest {
 
             assertThat(saida.slug()).isEqualTo("corridasserra");
             verifyNoInteractions(keycloak, assessoriaRepository, usuarioRepository, provisioningRepository);
+        }
+    }
+
+    @Nested
+    @DisplayName("Limites anti-abuso")
+    class Limites {
+
+        @Test
+        @DisplayName("limite diário por e-mail: 429 sem tocar o Keycloak")
+        void limitePorEmail() {
+            when(provisioningRepository.countByEmailAndCreatedAtAfter(eq("maria@exemplo.com"), any()))
+                    .thenReturn((long) LIMITE_POR_EMAIL_DIA);
+
+            assertThatThrownBy(() -> service.cadastrar(entrada(), CHAVE, CORR))
+                    .isInstanceOf(SignupRateLimitException.class);
+
+            verifyNoInteractions(keycloak);
+            verify(assessoriaRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("teto diário global: 429 mesmo com o e-mail dentro do limite")
+        void tetoDiarioGlobal() {
+            when(provisioningRepository.countByCreatedAtAfter(any())).thenReturn((long) TETO_DIARIO);
+
+            assertThatThrownBy(() -> service.cadastrar(entrada(), CHAVE, CORR))
+                    .isInstanceOf(SignupRateLimitException.class);
+
+            verifyNoInteractions(keycloak);
+        }
+
+        @Test
+        @DisplayName("dentro dos limites o cadastro segue normalmente")
+        void dentroDosLimites() {
+            stubProvisionamentoFeliz();
+            when(provisioningRepository.countByEmailAndCreatedAtAfter(anyString(), any())).thenReturn(1L);
+            when(provisioningRepository.countByCreatedAtAfter(any())).thenReturn(5L);
+
+            assertThat(service.cadastrar(entrada(), CHAVE, CORR).slug()).isEqualTo("corridasserra");
+        }
+
+        @Test
+        @DisplayName("o limite é checado ANTES da disponibilidade — não vaza se o e-mail existe")
+        void limiteAntesDaDisponibilidade() {
+            when(provisioningRepository.countByCreatedAtAfter(any())).thenReturn((long) TETO_DIARIO);
+
+            assertThatThrownBy(() -> service.cadastrar(entrada(), CHAVE, CORR))
+                    .isInstanceOf(SignupRateLimitException.class);
+
+            verify(assessoriaRepository, never()).findByDominio(anyString());
         }
     }
 }

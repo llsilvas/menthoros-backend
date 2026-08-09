@@ -13,6 +13,7 @@ import br.com.menthoros.backend.exception.DuplicateResourceException;
 import br.com.menthoros.backend.exception.FitParseException;
 import br.com.menthoros.backend.exception.IntervalsIcuRateLimitException;
 import br.com.menthoros.backend.exception.KeycloakIntegrationException;
+import br.com.menthoros.backend.exception.SignupRateLimitException;
 import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.exception.StravaRateLimitException;
@@ -382,6 +383,21 @@ public class GlobalExceptionHandler {
                 "message", "Arquivo excede o tamanho máximo permitido."
         );
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(body);
+    }
+
+    /**
+     * Limite de auto-cadastro. A mensagem é deliberadamente vaga: dizer qual dimensão estourou
+     * (IP, e-mail ou teto global) entrega ao atacante o mapa da defesa.
+     */
+    @ExceptionHandler(SignupRateLimitException.class)
+    public ResponseEntity<Map<String, Object>> handleSignupRateLimit(SignupRateLimitException ex) {
+        log.warn("Limite de auto-cadastro atingido: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 429,
+                "error", "Too Many Requests",
+                "message", "Muitas solicitações. Tente novamente mais tarde."
+        );
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
     }
 
     @ExceptionHandler(StravaRateLimitException.class)
