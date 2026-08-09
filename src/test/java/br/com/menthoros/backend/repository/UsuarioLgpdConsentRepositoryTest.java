@@ -80,7 +80,14 @@ class UsuarioLgpdConsentRepositoryTest extends AbstractIntegrationTest {
 
             UsuarioLgpdConsent recarregado = consentRepository.findById(primeiro.getId()).orElseThrow();
             assertThat(recarregado.getPolicyVersion()).isEqualTo(POLICY_V1);
-            assertThat(recarregado.getConsentedAt()).isEqualTo(consentedAtOriginal);
+            // Truncado a microssegundo porque é essa a precisão de TIMESTAMPTZ no Postgres: o valor
+            // em memória carrega os nanossegundos do relógio, o valor relido não. Em macOS a
+            // granularidade do clock esconde a diferença e a igualdade exata passa; em Linux ela
+            // aparece e o teste quebra por um detalhe de armazenamento, não de comportamento.
+            // O que a asserção precisa provar é que a linha não foi alterada — não que o banco
+            // guarda nanossegundos.
+            assertThat(recarregado.getConsentedAt())
+                    .isEqualTo(consentedAtOriginal.truncatedTo(ChronoUnit.MICROS));
         }
 
         @Test
