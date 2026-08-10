@@ -59,7 +59,7 @@ class WaitlistControllerIT extends AbstractIntegrationTest {
                         .header("X-Forwarded-For", "10.0.0.1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("Maria", "maria@exemplo.com", "TREINADOR", true, null, "DE_11_A_30")))
-                .andExpect(status().isCreated())
+                .andExpect(status().isTeapot())
                 .andExpect(jsonPath("$.status").value("CRIADO"))
                 .andExpect(jsonPath("$.mensagem").isNotEmpty());
 
