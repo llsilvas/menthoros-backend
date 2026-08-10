@@ -152,6 +152,13 @@ app:
   # é a cota diária de e-mail. Esgotá-la faz a verificação dos cadastros LEGÍTIMOS parar
   # de sair, sem erro visível para ninguém.
   coach-signup:
+    # Default DESLIGADO: o deploy nunca liga sozinho um endpoint anonimo que provisiona no
+    # Keycloak e cria tenant. Ligar e decisao operacional; e tambem o kill switch, que precisa
+    # ser variavel de ambiente para valer em minutos, sem reverter codigo.
+    enabled: ${COACH_SIGNUP_ENABLED:false}
+    # Teto de corpo. A validacao do DTO so roda depois da desserializacao — sem teto, o parsing
+    # de um POST grande acontece antes de haver chance de recusar.
+    max-request-bytes: ${COACH_SIGNUP_MAX_BODY_BYTES:8192}
     rate-limit:
       # Por IP, no filtro (PublicEndpointRateLimitFilter). Janela de hora: cadastro é ação
       # rara e cara; quem faz três num minuto não é humano.

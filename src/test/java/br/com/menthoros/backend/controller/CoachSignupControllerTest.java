@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.config.signup.CoachSignupProperties;
 import br.com.menthoros.backend.dto.output.CoachSignupOutputDto;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
 import br.com.menthoros.backend.exception.KeycloakIntegrationException;
@@ -38,6 +39,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         type = FilterType.ASSIGNABLE_TYPE,
         classes = {JwtTenantFilter.class, StructuredLoggingFilter.class}))
 @AutoConfigureMockMvc(addFilters = false)
+@org.springframework.boot.context.properties.EnableConfigurationProperties(CoachSignupProperties.class)
+@org.springframework.test.context.TestPropertySource(properties = "app.coach-signup.enabled=true")
 @DisplayName("POST /api/public/coach-signups")
 class CoachSignupControllerTest {
 
@@ -45,6 +48,7 @@ class CoachSignupControllerTest {
     @Autowired private ObjectMapper objectMapper;
 
     @MockitoBean private CoachSignupService coachSignupService;
+    @Autowired private CoachSignupProperties properties;
 
     private static Map<String, Object> corpoValido() {
         return Map.of(
@@ -132,5 +136,29 @@ class CoachSignupControllerTest {
                 .thenThrow(new KeycloakIntegrationException("keycloak fora"));
 
         enviar(corpoValido()).andExpect(status().isBadGateway());
+    }
+
+    @Test
+    @DisplayName("com a flag DESLIGADA responde 404 e não chama o serviço")
+    void flagDesligadaResponde404() throws Exception {
+        properties.setEnabled(false);
+        try {
+            enviar(corpoValido()).andExpect(status().isNotFound());
+            org.mockito.Mockito.verifyNoInteractions(coachSignupService);
+        } finally {
+            properties.setEnabled(true);
+        }
+    }
+
+    @Test
+    @DisplayName("o default da propriedade é DESLIGADO — o deploy nunca liga sozinho")
+    void defaultEhDesligado() {
+        assertThat(new CoachSignupProperties().isEnabled()).isFalse();
+    }
+
+    @Test
+    @DisplayName("o teto de corpo tem default definido — sem ele o parsing acontece antes da recusa")
+    void tetoDeCorpoTemDefault() {
+        assertThat(new CoachSignupProperties().getMaxRequestBytes()).isPositive();
     }
 }
