@@ -90,6 +90,21 @@ public record CoachSignupInputDto(
     }
 
     /**
+     * Espelha a `passwordPolicy` do realm (`notUsername and notEmail`).
+     *
+     * <p>Sem esta checagem, quem usasse o e-mail como senha receberia <strong>502</strong>: o
+     * Keycloak recusaria a credencial, o gateway traduziria como falha de integração, e o usuário
+     * leria "tente novamente em instantes" para um erro que só ele pode corrigir. Validar aqui
+     * devolve <strong>400</strong> com a razão.</p>
+     *
+     * <p>O username no Keycloak <em>é</em> o e-mail, então uma checagem cobre as duas regras.</p>
+     */
+    @AssertTrue(message = "A senha não pode ser igual ao seu e-mail")
+    public boolean isSenhaDiferenteDoEmail() {
+        return senha == null || email == null || !senha.equalsIgnoreCase(email);
+    }
+
+    /**
      * O controller responde 201 mesmo com o honeypot preenchido — revelar a detecção ensina o bot a
      * contorná-la. Por isso isto não é uma restrição de validação.
      */

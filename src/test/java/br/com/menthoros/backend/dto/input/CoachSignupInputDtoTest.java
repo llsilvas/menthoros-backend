@@ -235,5 +235,23 @@ class CoachSignupInputDtoTest {
                      "   ");
             assertThat(comEspacos.honeypotPreenchido()).isFalse();
         }
+
+        @Test
+        @DisplayName("senha igual ao e-mail é 400, não 502 — a passwordPolicy do realm recusaria e viraria falha de integração")
+        void senhaIgualAoEmail() {
+            var dto = new CoachSignupInputDto(
+                    "Maria", "maria@exemplo.com", "maria@exemplo.com", "Assessoria", "corridasserra", null);
+
+            assertThat(violacoes(dto)).contains("senhaDiferenteDoEmail");
+        }
+
+        @Test
+        @DisplayName("a comparação ignora caixa — MARIA@EXEMPLO.COM também é recusada")
+        void senhaIgualAoEmailComCaixaDiferente() {
+            var dto = new CoachSignupInputDto(
+                    "Maria", "maria@exemplo.com", "MARIA@Exemplo.com", "Assessoria", "corridasserra", null);
+
+            assertThat(violacoes(dto)).contains("senhaDiferenteDoEmail");
+        }
     }
 }
