@@ -101,7 +101,7 @@ class CoachSignupServiceImplTest {
 
     private static CoachSignupInputDto entrada() {
         return new CoachSignupInputDto("Maria Treinadora", "maria@exemplo.com",
-                "senha-forte-o-suficiente", "Assessoria Corrida na Serra", "corridasserra", true, null);
+                "senha-forte-o-suficiente", "Assessoria Corrida na Serra", "corridasserra", null);
     }
 
     private SignupProvisioning ultimoRastro() {
@@ -355,7 +355,7 @@ class CoachSignupServiceImplTest {
         @DisplayName("responde como sucesso mas NÃO cria nada — erro ensinaria o bot qual campo o denunciou")
         void honeypotNaoCriaNada() {
             var comIsca = new CoachSignupInputDto("Bot", "bot@exemplo.com", "senha-forte-o-suficiente",
-                    "Assessoria", "corridasserra", true, "http://spam.example");
+                    "Assessoria", "corridasserra", "http://spam.example");
 
             var saida = service.cadastrar(comIsca, CHAVE, CORR);
 

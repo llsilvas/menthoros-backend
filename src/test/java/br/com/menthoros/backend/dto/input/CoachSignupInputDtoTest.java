@@ -41,7 +41,6 @@ class CoachSignupInputDtoTest {
                 "senha-forte-o-suficiente",
                 "Assessoria Corrida na Serra",
                 "corridasserra",
-                true,
                 null);
     }
 
@@ -68,7 +67,7 @@ class CoachSignupInputDtoTest {
         void normalizaEmailESlug() {
             var dto = new CoachSignupInputDto(
                     "  Maria Treinadora  ", "  MARIA@Exemplo.COM  ", "senha-forte-o-suficiente",
-                    "  Assessoria Corrida na Serra  ", "  CorridaSerra  ", true, null);
+                    "  Assessoria Corrida na Serra  ", "  CorridaSerra  ", null);
 
             assertThat(dto.email()).isEqualTo("maria@exemplo.com");
             assertThat(dto.slug()).isEqualTo("corridaserra");
@@ -81,7 +80,7 @@ class CoachSignupInputDtoTest {
         void naoNormalizaSenha() {
             var comEspacos = "  senha com bordas  ";
             var dto = new CoachSignupInputDto(
-                    "Maria", "maria@exemplo.com", comEspacos, "Assessoria", "corridasserra", true, null);
+                    "Maria", "maria@exemplo.com", comEspacos, "Assessoria", "corridasserra", null);
 
             assertThat(dto.senha()).isEqualTo(comEspacos);
         }
@@ -89,9 +88,9 @@ class CoachSignupInputDtoTest {
         @Test
         @DisplayName("campos nulos não quebram a normalização — quem reporta o erro é a validação")
         void toleraNulos() {
-            var dto = new CoachSignupInputDto(null, null, null, null, null, null, null);
+            var dto = new CoachSignupInputDto(null, null, null, null, null, null);
 
-            assertThat(violacoes(dto)).contains("nome", "email", "senha", "nomeAssessoria", "slug", "aceiteLgpd");
+            assertThat(violacoes(dto)).contains("nome", "email", "senha", "nomeAssessoria", "slug");
         }
     }
 
@@ -113,7 +112,7 @@ class CoachSignupInputDtoTest {
         })
         void slugsInvalidos(String slug) {
             var dto = new CoachSignupInputDto(
-                    "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", slug, true, null);
+                    "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", slug, null);
 
             // "CorridaSerra " normaliza para "corridaserra", que é válido — os demais devem falhar.
             if ("corridaserra".equals(dto.slug())) {
@@ -127,7 +126,7 @@ class CoachSignupInputDtoTest {
         @ValueSource(strings = {"corridasserra", "team-x", "abc", "a1b2c3", "assessoria-da-maria-2026"})
         void slugsValidos(String slug) {
             var dto = new CoachSignupInputDto(
-                    "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", slug, true, null);
+                    "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", slug, null);
 
             assertThat(violacoes(dto)).doesNotContain("slug");
         }
@@ -136,7 +135,7 @@ class CoachSignupInputDtoTest {
         @DisplayName("\"default\" é reservado — é o tenant semeado pela V2, e tomá-lo colide com dado existente")
         void slugDefaultEhReservado() {
             var dto = new CoachSignupInputDto(
-                    "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", "default", true, null);
+                    "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", "default", null);
 
             assertThat(violacoes(dto)).contains("slugPermitido");
         }
@@ -145,7 +144,7 @@ class CoachSignupInputDtoTest {
         @ValueSource(strings = {"api", "admin", "www", "app", "auth", "login", "menthoros"})
         void slugsReservados(String slug) {
             var dto = new CoachSignupInputDto(
-                    "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", slug, true, null);
+                    "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", slug, null);
 
             assertThat(violacoes(dto)).contains("slugPermitido");
         }
@@ -154,7 +153,7 @@ class CoachSignupInputDtoTest {
         @DisplayName("a reserva é checada após a normalização — \"ADMIN\" não escapa por caixa alta")
         void reservaResisteACaixaAlta() {
             var dto = new CoachSignupInputDto(
-                    "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", " ADMIN ", true, null);
+                    "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", " ADMIN ", null);
 
             assertThat(violacoes(dto)).contains("slugPermitido");
         }
@@ -164,7 +163,7 @@ class CoachSignupInputDtoTest {
         void slugRespeitaAColuna() {
             var dto = new CoachSignupInputDto(
                     "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria",
-                    "a".repeat(101), true, null);
+                    "a".repeat(101), null);
 
             assertThat(violacoes(dto)).contains("slug");
         }
@@ -178,7 +177,7 @@ class CoachSignupInputDtoTest {
         @DisplayName("senha curta é rejeitada — o realm não tem passwordPolicy, então este é o único portão")
         void senhaCurta() {
             var dto = new CoachSignupInputDto(
-                    "Maria", "maria@exemplo.com", "curta", "Assessoria", "corridasserra", true, null);
+                    "Maria", "maria@exemplo.com", "curta", "Assessoria", "corridasserra", null);
 
             assertThat(violacoes(dto)).contains("senha");
         }
@@ -187,7 +186,7 @@ class CoachSignupInputDtoTest {
         @DisplayName("senha absurdamente longa é rejeitada antes de chegar ao Keycloak")
         void senhaLonga() {
             var dto = new CoachSignupInputDto(
-                    "Maria", "maria@exemplo.com", "a".repeat(129), "Assessoria", "corridasserra", true, null);
+                    "Maria", "maria@exemplo.com", "a".repeat(129), "Assessoria", "corridasserra", null);
 
             assertThat(violacoes(dto)).contains("senha");
         }
@@ -201,7 +200,7 @@ class CoachSignupInputDtoTest {
         @DisplayName("e-mail malformado é rejeitado")
         void emailInvalido() {
             var dto = new CoachSignupInputDto(
-                    "Maria", "nao-e-email", "senha-forte-o-suficiente", "Assessoria", "corridasserra", true, null);
+                    "Maria", "nao-e-email", "senha-forte-o-suficiente", "Assessoria", "corridasserra", null);
 
             assertThat(violacoes(dto)).contains("email");
         }
@@ -211,19 +210,9 @@ class CoachSignupInputDtoTest {
         void nomeAssessoriaRespeitaAColuna() {
             var dto = new CoachSignupInputDto(
                     "Maria", "maria@exemplo.com", "senha-forte-o-suficiente",
-                    "a".repeat(201), "corridasserra", true, null);
+                    "a".repeat(201), "corridasserra", null);
 
             assertThat(violacoes(dto)).contains("nomeAssessoria");
-        }
-
-        @Test
-        @DisplayName("aceite LGPD falso é rejeitado")
-        void aceiteLgpdFalso() {
-            var dto = new CoachSignupInputDto(
-                    "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", "corridasserra",
-                    false, null);
-
-            assertThat(violacoes(dto)).contains("aceiteLgpd");
         }
 
         @Test
@@ -231,7 +220,7 @@ class CoachSignupInputDtoTest {
         void honeypotNaoViraErroDeValidacao() {
             var dto = new CoachSignupInputDto(
                     "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", "corridasserra",
-                    true, "http://spam.example");
+                     "http://spam.example");
 
             assertThat(violacoes(dto)).isEmpty();
             assertThat(dto.honeypotPreenchido()).isTrue();
@@ -243,7 +232,7 @@ class CoachSignupInputDtoTest {
             assertThat(valido().honeypotPreenchido()).isFalse();
             var comEspacos = new CoachSignupInputDto(
                     "Maria", "maria@exemplo.com", "senha-forte-o-suficiente", "Assessoria", "corridasserra",
-                    true, "   ");
+                     "   ");
             assertThat(comEspacos.honeypotPreenchido()).isFalse();
         }
     }

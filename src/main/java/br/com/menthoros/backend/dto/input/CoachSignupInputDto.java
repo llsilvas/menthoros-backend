@@ -4,12 +4,20 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 import java.util.Set;
 
+/**
+ * <p><strong>Não há campo de aceite LGPD, e a ausência é deliberada.</strong> A proposal desta change
+ * põe "aceite LGPD no formulário de cadastro" explicitamente fora de escopo: o aceite auditável e
+ * versionado pertence à change {@code add-coach-lgpd-consent} e acontece na primeira sessão
+ * autenticada. O formulário mostra apenas links informativos para Termos e Privacidade.</p>
+ *
+ * <p>Adicionar o campo aqui duplicaria o consentimento em dois lugares — e o que vale juridicamente
+ * seria o outro.</p>
+ */
 @Schema(description = "Dados do auto-cadastro público de uma assessoria e do seu coach")
 public record CoachSignupInputDto(
 
@@ -41,11 +49,6 @@ public record CoachSignupInputDto(
         @Size(min = TAMANHO_MINIMO_DO_SLUG, max = 100)
         @Pattern(regexp = FORMATO_DO_SLUG, message = "Use de 3 a 100 caracteres: letras minúsculas, números e hífens simples entre eles")
         String slug,
-
-        @Schema(description = "Aceite do consentimento LGPD (obrigatório)", example = "true", requiredMode = Schema.RequiredMode.REQUIRED)
-        @NotNull
-        @AssertTrue(message = "O aceite dos termos de uso de dados é obrigatório")
-        Boolean aceiteLgpd,
 
         @Schema(description = "Campo honeypot anti-spam — deve vir vazio", hidden = true)
         String website

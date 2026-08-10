@@ -52,8 +52,7 @@ class CoachSignupControllerTest {
                 "email", "maria@exemplo.com",
                 "senha", "senha-forte-o-suficiente",
                 "nomeAssessoria", "Assessoria Corrida na Serra",
-                "slug", "corridasserra",
-                "aceiteLgpd", true);
+                "slug", "corridasserra");
     }
 
     private org.springframework.test.web.servlet.ResultActions enviar(Map<String, Object> corpo) throws Exception {
@@ -113,15 +112,6 @@ class CoachSignupControllerTest {
     void slugInvalido() throws Exception {
         var corpo = new java.util.HashMap<>(corpoValido());
         corpo.put("slug", "Corrida Serra");
-
-        enviar(corpo).andExpect(status().isBadRequest());
-    }
-
-    @Test
-    @DisplayName("400 quando o aceite LGPD é falso")
-    void semAceiteLgpd() throws Exception {
-        var corpo = new java.util.HashMap<>(corpoValido());
-        corpo.put("aceiteLgpd", false);
 
         enviar(corpo).andExpect(status().isBadRequest());
     }
