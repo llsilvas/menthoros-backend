@@ -176,7 +176,7 @@ public class RaceProjectionServiceImpl implements RaceProjectionService {
         int avgPaceSecPerKm = (int) tr.getPaceMedia().toSeconds();
         return new WorkoutSummary(
                 tr.getDataTreino(),
-                tr.getTipoTreino(),
+                tr.getTipoTreinoEfetivo(),
                 distanceM,
                 durationSec,
                 avgPaceSecPerKm,

@@ -460,7 +460,7 @@ public class PlanoTreinoPromptBuilder {
                 .forEach(treino -> {
                     sb.append(String.format("- %s: %s - %.1f km, %s min, TSS %d",
                             treino.getDataTreino(),
-                            treino.getTipoTreino(),
+                            treino.getTipoTreinoEfetivo(),
                             treino.getDistanciaKm() != null ? treino.getDistanciaKm().doubleValue() : 0.0,
                             treino.getDuracaoMin() != null ? treino.getDuracaoMin() : 0,
                             treino.getTssCalculado() != null ? treino.getTssCalculado() : 0

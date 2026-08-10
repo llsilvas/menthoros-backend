@@ -139,6 +139,49 @@ class ProgressaoTreinoServiceImplTest {
 
             assertThat(resultado.rpeMedioTreinosDuros()).isNull();
         }
+
+        @Test
+        @DisplayName("longão vinculado a planejado LONGO conta como longão mesmo com tipo realizado TEMPO_RUN")
+        void longaoComTipoInferidoErradoContaPeloPlanejado() {
+            // A sincronização do Strava infere o tipo por duração/FC: um longão de menos de 90min
+            // com FC acima do limiar vira TEMPO_RUN. O vínculo com o planejado é a fonte da verdade.
+            TreinoRealizado longoMalClassificado =
+                    vinculado(treino(HOJE.minusDays(4), TipoTreino.TEMPO_RUN, 18.0, 8), TipoTreino.LONGO);
+            TreinoRealizado longoOk = treino(HOJE.minusDays(11), TipoTreino.LONGO, 20.0, null);
+
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
+                    .thenReturn(List.of(longoMalClassificado, longoOk));
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of(planejado(), planejado()));
+            when(planoMetadadosService.buscarPorAtletaId(atletaId))
+                    .thenReturn(metaDados(-10.0, 50.0, 55.0));
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.longoesRealizados7d()).isEqualTo(1);
+            assertThat(resultado.longoesRealizados21d()).isEqualTo(2);
+            // o RPE 8 do longão não pode contaminar a média de treinos duros
+            assertThat(resultado.rpeMedioTreinosDuros()).isNull();
+        }
+
+        @Test
+        @DisplayName("treino não planejado mantém o tipo inferido na contagem")
+        void treinoSemVinculoUsaTipoRealizado() {
+            TreinoRealizado avulso = treino(HOJE.minusDays(4), TipoTreino.TEMPO_RUN, 12.0, 8);
+            TreinoRealizado longo = treino(HOJE.minusDays(11), TipoTreino.LONGO, 20.0, null);
+
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
+                    .thenReturn(List.of(avulso, longo));
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of(planejado(), planejado()));
+            when(planoMetadadosService.buscarPorAtletaId(atletaId))
+                    .thenReturn(metaDados(-10.0, 50.0, 55.0));
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.longoesRealizados21d()).isEqualTo(1);
+            assertThat(resultado.rpeMedioTreinosDuros()).isEqualTo(8.0);
+        }
     }
 
     @Nested
@@ -264,6 +307,13 @@ class ProgressaoTreinoServiceImplTest {
 
     private TreinoPlanejado planejado() {
         return new TreinoPlanejado();
+    }
+
+    private TreinoRealizado vinculado(TreinoRealizado realizado, TipoTreino tipoPlanejado) {
+        TreinoPlanejado planejado = new TreinoPlanejado();
+        planejado.setTipoTreino(tipoPlanejado);
+        realizado.setTreinoPlanejado(planejado);
+        return realizado;
     }
 
     private PlanoMetaDados metaDados(double tsb, double ctl, double atl) {
