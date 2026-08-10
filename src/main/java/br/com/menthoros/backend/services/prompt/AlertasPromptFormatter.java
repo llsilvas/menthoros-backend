@@ -333,7 +333,7 @@ public class AlertasPromptFormatter {
         Map<String, LocalDate> mapa = new HashMap<>();
 
         treinos.forEach(t -> {
-            String tipo = t.getTipoTreino() != null ? t.getTipoTreino().toString() : "DESCONHECIDO";
+            String tipo = t.getTipoTreinoEfetivo() != null ? t.getTipoTreinoEfetivo().toString() : "DESCONHECIDO";
             LocalDate ultimaData = mapa.getOrDefault(tipo, t.getDataTreino());
 
             if (t.getDataTreino().isAfter(ultimaData)) {

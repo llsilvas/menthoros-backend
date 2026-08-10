@@ -334,9 +334,9 @@ public class IntervaladoElegibilidadeService {
             List<TreinoRealizado> treinos, LocalDate dataReferencia) {
         if (treinos == null || treinos.isEmpty()) return Integer.MAX_VALUE;
         OptionalLong minDias = treinos.stream()
-                .filter(t -> t.getTipoTreino() != null
-                        && (t.getTipoTreino() == TipoTreino.INTERVALADO
-                            || t.getTipoTreino() == TipoTreino.TIRO))
+                .filter(t -> t.getTipoTreinoEfetivo() != null
+                        && (t.getTipoTreinoEfetivo() == TipoTreino.INTERVALADO
+                            || t.getTipoTreinoEfetivo() == TipoTreino.TIRO))
                 .filter(t -> t.getDataTreino() != null
                         && t.getDataTreino().isBefore(dataReferencia))
                 .mapToLong(t -> ChronoUnit.DAYS.between(t.getDataTreino(), dataReferencia))
@@ -367,9 +367,9 @@ public class IntervaladoElegibilidadeService {
             List<TreinoRealizado> treinos, LocalDate dataReferencia) {
         if (treinos == null || treinos.isEmpty()) return Optional.empty();
         return treinos.stream()
-                .filter(t -> t.getTipoTreino() != null
-                        && (t.getTipoTreino() == TipoTreino.INTERVALADO
-                            || t.getTipoTreino() == TipoTreino.TIRO))
+                .filter(t -> t.getTipoTreinoEfetivo() != null
+                        && (t.getTipoTreinoEfetivo() == TipoTreino.INTERVALADO
+                            || t.getTipoTreinoEfetivo() == TipoTreino.TIRO))
                 .filter(t -> t.getDataTreino() != null
                         && t.getDataTreino().isBefore(dataReferencia))
                 .max(Comparator.comparing(TreinoRealizado::getDataTreino));
@@ -441,9 +441,9 @@ public class IntervaladoElegibilidadeService {
         return treinos.stream()
                 .filter(t -> t.getDataTreino() != null
                         && !t.getDataTreino().isAfter(dataReferencia))
-                .filter(t -> t.getTipoTreino() == TipoTreino.INTERVALADO
-                          || t.getTipoTreino() == TipoTreino.TIRO
-                          || t.getTipoTreino() == TipoTreino.FARTLEK)
+                .filter(t -> t.getTipoTreinoEfetivo() == TipoTreino.INTERVALADO
+                          || t.getTipoTreinoEfetivo() == TipoTreino.TIRO
+                          || t.getTipoTreinoEfetivo() == TipoTreino.FARTLEK)
                 .max(Comparator.comparing(TreinoRealizado::getDataTreino))
                 .map(this::detectarCategoriaDoTreino)
                 .orElse(null);
@@ -452,7 +452,7 @@ public class IntervaladoElegibilidadeService {
     private CategoriaIntervalado detectarCategoriaDoTreino(TreinoRealizado treino) {
         String obs  = treino.getObservacao() != null ? treino.getObservacao().toUpperCase() : "";
         String desc = treino.getDescricao()  != null ? treino.getDescricao().toUpperCase()  : "";
-        String tipo = treino.getTipoTreino() != null ? treino.getTipoTreino().name()         : "";
+        String tipo = treino.getTipoTreinoEfetivo() != null ? treino.getTipoTreinoEfetivo().name() : "";
         String texto = obs + " " + desc;
 
         if (texto.contains("200M") || texto.contains("400M") || texto.contains("600M")

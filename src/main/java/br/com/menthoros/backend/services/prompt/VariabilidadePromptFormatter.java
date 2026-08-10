@@ -94,9 +94,9 @@ public class VariabilidadePromptFormatter {
             TreinoRealizado treinoIntervalado = treinos.stream()
                     .filter(t -> !t.getDataTreino().isBefore(inicioSem) &&
                             !t.getDataTreino().isAfter(fimSemana) &&
-                            t.getTipoTreino() != null &&
-                            (t.getTipoTreino().toString().contains("INTERVALADO") ||
-                                    t.getTipoTreino().toString().contains("FARTLEK")))
+                            t.getTipoTreinoEfetivo() != null &&
+                            (t.getTipoTreinoEfetivo().toString().contains("INTERVALADO") ||
+                                    t.getTipoTreinoEfetivo().toString().contains("FARTLEK")))
                     .findFirst()
                     .orElse(null);
 
@@ -203,10 +203,10 @@ public class VariabilidadePromptFormatter {
         // ALERTA 3: Gaps entre treinos de qualidade
         alertas.append("\n### Frequência de Treinos Intensivos\n");
         long treinosIntensivos = treinos.stream()
-                .filter(t -> t.getTipoTreino() != null &&
-                        (t.getTipoTreino().toString().contains("INTERVALADO") ||
-                                t.getTipoTreino().toString().contains("TEMPO_RUN") ||
-                                t.getTipoTreino().toString().contains("FARTLEK")))
+                .filter(t -> t.getTipoTreinoEfetivo() != null &&
+                        (t.getTipoTreinoEfetivo().toString().contains("INTERVALADO") ||
+                                t.getTipoTreinoEfetivo().toString().contains("TEMPO_RUN") ||
+                                t.getTipoTreinoEfetivo().toString().contains("FARTLEK")))
                 .count();
 
         long totalTreinos = treinos.size();
@@ -363,7 +363,7 @@ public class VariabilidadePromptFormatter {
 
     private String identificarCategoriaIntervalado(TreinoRealizado treino) {
         String obs = treino.getObservacao() != null ? treino.getObservacao().toUpperCase() : "";
-        String tipo = treino.getTipoTreino() != null ? treino.getTipoTreino().toString() : "";
+        String tipo = treino.getTipoTreinoEfetivo() != null ? treino.getTipoTreinoEfetivo().toString() : "";
 
         if (obs.contains("200M") || obs.contains("400M") || obs.contains("CURTO")) {
             return "A (VO2max curto)";
@@ -448,7 +448,7 @@ public class VariabilidadePromptFormatter {
         Map<String, LocalDate> mapa = new HashMap<>();
 
         treinos.forEach(t -> {
-            String tipo = t.getTipoTreino() != null ? t.getTipoTreino().toString() : "DESCONHECIDO";
+            String tipo = t.getTipoTreinoEfetivo() != null ? t.getTipoTreinoEfetivo().toString() : "DESCONHECIDO";
             LocalDate ultimaData = mapa.getOrDefault(tipo, t.getDataTreino());
 
             if (t.getDataTreino().isAfter(ultimaData)) {
@@ -471,9 +471,9 @@ public class VariabilidadePromptFormatter {
             TreinoRealizado treinoIntervalado = treinos.stream()
                     .filter(t -> !t.getDataTreino().isBefore(inicioSem) &&
                             !t.getDataTreino().isAfter(fimSemana) &&
-                            t.getTipoTreino() != null &&
-                            (t.getTipoTreino().toString().contains("INTERVALADO") ||
-                                    t.getTipoTreino().toString().contains("FARTLEK")))
+                            t.getTipoTreinoEfetivo() != null &&
+                            (t.getTipoTreinoEfetivo().toString().contains("INTERVALADO") ||
+                                    t.getTipoTreinoEfetivo().toString().contains("FARTLEK")))
                     .findFirst()
                     .orElse(null);
 

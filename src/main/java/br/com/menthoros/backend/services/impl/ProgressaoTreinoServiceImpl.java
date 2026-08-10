@@ -176,13 +176,13 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
 
     private int contarLongoes(List<TreinoRealizado> treinos) {
         return (int) treinos.stream()
-                .filter(t -> TipoTreino.LONGO.equals(t.getTipoTreino()))
+                .filter(t -> TipoTreino.LONGO.equals(t.getTipoTreinoEfetivo()))
                 .count();
     }
 
     private Double calcularRpeMedioTreinosDuros(List<TreinoRealizado> treinos) {
         OptionalDouble media = treinos.stream()
-                .filter(t -> TREINOS_DUROS.contains(t.getTipoTreino()))
+                .filter(t -> TREINOS_DUROS.contains(t.getTipoTreinoEfetivo()))
                 .filter(t -> t.getPercepcaoEsforco() != null)
                 .mapToInt(TreinoRealizado::getPercepcaoEsforco)
                 .average();

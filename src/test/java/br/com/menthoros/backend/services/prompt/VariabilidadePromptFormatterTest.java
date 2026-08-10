@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.prompt;
 
+import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.TipoTreino;
 import org.junit.jupiter.api.Test;
@@ -8,6 +9,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class VariabilidadePromptFormatterTest {
@@ -45,6 +47,53 @@ class VariabilidadePromptFormatterTest {
         assertTrue(texto.contains("Atual (0–6 dias atrás)"));
         assertTrue(texto.contains("Anterior (7–13 dias atrás)"));
         assertTrue(texto.contains("Base (14–20 dias atrás)"));
+    }
+
+    @Test
+    void gerarAlertasVariabilidade_naoDeveAcusarLongoAusenteQuandoFoiPrescritoECumprido() {
+        // O sync classificou o longão como TEMPO_RUN. Sem resolver pela prescrição, o alerta manda
+        // "REINTRODUZIR" um estímulo que o atleta fez ontem — e ainda conta o longão como intensivo.
+        VariabilidadePromptFormatter formatter = new VariabilidadePromptFormatter();
+        LocalDate referencia = LocalDate.of(2026, 2, 17);
+
+        String texto = formatter.gerarAlertasVariabilidade(List.of(
+                vinculado(treino(referencia.minusDays(1), TipoTreino.TEMPO_RUN), TipoTreino.LONGO)), referencia);
+
+        assertFalse(texto.contains("**LONGO:** NUNCA realizado"),
+                "o longão prescrito e cumprido não pode aparecer como nunca realizado");
+        assertTrue(texto.contains("**TEMPO_RUN:** NUNCA realizado"),
+                "o TEMPO_RUN é que não foi realizado — o tipo inferido não pode mascarar isso");
+    }
+
+    @Test
+    void gerarAlertasVariabilidade_naoDeveContarLongaoPrescritoComoTreinoIntensivo() {
+        VariabilidadePromptFormatter formatter = new VariabilidadePromptFormatter();
+        LocalDate referencia = LocalDate.of(2026, 2, 17);
+
+        String texto = formatter.gerarAlertasVariabilidade(List.of(
+                vinculado(treino(referencia.minusDays(1), TipoTreino.TEMPO_RUN), TipoTreino.LONGO),
+                treino(referencia.minusDays(3), TipoTreino.FACIL)), referencia);
+
+        // 0 de 2 treinos são intensivos — com o tipo inferido seriam 50% e o prompt pediria menos intensidade.
+        assertTrue(texto.contains("Baixa frequência de treinos intensivos (0%"), texto);
+    }
+
+    private TreinoRealizado treino(LocalDate data, TipoTreino tipo) {
+        TreinoRealizado tr = new TreinoRealizado();
+        tr.setDataTreino(data);
+        tr.setTipoTreino(tipo);
+        tr.setDistanciaKm(BigDecimal.valueOf(15));
+        tr.setTssCalculado(80);
+        tr.setZonaAlvo("Z2");
+        tr.setPercepcaoEsforco(6);
+        return tr;
+    }
+
+    private TreinoRealizado vinculado(TreinoRealizado realizado, TipoTreino tipoPrescrito) {
+        TreinoPlanejado planejado = new TreinoPlanejado();
+        planejado.setTipoTreino(tipoPrescrito);
+        realizado.setTreinoPlanejado(planejado);
+        return realizado;
     }
 }
 
