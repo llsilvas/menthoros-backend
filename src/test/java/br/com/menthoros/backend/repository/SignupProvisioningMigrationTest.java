@@ -29,9 +29,11 @@ class SignupProvisioningMigrationTest extends AbstractIntegrationTest {
 
     private UUID inserirAssessoria(String slug) {
         var id = UUID.randomUUID();
+        // Sem `trial`: a coluna existiu na V45 e foi removida quando o estado de cobrança migrou
+        // para tb_assinatura. Escrever este INSERT a partir da V45 é o erro que o `verify` pegou.
         jdbc.update("""
-                INSERT INTO tb_assessoria (id, nome, dominio, plano, ativo, trial, max_atletas, max_tecnicos)
-                VALUES (?, ?, ?, 'BASIC', true, false, 10, 1)
+                INSERT INTO tb_assessoria (id, nome, dominio, plano, ativo, max_atletas, max_tecnicos)
+                VALUES (?, ?, ?, 'BASIC', true, 10, 1)
                 """, id, "Assessoria " + slug, slug);
         return id;
     }
