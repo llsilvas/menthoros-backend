@@ -66,7 +66,16 @@ public class JwtTenantFilter extends OncePerRequestFilter {
         // que um usuário autenticado que acerte essa rota (token injetado globalmente) não seja
         // rejeitado por ausência de tenant_id. Match exato (não prefixo) para não isentar
         // inadvertidamente sub-rotas futuras como /api/v1/waitlist/{id}.
-        return uri.startsWith("/api/admin/") || "/api/v1/waitlist".equals(uri);
+        //
+        // /api/public/**: prefixo, e aqui é deliberado — o namespace inteiro é tenant-less por
+        // definição, ao contrário do /api/v1/waitlist, que é uma rota pública isolada dentro de um
+        // namespace com tenant. Sem esta isenção o auto-cadastro responderia 403: o frontend injeta
+        // o header Authorization globalmente, e um token residual de outra sessão chega SEM
+        // tenant_id — o filtro rejeita antes de a requisição chegar ao controller, e o sintoma não
+        // aponta para cá.
+        return uri.startsWith("/api/admin/")
+                || uri.startsWith("/api/public/")
+                || "/api/v1/waitlist".equals(uri);
     }
 
     @Override

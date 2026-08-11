@@ -42,4 +42,32 @@ class JwtTenantFilterShouldNotFilterTest {
 
         assertThat(filter.shouldNotFilter(request)).isTrue();
     }
+
+    @Test
+    @DisplayName("o auto-cadastro é isento — o front injeta Authorization globalmente, e um token "
+            + "residual sem tenant_id derrubaria o cadastro com 403")
+    void naoFiltraAutoCadastro() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRequestURI()).thenReturn("/api/public/coach-signups");
+
+        assertThat(filter.shouldNotFilter(request)).isTrue();
+    }
+
+    @Test
+    @DisplayName("a isenção é por prefixo: /api/public/** inteiro é tenant-less por definição")
+    void naoFiltraOutrasRotasPublicas() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRequestURI()).thenReturn("/api/public/qualquer-coisa/futura");
+
+        assertThat(filter.shouldNotFilter(request)).isTrue();
+    }
+
+    @Test
+    @DisplayName("mas o prefixo não vaza para rotas que apenas COMEÇAM com o texto")
+    void naoIsentaRotaQueSoParecePublica() {
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getRequestURI()).thenReturn("/api/publicidade/campanhas");
+
+        assertThat(filter.shouldNotFilter(request)).isFalse();
+    }
 }

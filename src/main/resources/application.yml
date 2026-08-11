@@ -145,6 +145,31 @@ app:
     url: ${FRONTEND_URL:http://localhost:5174}
 
   # ----------------------------------------
+  # AUTO-CADASTRO PÚBLICO DE ASSESSORIA
+  # ----------------------------------------
+  # Três dimensões contra abuso. Os valores começam BAIXOS de propósito: com volume real
+  # perto de zero, um teto alto nunca alarma — e o recurso escasso não é linha de banco,
+  # é a cota diária de e-mail. Esgotá-la faz a verificação dos cadastros LEGÍTIMOS parar
+  # de sair, sem erro visível para ninguém.
+  coach-signup:
+    # Default DESLIGADO: o deploy nunca liga sozinho um endpoint anonimo que provisiona no
+    # Keycloak e cria tenant. Ligar e decisao operacional; e tambem o kill switch, que precisa
+    # ser variavel de ambiente para valer em minutos, sem reverter codigo.
+    enabled: ${COACH_SIGNUP_ENABLED:false}
+    # Teto de corpo. A validacao do DTO so roda depois da desserializacao — sem teto, o parsing
+    # de um POST grande acontece antes de haver chance de recusar.
+    max-request-bytes: ${COACH_SIGNUP_MAX_BODY_BYTES:8192}
+    rate-limit:
+      # Por IP, no filtro (PublicEndpointRateLimitFilter). Janela de hora: cadastro é ação
+      # rara e cara; quem faz três num minuto não é humano.
+      per-hour: ${COACH_SIGNUP_RATE_PER_HOUR:3}
+      # Por e-mail e teto global, no serviço — um filtro não enxerga o e-mail sem consumir
+      # o corpo da requisição, e o teto global precisa de contagem persistida (memória de
+      # processo zeraria a cada deploy e se multiplicaria por instância).
+      per-email-per-day: ${COACH_SIGNUP_RATE_PER_EMAIL_DAY:3}
+      daily-cap: ${COACH_SIGNUP_DAILY_CAP:20}
+
+  # ----------------------------------------
   # LGPD / CONSENTIMENTO DO COACH
   # ----------------------------------------
   lgpd:

@@ -11,11 +11,11 @@ import java.io.IOException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class WaitlistRateLimitFilterTest {
+class PublicEndpointRateLimitFilterTest {
 
     private static final String PATH = "/api/v1/waitlist";
 
-    private final WaitlistRateLimitFilter filter = new WaitlistRateLimitFilter(3);
+    private final PublicEndpointRateLimitFilter filter = new PublicEndpointRateLimitFilter(3, 3);
 
     @Test
     void permiteAteOLimiteEBloqueiaAcima() throws Exception {
@@ -51,6 +51,40 @@ class WaitlistRateLimitFilterTest {
         if (xForwardedFor != null) {
             request.addHeader("X-Forwarded-For", xForwardedFor);
         }
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, new MockFilterChain());
+        return response;
+    }
+
+    @Test
+    void protegeTambemOAutoCadastro() throws Exception {
+        for (int i = 0; i < 3; i++) {
+            assertThat(postEm("/api/public/coach-signups", "2.2.2.2").getStatus())
+                    .isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+        }
+        assertThat(postEm("/api/public/coach-signups", "2.2.2.2").getStatus())
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
+
+    @Test
+    void contadoresDasDuasRotasSaoIndependentes() throws Exception {
+        // Esgotar a waitlist não pode fechar o cadastro para o mesmo IP: são recursos distintos.
+        for (int i = 0; i < 4; i++) {
+            postEm("/api/v1/waitlist", "3.3.3.3");
+        }
+        assertThat(postEm("/api/public/coach-signups", "3.3.3.3").getStatus())
+                .isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
+
+    @Test
+    void rotaNaoProtegidaPassaDireto() throws Exception {
+        assertThat(postEm("/api/v1/atletas", "4.4.4.4").getStatus())
+                .isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
+
+    private MockHttpServletResponse postEm(String path, String ip) throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+        request.setRemoteAddr(ip);
         MockHttpServletResponse response = new MockHttpServletResponse();
         filter.doFilter(request, response, new MockFilterChain());
         return response;
