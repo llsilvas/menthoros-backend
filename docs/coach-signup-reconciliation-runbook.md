@@ -53,17 +53,29 @@ Leia as colunas de id como um mapa do que sobrou:
 
 | Coluna preenchida | Recurso que pode ter ficado órfão |
 |---|---|
-| `assessoria_id` **não nulo** | a `Assessoria` local ainda existe — mas veja a nota abaixo |
+| `assessoria_id` **não nulo** | a `Assessoria` local **chegou a existir** — pode ou não estar lá |
 | `keycloak_organization_id` | organização no Keycloak |
 | `keycloak_user_id` | usuário no Keycloak |
 
-⚠️ **`assessoria_id` nulo NÃO prova que a assessoria foi apagada.** A FK é `ON DELETE SET NULL`:
-apagar a assessoria zera esta coluna. Nulo significa "apagada **ou** nunca criada" — para saber
-qual, use o `slug`, que permanece na linha:
+⚠️ **Nenhuma coluna de id prova existência — todas provam apenas criação.** Desde a **V76** a
+coluna `assessoria_id` não tem FK, então nada a zera quando a assessoria é apagada: o id
+permanece de propósito, como perícia. Antes da V76 ela era `ON DELETE SET NULL` e o nulo era
+ambíguo ("apagada **ou** nunca criada"); agora a ambiguidade some do outro lado — preenchido
+significa "existiu", e só a consulta abaixo diz se ainda existe.
 
 ```sql
+-- Pelo id (preferível: imune a reuso do slug por outro cadastro posterior)
+SELECT id, nome, dominio FROM tb_assessoria WHERE id = '<assessoria_id>';
+
+-- Pelo slug, quando assessoria_id estiver nulo (falha antes de criar a assessoria)
 SELECT id, nome, dominio FROM tb_assessoria WHERE dominio = '<slug-da-linha>';
 ```
+
+📌 **Por que a FK saiu (V76).** Ela derrubava justamente a linha que registra a falha: o Postgres
+zerava a coluna no `DELETE` da compensação, mas a entidade em memória seguia com o id antigo, e o
+`UPDATE` que grava o desfecho reescrevia a referência pendurada. Efeito: o rastro **congelava no
+passo anterior** e nunca chegava a `FAILED` nem a `RECONCILIATION_REQUIRED` — ou seja, a fila deste
+runbook ficava cega. Coberto por `CoachSignupCompensacaoIT`.
 
 ## Correção
 
@@ -110,6 +122,23 @@ UPDATE tb_signup_provisioning
 **Não apague a linha de `tb_signup_provisioning`.** Ela é o único registro de que o incidente
 aconteceu, e o índice parcial que a varredura usa só enxerga `RECONCILIATION_REQUIRED` — mudar o
 status já a tira da fila.
+
+## Desligar o cadastro (kill switch)
+
+`COACH_SIGNUP_ENABLED=false` faz o endpoint responder **404** — não 503, para não anunciar a um
+scanner um provisionamento público que ainda não foi lançado. Nada já criado é afetado.
+
+⚠️ **Exige reiniciar o serviço.** A propriedade é `@ConfigurationProperties` sem `@RefreshScope`:
+o valor é lido no boot, não por request. Mudar a variável e não reiniciar não desliga nada. No
+Railway é um restart do serviço — não um deploy de código, e não precisa reverter commit.
+
+Confirme que caiu antes de considerar o incidente contido:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}\n" -X POST "$API/api/public/coach-signups" \
+  -H 'Content-Type: application/json' -d '{}'
+# 404 = desligado · 400 = LIGADO (chegou na validação do corpo)
+```
 
 ## Por que não há retry automático
 
