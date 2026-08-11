@@ -132,13 +132,48 @@ scanner um provisionamento público que ainda não foi lançado. Nada já criado
 o valor é lido no boot, não por request. Mudar a variável e não reiniciar não desliga nada. No
 Railway é um restart do serviço — não um deploy de código, e não precisa reverter commit.
 
-Confirme que caiu antes de considerar o incidente contido:
+Confirme que caiu antes de considerar o incidente contido — e **use a sonda abaixo, não um corpo
+vazio**:
 
 ```bash
+# Corpo VÁLIDO com o honeypot (`website`) preenchido. Com a flag ligada o serviço responde 201 e
+# NÃO cria nada — é a resposta que ele dá a bot. Com a flag desligada, 404 antes de tudo.
 curl -s -o /dev/null -w "%{http_code}\n" -X POST "$API/api/public/coach-signups" \
-  -H 'Content-Type: application/json' -d '{}'
-# 404 = desligado · 400 = LIGADO (chegou na validação do corpo)
+  -H 'Content-Type: application/json' -H "Idempotency-Key: probe-$RANDOM" \
+  -d '{"nome":"Probe","email":"probe@menthoros.test","senha":"Senha#Forte#2026",
+       "nomeAssessoria":"Probe","slug":"probe-kill-switch","website":"http://bot.example"}'
+# 404 = desligado · 201 = LIGADO
 ```
+
+⚠️ **Não sonde com `-d '{}'`.** A validação do corpo (`@Valid`) roda **antes** do teste da flag,
+então um corpo inválido devolve `400` com a flag ligada **ou** desligada — a resposta não
+discrimina, e quem sondar assim vai concluir "ligado" nas duas situações. Verificado em 2026-08-11:
+a versão anterior desta seção prescrevia exatamente essa sonda inútil.
+
+O honeypot é o que torna a sonda segura de repetir: ele é o único caminho que responde sucesso sem
+tocar em Keycloak nem no banco (confirmado — nenhuma linha em `tb_assessoria` ou
+`tb_signup_provisioning` com o slug da sonda).
+
+## Lacuna conhecida: desfazer um cadastro que **deu certo**
+
+Este runbook cobre `RECONCILIATION_REQUIRED`, onde o `Usuario` local não chegou a existir. A
+checagem antes do `DELETE` da assessoria reflete isso — se houver usuário ou atleta vinculado, ela
+manda **PARAR**, porque nesse cenário significa que o cadastro avançou mais do que o rastro indica.
+
+Ao executar a limpeza de 2026-08-11 (resíduos de QA no HomeLab), o guard disparou **corretamente**:
+os cadastros tinham concluído, então o coach existia por construção. Não há procedimento escrito
+para esse caso, e ele não é hipotético — é o mesmo caminho de uma **exclusão de conta a pedido do
+titular (LGPD)**.
+
+O que foi feito na limpeza, na ordem inversa da criação, e que serve de rascunho:
+
+1. Keycloak: `DELETE` do usuário, depois da organização (`404` também é sucesso).
+2. Banco: `DELETE FROM tb_usuario WHERE tenant_id = '<id>'`, depois `DELETE FROM tb_assessoria`.
+3. Rastro: **anotar**, não reescrever o status. Marcar `FAILED` mentiria — o cadastro concluiu; o
+   que houve depois foi remoção deliberada. O schema não tem estado para isso.
+
+Formalizar vira change própria: envolve dado do atleta, retenção e prazo legal, nada que caiba num
+apêndice de runbook.
 
 ## Por que não há retry automático
 
