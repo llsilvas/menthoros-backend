@@ -69,14 +69,14 @@ class SignupProvisioningMigrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("apagar a Assessoria libera o slug e PRESERVA o rastro — o ponto inteiro do ON DELETE SET NULL")
+    @DisplayName("apagar a Assessoria libera o slug e preserva o rastro INTEIRO, id incluído (V76)")
     void compensacaoApagaAssessoriaSemPerderORastro() {
         var slug = "falha-" + UUID.randomUUID().toString().substring(0, 8);
         var assessoriaId = inserirAssessoria(slug);
         var chave = "idem-" + UUID.randomUUID();
         inserirRastro(chave, slug, "ASSESSORIA_CREATED", assessoriaId);
 
-        // A compensação apaga a assessoria. A FK não pode bloquear isso.
+        // A compensação apaga a assessoria. Sem FK (V76), nada bloqueia e nada é zerado.
         assertThatCode(() -> jdbc.update("DELETE FROM tb_assessoria WHERE id = ?", assessoriaId))
                 .doesNotThrowAnyException();
 
@@ -84,7 +84,13 @@ class SignupProvisioningMigrationTest extends AbstractIntegrationTest {
                 "SELECT slug, status, assessoria_id, correlation_id FROM tb_signup_provisioning WHERE idempotency_key = ?",
                 chave);
 
-        assertThat(rastro.get("assessoria_id")).as("a referência morre com a assessoria").isNull();
+        // Era null até a V76, por ON DELETE SET NULL. A FK foi derrubada porque o zeramento
+        // acontecia no banco enquanto a entidade em memória seguia com o id antigo: o UPDATE que
+        // gravava o desfecho FAILED reescrevia a referência pendurada e violava a constraint,
+        // deixando o rastro congelado no passo anterior. Ver CoachSignupCompensacaoIT.
+        assertThat(rastro.get("assessoria_id"))
+                .as("o id sobrevive à remoção — é perícia, e sem ele o rastro não diz qual tenant existiu")
+                .isEqualTo(assessoriaId);
         assertThat(rastro.get("slug")).as("mas o slug tentado permanece legível").isEqualTo(slug);
         assertThat(rastro.get("correlation_id")).as("e o fio para o log sobrevive").isEqualTo("corr-" + chave);
 
