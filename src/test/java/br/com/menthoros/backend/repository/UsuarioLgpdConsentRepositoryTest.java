@@ -69,18 +69,28 @@ class UsuarioLgpdConsentRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("aceite de versão DIFERENTE cria segunda linha e preserva a primeira intacta")
         void versaoDiferentePreservaHistorico() {
             Usuario usuario = seedUsuario();
-            UsuarioLgpdConsent primeiro = consentRepository.saveAndFlush(
-                    consent(usuario, POLICY_V1, TERMS_V1));
-            Instant consentedAtOriginal = primeiro.getConsentedAt();
+            UUID primeiroId = consentRepository.saveAndFlush(
+                    consent(usuario, POLICY_V1, TERMS_V1)).getId();
+            flushClear();
+
+            // Baseline lido do BANCO, não da instância em memória. O `Instant` em memória carrega os
+            // nanossegundos do relógio; `TIMESTAMPTZ` guarda microssegundos e **arredonda** ao
+            // gravar. Comparar memória com banco embute um palpite sobre esse arredondamento — e
+            // erra: `...8465965` vira `...846597` no banco, enquanto truncar dá `...846596`.
+            // Em macOS a granularidade do clock esconde tudo isso e a igualdade exata passa.
+            // Com os dois lados vindos do banco, a asserção prova o que o nome do teste promete —
+            // que a primeira linha não foi alterada — sem depender de precisão de armazenamento.
+            Instant consentedAtPersistido = consentRepository.findById(primeiroId)
+                    .orElseThrow().getConsentedAt();
 
             consentRepository.saveAndFlush(consent(usuario, POLICY_V2, TERMS_V1));
             flushClear();
 
             assertThat(consentRepository.findAll()).hasSize(2);
 
-            UsuarioLgpdConsent recarregado = consentRepository.findById(primeiro.getId()).orElseThrow();
+            UsuarioLgpdConsent recarregado = consentRepository.findById(primeiroId).orElseThrow();
             assertThat(recarregado.getPolicyVersion()).isEqualTo(POLICY_V1);
-            assertThat(recarregado.getConsentedAt()).isEqualTo(consentedAtOriginal);
+            assertThat(recarregado.getConsentedAt()).isEqualTo(consentedAtPersistido);
         }
 
         @Test

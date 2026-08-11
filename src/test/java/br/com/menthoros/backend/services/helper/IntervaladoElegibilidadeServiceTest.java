@@ -80,6 +80,14 @@ class IntervaladoElegibilidadeServiceTest {
         return t;
     }
 
+    private TreinoRealizado vinculado(TreinoRealizado realizado, TipoTreino tipoPlanejado) {
+        br.com.menthoros.backend.entity.TreinoPlanejado planejado =
+                new br.com.menthoros.backend.entity.TreinoPlanejado();
+        planejado.setTipoTreino(tipoPlanejado);
+        realizado.setTreinoPlanejado(planejado);
+        return realizado;
+    }
+
     private TreinoRealizado treinoRealizadoComObs(TipoTreino tipo, LocalDate data, Integer rpe, String observacao) {
         TreinoRealizado t = treinoRealizado(tipo, data, rpe);
         t.setObservacao(observacao);
@@ -262,6 +270,24 @@ class IntervaladoElegibilidadeServiceTest {
                 List.of(intervalo), DATA_REFERENCIA);
 
         assertInstanceOf(RecomendacaoIntervalado.Elegivel.class, resultado);
+    }
+
+    @Test
+    @DisplayName("Portão 3 enxerga intervalado recente vinculado ao planejado mesmo com tipo realizado errado")
+    void deveBloquearQuandoIntervaladoRecenteFoiClassificadoComoTempoRun() {
+        Atleta atleta = atletaSaudavel(NivelExperiencia.AVANCADO);
+        PlanoMetaDados meta = metaDadosPadrao(-5.0, 45.0, FasePeriodizacao.BUILD);
+
+        // Sync inferiu TEMPO_RUN por FC/duração; o coach havia prescrito INTERVALADO há 24h
+        TreinoRealizado intervalo = vinculado(
+                treinoRealizado(TipoTreino.TEMPO_RUN, DATA_REFERENCIA.minusDays(1), 6),
+                TipoTreino.INTERVALADO);
+
+        RecomendacaoIntervalado resultado = service.avaliar(atleta, meta,
+                List.of(intervalo), DATA_REFERENCIA);
+
+        assertFalse(resultado instanceof RecomendacaoIntervalado.Elegivel,
+                "24h desde o último intervalado está abaixo do mínimo de 48h para AVANCADO");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

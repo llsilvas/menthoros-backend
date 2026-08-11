@@ -3,6 +3,7 @@ package br.com.menthoros.backend.entity;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
+import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -197,6 +198,29 @@ public class TreinoRealizado extends TreinoBase{
         }
 
         return percepcaoEsforco > treinoPlanejado.getPercepcaoEsforcoEsperada() + 1;
+    }
+
+    /**
+     * Tipo do treino para fins de decisão de planejamento: a prescrição do coach prevalece
+     * sobre o {@code tipoTreino} do realizado quando existe vínculo com um planejado.
+     *
+     * <p>O {@code tipoTreino} de um realizado vindo de integração é inferido por heurística de
+     * duração e FC ({@code StravaActivityServiceImpl.inferTipoTreino},
+     * {@code IntervalsIcuActivityMapper.inferTipoTreino}) — um longão de menos de 90min com FC
+     * acima do limiar é classificado como {@code TEMPO_RUN}. A reconciliação vincula o realizado
+     * ao planejado mas não corrige o tipo, de propósito: sobrescrevê-lo apagaria o sinal de
+     * divergência que o {@code TipoTreinoConsistenciaValidator} detecta.
+     *
+     * <p>Use este acessor onde a pergunta é "o atleta cumpriu a sessão do tipo X que foi
+     * prescrita?" (progressão, elegibilidade, prompts do planejador). Use {@code getTipoTreino()}
+     * onde a pergunta é sobre o que de fato foi executado (TSS, decoupling, inferência de limiar,
+     * matching de reconciliação).
+     */
+    public TipoTreino getTipoTreinoEfetivo() {
+        if (treinoPlanejado != null && treinoPlanejado.getTipoTreino() != null) {
+            return treinoPlanejado.getTipoTreino();
+        }
+        return getTipoTreino();
     }
 
     /**

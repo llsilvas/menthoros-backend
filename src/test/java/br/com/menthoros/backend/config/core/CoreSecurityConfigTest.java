@@ -17,7 +17,17 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
     "app.security.public-paths[0]=/api/public/**",
     "app.security.public-paths[1]=/actuator/health",
     "app.security.strava-paths[0]=/api/v1/strava/webhook",
-    "app.strava.webhook-verify-token=test-webhook-token"
+    "app.strava.webhook-verify-token=test-webhook-token",
+    // Sobe o contexto inteiro para exercitar a cadeia de filtros — e o contexto inteiro arrasta
+    // Flyway e JPA. Sem H2, o datasource default aponta para localhost:5432 e o teste passa apenas
+    // onde já existe um Postgres no ar: verde na máquina do dev, vermelho em qualquer runner limpo.
+    // Mesmo tratamento de HealthConfigTest e AuditConfigTest.
+    "spring.datasource.url=jdbc:h2:mem:securitydb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false",
+    "spring.datasource.driver-class-name=org.h2.Driver",
+    "spring.datasource.username=sa",
+    "spring.datasource.password=",
+    "spring.flyway.enabled=false",
+    "spring.jpa.hibernate.ddl-auto=create-drop"
 })
 class CoreSecurityConfigTest {
 

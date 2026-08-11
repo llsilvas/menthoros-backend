@@ -79,11 +79,18 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     Optional<TreinoRealizado> findTopByAtletaIdOrderByDataTreinoDesc(UUID atletaId);
 
     /**
-     * Busca treinos realizados de um atleta a partir de uma data limite, ordenados pela data decrescente
+     * Busca treinos realizados de um atleta a partir de uma data limite, ordenados pela data decrescente.
+     *
+     * <p>O {@code treinoPlanejado} vem em fetch join porque os consumidores desta query
+     * ({@code TreinoHistoricoProvider}, projeção de prova) resolvem o tipo por
+     * {@code TreinoRealizado.getTipoTreinoEfetivo()} — sem o join seria um SELECT por treino.
+     * O relacionamento é {@code @OneToOne}, então o LEFT JOIN não multiplica linhas.
      */
+    @Query("SELECT tr FROM TreinoRealizado tr LEFT JOIN FETCH tr.treinoPlanejado "
+            + "WHERE tr.atleta = :atleta AND tr.dataTreino >= :dataLimite ORDER BY tr.dataTreino DESC")
     List<TreinoRealizado> findByAtletaAndDataTreinoGreaterThanEqualOrderByDataTreinoDesc(
-            Atleta atleta,
-            LocalDate dataLimite
+            @Param("atleta") Atleta atleta,
+            @Param("dataLimite") LocalDate dataLimite
     );
 
     List<TreinoRealizado> findByAtletaIdAndDataTreino(UUID atletaId, LocalDate data);
@@ -93,7 +100,12 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
 
     List<TreinoRealizado> findByAtletaIdAndDataTreinoBetween(UUID id, LocalDate semanaInicio, LocalDate semanaFim);
 
-    @Query("SELECT tr FROM TreinoRealizado tr WHERE tr.atleta.id = :atletaId AND tr.tenantId = :tenantId AND tr.dataTreino BETWEEN :dataInicio AND :dataFim ORDER BY tr.dataTreino DESC")
+    /**
+     * Fetch join de {@code treinoPlanejado} pelo mesmo motivo de
+     * {@link #findByAtletaAndDataTreinoGreaterThanEqualOrderByDataTreinoDesc}: a progressão resolve
+     * o tipo do treino pelo vínculo com o planejado.
+     */
+    @Query("SELECT tr FROM TreinoRealizado tr LEFT JOIN FETCH tr.treinoPlanejado WHERE tr.atleta.id = :atletaId AND tr.tenantId = :tenantId AND tr.dataTreino BETWEEN :dataInicio AND :dataFim ORDER BY tr.dataTreino DESC")
     List<TreinoRealizado> findByAtletaIdAndTenantIdAndDataTreinoBetween(
             @Param("atletaId") UUID atletaId,
             @Param("tenantId") UUID tenantId,

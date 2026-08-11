@@ -6,6 +6,7 @@ import br.com.menthoros.backend.dto.output.RaceProjectionSnapshotOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.RaceProjectionSnapshot;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.NivelExperiencia;
@@ -293,6 +294,40 @@ class RaceProjectionServiceImplTest {
                     service.generate(atletaId, tenantId, coachId, request(provaId, List.of(10000), 6)));
         }
 
+        @Test
+        @DisplayName("histórico enviado à skill usa o tipo prescrito quando o realizado veio vinculado ao planejado")
+        void usaTipoPrescritoNoHistorico() {
+            // O tipo do realizado vindo de integração é inferido por heurística e erra; a projeção
+            // pergunta "que sessão foi essa?", então vale a prescrição do coach.
+            stubAtletaEncontrado();
+            TreinoRealizado longaoMalClassificado =
+                    vinculado(treino(LocalDate.now().minusWeeks(1), TipoTreino.TEMPO_RUN), TipoTreino.LONGO);
+            stubHistorico(List.of(longaoMalClassificado), List.of());
+            stubSkillSimples();
+
+            service.generate(atletaId, tenantId, coachId, request(null, List.of(10000), 6));
+
+            assertEquals(TipoTreino.LONGO, capturarInput().trainingHistory().workouts().get(0).type());
+        }
+
+        @Test
+        @DisplayName("sessões qualificantes mal classificadas pelo sync ainda contam para o DataQuality")
+        void dataQualityContaSessoesVinculadas() {
+            // DataQuality é derivado do type() do WorkoutSummary: com o tipo inferido (FACIL, não
+            // qualificante) as 6 sessões cairiam em SPARSE e a projeção sairia com confiança baixa.
+            stubAtletaEncontrado();
+            List<TreinoRealizado> treinos = IntStream.range(0, 6)
+                    .mapToObj(i -> vinculado(
+                            treino(LocalDate.now().minusWeeks(i + 1L), TipoTreino.FACIL), TipoTreino.LONGO))
+                    .toList();
+            stubHistorico(treinos, List.of());
+            stubSkillSimples();
+
+            service.generate(atletaId, tenantId, coachId, request(null, List.of(10000), 6));
+
+            assertEquals(DataQuality.PARTIAL, capturarInput().trainingHistory().dataQuality());
+        }
+
         private void assertDataQuality(int qtdSessoes, DataQuality esperado) {
             stubAtletaEncontrado();
             List<TreinoRealizado> treinos = new ArrayList<>();
@@ -498,6 +533,13 @@ class RaceProjectionServiceImplTest {
         tr.setTssCalculado(70);
         tr.setPercepcaoEsforco(6);
         return tr;
+    }
+
+    private TreinoRealizado vinculado(TreinoRealizado realizado, TipoTreino tipoPrescrito) {
+        TreinoPlanejado planejado = new TreinoPlanejado();
+        planejado.setTipoTreino(tipoPrescrito);
+        realizado.setTreinoPlanejado(planejado);
+        return realizado;
     }
 
     private Prova provaRealizada() {

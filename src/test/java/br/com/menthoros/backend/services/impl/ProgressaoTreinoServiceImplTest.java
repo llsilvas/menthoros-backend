@@ -139,6 +139,49 @@ class ProgressaoTreinoServiceImplTest {
 
             assertThat(resultado.rpeMedioTreinosDuros()).isNull();
         }
+
+        @Test
+        @DisplayName("longão vinculado a planejado LONGO conta como longão mesmo com tipo realizado TEMPO_RUN")
+        void longaoComTipoInferidoErradoContaPeloPlanejado() {
+            // A sincronização do Strava infere o tipo por duração/FC: um longão de menos de 90min
+            // com FC acima do limiar vira TEMPO_RUN. O vínculo com o planejado é a fonte da verdade.
+            TreinoRealizado longoMalClassificado =
+                    vinculado(treino(HOJE.minusDays(4), TipoTreino.TEMPO_RUN, 18.0, 8), TipoTreino.LONGO);
+            TreinoRealizado longoOk = treino(HOJE.minusDays(11), TipoTreino.LONGO, 20.0, null);
+
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
+                    .thenReturn(List.of(longoMalClassificado, longoOk));
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of(planejado(), planejado()));
+            when(planoMetadadosService.buscarPorAtletaId(atletaId))
+                    .thenReturn(metaDados(-10.0, 50.0, 55.0));
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.longoesRealizados7d()).isEqualTo(1);
+            assertThat(resultado.longoesRealizados21d()).isEqualTo(2);
+            // o RPE 8 do longão não pode contaminar a média de treinos duros
+            assertThat(resultado.rpeMedioTreinosDuros()).isNull();
+        }
+
+        @Test
+        @DisplayName("treino não planejado mantém o tipo inferido na contagem")
+        void treinoSemVinculoUsaTipoRealizado() {
+            TreinoRealizado avulso = treino(HOJE.minusDays(4), TipoTreino.TEMPO_RUN, 12.0, 8);
+            TreinoRealizado longo = treino(HOJE.minusDays(11), TipoTreino.LONGO, 20.0, null);
+
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
+                    .thenReturn(List.of(avulso, longo));
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of(planejado(), planejado()));
+            when(planoMetadadosService.buscarPorAtletaId(atletaId))
+                    .thenReturn(metaDados(-10.0, 50.0, 55.0));
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.longoesRealizados21d()).isEqualTo(1);
+            assertThat(resultado.rpeMedioTreinosDuros()).isEqualTo(8.0);
+        }
     }
 
     @Nested
@@ -251,7 +294,151 @@ class ProgressaoTreinoServiceImplTest {
         }
     }
 
+    /**
+     * Regressão do bug em que o volume travava: o tipo do realizado vindo de integração é inferido
+     * por heurística de duração/FC, e um longão prescrito voltava do sync como TEMPO_RUN. O
+     * {@code contarLongoes} não enxergava esses longões, {@code podeProgredir} nunca atingia o
+     * mínimo de 2, e o plano gerado ficava preso em MANTER/PROGREDIR_LEVE — o atleta cumpria a
+     * prescrição e mesmo assim não recebia carga.
+     *
+     * <p>Estes testes atravessam {@code calcularHistorico} → {@code calcularDecisao} de propósito:
+     * a contagem isolada já é coberta em {@link CalcularHistorico}, mas o que o coach percebe é a
+     * decisão. Sem o {@code getTipoTreinoEfetivo()} todos eles falham na decisão, não na contagem.
+     */
+    @Nested
+    @DisplayName("regressão — longão mal classificado pelo sync")
+    class LongaoMalClassificado {
+
+        @Test
+        @DisplayName("dois longões prescritos e cumpridos liberam PROGREDIR mesmo voltando do sync como TEMPO_RUN")
+        void progredirComLongoesVinculados() {
+            // Cenário do bug: o coach prescreveu 2 longos, o atleta cumpriu, mas o Strava inferiu
+            // TEMPO_RUN nos dois. Antes do fix: longões=0 → PROGREDIR_LEVE (metade do incremento).
+            List<TreinoRealizado> treinos = List.of(
+                    vinculado(treino(HOJE.minusDays(4), TipoTreino.TEMPO_RUN, 18.0, null), TipoTreino.LONGO),
+                    vinculado(treino(HOJE.minusDays(11), TipoTreino.TEMPO_RUN, 19.0, null), TipoTreino.LONGO),
+                    treino(HOJE.minusDays(2), TipoTreino.FACIL, 8.0, null),
+                    treino(HOJE.minusDays(6), TipoTreino.FACIL, 8.0, null),
+                    treino(HOJE.minusDays(9), TipoTreino.REGENERATIVO, 6.0, null)
+            );
+            stubHistorico(treinos, 6, metaDados(-10.0, 50.0, 55.0));
+
+            DecisaoProgressao decisao = service.calcularDecisao(service.calcularHistorico(atletaId));
+
+            assertThat(decisao.estado()).isEqualTo(EstadoProgressao.PROGREDIR);
+            assertThat(decisao.ajusteVolumePercentual()).isEqualTo(0.06);
+            assertThat(decisao.permitirProgressaoIntensidade()).isTrue();
+        }
+
+        @Test
+        @DisplayName("os mesmos treinos sem vínculo com o planejado não liberam PROGREDIR — é o estado do bug")
+        void semVinculoAtletaFicaSemProgressao() {
+            // Contraste do teste acima: treino idêntico, só que sem reconciliação com o planejado.
+            // Aqui não há prescrição para consultar, o tipo inferido é tudo que existe e a decisão
+            // fica na metade do incremento — exatamente o que o atleta viveu antes do fix.
+            List<TreinoRealizado> treinos = List.of(
+                    treino(HOJE.minusDays(4), TipoTreino.TEMPO_RUN, 18.0, null),
+                    treino(HOJE.minusDays(11), TipoTreino.TEMPO_RUN, 19.0, null),
+                    treino(HOJE.minusDays(2), TipoTreino.FACIL, 8.0, null),
+                    treino(HOJE.minusDays(6), TipoTreino.FACIL, 8.0, null),
+                    treino(HOJE.minusDays(9), TipoTreino.REGENERATIVO, 6.0, null)
+            );
+            stubHistorico(treinos, 6, metaDados(-10.0, 50.0, 55.0));
+
+            ProgressaoHistoricoResumo resumo = service.calcularHistorico(atletaId);
+            DecisaoProgressao decisao = service.calcularDecisao(resumo);
+
+            assertThat(resumo.longoesRealizados21d()).isZero();
+            assertThat(decisao.estado()).isEqualTo(EstadoProgressao.PROGREDIR_LEVE);
+            assertThat(decisao.permitirProgressaoIntensidade()).isFalse();
+        }
+
+        @Test
+        @DisplayName("RPE alto de longão mal classificado não entra na média de treinos duros nem dispara REDUZIR")
+        void rpeDoLongaoNaoDisparaReducao() {
+            // O mesmo treino tinha efeito duplo: sumia da contagem de longões e ainda inflava o RPE
+            // médio de treinos duros (TEMPO_RUN está em TREINOS_DUROS), podendo puxar para REDUZIR.
+            List<TreinoRealizado> treinos = List.of(
+                    vinculado(treino(HOJE.minusDays(4), TipoTreino.TEMPO_RUN, 18.0, 9), TipoTreino.LONGO),
+                    vinculado(treino(HOJE.minusDays(11), TipoTreino.TEMPO_RUN, 19.0, 9), TipoTreino.LONGO),
+                    treino(HOJE.minusDays(2), TipoTreino.FACIL, 8.0, null),
+                    treino(HOJE.minusDays(6), TipoTreino.FACIL, 8.0, null),
+                    treino(HOJE.minusDays(9), TipoTreino.REGENERATIVO, 6.0, null)
+            );
+            stubHistorico(treinos, 6, metaDados(-10.0, 50.0, 55.0));
+
+            ProgressaoHistoricoResumo resumo = service.calcularHistorico(atletaId);
+
+            assertThat(resumo.rpeMedioTreinosDuros()).isNull();
+            assertThat(service.calcularDecisao(resumo).estado()).isEqualTo(EstadoProgressao.PROGREDIR);
+        }
+
+        @Test
+        @DisplayName("um longão vinculado a menos mantém a decisão abaixo de PROGREDIR (limite de 2)")
+        void umLongaoNaoBastaParaProgredir() {
+            // Fronteira de LONGAS_MINIMAS_PROGREDIR: o fix não pode inflar a contagem — com 1 longão
+            // a decisão continua sendo a moderada.
+            List<TreinoRealizado> treinos = List.of(
+                    vinculado(treino(HOJE.minusDays(4), TipoTreino.TEMPO_RUN, 18.0, null), TipoTreino.LONGO),
+                    treino(HOJE.minusDays(11), TipoTreino.TEMPO_RUN, 12.0, null),
+                    treino(HOJE.minusDays(2), TipoTreino.FACIL, 8.0, null),
+                    treino(HOJE.minusDays(6), TipoTreino.FACIL, 8.0, null),
+                    treino(HOJE.minusDays(9), TipoTreino.REGENERATIVO, 6.0, null)
+            );
+            stubHistorico(treinos, 6, metaDados(-10.0, 50.0, 55.0));
+
+            ProgressaoHistoricoResumo resumo = service.calcularHistorico(atletaId);
+
+            assertThat(resumo.longoesRealizados21d()).isEqualTo(1);
+            assertThat(service.calcularDecisao(resumo).estado()).isEqualTo(EstadoProgressao.PROGREDIR_LEVE);
+        }
+
+        @Test
+        @DisplayName("vínculo com planejado sem tipo definido não apaga o tipo do realizado")
+        void planejadoSemTipoMantemTipoRealizado() {
+            // TreinoPlanejado com tipoTreino nulo existe em plano importado/rascunho: o fallback tem
+            // de ser o tipo executado, não null — senão o treino sai de toda contagem.
+            TreinoRealizado longoSemPrescricaoDeTipo =
+                    vinculado(treino(HOJE.minusDays(4), TipoTreino.LONGO, 20.0, null), null);
+            List<TreinoRealizado> treinos = List.of(
+                    longoSemPrescricaoDeTipo,
+                    treino(HOJE.minusDays(11), TipoTreino.LONGO, 20.0, null),
+                    treino(HOJE.minusDays(2), TipoTreino.FACIL, 8.0, null)
+            );
+            stubHistorico(treinos, 4, metaDados(-10.0, 50.0, 55.0));
+
+            ProgressaoHistoricoResumo resumo = service.calcularHistorico(atletaId);
+
+            assertThat(resumo.longoesRealizados21d()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("treino fora da janela de 21 dias não conta como longão, mesmo vinculado")
+        void longaoVinculadoForaDaJanelaNaoConta() {
+            List<TreinoRealizado> treinos = List.of(
+                    vinculado(treino(HOJE.minusDays(4), TipoTreino.TEMPO_RUN, 18.0, null), TipoTreino.LONGO),
+                    vinculado(treino(HOJE.minusDays(30), TipoTreino.TEMPO_RUN, 19.0, null), TipoTreino.LONGO),
+                    treino(HOJE.minusDays(2), TipoTreino.FACIL, 8.0, null),
+                    treino(HOJE.minusDays(6), TipoTreino.FACIL, 8.0, null)
+            );
+            stubHistorico(treinos, 4, metaDados(-10.0, 50.0, 55.0));
+
+            ProgressaoHistoricoResumo resumo = service.calcularHistorico(atletaId);
+
+            assertThat(resumo.longoesRealizados21d()).isEqualTo(1);
+            assertThat(resumo.longoesRealizados7d()).isEqualTo(1);
+        }
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────────
+
+    private void stubHistorico(List<TreinoRealizado> treinos, int planejados21d, PlanoMetaDados metaDados) {
+        when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
+                .thenReturn(treinos);
+        when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+                .thenReturn(Collections.nCopies(planejados21d, planejado()));
+        when(planoMetadadosService.buscarPorAtletaId(atletaId)).thenReturn(metaDados);
+    }
 
     private TreinoRealizado treino(LocalDate data, TipoTreino tipo, double distanciaKm, Integer rpe) {
         TreinoRealizado tr = new TreinoRealizado();
@@ -264,6 +451,13 @@ class ProgressaoTreinoServiceImplTest {
 
     private TreinoPlanejado planejado() {
         return new TreinoPlanejado();
+    }
+
+    private TreinoRealizado vinculado(TreinoRealizado realizado, TipoTreino tipoPlanejado) {
+        TreinoPlanejado planejado = new TreinoPlanejado();
+        planejado.setTipoTreino(tipoPlanejado);
+        realizado.setTreinoPlanejado(planejado);
+        return realizado;
     }
 
     private PlanoMetaDados metaDados(double tsb, double ctl, double atl) {
