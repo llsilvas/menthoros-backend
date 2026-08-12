@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.skills.recovery;
 
+import br.com.menthoros.backend.enums.MetricasThresholds;
 import br.com.menthoros.backend.skills.core.DomainSkill;
 import br.com.menthoros.backend.skills.core.SkillCategory;
 import br.com.menthoros.backend.skills.core.SkillConfidence;
@@ -38,16 +39,25 @@ public class RecoveryCargaSkill implements DomainSkill<RecoveryCargaInput, Recov
     private static final String SKILL_KEY = "recovery-carga-v1";
     private static final String SKILL_VERSION = "1.0";
 
-    // Thresholds TSB para classificação de prontidão
-    private static final double TSB_FRESCO_MIN = 5.0;
-    private static final double TSB_NEUTRO_MIN = -10.0;
-    private static final double TSB_SOBRECARREGADO_MAX = -25.0;
+    /*
+     * Os limiares vêm de MetricasThresholds — a skill não tem números próprios.
+     *
+     * Antes eram quatro literais aqui: dois repetiam valores que o enum já tinha (5.0 e -10.0) e
+     * dois só existiam nesta classe (-25 e 7 dias), com o -25 copiado à mão também no
+     * RevisaoSemanalCalculator. Três fontes para o mesmo conceito: mudar uma não mexia nas outras, e
+     * nenhum teste acusava. A skill roda hoje em shadow mode dentro do MetricasAlertaService (o
+     * resultado só vai para log.debug), então a divergência não chegava ao treinador — mas chegaria
+     * no dia em que ela passasse a valer.
+     */
+    private static final double TSB_FRESCO_MIN = MetricasThresholds.TSB_FORMA_IDEAL_MIN;
+    private static final double TSB_NEUTRO_MIN = MetricasThresholds.TSB_ACUMULANDO_FADIGA;
+    private static final double TSB_SOBRECARREGADO_MAX = MetricasThresholds.TSB_PISO_RECOVERY;
 
     // Threshold de ramp rate para qualificar estado FRESCO (condição AND com TSB)
     private static final double RAMP_RATE_FRESCO_MAX = 5.0;
 
     // Limiar de dias consecutivos para disparar SOBRECARREGADO
-    private static final int DIAS_CONSECUTIVOS_SOBRECARGA = 7;
+    private static final int DIAS_CONSECUTIVOS_SOBRECARGA = MetricasThresholds.DIAS_CONSECUTIVOS_RECOVERY;
 
     @Override
     public String skillKey() {

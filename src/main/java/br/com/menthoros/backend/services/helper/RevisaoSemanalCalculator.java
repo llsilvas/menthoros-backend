@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.enums.MetricasThresholds;
 import br.com.menthoros.backend.enums.NivelAderencia;
 import br.com.menthoros.backend.enums.RecommendationType;
 
@@ -20,10 +21,16 @@ public final class RevisaoSemanalCalculator {
     static final BigDecimal ADERENCIA_ALTA_MIN = new BigDecimal("90");
     /** Aderência ≥ 60% → MEDIA (senão BAIXA). */
     static final BigDecimal ADERENCIA_MEDIA_MIN = new BigDecimal("60");
-    /** Piso de fadiga: TSB ≤ −25 → RECOVERY (ancorado em RecoveryCargaSkill/retention-radar). */
-    static final BigDecimal TSB_PISO_RECOVERY = new BigDecimal("-25");
+    /**
+     * Piso de fadiga: TSB ≤ {@link MetricasThresholds#TSB_PISO_RECOVERY} → RECOVERY.
+     *
+     * <p>Antes era o literal {@code -25}, com o comentário "ancorado em RecoveryCargaSkill". A
+     * âncora era só textual: o número estava copiado à mão, e mudar a skill não mexia aqui. Agora a
+     * dependência é de código.
+     */
+    static final BigDecimal TSB_PISO_RECOVERY = BigDecimal.valueOf(MetricasThresholds.TSB_PISO_RECOVERY);
     /** Faixa de fadiga: TSB ≤ −10 com baixa aderência → RECOVERY; TSB ≥ −10 é pré-requisito de PROGRESS. */
-    static final BigDecimal TSB_FADIGA = new BigDecimal("-10");
+    static final BigDecimal TSB_FADIGA = BigDecimal.valueOf(MetricasThresholds.TSB_ACUMULANDO_FADIGA);
     /** Mínimo de treinos realizados na janela para conclusão forte. */
     static final int MIN_TREINOS_SUFICIENTE = 2;
     /** Treino de "alta criticidade" — {@code TipoTreino.getFatorImpacto() ≥ 1.15} (LONGO em diante). */
