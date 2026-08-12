@@ -22,6 +22,17 @@ public final class MetricasThresholds {
     /** TSB abaixo deste valor = fadiga moderada */
     public static final double TSB_FADIGA_MODERADA = -20.0;
 
+    /**
+     * TSB abaixo deste valor = recomendar semana de recuperação.
+     *
+     * <p>Nível próprio, entre {@link #TSB_FADIGA_MODERADA} e {@link #TSB_SOBRECARGA}: recomendar
+     * recuperação acontece <b>antes</b> de o alarme de sobrecarga disparar. Não é cópia errada de
+     * nenhum dos dois — o valor já era usado, idêntico, pelo {@code RecoveryCargaSkill} e pelo
+     * {@code RevisaoSemanalCalculator}, cada um com sua própria constante. Nomeá-lo aqui foi o que
+     * permitiu apagar as duas cópias.
+     */
+    public static final double TSB_PISO_RECOVERY = -25.0;
+
     /** TSB abaixo deste valor = acumulando fadiga */
     public static final double TSB_ACUMULANDO_FADIGA = -10.0;
 
@@ -66,6 +77,15 @@ public final class MetricasThresholds {
 
     /** Dias consecutivos a partir deste valor = alerta crítico */
     public static final int DIAS_CONSECUTIVOS_CRITICO = 6;
+
+    /**
+     * Dias consecutivos a partir deste valor = descanso obrigatório na classificação de prontidão.
+     *
+     * <p>Vem <b>depois</b> de {@link #DIAS_CONSECUTIVOS_CRITICO}: o alerta ao treinador dispara
+     * primeiro (6), o bloqueio de carga só no dia seguinte (7). Valor extraído da constante privada
+     * do {@code RecoveryCargaSkill}, que era a única a conhecê-lo.
+     */
+    public static final int DIAS_CONSECUTIVOS_RECOVERY = 7;
 
     /** Dias consecutivos a partir deste valor = alerta alto */
     public static final int DIAS_CONSECUTIVOS_ALTO = 5;

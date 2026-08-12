@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.enums.MetricasThresholds;
 import br.com.menthoros.backend.enums.NivelAderencia;
 import br.com.menthoros.backend.enums.RecommendationType;
 import org.junit.jupiter.api.DisplayName;
@@ -231,6 +232,33 @@ class RevisaoSemanalCalculatorTest {
         void datasNulasNaoEntram() {
             assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(null, LocalDate.now())).isFalse();
             assertThat(RevisaoSemanalCalculator.withinConsumptionWindow(LocalDate.now(), null)).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("limiares vêm de MetricasThresholds")
+    class LimiaresFonteUnica {
+
+        /*
+         * Guarda contra o retorno da terceira cópia. Estes campos já foram literais (-25 e -10)
+         * "ancorados" na RecoveryCargaSkill por comentário, não por código: mudar a skill não mexia
+         * aqui, e nada falhava. As asserções vivem neste arquivo, e não no
+         * MetricasThresholdsFonteUnicaTest, porque os campos são package-private — alargar a
+         * visibilidade só para o teste seria deixar o teste ditar o desenho.
+         */
+
+        @Test
+        @DisplayName("o piso de RECOVERY é o do enum")
+        void pisoVemDoEnum() {
+            assertThat(RevisaoSemanalCalculator.TSB_PISO_RECOVERY.doubleValue())
+                    .isEqualTo(MetricasThresholds.TSB_PISO_RECOVERY);
+        }
+
+        @Test
+        @DisplayName("a faixa de fadiga é a do enum")
+        void faixaVemDoEnum() {
+            assertThat(RevisaoSemanalCalculator.TSB_FADIGA.doubleValue())
+                    .isEqualTo(MetricasThresholds.TSB_ACUMULANDO_FADIGA);
         }
     }
 }
