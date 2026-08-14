@@ -5,6 +5,7 @@ import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.SignupProvisioning;
 import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.SignupProvisioningStatus;
+import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
 import br.com.menthoros.backend.exception.KeycloakIntegrationException;
 import br.com.menthoros.backend.exception.SignupRateLimitException;
@@ -168,6 +169,33 @@ class CoachSignupServiceImplTest {
 
             assertThat(captor.getValue().getId()).isEqualTo(usuarioKeycloakId);
             assertThat(captor.getValue().getKeycloakId()).isEqualTo(usuarioKeycloakId.toString());
+        }
+
+        @Test
+        @DisplayName("o fundador recebe a role PROPRIETARIO no Keycloak")
+        void fundadorRecebeRoleProprietario() {
+            stubProvisionamentoFeliz();
+            service.cadastrar(entrada(), CHAVE, CORR);
+
+            verify(keycloak).atribuirRoleDeRealm(usuarioKeycloakId.toString(), "PROPRIETARIO");
+        }
+
+        /**
+         * O dono continua contando como técnico no banco: `role` é single-valued e alimenta
+         * `countByTenantIdAndRoleAndAtivoTrue`, com `maxTecnicos = 1` no BASIC. A propriedade
+         * vive na flag `owner`, que a role composite do Keycloak reespelha a cada sync.
+         */
+        @Test
+        @DisplayName("o Usuario local nasce TECNICO e dono")
+        void usuarioLocalNasceTecnicoEDono() {
+            stubProvisionamentoFeliz();
+            service.cadastrar(entrada(), CHAVE, CORR);
+
+            var captor = ArgumentCaptor.forClass(Usuario.class);
+            verify(usuarioRepository).save(captor.capture());
+
+            assertThat(captor.getValue().getRole()).isEqualTo(UserRole.TECNICO);
+            assertThat(captor.getValue().isOwner()).isTrue();
         }
 
         @Test
