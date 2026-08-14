@@ -5,6 +5,7 @@ import br.com.menthoros.backend.enums.PlanoAssessoria;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.security.JwtTenantFilter;
 import br.com.menthoros.backend.security.StructuredLoggingFilter;
+import br.com.menthoros.backend.services.AssessoriaLogoService;
 import br.com.menthoros.backend.services.AssessoriaSettingsService;
 import jakarta.persistence.OptimisticLockException;
 import org.junit.jupiter.api.DisplayName;
@@ -15,17 +16,27 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.FilterType;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -43,6 +54,7 @@ class AssessoriaSettingsControllerTest {
 
     @Autowired private MockMvc mockMvc;
     @MockitoBean private AssessoriaSettingsService service;
+    @MockitoBean private AssessoriaLogoService logoService;
 
     @Test
     @DisplayName("GET /assessorias/me → 200 com identidade, uso e versão")
@@ -173,6 +185,107 @@ class AssessoriaSettingsControllerTest {
                             .content("""
                                     {"nome":"Corridas Serra","version":2}
                                     """))
+                    .andExpect(status().isConflict());
+        }
+    }
+
+    @Nested
+    @DisplayName("logo")
+    class Logo {
+
+        @Test
+        @DisplayName("POST com PNG → 200 e repassa os bytes e a versão")
+        void uploadValido() throws Exception {
+            when(logoService.substituir(any(), any())).thenReturn(saida("Corridas Serra", 4L));
+
+            mockMvc.perform(multipart("/api/v1/assessorias/me/logo")
+                            .file(new MockMultipartFile("arquivo", "logo.png", "image/png",
+                                    new byte[]{1, 2, 3}))
+                            .param("version", "3"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.version").value(4));
+
+            verify(logoService).substituir(any(), eq(3L));
+        }
+
+        @Test
+        @DisplayName("GET → 200 com Content-Type e ETag do conteúdo")
+        void servirLogo() throws Exception {
+            when(logoService.buscarEtag()).thenReturn(Optional.of("hash-do-conteudo"));
+            when(logoService.buscar()).thenReturn(Optional.of(new AssessoriaLogoService.LogoBinario(
+                    new byte[]{10, 20, 30}, "image/png", "hash-do-conteudo")));
+
+            mockMvc.perform(get("/api/v1/assessorias/me/logo"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.ETAG, "\"hash-do-conteudo\""))
+                    .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "image/png"));
+        }
+
+        /**
+         * O ponto do 304 é não trafegar nem <b>ler</b> os bytes: se {@code buscar()} for chamado,
+         * a economia se perde mesmo com a resposta correta.
+         */
+        @Test
+        @DisplayName("GET com If-None-Match igual → 304 sem ler o conteúdo")
+        void naoModificado() throws Exception {
+            when(logoService.buscarEtag()).thenReturn(Optional.of("hash-do-conteudo"));
+
+            mockMvc.perform(get("/api/v1/assessorias/me/logo")
+                            .header(HttpHeaders.IF_NONE_MATCH, "\"hash-do-conteudo\""))
+                    .andExpect(status().isNotModified());
+
+            verify(logoService, never()).buscar();
+        }
+
+        @Test
+        @DisplayName("GET com If-None-Match diferente → 200 com o conteúdo novo")
+        void etagDesatualizado() throws Exception {
+            when(logoService.buscarEtag()).thenReturn(Optional.of("hash-novo"));
+            when(logoService.buscar()).thenReturn(Optional.of(new AssessoriaLogoService.LogoBinario(
+                    new byte[]{9}, "image/jpeg", "hash-novo")));
+
+            mockMvc.perform(get("/api/v1/assessorias/me/logo")
+                            .header(HttpHeaders.IF_NONE_MATCH, "\"hash-antigo\""))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.ETAG, "\"hash-novo\""));
+        }
+
+        @Test
+        @DisplayName("GET sem logo → 404")
+        void semLogo() throws Exception {
+            when(logoService.buscarEtag()).thenReturn(Optional.empty());
+
+            mockMvc.perform(get("/api/v1/assessorias/me/logo"))
+                    .andExpect(status().isNotFound());
+
+            verify(logoService, never()).buscar();
+        }
+
+        @Test
+        @DisplayName("DELETE → 204 e repassa a versão")
+        void removerLogo() throws Exception {
+            mockMvc.perform(delete("/api/v1/assessorias/me/logo").param("version", "3"))
+                    .andExpect(status().isNoContent());
+
+            verify(logoService).remover(3L);
+        }
+
+        @Test
+        @DisplayName("DELETE sem versão → 400, nunca apaga por omissão")
+        void removerSemVersao() throws Exception {
+            mockMvc.perform(delete("/api/v1/assessorias/me/logo"))
+                    .andExpect(status().isBadRequest());
+
+            verify(logoService, never()).remover(any());
+        }
+
+        @Test
+        @DisplayName("DELETE com versão obsoleta → 409")
+        void removerVersaoObsoleta() throws Exception {
+            doThrow(new OptimisticLockException("versão obsoleta"))
+                    .when(logoService).remover(2L);
+
+            mockMvc.perform(delete("/api/v1/assessorias/me/logo").param("version", "2"))
                     .andExpect(status().isConflict());
         }
     }
