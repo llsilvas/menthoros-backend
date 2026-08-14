@@ -6,6 +6,8 @@ import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -116,5 +118,54 @@ class UsuarioSyncServiceImplRoleTest {
         assertThat(usuario.getRole()).isEqualTo(UserRole.TECNICO);
         assertThat(usuario.isTecnico()).isTrue();
         assertThat(usuario.podeEscrever()).isTrue();
+    }
+
+    @Nested
+    @DisplayName("espelho da flag owner")
+    class EspelhoDaFlagOwner {
+
+        @Test
+        @DisplayName("liga a flag quando o token traz PROPRIETARIO")
+        void ligaQuandoTokenTrazRole() {
+            UUID tenantId = UUID.randomUUID();
+            mockTenantECriacao(tenantId);
+
+            Usuario usuario = service.syncUsuarioFromJwt(
+                    jwtComRoles(List.of("PROPRIETARIO", "TECNICO")), tenantId);
+
+            assertThat(usuario.isOwner()).isTrue();
+        }
+
+        @Test
+        @DisplayName("mantém a flag desligada para técnico comum")
+        void naoLigaParaTecnicoComum() {
+            UUID tenantId = UUID.randomUUID();
+            mockTenantECriacao(tenantId);
+
+            Usuario usuario = service.syncUsuarioFromJwt(jwtComRole("TECNICO"), tenantId);
+
+            assertThat(usuario.isOwner()).isFalse();
+        }
+
+        /**
+         * A flag é espelho, não segunda fonte da verdade: perder a role no Keycloak tem de
+         * desligá-la no próximo acesso. Sem este caso, um dono removido no IdP continuaria
+         * dono no banco para sempre.
+         */
+        @Test
+        @DisplayName("desliga a flag quando a role some do token")
+        void desligaQuandoRoleSomeDoToken() {
+            UUID tenantId = UUID.randomUUID();
+            Usuario existente = new Usuario();
+            existente.setId(UUID.randomUUID());
+            existente.setKeycloakId(existente.getId().toString());
+            existente.setOwner(true);
+            when(usuarioRepository.findByKeycloakId(any())).thenReturn(Optional.of(existente));
+            when(usuarioRepository.save(any(Usuario.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            Usuario usuario = service.syncUsuarioFromJwt(jwtComRole("TECNICO"), tenantId);
+
+            assertThat(usuario.isOwner()).isFalse();
+        }
     }
 }

@@ -66,6 +66,10 @@ public class UsuarioSyncServiceImpl implements UsuarioSyncService {
         usuario.setSobrenome(sobrenome);
         usuario.setEmailVerificado(emailVerificado != null ? emailVerificado : false);
         usuario.setRole(userRole);
+        // Espelho da role PROPRIETARIO: atribuição SEMPRE, nunca só quando presente — perder a
+        // role no Keycloak precisa desligar a flag no próximo acesso, senão o banco vira uma
+        // segunda fonte da verdade que ninguém reconcilia.
+        usuario.setOwner(roles.contains("PROPRIETARIO"));
         usuario.registrarAcesso();
         usuario.registrarSincronizacao();
 
