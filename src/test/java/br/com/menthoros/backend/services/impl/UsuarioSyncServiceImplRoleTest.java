@@ -81,7 +81,10 @@ class UsuarioSyncServiceImplRoleTest {
                 Arguments.of(List.of("ATLETA", "ADMIN"), UserRole.ADMIN),
                 Arguments.of(List.of("ATLETA", "TECNICO"), UserRole.TECNICO),
                 Arguments.of(List.of("ATLETA", "VISUALIZADOR"), UserRole.ATLETA),
-                Arguments.of(List.of(), UserRole.VISUALIZADOR)
+                Arguments.of(List.of(), UserRole.VISUALIZADOR),
+                // PROPRIETARIO é composite de TECNICO: o token traz as duas e a role
+                // resolvida tem de continuar TECNICO. Ver o bloco abaixo para o porquê.
+                Arguments.of(List.of("PROPRIETARIO", "TECNICO"), UserRole.TECNICO)
         );
     }
 
@@ -94,5 +97,24 @@ class UsuarioSyncServiceImplRoleTest {
         Usuario usuario = service.syncUsuarioFromJwt(jwtComRoles(roles), tenantId);
 
         assertThat(usuario.getRole()).isEqualTo(esperada);
+    }
+
+    /**
+     * `Usuario.role` guarda um único valor. Se `PROPRIETARIO` entrasse na cadeia de
+     * `mapToUserRole`, o dono deixaria de ser contado como técnico — e quem conta é
+     * `countByTenantIdAndRoleAndAtivoTrue`, com `maxTecnicos = 1` no plano BASIC.
+     * A propriedade vive na flag `owner`, não na role. Este teste é a rede disso.
+     */
+    @Test
+    void proprietarioContinuaSendoTecnicoNaRole() {
+        UUID tenantId = UUID.randomUUID();
+        mockTenantECriacao(tenantId);
+
+        Usuario usuario = service.syncUsuarioFromJwt(
+                jwtComRoles(List.of("PROPRIETARIO", "TECNICO")), tenantId);
+
+        assertThat(usuario.getRole()).isEqualTo(UserRole.TECNICO);
+        assertThat(usuario.isTecnico()).isTrue();
+        assertThat(usuario.podeEscrever()).isTrue();
     }
 }
