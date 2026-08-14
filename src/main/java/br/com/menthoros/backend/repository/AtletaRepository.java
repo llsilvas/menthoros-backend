@@ -142,4 +142,16 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     @Transactional(readOnly = true)
     @Query("SELECT COUNT(a) FROM Atleta a")
     Integer countAllAthletes();
+
+    /**
+     * Conta atletas ativos de um tenant. Agregação no banco — carregar a coleção
+     * {@code Assessoria.atletas} para chamar {@code size()} traria todas as linhas para contar.
+     */
+    @Transactional(readOnly = true)
+    @Query("""
+    SELECT COUNT(a) FROM Atleta a
+    WHERE a.assessoria.id = :tenantId
+      AND a.ativo = br.com.menthoros.backend.enums.AtletaStatus.ATIVO
+    """)
+    long countAtivosByTenantId(@Param("tenantId") UUID tenantId);
 }
