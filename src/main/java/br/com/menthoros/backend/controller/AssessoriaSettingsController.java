@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.input.AssessoriaPatchInputDto;
 import br.com.menthoros.backend.dto.output.AssessoriaMeOutputDto;
 import br.com.menthoros.backend.services.AssessoriaSettingsService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -8,10 +9,13 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -46,5 +50,29 @@ public class AssessoriaSettingsController {
     })
     public ResponseEntity<AssessoriaMeOutputDto> buscarMinhaAssessoria() {
         return ResponseEntity.ok(assessoriaSettingsService.buscarDoTenantCorrente());
+    }
+
+    @PatchMapping("/me")
+    @PreAuthorize("hasRole('PROPRIETARIO')")
+    @Operation(summary = "Atualizar a assessoria do usuário autenticado",
+            description = "Só o dono edita. Exige a versão lida no GET: versão obsoleta devolve 409 "
+                    + "em vez de sobrescrever a alteração de outra sessão. Campo fora do contrato "
+                    + "(cores, plano, limites, slug) é rejeitado, nunca ignorado.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Assessoria atualizada",
+                    content = @Content(mediaType = "application/json",
+                            schema = @Schema(implementation = AssessoriaMeOutputDto.class))),
+            @ApiResponse(responseCode = "400", description = "Payload inválido ou campo não editável",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "403", description = "Não é o dono da assessoria",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "404", description = "Assessoria do tenant não encontrada",
+                    content = @Content(mediaType = "application/json")),
+            @ApiResponse(responseCode = "409", description = "Versão obsoleta — recarregue antes de salvar",
+                    content = @Content(mediaType = "application/json"))
+    })
+    public ResponseEntity<AssessoriaMeOutputDto> atualizarMinhaAssessoria(
+            @Valid @RequestBody AssessoriaPatchInputDto input) {
+        return ResponseEntity.ok(assessoriaSettingsService.atualizarDoTenantCorrente(input));
     }
 }

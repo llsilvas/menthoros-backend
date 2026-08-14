@@ -1,10 +1,13 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.input.AssessoriaPatchInputDto;
 import br.com.menthoros.backend.dto.output.AssessoriaMeOutputDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.enums.PlanoAssessoria;
 import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import jakarta.persistence.OptimisticLockException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AssessoriaLogoRepository;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
@@ -25,6 +28,8 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -152,7 +157,85 @@ class AssessoriaSettingsServiceImplTest {
         }
     }
 
-    private void stubAssessoria(Integer maxAtletas, Integer maxTecnicos) {
+    @Nested
+    @DisplayName("atualizarDoTenantCorrente")
+    class AtualizarDoTenantCorrente {
+
+        @Test
+        @DisplayName("altera o nome e devolve a assessoria atualizada")
+        void alteraNome() {
+            Assessoria assessoria = stubAssessoria(10, 1);
+            stubContagens();
+
+            AssessoriaMeOutputDto saida = service.atualizarDoTenantCorrente(
+                    new AssessoriaPatchInputDto("Corridas Serra Pro", 3L));
+
+            assertThat(assessoria.getNome()).isEqualTo("Corridas Serra Pro");
+            assertThat(saida.nome()).isEqualTo("Corridas Serra Pro");
+            verify(assessoriaRepository).save(assessoria);
+        }
+
+        @Test
+        @DisplayName("normaliza espaços do nome antes de persistir")
+        void normalizaNome() {
+            Assessoria assessoria = stubAssessoria(10, 1);
+            stubContagens();
+
+            service.atualizarDoTenantCorrente(
+                    new AssessoriaPatchInputDto("  Corridas   Serra  Pro ", 3L));
+
+            assertThat(assessoria.getNome()).isEqualTo("Corridas Serra Pro");
+        }
+
+        /**
+         * Duas abas: a primeira salvou e levou a versão a 4; a segunda ainda acredita em 3.
+         * Sem esta checagem, a segunda sobrescreveria a primeira em silêncio.
+         */
+        @Test
+        @DisplayName("versão obsoleta vira OptimisticLockException sem salvar")
+        void versaoObsoleta() {
+            stubAssessoria(10, 1);
+
+            assertThatThrownBy(() -> service.atualizarDoTenantCorrente(
+                    new AssessoriaPatchInputDto("Nome novo", 2L)))
+                    .isInstanceOf(OptimisticLockException.class);
+
+            verify(assessoriaRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("tenant inexistente vira DomainNotFoundException sem salvar")
+        void tenantInexistente() {
+            when(assessoriaRepository.findById(tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.atualizarDoTenantCorrente(
+                    new AssessoriaPatchInputDto("Nome novo", 3L)))
+                    .isInstanceOf(DomainNotFoundException.class);
+
+            verify(assessoriaRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("nome em branco é rejeitado mesmo passando pelo Bean Validation do controller")
+        void nomeEmBrancoRejeitadoNoServico() {
+            stubAssessoria(10, 1);
+
+            assertThatThrownBy(() -> service.atualizarDoTenantCorrente(
+                    new AssessoriaPatchInputDto("   ", 3L)))
+                    .isInstanceOf(DomainRuleViolationException.class);
+
+            verify(assessoriaRepository, never()).save(any());
+        }
+
+        private void stubContagens() {
+            when(logoRepository.existsByAssessoriaId(tenantId)).thenReturn(false);
+            when(atletaRepository.countAtivosByTenantId(tenantId)).thenReturn(0L);
+            when(usuarioRepository.countByTenantIdAndRoleAndAtivoTrue(tenantId, UserRole.TECNICO))
+                    .thenReturn(1L);
+        }
+    }
+
+    private Assessoria stubAssessoria(Integer maxAtletas, Integer maxTecnicos) {
         Assessoria assessoria = new Assessoria();
         assessoria.setId(tenantId);
         assessoria.setNome("Corridas Serra");
@@ -161,5 +244,6 @@ class AssessoriaSettingsServiceImplTest {
         assessoria.setMaxTecnicos(maxTecnicos);
         assessoria.setVersion(3L);
         when(assessoriaRepository.findById(tenantId)).thenReturn(Optional.of(assessoria));
+        return assessoria;
     }
 }
