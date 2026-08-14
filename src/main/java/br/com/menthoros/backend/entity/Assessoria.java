@@ -105,6 +105,14 @@ public class Assessoria {
     @Column(name = "ativo", nullable = false)
     private Boolean ativo = true;
 
+    /**
+     * Concorrência otimista. Duas abas do mesmo coach editando a assessoria produzem
+     * {@code 409} em vez de lost update — a segunda escrita com versão obsoleta falha.
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
