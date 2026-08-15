@@ -19,6 +19,8 @@ public interface CoachOnboardingService {
      *
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o usuário não existir
      *         no tenant atual
+     * @throws IllegalStateException se não houver tenant no contexto — vem de
+     *         {@code TenantContext.getRequiredTenantId()} e falha antes de qualquer consulta
      */
     void concluir();
 }
