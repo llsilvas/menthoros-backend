@@ -46,7 +46,8 @@ public class UsuarioMapper {
                 lgpd.currentTermsVersion(),
                 lgpd.consentedAt(),
                 lgpd.acceptedPolicyVersion(),
-                lgpd.acceptedTermsVersion()
+                lgpd.acceptedTermsVersion(),
+                usuario.isOnboardingConcluido()
         );
     }
 

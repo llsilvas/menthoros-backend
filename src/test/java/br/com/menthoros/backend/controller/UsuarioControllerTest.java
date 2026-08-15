@@ -65,7 +65,7 @@ class UsuarioControllerTest {
             when(usuarioService.getCurrentUser()).thenReturn(new UsuarioMeOutputDto(
                     id, "João Silva", "joao@exemplo.com", null, UserRole.ATLETA,
                     new UsuarioMeOutputDto.Assessoria(UUID.randomUUID(), "Corridas Serra", "corridasserra"),
-                    atletaId, true, "2026-06-30", "2026-06-30", null, null, null));
+                    atletaId, true, "2026-06-30", "2026-06-30", null, null, null, true));
 
             mockMvc.perform(get("/api/v1/users/me"))
                     .andExpect(status().isOk())

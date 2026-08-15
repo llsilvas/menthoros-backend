@@ -120,6 +120,41 @@ class UsuarioSyncServiceImplRoleTest {
         assertThat(usuario.podeEscrever()).isTrue();
     }
 
+    /**
+     * O sync roda a cada requisição. Se ele escrevesse `onboardingConcluido`, reabriria o wizard
+     * para quem já concluiu — ou, pior, criaria todo usuário sincronizado como pendente.
+     */
+    @Test
+    @DisplayName("o sync não mexe no estado de onboarding")
+    void syncNaoTocaOnboarding() {
+        UUID tenantId = UUID.randomUUID();
+        Usuario existente = new Usuario();
+        existente.setId(UUID.randomUUID());
+        existente.setKeycloakId(existente.getId().toString());
+        existente.setOnboardingConcluido(false);
+        when(usuarioRepository.findByKeycloakId(any())).thenReturn(Optional.of(existente));
+        when(usuarioRepository.save(any(Usuario.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Usuario usuario = service.syncUsuarioFromJwt(jwtComRole("TECNICO"), tenantId);
+
+        assertThat(usuario.isOnboardingConcluido())
+                .as("quem estava pendente continua pendente; o sync não decide isso")
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("usuário novo criado pelo sync nasce concluído")
+    void usuarioNovoDoSyncNasceConcluido() {
+        UUID tenantId = UUID.randomUUID();
+        mockTenantECriacao(tenantId);
+
+        Usuario usuario = service.syncUsuarioFromJwt(jwtComRole("TECNICO"), tenantId);
+
+        assertThat(usuario.isOnboardingConcluido())
+                .as("o sync cria usuário a cada primeiro acesso; nenhum deles deve ver o wizard")
+                .isTrue();
+    }
+
     @Nested
     @DisplayName("espelho da flag owner")
     class EspelhoDaFlagOwner {

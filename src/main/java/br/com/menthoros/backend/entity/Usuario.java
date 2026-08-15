@@ -112,6 +112,23 @@ public class Usuario {
     private boolean owner = false;
 
     /**
+     * Indica se o usuário já passou pelo wizard de boas-vindas.
+     *
+     * <p><b>Nasce {@code true} por default do banco</b> (V80), o contrário do reflexo: interromper
+     * quem já usa o produto com um wizard de boas-vindas é pior do que deixar de exibi-lo. Só o
+     * auto-cadastro grava {@code false}, em {@code CoachSignupServiceImpl}.
+     *
+     * <p><b>{@code @Builder.Default} é obrigatório aqui.</b> Sem ele o Lombok ignora o
+     * inicializador e o builder produz {@code false} — o default da JVM —, e como o {@code INSERT}
+     * passa a mandar o valor explícito, o default do banco nunca entra em jogo. O
+     * {@code UsuarioSyncServiceImpl} roda a cada requisição e criaria todo usuário como pendente,
+     * abrindo o wizard para quem já usa o produto. Um teste fixa isso.
+     */
+    @Builder.Default
+    @Column(name = "onboarding_concluido", nullable = false)
+    private boolean onboardingConcluido = true;
+
+    /**
      * Indica se o usuário está ativo
      * Controle local, pode ser diferente do Keycloak
      */

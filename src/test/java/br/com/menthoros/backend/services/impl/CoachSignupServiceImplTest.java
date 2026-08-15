@@ -198,6 +198,22 @@ class CoachSignupServiceImplTest {
             assertThat(captor.getValue().isOwner()).isTrue();
         }
 
+        /**
+         * O fundador é o único que nasce pendente — é para ele que o wizard existe. Todo o resto
+         * herda o `DEFAULT true` do banco, inclusive o técnico convidado depois.
+         */
+        @Test
+        @DisplayName("o fundador nasce com onboarding pendente")
+        void fundadorNasceComOnboardingPendente() {
+            stubProvisionamentoFeliz();
+            service.cadastrar(entrada(), CHAVE, CORR);
+
+            var captor = ArgumentCaptor.forClass(Usuario.class);
+            verify(usuarioRepository).save(captor.capture());
+
+            assertThat(captor.getValue().isOnboardingConcluido()).isFalse();
+        }
+
         @Test
         @DisplayName("a resposta não carrega token nem senha")
         void respostaSemSegredo() {
