@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.AssessoriaLogo;
+import br.com.menthoros.backend.exception.AccessDeniedException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -10,6 +11,7 @@ import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.services.AssessoriaLogoService;
 import br.com.menthoros.backend.services.AssessoriaSettingsService;
 import br.com.menthoros.backend.services.helper.LogoImagemValidator;
+import br.com.menthoros.backend.services.helper.TenantCoerenciaGuard;
 import jakarta.persistence.OptimisticLockException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +35,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -45,6 +48,7 @@ class AssessoriaLogoServiceImplTest {
     @Mock private AssessoriaRepository assessoriaRepository;
     @Mock private AssessoriaLogoRepository logoRepository;
     @Mock private AssessoriaSettingsService settingsService;
+    @Mock private TenantCoerenciaGuard tenantCoerenciaGuard;
 
     private AssessoriaLogoServiceImpl service;
     private UUID tenantId;
@@ -56,7 +60,9 @@ class AssessoriaLogoServiceImplTest {
         // O validador é lógica pura e determinística — usar o real torna o teste honesto sobre o
         // que de fato é aceito, em vez de assumir que o mock aprovou.
         service = new AssessoriaLogoServiceImpl(
-                assessoriaRepository, logoRepository, new LogoImagemValidator(), settingsService);
+                assessoriaRepository, logoRepository, new LogoImagemValidator(), settingsService,
+                tenantCoerenciaGuard);
+        lenient().when(tenantCoerenciaGuard.exigirCoerencia()).thenReturn(tenantId);
     }
 
     @AfterEach
@@ -237,6 +243,49 @@ class AssessoriaLogoServiceImplTest {
 
             verify(logoRepository, never()).deleteById(any());
             verify(assessoriaRepository, never()).saveAndFlush(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("gate de coerência de tenant")
+    class GateDeCoerencia {
+
+        @Test
+        @DisplayName("upload de usuário fora do tenant não escreve nada")
+        void uploadBarrado() throws IOException {
+            when(tenantCoerenciaGuard.exigirCoerencia())
+                    .thenThrow(new AccessDeniedException("Usuário não pertence à assessoria"));
+
+            assertThatThrownBy(() -> service.substituir(png(16, 16), 3L))
+                    .isInstanceOf(AccessDeniedException.class);
+
+            verifyNoInteractions(assessoriaRepository, logoRepository);
+        }
+
+        @Test
+        @DisplayName("remoção de usuário fora do tenant não apaga nada")
+        void remocaoBarrada() {
+            when(tenantCoerenciaGuard.exigirCoerencia())
+                    .thenThrow(new AccessDeniedException("Usuário não pertence à assessoria"));
+
+            assertThatThrownBy(() -> service.remover(3L))
+                    .isInstanceOf(AccessDeniedException.class);
+
+            verifyNoInteractions(assessoriaRepository, logoRepository);
+        }
+
+        /**
+         * Leitura não passa pelo gate de propósito: o {@code TenantContext} já limita o que se
+         * enxerga, e recusar o GET puniria o caso comum para proteger contra escrita.
+         */
+        @Test
+        @DisplayName("leitura não exige o gate")
+        void leituraNaoPassaPeloGate() {
+            when(logoRepository.findById(tenantId)).thenReturn(Optional.empty());
+
+            assertThat(service.buscar()).isEmpty();
+
+            verifyNoInteractions(tenantCoerenciaGuard);
         }
     }
 

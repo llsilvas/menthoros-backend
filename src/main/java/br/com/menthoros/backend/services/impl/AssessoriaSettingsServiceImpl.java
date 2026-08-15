@@ -13,6 +13,7 @@ import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.services.AssessoriaSettingsService;
+import br.com.menthoros.backend.services.helper.TenantCoerenciaGuard;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class AssessoriaSettingsServiceImpl implements AssessoriaSettingsService 
     private final AssessoriaLogoRepository logoRepository;
     private final AtletaRepository atletaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final TenantCoerenciaGuard tenantCoerenciaGuard;
 
     @Override
     @Transactional(readOnly = true)
@@ -46,7 +48,8 @@ public class AssessoriaSettingsServiceImpl implements AssessoriaSettingsService 
     @Override
     @Transactional
     public AssessoriaMeOutputDto atualizarDoTenantCorrente(AssessoriaPatchInputDto input) {
-        UUID tenantId = TenantContext.getRequiredTenantId();
+        // Gate de coerência antes de qualquer escrita (ver TenantCoerenciaGuard).
+        UUID tenantId = tenantCoerenciaGuard.exigirCoerencia();
         log.info("Atualizando assessoria: tenantId={}, versaoInformada={}", tenantId, input.version());
 
         Assessoria assessoria = carregarDoTenant(tenantId);

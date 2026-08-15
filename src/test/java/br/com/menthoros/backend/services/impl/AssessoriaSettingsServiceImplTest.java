@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.output.AssessoriaMeOutputDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.enums.PlanoAssessoria;
 import br.com.menthoros.backend.enums.UserRole;
+import br.com.menthoros.backend.exception.AccessDeniedException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import jakarta.persistence.OptimisticLockException;
@@ -13,6 +14,7 @@ import br.com.menthoros.backend.repository.AssessoriaLogoRepository;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
+import br.com.menthoros.backend.services.helper.TenantCoerenciaGuard;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -29,6 +31,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -41,6 +44,7 @@ class AssessoriaSettingsServiceImplTest {
     @Mock private AssessoriaLogoRepository logoRepository;
     @Mock private AtletaRepository atletaRepository;
     @Mock private UsuarioRepository usuarioRepository;
+    @Mock private TenantCoerenciaGuard tenantCoerenciaGuard;
 
     @InjectMocks private AssessoriaSettingsServiceImpl service;
 
@@ -161,6 +165,11 @@ class AssessoriaSettingsServiceImplTest {
     @DisplayName("atualizarDoTenantCorrente")
     class AtualizarDoTenantCorrente {
 
+        @BeforeEach
+        void stubGuard() {
+            lenient().when(tenantCoerenciaGuard.exigirCoerencia()).thenReturn(tenantId);
+        }
+
         @Test
         @DisplayName("altera o nome e devolve a assessoria atualizada")
         void alteraNome() {
@@ -225,6 +234,19 @@ class AssessoriaSettingsServiceImplTest {
                     .isInstanceOf(DomainRuleViolationException.class);
 
             verify(assessoriaRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("PATCH de usuário fora do tenant não escreve nada")
+        void gateBarraEscrita() {
+            when(tenantCoerenciaGuard.exigirCoerencia())
+                    .thenThrow(new AccessDeniedException("Usuário não pertence à assessoria"));
+
+            assertThatThrownBy(() -> service.atualizarDoTenantCorrente(
+                    new AssessoriaPatchInputDto("Nome novo", 3L)))
+                    .isInstanceOf(AccessDeniedException.class);
+
+            verifyNoInteractions(assessoriaRepository);
         }
 
         private void stubContagens() {

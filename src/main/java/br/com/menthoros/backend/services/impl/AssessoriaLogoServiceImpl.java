@@ -10,6 +10,7 @@ import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.services.AssessoriaLogoService;
 import br.com.menthoros.backend.services.AssessoriaSettingsService;
 import br.com.menthoros.backend.services.helper.LogoImagemValidator;
+import br.com.menthoros.backend.services.helper.TenantCoerenciaGuard;
 import jakarta.persistence.OptimisticLockException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,11 +31,12 @@ public class AssessoriaLogoServiceImpl implements AssessoriaLogoService {
     private final AssessoriaLogoRepository logoRepository;
     private final LogoImagemValidator validator;
     private final AssessoriaSettingsService settingsService;
+    private final TenantCoerenciaGuard tenantCoerenciaGuard;
 
     @Override
     @Transactional
     public AssessoriaMeOutputDto substituir(byte[] bytes, Long version) {
-        UUID tenantId = TenantContext.getRequiredTenantId();
+        UUID tenantId = tenantCoerenciaGuard.exigirCoerencia();
         Assessoria assessoria = carregarConferindoVersao(tenantId, version);
 
         // Validar ANTES de qualquer escrita: um arquivo recusado não pode deixar rastro nem
@@ -78,7 +80,7 @@ public class AssessoriaLogoServiceImpl implements AssessoriaLogoService {
     @Override
     @Transactional
     public void remover(Long version) {
-        UUID tenantId = TenantContext.getRequiredTenantId();
+        UUID tenantId = tenantCoerenciaGuard.exigirCoerencia();
         Assessoria assessoria = carregarConferindoVersao(tenantId, version);
 
         logoRepository.deleteById(tenantId);
