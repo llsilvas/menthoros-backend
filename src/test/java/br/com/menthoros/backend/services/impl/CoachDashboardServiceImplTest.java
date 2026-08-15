@@ -102,7 +102,7 @@ class CoachDashboardServiceImplTest {
             Atleta warnInativo = atletaRoster("warnInativo", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(8));
             Atleta dangerInativo = atletaRoster("dangerInativo", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(20));
             Atleta paused = atletaRoster("paused", AtletaStatus.INATIVO, 5.0, HOJE.minusDays(1));
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId))
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId))
                     .thenReturn(List.of(active, warnTsb, dangerTsb, warnInativo, dangerInativo, paused));
 
             List<CoachAtletaResumoDto> roster = service.getRoster();
@@ -125,7 +125,7 @@ class CoachDashboardServiceImplTest {
             Atleta danger14 = atletaRoster("d14", AtletaStatus.ATIVO, 0.0, HOJE.minusDays(14));// ==14 → danger
             Atleta warnTsb10 = atletaRoster("wt", AtletaStatus.ATIVO, -10.0, HOJE.minusDays(1));// ==-10 → warning
             Atleta dangerTsb20 = atletaRoster("dt", AtletaStatus.ATIVO, -20.0, HOJE.minusDays(1));// ==-20 → danger
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId))
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId))
                     .thenReturn(List.of(active6, warn7, danger14, warnTsb10, dangerTsb20));
 
             assertThat(service.getRoster()).extracting(CoachAtletaResumoDto::status)
@@ -137,7 +137,7 @@ class CoachDashboardServiceImplTest {
         void semMetricasDegrada() {
             Atleta semDados = Atleta.builder().id(UUID.randomUUID()).nome("Sem").sobrenome("Dados")
                     .ativo(AtletaStatus.ATIVO).build();
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(semDados));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(semDados));
             when(metricasDiariasRepository.findLatestByAtletaId(semDados.getId())).thenReturn(Optional.empty());
             when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(semDados.getId())).thenReturn(Optional.empty());
 
@@ -155,7 +155,7 @@ class CoachDashboardServiceImplTest {
         @DisplayName("weeklyVolume soma os treinos realizados da semana")
         void weeklyVolume() {
             Atleta a = atletaRoster("vol", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
             when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(a.getId()), eq(INICIO_SEMANA), eq(FIM_SEMANA)))
                     .thenReturn(List.of(treino(HOJE.minusDays(1), "10.0", 80), treino(HOJE, "5.5", 40)));
 
@@ -166,7 +166,7 @@ class CoachDashboardServiceImplTest {
         @DisplayName("aderenciaPercentual calculada sobre as últimas 4 semanas")
         void aderenciaPercentual() {
             Atleta a = atletaRoster("ader", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
 
             TreinoPlanejado realizado1 = planejado(a, HOJE.minusDays(7), TipoTreino.REGENERATIVO);
             realizado1.setTreinoRealizado(treino(HOJE.minusDays(7), "5.0", 40));
@@ -186,7 +186,7 @@ class CoachDashboardServiceImplTest {
         @DisplayName("aderenciaPercentual é null quando atleta não tem plano")
         void aderenciaPercentualNullSemPlano() {
             Atleta a = atletaRoster("semplano", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(
                     eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3))))
                     .thenReturn(List.of());
@@ -198,7 +198,7 @@ class CoachDashboardServiceImplTest {
         @DisplayName("dataVencimentoPlano nulo → tipoPlanoAtleta e statusVencimentoPlano ausentes")
         void semDadosDeCobranca() {
             Atleta a = atletaSemMetricas("Sem", "Dados");
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
             when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
             when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
 
@@ -216,7 +216,7 @@ class CoachDashboardServiceImplTest {
                     .tipoPlanoAtleta(TipoPlanoAtleta.ANUAL)
                     .dataVencimentoPlano(HOJE.minusDays(5))
                     .build();
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
             when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
             when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
 
@@ -231,7 +231,7 @@ class CoachDashboardServiceImplTest {
         void dataProximaRetornaProximoVencimento() {
             Atleta a = atletaSemMetricas("Bia", "Proxima").toBuilder()
                     .dataVencimentoPlano(HOJE.plusDays(4)).build();
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
             when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
             when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
 
@@ -244,7 +244,7 @@ class CoachDashboardServiceImplTest {
         void dataDistanteRetornaEmDia() {
             Atleta a = atletaSemMetricas("Caio", "Distante").toBuilder()
                     .dataVencimentoPlano(HOJE.plusDays(60)).build();
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
             when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
             when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
 
@@ -261,7 +261,7 @@ class CoachDashboardServiceImplTest {
                     .dataVencimentoPlano(HOJE.plusDays(1)).build();
             Atleta emDia = atletaSemMetricas("EmDia", "S").toBuilder()
                     .dataVencimentoPlano(HOJE.plusDays(90)).build();
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId))
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId))
                     .thenReturn(List.of(vencido, proximo, emDia));
             for (Atleta a : List.of(vencido, proximo, emDia)) {
                 when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
@@ -342,7 +342,7 @@ class CoachDashboardServiceImplTest {
         void kpisETendencia() {
             Atleta active = atletaRoster("active", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
             Atleta paused = atletaRoster("paused", AtletaStatus.INATIVO, 5.0, HOJE.minusDays(1));
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(active, paused));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(active, paused));
             when(treinoPlanejadoRepository.findByTenantAndDataBetween(eq(tenantId), any(), any())).thenReturn(List.of());
             // mesmo stub serve para a janela semanal (roster) e o período (insights)
             when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(active.getId()), any(), any()))
@@ -363,7 +363,7 @@ class CoachDashboardServiceImplTest {
         @Test
         @DisplayName("sem dados → KPIs zerados e listas vazias")
         void semDados() {
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of());
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of());
             when(treinoPlanejadoRepository.findByTenantAndDataBetween(eq(tenantId), any(), any())).thenReturn(List.of());
 
             CoachInsightsDto insights = service.getInsights(null, null);
@@ -390,7 +390,7 @@ class CoachDashboardServiceImplTest {
         void agregaDashboard() {
             Atleta bruno = atletaRoster("Bruno", AtletaStatus.ATIVO, -12.0, HOJE.minusDays(2));
             Atleta carla = atletaRoster("Carla", AtletaStatus.ATIVO, 4.0, HOJE.minusDays(1));
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(bruno, carla));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(bruno, carla));
             when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(bruno.getId()), any(), any()))
                     .thenReturn(List.of(treino(LocalDate.of(2026, 6, 16), "10.0", 80)));
             when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(carla.getId()), any(), any()))

@@ -283,7 +283,7 @@ class MetricasAdesaoServiceTest {
         @DisplayName("calcula a média de adesão dos atletas do tenant na semana com dados")
         void calculaMediaDoTenant() {
             LocalDate hoje = LocalDate.now();
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(atleta));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(atleta));
             when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any()))
                     .thenReturn(List.of(treinoPlanejado(hoje)));
             when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(), any()))
@@ -309,7 +309,7 @@ class MetricasAdesaoServiceTest {
         @Test
         @DisplayName("retorna estrutura vazia quando o tenant não tem atletas")
         void tenantSemAtletas() {
-            when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of());
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of());
 
             AdesaoDiariaDto dto = service.getAdesaoDiariaAssessoria();
 

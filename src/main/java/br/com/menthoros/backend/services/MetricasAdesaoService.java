@@ -175,7 +175,7 @@ public class MetricasAdesaoService {
     public AdesaoDiariaDto getAdesaoDiariaAssessoria() {
         UUID tenantId = TenantContext.getRequiredTenantId();
         LocalDate hoje = LocalDate.now();
-        List<Atleta> atletas = atletaRepository.findAllByTenantIdOrderByNome(tenantId);
+        List<Atleta> atletas = atletaRepository.findAtivosByTenantIdOrderByNome(tenantId);
 
         if (atletas.isEmpty()) {
             return new AdesaoDiariaDto(tenantId.toString(), "Assessoria", new ArrayList<>());

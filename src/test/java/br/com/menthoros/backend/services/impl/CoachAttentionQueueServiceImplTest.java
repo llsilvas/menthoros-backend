@@ -182,7 +182,7 @@ class CoachAttentionQueueServiceImplTest {
 
             service.getAttentionQueue();
 
-            verify(atletaRepository).findAllByTenantIdOrderByNome(tenantId);
+            verify(atletaRepository).findAtivosByTenantIdOrderByNome(tenantId);
         }
 
         @Test
@@ -199,7 +199,7 @@ class CoachAttentionQueueServiceImplTest {
     // ===== Helpers de montagem =====
 
     private void roster(Atleta... atletas) {
-        when(atletaRepository.findAllByTenantIdOrderByNome(tenantId)).thenReturn(List.of(atletas));
+        when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(atletas));
     }
 
     private Atleta atletaAtivo(String nome, boolean testesEmDia) {

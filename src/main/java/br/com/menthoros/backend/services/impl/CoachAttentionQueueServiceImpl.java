@@ -81,7 +81,7 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
         LocalDate inicioJanela = hoje.minusDays(JANELA_ADERENCIA_DIAS);
         Instant geradoEm = clock.instant();
 
-        List<CoachAttentionItemOutputDto> fila = atletaRepository.findAllByTenantIdOrderByNome(tenantId).stream()
+        List<CoachAttentionItemOutputDto> fila = atletaRepository.findAtivosByTenantIdOrderByNome(tenantId).stream()
                 .filter(atleta -> atleta.getAtivo() != AtletaStatus.INATIVO)
                 .map(atleta -> montarItem(atleta, hoje, inicioJanela, geradoEm))
                 .flatMap(Optional::stream)

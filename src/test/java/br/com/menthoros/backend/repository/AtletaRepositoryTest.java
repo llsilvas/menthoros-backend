@@ -134,16 +134,24 @@ class AtletaRepositoryTest extends AbstractIntegrationTest {
         assertThat(result.get().getId()).isEqualTo(atletaAtivo.getId());
     }
 
+    /**
+     * Trocou de nome e de semântica em 2026-08-15. A versão anterior
+     * ({@code findAtivosByTenantIdOrderByNome}) devolvia todos os status, o que tornava o soft delete
+     * inócuo: o atleta inativado seguia no roster do dashboard, na fila de atenção e na métrica de
+     * adesão. Nenhum dos três consumidores queria isso.
+     */
     @Test
-    @DisplayName("findAllByTenantIdOrderByNome: @Transactional(readOnly=true) — returns all statuses ordered by nome")
-    void findAllByTenantIdOrderByNome_readOnlyTransaction_returnsAllStatusesOrdered() {
-        List<Atleta> result = atletaRepository.findAllByTenantIdOrderByNome(tenant.getId());
+    @DisplayName("findAtivosByTenantIdOrderByNome: devolve só ativos, ordenados por nome")
+    void findAtivosByTenantIdOrderByNome_devolveSomenteAtivos() {
+        List<Atleta> result = atletaRepository.findAtivosByTenantIdOrderByNome(tenant.getId());
 
-        assertThat(result).isNotNull();
         assertThat(result).isNotEmpty();
 
         List<UUID> ids = result.stream().map(Atleta::getId).toList();
-        assertThat(ids).contains(atletaAtivo.getId(), atletaInativo.getId());
+        assertThat(ids).contains(atletaAtivo.getId());
+        assertThat(ids)
+                .as("atleta inativado não pode voltar a aparecer para o coach")
+                .doesNotContain(atletaInativo.getId());
     }
 
     @Test
