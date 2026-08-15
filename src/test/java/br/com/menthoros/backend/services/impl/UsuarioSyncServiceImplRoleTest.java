@@ -6,6 +6,8 @@ import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -81,7 +83,10 @@ class UsuarioSyncServiceImplRoleTest {
                 Arguments.of(List.of("ATLETA", "ADMIN"), UserRole.ADMIN),
                 Arguments.of(List.of("ATLETA", "TECNICO"), UserRole.TECNICO),
                 Arguments.of(List.of("ATLETA", "VISUALIZADOR"), UserRole.ATLETA),
-                Arguments.of(List.of(), UserRole.VISUALIZADOR)
+                Arguments.of(List.of(), UserRole.VISUALIZADOR),
+                // PROPRIETARIO é composite de TECNICO: o token traz as duas e a role
+                // resolvida tem de continuar TECNICO. Ver o bloco abaixo para o porquê.
+                Arguments.of(List.of("PROPRIETARIO", "TECNICO"), UserRole.TECNICO)
         );
     }
 
@@ -94,5 +99,73 @@ class UsuarioSyncServiceImplRoleTest {
         Usuario usuario = service.syncUsuarioFromJwt(jwtComRoles(roles), tenantId);
 
         assertThat(usuario.getRole()).isEqualTo(esperada);
+    }
+
+    /**
+     * `Usuario.role` guarda um único valor. Se `PROPRIETARIO` entrasse na cadeia de
+     * `mapToUserRole`, o dono deixaria de ser contado como técnico — e quem conta é
+     * `countByTenantIdAndRoleAndAtivoTrue`, com `maxTecnicos = 1` no plano BASIC.
+     * A propriedade vive na flag `owner`, não na role. Este teste é a rede disso.
+     */
+    @Test
+    void proprietarioContinuaSendoTecnicoNaRole() {
+        UUID tenantId = UUID.randomUUID();
+        mockTenantECriacao(tenantId);
+
+        Usuario usuario = service.syncUsuarioFromJwt(
+                jwtComRoles(List.of("PROPRIETARIO", "TECNICO")), tenantId);
+
+        assertThat(usuario.getRole()).isEqualTo(UserRole.TECNICO);
+        assertThat(usuario.isTecnico()).isTrue();
+        assertThat(usuario.podeEscrever()).isTrue();
+    }
+
+    @Nested
+    @DisplayName("espelho da flag owner")
+    class EspelhoDaFlagOwner {
+
+        @Test
+        @DisplayName("liga a flag quando o token traz PROPRIETARIO")
+        void ligaQuandoTokenTrazRole() {
+            UUID tenantId = UUID.randomUUID();
+            mockTenantECriacao(tenantId);
+
+            Usuario usuario = service.syncUsuarioFromJwt(
+                    jwtComRoles(List.of("PROPRIETARIO", "TECNICO")), tenantId);
+
+            assertThat(usuario.isOwner()).isTrue();
+        }
+
+        @Test
+        @DisplayName("mantém a flag desligada para técnico comum")
+        void naoLigaParaTecnicoComum() {
+            UUID tenantId = UUID.randomUUID();
+            mockTenantECriacao(tenantId);
+
+            Usuario usuario = service.syncUsuarioFromJwt(jwtComRole("TECNICO"), tenantId);
+
+            assertThat(usuario.isOwner()).isFalse();
+        }
+
+        /**
+         * A flag é espelho, não segunda fonte da verdade: perder a role no Keycloak tem de
+         * desligá-la no próximo acesso. Sem este caso, um dono removido no IdP continuaria
+         * dono no banco para sempre.
+         */
+        @Test
+        @DisplayName("desliga a flag quando a role some do token")
+        void desligaQuandoRoleSomeDoToken() {
+            UUID tenantId = UUID.randomUUID();
+            Usuario existente = new Usuario();
+            existente.setId(UUID.randomUUID());
+            existente.setKeycloakId(existente.getId().toString());
+            existente.setOwner(true);
+            when(usuarioRepository.findByKeycloakId(any())).thenReturn(Optional.of(existente));
+            when(usuarioRepository.save(any(Usuario.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            Usuario usuario = service.syncUsuarioFromJwt(jwtComRole("TECNICO"), tenantId);
+
+            assertThat(usuario.isOwner()).isFalse();
+        }
     }
 }

@@ -26,7 +26,8 @@ import java.util.UUID;
         @Index(name = "idx_usuario_email", columnList = "email"),
         @Index(name = "idx_usuario_tenant", columnList = "tenant_id"),
         @Index(name = "idx_usuario_tenant_ativo", columnList = "tenant_id, ativo"),
-        @Index(name = "idx_usuario_tenant_role", columnList = "tenant_id, role")
+        @Index(name = "idx_usuario_tenant_role", columnList = "tenant_id, role"),
+        @Index(name = "idx_usuario_tenant_owner", columnList = "tenant_id, owner")
     })
 @Getter
 @Setter
@@ -98,6 +99,17 @@ public class Usuario {
     @Enumerated(EnumType.STRING)
     @Column(name = "role", nullable = false, length = 20)
     private UserRole role;
+
+    /**
+     * Indica se o usuário é o dono da assessoria (não apenas um técnico contratado).
+     *
+     * <p>Espelho da role {@code PROPRIETARIO} do Keycloak, atualizado a cada sincronização — o IdP
+     * é a fonte da verdade, este campo é derivado. Existe porque {@code role} guarda um único valor
+     * e o dono precisa continuar contando como {@code TECNICO} (ver JavaDoc de
+     * {@link br.com.menthoros.backend.enums.UserRole#PROPRIETARIO}).
+     */
+    @Column(name = "owner", nullable = false)
+    private boolean owner = false;
 
     /**
      * Indica se o usuário está ativo

@@ -35,5 +35,20 @@ public enum UserRole {
      * - Acessa apenas seus próprios dados (treinos, planos, métricas)
      * - Conta criada via convite e efetivada no aceite
      */
-    ATLETA
+    ATLETA,
+
+    /**
+     * Dono da assessoria — configura a identidade da própria assessoria.
+     *
+     * <p>No Keycloak é uma role <b>composite</b> que inclui {@code TECNICO}, então o token do dono
+     * traz as duas e ele mantém tudo o que um técnico faz.
+     *
+     * <p><b>Nunca entra em {@code UsuarioSyncServiceImpl.mapToUserRole}.</b> {@code Usuario.role}
+     * guarda um único valor: se o dono fosse resolvido como {@code PROPRIETARIO}, ele sairia de
+     * {@code countByTenantIdAndRoleAndAtivoTrue} (a contagem de técnicos do plano, com
+     * {@code maxTecnicos = 1} no BASIC), de {@code isTecnico()} e de {@code podeEscrever()}.
+     * A propriedade da assessoria vive na flag {@code Usuario.owner}, espelhada do JWT — esta
+     * constante existe para o mapeamento de authorities e para o {@code @PreAuthorize}.
+     */
+    PROPRIETARIO
 }

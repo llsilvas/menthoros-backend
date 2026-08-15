@@ -56,7 +56,12 @@ public class CoachSignupServiceImpl implements CoachSignupService {
 
     private static final int MAX_ATLETAS_BASIC = 10;
     private static final int MAX_TECNICOS_BASIC = 1;
-    private static final String ROLE_COACH = "TECNICO";
+    /**
+     * O fundador nasce dono da assessoria, não técnico contratado. {@code PROPRIETARIO} é
+     * composite de {@code TECNICO} no realm, então o token continua trazendo as duas — trocar
+     * esta constante não tira nenhum acesso que o coach já tinha.
+     */
+    private static final String ROLE_COACH = "PROPRIETARIO";
     private static final String ACAO_VERIFICAR_EMAIL = "VERIFY_EMAIL";
 
     private static final String METRICA = "signup.coach";
@@ -280,7 +285,10 @@ public class CoachSignupServiceImpl implements CoachSignupService {
                 .assessoria(assessoria)
                 .email(input.email())
                 .nome(input.nome())
+                // TECNICO, não PROPRIETARIO: `role` é single-valued e alimenta a contagem de
+                // técnicos do plano (maxTecnicos = 1 no BASIC). A propriedade vive em `owner`.
                 .role(UserRole.TECNICO)
+                .owner(true)
                 .ativo(true)
                 .emailVerificado(false)
                 .build());
