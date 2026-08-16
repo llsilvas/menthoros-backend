@@ -11,6 +11,7 @@ import br.com.menthoros.backend.exception.ConsentVersionStaleException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.LgpdConsentStatus;
 import br.com.menthoros.backend.mapper.UsuarioMapper;
+import br.com.menthoros.backend.repository.AssessoriaLogoRepository;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.UsuarioLgpdConsentRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
@@ -38,6 +39,12 @@ public class UsuarioServiceImpl implements UsuarioService {
     private final UsuarioLgpdConsentRepository consentRepository;
     private final AtletaService atletaService;
     private final UsuarioMapper usuarioMapper;
+    /**
+     * A logo é um BLOB em {@code tb_assessoria_logo}, não um campo da assessoria — o
+     * {@code Assessoria.logoUrl} é legado e está {@code NULL} desde a migração. Quem resolve a
+     * presença é esta service; o mapper só converte.
+     */
+    private final AssessoriaLogoRepository assessoriaLogoRepository;
     private final AuthenticatedPrincipalResolver principalResolver;
     private final LgpdProperties lgpdProperties;
 
@@ -75,7 +82,10 @@ public class UsuarioServiceImpl implements UsuarioService {
 
         log.info("Usuário atual resolvido: id={}, role={}, atletaVinculado={}, lgpdConsentGranted={}",
                 usuario.getId(), usuario.getRole(), atleta != null, lgpd.granted());
-        return usuarioMapper.toMeOutputDto(usuario, atleta, lgpd);
+        boolean temLogo = usuario.getAssessoria() != null
+                && assessoriaLogoRepository.existsByAssessoriaId(usuario.getAssessoria().getId());
+
+        return usuarioMapper.toMeOutputDto(usuario, atleta, lgpd, temLogo);
     }
 
     /**

@@ -34,9 +34,9 @@ class UsuarioMapperTest {
         @Test
         @DisplayName("lança IllegalArgumentException quando usuario é null")
         void rejeitaUsuarioNull() {
-            assertThatThrownBy(() -> mapper.toMeOutputDto(null, null, LGPD))
+            assertThatThrownBy(() -> mapper.toMeOutputDto(null, null, LGPD, false))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("Usuario");
+                    .hasMessageContaining("Usuario", false);
         }
 
         @Test
@@ -44,7 +44,7 @@ class UsuarioMapperTest {
         void mapeiaSemAtleta() {
             Usuario usuario = usuarioTecnico();
 
-            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, null, LGPD);
+            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, null, LGPD, false);
 
             assertThat(dto.id()).isEqualTo(usuario.getId());
             assertThat(dto.nome()).isEqualTo("João Silva"); // nome completo (nome + sobrenome)
@@ -63,7 +63,7 @@ class UsuarioMapperTest {
             Usuario usuario = usuarioAtleta();
             Atleta atleta = Atleta.builder().id(UUID.randomUUID()).nome("Atleta").build();
 
-            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, atleta, LGPD);
+            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, atleta, LGPD, false);
 
             assertThat(dto.role()).isEqualTo(UserRole.ATLETA);
             assertThat(dto.atletaId()).isEqualTo(atleta.getId());
@@ -74,7 +74,7 @@ class UsuarioMapperTest {
         void omiteAssessoriaQuandoNula() {
             Usuario usuario = usuario(UserRole.TECNICO, null);
 
-            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, null, LGPD);
+            UsuarioMeOutputDto dto = mapper.toMeOutputDto(usuario, null, LGPD, false);
 
             assertThat(dto.assessoria()).isNull();
         }
