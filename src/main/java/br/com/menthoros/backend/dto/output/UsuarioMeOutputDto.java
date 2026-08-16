@@ -74,6 +74,18 @@ public record UsuarioMeOutputDto(
             String nome,
 
             @Schema(description = "Domínio da assessoria", example = "corridasserra")
-            String dominio) {
+            String dominio,
+
+            @Schema(description = "Indica se há logo cadastrada", example = "true")
+            boolean temLogo,
+
+            @Schema(description = "Rota do próprio produto que serve a logo; null quando não há",
+                    example = "/api/v1/assessorias/me/logo")
+            String logoUrl,
+
+            @Schema(description = "Versão da assessoria (concorrência otimista). Serve também de "
+                    + "cache-bust do logo: a URL é fixa, então sem ela o navegador manteria a "
+                    + "imagem antiga após a troca.", example = "3")
+            Long version) {
     }
 }

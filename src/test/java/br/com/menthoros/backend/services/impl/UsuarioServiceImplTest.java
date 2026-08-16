@@ -12,6 +12,7 @@ import br.com.menthoros.backend.exception.ConsentVersionStaleException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.LgpdConsentStatus;
 import br.com.menthoros.backend.mapper.UsuarioMapper;
+import br.com.menthoros.backend.repository.AssessoriaLogoRepository;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.UsuarioLgpdConsentRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
@@ -56,6 +57,8 @@ class UsuarioServiceImplTest {
     @Mock private UsuarioLgpdConsentRepository consentRepository;
     @Mock private AtletaService atletaService;
     @Mock private UsuarioMapper usuarioMapper;
+    @Mock
+    private AssessoriaLogoRepository assessoriaLogoRepository;
     @Mock private AuthenticatedPrincipalResolver principalResolver;
     @Spy private LgpdProperties lgpdProperties = novasProperties();
 
@@ -95,7 +98,7 @@ class UsuarioServiceImplTest {
             UsuarioMeOutputDto esperado = dtoStub();
             when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId))
                     .thenReturn(Optional.of(usuario));
-            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class)))
+            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class), anyBoolean()))
                     .thenReturn(esperado);
 
             UsuarioMeOutputDto resultado = usuarioService.getCurrentUser();
@@ -114,7 +117,7 @@ class UsuarioServiceImplTest {
                     .thenReturn(Optional.of(usuario));
             when(atletaService.findVinculadoAoUsuario(usuario.getId()))
                     .thenReturn(Optional.of(atleta));
-            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(atleta), any(LgpdConsentStatus.class)))
+            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(atleta), any(LgpdConsentStatus.class), anyBoolean()))
                     .thenReturn(esperado);
 
             UsuarioMeOutputDto resultado = usuarioService.getCurrentUser();
@@ -131,12 +134,12 @@ class UsuarioServiceImplTest {
                     .thenReturn(Optional.of(usuario));
             when(atletaService.findVinculadoAoUsuario(usuario.getId()))
                     .thenReturn(Optional.empty());
-            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class)))
+            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class), anyBoolean()))
                     .thenReturn(dtoStub());
 
             usuarioService.getCurrentUser();
 
-            verify(usuarioMapper).toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class));
+            verify(usuarioMapper).toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class), anyBoolean());
         }
 
         @Test
@@ -162,14 +165,14 @@ class UsuarioServiceImplTest {
                     .thenReturn(Optional.of(usuario));
             when(atletaService.findVinculadoAoUsuario(usuario.getId()))
                     .thenReturn(Optional.empty());
-            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class)))
+            when(usuarioMapper.toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class), anyBoolean()))
                     .thenReturn(dtoStub());
 
             usuarioService.getCurrentUser();
 
-            verify(usuarioMapper).toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class));
+            verify(usuarioMapper).toMeOutputDto(eq(usuario), eq(null), any(LgpdConsentStatus.class), anyBoolean());
             verify(usuarioMapper, never())
-                    .toMeOutputDto(any(), any(Atleta.class), any(LgpdConsentStatus.class));
+                    .toMeOutputDto(any(), any(Atleta.class), any(LgpdConsentStatus.class), anyBoolean());
         }
     }
 
@@ -218,7 +221,7 @@ class UsuarioServiceImplTest {
             Usuario usuario = usuario(UserRole.TECNICO);
             when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId))
                     .thenReturn(Optional.of(usuario));
-            when(usuarioMapper.toMeOutputDto(any(), any(), any(LgpdConsentStatus.class)))
+            when(usuarioMapper.toMeOutputDto(any(), any(), any(LgpdConsentStatus.class), anyBoolean()))
                     .thenReturn(dtoStub());
         }
     }
@@ -290,7 +293,7 @@ class UsuarioServiceImplTest {
         private void prepararUsuario() {
             when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId))
                     .thenReturn(Optional.of(usuario(UserRole.TECNICO)));
-            when(usuarioMapper.toMeOutputDto(any(), any(), any(LgpdConsentStatus.class)))
+            when(usuarioMapper.toMeOutputDto(any(), any(), any(LgpdConsentStatus.class), anyBoolean()))
                     .thenReturn(dtoStub());
         }
     }
@@ -406,7 +409,7 @@ class UsuarioServiceImplTest {
     /** Captura o LgpdConsentStatus que o service montou e entregou ao mapper. */
     private LgpdConsentStatus capturarLgpd() {
         ArgumentCaptor<LgpdConsentStatus> captor = ArgumentCaptor.forClass(LgpdConsentStatus.class);
-        verify(usuarioMapper).toMeOutputDto(any(), any(), captor.capture());
+        verify(usuarioMapper).toMeOutputDto(any(), any(), captor.capture(), anyBoolean());
         return captor.getValue();
     }
 
