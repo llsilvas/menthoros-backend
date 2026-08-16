@@ -57,7 +57,12 @@ public record UsuarioMeOutputDto(
 
         @Schema(description = "Versão dos Termos efetivamente aceita no último registro. Pode ser "
                 + "ANTERIOR à vigente.", example = "2026-06-30")
-        String lgpdAcceptedTermsVersion) {
+        String lgpdAcceptedTermsVersion,
+
+        @Schema(description = "Indica se o usuário já passou pelo wizard de boas-vindas. "
+                + "Usuários anteriores ao lançamento do wizard nascem true e nunca o veem; "
+                + "só o auto-cadastro cria com false.", example = "true")
+        boolean onboardingConcluido) {
 
     @Schema(description = "Dados básicos da assessoria do usuário")
     @JsonInclude(JsonInclude.Include.NON_NULL)

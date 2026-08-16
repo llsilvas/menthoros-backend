@@ -79,13 +79,17 @@ public class AtletaController {
     }
 
     @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    // PROPRIETARIO entrou aqui em 2026-08-15: o dono da assessoria não conseguia remover um atleta
+    // cadastrado por engano na própria assessoria, e a operação é soft delete tenant-scoped —
+    // reversível e sem alcance fora do tenant. Continua FORA de TECNICO: inativar atleta é
+    // destrutivo do ponto de vista de quem treina, e a distinção dono/contratado existe para isso.
+    @PreAuthorize("hasAnyRole('PROPRIETARIO','ADMIN')")
     @Operation(summary = "Deletar atleta", description = "Remove um atleta do sistema (soft delete)")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "204", description = "Atleta removido com sucesso"),
         @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
                 content = @Content(mediaType = "application/json")),
-        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas ADMIN pode deletar atletas",
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas o dono da assessoria (PROPRIETARIO) ou ADMIN",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<Void> deletarAtleta(

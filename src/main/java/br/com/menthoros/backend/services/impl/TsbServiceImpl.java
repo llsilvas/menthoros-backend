@@ -551,11 +551,28 @@ public class TsbServiceImpl implements TsbService {
         return new ProgressoRecalculo(blocosConcluidos, ultimoDiaReconstruido);
     }
 
+    /**
+     * Zera as métricas quando o atleta não tem histórico nenhum.
+     *
+     * <p><b>Ausência de metadados aqui é normal, não erro.</b> Este caminho roda justamente quando
+     * o atleta não tem treino algum — tipicamente um atleta recém-cadastrado —, e nesse momento
+     * ninguém criou metadados ainda: quem cria é {@code buscarOuCriarMetadados}, mais adiante no
+     * fluxo de geração de plano.
+     *
+     * <p>Até 2026-08-15 este método lançava {@code IllegalArgumentException} quando não encontrava,
+     * o que <b>impedia a geração do primeiro plano de qualquer atleta novo</b>: o erro subia como
+     * falha de LLM e o coach via "erro ao gerar plano" sem nenhuma pista. Não havia o que zerar —
+     * um atleta sem metadados já está no estado que este método existe para produzir.
+     */
     private void zerarMetaDadosSemHistorico(UUID atletaId) {
         PlanoMetaDados metaDados = planoMetaDadosRepository
                 .findByAtletaId(atletaId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "MetaDados não encontrado para atleta: " + atletaId));
+                .orElse(null);
+
+        if (metaDados == null) {
+            log.debug("Atleta {} ainda não tem metadados; nada a zerar", atletaId);
+            return;
+        }
 
         metaDados.setCtlAtual(0.0);
         metaDados.setAtlAtual(0.0);

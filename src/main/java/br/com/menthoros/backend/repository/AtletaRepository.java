@@ -58,13 +58,25 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     """)
     List<Atleta> findAllAtletas(@Param("tenantId") UUID tenantId);
 
+    /**
+     * Atletas <b>ativos</b> do tenant, ordenados por nome.
+     *
+     * <p>Antes chamava-se {@code findAllByTenantIdOrderByNome} e não filtrava status — o que
+     * tornava o soft delete inócuo: o atleta inativado continuava no roster do dashboard, na fila
+     * de atenção e na métrica de adesão. Um atleta que saiu da assessoria não deve gerar alerta
+     * para o coach nem puxar a aderência para baixo.
+     *
+     * <p>Quem precisar de inativos deve pedir explicitamente, numa query própria — o nome dizia
+     * "all" e a intenção de todos os três consumidores era "ativos".
+     */
     @Transactional(readOnly = true)
     @Query("""
     select atl from Atleta atl
     where atl.assessoria.id = :tenantId
+      and atl.ativo = 'ATIVO'
     order by atl.nome ASC
     """)
-    List<Atleta> findAllByTenantIdOrderByNome(@Param("tenantId") UUID tenantId);
+    List<Atleta> findAtivosByTenantIdOrderByNome(@Param("tenantId") UUID tenantId);
 
     /**
      * Busca atleta por ID garantindo que pertence ao tenant correto.

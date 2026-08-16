@@ -423,6 +423,6 @@ class UsuarioServiceImplTest {
 
     private UsuarioMeOutputDto dtoStub() {
         return new UsuarioMeOutputDto(UUID.fromString(sub), "Usuário", "usuario@exemplo.com", null,
-                UserRole.TECNICO, null, null, false, POLICY_VIGENTE, TERMS_VIGENTE, null, null, null);
+                UserRole.TECNICO, null, null, false, POLICY_VIGENTE, TERMS_VIGENTE, null, null, null, true);
     }
 }

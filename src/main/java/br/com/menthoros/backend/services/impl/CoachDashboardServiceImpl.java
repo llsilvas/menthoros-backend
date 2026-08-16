@@ -85,7 +85,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         LocalDate inicioSemana = hoje.with(DayOfWeek.MONDAY);
         LocalDate fimSemana = inicioSemana.plusDays(6);
 
-        return atletaRepository.findAllByTenantIdOrderByNome(tenantId).stream()
+        return atletaRepository.findAtivosByTenantIdOrderByNome(tenantId).stream()
                 .map(atleta -> montarResumo(atleta, hoje, inicioSemana, fimSemana))
                 .toList();
     }

@@ -289,6 +289,10 @@ public class CoachSignupServiceImpl implements CoachSignupService {
                 // técnicos do plano (maxTecnicos = 1 no BASIC). A propriedade vive em `owner`.
                 .role(UserRole.TECNICO)
                 .owner(true)
+                // Único lugar do sistema que grava `false`: o fundador é quem precisa do wizard.
+                // Todo o resto herda o DEFAULT true do banco (V80) — inclusive o técnico convidado,
+                // que vai direto ao dashboard por decisão de produto (D1 da change).
+                .onboardingConcluido(false)
                 .ativo(true)
                 .emailVerificado(false)
                 .build());

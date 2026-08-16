@@ -11,7 +11,6 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -55,8 +54,22 @@ public class PlanoMetadadosServiceImpl implements PlanoMetadadosService {
      * <strong>Side Effects:</strong> Database insert (apenas na primeira chamada por atleta).
      * <strong>Tenant-aware:</strong> YES — popula assessoria a partir do TenantContext quando disponível.
      */
+    /**
+     * <b>Deliberadamente SEM {@code @Cacheable}</b> — foi removido em 2026-08-15 depois de um
+     * incidente em produção.
+     *
+     * <p>Este método <b>escreve</b>: quando não encontra, cria e salva dentro da transação do
+     * chamador. O Spring popula o cache <i>antes</i> do commit, então uma transação que reverte
+     * — o que é provável em {@code gerarPlanoTreino}, que chama LLM e leva dezenas de segundos —
+     * apagava o {@code INSERT} do banco e deixava o objeto no cache com um ID que nunca existiu.
+     * A partir daí, toda tentativa lia o ID fantasma, falhava no {@code findByIdAndTenantId} e
+     * revertia de novo: <b>o erro não se resolvia sozinho, nem reiniciando a tentativa</b>.
+     *
+     * <p>Cachear o resultado de um método que escreve é inseguro por construção. O ganho aqui era
+     * uma consulta indexada num fluxo que faz uma chamada de LLM — desprezível perto do risco.
+     * {@code PlanoMetadadosCacheIT} guarda esse comportamento.
+     */
     @Override
-    @Cacheable(value = "metadados-atleta", key = "#atleta.id + '_' + " + TENANT_KEY, condition = HAS_TENANT)
     public PlanoMetaDados buscarOuCriarMetadados(Atleta atleta) {
         Objects.requireNonNull(atleta, "Atleta não pode ser nulo");
         Objects.requireNonNull(atleta.getId(), "ID do atleta não pode ser nulo");
@@ -97,15 +110,20 @@ public class PlanoMetadadosServiceImpl implements PlanoMetadadosService {
                 .diaPreferidoLongo(atleta.getDiaPreferidoLongo())
                 .dataCriacao(LocalDateTime.now());
 
-        // Popula assessoria (tenant) se disponível no contexto ou via atleta
+        // A assessoria é OBRIGATÓRIA, não best-effort. A leitura é tenant-scoped
+        // (`findByIdAndTenantId`), então metadados sem tenant seriam invisíveis para sempre — o
+        // mesmo sintoma do incidente do cache, só que persistido no banco em vez de em memória.
         if (TenantContext.hasTenant()) {
             UUID tenantId = TenantContext.getTenantId();
-            Assessoria assessoria = assessoriaRepository.getReferenceById(tenantId);
-            builder.assessoria(assessoria);
+            builder.assessoria(assessoriaRepository.getReferenceById(tenantId));
             log.debug("Metadados criados com tenant: {}", tenantId);
         } else if (atleta.getAssessoria() != null) {
             builder.assessoria(atleta.getAssessoria());
             log.debug("Metadados criados com assessoria do atleta: {}", atleta.getAssessoria().getId());
+        } else {
+            throw new IllegalStateException(
+                    "Não é possível criar metadados sem tenant: nem o contexto nem o atleta "
+                            + atleta.getId() + " têm assessoria");
         }
 
         PlanoMetaDados metaDados = builder.build();
