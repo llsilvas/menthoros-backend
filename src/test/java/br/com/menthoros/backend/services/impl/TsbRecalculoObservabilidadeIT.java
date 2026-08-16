@@ -82,43 +82,53 @@ class TsbRecalculoObservabilidadeIT extends AbstractIntegrationTest {
         TenantContext.clear();
     }
 
+    /**
+     * O CA9 original exigia que o recálculo <b>invalidasse</b> a entrada de cache, para que a
+     * geração de plano não lesse CTL/TSB anteriores ao recálculo.
+     *
+     * <p>Em 2026-08-15 o {@code @Cacheable} de {@code buscarOuCriarMetadados} foi <b>removido</b>:
+     * ele cacheava o resultado de um método que <i>escreve</i>, e uma transação revertida deixava
+     * no cache um ID que nunca existiu — quebrando a geração do primeiro plano de forma permanente
+     * (ver {@code PlanoMetadadosCacheIT}).
+     *
+     * <p>O objetivo do CA9 continua garantido, e de forma mais forte: <b>não há cache para servir
+     * dado velho</b>. Estes testes passaram a verificar o objetivo — a leitura pós-recálculo
+     * reflete o banco — em vez do mecanismo que deixou de existir. O
+     * {@code invalidarCacheMetadados} do executor foi mantido: é barato e protege se alguém
+     * reintroduzir cache aqui.
+     */
     @Nested
-    @DisplayName("cache metadados-atleta")
-    class CacheMetadados {
+    @DisplayName("leitura de metadados após recálculo")
+    class LeituraAposRecalculo {
 
         @Test
-        @DisplayName("recalculo invalida a entrada de cache do atleta (CA9)")
-        void recalculoInvalidaCache() {
+        @DisplayName("a leitura reflete o estado do banco, sem dado obsoleto (CA9)")
+        void leituraRefleteBanco() {
             salvarTreino(atleta, LocalDate.now().minusDays(3));
-
-            // Popula o cache pelo mesmo caminho que a geracao de plano usa.
             planoMetadadosService.buscarOuCriarMetadados(atleta);
-            String chave = atleta.getId() + "_" + tenantId;
-
-            Cache cache = cacheManager.getCache("metadados-atleta");
-            assertThat(cache).isNotNull();
-            assertThat(cache.get(chave))
-                    .as("pre-condicao: a entrada tem de estar cacheada")
-                    .isNotNull();
 
             tsbService.recalcularHistoricoCompleto(atleta.getId());
 
-            assertThat(cache.get(chave))
-                    .as("sem invalidacao, a geracao de plano leria CTL/TSB anteriores ao recalculo")
-                    .isNull();
+            var doBanco = planoMetadadosRepository.findByAtletaId(atleta.getId());
+            var pelaLeitura = planoMetadadosService.buscarOuCriarMetadados(atleta);
+
+            assertThat(doBanco).isPresent();
+            assertThat(pelaLeitura.getCtlAtual())
+                    .as("o que a geração de plano lê tem de ser o que o recálculo gravou")
+                    .isEqualTo(doBanco.get().getCtlAtual());
         }
 
         @Test
-        @DisplayName("atleta sem historico tambem invalida o cache")
-        void semHistoricoInvalidaCache() {
+        @DisplayName("atleta sem histórico: recálculo não quebra nem serve dado velho")
+        void semHistoricoNaoQuebra() {
             planoMetadadosService.buscarOuCriarMetadados(atleta);
-            String chave = atleta.getId() + "_" + tenantId;
-            Cache cache = cacheManager.getCache("metadados-atleta");
-            assertThat(cache.get(chave)).isNotNull();
 
             tsbService.recalcularHistoricoCompleto(atleta.getId());
 
-            assertThat(cache.get(chave)).isNull();
+            var doBanco = planoMetadadosRepository.findByAtletaId(atleta.getId());
+            assertThat(doBanco).isPresent();
+            assertThat(planoMetadadosService.buscarOuCriarMetadados(atleta).getCtlAtual())
+                    .isEqualTo(doBanco.get().getCtlAtual());
         }
     }
 
