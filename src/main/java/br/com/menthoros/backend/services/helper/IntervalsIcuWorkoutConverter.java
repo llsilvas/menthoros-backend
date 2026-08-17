@@ -129,8 +129,9 @@ public class IntervalsIcuWorkoutConverter {
         while (i < total) {
             UUID blocoId = etapas.get(i).getBlocoId();
             if (blocoId == null) {
-                resultado.add(stepDeEtapa(etapas.get(i)));
-                i++;
+                BlocoInferido inferido = inferirBloco(etapas, i);
+                resultado.add(inferido.step());
+                i += inferido.etapasConsumidas();
                 continue;
             }
 
@@ -149,6 +150,93 @@ public class IntervalsIcuWorkoutConverter {
             i = fim;
         }
         return resultado;
+    }
+
+    /**
+     * Reconstrói um bloco a partir da repetição observada, para etapas <b>sem</b> {@code blocoId}.
+     *
+     * <p>O caminho da IA nunca atribui {@code blocoId} — só o do treinador, via
+     * {@code tipoEtapa=BLOCO}. Sem esta inferência, um fartlek "4x (1min forte + 2min leve)" chega
+     * ao relógio como 8 steps sequenciais, e a estrutura da série se perde.</p>
+     *
+     * <p>Escolhe a janela que cobre mais etapas; empatada a cobertura, prefere mais repetições
+     * (série mais compacta). Sem repetição de pelo menos duas janelas, emite a etapa isolada — o
+     * bloco nunca é inventado a partir de etapas heterogêneas.</p>
+     *
+     * <p><b>A janela precisa conter uma etapa {@code INTERVALADO}</b>, que é o que caracteriza uma
+     * série no domínio. Sem essa exigência, repetição vira sinônimo de série e a inferência inventa
+     * estrutura: um ondulado "10min Z2 / 5min Z3 / 10min Z2 / 5min Z3" viraria
+     * "2x (10min Z2 + 5min Z3)" — um bloco que o treinador não prescreveu.</p>
+     *
+     * @return o step montado e quantas etapas ele consumiu, nunca menos que 1
+     */
+    private BlocoInferido inferirBloco(List<EtapaTreino> etapas, int inicio) {
+        int limite = inicio;
+        while (limite < etapas.size() && etapas.get(limite).getBlocoId() == null) {
+            limite++;
+        }
+        int disponivel = limite - inicio;
+
+        int melhorJanela = 0;
+        int melhorReps = 0;
+        for (int janela = 1; janela <= disponivel / 2; janela++) {
+            if (!contemIntervalado(etapas, inicio, janela)) {
+                continue;
+            }
+            int reps = contarRepeticoes(etapas, inicio, janela, limite);
+            if (reps < 2) {
+                continue;
+            }
+            int cobertura = janela * reps;
+            int melhorCobertura = melhorJanela * melhorReps;
+            if (cobertura > melhorCobertura || (cobertura == melhorCobertura && reps > melhorReps)) {
+                melhorJanela = janela;
+                melhorReps = reps;
+            }
+        }
+
+        if (melhorReps < 2) {
+            return new BlocoInferido(stepDeEtapa(etapas.get(inicio)), 1);
+        }
+
+        List<WorkoutStep> subSteps = etapas.subList(inicio, inicio + melhorJanela).stream()
+                .map(this::stepDeEtapa)
+                .toList();
+        return new BlocoInferido(WorkoutStep.bloco(null, melhorReps, subSteps),
+                melhorJanela * melhorReps);
+    }
+
+    /** Resultado de {@link #inferirBloco}: o step montado e quantas etapas ele consumiu. */
+    private record BlocoInferido(WorkoutStep step, int etapasConsumidas) {}
+
+    /** Uma série tem esforço: sem etapa INTERVALADO, a repetição é coincidência, não bloco. */
+    private boolean contemIntervalado(List<EtapaTreino> etapas, int inicio, int janela) {
+        for (int pos = inicio; pos < inicio + janela; pos++) {
+            if ("INTERVALADO".equalsIgnoreCase(etapas.get(pos).getTipoEtapa())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Quantas vezes a janela iniciada em {@code inicio} se repete consecutivamente até {@code limite}. */
+    private int contarRepeticoes(List<EtapaTreino> etapas, int inicio, int janela, int limite) {
+        int reps = 1;
+        int proxima = inicio + janela;
+        while (proxima + janela <= limite && janelaEquivalente(etapas, inicio, proxima, janela)) {
+            reps++;
+            proxima += janela;
+        }
+        return reps;
+    }
+
+    private boolean janelaEquivalente(List<EtapaTreino> etapas, int a, int b, int janela) {
+        for (int pos = 0; pos < janela; pos++) {
+            if (!etapasEquivalentes(etapas.get(a + pos), etapas.get(b + pos))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

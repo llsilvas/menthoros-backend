@@ -1198,8 +1198,8 @@ class PlanoServiceImplTest {
             // Campo persistido propositalmente desatualizado/congelado — deve ser ignorado.
             plano.setVolumeRealizadoKm(BigDecimal.ZERO);
 
-            when(planoSemanalRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
-                    .thenReturn(Optional.of(plano));
+            when(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId))
+                    .thenReturn(List.of(plano));
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
                     atletaId, tenantId, plano.getSemanaInicio(), plano.getSemanaFim()))
                     .thenReturn(List.of(
@@ -1218,8 +1218,8 @@ class PlanoServiceImplTest {
             UUID atletaId = UUID.randomUUID();
             PlanoSemanal plano = criarPlanoSemanalMock();
 
-            when(planoSemanalRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
-                    .thenReturn(Optional.of(plano));
+            when(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId))
+                    .thenReturn(List.of(plano));
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
                     atletaId, tenantId, plano.getSemanaInicio(), plano.getSemanaFim()))
                     .thenReturn(List.of());
@@ -1236,8 +1236,8 @@ class PlanoServiceImplTest {
             UUID atletaId = UUID.randomUUID();
             PlanoSemanal plano = criarPlanoSemanalMock();
 
-            when(planoSemanalRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
-                    .thenReturn(Optional.of(plano));
+            when(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId))
+                    .thenReturn(List.of(plano));
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
                     atletaId, tenantId, plano.getSemanaInicio(), plano.getSemanaFim()))
                     .thenReturn(List.of(
@@ -1267,7 +1267,7 @@ class PlanoServiceImplTest {
             PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, true);
 
             assertEquals(9.0, resultado.volumeRealizadoKm());
-            verify(planoSemanalRepository, never()).findByAtletaIdAndTenantId(any(), any());
+            verify(planoSemanalRepository, never()).findAtivosPorAtleta(any(), any());
         }
 
         @Test
@@ -1289,8 +1289,8 @@ class PlanoServiceImplTest {
         void apenasAprovadosFalseLancaExcecaoQuandoAtletaNaoTemPlano() {
             UUID atletaId = UUID.randomUUID();
 
-            when(planoSemanalRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
-                    .thenReturn(Optional.empty());
+            when(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId))
+                    .thenReturn(List.of());
 
             assertThrows(ResourceNotFoundException.class,
                     () -> planoService.buscarPlanoPorAtleta(atletaId, false));
