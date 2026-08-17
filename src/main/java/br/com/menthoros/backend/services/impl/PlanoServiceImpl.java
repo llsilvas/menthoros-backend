@@ -850,7 +850,9 @@ public class PlanoServiceImpl implements PlanoService {
                             "Nenhum plano aprovado encontrado para o atleta: " + atletaId));
         } else {
             planoSemanal = planoSemanalRepository
-                    .findByAtletaIdAndTenantId(atletaId, tenantId)
+                    .findAtivosPorAtleta(atletaId, tenantId)
+                    .stream()
+                    .findFirst()
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Plano não encontrado para o atleta: " + atletaId));
         }

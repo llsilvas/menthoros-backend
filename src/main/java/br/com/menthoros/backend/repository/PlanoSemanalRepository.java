@@ -56,7 +56,23 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
             UUID atletaId, LocalDate semanaInicio, PlanoStatus status);
 
     /**
-     * Busca o plano mais recente (não-CONCLUIDO) de um atleta dentro do tenant.
+     * Planos ativos de um atleta no tenant, do mais recente para o mais antigo.
+     *
+     * <p><b>Ativo exclui REJEITADO</b>, o mesmo predicado do índice único
+     * {@code uk_plano_semanal_atleta_semana_ativo} (V52): o modelo de dados já define plano
+     * rejeitado como não-ativo, e é por isso que ele permite um rejeitado e um novo na mesma
+     * semana.</p>
+     *
+     * <p>A versão anterior filtrava só {@code status != CONCLUIDO} e devolvia {@code Optional} sem
+     * ordenar nem limitar. Como {@code rejeitarPlano} mexe apenas em {@code reviewStatus} — o
+     * {@code status} continua PLANEJADO —, rejeitar um plano e gerar outro deixava dois registros
+     * casando a query: o Hibernate lançava {@code NonUniqueResultException} e
+     * {@code GET /api/v1/planos/{atletaId}} respondia 500 no fluxo mais comum do produto.</p>
+     *
+     * <p>Retorna lista, não {@code Optional} — mesmo motivo da query de semanas correntes abaixo:
+     * o chamador usa o primeiro, e sobreposição eventual degrada em escolha, não em 500. A ordem é
+     * determinística sem desempate adicional porque o índice único já garante no máximo um ativo
+     * por (atleta, semana).</p>
      *
      * Idempotent: YES — leitura pura.
      * Side Effects: NONE
@@ -67,9 +83,11 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
                     where ps.atleta.id = :atletaId
                       and ps.assessoria.id = :tenantId
                       and ps.status != 'CONCLUIDO'
+                      and ps.reviewStatus != 'REJEITADO'
+                    order by ps.semanaInicio desc
             """)
-    Optional<PlanoSemanal> findByAtletaIdAndTenantId(@Param("atletaId") UUID atletaId,
-                                                      @Param("tenantId") UUID tenantId);
+    List<PlanoSemanal> findAtivosPorAtleta(@Param("atletaId") UUID atletaId,
+                                            @Param("tenantId") UUID tenantId);
 
     /**
      * Busca um PlanoSemanal filtrando por id e tenantId (assessoria.id).
