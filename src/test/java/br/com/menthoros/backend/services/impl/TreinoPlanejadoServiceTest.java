@@ -443,6 +443,122 @@ class TreinoPlanejadoServiceTest {
     class EditarTreino {
 
         @Test
+        @DisplayName("patch com BLOCO grava blocoId compartilhado e blocoRepeticoes")
+        void patchComBlocoGravaBlocoId() {
+            // O caminho de adição já fazia isso; o de patch chamava toEntity direto e deixava
+            // blocoId nulo, então editar um treino desfazia o agrupamento da série.
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setEtapas(new ArrayList<>());
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
+
+            List<EtapaInputDto> subs = List.of(
+                    new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null),
+                    new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null)
+            );
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null,
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 4, subs))
+            );
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
+            verify(treinoPlanejadoRepository).save(captor.capture());
+            List<EtapaTreino> etapas = captor.getValue().getEtapas();
+
+            assertThat(etapas).hasSize(8);
+            UUID blocoId = etapas.getFirst().getBlocoId();
+            assertThat(blocoId).isNotNull();
+            assertThat(etapas).allSatisfy(e -> assertThat(e.getBlocoId()).isEqualTo(blocoId));
+            assertThat(etapas).allSatisfy(e -> assertThat(e.getBlocoRepeticoes()).isEqualTo(4));
+            for (int i = 0; i < 8; i++) assertThat(etapas.get(i).getOrdem()).isEqualTo(i + 1);
+        }
+
+        @Test
+        @DisplayName("dois blocos no mesmo patch recebem blocoId distintos")
+        void doisBlocosRecebemBlocoIdDistintos() {
+            // Série heterogênea: 2× (1min Z4 + 2min Z1) seguida de 2× (2min Z5 + 3min Z1).
+            // É o caso que o editor colapsava e que motivou a change.
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setEtapas(new ArrayList<>());
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null,
+                    List.of(
+                            new EtapaInputDto("BLOCO", null, null, null, null, null, 2, List.of(
+                                    new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null),
+                                    new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null))),
+                            new EtapaInputDto("BLOCO", null, null, null, null, null, 2, List.of(
+                                    new EtapaInputDto("INTERVALADO", null, 2, null, null, null, null, null),
+                                    new EtapaInputDto("RECUPERACAO", null, 3, null, null, null, null, null)))
+                    )
+            );
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
+            verify(treinoPlanejadoRepository).save(captor.capture());
+            List<EtapaTreino> etapas = captor.getValue().getEtapas();
+
+            assertThat(etapas).hasSize(8);
+            UUID primeiro = etapas.get(0).getBlocoId();
+            UUID segundo  = etapas.get(4).getBlocoId();
+            assertThat(primeiro).isNotNull();
+            assertThat(segundo).isNotNull().isNotEqualTo(primeiro);
+            assertThat(etapas.subList(0, 4)).allSatisfy(e -> assertThat(e.getBlocoId()).isEqualTo(primeiro));
+            assertThat(etapas.subList(4, 8)).allSatisfy(e -> assertThat(e.getBlocoId()).isEqualTo(segundo));
+        }
+
+        @Test
+        @DisplayName("patch de treino simples não cria bloco — etapas sem blocoId")
+        void patchSimplesNaoCriaBloco() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setEtapas(new ArrayList<>());
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null,
+                    List.of(
+                            new EtapaInputDto("AQUECIMENTO", null, 10, null, null, null, null, null),
+                            new EtapaInputDto("PRINCIPAL", null, 30, null, null, null, null, null),
+                            new EtapaInputDto("DESAQUECIMENTO", null, 5, null, null, null, null, null)
+                    )
+            );
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
+            verify(treinoPlanejadoRepository).save(captor.capture());
+            List<EtapaTreino> etapas = captor.getValue().getEtapas();
+
+            assertThat(etapas).hasSize(3);
+            assertThat(etapas).allSatisfy(e -> assertThat(e.getBlocoId()).isNull());
+            for (int i = 0; i < 3; i++) assertThat(etapas.get(i).getOrdem()).isEqualTo(i + 1);
+        }
+
+        @Test
         @DisplayName("atualiza campos não-nulos e seta editadoPeloCoach true")
         void atualizaCamposNaoNulosESetaEditadoPeloCoach() {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
@@ -741,11 +857,12 @@ class TreinoPlanejadoServiceTest {
                     null, null, null, null, null, null, null, null, List.of(bloco)
             );
 
-            EtapaTreino etapaEntity = new EtapaTreino();
+            treino.setEtapas(new ArrayList<>());
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
             when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
                     .thenReturn(Optional.of(treino));
-            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenReturn(etapaEntity);
+            when(etapaMapper.toEntity(any(EtapaInputDto.class)))
+                    .thenAnswer(inv -> etapaComTipo(inv.getArgument(0)));
             when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
@@ -753,11 +870,18 @@ class TreinoPlanejadoServiceTest {
                 service.editarTreino(planoId, treinoId, patch);
             }
 
-            ArgumentCaptor<EtapaInputDto> captor = ArgumentCaptor.forClass(EtapaInputDto.class);
-            verify(etapaMapper, times(2)).toEntity(captor.capture());
-            assertThat(captor.getAllValues()).allSatisfy(e -> {
-                assertThat(e.tipoEtapa()).isEqualTo("INTERVALADO");
-                assertThat(e.blocoRepeticoes()).isEqualTo(2);
+            // Asserção na ENTIDADE, não no DTO passado ao mapper: a expansão em DTO intermediário
+            // foi removida justamente porque EtapaInputDto não tem como carregar o blocoId — era a
+            // causa de o patch desfazer o agrupamento da série.
+            ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
+            verify(treinoPlanejadoRepository).save(captor.capture());
+            List<EtapaTreino> etapas = captor.getValue().getEtapas();
+
+            assertThat(etapas).hasSize(2);
+            assertThat(etapas).allSatisfy(e -> {
+                assertThat(e.getTipoEtapa()).isEqualTo("INTERVALADO");
+                assertThat(e.getBlocoRepeticoes()).isEqualTo(2);
+                assertThat(e.getBlocoId()).isNotNull();
             });
         }
 
@@ -930,6 +1054,14 @@ class TreinoPlanejadoServiceTest {
         plano.setId(planoId);
         plano.setReviewStatus(reviewStatus);
         return plano;
+    }
+
+    /** Entidade com o tipoEtapa do DTO — o mapper real faz isso; aqui só o suficiente para asserir. */
+    private EtapaTreino etapaComTipo(EtapaInputDto dto) {
+        EtapaTreino etapa = new EtapaTreino();
+        etapa.setTipoEtapa(dto.tipoEtapa());
+        etapa.setDuracaoMin(dto.duracaoMin());
+        return etapa;
     }
 
     private TreinoPlanejado criarTreino(PlanoSemanal plano) {

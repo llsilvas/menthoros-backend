@@ -253,7 +253,7 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
         int ordem = 1;
         for (EtapaInputDto dto : etapasDto) {
             if ("BLOCO".equalsIgnoreCase(dto.tipoEtapa())) {
-                ordem = expandirBlocoParaAdicao(dto, treino, etapas, ordem);
+                ordem = expandirBloco(dto, treino, etapas, ordem);
             } else {
                 etapas.add(buildEtapaSimples(dto, treino, ordem++, null, null));
             }
@@ -261,8 +261,13 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
         return etapas;
     }
 
-    private int expandirBlocoParaAdicao(EtapaInputDto blocoDto, TreinoPlanejado treino,
-                                        List<EtapaTreino> etapas, int ordemInicial) {
+    /**
+     * Expande um {@code BLOCO} em N cópias das sub-etapas, todas com o mesmo {@code blocoId}.
+     * Usado pela adição <b>e</b> pelo patch — eram dois caminhos, e só o da adição gravava o
+     * agrupamento, então editar um treino desfazia a série.
+     */
+    private int expandirBloco(EtapaInputDto blocoDto, TreinoPlanejado treino,
+                              List<EtapaTreino> etapas, int ordemInicial) {
         List<EtapaInputDto> subEtapas = blocoDto.subEtapas() != null ? blocoDto.subEtapas() : List.of();
         if (subEtapas.isEmpty()) {
             throw new DomainRuleViolationException("Bloco repetido deve conter ao menos uma sub-etapa");
@@ -310,49 +315,8 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
             treino.setObservacao(patch.observacao());
         }
         if (patch.etapas() != null) {
-            aplicarEtapasPatch(treino, expandirEtapas(patch.etapas()));
+            aplicarEtapasPatch(treino, expandirRepeticoes(patch.etapas()));
         }
-    }
-
-    private List<EtapaInputDto> expandirEtapas(List<EtapaInputDto> etapas) {
-        return expandirRepeticoes(expandirBlocos(etapas));
-    }
-
-    /**
-     * Expande etapas do tipo BLOCO (modelo coach) em etapas simples com blocoRepeticoes preenchido.
-     * Cada sub-etapa é duplicada N vezes onde N = blocoRepeticoes do bloco pai.
-     */
-    private static List<EtapaInputDto> expandirBlocos(List<EtapaInputDto> etapas) {
-        List<EtapaInputDto> resultado = new ArrayList<>();
-        for (EtapaInputDto etapa : etapas) {
-            if ("BLOCO".equalsIgnoreCase(etapa.tipoEtapa())) {
-                int reps = etapa.blocoRepeticoes() != null && etapa.blocoRepeticoes() > 0
-                        ? etapa.blocoRepeticoes() : 1;
-                List<EtapaInputDto> subEtapas = etapa.subEtapas() != null ? etapa.subEtapas() : List.of();
-                for (EtapaInputDto sub : subEtapas) {
-                    if (sub.subEtapas() != null && !sub.subEtapas().isEmpty()) {
-                        throw new DomainRuleViolationException("Sub-etapas não podem conter sub-etapas aninhadas");
-                    }
-                }
-                for (int r = 0; r < reps; r++) {
-                    for (EtapaInputDto sub : subEtapas) {
-                        resultado.add(new EtapaInputDto(
-                                sub.tipoEtapa() != null ? sub.tipoEtapa().toUpperCase() : null,
-                                sub.descricaoEtapa(),
-                                sub.duracaoMin(),
-                                sub.distanciaKm(),
-                                sub.fcAlvoEtapa(),
-                                sub.repeticoes(),
-                                reps,
-                                null
-                        ));
-                    }
-                }
-            } else {
-                resultado.add(etapa);
-            }
-        }
-        return resultado;
     }
 
     /**
@@ -407,6 +371,16 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
         );
     }
 
+    /**
+     * Substitui as etapas do treino pelas do patch, expandindo os {@code BLOCO} pelo mesmo caminho
+     * da adição ({@link #expandirBloco}) — e portanto gravando {@code blocoId}.
+     *
+     * <p>Antes, o patch mapeava cada DTO direto com {@code etapaMapper.toEntity} e o
+     * {@code blocoId} ficava nulo ({@code EtapaMapper} o ignora de propósito, já que ele nunca vem
+     * do cliente). Resultado: editar um treino desfazia o agrupamento da série. A expansão em DTO
+     * que existia aqui não tinha como carregar o agrupamento — {@code EtapaInputDto} não tem esse
+     * campo —, por isso a expansão passou a construir entidades diretamente.</p>
+     */
     private void aplicarEtapasPatch(TreinoPlanejado treino, List<EtapaInputDto> etapasDto) {
         Hibernate.initialize(treino.getEtapas());
         if (treino.getEtapas() == null) {
@@ -414,11 +388,13 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
         }
         treino.getEtapas().clear();
 
-        for (int i = 0; i < etapasDto.size(); i++) {
-            EtapaTreino etapa = etapaMapper.toEntity(etapasDto.get(i));
-            etapa.setTreinoPlanejado(treino);
-            etapa.setOrdem(i + 1);
-            treino.getEtapas().add(etapa);
+        int ordem = 1;
+        for (EtapaInputDto dto : etapasDto) {
+            if ("BLOCO".equalsIgnoreCase(dto.tipoEtapa())) {
+                ordem = expandirBloco(dto, treino, treino.getEtapas(), ordem);
+            } else {
+                treino.getEtapas().add(buildEtapaSimples(dto, treino, ordem++, null, null));
+            }
         }
     }
 
