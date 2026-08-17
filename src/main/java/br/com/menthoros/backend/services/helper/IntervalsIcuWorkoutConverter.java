@@ -129,7 +129,9 @@ public class IntervalsIcuWorkoutConverter {
         while (i < total) {
             UUID blocoId = etapas.get(i).getBlocoId();
             if (blocoId == null) {
-                i += inferirBloco(etapas, i, resultado);
+                BlocoInferido inferido = inferirBloco(etapas, i);
+                resultado.add(inferido.step());
+                i += inferido.etapasConsumidas();
                 continue;
             }
 
@@ -161,9 +163,14 @@ public class IntervalsIcuWorkoutConverter {
      * (série mais compacta). Sem repetição de pelo menos duas janelas, emite a etapa isolada — o
      * bloco nunca é inventado a partir de etapas heterogêneas.</p>
      *
-     * @return quantas etapas foram consumidas, nunca menos que 1
+     * <p><b>A janela precisa conter uma etapa {@code INTERVALADO}</b>, que é o que caracteriza uma
+     * série no domínio. Sem essa exigência, repetição vira sinônimo de série e a inferência inventa
+     * estrutura: um ondulado "10min Z2 / 5min Z3 / 10min Z2 / 5min Z3" viraria
+     * "2x (10min Z2 + 5min Z3)" — um bloco que o treinador não prescreveu.</p>
+     *
+     * @return o step montado e quantas etapas ele consumiu, nunca menos que 1
      */
-    private int inferirBloco(List<EtapaTreino> etapas, int inicio, List<WorkoutStep> destino) {
+    private BlocoInferido inferirBloco(List<EtapaTreino> etapas, int inicio) {
         int limite = inicio;
         while (limite < etapas.size() && etapas.get(limite).getBlocoId() == null) {
             limite++;
@@ -173,6 +180,9 @@ public class IntervalsIcuWorkoutConverter {
         int melhorJanela = 0;
         int melhorReps = 0;
         for (int janela = 1; janela <= disponivel / 2; janela++) {
+            if (!contemIntervalado(etapas, inicio, janela)) {
+                continue;
+            }
             int reps = contarRepeticoes(etapas, inicio, janela, limite);
             if (reps < 2) {
                 continue;
@@ -186,15 +196,27 @@ public class IntervalsIcuWorkoutConverter {
         }
 
         if (melhorReps < 2) {
-            destino.add(stepDeEtapa(etapas.get(inicio)));
-            return 1;
+            return new BlocoInferido(stepDeEtapa(etapas.get(inicio)), 1);
         }
 
         List<WorkoutStep> subSteps = etapas.subList(inicio, inicio + melhorJanela).stream()
                 .map(this::stepDeEtapa)
                 .toList();
-        destino.add(WorkoutStep.bloco(null, melhorReps, subSteps));
-        return melhorJanela * melhorReps;
+        return new BlocoInferido(WorkoutStep.bloco(null, melhorReps, subSteps),
+                melhorJanela * melhorReps);
+    }
+
+    /** Resultado de {@link #inferirBloco}: o step montado e quantas etapas ele consumiu. */
+    private record BlocoInferido(WorkoutStep step, int etapasConsumidas) {}
+
+    /** Uma série tem esforço: sem etapa INTERVALADO, a repetição é coincidência, não bloco. */
+    private boolean contemIntervalado(List<EtapaTreino> etapas, int inicio, int janela) {
+        for (int pos = inicio; pos < inicio + janela; pos++) {
+            if ("INTERVALADO".equalsIgnoreCase(etapas.get(pos).getTipoEtapa())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Quantas vezes a janela iniciada em {@code inicio} se repete consecutivamente até {@code limite}. */

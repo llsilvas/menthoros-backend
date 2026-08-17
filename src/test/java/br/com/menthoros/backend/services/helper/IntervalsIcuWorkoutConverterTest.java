@@ -128,6 +128,28 @@ class IntervalsIcuWorkoutConverterTest {
         }
 
         @Test
+        @DisplayName("ondulado com trechos repetidos não vira série — repetição não é bloco")
+        void naoInfereBlocoEmOnduladoSemIntervalado() {
+            // Contra-exemplo levantado no QA (cross-model): sem exigir uma etapa INTERVALADO na
+            // janela, este ondulado viraria "2x (10min Z2 + 5min Z3)" — uma série que o treinador
+            // nunca prescreveu.
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "PRINCIPAL", "Rodagem controlada", 10, null, null, "136-142 bpm", null, null),
+                    etapa(2, "PRINCIPAL", "Ondulação", 5, null, null, "142-150 bpm", null, null),
+                    etapa(3, "PRINCIPAL", "Rodagem controlada", 10, null, null, "136-142 bpm", null, null),
+                    etapa(4, "PRINCIPAL", "Ondulação", 5, null, null, "142-150 bpm", null, null),
+                    etapa(5, "DESAQUECIMENTO", "Desaquecimento", 15, null, null, "120-136 bpm", null, null)
+            );
+            TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 8, 20),
+                    Duration.ZERO, null, null, null, etapas);
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+
+            assertThat(resultado.steps()).hasSize(5);
+            assertThat(resultado.steps()).allSatisfy(step -> assertThat(step.reps()).isNull());
+        }
+
+        @Test
         @DisplayName("série repetida sem blocoId convive com aquecimento e desaquecimento avulsos")
         void inferBlocoPreservandoEtapasAvulsas() {
             List<EtapaTreino> etapas = List.of(
