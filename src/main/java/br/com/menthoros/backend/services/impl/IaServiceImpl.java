@@ -868,13 +868,23 @@ public class IaServiceImpl implements IaService {
     private static final double FATOR_PACE_Z1 = 1.35;          // Z1 ≈ limiar × 1.35
 
     // Detecta "NxDist" como "6x400m", "8 x 200", "5×1000m"
+    // O lookahead (?!\s*min) impede que "5x 2min" seja lido como 5 tiros de 2 metros: sem ele o
+    // grupo (m|km)? casa o "m" de "min" e o treino por tempo cai no caminho de distância.
     private static final Pattern REPETICOES_PATTERN =
-            Pattern.compile("(\\d{1,2})\\s*[xX×]\\s*(\\d+)\\s*(m|km)?", Pattern.CASE_INSENSITIVE);
+            Pattern.compile("(\\d{1,2})\\s*[xX×]\\s*(\\d+)(?!\\s*min)\\s*(m|km)?", Pattern.CASE_INSENSITIVE);
 
     // Detecta "Nx (AccelMin + RecovMin)" como "4x (1min Z2 + 2min Z1)", "6 x (2min Z4 + 1min Z2)"
     private static final Pattern FARTLEK_TEMPO_PATTERN =
             Pattern.compile("(\\d{1,2})\\s*[xX×]\\s*\\(?\\s*(\\d+)\\s*min[^+]*\\+\\s*(\\d+)\\s*min",
                     Pattern.CASE_INSENSITIVE);
+
+    /** Tipos de etapa que podem carregar uma série comprimida na descrição. */
+    private static final java.util.Set<String> ETAPAS_EXPANSIVEIS =
+            java.util.Set.of("INTERVALADO", "PRINCIPAL");
+
+    private static String normalizarTipoEtapa(String tipoEtapa) {
+        return tipoEtapa == null ? "" : tipoEtapa.trim().toUpperCase();
+    }
 
     private record FartlekParams(int n, int duracaoAceleracao, int duracaoRecuperacao,
                                   String zonaAceleracao, String zonaRecuperacao) {}
@@ -899,7 +909,11 @@ public class IaServiceImpl implements IaService {
         while (i < etapas.size()) {
             EtapaTreinoLlmDto etapa = etapas.get(i);
 
-            if (!"INTERVALADO".equalsIgnoreCase(etapa.tipoEtapa())) {
+            // O LLM tipa a série ora como INTERVALADO, ora como PRINCIPAL — ambos são válidos no
+            // schema, e restringir a INTERVALADO fazia o fartlek escapar da expansão em silêncio.
+            // Quem decide não é o tipo, é o padrão na descrição: PRINCIPAL sem padrão cai no
+            // "nenhum padrão detectado" ao final do laço e é preservada intacta.
+            if (!ETAPAS_EXPANSIVEIS.contains(normalizarTipoEtapa(etapa.tipoEtapa()))) {
                 resultado.add(etapa);
                 i++;
                 continue;
