@@ -81,6 +81,76 @@ class IntervalsIcuWorkoutConverterTest {
         }
 
         @Test
+        @DisplayName("infere bloco reps=4 em série repetida sem blocoId (fartlek expandido pela IA)")
+        void inferBlocoSemBlocoId() {
+            // Etapas geradas pela expansão do LLM: nascem sem blocoId (o campo só é setado no
+            // caminho do treinador, via tipoEtapa=BLOCO). Sem inferência, o Garmin recebe 8 steps
+            // soltos em vez de "4x [1min forte, 2min leve]".
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "INTERVALADO", "Aceleração 1/4 - 1min", 1, null, null, "150-160 bpm", null, null),
+                    etapa(2, "RECUPERACAO", "Recuperação 1 - 2min trote", 2, null, null, "120-136 bpm", null, null),
+                    etapa(3, "INTERVALADO", "Aceleração 2/4 - 1min", 1, null, null, "150-160 bpm", null, null),
+                    etapa(4, "RECUPERACAO", "Recuperação 2 - 2min trote", 2, null, null, "120-136 bpm", null, null),
+                    etapa(5, "INTERVALADO", "Aceleração 3/4 - 1min", 1, null, null, "150-160 bpm", null, null),
+                    etapa(6, "RECUPERACAO", "Recuperação 3 - 2min trote", 2, null, null, "120-136 bpm", null, null),
+                    etapa(7, "INTERVALADO", "Aceleração 4/4 - 1min", 1, null, null, "150-160 bpm", null, null),
+                    etapa(8, "RECUPERACAO", "Recuperação 4 - 2min trote", 2, null, null, "120-136 bpm", null, null)
+            );
+            TreinoPlanejado treino = treino(TipoTreino.FARTLEK, LocalDate.of(2026, 8, 20),
+                    Duration.ZERO, null, null, null, etapas);
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+
+            assertThat(resultado.steps()).hasSize(1);
+            WorkoutStep bloco = resultado.steps().getFirst();
+            assertThat(bloco.reps()).isEqualTo(4);
+            assertThat(bloco.steps()).hasSize(2);
+            assertThat(bloco.steps().get(0).durationSeconds()).isEqualTo(60);
+            assertThat(bloco.steps().get(1).durationSeconds()).isEqualTo(120);
+        }
+
+        @Test
+        @DisplayName("não inventa bloco em etapas heterogêneas sem blocoId")
+        void naoInfereBlocoEmSerieHeterogenea() {
+            // Progressivo: durações crescentes, nenhuma janela se repete.
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "PRINCIPAL", "Bloco 1", 5, null, null, "130-140 bpm", null, null),
+                    etapa(2, "PRINCIPAL", "Bloco 2", 8, null, null, "140-150 bpm", null, null),
+                    etapa(3, "PRINCIPAL", "Bloco 3", 12, null, null, "150-160 bpm", null, null)
+            );
+            TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 8, 20),
+                    Duration.ZERO, null, null, null, etapas);
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+
+            assertThat(resultado.steps()).hasSize(3);
+            assertThat(resultado.steps()).allSatisfy(step -> assertThat(step.reps()).isNull());
+        }
+
+        @Test
+        @DisplayName("série repetida sem blocoId convive com aquecimento e desaquecimento avulsos")
+        void inferBlocoPreservandoEtapasAvulsas() {
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "AQUECIMENTO", "Aquecimento leve", 8, null, null, "107-121 bpm", null, null),
+                    etapa(2, "INTERVALADO", "Aceleração 1/2", 1, null, null, "150-160 bpm", null, null),
+                    etapa(3, "RECUPERACAO", "Recuperação 1", 2, null, null, "120-136 bpm", null, null),
+                    etapa(4, "INTERVALADO", "Aceleração 2/2", 1, null, null, "150-160 bpm", null, null),
+                    etapa(5, "RECUPERACAO", "Recuperação 2", 2, null, null, "120-136 bpm", null, null),
+                    etapa(6, "DESAQUECIMENTO", "Desaquecimento", 5, null, null, "107-121 bpm", null, null)
+            );
+            TreinoPlanejado treino = treino(TipoTreino.FARTLEK, LocalDate.of(2026, 8, 20),
+                    Duration.ZERO, null, null, null, etapas);
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+
+            assertThat(resultado.steps()).hasSize(3);
+            assertThat(resultado.steps().get(0).reps()).isNull();
+            assertThat(resultado.steps().get(1).reps()).isEqualTo(2);
+            assertThat(resultado.steps().get(1).steps()).hasSize(2);
+            assertThat(resultado.steps().get(2).reps()).isNull();
+        }
+
+        @Test
         @DisplayName("distância vence duração quando ambas presentes; só duração usa duração; nenhuma gera step aberto")
         void precedenciaDuracaoDistancia() {
             List<EtapaTreino> etapas = List.of(
