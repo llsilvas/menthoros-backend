@@ -525,6 +525,77 @@ class TreinoPlanejadoServiceTest {
         }
 
         @Test
+        @DisplayName("patch com BLOCO sem sub-etapas é rejeitado — antes o bloco sumia calado")
+        void patchComBlocoVazioRejeitado() {
+            // Mudança de contrato do PATCH, deliberada: o caminho antigo iterava uma lista vazia e
+            // descartava o bloco sem erro. Perder etapa em silêncio é pior que 422.
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setEtapas(new ArrayList<>());
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null,
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 3, List.of()))
+            );
+
+            assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("ao menos uma sub-etapa");
+            verify(treinoPlanejadoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("patch com blocoRepeticoes acima de 20 é rejeitado — antes não havia limite")
+        void patchComRepeticoesAcimaDoLimiteRejeitado() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setEtapas(new ArrayList<>());
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null,
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 21, List.of(
+                            new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null))))
+            );
+
+            assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("exceder 20");
+            verify(treinoPlanejadoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("patch com sub-etapa aninhada é rejeitado")
+        void patchComSubEtapaAninhadaRejeitado() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setEtapas(new ArrayList<>());
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+
+            EtapaInputDto aninhada = new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null,
+                    List.of(new EtapaInputDto("RECUPERACAO", null, 1, null, null, null, null, null)));
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null,
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 2, List.of(aninhada)))
+            );
+
+            assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("aninhadas");
+            verify(treinoPlanejadoRepository, never()).save(any());
+        }
+
+        @Test
         @DisplayName("patch de treino simples não cria bloco — etapas sem blocoId")
         void patchSimplesNaoCriaBloco() {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
