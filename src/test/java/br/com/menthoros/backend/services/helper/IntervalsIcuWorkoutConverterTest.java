@@ -23,6 +23,13 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+/**
+ * A mesma regra de agrupamento existe no front, em
+ * {@code features/coach/components/etapas/etapaItem.ts} ({@code itensFromEtapas}), que hidrata o
+ * editor de treinos — este lado exporta para o relógio, aquele alimenta a edição. Os fixtures de
+ * agrupamento são espelhados lá. Ao mexer aqui, conferir o outro: divergência entre os dois chega
+ * ao treinador como "editei uma coisa e o Garmin mostrou outra".
+ */
 class IntervalsIcuWorkoutConverterTest {
 
     private final IntervalsIcuWorkoutConverter converter = new IntervalsIcuWorkoutConverter();
