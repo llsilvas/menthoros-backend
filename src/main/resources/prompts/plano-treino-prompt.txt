@@ -31,18 +31,18 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 **✅ CORRETO (expandido para Garmin):**
 ```json
 "etapas": [
-  { "ordem": 1, "tipoEtapa": "AQUECIMENTO", "descricao": "Aquecimento progressivo", "duracaoMin": 10, "fcAlvo": "60-70% FCmax", "repeticoes": 1 },
-  { "ordem": 2, "tipoEtapa": "INTERVALADO", "descricao": "Intervalo 1 - Z5 rápido", "duracaoMin": 4, "fcAlvo": "90-95% FCmax", "repeticoes": 1 },
-  { "ordem": 3, "tipoEtapa": "RECUPERACAO", "descricao": "Recuperação ativa Z2", "duracaoMin": 2, "fcAlvo": "65-75% FCmax", "repeticoes": 1 },
-  { "ordem": 4, "tipoEtapa": "INTERVALADO", "descricao": "Intervalo 2 - Z5 rápido", "duracaoMin": 4, "fcAlvo": "90-95% FCmax", "repeticoes": 1 },
-  { "ordem": 5, "tipoEtapa": "RECUPERACAO", "descricao": "Recuperação ativa Z2", "duracaoMin": 2, "fcAlvo": "65-75% FCmax", "repeticoes": 1 },
-  { "ordem": 6, "tipoEtapa": "INTERVALADO", "descricao": "Intervalo 3 - Z5 rápido", "duracaoMin": 4, "fcAlvo": "90-95% FCmax", "repeticoes": 1 },
-  { "ordem": 7, "tipoEtapa": "RECUPERACAO", "descricao": "Recuperação ativa Z2", "duracaoMin": 2, "fcAlvo": "65-75% FCmax", "repeticoes": 1 },
-  { "ordem": 8, "tipoEtapa": "INTERVALADO", "descricao": "Intervalo 4 - Z5 rápido", "duracaoMin": 4, "fcAlvo": "90-95% FCmax", "repeticoes": 1 },
-  { "ordem": 9, "tipoEtapa": "RECUPERACAO", "descricao": "Recuperação ativa Z2", "duracaoMin": 2, "fcAlvo": "65-75% FCmax", "repeticoes": 1 },
-  { "ordem": 10, "tipoEtapa": "INTERVALADO", "descricao": "Intervalo 5 - Z5 rápido", "duracaoMin": 4, "fcAlvo": "90-95% FCmax", "repeticoes": 1 },
-  { "ordem": 11, "tipoEtapa": "RECUPERACAO", "descricao": "Recuperação ativa Z2", "duracaoMin": 2, "fcAlvo": "65-75% FCmax", "repeticoes": 1 },
-  { "ordem": 12, "tipoEtapa": "DESAQUECIMENTO", "descricao": "Volta à calma", "duracaoMin": 5, "fcAlvo": "60-70% FCmax", "repeticoes": 1 }
+  { "ordem": 1, "tipoEtapa": "AQUECIMENTO", "descricao": "Aquecimento progressivo", "duracaoMin": 10, "fcAlvo": "115-130 bpm", "repeticoes": 1 },
+  { "ordem": 2, "tipoEtapa": "INTERVALADO", "descricao": "Intervalo 1 - Z5 rápido", "duracaoMin": 4, "fcAlvo": "153-162 bpm", "repeticoes": 1 },
+  { "ordem": 3, "tipoEtapa": "RECUPERACAO", "descricao": "Recuperação ativa Z2", "duracaoMin": 2, "fcAlvo": "130-136 bpm", "repeticoes": 1 },
+  { "ordem": 4, "tipoEtapa": "INTERVALADO", "descricao": "Intervalo 2 - Z5 rápido", "duracaoMin": 4, "fcAlvo": "153-162 bpm", "repeticoes": 1 },
+  { "ordem": 5, "tipoEtapa": "RECUPERACAO", "descricao": "Recuperação ativa Z2", "duracaoMin": 2, "fcAlvo": "130-136 bpm", "repeticoes": 1 },
+  { "ordem": 6, "tipoEtapa": "INTERVALADO", "descricao": "Intervalo 3 - Z5 rápido", "duracaoMin": 4, "fcAlvo": "153-162 bpm", "repeticoes": 1 },
+  { "ordem": 7, "tipoEtapa": "RECUPERACAO", "descricao": "Recuperação ativa Z2", "duracaoMin": 2, "fcAlvo": "130-136 bpm", "repeticoes": 1 },
+  { "ordem": 8, "tipoEtapa": "INTERVALADO", "descricao": "Intervalo 4 - Z5 rápido", "duracaoMin": 4, "fcAlvo": "153-162 bpm", "repeticoes": 1 },
+  { "ordem": 9, "tipoEtapa": "RECUPERACAO", "descricao": "Recuperação ativa Z2", "duracaoMin": 2, "fcAlvo": "130-136 bpm", "repeticoes": 1 },
+  { "ordem": 10, "tipoEtapa": "INTERVALADO", "descricao": "Intervalo 5 - Z5 rápido", "duracaoMin": 4, "fcAlvo": "153-162 bpm", "repeticoes": 1 },
+  { "ordem": 11, "tipoEtapa": "RECUPERACAO", "descricao": "Recuperação ativa Z2", "duracaoMin": 2, "fcAlvo": "130-136 bpm", "repeticoes": 1 },
+  { "ordem": 12, "tipoEtapa": "DESAQUECIMENTO", "descricao": "Volta à calma", "duracaoMin": 5, "fcAlvo": "115-130 bpm", "repeticoes": 1 }
 ]
 ```
 
@@ -73,7 +73,7 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 - `intensidadePlanejada`: **0.5–1.5**; `percepcaoEsforcoEsperada`: **1–10**.
 
 ### CAMPOS OBRIGATÓRIOS (POR TREINO)
-- `diaSemana` (string), `tipoTreino` (string), `fcAlvo` (ex.: `"70-80%% FCmáx"`),
+- `diaSemana` (string), `tipoTreino` (string), `fcAlvo` (**range em BPM absoluto**, ex.: `"130-136 bpm"`),
 - `tssPlanejado` (≥ 0), `intensidadePlanejada` (0.5–1.5),
 - `percepcaoEsforcoEsperada` (1–10), `justificativaIa` (≤ 200 chars),
 - `duracaoMin` (≥ 1), `distanciaKm` (≥ 0),
@@ -87,7 +87,11 @@ Com base no perfil detalhado do atleta, no histórico recente de treinos e nos v
 - `ordem` (1,2,3...), `tipoEtapa` (string),
 - `descricaoEtapa` (≤ 120 chars, sem aspas duplicadas),
 - `duracaoMin` (≥ 1), `distanciaKm` (≥ 0),
-- `fcAlvoEtapa` (string), `repeticoes` (≥ 1).
+- `fcAlvoEtapa` (**range em BPM absoluto**, ex.: `"130-136 bpm"`), `repeticoes` (≥ 1).
+- **SEMPRE em BPM.** Copie o range das **Zonas de Treino Calculadas** entregues acima. NUNCA
+  escreva percentual (`"70-80% FCmax"`, `"90-95%"`) nem nome de zona (`"Z2"`): o alvo relativo é
+  ambíguo — o padrão do relógio o interpreta como % da FC máxima, e as zonas aqui derivam da FC de
+  limiar. O número enviado ao atleta sairia acima do prescrito.
 - **Fallbacks obrigatórios se faltar valor específico**:
   - `fcAlvoEtapa` := `fcAlvo` do treino,
   - `repeticoes` := `1` (se `tipoEtapa=INTERVALADO`, use `≥1`),

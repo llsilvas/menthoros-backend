@@ -720,6 +720,7 @@ Todos os campos abaixo são **obrigatórios** em cada etapa:
 - `duracaoMin` (number, ≥ 1)
 - `distanciaKm` (number, ≥ 0)
 - `fcAlvoEtapa` (string: range de BPM da zona desta etapa, extraído das **Zonas de Treino Calculadas** do histórico — ex: `"115-130 bpm"` para Z1, `"130-136 bpm"` para Z2. **NUNCA use valores abaixo de 100 bpm**)
+  - **SEMPRE BPM absoluto.** NUNCA percentual (`"70-80% FCmax"`) nem nome de zona (`"Z2"`): o padrão do relógio lê alvo relativo como % da FC máxima, e estas zonas derivam da FC de limiar — o atleta receberia FC acima da prescrita.
 - `repeticoes` (number, ≥ 1)
 
 **Fallbacks obrigatórios se faltar especificidade:**
