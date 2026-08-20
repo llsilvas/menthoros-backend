@@ -45,6 +45,10 @@ public class IntervalsIcuPushProcessor {
 
     private static final String PLATAFORMA = FonteDados.INTERVALS_ICU.name();
 
+    static final String MOTIVO_META_FC_DESCARTADA =
+            "Meta de FC não enviada: o atleta não tem FC de limiar medida. "
+                    + "Cadastre a FC de limiar e reenvie o treino.";
+
     private final IntervalsIcuWorkoutConverter converter;
     private final WorkoutChannel workoutChannel;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
@@ -125,7 +129,8 @@ public class IntervalsIcuPushProcessor {
         }
 
         final PushResult resultadoFinal = resultado;
-        Boolean autenticacaoFalhou = txPropria.execute(status -> marcarNaTx(treinoId, tenantId, resultadoFinal));
+        Boolean autenticacaoFalhou = txPropria.execute(
+                status -> marcarNaTx(treinoId, tenantId, resultadoFinal, claim.metaFcDescartada()));
 
         ProcessamentoResultado tipo;
         if (Boolean.TRUE.equals(autenticacaoFalhou)) {
@@ -150,8 +155,8 @@ public class IntervalsIcuPushProcessor {
             return ClaimResultado.encerrado(ProcessamentoResultado.NAO_ENCONTRADO);
         }
 
-        Optional<StructuredWorkout> workoutOpt = converter.converter(treino);
-        if (workoutOpt.isEmpty()) {
+        Optional<IntervalsIcuWorkoutConverter.ResultadoConversao> conversaoOpt = converter.converter(treino);
+        if (conversaoOpt.isEmpty()) {
             // Treino que já esteve sincronizado e virou não exportável (ex.: coach o transformou
             // em DESCANSO): o evento externo vira órfão (o chamador o reconcilia) e o estado
             // local acompanha — reset completo. Treino nunca sincronizado sai sem mutação.
@@ -168,7 +173,11 @@ public class IntervalsIcuPushProcessor {
         treino.registrarTentativaSincronizacao();
         treino.setStatusSincronizacao(StatusSincronizacao.SINCRONIZANDO);
         treinoPlanejadoRepository.saveAndFlush(treino);
-        return ClaimResultado.reclamado(workoutOpt.get(), eventIdArmazenado);
+        IntervalsIcuWorkoutConverter.ResultadoConversao conversao = conversaoOpt.get();
+        if (conversao.metaFcDescartada()) {
+            log.warn("Treino {} enviado sem meta de FC: atleta sem FC de limiar medida", treinoId);
+        }
+        return ClaimResultado.reclamado(conversao.workout(), eventIdArmazenado, conversao.metaFcDescartada());
     }
 
     /**
@@ -177,7 +186,8 @@ public class IntervalsIcuPushProcessor {
      *
      * @return true quando o erro marcado foi especificamente de autenticação
      */
-    private boolean marcarNaTx(UUID treinoId, UUID tenantId, PushResult resultado) {
+    private boolean marcarNaTx(UUID treinoId, UUID tenantId, PushResult resultado,
+                               boolean metaFcDescartada) {
         TreinoPlanejado treino = treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId).orElse(null);
         if (treino == null) {
             log.warn("Treino {} sumiu entre o claim e a marcação (deleção concorrente) — resultado descartado",
@@ -189,6 +199,14 @@ public class IntervalsIcuPushProcessor {
         if (resultado.sucesso()) {
             treino.marcarComoSincronizado(PLATAFORMA);
             treino.setExternalId(String.valueOf(resultado.eventId()));
+            if (metaFcDescartada) {
+                // O push funcionou, mas o treino saiu sem a meta que o treinador prescreveu. No
+                // payload isso é indistinguível de "o treinador escolheu sem objetivo" — e são
+                // opostos. Sem esta marcação, o atleta recebe treino livre e nada na tela diz que
+                // não foi decisão do treinador.
+                treino.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO_PARCIAL);
+                treino.setErroSincronizacao(MOTIVO_META_FC_DESCARTADA);
+            }
         } else {
             treino.marcarErroSincronizacao(resultado.statusErro(), resultado.mensagem());
             if (treino.atingiuLimiteTentativas()) {
@@ -215,13 +233,15 @@ public class IntervalsIcuPushProcessor {
     /** Estado interno entre a TX-A e a fase de rede. */
     private record ClaimResultado(@Nullable ProcessamentoResultado tipo,
                                   @Nullable StructuredWorkout workout,
-                                  @Nullable Long eventIdArmazenado) {
+                                  @Nullable Long eventIdArmazenado,
+                                  boolean metaFcDescartada) {
         static ClaimResultado encerrado(ProcessamentoResultado tipo) {
-            return new ClaimResultado(tipo, null, null);
+            return new ClaimResultado(tipo, null, null, false);
         }
 
-        static ClaimResultado reclamado(StructuredWorkout workout, @Nullable Long eventIdArmazenado) {
-            return new ClaimResultado(null, workout, eventIdArmazenado);
+        static ClaimResultado reclamado(StructuredWorkout workout, @Nullable Long eventIdArmazenado,
+                                        boolean metaFcDescartada) {
+            return new ClaimResultado(null, workout, eventIdArmazenado, metaFcDescartada);
         }
     }
 

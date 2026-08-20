@@ -132,7 +132,7 @@ class IntervalsIcuPushProcessorTest {
             AtomicReference<Integer> tentativasNoClaim = new AtomicReference<>();
 
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
-            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
             when(treinoPlanejadoRepository.saveAndFlush(t)).thenAnswer(invocation -> {
                 TreinoPlanejado arg = invocation.getArgument(0);
                 statusNoClaim.set(arg.getStatusSincronizacao());
@@ -158,7 +158,7 @@ class IntervalsIcuPushProcessorTest {
             StructuredWorkout workout = workout();
 
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
-            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
             when(treinoPlanejadoRepository.saveAndFlush(t)).thenThrow(new OptimisticLockingFailureException("stale"));
 
             IntervalsIcuPushProcessor.ResultadoPush resultado = processor.processar(treinoId, tenantId, conexao);
@@ -176,7 +176,7 @@ class IntervalsIcuPushProcessorTest {
             StructuredWorkout workout = workout();
 
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
-            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
             when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
             when(workoutChannel.push(eq(conexao), eq(workout), isNull())).thenReturn(PushResult.okCriado(111L));
 
@@ -191,13 +191,54 @@ class IntervalsIcuPushProcessorTest {
         }
 
         @Test
+        @DisplayName("meta de FC descartada: push bem-sucedido vira SINCRONIZADO_PARCIAL com o motivo")
+        void metaDescartadaMarcaParcial() {
+            TreinoPlanejado t = treino(null, StatusSincronizacao.PENDENTE);
+            StructuredWorkout workout = workout();
+
+            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
+            when(converter.converter(t)).thenReturn(Optional.of(
+                    new IntervalsIcuWorkoutConverter.ResultadoConversao(workout, true)));
+            when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
+            when(workoutChannel.push(eq(conexao), eq(workout), isNull())).thenReturn(PushResult.okCriado(111L));
+
+            IntervalsIcuPushProcessor.ResultadoPush resultado = processor.processar(treinoId, tenantId, conexao);
+
+            // O push funcionou — o desfecho continua sucesso e o vínculo é gravado.
+            assertThat(resultado.tipo()).isEqualTo(IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO);
+            assertThat(t.getExternalId()).isEqualTo("111");
+            // ...mas o treinador precisa saber que a prescrição dele não foi honrada.
+            assertThat(t.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.SINCRONIZADO_PARCIAL);
+            assertThat(t.getErroSincronizacao())
+                    .isEqualTo(IntervalsIcuPushProcessor.MOTIVO_META_FC_DESCARTADA);
+        }
+
+        @Test
+        @DisplayName("sem meta descartada: SINCRONIZADO limpo, sem motivo — o outro caminho até \"sem objetivo\"")
+        void semDescarteNaoMarcaParcial() {
+            TreinoPlanejado t = treino(null, StatusSincronizacao.PENDENTE);
+            StructuredWorkout workout = workout();
+
+            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
+            when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
+            when(workoutChannel.push(eq(conexao), eq(workout), isNull())).thenReturn(PushResult.okCriado(111L));
+
+            processor.processar(treinoId, tenantId, conexao);
+
+            // Treinador que escolheu não prescrever meta não gera aviso nenhum: é prescrição válida.
+            assertThat(t.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.SINCRONIZADO);
+            assertThat(t.getErroSincronizacao()).isNull();
+        }
+
+        @Test
         @DisplayName("push com sucesso (okAtualizado) retorna criadoNovo=false")
         void sucessoOkAtualizadoCriadoNovoFalse() {
             TreinoPlanejado t = treino("111", StatusSincronizacao.ERRO_TEMPORARIO);
             StructuredWorkout workout = workout();
 
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
-            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
             when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
             when(workoutChannel.push(eq(conexao), eq(workout), eq(111L))).thenReturn(PushResult.okAtualizado(111L));
 
@@ -215,7 +256,7 @@ class IntervalsIcuPushProcessorTest {
             StructuredWorkout workout = workout();
 
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
-            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
             when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
             when(workoutChannel.push(eq(conexao), eq(workout), isNull()))
                     .thenReturn(PushResult.erro(StatusSincronizacao.ERRO_AUTENTICACAO, "token expirado"));
@@ -237,7 +278,7 @@ class IntervalsIcuPushProcessorTest {
             StructuredWorkout workout = workout();
 
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
-            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
             when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
             when(workoutChannel.push(eq(conexao), eq(workout), isNull()))
                     .thenReturn(PushResult.erro(StatusSincronizacao.ERRO_TEMPORARIO, "timeout"));
@@ -256,7 +297,7 @@ class IntervalsIcuPushProcessorTest {
             StructuredWorkout workout = workout();
 
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
-            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
             when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
             when(workoutChannel.push(eq(conexao), eq(workout), isNull()))
                     .thenThrow(new RuntimeException("violação de contrato"));
@@ -280,7 +321,7 @@ class IntervalsIcuPushProcessorTest {
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId))
                     .thenReturn(Optional.of(t))
                     .thenReturn(Optional.empty());
-            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
             when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
             when(workoutChannel.push(eq(conexao), eq(workout), isNull())).thenReturn(PushResult.okCriado(999L));
 
@@ -296,7 +337,7 @@ class IntervalsIcuPushProcessorTest {
             StructuredWorkout workout = workout();
 
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
-            when(converter.converter(t)).thenReturn(Optional.of(workout));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
             when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
             when(workoutChannel.push(eq(conexao), eq(workout), isNull())).thenReturn(PushResult.okCriado(555L));
 
@@ -341,5 +382,10 @@ class IntervalsIcuPushProcessorTest {
 
     private StructuredWorkout workout() {
         return new StructuredWorkout("menthoros-x", "TREINO", null, LocalDate.now(), "desc", List.of());
+    }
+
+    /** Conversão sem meta descartada — o caso normal; o descarte tem teste próprio. */
+    private IntervalsIcuWorkoutConverter.ResultadoConversao conversao(StructuredWorkout workout) {
+        return new IntervalsIcuWorkoutConverter.ResultadoConversao(workout, false);
     }
 }
