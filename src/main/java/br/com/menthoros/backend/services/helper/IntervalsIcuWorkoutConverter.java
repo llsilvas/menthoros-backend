@@ -1,9 +1,11 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.domain.workout.HrTarget;
+import br.com.menthoros.backend.domain.workout.IntensityTarget;
 import br.com.menthoros.backend.domain.workout.PaceTarget;
 import br.com.menthoros.backend.domain.workout.StructuredWorkout;
 import br.com.menthoros.backend.domain.workout.WorkoutStep;
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.TipoTreino;
@@ -19,13 +21,19 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Converte um {@link TreinoPlanejado} persistido no modelo canônico {@link StructuredWorkout}.
  * <p>
  * Responsabilidades: des-expansão de blocos (o banco persiste blocos JÁ expandidos — N cópias
- * físicas com o mesmo {@code blocoId} e {@code blocoRepeticoes=N}), aplicação da precedência
- * pace &gt; FC e normalização de dados degenerados sem nunca lançar exceção.
+ * físicas com o mesmo {@code blocoId} e {@code blocoRepeticoes=N}), escolha da meta de intensidade
+ * da etapa, resolução do alvo de FC para bpm absoluto contra o atleta, e normalização de dados
+ * degenerados sem nunca lançar exceção.
+ * <p>
+ * <b>A resolução para bpm acontece aqui, não no adapter.</b> O adapter traduz modelo canônico →
+ * JSON e não conhece {@code Atleta}; levar o atleta até lá misturaria responsabilidades. O treino já
+ * chega com o atleta associado.
  * <p>
  * Classe pura, sem estado, sem dependência de contexto transacional — não deve receber uma
  * entidade fora de uma transação ativa quando {@code etapas} for lazy (o chamador é responsável
@@ -37,6 +45,22 @@ public class IntervalsIcuWorkoutConverter {
     private static final DateTimeFormatter FORMATO_DATA = DateTimeFormatter.ofPattern("dd/MM");
     private static final BigDecimal METROS_POR_KM = BigDecimal.valueOf(1000);
 
+    private final IntervalsIcuFcAlvoResolver fcAlvoResolver;
+
+    public IntervalsIcuWorkoutConverter(IntervalsIcuFcAlvoResolver fcAlvoResolver) {
+        this.fcAlvoResolver = fcAlvoResolver;
+    }
+
+    /**
+     * Resultado da conversão: o treino canônico e se alguma meta de FC prescrita foi descartada por
+     * falta de FC de limiar medida do atleta.
+     *
+     * <p>O sinal existe porque no payload os dois caminhos até "sem objetivo" são idênticos —
+     * "o treinador escolheu não prescrever" e "a prescrição do treinador foi descartada" são
+     * opostos, e sem isso o segundo se disfarça do primeiro.</p>
+     */
+    public record ResultadoConversao(StructuredWorkout workout, boolean metaFcDescartada) {}
+
     /**
      * Converte o treino planejado para o modelo canônico de treino estruturado.
      *
@@ -46,10 +70,10 @@ public class IntervalsIcuWorkoutConverter {
      * treino dentro do escopo do tenant correto.
      *
      * @param treino treino planejado a converter
-     * @return o treino estruturado, ou {@link Optional#empty()} se o treino não for exportável
-     *         (tipo DESCANSO, ou sem nenhum conteúdo prescritivo)
+     * @return o treino estruturado + o sinal de meta descartada, ou {@link Optional#empty()} se o
+     *         treino não for exportável (tipo DESCANSO, ou sem nenhum conteúdo prescritivo)
      */
-    public Optional<StructuredWorkout> converter(TreinoPlanejado treino) {
+    public Optional<ResultadoConversao> converter(TreinoPlanejado treino) {
         if (treino == null) {
             throw new IllegalArgumentException("TreinoPlanejado não pode ser nulo");
         }
@@ -60,19 +84,26 @@ public class IntervalsIcuWorkoutConverter {
         // Etapas sem nenhuma duração/distância positiva não são prescritivas: cai no mesmo
         // caminho do treino sem etapas (step único com duração/distância do próprio treino).
         List<EtapaTreino> etapas = etapasValidas(treino);
-        List<WorkoutStep> steps = temEtapaPrescritiva(etapas) ? desExpandir(etapas) : stepUnico(treino);
+        Contexto ctx = new Contexto(treino.getAtleta(), new AtomicBoolean(false));
+        List<WorkoutStep> steps = temEtapaPrescritiva(etapas)
+                ? desExpandir(etapas, ctx)
+                : stepUnico(treino, ctx);
         if (steps.isEmpty()) {
             return Optional.empty();
         }
 
-        return Optional.of(new StructuredWorkout(
+        StructuredWorkout workout = new StructuredWorkout(
                 StructuredWorkout.externalIdCanonico(treino.getId()),
                 nome(treino),
                 null,
                 treino.getDataTreino(),
                 treino.getDescricao(),
-                steps));
+                steps);
+        return Optional.of(new ResultadoConversao(workout, ctx.metaDescartada().get()));
     }
+
+    /** Atleta do treino e o acumulador de descartes, carregados por toda a conversão. */
+    private record Contexto(Atleta atleta, AtomicBoolean metaDescartada) {}
 
     // ===== Exportabilidade =====
 
@@ -110,26 +141,27 @@ public class IntervalsIcuWorkoutConverter {
 
     // ===== Treino sem etapas =====
 
-    private List<WorkoutStep> stepUnico(TreinoPlanejado treino) {
+    private List<WorkoutStep> stepUnico(TreinoPlanejado treino, Contexto ctx) {
         Integer distanceMeters = distanciaEmMetros(treino.getDistanciaKm());
         Integer durationSeconds = distanceMeters != null ? null : duracaoEmSegundos(treino.getDuracaoMin());
         if (distanceMeters == null && durationSeconds == null) {
             return List.of();
         }
-        HrTarget hr = IntervalsIcuTargetParser.parseZona(treino.getZonaAlvo()).orElse(null);
-        return List.of(WorkoutStep.simples(null, durationSeconds, distanceMeters, null, hr));
+        IntensityTarget meta = resolverFc(
+                IntervalsIcuTargetParser.parseZona(treino.getZonaAlvo()).orElse(null), ctx);
+        return List.of(WorkoutStep.simples(null, durationSeconds, distanceMeters, meta));
     }
 
     // ===== Des-expansão de blocos =====
 
-    private List<WorkoutStep> desExpandir(List<EtapaTreino> etapas) {
+    private List<WorkoutStep> desExpandir(List<EtapaTreino> etapas, Contexto ctx) {
         List<WorkoutStep> resultado = new ArrayList<>();
         int i = 0;
         int total = etapas.size();
         while (i < total) {
             UUID blocoId = etapas.get(i).getBlocoId();
             if (blocoId == null) {
-                BlocoInferido inferido = inferirBloco(etapas, i);
+                BlocoInferido inferido = inferirBloco(etapas, i, ctx);
                 resultado.add(inferido.step());
                 i += inferido.etapasConsumidas();
                 continue;
@@ -141,11 +173,11 @@ public class IntervalsIcuWorkoutConverter {
             }
             List<EtapaTreino> grupo = etapas.subList(i, fim);
 
-            WorkoutStep bloco = tentarMontarBloco(grupo);
+            WorkoutStep bloco = tentarMontarBloco(grupo, ctx);
             if (bloco != null) {
                 resultado.add(bloco);
             } else {
-                grupo.forEach(etapa -> resultado.add(stepDeEtapa(etapa)));
+                grupo.forEach(etapa -> resultado.add(stepDeEtapa(etapa, ctx)));
             }
             i = fim;
         }
@@ -170,7 +202,7 @@ public class IntervalsIcuWorkoutConverter {
      *
      * @return o step montado e quantas etapas ele consumiu, nunca menos que 1
      */
-    private BlocoInferido inferirBloco(List<EtapaTreino> etapas, int inicio) {
+    private BlocoInferido inferirBloco(List<EtapaTreino> etapas, int inicio, Contexto ctx) {
         int limite = inicio;
         while (limite < etapas.size() && etapas.get(limite).getBlocoId() == null) {
             limite++;
@@ -196,11 +228,11 @@ public class IntervalsIcuWorkoutConverter {
         }
 
         if (melhorReps < 2) {
-            return new BlocoInferido(stepDeEtapa(etapas.get(inicio)), 1);
+            return new BlocoInferido(stepDeEtapa(etapas.get(inicio), ctx), 1);
         }
 
         List<WorkoutStep> subSteps = etapas.subList(inicio, inicio + melhorJanela).stream()
-                .map(this::stepDeEtapa)
+                .map(etapa -> stepDeEtapa(etapa, ctx))
                 .toList();
         return new BlocoInferido(WorkoutStep.bloco(null, melhorReps, subSteps),
                 melhorJanela * melhorReps);
@@ -244,7 +276,7 @@ public class IntervalsIcuWorkoutConverter {
      * {@code blocoId}. Retorna {@code null} quando o grupo não pode ser dividido em N janelas
      * idênticas — nesse caso o chamador aplica o fallback seguro (steps individuais expandidos).
      */
-    private WorkoutStep tentarMontarBloco(List<EtapaTreino> grupo) {
+    private WorkoutStep tentarMontarBloco(List<EtapaTreino> grupo, Contexto ctx) {
         Integer reps = grupo.get(0).getBlocoRepeticoes();
         if (reps == null || reps <= 1 || grupo.size() % reps != 0) {
             return null;
@@ -253,7 +285,7 @@ public class IntervalsIcuWorkoutConverter {
         if (!janelasIdenticas(janelas)) {
             return null;
         }
-        List<WorkoutStep> subSteps = janelas.get(0).stream().map(this::stepDeEtapa).toList();
+        List<WorkoutStep> subSteps = janelas.get(0).stream().map(etapa -> stepDeEtapa(etapa, ctx)).toList();
         return WorkoutStep.bloco(null, reps, subSteps);
     }
 
@@ -299,27 +331,46 @@ public class IntervalsIcuWorkoutConverter {
 
     // ===== Mapeamento de uma etapa =====
 
-    private WorkoutStep stepDeEtapa(EtapaTreino etapa) {
+    private WorkoutStep stepDeEtapa(EtapaTreino etapa, Contexto ctx) {
         Integer distanceMeters = distanciaEmMetros(etapa.getDistanciaKm());
         Integer durationSeconds = distanceMeters != null ? null : duracaoEmSegundos(etapa.getDuracaoMin());
 
         String text = normalizaTexto(etapa.getDescricaoEtapa());
+        IntensityTarget meta = resolverFc(
+                IntervalsIcuTargetParser.parseFc(etapa.getFcAlvoEtapa()).orElse(null), ctx);
         PaceTarget pace = IntervalsIcuTargetParser.parsePace(etapa.getRitmoAlvo()).orElse(null);
-        HrTarget hr = null;
 
-        if (pace != null) {
-            if (isPresente(etapa.getFcAlvoEtapa())) {
-                text = anexarFc(text, etapa.getFcAlvoEtapa());
+        // A meta é UMA. Quando a etapa traz os dois alvos, a FC é a meta e o ritmo desce para o
+        // texto — o inverso do que se fazia aqui, e a inversão é o ponto: a FC é a variável que o
+        // treinador prescreve (o schema de etapa do prompt só tem fcAlvo) e é ela que governa a
+        // intensidade. Rebaixá-la a "(140-150 bpm)" na descrição fazia o relógio não controlar nada
+        // numa etapa prescrita por FC.
+        if (meta instanceof HrTarget) {
+            if (pace != null) {
+                text = anexarAoTexto(text, etapa.getRitmoAlvo());
             }
-        } else {
-            hr = IntervalsIcuTargetParser.parseFc(etapa.getFcAlvoEtapa()).orElse(null);
+        } else if (pace != null) {
+            meta = pace;
         }
 
-        return WorkoutStep.simples(text, durationSeconds, distanceMeters, pace, hr);
+        return WorkoutStep.simples(text, durationSeconds, distanceMeters, meta);
     }
 
-    private String anexarFc(String textoBase, String fcAlvoEtapa) {
-        String sufixo = "(" + fcAlvoEtapa.trim() + ")";
+    /**
+     * Alvo bruto → meta em bpm, marcando o descarte quando o atleta não tem FC de limiar medida.
+     * Alvo ausente é "sem objetivo" silencioso: foi escolha do treinador, não perda de prescrição.
+     */
+    private IntensityTarget resolverFc(IntervalsIcuTargetParser.FcAlvoBruto bruto, Contexto ctx) {
+        IntervalsIcuFcAlvoResolver.Resolucao resolucao = fcAlvoResolver.resolver(bruto, ctx.atleta());
+        if (resolucao.descartadoPorFaltaDeDado()) {
+            ctx.metaDescartada().set(true);
+            return IntensityTarget.SEM_OBJETIVO;
+        }
+        return resolucao.alvo() != null ? resolucao.alvo() : IntensityTarget.SEM_OBJETIVO;
+    }
+
+    private String anexarAoTexto(String textoBase, String valor) {
+        String sufixo = "(" + valor.trim() + ")";
         return textoBase == null ? sufixo : textoBase + " " + sufixo;
     }
 

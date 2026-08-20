@@ -1,6 +1,5 @@
 package br.com.menthoros.backend.services.helper;
 
-import br.com.menthoros.backend.domain.workout.HrTarget;
 import br.com.menthoros.backend.domain.workout.PaceTarget;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -53,9 +52,10 @@ class IntervalsIcuTargetParserTest {
                 "70-80%, PERCENT, 70, 80"
         })
         @DisplayName("bpm absoluto e percentual")
-        void formatosValidos(String entrada, HrTarget.Unidade unidade, int inicio, int fim) {
+        void formatosValidos(String entrada, IntervalsIcuTargetParser.FcAlvoBruto.Base base,
+                             int inicio, int fim) {
             assertThat(IntervalsIcuTargetParser.parseFc(entrada))
-                    .contains(new HrTarget(unidade, inicio, fim));
+                    .contains(new IntervalsIcuTargetParser.FcAlvoBruto(base, inicio, fim));
         }
 
         @ParameterizedTest
@@ -75,9 +75,11 @@ class IntervalsIcuTargetParserTest {
         @DisplayName("Z2 vira zona 2; faixa z2-z3 vira zona inferior (conservador)")
         void zonas() {
             assertThat(IntervalsIcuTargetParser.parseZona("Z2"))
-                    .contains(new HrTarget(HrTarget.Unidade.ZONE, 2, 2));
+                    .contains(new IntervalsIcuTargetParser.FcAlvoBruto(
+                            IntervalsIcuTargetParser.FcAlvoBruto.Base.ZONE, 2, 2));
             assertThat(IntervalsIcuTargetParser.parseZona("z2-z3"))
-                    .contains(new HrTarget(HrTarget.Unidade.ZONE, 2, 2));
+                    .contains(new IntervalsIcuTargetParser.FcAlvoBruto(
+                            IntervalsIcuTargetParser.FcAlvoBruto.Base.ZONE, 2, 2));
         }
     }
 }

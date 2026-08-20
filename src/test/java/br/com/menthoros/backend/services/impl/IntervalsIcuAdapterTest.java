@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.domain.workout.HrTarget;
+import br.com.menthoros.backend.domain.workout.IntensityTarget;
 import br.com.menthoros.backend.domain.workout.PaceTarget;
 import br.com.menthoros.backend.domain.workout.StructuredWorkout;
 import br.com.menthoros.backend.domain.workout.WorkoutStep;
@@ -70,17 +71,12 @@ class IntervalsIcuAdapterTest {
         @DisplayName("monta workout_doc correto: sem description no evento, steps com pace/hr/bloco")
         void montaPayloadCorreto() {
             List<WorkoutStep> steps = List.of(
-                    WorkoutStep.simples("Aquecimento", 600, null, null,
-                            new HrTarget(HrTarget.Unidade.BPM, 140, 150)),
-                    WorkoutStep.simples(null, null, 1000,
-                            new PaceTarget(240, 260), null),
-                    WorkoutStep.simples(null, 300, null,
-                            new PaceTarget(270, 270), null),
-                    WorkoutStep.simples(null, 600, null, null,
-                            new HrTarget(HrTarget.Unidade.ZONE, 2, 2)),
+                    WorkoutStep.simples("Aquecimento", 600, null, new HrTarget(140, 150)),
+                    WorkoutStep.simples(null, null, 1000, new PaceTarget(240, 260)),
+                    WorkoutStep.simples(null, 300, null, new PaceTarget(270, 270)),
+                    WorkoutStep.simples(null, 600, null, IntensityTarget.SEM_OBJETIVO),
                     WorkoutStep.bloco("Tiros", 4, List.of(
-                            WorkoutStep.simples("Tiro", 180, null,
-                                    new PaceTarget(230, 230), null)))
+                            WorkoutStep.simples("Tiro", 180, null, new PaceTarget(230, 230))))
             );
             StructuredWorkout workout = new StructuredWorkout(
                     "menthoros-1", "CONTINUO 15/07", null, DATA, "Treino continuo de base", steps);
@@ -129,10 +125,10 @@ class IntervalsIcuAdapterTest {
             assertThat(paceValor.get("pace").get("value").asInt()).isEqualTo(270);
             assertThat(paceValor.get("pace").has("start")).isFalse();
 
-            JsonNode hrZone = nodeSteps.get(3);
-            assertThat(hrZone.get("hr").get("units").asText()).isEqualTo("hr_zone");
-            assertThat(hrZone.get("hr").get("value").asInt()).isEqualTo(2);
-            assertThat(hrZone.get("hr").has("start")).isFalse();
+            // "Sem objetivo" é escolha de primeira classe: o step vai sem meta nenhuma.
+            JsonNode semObjetivo = nodeSteps.get(3);
+            assertThat(semObjetivo.has("hr")).isFalse();
+            assertThat(semObjetivo.has("pace")).isFalse();
 
             JsonNode bloco = nodeSteps.get(4);
             assertThat(bloco.get("reps").asInt()).isEqualTo(4);
@@ -244,7 +240,7 @@ class IntervalsIcuAdapterTest {
         void namePrefixConcatenado() {
             StructuredWorkout comPrefixo = new StructuredWorkout(
                     "menthoros-7", "CONTINUO 15/07", "[Calibração]", DATA, "desc",
-                    List.of(WorkoutStep.simples("Corrida", 1800, null, null, null)));
+                    List.of(WorkoutStep.simples("Corrida", 1800, null, IntensityTarget.SEM_OBJETIVO)));
             when(client.atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(10L), any()))
                     .thenReturn(new IcuEventDto(10L, "menthoros-7", "[Calibração] CONTINUO 15/07",
                             "2026-07-15T00:00:00"));
@@ -352,7 +348,7 @@ class IntervalsIcuAdapterTest {
 
     private StructuredWorkout workoutSimples(String externalId) {
         return new StructuredWorkout(externalId, "CONTINUO 15/07", null, DATA, "desc",
-                List.of(WorkoutStep.simples("Corrida", 1800, null, null, null)));
+                List.of(WorkoutStep.simples("Corrida", 1800, null, IntensityTarget.SEM_OBJETIVO)));
     }
 
     static Stream<Arguments> statusParaErro() {
