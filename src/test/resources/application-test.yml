@@ -20,3 +20,14 @@ app:
     api-base-url: https://www.strava.com/api/v3
     webhook-verify-token: test-webhook-token
     sync-days-back: 90
+
+  # Valores fake, mas NAO em branco: IntervalsIcuProperties e @Validated/@NotBlank e sem
+  # isto todo @SpringBootTest falharia no boot. Ver D11 da change intervals-icu-oauth2.
+  intervals-icu:
+    base-url: https://intervals.icu
+    client-id: test-intervals-client-id
+    client-secret: test-intervals-client-secret
+    redirect-uri: http://localhost:8080/api/v1/integracoes/intervals-icu/callback
+    authorization-uri: https://intervals.icu/oauth/authorize
+    token-uri: https://intervals.icu/api/oauth/token
+    scope: ACTIVITY:READ,CALENDAR:WRITE

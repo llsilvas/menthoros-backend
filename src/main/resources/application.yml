@@ -310,8 +310,20 @@ app:
   # ----------------------------------------
   # INTERVALS.ICU INTEGRATION CONFIGURATION
   # ----------------------------------------
+  # OAuth2 (app 663). O default vazio de client-id/client-secret NAO significa "opcional":
+  # os campos sao @NotBlank e o boot falha com mensagem nomeando a propriedade. O default
+  # existe so para que a falha seja a da validacao, e nao um "Could not resolve placeholder".
+  # O client-secret e a chave do HMAC que assina o state do callback publico -- com valor
+  # vazio o state vira forjavel e o fluxo funciona mesmo assim, sem sintoma nenhum.
+  # Ver IntervalsIcuProperties e D11 da change.
   intervals-icu:
     base-url: ${INTERVALS_ICU_BASE_URL:https://intervals.icu}
+    client-id: ${INTERVALS_ICU_CLIENT_ID:}
+    client-secret: ${INTERVALS_ICU_CLIENT_SECRET:}
+    redirect-uri: ${INTERVALS_ICU_REDIRECT_URI:http://localhost:8099/api/v1/integracoes/intervals-icu/callback}
+    authorization-uri: https://intervals.icu/oauth/authorize
+    token-uri: https://intervals.icu/api/oauth/token
+    scope: ACTIVITY:READ,CALENDAR:WRITE
 
 # ----------------------------------------
 # DETERMINISTIC PLANNER ENGINE (shadow mode — deterministic-planner-engine)

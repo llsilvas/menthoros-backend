@@ -20,6 +20,15 @@ spring:
     openai:
       api-key: test-openai-key
 
+app:
+  # Necessario porque IntervalsIcuProperties e @Validated/@NotBlank e o application.yml real
+  # deixa client-id/client-secret vazios (vem de env var em runtime). Sem estes valores o
+  # contexto de integracao nao sobe. E o comportamento pretendido: config incompleta falha no
+  # boot, em qualquer profile. Ver D11 da change intervals-icu-oauth2-integration.
+  intervals-icu:
+    client-id: test-intervals-client-id
+    client-secret: test-intervals-client-secret
+
 logging:
   level:
     org.flywaydb: WARN
