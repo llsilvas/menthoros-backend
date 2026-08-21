@@ -45,6 +45,12 @@ public class IntervalsIcuCallbackController {
     private static final String SUCESSO = "success";
     private static final String ERRO = "error";
 
+    /**
+     * Rota do front onde o card de conexão vive, dentro do hash. O {@code #} é obrigatório: o
+     * front usa {@code createHashRouter}, então tudo que vier antes dele é ignorado pelo roteador.
+     */
+    private static final String ROTA_PERFIL_ATLETA = "/#/athlete/profile";
+
     private final IntervalsIcuOAuthService oauthService;
 
     @Value("${app.frontend.url}")
@@ -89,14 +95,32 @@ public class IntervalsIcuCallbackController {
         }
     }
 
+    /**
+     * Redireciona para <b>dentro do hash</b> da rota do perfil do atleta, e não para a raiz do
+     * front com um query param solto.
+     *
+     * <p><b>Por que isso importa:</b> o front usa {@code createHashRouter}. Um redirect para
+     * {@code FRONTEND_URL?intervals-icu=success} deixaria o hash vazio — o router mandaria o atleta
+     * para a rota raiz em vez da tela de onde ele saiu — e o parâmetro ficaria <b>antes</b> do
+     * {@code #}, invisível para o {@code useSearchParams}, que lê o query string de dentro do hash.
+     * O resultado seria um fluxo que "funciona" e não mostra nada ao atleta.
+     *
+     * <p>O fluxo do Strava tem esse mesmo defeito ({@code ?strava=status} na raiz) e ninguém
+     * percebeu porque o front nunca chegou a tratar aquele retorno. Corrigi-lo é fora do escopo
+     * desta change.
+     *
+     * <p><b>Acoplamento assumido:</b> o path {@link #ROTA_PERFIL_ATLETA} precisa existir no front.
+     * Se a rota mudar lá, o atleta cai numa tela vazia — só um teste de ponta a ponta pega.
+     */
     private ResponseEntity<Void> redirecionar(String status) {
-        URI destino = UriComponentsBuilder.fromUriString(frontendUrl)
-                .queryParam(PARAM_RETORNO, status)
-                .build()
-                .toUri();
+        String base = frontendUrl.endsWith("/")
+                ? frontendUrl.substring(0, frontendUrl.length() - 1)
+                : frontendUrl;
+
+        String destino = base + ROTA_PERFIL_ATLETA + "?" + PARAM_RETORNO + "=" + status;
 
         return ResponseEntity.status(HttpStatus.FOUND)
-                .header(HttpHeaders.LOCATION, destino.toString())
+                .header(HttpHeaders.LOCATION, destino)
                 .build();
     }
 }

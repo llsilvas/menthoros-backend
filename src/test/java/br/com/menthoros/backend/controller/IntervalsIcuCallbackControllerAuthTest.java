@@ -90,6 +90,24 @@ class IntervalsIcuCallbackControllerAuthTest {
                     .andExpect(header().string("Location",
                             org.hamcrest.Matchers.containsString("intervals-icu=success")));
         }
+
+        // O front usa createHashRouter. Sem o "#/athlete/profile" o atleta cairia na rota raiz e
+        // o parâmetro ficaria ANTES do '#', invisível para o useSearchParams — o fluxo terminaria
+        // "com sucesso" e sem mostrar nada a ele. É a regressão que este teste impede.
+        @Test
+        @DisplayName("o parâmetro vai DENTRO do hash, na rota do perfil do atleta")
+        void parametroVaiDentroDoHash() throws Exception {
+            when(oauthService.exchangeCodeForToken(any(), any())).thenReturn(Resultado.SUCESSO);
+
+            MvcResult resultado = mockMvc.perform(
+                            get(CALLBACK).param("code", "c").param("state", "s"))
+                    .andReturn();
+
+            String location = resultado.getResponse().getHeader("Location");
+            assertThat(location).contains("#/athlete/profile");
+            // O '?' precisa vir depois do '#', senão o router nunca vê o parâmetro.
+            assertThat(location.indexOf('#')).isLessThan(location.indexOf('?'));
+        }
     }
 
     @Nested
