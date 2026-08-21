@@ -1,6 +1,5 @@
 package br.com.menthoros.backend.controller;
 
-import br.com.menthoros.backend.dto.input.IntervalsIcuConnectInputDto;
 import br.com.menthoros.backend.dto.output.IntervalsIcuConnectionStatusDto;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
@@ -8,15 +7,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -31,21 +26,8 @@ public class IntervalsIcuConnectionController {
     private final IntervalsIcuConnectionService connectionService;
     private final AtletaProgressService atletaProgressService;
 
-    @PostMapping
-    @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
-    @Operation(summary = "Conecta a conta intervals.icu do atleta (valida a API key antes de salvar)")
-    @ApiResponses({
-        @ApiResponse(responseCode = "201", description = "Conexão criada"),
-        @ApiResponse(responseCode = "401", description = "Não autenticado"),
-        @ApiResponse(responseCode = "403", description = "Sem papel ATLETA/ADMIN"),
-        @ApiResponse(responseCode = "422", description = "API key inválida — nada persistido")
-    })
-    public ResponseEntity<IntervalsIcuConnectionStatusDto> conectar(
-            @Valid @RequestBody IntervalsIcuConnectInputDto input) {
-        var atletaId = atletaProgressService.resolverAtletaIdAtual();
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(connectionService.conectar(atletaId, input.apiKey()));
-    }
+    // O POST de conexão por API key foi removido: OAuth2 substitui o fluxo antigo e não convive
+    // com ele (D6). O endpoint de autorização entra no Bloco 5 como GET /authorize-url.
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")

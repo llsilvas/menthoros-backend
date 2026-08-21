@@ -38,11 +38,11 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
      * Tenant-aware: NO — credencial é do atleta, não do tenant.
      */
     @Override
-    public Optional<IcuAthleteDto> validarApiKey(String apiKey) {
+    public Optional<IcuAthleteDto> validarToken(String token) {
         try {
             IcuAthleteDto atleta = webClient.get()
                     .uri("/api/v1/athlete/0")
-                    .headers(h -> basic(h, apiKey))
+                    .headers(h -> bearer(h, token))
                     .retrieve()
                     .bodyToMono(IcuAthleteDto.class)
                     .block();
@@ -63,10 +63,10 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
      * Tenant-aware: NO
      */
     @Override
-    public IcuEventDto criarEvento(String apiKey, String externalAthleteId, JsonNode payload) {
+    public IcuEventDto criarEvento(String token, String externalAthleteId, JsonNode payload) {
         return executa("criar evento", () -> webClient.post()
                 .uri("/api/v1/athlete/{id}/events", externalAthleteId)
-                .headers(h -> basic(h, apiKey))
+                .headers(h -> bearer(h, token))
                 .bodyValue(payload)
                 .retrieve()
                 .bodyToMono(IcuEventDto.class)
@@ -79,10 +79,10 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
      * Tenant-aware: NO
      */
     @Override
-    public IcuEventDto atualizarEvento(String apiKey, String externalAthleteId, long eventId, JsonNode payload) {
+    public IcuEventDto atualizarEvento(String token, String externalAthleteId, long eventId, JsonNode payload) {
         return executa("atualizar evento", () -> webClient.put()
                 .uri("/api/v1/athlete/{id}/events/{eventId}", externalAthleteId, eventId)
-                .headers(h -> basic(h, apiKey))
+                .headers(h -> bearer(h, token))
                 .bodyValue(payload)
                 .retrieve()
                 .bodyToMono(IcuEventDto.class)
@@ -95,7 +95,7 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
      * Tenant-aware: NO
      */
     @Override
-    public List<IcuEventDto> listarEventos(String apiKey, String externalAthleteId,
+    public List<IcuEventDto> listarEventos(String token, String externalAthleteId,
                                            LocalDate oldest, LocalDate newest) {
         return executa("listar eventos", () -> {
             IcuEventDto[] eventos = webClient.get()
@@ -103,7 +103,7 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
                             .queryParam("oldest", oldest.toString())
                             .queryParam("newest", newest.toString())
                             .build(externalAthleteId))
-                    .headers(h -> basic(h, apiKey))
+                    .headers(h -> bearer(h, token))
                     .retrieve()
                     .bodyToMono(IcuEventDto[].class)
                     .block();
@@ -117,10 +117,10 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
      * Tenant-aware: NO
      */
     @Override
-    public void deletarEvento(String apiKey, String externalAthleteId, long eventId) {
+    public void deletarEvento(String token, String externalAthleteId, long eventId) {
         executa("deletar evento", () -> webClient.delete()
                 .uri("/api/v1/athlete/{id}/events/{eventId}", externalAthleteId, eventId)
-                .headers(h -> basic(h, apiKey))
+                .headers(h -> bearer(h, token))
                 .retrieve()
                 .toBodilessEntity()
                 .block());
@@ -132,7 +132,7 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
      * Tenant-aware: NO — credencial é do atleta, não do tenant.
      */
     @Override
-    public IcuActivityDto buscarAtividade(String apiKey, String activityId, boolean comIntervalos) {
+    public IcuActivityDto buscarAtividade(String token, String activityId, boolean comIntervalos) {
         return executa("buscar atividade", () -> webClient.get()
                 .uri(uriBuilder -> {
                     uriBuilder.path("/api/v1/activity/{id}");
@@ -141,14 +141,44 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
                     }
                     return uriBuilder.build(activityId);
                 })
-                .headers(h -> basic(h, apiKey))
+                .headers(h -> bearer(h, token))
                 .retrieve()
                 .bodyToMono(IcuActivityDto.class)
                 .block());
     }
 
-    private void basic(HttpHeaders headers, String apiKey) {
-        headers.setBasicAuth("API_KEY", apiKey);
+    /**
+     * Ponto único de autenticação do client (D1). A doc do provedor é explícita: apps usados por
+     * mais de uma pessoa devem usar OAuth e Bearer token. O Basic com o literal {@code API_KEY}
+     * que vivia aqui saiu junto com o fluxo de API key — não há convivência entre os dois.
+     */
+    private void bearer(HttpHeaders headers, String token) {
+        headers.setBearerAuth(token);
+    }
+
+    /**
+     * Idempotent: YES — revogar duas vezes é seguro (a segunda encontra o app já desconectado).
+     * Side Effects: External API call (DELETE /api/v1/disconnect-app)
+     * Tenant-aware: NO — credencial é do atleta, não do tenant.
+     *
+     * <p><b>Não propaga falha (D7).</b> Ver JavaDoc da interface: quem chama está desconectando o
+     * atleta, e travar isso porque o provedor está fora do ar é pior que não revogar agora.
+     */
+    @Override
+    public void revogarAcesso(String token) {
+        try {
+            webClient.delete()
+                    .uri("/api/v1/disconnect-app")
+                    .headers(h -> bearer(h, token))
+                    .retrieve()
+                    .toBodilessEntity()
+                    .block();
+            log.info("Acesso revogado no intervals.icu");
+        } catch (Exception e) {
+            // Sem o token e sem body na mensagem — mesmo cuidado de traduz() (CA10).
+            log.warn("Falha ao revogar acesso no intervals.icu (best-effort, desconexão local segue): {}",
+                    e.getClass().getSimpleName());
+        }
     }
 
     private <T> T executa(String operacao, java.util.function.Supplier<T> chamada) {

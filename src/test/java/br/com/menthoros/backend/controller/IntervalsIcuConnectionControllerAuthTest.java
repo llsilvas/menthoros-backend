@@ -74,43 +74,21 @@ class IntervalsIcuConnectionControllerAuthTest {
         JwtTestSupport.stubUsuarioAtivo(usuarioSyncService);
     }
 
+    // CA8 — o fluxo de conexão por API key foi removido (D6). O que importa asserir é que o POST
+    // com corpo {apiKey} não é mais aceito e não toca no service. O status é 405 e não 404 porque
+    // a URL continua existindo para GET e DELETE: quem sumiu foi o método, não o recurso.
     @Nested
-    @DisplayName("POST /api/v1/integracoes/me/intervals-icu")
-    class Conectar {
+    @DisplayName("POST /api/v1/integracoes/me/intervals-icu (removido)")
+    class ConectarPorApiKeyRemovido {
 
         @Test
-        @DisplayName("retorna 201 para ATLETA com key válida")
-        void retorna201ParaAtleta() throws Exception {
-            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(atletaId);
-            when(connectionService.conectar(atletaId, "key-ok"))
-                    .thenReturn(new IntervalsIcuConnectionStatusDto(true, "i641775", Instant.now(), null, null));
-
+        @DisplayName("POST com {apiKey} não é aceito e nada chega ao service")
+        void postComApiKeyNaoExisteMais() throws Exception {
             mockMvc.perform(post("/api/v1/integracoes/me/intervals-icu")
                             .with(atletaJwt())
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{\"apiKey\":\"key-ok\"}"))
-                    .andExpect(status().isCreated());
-        }
-
-        @Test
-        @DisplayName("retorna 403 para TECNICO")
-        void retorna403ParaTecnico() throws Exception {
-            mockMvc.perform(post("/api/v1/integracoes/me/intervals-icu")
-                            .with(tecnicoJwt())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"apiKey\":\"key-ok\"}"))
-                    .andExpect(status().isForbidden());
-
-            verifyNoInteractions(connectionService);
-        }
-
-        @Test
-        @DisplayName("retorna 401 sem token")
-        void retorna401SemToken() throws Exception {
-            mockMvc.perform(post("/api/v1/integracoes/me/intervals-icu")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"apiKey\":\"key-ok\"}"))
-                    .andExpect(status().isUnauthorized());
+                    .andExpect(status().isMethodNotAllowed());
 
             verifyNoInteractions(connectionService);
         }

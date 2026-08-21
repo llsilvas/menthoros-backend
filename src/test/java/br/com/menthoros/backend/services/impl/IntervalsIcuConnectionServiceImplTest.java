@@ -1,15 +1,10 @@
 package br.com.menthoros.backend.services.impl;
 
-import br.com.menthoros.backend.dto.intervalsicu.IcuAthleteDto;
 import br.com.menthoros.backend.dto.output.IntervalsIcuConnectionStatusDto;
-import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.enums.FonteDados;
-import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
-import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
-import br.com.menthoros.backend.services.IntervalsIcuClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -36,9 +31,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class IntervalsIcuConnectionServiceImplTest {
 
-    @Mock private IntervalsIcuClient intervalsIcuClient;
     @Mock private IntegracaoExternaRepository integracaoRepository;
-    @Mock private AtletaRepository atletaRepository;
     @InjectMocks private IntervalsIcuConnectionServiceImpl service;
 
     private UUID tenantId;
@@ -56,151 +49,56 @@ class IntervalsIcuConnectionServiceImplTest {
         TenantContext.clear();
     }
 
+    // O bloco "conectar" saiu com o fluxo de API key (D6). Os três testes do hook D5.2 que viviam
+    // nele foram preservados aqui: o hook não morreu, só mudou de porta de entrada — agora é
+    // público e quem o chama é o IntervalsIcuOAuthService, a partir do callback (D9).
     @Nested
-    @DisplayName("conectar")
-    class Conectar {
+    @DisplayName("pausarStravaAutomaticamente")
+    class PausarStravaAutomaticamente {
 
         @Test
-        @DisplayName("key válida persiste integração com externalAthleteId e não expõe a key no DTO")
-        void keyValidaPersiste() {
-            when(intervalsIcuClient.validarApiKey("key-ok"))
-                    .thenReturn(Optional.of(new IcuAthleteDto("i641775", "Leandro")));
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId))
-                    .thenReturn(Optional.of(Atleta.builder().id(atletaId).build()));
-            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
-                    .thenReturn(Optional.empty());
-            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-            IntervalsIcuConnectionStatusDto dto = service.conectar(atletaId, "key-ok");
-
-            ArgumentCaptor<IntegracaoExterna> captor = ArgumentCaptor.forClass(IntegracaoExterna.class);
-            verify(integracaoRepository).save(captor.capture());
-            IntegracaoExterna salva = captor.getValue();
-            assertThat(salva.getPlataforma()).isEqualTo(FonteDados.INTERVALS_ICU);
-            assertThat(salva.getAccessToken()).isEqualTo("key-ok");
-            assertThat(salva.getExternalAthleteId()).isEqualTo("i641775");
-            assertThat(salva.isAtivo()).isTrue();
-            assertThat(dto.conectado()).isTrue();
-            assertThat(dto.toString()).doesNotContain("key-ok");
-        }
-
-        @Test
-        @DisplayName("key inválida lança 422 e NADA é persistido")
-        void keyInvalidaNaoPersiste() {
-            when(intervalsIcuClient.validarApiKey("key-ruim")).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> service.conectar(atletaId, "key-ruim"))
-                    .isInstanceOf(DomainRuleViolationException.class)
-                    .hasMessageContaining("API key");
-
-            verify(integracaoRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("reconectar reusa registro existente da unique (atleta, plataforma)")
-        void reconectarReusaRegistroExistente() {
-            IntegracaoExterna existente = new IntegracaoExterna();
-            existente.setAtivo(false);
-            existente.setAccessToken("key-antiga");
-            existente.setExternalAthleteId("i000000");
-            existente.setLastSyncError("erro anterior");
-
-            when(intervalsIcuClient.validarApiKey("key-nova"))
-                    .thenReturn(Optional.of(new IcuAthleteDto("i641775", "Leandro")));
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId))
-                    .thenReturn(Optional.of(Atleta.builder().id(atletaId).build()));
-            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
-                    .thenReturn(Optional.of(existente));
-            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-
-            service.conectar(atletaId, "key-nova");
-
-            assertThat(existente.getAccessToken()).isEqualTo("key-nova");
-            assertThat(existente.getExternalAthleteId()).isEqualTo("i641775");
-            assertThat(existente.isAtivo()).isTrue();
-            assertThat(existente.getLastSyncError()).isNull();
-            verify(integracaoRepository).save(existente);
-        }
-
-        @Test
-        @DisplayName("atleta não encontrado no tenant lança exceção e nada é persistido")
-        void atletaNaoEncontradoNaoPersiste() {
-            when(intervalsIcuClient.validarApiKey("key-ok"))
-                    .thenReturn(Optional.of(new IcuAthleteDto("i641775", "Leandro")));
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> service.conectar(atletaId, "key-ok"))
-                    .isInstanceOf(RuntimeException.class);
-
-            verify(integracaoRepository, never()).save(any());
-        }
-
-        @Test
-        @DisplayName("hook D5.2: Strava ativo conecta intervals.icu → Strava fica autoSyncPausado=true automaticamente")
-        void conectarPausaStravaAutomaticamente() {
+        @DisplayName("hook D5.2: Strava ativo → autoSyncPausado=true automaticamente")
+        void pausaStravaAtivo() {
             IntegracaoExterna integracaoStrava = new IntegracaoExterna();
             integracaoStrava.setPlataforma(FonteDados.STRAVA);
             integracaoStrava.setAtivo(true);
             integracaoStrava.setAutoSyncPausado(false);
 
-            when(intervalsIcuClient.validarApiKey("key-ok"))
-                    .thenReturn(Optional.of(new IcuAthleteDto("i641775", "Leandro")));
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId))
-                    .thenReturn(Optional.of(Atleta.builder().id(atletaId).build()));
-            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
-                    .thenReturn(Optional.empty());
-            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
                     .thenReturn(Optional.of(integracaoStrava));
 
-            service.conectar(atletaId, "key-ok");
+            service.pausarStravaAutomaticamente(atletaId, tenantId);
 
             assertThat(integracaoStrava.isAutoSyncPausado()).isTrue();
             verify(integracaoRepository).save(integracaoStrava);
         }
 
         @Test
-        @DisplayName("hook D5.2: sem Strava conectado, conectar intervals.icu é no-op quanto à flag")
-        void conectarSemStravaNaoFazNada() {
-            when(intervalsIcuClient.validarApiKey("key-ok"))
-                    .thenReturn(Optional.of(new IcuAthleteDto("i641775", "Leandro")));
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId))
-                    .thenReturn(Optional.of(Atleta.builder().id(atletaId).build()));
-            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
-                    .thenReturn(Optional.empty());
-            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        @DisplayName("hook D5.2: sem Strava conectado é no-op quanto à flag")
+        void semStravaNaoFazNada() {
             when(integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
                     .thenReturn(Optional.empty());
 
-            service.conectar(atletaId, "key-ok");
+            service.pausarStravaAutomaticamente(atletaId, tenantId);
 
-            // Nenhum save adicional além do save da própria integração intervals.icu
-            verify(integracaoRepository, org.mockito.Mockito.times(1)).save(any());
+            verify(integracaoRepository, never()).save(any());
         }
 
         @Test
-        @DisplayName("hook D5.2 (achado Baixo do 5º pre-mortem): Strava já pausado manualmente + conecta intervals.icu → permanece true, sem save duplicado")
-        void conectarComStravaJaPausadoEhIdempotente() {
+        @DisplayName("hook D5.2 (achado Baixo do 5º pre-mortem): Strava já pausado permanece true, sem save duplicado")
+        void stravaJaPausadoEhIdempotente() {
             IntegracaoExterna integracaoStrava = new IntegracaoExterna();
             integracaoStrava.setPlataforma(FonteDados.STRAVA);
             integracaoStrava.setAtivo(true);
             integracaoStrava.setAutoSyncPausado(true);
 
-            when(intervalsIcuClient.validarApiKey("key-ok"))
-                    .thenReturn(Optional.of(new IcuAthleteDto("i641775", "Leandro")));
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId))
-                    .thenReturn(Optional.of(Atleta.builder().id(atletaId).build()));
-            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
-                    .thenReturn(Optional.empty());
-            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             when(integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
                     .thenReturn(Optional.of(integracaoStrava));
 
-            service.conectar(atletaId, "key-ok");
+            service.pausarStravaAutomaticamente(atletaId, tenantId);
 
             assertThat(integracaoStrava.isAutoSyncPausado()).isTrue();
-            // Apenas o save da integração intervals.icu — o hook não salva de novo quando já true
-            verify(integracaoRepository, org.mockito.Mockito.times(1)).save(any());
+            verify(integracaoRepository, never()).save(any());
         }
     }
 
