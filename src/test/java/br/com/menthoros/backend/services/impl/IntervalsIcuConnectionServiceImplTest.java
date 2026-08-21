@@ -145,11 +145,19 @@ class IntervalsIcuConnectionServiceImplTest {
     @DisplayName("desconectar")
     class Desconectar {
 
+        // D13/CA6: "credenciais zeradas" é campo a campo. A versão anterior limpava só
+        // accessToken e refreshToken — e a métrica de sucesso da change conta conexões OAuth por
+        // scopes != null, então um atleta desconectado seguiria contado como conectado.
         @Test
-        @DisplayName("soft-disconnect zera token e desativa (padrão Strava)")
+        @DisplayName("soft-disconnect zera TODOS os campos OAuth e desativa")
         void softDisconnect() {
             IntegracaoExterna integracao = new IntegracaoExterna();
-            integracao.setAccessToken("key");
+            integracao.setAccessToken("tok");
+            integracao.setRefreshToken("refresh");
+            integracao.setScopes("ACTIVITY:READ,CALENDAR:WRITE");
+            integracao.setTokenExpiraEm(Instant.parse("2026-09-01T00:00:00Z"));
+            integracao.setExternalAthleteId("i641775");
+            integracao.setLastSyncError("erro antigo");
             integracao.setAtivo(true);
             when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
                     .thenReturn(Optional.of(integracao));
@@ -159,6 +167,10 @@ class IntervalsIcuConnectionServiceImplTest {
             assertThat(integracao.isAtivo()).isFalse();
             assertThat(integracao.getAccessToken()).isNull();
             assertThat(integracao.getRefreshToken()).isNull();
+            assertThat(integracao.getScopes()).isNull();
+            assertThat(integracao.getTokenExpiraEm()).isNull();
+            assertThat(integracao.getExternalAthleteId()).isNull();
+            assertThat(integracao.getLastSyncError()).isNull();
             verify(integracaoRepository).save(integracao);
         }
 

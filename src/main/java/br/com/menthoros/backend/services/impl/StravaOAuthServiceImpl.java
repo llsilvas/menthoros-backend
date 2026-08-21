@@ -166,7 +166,8 @@ public class StravaOAuthServiceImpl implements StravaOAuthService {
     /**
      * Override explícito do coach sobre {@code autoSyncPausado} (D5.2) — não é mais o mecanismo
      * primário de pausa (ver {@link #exchangeCodeForToken} e
-     * {@code IntervalsIcuConnectionServiceImpl#conectar} para os hooks automáticos).
+     * {@code IntervalsIcuConnectionService#pausarStravaAutomaticamente} para os hooks automáticos —
+     * o antigo {@code IntervalsIcuConnectionServiceImpl#conectar} saiu com o fluxo de API key).
      *
      * <p><b>Idempotent:</b> YES — reaplicar o mesmo valor é no-op seguro.
      * <p><b>Side Effects:</b> Database mutation (update de {@link IntegracaoExterna}).

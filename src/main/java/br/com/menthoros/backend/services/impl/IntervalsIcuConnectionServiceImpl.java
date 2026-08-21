@@ -78,10 +78,17 @@ public class IntervalsIcuConnectionServiceImpl implements IntervalsIcuConnection
     }
 
     /**
-     * Soft-disconnect (padrão Strava): mantém o registro histórico, zera as credenciais e desativa.
+     * Soft-disconnect: mantém o registro histórico, zera <b>todas</b> as credenciais e desativa.
+     *
+     * <p><b>Por que limpa mais campos que a versão anterior (D13):</b> antes só {@code accessToken}
+     * e {@code refreshToken} eram zerados. Com OAuth isso passou a ter consequência mensurável — a
+     * métrica de sucesso desta change conta conexões por {@code scopes != null}, então um atleta
+     * desconectado continuaria contado como conectado. {@code externalAthleteId} também sai: uma
+     * row inativa guardando o id externo é um vínculo sem função que só confunde auditoria (e o
+     * guard D12 filtra por conexões ativas, então mantê-lo não protegeria nada).
      *
      * <p>Idempotent: YES — desconectar duas vezes é seguro (já desconectado / nunca conectado = no-op).
-     * <p>Side Effects: Database update (ativo=false, accessToken/refreshToken=null) quando existir conexão.
+     * <p>Side Effects: Database update (ativo=false + credenciais nulas) quando existir conexão.
      * <p>Tenant-aware: YES — query tenant-scoped via {@code TenantContext.getRequiredTenantId()}.
      */
     @Override
@@ -99,6 +106,10 @@ public class IntervalsIcuConnectionServiceImpl implements IntervalsIcuConnection
                     integracao.setAtivo(false);
                     integracao.setAccessToken(null);
                     integracao.setRefreshToken(null);
+                    integracao.setScopes(null);
+                    integracao.setTokenExpiraEm(null);
+                    integracao.setExternalAthleteId(null);
+                    integracao.setLastSyncError(null);
                     integracaoRepository.save(integracao);
                     log.info("Conexão intervals.icu desconectada: atletaId={}", atletaId);
                     logStravaPermaneceStrava(atletaId, tenantId);
