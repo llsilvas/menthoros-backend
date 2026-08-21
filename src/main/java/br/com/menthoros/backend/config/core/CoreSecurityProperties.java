@@ -38,4 +38,19 @@ public class CoreSecurityProperties {
     private List<String> asaasPaths = new ArrayList<>(List.of(
         "/api/v1/asaas/webhook"
     ));
+
+    /**
+     * Lista própria, e não uma entrada em {@code stravaPaths}: o callback do intervals.icu chega
+     * do browser do atleta redirecionado pelo provedor, sem JWT (D5). Fica deliberadamente fora do
+     * prefixo {@code /api/v1/integracoes/me/**}, que é inteiramente autenticado — abrir um buraco
+     * de {@code permitAll} dentro daquela árvore seria exatamente o tipo de exceção que se esquece
+     * depois.
+     *
+     * <p>A identidade do atleta não vem da sessão: vem do {@code state} assinado com HMAC
+     * (ver {@code IntervalsIcuStateSigner}).
+     */
+    @NotEmpty(message = "intervalsIcuPaths cannot be empty")
+    private List<String> intervalsIcuPaths = new ArrayList<>(List.of(
+        "/api/v1/integracoes/intervals-icu/callback"
+    ));
 }
