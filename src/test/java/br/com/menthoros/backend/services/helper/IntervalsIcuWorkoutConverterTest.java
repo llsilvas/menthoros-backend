@@ -226,6 +226,71 @@ class IntervalsIcuWorkoutConverterTest {
         }
 
         @Test
+        @DisplayName("FC descartada com ritmo presente: o ritmo assume, e o aviso diz isso")
+        void fcDescartadaCaiNoRitmo() {
+            // O aviso e o payload precisam contar a mesma história. Antes, a etapa saía com meta de
+            // ritmo enquanto o treino era marcado "etapa sem meta" — o treinador lia que o relógio
+            // não controlava nada, e ele estava controlando ritmo.
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "INTERVALADO", "Tiro", 5, null, "4:00-4:10", "90-95% FCmax", null, null)
+            );
+            TreinoPlanejado treino = treinoSemFcMedida(etapas);
+
+            IntervalsIcuWorkoutConverter.ResultadoConversao r = converter.converter(treino).orElseThrow();
+
+            WorkoutStep step = r.workout().steps().get(0);
+            assertThat(step.meta()).isEqualTo(new PaceTarget(240, 250));
+            assertThat(r.fcDescartadaComRitmo()).isTrue();
+            assertThat(r.fcDescartadaSemMeta()).isFalse();
+            // A FC perdida vai no texto: sem isso o treinador não sabe qual meta se perdeu.
+            assertThat(step.text()).isEqualTo("Tiro (90-95% FCmax)");
+        }
+
+        @Test
+        @DisplayName("FC descartada sem ritmo: etapa sem meta, e o aviso diz isso")
+        void fcDescartadaSemRitmoFicaSemMeta() {
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "CONTINUO", "Base", 40, null, null, "90-95% FCmax", null, null)
+            );
+            TreinoPlanejado treino = treinoSemFcMedida(etapas);
+
+            IntervalsIcuWorkoutConverter.ResultadoConversao r = converter.converter(treino).orElseThrow();
+
+            assertThat(r.workout().steps().get(0).meta()).isEqualTo(IntensityTarget.SEM_OBJETIVO);
+            assertThat(r.fcDescartadaSemMeta()).isTrue();
+            assertThat(r.fcDescartadaComRitmo()).isFalse();
+        }
+
+        @Test
+        @DisplayName("treino com os dois desfechos acumula os dois sinais")
+        void treinoComOsDoisDesfechos() {
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "AQUECIMENTO", "Solto", 10, null, null, "70-80% FCmax", null, null),
+                    etapa(2, "INTERVALADO", "Tiro", 5, null, "4:00-4:10", "90-95% FCmax", null, null)
+            );
+            TreinoPlanejado treino = treinoSemFcMedida(etapas);
+
+            IntervalsIcuWorkoutConverter.ResultadoConversao r = converter.converter(treino).orElseThrow();
+
+            assertThat(r.fcDescartadaSemMeta()).isTrue();
+            assertThat(r.fcDescartadaComRitmo()).isTrue();
+        }
+
+        @Test
+        @DisplayName("etapa sem FC prescrita e com ritmo não é descarte: é escolha do treinador")
+        void apenasRitmoNaoEDescarte() {
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "INTERVALADO", "Tiro", 5, null, "4:00-4:10", null, null, null)
+            );
+            TreinoPlanejado treino = treinoSemFcMedida(etapas);
+
+            IntervalsIcuWorkoutConverter.ResultadoConversao r = converter.converter(treino).orElseThrow();
+
+            assertThat(r.workout().steps().get(0).meta()).isEqualTo(new PaceTarget(240, 250));
+            assertThat(r.metaFcDescartada()).isFalse();
+        }
+
+        @Test
         @DisplayName("treino sem etapas gera step único com duração do treino e zona alvo")
         void treinoSemEtapas() {
             TreinoPlanejado treino = treino(TipoTreino.FACIL, LocalDate.of(2026, 7, 15),
@@ -462,6 +527,17 @@ class IntervalsIcuWorkoutConverterTest {
         treino.setDescricao(descricao);
         treino.setEtapas(etapas);
         treino.setAtleta(Atleta.builder().id(UUID.randomUUID()).fcLimiar(FC_LIMIAR).build());
+        return treino;
+    }
+
+    /** Atleta sem fcLimiar medido — o caso em que a prescrição de FC não pode ser resolvida. */
+    private TreinoPlanejado treinoSemFcMedida(List<EtapaTreino> etapas) {
+        TreinoPlanejado treino = treino(TipoTreino.INTERVALADO, LocalDate.of(2026, 8, 21),
+                Duration.ofMinutes(40), null, null, null, etapas);
+        treino.setAtleta(Atleta.builder()
+                .id(UUID.randomUUID())
+                .dataNascimento(LocalDate.of(1990, 1, 1))
+                .build());
         return treino;
     }
 

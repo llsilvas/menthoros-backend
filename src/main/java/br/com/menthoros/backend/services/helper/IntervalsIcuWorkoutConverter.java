@@ -1,6 +1,5 @@
 package br.com.menthoros.backend.services.helper;
 
-import br.com.menthoros.backend.domain.workout.HrTarget;
 import br.com.menthoros.backend.domain.workout.IntensityTarget;
 import br.com.menthoros.backend.domain.workout.PaceTarget;
 import br.com.menthoros.backend.domain.workout.StructuredWorkout;
@@ -21,7 +20,6 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Converte um {@link TreinoPlanejado} persistido no modelo canônico {@link StructuredWorkout}.
@@ -59,7 +57,15 @@ public class IntervalsIcuWorkoutConverter {
      * "o treinador escolheu não prescrever" e "a prescrição do treinador foi descartada" são
      * opostos, e sem isso o segundo se disfarça do primeiro.</p>
      */
-    public record ResultadoConversao(StructuredWorkout workout, boolean metaFcDescartada) {}
+    public record ResultadoConversao(StructuredWorkout workout,
+                                     boolean fcDescartadaSemMeta,
+                                     boolean fcDescartadaComRitmo) {
+
+        /** Houve prescrição de FC que não pôde ser honrada, de qualquer forma. */
+        public boolean metaFcDescartada() {
+            return fcDescartadaSemMeta || fcDescartadaComRitmo;
+        }
+    }
 
     /**
      * Converte o treino planejado para o modelo canônico de treino estruturado.
@@ -84,7 +90,7 @@ public class IntervalsIcuWorkoutConverter {
         // Etapas sem nenhuma duração/distância positiva não são prescritivas: cai no mesmo
         // caminho do treino sem etapas (step único com duração/distância do próprio treino).
         List<EtapaTreino> etapas = etapasValidas(treino);
-        Contexto ctx = new Contexto(treino.getAtleta(), new AtomicBoolean(false));
+        Contexto ctx = new Contexto(treino.getAtleta(), new DescartesFc());
         List<WorkoutStep> steps = temEtapaPrescritiva(etapas)
                 ? desExpandir(etapas, ctx)
                 : stepUnico(treino, ctx);
@@ -99,11 +105,40 @@ public class IntervalsIcuWorkoutConverter {
                 treino.getDataTreino(),
                 treino.getDescricao(),
                 steps);
-        return Optional.of(new ResultadoConversao(workout, ctx.metaDescartada().get()));
+        return Optional.of(new ResultadoConversao(workout,
+                ctx.descartes().semMeta(), ctx.descartes().comRitmo()));
     }
 
     /** Atleta do treino e o acumulador de descartes, carregados por toda a conversão. */
-    private record Contexto(Atleta atleta, AtomicBoolean metaDescartada) {}
+    private record Contexto(Atleta atleta, DescartesFc descartes) {}
+
+    /**
+     * O que aconteceu com as prescrições de FC que não puderam ser resolvidas.
+     *
+     * <p>Acumulador <b>sequencial</b>, de uma conversão só — não é sincronização. Os dois desfechos
+     * são distintos para o treinador: perder a meta é diferente de recebê-la em outra grandeza, e um
+     * aviso que não os separa afirma o que não aconteceu.</p>
+     */
+    private static final class DescartesFc {
+        private boolean semMeta;
+        private boolean comRitmo;
+
+        void registrarSemMeta() {
+            semMeta = true;
+        }
+
+        void registrarComRitmo() {
+            comRitmo = true;
+        }
+
+        boolean semMeta() {
+            return semMeta;
+        }
+
+        boolean comRitmo() {
+            return comRitmo;
+        }
+    }
 
     // ===== Exportabilidade =====
 
@@ -147,8 +182,13 @@ public class IntervalsIcuWorkoutConverter {
         if (distanceMeters == null && durationSeconds == null) {
             return List.of();
         }
-        IntensityTarget meta = resolverFc(
-                IntervalsIcuTargetParser.parseZona(treino.getZonaAlvo()).orElse(null), ctx);
+        // Não há ritmo neste caminho: o step único nasce da zona do treino, não de uma etapa.
+        IntervalsIcuFcAlvoResolver.Resolucao fc = fcAlvoResolver.resolver(
+                IntervalsIcuTargetParser.parseZona(treino.getZonaAlvo()).orElse(null), ctx.atleta());
+        if (fc.descartadoPorFaltaDeDado()) {
+            ctx.descartes().registrarSemMeta();
+        }
+        IntensityTarget meta = fc.alvo() != null ? fc.alvo() : IntensityTarget.SEM_OBJETIVO;
         return List.of(WorkoutStep.simples(null, durationSeconds, distanceMeters, meta));
     }
 
@@ -336,37 +376,38 @@ public class IntervalsIcuWorkoutConverter {
         Integer durationSeconds = distanceMeters != null ? null : duracaoEmSegundos(etapa.getDuracaoMin());
 
         String text = normalizaTexto(etapa.getDescricaoEtapa());
-        IntensityTarget meta = resolverFc(
-                IntervalsIcuTargetParser.parseFc(etapa.getFcAlvoEtapa()).orElse(null), ctx);
+        IntervalsIcuFcAlvoResolver.Resolucao fc = fcAlvoResolver.resolver(
+                IntervalsIcuTargetParser.parseFc(etapa.getFcAlvoEtapa()).orElse(null), ctx.atleta());
         PaceTarget pace = IntervalsIcuTargetParser.parsePace(etapa.getRitmoAlvo()).orElse(null);
 
         // A meta é UMA. Quando a etapa traz os dois alvos, a FC é a meta e o ritmo desce para o
-        // texto — o inverso do que se fazia aqui, e a inversão é o ponto: a FC é a variável que o
-        // treinador prescreve (o schema de etapa do prompt só tem fcAlvo) e é ela que governa a
-        // intensidade. Rebaixá-la a "(140-150 bpm)" na descrição fazia o relógio não controlar nada
-        // numa etapa prescrita por FC.
-        if (meta instanceof HrTarget) {
+        // texto — o inverso do que se fazia aqui, e a inversão é o ponto: a FC é a variável que
+        // governa a intensidade, e rebaixá-la a "(140-150 bpm)" na descrição fazia o relógio não
+        // controlar nada numa etapa prescrita por FC.
+        if (fc.alvo() != null) {
             if (pace != null) {
                 text = anexarAoTexto(text, etapa.getRitmoAlvo());
             }
-        } else if (pace != null) {
-            meta = pace;
+            return WorkoutStep.simples(text, durationSeconds, distanceMeters, fc.alvo());
         }
 
+        // FC prescrita que não pôde ser resolvida. O ritmo, quando existe, assume: também é
+        // prescrição do treinador, e entregar a etapa em outra grandeza é melhor que entregá-la
+        // livre. Mas o desfecho tem de ser registrado pelo que ele é — dizer ao treinador que a
+        // etapa foi sem meta, quando o relógio está controlando ritmo, é o aviso afirmar o que não
+        // aconteceu.
+        if (fc.descartadoPorFaltaDeDado()) {
+            // Sem a FC prescrita no texto, o treinador não tem como saber qual meta se perdeu.
+            text = anexarAoTexto(text, etapa.getFcAlvoEtapa());
+            if (pace != null) {
+                ctx.descartes().registrarComRitmo();
+            } else {
+                ctx.descartes().registrarSemMeta();
+            }
+        }
+
+        IntensityTarget meta = pace != null ? pace : IntensityTarget.SEM_OBJETIVO;
         return WorkoutStep.simples(text, durationSeconds, distanceMeters, meta);
-    }
-
-    /**
-     * Alvo bruto → meta em bpm, marcando o descarte quando o atleta não tem FC de limiar medida.
-     * Alvo ausente é "sem objetivo" silencioso: foi escolha do treinador, não perda de prescrição.
-     */
-    private IntensityTarget resolverFc(IntervalsIcuTargetParser.FcAlvoBruto bruto, Contexto ctx) {
-        IntervalsIcuFcAlvoResolver.Resolucao resolucao = fcAlvoResolver.resolver(bruto, ctx.atleta());
-        if (resolucao.descartadoPorFaltaDeDado()) {
-            ctx.metaDescartada().set(true);
-            return IntensityTarget.SEM_OBJETIVO;
-        }
-        return resolucao.alvo() != null ? resolucao.alvo() : IntensityTarget.SEM_OBJETIVO;
     }
 
     private String anexarAoTexto(String textoBase, String valor) {

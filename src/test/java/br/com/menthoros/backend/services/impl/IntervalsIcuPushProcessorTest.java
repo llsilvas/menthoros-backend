@@ -198,7 +198,7 @@ class IntervalsIcuPushProcessorTest {
 
             when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
             when(converter.converter(t)).thenReturn(Optional.of(
-                    new IntervalsIcuWorkoutConverter.ResultadoConversao(workout, true)));
+                    new IntervalsIcuWorkoutConverter.ResultadoConversao(workout, true, false)));
             when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
             when(workoutChannel.push(eq(conexao), eq(workout), isNull())).thenReturn(PushResult.okCriado(111L));
 
@@ -210,7 +210,43 @@ class IntervalsIcuPushProcessorTest {
             // ...mas o treinador precisa saber que a prescrição dele não foi honrada.
             assertThat(t.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.SINCRONIZADO_PARCIAL);
             assertThat(t.getErroSincronizacao())
-                    .isEqualTo(IntervalsIcuPushProcessor.MOTIVO_META_FC_DESCARTADA);
+                    .isEqualTo(IntervalsIcuPushProcessor.MOTIVO_FC_SEM_META);
+        }
+
+        @Test
+        @DisplayName("FC descartada com ritmo: o motivo diz que a etapa foi com o ritmo prescrito")
+        void metaDescartadaComRitmoInformaORitmo() {
+            TreinoPlanejado t = treino(null, StatusSincronizacao.PENDENTE);
+            StructuredWorkout workout = workout();
+
+            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
+            when(converter.converter(t)).thenReturn(Optional.of(
+                    new IntervalsIcuWorkoutConverter.ResultadoConversao(workout, false, true)));
+            when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
+            when(workoutChannel.push(eq(conexao), eq(workout), isNull())).thenReturn(PushResult.okCriado(111L));
+
+            processor.processar(treinoId, tenantId, conexao);
+
+            assertThat(t.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.SINCRONIZADO_PARCIAL);
+            assertThat(t.getErroSincronizacao()).isEqualTo(IntervalsIcuPushProcessor.MOTIVO_FC_COM_RITMO);
+            assertThat(t.getErroSincronizacao()).contains("ritmo prescrito");
+        }
+
+        @Test
+        @DisplayName("os dois desfechos no mesmo treino: motivo misto")
+        void metaDescartadaMistaInformaOsDois() {
+            TreinoPlanejado t = treino(null, StatusSincronizacao.PENDENTE);
+            StructuredWorkout workout = workout();
+
+            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
+            when(converter.converter(t)).thenReturn(Optional.of(
+                    new IntervalsIcuWorkoutConverter.ResultadoConversao(workout, true, true)));
+            when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
+            when(workoutChannel.push(eq(conexao), eq(workout), isNull())).thenReturn(PushResult.okCriado(111L));
+
+            processor.processar(treinoId, tenantId, conexao);
+
+            assertThat(t.getErroSincronizacao()).isEqualTo(IntervalsIcuPushProcessor.MOTIVO_FC_MISTO);
         }
 
         @Test
@@ -386,6 +422,6 @@ class IntervalsIcuPushProcessorTest {
 
     /** Conversão sem meta descartada — o caso normal; o descarte tem teste próprio. */
     private IntervalsIcuWorkoutConverter.ResultadoConversao conversao(StructuredWorkout workout) {
-        return new IntervalsIcuWorkoutConverter.ResultadoConversao(workout, false);
+        return new IntervalsIcuWorkoutConverter.ResultadoConversao(workout, false, false);
     }
 }

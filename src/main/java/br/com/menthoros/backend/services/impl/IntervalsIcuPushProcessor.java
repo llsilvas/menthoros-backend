@@ -45,8 +45,18 @@ public class IntervalsIcuPushProcessor {
 
     private static final String PLATAFORMA = FonteDados.INTERVALS_ICU.name();
 
-    static final String MOTIVO_META_FC_DESCARTADA =
+    static final String MOTIVO_FC_SEM_META =
             "Meta de FC não enviada: o atleta não tem FC de limiar medida. "
+                    + "A etapa foi enviada sem meta. Cadastre a FC de limiar e reenvie o treino.";
+
+    static final String MOTIVO_FC_COM_RITMO =
+            "Meta de FC não enviada: o atleta não tem FC de limiar medida. "
+                    + "A etapa foi enviada com o ritmo prescrito. Cadastre a FC de limiar e reenvie "
+                    + "o treino para prescrever por FC.";
+
+    static final String MOTIVO_FC_MISTO =
+            "Meta de FC não enviada: o atleta não tem FC de limiar medida. "
+                    + "Parte das etapas foi enviada com o ritmo prescrito e parte foi sem meta. "
                     + "Cadastre a FC de limiar e reenvie o treino.";
 
     private final IntervalsIcuWorkoutConverter converter;
@@ -130,7 +140,7 @@ public class IntervalsIcuPushProcessor {
 
         final PushResult resultadoFinal = resultado;
         Boolean autenticacaoFalhou = txPropria.execute(
-                status -> marcarNaTx(treinoId, tenantId, resultadoFinal, claim.metaFcDescartada()));
+                status -> marcarNaTx(treinoId, tenantId, resultadoFinal, claim.motivoParcial()));
 
         ProcessamentoResultado tipo;
         if (Boolean.TRUE.equals(autenticacaoFalhou)) {
@@ -174,10 +184,12 @@ public class IntervalsIcuPushProcessor {
         treino.setStatusSincronizacao(StatusSincronizacao.SINCRONIZANDO);
         treinoPlanejadoRepository.saveAndFlush(treino);
         IntervalsIcuWorkoutConverter.ResultadoConversao conversao = conversaoOpt.get();
-        if (conversao.metaFcDescartada()) {
-            log.warn("Treino {} enviado sem meta de FC: atleta sem FC de limiar medida", treinoId);
+        String motivoParcial = motivoParcial(conversao);
+        if (motivoParcial != null) {
+            log.warn("Treino {}: meta de FC descartada (atleta sem FC de limiar medida) — {}",
+                    treinoId, motivoParcial);
         }
-        return ClaimResultado.reclamado(conversao.workout(), eventIdArmazenado, conversao.metaFcDescartada());
+        return ClaimResultado.reclamado(conversao.workout(), eventIdArmazenado, motivoParcial);
     }
 
     /**
@@ -187,7 +199,7 @@ public class IntervalsIcuPushProcessor {
      * @return true quando o erro marcado foi especificamente de autenticação
      */
     private boolean marcarNaTx(UUID treinoId, UUID tenantId, PushResult resultado,
-                               boolean metaFcDescartada) {
+                               @Nullable String motivoParcial) {
         TreinoPlanejado treino = treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId).orElse(null);
         if (treino == null) {
             log.warn("Treino {} sumiu entre o claim e a marcação (deleção concorrente) — resultado descartado",
@@ -199,13 +211,14 @@ public class IntervalsIcuPushProcessor {
         if (resultado.sucesso()) {
             treino.marcarComoSincronizado(PLATAFORMA);
             treino.setExternalId(String.valueOf(resultado.eventId()));
-            if (metaFcDescartada) {
-                // O push funcionou, mas o treino saiu sem a meta que o treinador prescreveu. No
-                // payload isso é indistinguível de "o treinador escolheu sem objetivo" — e são
-                // opostos. Sem esta marcação, o atleta recebe treino livre e nada na tela diz que
-                // não foi decisão do treinador.
+            if (motivoParcial != null) {
+                // O push funcionou, mas alguma prescrição de FC não pôde ser honrada. No payload
+                // isso é indistinguível de "o treinador escolheu sem objetivo" — e são opostos.
+                // O motivo distingue os dois desfechos possíveis: a etapa saiu sem meta, ou saiu
+                // com o ritmo. Dizer "sem meta" quando o relógio está controlando ritmo seria o
+                // aviso afirmar o que não aconteceu.
                 treino.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO_PARCIAL);
-                treino.setErroSincronizacao(MOTIVO_META_FC_DESCARTADA);
+                treino.setErroSincronizacao(motivoParcial);
             }
         } else {
             treino.marcarErroSincronizacao(resultado.statusErro(), resultado.mensagem());
@@ -216,6 +229,19 @@ public class IntervalsIcuPushProcessor {
         }
         treinoPlanejadoRepository.save(treino);
         return autenticacaoFalhou;
+    }
+
+    /** Qual desfecho o treinador precisa ver — {@code null} quando nada foi descartado. */
+    private @Nullable String motivoParcial(IntervalsIcuWorkoutConverter.ResultadoConversao conversao) {
+        boolean semMeta = conversao.fcDescartadaSemMeta();
+        boolean comRitmo = conversao.fcDescartadaComRitmo();
+        if (semMeta && comRitmo) {
+            return MOTIVO_FC_MISTO;
+        }
+        if (comRitmo) {
+            return MOTIVO_FC_COM_RITMO;
+        }
+        return semMeta ? MOTIVO_FC_SEM_META : null;
     }
 
     private @Nullable Long parseEventId(@Nullable String externalId) {
@@ -234,14 +260,14 @@ public class IntervalsIcuPushProcessor {
     private record ClaimResultado(@Nullable ProcessamentoResultado tipo,
                                   @Nullable StructuredWorkout workout,
                                   @Nullable Long eventIdArmazenado,
-                                  boolean metaFcDescartada) {
+                                  @Nullable String motivoParcial) {
         static ClaimResultado encerrado(ProcessamentoResultado tipo) {
-            return new ClaimResultado(tipo, null, null, false);
+            return new ClaimResultado(tipo, null, null, null);
         }
 
         static ClaimResultado reclamado(StructuredWorkout workout, @Nullable Long eventIdArmazenado,
-                                        boolean metaFcDescartada) {
-            return new ClaimResultado(null, workout, eventIdArmazenado, metaFcDescartada);
+                                        @Nullable String motivoParcial) {
+            return new ClaimResultado(null, workout, eventIdArmazenado, motivoParcial);
         }
     }
 

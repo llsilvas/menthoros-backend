@@ -71,7 +71,9 @@ public class IntervalsIcuFcAlvoResolver {
                         percentualDoLimiar(bruto.inicio(), fcLimiar),
                         percentualDoLimiar(bruto.fim(), fcLimiar));
                 // Registrado, não silencioso: o mesmo texto do plano passa a significar outro bpm.
-                log.info("Alvo percentual {}-{}% interpretado como %LTHR (limiar {}) => {}-{} bpm",
+                // DEBUG, não INFO: a linha carrega FC de limiar e bpm — dado fisiológico do atleta,
+                // que não deve ficar em nível de rotina num pipeline de log centralizado.
+                log.debug("Alvo percentual {}-{}% interpretado como %LTHR (limiar {}) => {}-{} bpm",
                         bruto.inicio(), bruto.fim(), fcLimiar, alvo.startBpm(), alvo.endBpm());
                 yield Resolucao.resolvido(alvo);
             }
