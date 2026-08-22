@@ -324,6 +324,10 @@ app:
     authorization-uri: https://intervals.icu/oauth/authorize
     token-uri: https://intervals.icu/api/oauth/token
     scope: ACTIVITY:READ,CALENDAR:WRITE
+    # Scheduler de sync automatico (intervals-icu-activity-sync-scheduler). Ver IntervalsIcuProperties.
+    sync-days-back: ${INTERVALS_ICU_SYNC_DAYS_BACK:90}
+    sync-overlap-days: ${INTERVALS_ICU_SYNC_OVERLAP_DAYS:1}
+    sync-max-activities-per-cycle: ${INTERVALS_ICU_SYNC_MAX_ACTIVITIES_PER_CYCLE:6}
 
 # ----------------------------------------
 # DETERMINISTIC PLANNER ENGINE (shadow mode — deterministic-planner-engine)

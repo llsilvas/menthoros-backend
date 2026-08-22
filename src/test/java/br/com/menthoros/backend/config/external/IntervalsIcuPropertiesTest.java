@@ -158,4 +158,65 @@ class IntervalsIcuPropertiesTest {
                     });
         }
     }
+
+    @Nested
+    @DisplayName("scheduler de sync (intervals-icu-activity-sync-scheduler, D3/D4.1)")
+    class Scheduler {
+
+        @Test
+        @DisplayName("sem as chaves, vale 90 dias de lookback, 1 dia de overlap e 6 atividades por ciclo")
+        void defaultsDoScheduler() {
+            contextRunner.withPropertyValues(PROPRIEDADES_COMPLETAS).run(ctx -> {
+                IntervalsIcuProperties props = ctx.getBean(IntervalsIcuProperties.class);
+                assertThat(props.getSyncDaysBack()).isEqualTo(90);
+                assertThat(props.getSyncOverlapDays()).isEqualTo(1);
+                assertThat(props.getSyncMaxActivitiesPerCycle()).isEqualTo(6);
+            });
+        }
+
+        @Test
+        @DisplayName("carrega as três chaves do scheduler quando informadas")
+        void carregaAsChavesDoScheduler() {
+            contextRunner.withPropertyValues(PROPRIEDADES_COMPLETAS)
+                    .withPropertyValues(
+                            "app.intervals-icu.sync-days-back=42",
+                            "app.intervals-icu.sync-overlap-days=2",
+                            "app.intervals-icu.sync-max-activities-per-cycle=10")
+                    .run(ctx -> {
+                        IntervalsIcuProperties props = ctx.getBean(IntervalsIcuProperties.class);
+                        assertThat(props.getSyncDaysBack()).isEqualTo(42);
+                        assertThat(props.getSyncOverlapDays()).isEqualTo(2);
+                        assertThat(props.getSyncMaxActivitiesPerCycle()).isEqualTo(10);
+                    });
+        }
+
+        // DoR rodada 3: com teto 0 o lote fica vazio, o cursor não anda e o atleta relista a
+        // mesma janela para sempre — sem erro nenhum. Falhar no boot é o único lugar visível.
+        @Test
+        @DisplayName("falha o contexto com sync-max-activities-per-cycle=0")
+        void falhaComTetoZero() {
+            contextRunner.withPropertyValues(PROPRIEDADES_COMPLETAS)
+                    .withPropertyValues("app.intervals-icu.sync-max-activities-per-cycle=0")
+                    .run(ctx -> assertThat(ctx).hasFailed());
+        }
+
+        @Test
+        @DisplayName("falha o contexto com sync-days-back=0")
+        void falhaComLookbackZero() {
+            contextRunner.withPropertyValues(PROPRIEDADES_COMPLETAS)
+                    .withPropertyValues("app.intervals-icu.sync-days-back=0")
+                    .run(ctx -> assertThat(ctx).hasFailed());
+        }
+
+        @Test
+        @DisplayName("falha o contexto com sync-overlap-days negativo (zero é válido)")
+        void falhaComOverlapNegativo() {
+            contextRunner.withPropertyValues(PROPRIEDADES_COMPLETAS)
+                    .withPropertyValues("app.intervals-icu.sync-overlap-days=-1")
+                    .run(ctx -> assertThat(ctx).hasFailed());
+            contextRunner.withPropertyValues(PROPRIEDADES_COMPLETAS)
+                    .withPropertyValues("app.intervals-icu.sync-overlap-days=0")
+                    .run(ctx -> assertThat(ctx).hasNotFailed());
+        }
+    }
 }

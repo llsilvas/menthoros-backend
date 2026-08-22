@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.config.external;
 
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import lombok.Getter;
 import lombok.Setter;
@@ -52,4 +53,23 @@ public class IntervalsIcuProperties {
     /** Maiúsculo e separado por vírgula: {@code ACTIVITY:READ,CALENDAR:WRITE}. */
     @NotBlank
     private String scope;
+
+    // --- scheduler de sync automático (intervals-icu-activity-sync-scheduler, D3/D4.1) ---
+
+    /** Janela de fallback do primeiro ciclo, em dias. 90 (τ do CTL é 42; com 42 o CTL nasce 37% baixo). */
+    @Min(1)
+    private int syncDaysBack = 90;
+
+    /** Dias subtraídos do cursor ao calcular {@code oldest}; absorve a conversão Instant → LocalDate. */
+    @Min(0)
+    private int syncOverlapDays = 1;
+
+    /**
+     * Teto de atividades ainda não importadas que um ciclo busca por atleta. O provedor limita a
+     * 100 req/usuário/dia e não expõe a folga em header; com 12 ciclos/dia, 1 + 6 = 7 por ciclo dá
+     * 84. {@code @Min(1)} porque com 0 o lote fica vazio, o cursor não anda e o atleta relista a
+     * mesma janela para sempre — sem erro nenhum.
+     */
+    @Min(1)
+    private int syncMaxActivitiesPerCycle = 6;
 }

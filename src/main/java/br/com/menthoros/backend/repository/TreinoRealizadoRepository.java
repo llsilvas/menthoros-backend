@@ -49,6 +49,13 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     Optional<TreinoRealizado> findByTenantIdAndFonteDadosAndExternalId(UUID tenantId, FonteDados fonteDados, String externalId);
 
     /**
+     * Contagem por delta do scheduler do intervals.icu: {@code syncActivityCount} mede importações
+     * NOVAS (antes/depois do lote), não chamadas bem-sucedidas — o import é idempotente e devolve
+     * sucesso também para o que já existia (design D2, pre-mortem moderado #4).
+     */
+    long countByTenantIdAndAtletaIdAndFonteDados(UUID tenantId, UUID atletaId, FonteDados fonteDados);
+
+    /**
      * Treinos de uma fonte externa que ficaram SEM etapas — candidatos ao backfill (D9 da change
      * {@code intervals-icu-activity-laps}).
      *
