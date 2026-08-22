@@ -12,6 +12,7 @@ import br.com.menthoros.backend.exception.IntervalsIcuRateLimitException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.helper.IntervalsIcuActivityMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
@@ -50,6 +51,7 @@ public class IntervalsIcuActivitySyncScheduler {
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final IntervalsIcuClient intervalsIcuClient;
     private final IntervalsIcuActivityIngestionService ingestionService;
+    private final IntervalsIcuActivityMapper activityMapper;
     private final IntervalsIcuProperties props;
 
     /**
@@ -116,7 +118,19 @@ public class IntervalsIcuActivitySyncScheduler {
         // Da mais antiga para a mais nova: a API devolve decrescente, e a carga inicial precisa
         // construir o PMC em ordem cronológica para o cursor poder apontar "até onde cheguei".
         // Já importada custa zero requisição e não conta no teto.
+        //
+        // Modalidade vem na listagem, então o filtro é gratuito — e necessário: o smoke de
+        // 2026-08-22 mostrou 6 atividades de natação/bike/musculação sendo buscadas (1 req cada) só
+        // para serem rejeitadas pela ingestão, e com o overlap de 7 dias elas seriam rebuscadas em
+        // TODO ciclo por uma semana: 72 das 100 req/dia de um triatleta, em nada.
         List<Pendente> pendentes = atividades.stream()
+                .filter(a -> {
+                    boolean suportada = activityMapper.isModalidadeSuportada(a.type());
+                    if (!suportada) {
+                        log.debug("Activity {} do atleta {} ignorada sem buscar: modalidade {}", a.id(), atletaId, a.type());
+                    }
+                    return suportada;
+                })
                 .map(a -> Pendente.de(a, atletaId))
                 .filter(Optional::isPresent).map(Optional::get)
                 .filter(p -> treinoRealizadoRepository

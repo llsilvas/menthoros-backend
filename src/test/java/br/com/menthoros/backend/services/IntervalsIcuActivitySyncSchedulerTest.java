@@ -15,6 +15,7 @@ import br.com.menthoros.backend.exception.IntervalsIcuRateLimitException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.helper.IntervalsIcuActivityMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -69,9 +70,10 @@ class IntervalsIcuActivitySyncSchedulerTest {
     @BeforeEach
     void setUp() {
         props = new IntervalsIcuProperties();
+        // mapper real: é um helper puro sem dependências, e o filtro de modalidade é o que está em teste
         scheduler = new IntervalsIcuActivitySyncScheduler(
                 integracaoExternaRepository, treinoRealizadoRepository, intervalsIcuClient,
-                ingestionService, props);
+                ingestionService, new IntervalsIcuActivityMapper(), props);
         tenantId = UUID.randomUUID();
         atletaId = UUID.randomUUID();
         inicioDoTeste = Instant.now();
@@ -500,6 +502,24 @@ class IntervalsIcuActivitySyncSchedulerTest {
             IntegracaoExterna salva = salva();
             assertThat(salva.getUltimaSincronizacao()).isAfterOrEqualTo(inicioDoTeste);
             assertThat(salva.getLastSyncError()).isNull();
+        }
+
+        @Test
+        @DisplayName("modalidade não suportada é descartada pela listagem — sem fetch, sem vaga no teto (smoke 2026-08-22)")
+        void modalidadeNaoSuportadaNaoEBuscada() {
+            props.setSyncMaxActivitiesPerCycle(2);
+            atletaAtivo(null);
+            IcuActivityDto natacao = new IcuActivityDto("i-swim", EXTERNAL_ATHLETE, "Swim", "Natação",
+                    "2026-08-14T07:00:00", "2026-08-14T10:00:00Z",
+                    1800, 1850, 1500.0, null, null, null, null, null, null, null, null, null, null, null);
+            listagemDevolve(A2, A1, natacao);
+
+            scheduler.runDailyIncrementalSync();
+
+            // a natação é a mais antiga: se contasse no teto, tomaria a vaga de i2
+            assertThat(idsImportadosEmOrdem()).containsExactly("i1", "i2");
+            verify(ingestionService, never()).importarAtividade(any(), eq("i-swim"), any());
+            assertThat(salva().getUltimaSincronizacao()).isAfterOrEqualTo(inicioDoTeste);
         }
 
         @Test
