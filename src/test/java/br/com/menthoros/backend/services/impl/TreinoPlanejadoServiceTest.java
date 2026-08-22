@@ -118,8 +118,8 @@ class TreinoPlanejadoServiceTest {
             when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
 
             List<EtapaInputDto> etapas = List.of(
-                    new EtapaInputDto("AQUECIMENTO", null, 10, null, null, null, null, null),
-                    new EtapaInputDto("PRINCIPAL", null, 60, null, null, null, null, null)
+                    new EtapaInputDto("AQUECIMENTO", null, 10, null, null, null, null, null, null),
+                    new EtapaInputDto("PRINCIPAL", null, 60, null, null, null, null, null, null)
             );
             TreinoPlanejadoAddDto dto = new TreinoPlanejadoAddDto(
                     "CONTINUO", DATA_SEXTA, null, null, 70, null, null, null, null, etapas
@@ -335,12 +335,12 @@ class TreinoPlanejadoServiceTest {
             when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
 
             List<EtapaInputDto> subs = List.of(
-                    new EtapaInputDto("INTERVALADO", null, 3, null, null, null, null, null),
-                    new EtapaInputDto("RECUPERACAO", null, 1, null, null, null, null, null)
+                    new EtapaInputDto("INTERVALADO", null, 3, null, null, null, null, null, null),
+                    new EtapaInputDto("RECUPERACAO", null, 1, null, null, null, null, null, null)
             );
             TreinoPlanejadoAddDto dto = new TreinoPlanejadoAddDto(
                     "INTERVALADO", DATA_SEXTA, null, null, null, null, null, null, null,
-                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 3, subs))
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 3, subs))
             );
 
             service.adicionarTreino(planoId, dto);
@@ -368,8 +368,8 @@ class TreinoPlanejadoServiceTest {
 
             TreinoPlanejadoAddDto dto = new TreinoPlanejadoAddDto(
                     "CONTINUO", DATA_SEXTA, null, null, null, null, null, null, null,
-                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null,
-                            List.of(new EtapaInputDto("PRINCIPAL", null, 30, null, null, null, null, null))))
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, null,
+                            List.of(new EtapaInputDto("PRINCIPAL", null, 30, null, null, null, null, null, null))))
             );
 
             service.adicionarTreino(planoId, dto);
@@ -388,7 +388,7 @@ class TreinoPlanejadoServiceTest {
 
             TreinoPlanejadoAddDto dto = new TreinoPlanejadoAddDto(
                     "CONTINUO", DATA_SEXTA, null, null, null, null, null, null, null,
-                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 3, List.of()))
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 3, List.of()))
             );
 
             assertThatThrownBy(() -> service.adicionarTreino(planoId, dto))
@@ -408,15 +408,15 @@ class TreinoPlanejadoServiceTest {
             when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
 
             List<EtapaInputDto> subs = List.of(
-                    new EtapaInputDto("INTERVALADO", null, 3, null, null, null, null, null),
-                    new EtapaInputDto("RECUPERACAO", null, 1, null, null, null, null, null)
+                    new EtapaInputDto("INTERVALADO", null, 3, null, null, null, null, null, null),
+                    new EtapaInputDto("RECUPERACAO", null, 1, null, null, null, null, null, null)
             );
             TreinoPlanejadoAddDto dto = new TreinoPlanejadoAddDto(
                     "INTERVALADO", DATA_SEXTA, null, null, null, null, null, null, null,
                     List.of(
-                            new EtapaInputDto("AQUECIMENTO", null, 10, null, null, null, null, null),
-                            new EtapaInputDto("BLOCO", null, null, null, null, null, 2, subs),
-                            new EtapaInputDto("DESAQUECIMENTO", null, 10, null, null, null, null, null)
+                            new EtapaInputDto("AQUECIMENTO", null, 10, null, null, null, null, null, null),
+                            new EtapaInputDto("BLOCO", null, null, null, null, null, null, 2, subs),
+                            new EtapaInputDto("DESAQUECIMENTO", null, 10, null, null, null, null, null, null)
                     )
             );
 
@@ -459,12 +459,12 @@ class TreinoPlanejadoServiceTest {
             when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> new EtapaTreino());
 
             List<EtapaInputDto> subs = List.of(
-                    new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null),
-                    new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null)
+                    new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null, null),
+                    new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null, null)
             );
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
-                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 4, subs))
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 4, subs))
             );
 
             service.editarTreino(planoId, treinoId, patch);
@@ -500,12 +500,12 @@ class TreinoPlanejadoServiceTest {
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
                     List.of(
-                            new EtapaInputDto("BLOCO", null, null, null, null, null, 2, List.of(
-                                    new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null),
-                                    new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null))),
-                            new EtapaInputDto("BLOCO", null, null, null, null, null, 2, List.of(
-                                    new EtapaInputDto("INTERVALADO", null, 2, null, null, null, null, null),
-                                    new EtapaInputDto("RECUPERACAO", null, 3, null, null, null, null, null)))
+                            new EtapaInputDto("BLOCO", null, null, null, null, null, null, 2, List.of(
+                                    new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null, null),
+                                    new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null, null))),
+                            new EtapaInputDto("BLOCO", null, null, null, null, null, null, 2, List.of(
+                                    new EtapaInputDto("INTERVALADO", null, 2, null, null, null, null, null, null),
+                                    new EtapaInputDto("RECUPERACAO", null, 3, null, null, null, null, null, null)))
                     )
             );
 
@@ -525,6 +525,64 @@ class TreinoPlanejadoServiceTest {
         }
 
         @Test
+        @DisplayName("patch preserva o ritmo por etapa — antes a edição apagava o que o planner prescreveu")
+        void patchPreservaRitmoPorEtapa() {
+            // O planner prescreve ritmo por etapa (o schema do structured output exige ritmoAlvo,
+            // nullable, em cada etapa). Como aplicarEtapasPatch limpa as etapas e as reconstrói a
+            // partir do EtapaInputDto, um campo ausente do DTO nascia nulo: editar qualquer coisa no
+            // treino apagava o ritmo de todas as etapas, sem erro e sem aviso.
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setEtapas(new ArrayList<>());
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any(TreinoPlanejado.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> etapaDe(inv.getArgument(0)));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null,
+                    List.of(new EtapaInputDto("PRINCIPAL", "Tiro", 5, null,
+                            "140-150 bpm", "5:00-5:15/km", 1, null, null))
+            );
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            assertThat(treino.getEtapas()).hasSize(1);
+            assertThat(treino.getEtapas().get(0).getRitmoAlvo()).isEqualTo("5:00-5:15/km");
+            assertThat(treino.getEtapas().get(0).getFcAlvoEtapa()).isEqualTo("140-150 bpm");
+        }
+
+        @Test
+        @DisplayName("bloco expandido preserva o ritmo em cada cópia da série")
+        void blocoExpandidoPreservaRitmo() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setEtapas(new ArrayList<>());
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any(TreinoPlanejado.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> etapaDe(inv.getArgument(0)));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null,
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 3, List.of(
+                            new EtapaInputDto("INTERVALADO", "Tiro", 1, null, null, "4:00-4:10/km", null, null, null))))
+            );
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            // comRepeticoes() reconstrói o DTO de cada cópia: sem o campo ali, a série perdia o
+            // ritmo mesmo com o DTO de entrada carregando-o.
+            assertThat(treino.getEtapas()).hasSize(3);
+            assertThat(treino.getEtapas()).allSatisfy(e ->
+                    assertThat(e.getRitmoAlvo()).isEqualTo("4:00-4:10/km"));
+        }
+
+        @Test
         @DisplayName("patch com BLOCO sem sub-etapas é rejeitado — antes o bloco sumia calado")
         void patchComBlocoVazioRejeitado() {
             // Mudança de contrato do PATCH, deliberada: o caminho antigo iterava uma lista vazia e
@@ -539,7 +597,7 @@ class TreinoPlanejadoServiceTest {
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
-                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 3, List.of()))
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 3, List.of()))
             );
 
             assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
@@ -561,8 +619,8 @@ class TreinoPlanejadoServiceTest {
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
-                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 21, List.of(
-                            new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null))))
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 21, List.of(
+                            new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null, null))))
             );
 
             assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
@@ -582,11 +640,11 @@ class TreinoPlanejadoServiceTest {
             when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
                     .thenReturn(Optional.of(treino));
 
-            EtapaInputDto aninhada = new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null,
-                    List.of(new EtapaInputDto("RECUPERACAO", null, 1, null, null, null, null, null)));
+            EtapaInputDto aninhada = new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null,
+                    List.of(new EtapaInputDto("RECUPERACAO", null, 1, null, null, null, null, null, null)));
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
-                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, 2, List.of(aninhada)))
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 2, List.of(aninhada)))
             );
 
             assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
@@ -612,9 +670,9 @@ class TreinoPlanejadoServiceTest {
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
                     List.of(
-                            new EtapaInputDto("AQUECIMENTO", null, 10, null, null, null, null, null),
-                            new EtapaInputDto("PRINCIPAL", null, 30, null, null, null, null, null),
-                            new EtapaInputDto("DESAQUECIMENTO", null, 5, null, null, null, null, null)
+                            new EtapaInputDto("AQUECIMENTO", null, 10, null, null, null, null, null, null),
+                            new EtapaInputDto("PRINCIPAL", null, 30, null, null, null, null, null, null),
+                            new EtapaInputDto("DESAQUECIMENTO", null, 5, null, null, null, null, null, null)
                     )
             );
 
@@ -922,8 +980,8 @@ class TreinoPlanejadoServiceTest {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
             TreinoPlanejado treino = criarTreino(plano);
 
-            EtapaInputDto subEtapa = new EtapaInputDto("INTERVALADO", null, 5, null, null, null, null, null);
-            EtapaInputDto bloco = new EtapaInputDto("BLOCO", null, null, null, null, null, 2, List.of(subEtapa));
+            EtapaInputDto subEtapa = new EtapaInputDto("INTERVALADO", null, 5, null, null, null, null, null, null);
+            EtapaInputDto bloco = new EtapaInputDto("BLOCO", null, null, null, null, null, null, 2, List.of(subEtapa));
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null, List.of(bloco)
             );
@@ -963,10 +1021,10 @@ class TreinoPlanejadoServiceTest {
             TreinoPlanejado treino = criarTreino(plano);
 
             List<EtapaInputDto> subEtapas = List.of(
-                    new EtapaInputDto("INTERVALADO", null, 3, null, null, null, null, null),
-                    new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null)
+                    new EtapaInputDto("INTERVALADO", null, 3, null, null, null, null, null, null),
+                    new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null, null)
             );
-            EtapaInputDto bloco = new EtapaInputDto("BLOCO", null, null, null, null, null, 3, subEtapas);
+            EtapaInputDto bloco = new EtapaInputDto("BLOCO", null, null, null, null, null, null, 3, subEtapas);
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null, List.of(bloco)
             );
@@ -991,8 +1049,8 @@ class TreinoPlanejadoServiceTest {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
             TreinoPlanejado treino = criarTreino(plano);
 
-            EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, 3, 3, null);
-            EtapaInputDto recuperacao = new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null);
+            EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, null, 3, 3, null);
+            EtapaInputDto recuperacao = new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null, null);
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null, List.of(intervalado, recuperacao)
             );
@@ -1026,7 +1084,7 @@ class TreinoPlanejadoServiceTest {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
             TreinoPlanejado treino = criarTreino(plano);
 
-            EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, 3, null, null);
+            EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, null, 3, null, null);
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null, List.of(intervalado)
             );
@@ -1056,7 +1114,7 @@ class TreinoPlanejadoServiceTest {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
             TreinoPlanejado treino = criarTreino(plano);
 
-            EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, 1, null, null);
+            EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, null, 1, null, null);
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null, List.of(intervalado)
             );
@@ -1147,6 +1205,17 @@ class TreinoPlanejadoServiceTest {
         treino.setStatusTreino(TreinoExecucaoStatus.PENDENTE);
         treino.setDataTreino(LocalDate.now().plusDays(1));
         return treino;
+    }
+
+    /** Espelha o {@link EtapaMapper} real nos campos que o teste observa. */
+    private EtapaTreino etapaDe(EtapaInputDto dto) {
+        EtapaTreino etapa = new EtapaTreino();
+        etapa.setTipoEtapa(dto.tipoEtapa());
+        etapa.setDescricaoEtapa(dto.descricaoEtapa());
+        etapa.setDuracaoMin(dto.duracaoMin());
+        etapa.setFcAlvoEtapa(dto.fcAlvoEtapa());
+        etapa.setRitmoAlvo(dto.ritmoAlvo());
+        return etapa;
     }
 
     private TreinoPlanejadoOutputDto outputStub() {

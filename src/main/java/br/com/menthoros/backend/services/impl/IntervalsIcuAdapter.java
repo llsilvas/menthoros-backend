@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.domain.workout.HrTarget;
+import br.com.menthoros.backend.domain.workout.IntensityTarget;
 import br.com.menthoros.backend.domain.workout.PaceTarget;
 import br.com.menthoros.backend.domain.workout.StructuredWorkout;
 import br.com.menthoros.backend.domain.workout.WorkoutStep;
@@ -240,11 +241,15 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
         if (step.distanceMeters() != null) {
             node.put("distance", step.distanceMeters());
         }
-        if (step.pace() != null) {
-            node.set("pace", montarPace(step.pace()));
-        }
-        if (step.hr() != null) {
-            node.set("hr", montarHr(step.hr()));
+        switch (step.meta()) {
+            case PaceTarget pace -> node.set("pace", montarPace(pace));
+            case HrTarget hr -> node.set("hr", montarHr(hr));
+            case IntensityTarget.NoTarget ignored -> {
+                // "Sem objetivo": o step vai sem meta, e isso é prescrição válida.
+            }
+            case null -> {
+                // Defensivo: WorkoutStep.simples normaliza null para SEM_OBJETIVO.
+            }
         }
         return node;
     }
@@ -261,24 +266,17 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
         return node;
     }
 
+    /**
+     * Alvo de FC sempre absoluto. As formas relativas do padrão ({@code %hr}, {@code hr_zone}) não
+     * são emitidas: a primeira é %FCmax por definição do formato, enquanto o domínio é %LTHR, e a
+     * segunda delega a conversão às zonas configuradas no relógio, que o Menthoros não escreve.
+     * O {@code HrTarget} já chega resolvido do converter.
+     */
     private ObjectNode montarHr(HrTarget hr) {
         ObjectNode node = objectMapper.createObjectNode();
-        switch (hr.unidade()) {
-            case BPM -> {
-                node.put("units", "bpm");
-                node.put("start", hr.start());
-                node.put("end", hr.end());
-            }
-            case PERCENT -> {
-                node.put("units", "%hr");
-                node.put("start", hr.start());
-                node.put("end", hr.end());
-            }
-            case ZONE -> {
-                node.put("units", "hr_zone");
-                node.put("value", hr.start());
-            }
-        }
+        node.put("units", "bpm");
+        node.put("start", hr.startBpm());
+        node.put("end", hr.endBpm());
         return node;
     }
 }

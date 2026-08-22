@@ -1,6 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
-import br.com.menthoros.backend.domain.workout.HrTarget;
+
 import br.com.menthoros.backend.domain.workout.PaceTarget;
 
 import java.text.Normalizer;
@@ -41,29 +41,47 @@ public final class IntervalsIcuTargetParser {
         return Optional.empty();
     }
 
-    public static Optional<HrTarget> parseFc(String fcAlvoEtapa) {
+    /**
+     * Alvo de FC como o plano o escreveu, antes de ser resolvido contra o atleta.
+     *
+     * <p>Tipo intermediário de propósito: percentual e zona só têm significado em bpm depois de
+     * cruzados com o LTHR do atleta, e é o {@link IntervalsIcuFcAlvoResolver} que faz isso. Enquanto
+     * o alvo estiver nesta forma, ele ainda não é uma meta — não existe {@code HrTarget} relativo.</p>
+     */
+    public record FcAlvoBruto(Base base, int inicio, int fim) {
+        public enum Base {
+            /** Já absoluto: {@code "140-150 bpm"}. */
+            BPM,
+            /** Percentual do plano — interpretado na base do domínio (%LTHR), nunca %FCmax. */
+            PERCENT,
+            /** Número da zona (1–5), resolvido pela faixa do {@code ZonaTreinoService}. */
+            ZONE
+        }
+    }
+
+    public static Optional<FcAlvoBruto> parseFc(String fcAlvoEtapa) {
         String s = normaliza(fcAlvoEtapa);
         if (s == null) return Optional.empty();
         Matcher bpm = FC_BPM.matcher(s);
         if (bpm.matches()) {
-            return Optional.of(new HrTarget(HrTarget.Unidade.BPM,
+            return Optional.of(new FcAlvoBruto(FcAlvoBruto.Base.BPM,
                     Integer.parseInt(bpm.group(1)), Integer.parseInt(bpm.group(2))));
         }
         Matcher pct = FC_PERCENT.matcher(s);
         if (pct.matches()) {
-            return Optional.of(new HrTarget(HrTarget.Unidade.PERCENT,
+            return Optional.of(new FcAlvoBruto(FcAlvoBruto.Base.PERCENT,
                     Integer.parseInt(pct.group(1)), Integer.parseInt(pct.group(2))));
         }
         return Optional.empty();
     }
 
-    public static Optional<HrTarget> parseZona(String zonaAlvo) {
+    public static Optional<FcAlvoBruto> parseZona(String zonaAlvo) {
         String s = normaliza(zonaAlvo);
         if (s == null) return Optional.empty();
         Matcher zona = ZONA.matcher(s);
         if (zona.matches()) {
             int z = Integer.parseInt(zona.group(1));   // faixa -> zona inferior (conservador)
-            return Optional.of(new HrTarget(HrTarget.Unidade.ZONE, z, z));
+            return Optional.of(new FcAlvoBruto(FcAlvoBruto.Base.ZONE, z, z));
         }
         return Optional.empty();
     }

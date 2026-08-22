@@ -32,9 +32,17 @@ public record EtapaInputDto(
         @Positive
         Double distanciaKm,
 
-        @Schema(description = "Frequência cardíaca alvo da etapa", example = "70-80% FCmáx")
+        @Schema(description = "Frequência cardíaca alvo da etapa", example = "140-150 bpm")
         @Size(max = 50)
         String fcAlvoEtapa,
+
+        // Sem este campo, o PATCH apagava o ritmo por etapa: aplicarEtapasPatch limpa as etapas e
+        // as reconstrói a partir deste DTO, e o que ele não carrega nasce nulo. Mesmo mecanismo que
+        // desfazia o agrupamento da série antes de preservar-serie-estruturada-na-edicao — só que
+        // aqui o dado vinha do planner, que prescreve ritmo por etapa.
+        @Schema(description = "Ritmo alvo da etapa", example = "5:00-5:15/km")
+        @Size(max = 50)
+        String ritmoAlvo,
 
         @Schema(description = "Número de repetições — somente para tipo INTERVALADO", example = "4")
         @Positive

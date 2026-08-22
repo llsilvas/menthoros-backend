@@ -365,6 +365,7 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
                 dto.duracaoMin(),
                 dto.distanciaKm(),
                 dto.fcAlvoEtapa(),
+                dto.ritmoAlvo(),
                 repeticoes,
                 dto.blocoRepeticoes(),
                 null

@@ -1,7 +1,9 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.domain.workout.HrTarget;
+import br.com.menthoros.backend.domain.workout.IntensityTarget;
 import br.com.menthoros.backend.domain.workout.PaceTarget;
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.domain.workout.StructuredWorkout;
 import br.com.menthoros.backend.domain.workout.WorkoutStep;
 import br.com.menthoros.backend.entity.EtapaTreino;
@@ -32,7 +34,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class IntervalsIcuWorkoutConverterTest {
 
-    private final IntervalsIcuWorkoutConverter converter = new IntervalsIcuWorkoutConverter();
+    /** LTHR 170 — as zonas dos fixtures derivam daqui (Z2 = 85-89% => 145-151 bpm). */
+    private static final int FC_LIMIAR = 170;
+
+    private final IntervalsIcuWorkoutConverter converter = new IntervalsIcuWorkoutConverter(
+            new IntervalsIcuFcAlvoResolver(new ZonaTreinoService()));
 
     @Nested
     @DisplayName("converter")
@@ -55,7 +61,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.INTERVALADO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(1);
             WorkoutStep bloco = resultado.steps().get(0);
@@ -81,7 +87,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.INTERVALADO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(8);
             assertThat(resultado.steps()).allSatisfy(step -> assertThat(step.reps()).isNull());
@@ -106,7 +112,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.FARTLEK, LocalDate.of(2026, 8, 20),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(1);
             WorkoutStep bloco = resultado.steps().getFirst();
@@ -128,7 +134,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 8, 20),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(3);
             assertThat(resultado.steps()).allSatisfy(step -> assertThat(step.reps()).isNull());
@@ -150,7 +156,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 8, 20),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(5);
             assertThat(resultado.steps()).allSatisfy(step -> assertThat(step.reps()).isNull());
@@ -170,7 +176,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.FARTLEK, LocalDate.of(2026, 8, 20),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(3);
             assertThat(resultado.steps().get(0).reps()).isNull();
@@ -190,7 +196,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(3);
             assertThat(resultado.steps().get(0).distanceMeters()).isEqualTo(5000);
@@ -202,20 +208,86 @@ class IntervalsIcuWorkoutConverterTest {
         }
 
         @Test
-        @DisplayName("pace vence FC: pace preenchido, hr nulo, FC original anexada ao text")
-        void precedenciaPaceVenceFc() {
+        @DisplayName("FC vence pace: etapa prescrita por FC mantém a FC como meta, ritmo vai ao text")
+        void fcVencePace() {
             List<EtapaTreino> etapas = List.of(
                     etapa(1, "PRINCIPAL", "Tiro", 5, null, "5:00-5:15", "140-150 bpm", null, null)
             );
             TreinoPlanejado treino = treino(TipoTreino.INTERVALADO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             WorkoutStep step = resultado.steps().get(0);
-            assertThat(step.pace()).isEqualTo(new PaceTarget(300, 315));
-            assertThat(step.hr()).isNull();
-            assertThat(step.text()).isEqualTo("Tiro (140-150 bpm)");
+            // A meta é uma só. Antes o pace vencia e a FC virava texto — numa etapa prescrita por
+            // FC isso entregava ao relógio um alvo que o treinador não pediu.
+            assertThat(step.meta()).isEqualTo(new HrTarget(140, 150));
+            assertThat(step.text()).isEqualTo("Tiro (5:00-5:15)");
+        }
+
+        @Test
+        @DisplayName("FC descartada com ritmo presente: o ritmo assume, e o aviso diz isso")
+        void fcDescartadaCaiNoRitmo() {
+            // O aviso e o payload precisam contar a mesma história. Antes, a etapa saía com meta de
+            // ritmo enquanto o treino era marcado "etapa sem meta" — o treinador lia que o relógio
+            // não controlava nada, e ele estava controlando ritmo.
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "INTERVALADO", "Tiro", 5, null, "4:00-4:10", "90-95% FCmax", null, null)
+            );
+            TreinoPlanejado treino = treinoSemFcMedida(etapas);
+
+            IntervalsIcuWorkoutConverter.ResultadoConversao r = converter.converter(treino).orElseThrow();
+
+            WorkoutStep step = r.workout().steps().get(0);
+            assertThat(step.meta()).isEqualTo(new PaceTarget(240, 250));
+            assertThat(r.fcDescartadaComRitmo()).isTrue();
+            assertThat(r.fcDescartadaSemMeta()).isFalse();
+            // A FC perdida vai no texto: sem isso o treinador não sabe qual meta se perdeu.
+            assertThat(step.text()).isEqualTo("Tiro (90-95% FCmax)");
+        }
+
+        @Test
+        @DisplayName("FC descartada sem ritmo: etapa sem meta, e o aviso diz isso")
+        void fcDescartadaSemRitmoFicaSemMeta() {
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "CONTINUO", "Base", 40, null, null, "90-95% FCmax", null, null)
+            );
+            TreinoPlanejado treino = treinoSemFcMedida(etapas);
+
+            IntervalsIcuWorkoutConverter.ResultadoConversao r = converter.converter(treino).orElseThrow();
+
+            assertThat(r.workout().steps().get(0).meta()).isEqualTo(IntensityTarget.SEM_OBJETIVO);
+            assertThat(r.fcDescartadaSemMeta()).isTrue();
+            assertThat(r.fcDescartadaComRitmo()).isFalse();
+        }
+
+        @Test
+        @DisplayName("treino com os dois desfechos acumula os dois sinais")
+        void treinoComOsDoisDesfechos() {
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "AQUECIMENTO", "Solto", 10, null, null, "70-80% FCmax", null, null),
+                    etapa(2, "INTERVALADO", "Tiro", 5, null, "4:00-4:10", "90-95% FCmax", null, null)
+            );
+            TreinoPlanejado treino = treinoSemFcMedida(etapas);
+
+            IntervalsIcuWorkoutConverter.ResultadoConversao r = converter.converter(treino).orElseThrow();
+
+            assertThat(r.fcDescartadaSemMeta()).isTrue();
+            assertThat(r.fcDescartadaComRitmo()).isTrue();
+        }
+
+        @Test
+        @DisplayName("etapa sem FC prescrita e com ritmo não é descarte: é escolha do treinador")
+        void apenasRitmoNaoEDescarte() {
+            List<EtapaTreino> etapas = List.of(
+                    etapa(1, "INTERVALADO", "Tiro", 5, null, "4:00-4:10", null, null, null)
+            );
+            TreinoPlanejado treino = treinoSemFcMedida(etapas);
+
+            IntervalsIcuWorkoutConverter.ResultadoConversao r = converter.converter(treino).orElseThrow();
+
+            assertThat(r.workout().steps().get(0).meta()).isEqualTo(new PaceTarget(240, 250));
+            assertThat(r.metaFcDescartada()).isFalse();
         }
 
         @Test
@@ -224,13 +296,13 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.FACIL, LocalDate.of(2026, 7, 15),
                     Duration.ofMinutes(45), null, "z2", "Rodagem leve", List.of());
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(1);
             WorkoutStep step = resultado.steps().get(0);
             assertThat(step.durationSeconds()).isEqualTo(2700);
             assertThat(step.distanceMeters()).isNull();
-            assertThat(step.hr()).isEqualTo(new HrTarget(HrTarget.Unidade.ZONE, 2, 2));
+            assertThat(step.meta()).isEqualTo(new HrTarget(145, 151));
             assertThat(resultado.description()).isEqualTo("Rodagem leve");
         }
 
@@ -254,12 +326,12 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),
                     Duration.ofMinutes(40), null, "z2", null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(1);
             WorkoutStep step = resultado.steps().get(0);
             assertThat(step.durationSeconds()).isEqualTo(2400);
-            assertThat(step.hr()).isEqualTo(new HrTarget(HrTarget.Unidade.ZONE, 2, 2));
+            assertThat(step.meta()).isEqualTo(new HrTarget(145, 151));
         }
 
         @Test
@@ -277,7 +349,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.INTERVALADO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(2);
             assertThat(resultado.steps().get(0).reps()).isEqualTo(2);
@@ -298,7 +370,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(2);
             assertThat(resultado.steps()).allSatisfy(step -> {
@@ -322,7 +394,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.INTERVALADO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(5);
             assertThat(resultado.steps()).allSatisfy(step -> assertThat(step.reps()).isNull());
@@ -348,7 +420,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             WorkoutStep stepAberto = resultado.steps().get(1);
             assertThat(stepAberto.durationSeconds()).isNull();
@@ -365,7 +437,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps()).hasSize(1);
         }
@@ -379,7 +451,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.steps().get(0).text()).isNull();
         }
@@ -393,7 +465,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, null, null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             WorkoutStep step = resultado.steps().get(0);
             assertThat(step.distanceMeters()).isNull();
@@ -410,7 +482,7 @@ class IntervalsIcuWorkoutConverterTest {
                     Duration.ZERO, null, null, null, etapas);
             UUID treinoId = treino.getId();
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.name()).isEqualTo("CONTINUO 15/07");
             assertThat(resultado.externalId()).isEqualTo("menthoros-" + treinoId);
@@ -427,7 +499,7 @@ class IntervalsIcuWorkoutConverterTest {
             TreinoPlanejado treino = treino(TipoTreino.CONTINUO, LocalDate.of(2026, 7, 15),
                     Duration.ZERO, new BigDecimal("12.00"), null, null, etapas);
 
-            StructuredWorkout resultado = converter.converter(treino).orElseThrow();
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
 
             assertThat(resultado.name()).isEqualTo("12 Km - CONTINUO");
         }
@@ -454,6 +526,18 @@ class IntervalsIcuWorkoutConverterTest {
         treino.setZonaAlvo(zonaAlvo);
         treino.setDescricao(descricao);
         treino.setEtapas(etapas);
+        treino.setAtleta(Atleta.builder().id(UUID.randomUUID()).fcLimiar(FC_LIMIAR).build());
+        return treino;
+    }
+
+    /** Atleta sem fcLimiar medido — o caso em que a prescrição de FC não pode ser resolvida. */
+    private TreinoPlanejado treinoSemFcMedida(List<EtapaTreino> etapas) {
+        TreinoPlanejado treino = treino(TipoTreino.INTERVALADO, LocalDate.of(2026, 8, 21),
+                Duration.ofMinutes(40), null, null, null, etapas);
+        treino.setAtleta(Atleta.builder()
+                .id(UUID.randomUUID())
+                .dataNascimento(LocalDate.of(1990, 1, 1))
+                .build());
         return treino;
     }
 
