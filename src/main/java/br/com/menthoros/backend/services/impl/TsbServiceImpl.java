@@ -100,7 +100,7 @@ public class TsbServiceImpl implements TsbService {
 
         Atleta atleta = buscarAtleta(atletaId);
         List<TreinoRealizado> treinosDoDia = buscarTreinosDia(atletaId, data);
-        Integer tssHoje = tssCalculatorService.calcularTssDia(treinosDoDia);
+        Integer tssHoje = somarTssContabilizado(treinosDoDia);
 
         MetricasDiarias metricasHoje = obterOuCriarMetricasDia(atleta, data);
         atualizarVolumeDiario(metricasHoje, treinosDoDia);
@@ -135,6 +135,31 @@ public class TsbServiceImpl implements TsbService {
 
     private List<TreinoRealizado> buscarTreinosDia(UUID atletaId, LocalDate data) {
         return treinoRealizadoRepository.findQueContamByAtletaIdAndDataTreino(atletaId, data);
+    }
+
+    /**
+     * Soma {@code tssCalculado} dos treinos do dia — D3: o campo persistido é a única verdade,
+     * não um recálculo ao vivo.
+     *
+     * <p>Fallback temporário (task 8.2 remove após o backfill de {@link #recalcularHistoricoCompleto}
+     * rodar em produção): treino sem {@code tssCalculado} ainda (histórico pré-migração) tem o
+     * valor calculado e <b>persistido agora</b>, para que a próxima chamada não recalcule e o
+     * backfill deste atleta feche a lacuna de vez.</p>
+     */
+    private int somarTssContabilizado(List<TreinoRealizado> treinos) {
+        int total = 0;
+        for (TreinoRealizado treino : treinos) {
+            Integer tss = treino.getTssCalculado();
+            if (tss == null) {
+                log.warn("tssCalculado ausente para treino {} — calculado e persistido agora "
+                        + "(fallback D3, remover na task 8.2 após o backfill)", treino.getId());
+                tss = tssCalculatorService.calcularTss(treino);
+                treino.setTssCalculado(tss);
+                treinoRealizadoRepository.save(treino);
+            }
+            total += tss;
+        }
+        return total;
     }
 
     private MetricasDiarias obterOuCriarMetricasDia(Atleta atleta, LocalDate data) {
