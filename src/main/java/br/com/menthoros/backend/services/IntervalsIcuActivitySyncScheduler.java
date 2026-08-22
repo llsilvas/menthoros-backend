@@ -7,18 +7,21 @@ import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.exception.IntervalsIcuApiException;
 import br.com.menthoros.backend.exception.IntervalsIcuRateLimitException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
@@ -39,6 +42,9 @@ import java.util.UUID;
 @Component
 @RequiredArgsConstructor
 public class IntervalsIcuActivitySyncScheduler {
+
+    /** Tamanho de {@code tb_integracao_externa.last_sync_error} (V16). Acima disso o save falha. */
+    private static final int LAST_SYNC_ERROR_MAX = 500;
 
     private final IntegracaoExternaRepository integracaoExternaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
@@ -83,7 +89,7 @@ public class IntervalsIcuActivitySyncScheduler {
                 // para os demais e o motivo fica visível em lastSyncError — sem isso, credencial
                 // revogada e rate limit viram só uma linha de log que ninguém lê.
                 log.warn("Falha no intervals.icu sync tenant={} atleta={} erro={}", tenantId, atletaId, ex.getMessage());
-                registrarErro(atletaId, tenantId, ex.getMessage());
+                registrarErro(atletaId, tenantId, mensagemSegura(ex));
             } finally {
                 TenantContext.clear();
             }
@@ -102,42 +108,46 @@ public class IntervalsIcuActivitySyncScheduler {
         List<IcuActivityDto> atividades = intervalsIcuClient.listarAtividades(
                 integracao.getAccessToken(), integracao.getExternalAthleteId(), oldest, hoje);
 
+        // Delta antes/depois: importarAtividade é idempotente e devolve sucesso também para o que já
+        // existia, então "chamadas bem-sucedidas" contaria reprocessamento como importação nova.
         long antesDoLote = treinoRealizadoRepository
                 .countByTenantIdAndAtletaIdAndFonteDados(tenantId, atletaId, FonteDados.INTERVALS_ICU);
 
         // Da mais antiga para a mais nova: a API devolve decrescente, e a carga inicial precisa
         // construir o PMC em ordem cronológica para o cursor poder apontar "até onde cheguei".
         // Já importada custa zero requisição e não conta no teto.
-        List<IcuActivityDto> pendentes = atividades.stream()
-                .filter(a -> treinoRealizadoRepository
-                        .findByTenantIdAndFonteDadosAndExternalId(tenantId, FonteDados.INTERVALS_ICU, a.id())
+        List<Pendente> pendentes = atividades.stream()
+                .map(a -> Pendente.de(a, atletaId))
+                .filter(Optional::isPresent).map(Optional::get)
+                .filter(p -> treinoRealizadoRepository
+                        .findByTenantIdAndFonteDadosAndExternalId(tenantId, FonteDados.INTERVALS_ICU, p.id())
                         .isEmpty())
-                .sorted(Comparator.comparing(IcuActivityDto::startDate))
+                .sorted(Comparator.comparing(Pendente::inicio))
                 .toList();
         int maxPorCiclo = props.getSyncMaxActivitiesPerCycle();
         boolean esgotouJanela = pendentes.size() <= maxPorCiclo;
-        List<IcuActivityDto> lote = pendentes.subList(0, Math.min(maxPorCiclo, pendentes.size()));
+        List<Pendente> lote = pendentes.subList(0, Math.min(maxPorCiclo, pendentes.size()));
 
         boolean falhaTransitoria = false;
-        IcuActivityDto ultimaProcessada = null;
-        for (IcuActivityDto atividade : lote) {
+        Instant ultimaProcessada = null;
+        for (Pendente pendente : lote) {
             try {
-                ingestionService.importarAtividade(atletaId, atividade.id(), tenantId);
-                ultimaProcessada = atividade;
+                ingestionService.importarAtividade(atletaId, pendente.id(), tenantId);
+                ultimaProcessada = pendente.inicio();
             } catch (IntervalsIcuRateLimitException | DomainConflictException ex) {
                 // Transitória ou de estado do atleta (429, credencial revogada, Strava ainda ativo):
                 // insistir nas próximas só gasta cota. O cursor fica onde chegou e o próximo ciclo
                 // relista a partir daí — nada que ficou sem tentativa sai da janela.
                 falhaTransitoria = true;
                 log.warn("Lote intervals.icu abortado em activity {} do atleta {}: {}",
-                        atividade.id(), atletaId, ex.getMessage());
+                        pendente.id(), atletaId, ex.getMessage());
                 break;
             } catch (DomainNotFoundException | DomainRuleViolationException ex) {
                 // Permanente desta atividade (modalidade não suportada, 404): não é retryable,
                 // então o cursor pode passar por ela.
-                ultimaProcessada = atividade;
+                ultimaProcessada = pendente.inicio();
                 log.warn("Activity {} do atleta {} ignorada (permanente): {}",
-                        atividade.id(), atletaId, ex.getMessage());
+                        pendente.id(), atletaId, ex.getMessage());
             }
         }
 
@@ -157,27 +167,66 @@ public class IntervalsIcuActivitySyncScheduler {
         atual.setSyncActivityCount(
                 (atual.getSyncActivityCount() == null ? 0 : atual.getSyncActivityCount()) + novasImportadas);
 
-        // O cursor avança até onde o ciclo chegou, nunca além:
-        //   janela esgotada sem falha transitória  -> agora (regime de cruzeiro)
-        //   lote parcial (teto) ou falha transitória -> instante da última processada
-        //   falha logo na primeira                   -> intocado
-        if (!falhaTransitoria && esgotouJanela) {
-            atual.setUltimaSincronizacao(Instant.now());
-            atual.setLastSyncError(null);
-        } else if (ultimaProcessada != null) {
-            atual.setUltimaSincronizacao(Instant.parse(ultimaProcessada.startDate()));
-            atual.setLastSyncError(falhaTransitoria
-                    ? "Ciclo interrompido por falha transitória — cursor em " + ultimaProcessada.startDate()
-                    : null);
-        } else if (falhaTransitoria) {
-            atual.setLastSyncError("Ciclo interrompido por falha transitória — cursor mantido para retry");
-        }
+        EstadoCursor estado = calcularCursor(falhaTransitoria, esgotouJanela, ultimaProcessada,
+                atual.getUltimaSincronizacao());
+        atual.setUltimaSincronizacao(estado.cursor());
+        atual.setLastSyncError(estado.erro());
         integracaoExternaRepository.save(atual);
         log.info("intervals.icu sync concluído tenant={} atleta={} novas={} pendentesRestantes={}",
                 tenantId, atletaId, novasImportadas, Math.max(0, pendentes.size() - lote.size()));
     }
 
+    /** Para onde o cursor vai depois do lote, e o que fica em {@code lastSyncError}. */
+    record EstadoCursor(@Nullable Instant cursor, @Nullable String erro) {}
+
+    /**
+     * A regra do cursor, isolada para ser lida (e testada) sem o resto do ciclo:
+     * <ul>
+     *   <li>janela esgotada sem falha transitória → agora (regime de cruzeiro);</li>
+     *   <li>lote parcial (teto) ou falha transitória depois de algum progresso → instante da última
+     *       processada, nunca além;</li>
+     *   <li>falha logo na primeira → cursor intocado, erro registrado.</li>
+     * </ul>
+     */
+    static EstadoCursor calcularCursor(boolean falhaTransitoria, boolean esgotouJanela,
+                                       @Nullable Instant ultimaProcessada, @Nullable Instant cursorAnterior) {
+        if (!falhaTransitoria && esgotouJanela) {
+            return new EstadoCursor(Instant.now(), null);
+        }
+        if (ultimaProcessada != null) {
+            return new EstadoCursor(ultimaProcessada, falhaTransitoria
+                    ? "Ciclo interrompido por falha transitória — cursor em " + ultimaProcessada
+                    : null);
+        }
+        return new EstadoCursor(cursorAnterior, falhaTransitoria
+                ? "Ciclo interrompido por falha transitória — cursor mantido para retry"
+                : null);
+    }
+
+    /**
+     * Atividade da listagem com o instante já resolvido. {@code start_date} vem em UTC na listagem
+     * (gate 0.2), mas uma atividade sem ele ou com formato estranho não pode derrubar o atleta
+     * inteiro nem virar cursor: é pulada com log e fica para o import manual.
+     */
+    private record Pendente(String id, Instant inicio) {
+        static Optional<Pendente> de(IcuActivityDto dto, UUID atletaId) {
+            if (dto.startDate() == null) {
+                log.warn("Activity {} do atleta {} sem start_date — ignorada neste ciclo", dto.id(), atletaId);
+                return Optional.empty();
+            }
+            try {
+                return Optional.of(new Pendente(dto.id(), Instant.parse(dto.startDate())));
+            } catch (DateTimeParseException ex) {
+                log.warn("Activity {} do atleta {} com start_date ilegível ({}) — ignorada neste ciclo",
+                        dto.id(), atletaId, dto.startDate());
+                return Optional.empty();
+            }
+        }
+    }
+
     private void registrarErro(UUID atletaId, UUID tenantId, String mensagem) {
+        // Mesmo reload de syncAtleta: se o coach desconectou enquanto o provedor respondia, a
+        // instância da listagem está stale e salvá-la ressuscitaria a conexão.
         integracaoExternaRepository
                 .findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId)
                 .filter(IntegracaoExterna::isAtivo)
@@ -185,5 +234,22 @@ public class IntervalsIcuActivitySyncScheduler {
                     i.setLastSyncError(mensagem);
                     integracaoExternaRepository.save(i);
                 });
+    }
+
+    /**
+     * Só exceções do domínio e do client têm mensagem pensada para o coach. O resto (SQL, NPE,
+     * transporte) leva detalhe interno e pode passar dos 500 caracteres da coluna — o que faria o
+     * próprio registro do erro falhar.
+     */
+    static String mensagemSegura(Exception ex) {
+        boolean conhecida = ex instanceof IntervalsIcuApiException
+                || ex instanceof IntervalsIcuRateLimitException
+                || ex instanceof DomainConflictException
+                || ex instanceof DomainNotFoundException
+                || ex instanceof DomainRuleViolationException;
+        String mensagem = conhecida && ex.getMessage() != null
+                ? ex.getMessage()
+                : "Falha inesperada no sync (" + ex.getClass().getSimpleName() + ")";
+        return mensagem.length() <= LAST_SYNC_ERROR_MAX ? mensagem : mensagem.substring(0, LAST_SYNC_ERROR_MAX);
     }
 }

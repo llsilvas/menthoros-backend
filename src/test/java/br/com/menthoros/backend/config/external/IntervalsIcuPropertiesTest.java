@@ -164,12 +164,12 @@ class IntervalsIcuPropertiesTest {
     class Scheduler {
 
         @Test
-        @DisplayName("sem as chaves, vale 90 dias de lookback, 1 dia de overlap e 6 atividades por ciclo")
+        @DisplayName("sem as chaves, vale 90 dias de lookback, 7 dias de overlap e 6 atividades por ciclo")
         void defaultsDoScheduler() {
             contextRunner.withPropertyValues(PROPRIEDADES_COMPLETAS).run(ctx -> {
                 IntervalsIcuProperties props = ctx.getBean(IntervalsIcuProperties.class);
                 assertThat(props.getSyncDaysBack()).isEqualTo(90);
-                assertThat(props.getSyncOverlapDays()).isEqualTo(1);
+                assertThat(props.getSyncOverlapDays()).isEqualTo(7);
                 assertThat(props.getSyncMaxActivitiesPerCycle()).isEqualTo(6);
             });
         }

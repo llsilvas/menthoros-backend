@@ -60,9 +60,14 @@ public class IntervalsIcuProperties {
     @Min(1)
     private int syncDaysBack = 90;
 
-    /** Dias subtraídos do cursor ao calcular {@code oldest}; absorve a conversão Instant → LocalDate. */
+    /**
+     * Dias subtraídos do cursor ao calcular {@code oldest}. Nasceu como 1 (absorver a conversão
+     * Instant → LocalDate); subiu para 7 no QA porque um relógio que fica uma semana sem sincronizar
+     * entrega atividades com {@code start_date} anterior ao cursor — sem overlap elas nunca seriam
+     * listadas. Custa zero requisições: o que já foi importado é filtrado antes de qualquer HTTP.
+     */
     @Min(0)
-    private int syncOverlapDays = 1;
+    private int syncOverlapDays = 7;
 
     /**
      * Teto de atividades ainda não importadas que um ciclo busca por atleta. O provedor limita a

@@ -478,4 +478,73 @@ class IntervalsIcuActivitySyncSchedulerTest {
         assertThat(salva().getUltimaSincronizacao()).isAfterOrEqualTo(inicioDoTeste);
         assertThat(salva().getLastSyncError()).isNull();
     }
+
+    // ----------------------------------------------------------------- QA 2026-08-22
+
+    @Nested
+    @DisplayName("QA: robustez do ciclo (achados convergentes Claude + Codex)")
+    class Robustez {
+
+        @Test
+        @DisplayName("atividade sem start_date é pulada com log — não derruba o atleta nem vira cursor")
+        void startDateNuloEPulado() {
+            atletaAtivo(Instant.parse("2026-08-01T00:00:00Z"));
+            IcuActivityDto semData = new IcuActivityDto("i-sem-data", EXTERNAL_ATHLETE, "Run", "Corrida",
+                    "2026-08-16T07:00:00", null,
+                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
+            listagemDevolve(A2, semData, A1);
+
+            scheduler.runDailyIncrementalSync();
+
+            assertThat(idsImportadosEmOrdem()).containsExactly("i1", "i2");
+            IntegracaoExterna salva = salva();
+            assertThat(salva.getUltimaSincronizacao()).isAfterOrEqualTo(inicioDoTeste);
+            assertThat(salva.getLastSyncError()).isNull();
+        }
+
+        @Test
+        @DisplayName("exceção inesperada na listagem grava mensagem genérica, nunca o detalhe interno")
+        void excecaoInesperadaNaoVazaDetalhe() {
+            IntegracaoExterna i = atletaAtivo(null);
+            when(intervalsIcuClient.listarAtividades(eq(TOKEN), eq(EXTERNAL_ATHLETE), any(), any()))
+                    .thenThrow(new IllegalStateException("select * from tb_segredo where " + "x".repeat(600)));
+
+            scheduler.runDailyIncrementalSync();
+
+            assertThat(salva().getLastSyncError())
+                    .isEqualTo("Falha inesperada no sync (IllegalStateException)")
+                    .doesNotContain("tb_segredo");
+            assertThat(TenantContext.hasTenant()).isFalse();
+        }
+
+        @Test
+        @DisplayName("mensagem conhecida acima de 500 caracteres é cortada — o save do erro não pode falhar")
+        void mensagemLongaECortadaEm500() {
+            String longa = "intervals.icu retornou 503 ao listar atividades: " + "detalhe ".repeat(100);
+            String segura = IntervalsIcuActivitySyncScheduler.mensagemSegura(new IntervalsIcuApiException(null, longa));
+
+            assertThat(segura).hasSize(500).startsWith("intervals.icu retornou 503");
+        }
+
+        @Test
+        @DisplayName("calcularCursor: os três ramos, sem o resto do ciclo")
+        void regraDoCursorIsolada() {
+            Instant anterior = Instant.parse("2026-08-01T00:00:00Z");
+            Instant ultima = Instant.parse("2026-08-15T10:00:00Z");
+
+            var cruzeiro = IntervalsIcuActivitySyncScheduler.calcularCursor(false, true, ultima, anterior);
+            var parcial = IntervalsIcuActivitySyncScheduler.calcularCursor(false, false, ultima, anterior);
+            var transitoriaComProgresso = IntervalsIcuActivitySyncScheduler.calcularCursor(true, true, ultima, anterior);
+            var transitoriaNaPrimeira = IntervalsIcuActivitySyncScheduler.calcularCursor(true, false, null, anterior);
+
+            assertThat(cruzeiro.cursor()).isAfterOrEqualTo(inicioDoTeste);
+            assertThat(cruzeiro.erro()).isNull();
+            assertThat(parcial.cursor()).isEqualTo(ultima);
+            assertThat(parcial.erro()).isNull();
+            assertThat(transitoriaComProgresso.cursor()).isEqualTo(ultima);
+            assertThat(transitoriaComProgresso.erro()).contains("transitória");
+            assertThat(transitoriaNaPrimeira.cursor()).isEqualTo(anterior);
+            assertThat(transitoriaNaPrimeira.erro()).contains("mantido");
+        }
+    }
 }
