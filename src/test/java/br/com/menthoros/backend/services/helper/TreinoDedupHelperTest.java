@@ -34,9 +34,8 @@ class TreinoDedupHelperTest {
     @BeforeEach
     void setUp() {
         atletaId = UUID.randomUUID();
-        // @InjectMocks só faz injeção por construtor aqui (RequiredArgsConstructor com um único
-        // final); entityManager é @PersistenceContext (field injection em produção) e fica null
-        // sem este setField.
+        // @InjectMocks só faz injeção por construtor aqui (RequiredArgsConstructor); entityManager
+        // é @PersistenceContext (field injection em produção) e fica null sem este setField.
         ReflectionTestUtils.setField(helper, "entityManager", entityManager);
     }
 
