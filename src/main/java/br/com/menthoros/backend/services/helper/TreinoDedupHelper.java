@@ -2,8 +2,11 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.hibernate.exception.ConstraintViolationException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Component;
 
@@ -24,6 +27,9 @@ public class TreinoDedupHelper {
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
 
+    @PersistenceContext
+    private EntityManager entityManager;
+
     /**
      * Tenta persistir {@code treino}; sob corrida de concorrência na constraint única, retorna o
      * registro que já foi inserido por outra requisição em vez de propagar o erro.
@@ -42,8 +48,18 @@ public class TreinoDedupHelper {
     public SaveResult saveIdempotent(TreinoRealizado treino, String externalId, UUID atletaId) {
         try {
             TreinoRealizado salvo = treinoRealizadoRepository.save(treino);
+            // Flush explícito: dentro de um chamador @Transactional (todos os atuais são), o
+            // INSERT fica pendente até a próxima query no mesmo EntityManager — sem forçar aqui,
+            // a violação de constraint só apareceria depois, fora deste try/catch, como exceção
+            // não tratada em vez de "duplicata, devolve o vencedor" (achado do IT de registrar,
+          // ingestao-treino-realizado).
+            entityManager.flush();
             return new SaveResult(salvo, true);
-        } catch (DataIntegrityViolationException e) {
+        } catch (DataIntegrityViolationException | ConstraintViolationException e) {
+            // ConstraintViolationException (Hibernate) chega crua do flush() direto no
+            // EntityManager — sem passar por um método de repositório Spring, não há tradução de
+            // exceção; DataIntegrityViolationException continua coberta por retrocompatibilidade
+            // (é o que os testes existentes simulam, e o que save() por si só poderia lançar).
             log.warn(
                 "Deduplication: constraint violation on (externalId={}, atletaId={}), " +
                 "retrying fetch. This is normal under concurrent load.",

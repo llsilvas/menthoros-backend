@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -11,6 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -24,6 +26,7 @@ import static org.mockito.Mockito.when;
 class TreinoDedupHelperTest {
 
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
+    @Mock private EntityManager entityManager;
     @InjectMocks private TreinoDedupHelper helper;
 
     private UUID atletaId;
@@ -31,6 +34,10 @@ class TreinoDedupHelperTest {
     @BeforeEach
     void setUp() {
         atletaId = UUID.randomUUID();
+        // @InjectMocks só faz injeção por construtor aqui (RequiredArgsConstructor com um único
+        // final); entityManager é @PersistenceContext (field injection em produção) e fica null
+        // sem este setField.
+        ReflectionTestUtils.setField(helper, "entityManager", entityManager);
     }
 
     @Nested
