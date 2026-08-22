@@ -70,6 +70,29 @@ public class TsbServiceImpl implements TsbService {
         atualizarTsbDia(atletaId, data, true);
     }
 
+    /**
+     * Idempotent: YES — recalcular o mesmo intervalo produz o mesmo resultado.
+     * Side Effects: Database insert/update das métricas de cada dia do intervalo e do
+     * PlanoMetaDados, no último dia.
+     * Tenant-aware: NO
+     */
+    @Override
+    @Transactional
+    public void recalcularDesde(UUID atletaId, LocalDate data) {
+        validarEntrada(atletaId, data);
+
+        LocalDate ultimoDia = metricasDiariasRepository.findDataUltimaMetrica(atletaId);
+        LocalDate fim = (ultimoDia == null || ultimoDia.isBefore(LocalDate.now()))
+                ? LocalDate.now()
+                : ultimoDia;
+
+        log.info("Recalculando TSB de {} para atleta {} até {}", data, atletaId, fim);
+
+        for (LocalDate dia = data; !dia.isAfter(fim); dia = dia.plusDays(1)) {
+            atualizarTsbDia(atletaId, dia, dia.equals(fim));
+        }
+    }
+
     private void atualizarTsbDia(UUID atletaId, LocalDate data, boolean atualizarMetaDadosHoje) {
         validarEntrada(atletaId, data);
 
