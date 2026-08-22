@@ -277,9 +277,12 @@ class TsbServiceImplSemanticaTest {
                 TreinoRealizadoRepository.class.getClassLoader(),
                 new Class<?>[]{TreinoRealizadoRepository.class},
                 (proxy, method, args) -> {
-                    if ("findByAtletaIdAndDataTreino".equals(method.getName())) {
-                        // Retorna lista vazia — TSS será calculado pelo TssCalculatorService stub
-                        return Collections.emptyList();
+                    if ("findQueContamByAtletaIdAndDataTreino".equals(method.getName())) {
+                        // Um treino com tssCalculado já persistido — D3: TsbServiceImpl soma o
+                        // campo, não recalcula via TssCalculatorService.
+                        TreinoRealizado treino = new TreinoRealizado();
+                        treino.setTssCalculado(tssHoje);
+                        return List.of(treino);
                     }
                     if ("findByAtletaIdAndDataTreinoBetween".equals(method.getName())) {
                         return Collections.emptyList();
@@ -292,13 +295,10 @@ class TsbServiceImplSemanticaTest {
                 }
         );
 
-        // Stub: TssCalculatorService — retorna TSS fixo (subclasse concreta)
-        TssCalculatorService tssCalc = new TssCalculatorService() {
-            @Override
-            public Integer calcularTssDia(List<TreinoRealizado> treinos) {
-                return tssHoje;
-            }
-        };
+        // D3: TsbServiceImpl não chama mais calcularTssDia — soma tssCalculado diretamente
+        // (stub acima). TssCalculatorService só entraria no fallback de treino sem TSS
+        // persistido, que este teste não exercita.
+        TssCalculatorService tssCalc = new TssCalculatorService();
 
         // Stub: MetricasDiariasRepository
         MetricasDiariasRepository metricasRepo = (MetricasDiariasRepository) Proxy.newProxyInstance(

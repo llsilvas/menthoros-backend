@@ -155,7 +155,7 @@ class TsbServiceImplRecalculoSemanticaTest {
                     String name = method.getName();
                     if ("findDataPrimeiroTreino".equals(name)) return null; // sem primeiro treino
                     if ("findByAtletaIdOrderByDataTreinoDesc".equals(name)) return Collections.emptyList();
-                    if ("findByAtletaIdAndDataTreino".equals(name)) return Collections.emptyList();
+                    if ("findQueContamByAtletaIdAndDataTreino".equals(name)) return Collections.emptyList();
                     if ("findByAtletaIdAndDataTreinoBetween".equals(name)) return Collections.emptyList();
                     if ("findByAtletaIdAndTenantIdAndDataTreinoBetween".equals(name)) return Collections.emptyList();
                     if ("toString".equals(name)) return "TreinoRealizadoRepositoryStub";
@@ -209,7 +209,7 @@ class TsbServiceImplRecalculoSemanticaTest {
                     String name = method.getName();
                     if ("findDataPrimeiroTreino".equals(name)) return primeiroTreino;
                     if ("findByAtletaIdOrderByDataTreinoDesc".equals(name)) return List.of(ultimoTreinoEntity);
-                    if ("findByAtletaIdAndDataTreino".equals(name)) return Collections.emptyList();
+                    if ("findQueContamByAtletaIdAndDataTreino".equals(name)) return Collections.emptyList();
                     if ("findByAtletaIdAndDataTreinoBetween".equals(name)) return Collections.emptyList();
                     if ("findByAtletaIdAndTenantIdAndDataTreinoBetween".equals(name)) return Collections.emptyList();
                     if ("toString".equals(name)) return "TreinoRealizadoRepositoryStub";

@@ -13,7 +13,6 @@ import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import br.com.menthoros.backend.services.impl.StravaActivityServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -48,11 +47,10 @@ class EnriquecerStravaServiceTest {
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private IntegracaoExternaRepository integracaoExternaRepository;
     @Mock private StravaOAuthService stravaOAuthService;
-    @Mock private TsbService tsbService;
     @Mock private TreinoMapper treinoMapper;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private WebClient stravaWebClient;
-    @Mock private TreinoDedupHelper treinoDedupHelper;
+    @Mock private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
 
     @Mock private WebClient.RequestHeadersUriSpec<?> uriSpec;
     @Mock private WebClient.RequestHeadersSpec<?> headersSpec;
@@ -70,11 +68,10 @@ class EnriquecerStravaServiceTest {
                 treinoRealizadoRepository,
                 integracaoExternaRepository,
                 stravaOAuthService,
-                tsbService,
                 treinoMapper,
                 eventPublisher,
                 stravaWebClient,
-                treinoDedupHelper
+                ingestaoTreinoRealizadoService
         );
 
         treinoId = UUID.randomUUID();

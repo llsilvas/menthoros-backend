@@ -9,24 +9,20 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
-import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
-import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.util.Utils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
-import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -67,12 +63,8 @@ public class FitTreinoPersister {
     private static final BigDecimal PROPORCAO_MAX_PCT = BigDecimal.valueOf(50.0);
 
     private final AtletaRepository atletaRepository;
-    private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoMapper treinoMapper;
-    private final TsbService tsbService;
-    private final TssCalculatorService tssCalculatorService;
-    private final ApplicationEventPublisher eventPublisher;
-    private final TreinoDedupHelper treinoDedupHelper;
+    private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
 
     /**
      * Persiste o treino a partir dos dados já extraídos de um .fit, com dedup idempotente por
@@ -93,32 +85,22 @@ public class FitTreinoPersister {
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado no tenant atual"));
 
         String externalId = buildExternalId(atletaId, dados);
-
-        Optional<TreinoRealizado> existente = treinoRealizadoRepository
-                .findByExternalIdAndAtletaId(externalId, atletaId);
-        if (existente.isPresent()) {
-            log.info("Fit já importado anteriormente: externalId={}, atletaId={}", externalId, atletaId);
-            return new FitImportResultado(treinoMapper.toOutputDto(existente.get()), false);
-        }
-
         TreinoRealizado treino = montarTreino(dados, atleta, tenantId, externalId);
-        TreinoDedupHelper.SaveResult resultado = treinoDedupHelper.saveIdempotent(treino, externalId, atletaId);
-        TreinoRealizado salvo = resultado.treino();
 
-        // Publicar evento/recalcular TSB só faz sentido quando ESTA requisição de fato inseriu o
-        // treino — do contrário duplicaríamos o efeito colateral para um treino já processado por
-        // outra requisição concorrente (ver TreinoDedupHelper.SaveResult#inserted). O flag "novo"
-        // retornado ao controller (200 vs 201) usa o MESMO sinal — nunca hardcoded.
+        // Dedup, tssCalculado (quando ausente), evento de análise e carga do dia são
+        // responsabilidade do seam único de ingestão (ingestao-treino-realizado, D1-D13) — este
+        // persister só monta a entidade a partir do .fit já parseado.
+        TreinoDedupHelper.SaveResult resultado = ingestaoTreinoRealizadoService.registrar(treino, externalId);
+
         if (resultado.inserted()) {
-            eventPublisher.publishEvent(new TreinoRegistradoEvent(salvo.getId(), tenantId));
-            tsbService.atualizarTsbDia(atletaId, salvo.getDataTreino());
-            log.info("Fit importado: treinoId={}, atletaId={}, externalId={}", salvo.getId(), atletaId, externalId);
+            log.info("Fit importado: treinoId={}, atletaId={}, externalId={}",
+                    resultado.treino().getId(), atletaId, externalId);
         } else {
-            log.info("Corrida de concorrência no import de .fit — registro já persistido por outra requisição: treinoId={}, atletaId={}, externalId={}",
-                    salvo.getId(), atletaId, externalId);
+            log.info("Fit já importado ou corrida de concorrência — registro já existente: treinoId={}, atletaId={}, externalId={}",
+                    resultado.treino().getId(), atletaId, externalId);
         }
 
-        return new FitImportResultado(treinoMapper.toOutputDto(salvo), resultado.inserted());
+        return new FitImportResultado(treinoMapper.toOutputDto(resultado.treino()), resultado.inserted());
     }
 
     /**
@@ -166,12 +148,10 @@ public class FitTreinoPersister {
         if (dados.tssCalculado() != null) {
             treino.setTssCalculado(dados.tssCalculado());
             treino.setMetodoCalculoTss("DISPOSITIVO");
-        } else {
-            // TSS ausente no .fit (dispositivo mais antigo ou não-Garmin) — calcula via FC/duração
-            // já preenchidos no treino (D0.3). Pode divergir do TSS do próprio dispositivo — esperado.
-            treino.setTssCalculado(tssCalculatorService.calcularTss(treino));
-            treino.setMetodoCalculoTss("FC");
         }
+        // Senão, deixa tssCalculado nulo — IngestaoTreinoRealizadoService.registrar calcula via
+        // FC/duração quando não é DISPOSITIVO (D3.1). Pode divergir do TSS do próprio dispositivo
+        // — esperado, é o mesmo comportamento de antes, só que centralizado no ingestor.
 
         for (FitLapData lap : dados.laps()) {
             EtapaRealizada etapa = EtapaRealizada.builder()

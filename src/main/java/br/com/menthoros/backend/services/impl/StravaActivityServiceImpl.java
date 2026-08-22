@@ -22,13 +22,13 @@ import br.com.menthoros.backend.exception.DuplicateResourceException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.exception.StravaRateLimitException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
-import br.com.menthoros.backend.services.TsbService;
-import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.services.StravaActivityService;
 import br.com.menthoros.backend.services.StravaOAuthService;
+import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -56,22 +56,20 @@ public class StravaActivityServiceImpl implements StravaActivityService {
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final IntegracaoExternaRepository integracaoExternaRepository;
     private final StravaOAuthService stravaOAuthService;
-    private final TsbService tsbService;
     private final TreinoMapper treinoMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final WebClient stravaWebClient;
-    private final TreinoDedupHelper treinoDedupHelper;
+    private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
 
-    public StravaActivityServiceImpl(AtletaRepository atletaRepository, TreinoRealizadoRepository treinoRealizadoRepository, IntegracaoExternaRepository integracaoExternaRepository, StravaOAuthService stravaOAuthService, TsbService tsbService, TreinoMapper treinoMapper, ApplicationEventPublisher eventPublisher, @Qualifier("stravaWebClient")WebClient stravaWebClient, TreinoDedupHelper treinoDedupHelper) {
+    public StravaActivityServiceImpl(AtletaRepository atletaRepository, TreinoRealizadoRepository treinoRealizadoRepository, IntegracaoExternaRepository integracaoExternaRepository, StravaOAuthService stravaOAuthService, TreinoMapper treinoMapper, ApplicationEventPublisher eventPublisher, @Qualifier("stravaWebClient")WebClient stravaWebClient, IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService) {
         this.atletaRepository = atletaRepository;
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.integracaoExternaRepository = integracaoExternaRepository;
         this.stravaOAuthService = stravaOAuthService;
-        this.tsbService = tsbService;
         this.treinoMapper = treinoMapper;
         this.eventPublisher = eventPublisher;
         this.stravaWebClient = stravaWebClient;
-        this.treinoDedupHelper = treinoDedupHelper;
+        this.ingestaoTreinoRealizadoService = ingestaoTreinoRealizadoService;
     }
 
     @Transactional(readOnly = true)
@@ -160,22 +158,33 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         TreinoRealizado treino = treinoRealizadoRepository
                 .findByExternalIdAndAtletaId(String.valueOf(activity.id()), atleta.getId())
                 .orElseGet(TreinoRealizado::new);
+        LocalDate dataAntiga = treino.getDataTreino();
 
         mergeActivityIntoTreino(treino, activity, atleta);
         attachLaps(treino, accessToken, activity.id());
-        // Task 1.2: Idempotent save handles concurrent deduplication (constraint violation retry).
-        // SaveResult#inserted() é ignorado de propósito aqui: diferente do import de .fit, `treino`
-        // já vem de um find-or-new (linha acima) — save() normalmente é um UPDATE (merge), então
-        // TSB/atualizarTsbDia abaixo deve rodar em todo re-sync, não só na primeira inserção.
-        treinoDedupHelper.saveIdempotent(treino, String.valueOf(activity.id()), atleta.getId());
+        // Dedup, tssCalculado, evento (só na primeira inserção — D4: `treino` já vem de um
+        // find-or-new, então um re-sync é UPDATE e não publica) e carga do dia são
+        // responsabilidade do seam único de ingestão (ingestao-treino-realizado).
+        TreinoDedupHelper.SaveResult resultado =
+                ingestaoTreinoRealizadoService.registrar(treino, String.valueOf(activity.id()));
+        recalcularSeDataMudou(resultado.treino(), dataAntiga);
         integracao.setUltimaSincronizacao(Instant.now());
-        atualizarTsbDia(atleta.getId(), treino.getDataTreino());
         integracaoExternaRepository.save(integracao);
     }
 
-    private void atualizarTsbDia(UUID atletaId, LocalDate dataTreino) {
-        log.info("Atualizando métricas TSB para atleta {} na data {}", atletaId, dataTreino);
-        tsbService.atualizarTsbDia(atletaId, dataTreino);
+    /**
+     * Achado do pre-mortem Codex (2026-08-22): quando o Strava reporta uma data diferente para
+     * uma atividade já sincronizada (usuário editou o horário no Strava), {@code mergeActivityIntoTreino}
+     * sobrescreve {@code dataTreino} antes de {@code registrar} rodar — e {@code registrar} só
+     * recalcula a partir da data NOVA (CA6 exige o menor das duas, como {@code reprocessar} já
+     * garante). Sem isto, o dia antigo ficaria com a carga do treino que já saiu de lá, sem nunca
+     * ser recalculado. Reaproveita {@code reprocessar} (idempotente) em vez de reimplementar o
+     * recálculo aqui.
+     */
+    private void recalcularSeDataMudou(TreinoRealizado treino, LocalDate dataAntiga) {
+        if (dataAntiga != null && !dataAntiga.equals(treino.getDataTreino())) {
+            ingestaoTreinoRealizadoService.reprocessar(treino.getId(), dataAntiga);
+        }
     }
 
     @Transactional
@@ -296,11 +305,15 @@ public class StravaActivityServiceImpl implements StravaActivityService {
                     TreinoRealizado treino = treinoRealizadoRepository
                             .findByExternalIdAndAtletaId(String.valueOf(activity.id()), atleta.getId())
                             .orElseGet(TreinoRealizado::new);
+                    LocalDate dataAntiga = treino.getDataTreino();
 
                     mergeActivityIntoTreino(treino, activity, atleta);
                     attachLaps(treino, accessToken, activity.id());
-                    // Task 1.2: Idempotent save handles concurrent deduplication (constraint violation retry)
-                    treinoDedupHelper.saveIdempotent(treino, String.valueOf(activity.id()), atleta.getId());
+                    // Antes desta migração, o sync em lote nunca recalculava TSB nem publicava
+                    // evento — o gap que ingestao-treino-realizado existe para fechar.
+                    TreinoDedupHelper.SaveResult resultado =
+                            ingestaoTreinoRealizadoService.registrar(treino, String.valueOf(activity.id()));
+                    recalcularSeDataMudou(resultado.treino(), dataAntiga);
                     imported++;
 
                     Instant activityInstant = parseActivityInstant(activity.startDateLocal());
