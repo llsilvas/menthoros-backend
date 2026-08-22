@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.config.core.WorkoutAnalysisProperties;
 import br.com.menthoros.backend.dto.llm.AnaliseWorkoutRawDto;
 import br.com.menthoros.backend.entity.AnaliseWorkout;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
@@ -30,6 +31,7 @@ import jakarta.annotation.PostConstruct;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -53,6 +55,7 @@ public class WorkoutAnalysisListener {
     // ObjectMapper mantido apenas para serializar os dados do treino no prompt (buildPromptData);
     // o parse da resposta do LLM agora é feito por .entity().
     private final ObjectMapper objectMapper;
+    private final WorkoutAnalysisProperties workoutAnalysisProperties;
 
     private static final String SKILL_PATH = "classpath:skills/analise/workout-analyzer/SKILL.md";
     private String cachedSkillContent;
@@ -91,6 +94,20 @@ public class WorkoutAnalysisListener {
         if (treino.getPercepcaoEsforco() == null) {
             log.debug("TreinoRealizado {} sem RPE, análise ignorada", treinoId);
             return;
+        }
+
+        // Guard de custo (ingestao-treino-realizado, D5): registrar publica evento em toda
+        // inserção, independente da fonte — sem isso, a carga inicial de um atleta recém
+        // conectado dispararia uma chamada de LLM por atividade histórica. Ausência de
+        // dataTreino não bloqueia (defensivo; não deveria ocorrer em produção, CA8 do ingestor).
+        LocalDate dataTreino = treino.getDataTreino();
+        if (dataTreino != null) {
+            LocalDate limite = LocalDate.now().minusDays(workoutAnalysisProperties.getMaxIdadeDias());
+            if (dataTreino.isBefore(limite)) {
+                log.debug("TreinoRealizado {} mais antigo que {} dias, análise ignorada",
+                        treinoId, workoutAnalysisProperties.getMaxIdadeDias());
+                return;
+            }
         }
 
         AnaliseWorkout analise = createPending(treinoId, tenantId);
