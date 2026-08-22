@@ -24,6 +24,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -33,6 +34,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -122,6 +124,29 @@ class StravaActivityServiceImplSyncTest {
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), eq("777"));
             assertThat(captor.getValue().getId()).isEqualTo(existente.getId());
+            verify(ingestaoTreinoRealizadoService, never()).reprocessar(any(), any());
+        }
+
+        @Test
+        @DisplayName("Strava reporta data diferente da já sincronizada (usuário editou no Strava): chama reprocessar com a data antiga [achado Codex]")
+        void dataMudouNoStravaChamaReprocessarComDataAntiga() {
+            IntegracaoExterna integracao = new IntegracaoExterna();
+            StravaActivityDto activity = stravaActivity(888L);
+            stubStravaCall(activity);
+            TreinoRealizado existente = new TreinoRealizado();
+            existente.setId(UUID.randomUUID());
+            LocalDate dataAntiga = LocalDate.of(2020, 1, 1);
+            existente.setDataTreino(dataAntiga);
+            when(treinoRealizadoRepository.findByExternalIdAndAtletaId("888", atleta.getId()))
+                    .thenReturn(Optional.of(existente));
+            stubLapsVazias();
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), false));
+
+            service.syncSingleActivityById(atleta, integracao, 888L);
+
+            assertThat(existente.getDataTreino()).isNotEqualTo(dataAntiga);
+            verify(ingestaoTreinoRealizadoService).reprocessar(existente.getId(), dataAntiga);
         }
 
         @Test

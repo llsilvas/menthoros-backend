@@ -28,6 +28,7 @@ import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.services.StravaActivityService;
 import br.com.menthoros.backend.services.StravaOAuthService;
+import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -157,15 +158,33 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         TreinoRealizado treino = treinoRealizadoRepository
                 .findByExternalIdAndAtletaId(String.valueOf(activity.id()), atleta.getId())
                 .orElseGet(TreinoRealizado::new);
+        LocalDate dataAntiga = treino.getDataTreino();
 
         mergeActivityIntoTreino(treino, activity, atleta);
         attachLaps(treino, accessToken, activity.id());
         // Dedup, tssCalculado, evento (só na primeira inserção — D4: `treino` já vem de um
         // find-or-new, então um re-sync é UPDATE e não publica) e carga do dia são
         // responsabilidade do seam único de ingestão (ingestao-treino-realizado).
-        ingestaoTreinoRealizadoService.registrar(treino, String.valueOf(activity.id()));
+        TreinoDedupHelper.SaveResult resultado =
+                ingestaoTreinoRealizadoService.registrar(treino, String.valueOf(activity.id()));
+        recalcularSeDataMudou(resultado.treino(), dataAntiga);
         integracao.setUltimaSincronizacao(Instant.now());
         integracaoExternaRepository.save(integracao);
+    }
+
+    /**
+     * Achado do pre-mortem Codex (2026-08-22): quando o Strava reporta uma data diferente para
+     * uma atividade já sincronizada (usuário editou o horário no Strava), {@code mergeActivityIntoTreino}
+     * sobrescreve {@code dataTreino} antes de {@code registrar} rodar — e {@code registrar} só
+     * recalcula a partir da data NOVA (CA6 exige o menor das duas, como {@code reprocessar} já
+     * garante). Sem isto, o dia antigo ficaria com a carga do treino que já saiu de lá, sem nunca
+     * ser recalculado. Reaproveita {@code reprocessar} (idempotente) em vez de reimplementar o
+     * recálculo aqui.
+     */
+    private void recalcularSeDataMudou(TreinoRealizado treino, LocalDate dataAntiga) {
+        if (dataAntiga != null && !dataAntiga.equals(treino.getDataTreino())) {
+            ingestaoTreinoRealizadoService.reprocessar(treino.getId(), dataAntiga);
+        }
     }
 
     @Transactional
@@ -286,12 +305,15 @@ public class StravaActivityServiceImpl implements StravaActivityService {
                     TreinoRealizado treino = treinoRealizadoRepository
                             .findByExternalIdAndAtletaId(String.valueOf(activity.id()), atleta.getId())
                             .orElseGet(TreinoRealizado::new);
+                    LocalDate dataAntiga = treino.getDataTreino();
 
                     mergeActivityIntoTreino(treino, activity, atleta);
                     attachLaps(treino, accessToken, activity.id());
                     // Antes desta migração, o sync em lote nunca recalculava TSB nem publicava
                     // evento — o gap que ingestao-treino-realizado existe para fechar.
-                    ingestaoTreinoRealizadoService.registrar(treino, String.valueOf(activity.id()));
+                    TreinoDedupHelper.SaveResult resultado =
+                            ingestaoTreinoRealizadoService.registrar(treino, String.valueOf(activity.id()));
+                    recalcularSeDataMudou(resultado.treino(), dataAntiga);
                     imported++;
 
                     Instant activityInstant = parseActivityInstant(activity.startDateLocal());
