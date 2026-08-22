@@ -941,14 +941,9 @@ Last reviewed on: 2026-06-26
 
 ## Agent skills
 
-### Issue tracker
-
-GitHub Issues via the `gh` CLI. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Cinco labels canônicas (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context (`CONTEXT.md` + `docs/adr/` na raiz). See `docs/agents/domain.md`.
+A configuração dos skills de engenharia (`to-tickets`, `to-spec`, `triage`, `qa`, `wayfinder`,
+`grill-with-docs`) é **transversal e vive na raiz do workspace** — `CLAUDE.md` da raiz, seção
+"Agent skills", e `docs/agents/*.md` versionados em `menthoros-infra/workspace/`. O rastreador é
+o **OpenSpec** em `menthoros-product/openspec/changes/`, não o GitHub Issues; os ADRs ficam em
+`menthoros-product/adr/`. Não duplicar aqui: a cópia que existia neste repo apontava para GitHub
+Issues e `docs/adr/` na raiz, e divergiu da configuração real em silêncio.
