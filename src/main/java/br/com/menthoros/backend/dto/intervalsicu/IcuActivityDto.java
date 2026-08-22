@@ -12,6 +12,11 @@ public record IcuActivityDto(
         String type,
         String name,
         @JsonProperty("start_date_local") String startDateLocal,
+        /*
+         * Instante UTC (ex.: 2026-08-21T10:15:06Z). Vem na listagem e no detalhe (gate 0.2); é a
+         * base do cursor do scheduler, que não pode depender do fuso de start_date_local.
+         */
+        @JsonProperty("start_date") String startDate,
         @JsonProperty("moving_time") Integer movingTimeSeg,
         @JsonProperty("elapsed_time") Integer elapsedTimeSeg,
         Double distance,

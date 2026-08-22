@@ -250,7 +250,7 @@ class IntervalsIcuActivityImportIntegrationTest extends AbstractIntegrationTest 
     }
 
     private IcuActivityDto activityDto(String activityId, String athleteId) {
-        return new IcuActivityDto(activityId, athleteId, "Run", "Corrida de teste", "2026-07-16T08:00:00",
+        return new IcuActivityDto(activityId, athleteId, "Run", "Corrida de teste", "2026-07-16T08:00:00", null,
                 1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
     }
     @Nested
@@ -379,7 +379,7 @@ class IntervalsIcuActivityImportIntegrationTest extends AbstractIntegrationTest 
                 1483778L, "RECOVERY", null, 389, 500.67, 195, 195, 2.5675383, 139.0, 145.0, 81.34359,
                 null, 0.0, 0.94692343, 253.0, 50.8, 103.7, 11.06, 19.0,
                 1, 82.0, -0.003195669);
-        return new IcuActivityDto(activityId, athleteId, "Run", "Corrida de teste", "2026-07-16T08:00:00",
+        return new IcuActivityDto(activityId, athleteId, "Run", "Corrida de teste", "2026-07-16T08:00:00", null,
                 1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null,
                 2, java.util.List.of(intervalo1, intervalo2));
     }

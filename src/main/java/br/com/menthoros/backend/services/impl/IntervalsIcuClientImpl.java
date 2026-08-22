@@ -112,6 +112,28 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
     }
 
     /**
+     * Idempotent: YES — leitura pura.
+     * Side Effects: External API call (GET activities?oldest&newest)
+     * Tenant-aware: NO
+     */
+    @Override
+    public List<IcuActivityDto> listarAtividades(String token, String externalAthleteId,
+                                                  LocalDate oldest, LocalDate newest) {
+        return executa("listar atividades", () -> {
+            IcuActivityDto[] atividades = webClient.get()
+                    .uri(uri -> uri.path("/api/v1/athlete/{id}/activities")
+                            .queryParam("oldest", oldest.toString())
+                            .queryParam("newest", newest.toString())
+                            .build(externalAthleteId))
+                    .headers(h -> bearer(h, token))
+                    .retrieve()
+                    .bodyToMono(IcuActivityDto[].class)
+                    .block();
+            return atividades == null ? List.<IcuActivityDto>of() : Arrays.asList(atividades);
+        });
+    }
+
+    /**
      * Idempotent: YES — deletar duas vezes é seguro (404 na segunda é tratado pelo chamador).
      * Side Effects: External API call (DELETE events/{id})
      * Tenant-aware: NO
