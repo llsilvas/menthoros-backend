@@ -11,7 +11,6 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.mapper.TreinoMapper;
-import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import br.com.menthoros.backend.services.impl.StravaActivityServiceImpl;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,13 +42,11 @@ class StravaActivityServiceTest {
     private WebClient stravaWebClient;
 
     @Mock
-    private TsbService tsbService;
-    @Mock
     private TreinoMapper treinoMapper;
     @Mock
     private ApplicationEventPublisher eventPublisher;
     @Mock
-    private TreinoDedupHelper treinoDedupHelper;
+    private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
 
     @Test
     @DisplayName("Deve mapear atividade Strava para TreinoRealizado com conversões corretas")
@@ -59,11 +56,10 @@ class StravaActivityServiceTest {
                 treinoRealizadoRepository,
                 integracaoExternaRepository,
                 stravaOAuthService,
-                tsbService,
                 treinoMapper,
                 eventPublisher,
                 stravaWebClient,
-                treinoDedupHelper
+                ingestaoTreinoRealizadoService
         );
 
         Atleta atleta = mockAtleta();
@@ -113,11 +109,10 @@ class StravaActivityServiceTest {
                 treinoRealizadoRepository,
                 integracaoExternaRepository,
                 stravaOAuthService,
-                tsbService,
                 treinoMapper,
                 eventPublisher,
                 stravaWebClient,
-                treinoDedupHelper
+                ingestaoTreinoRealizadoService
         );
 
         StravaSplitDto split = new StravaSplitDto(
