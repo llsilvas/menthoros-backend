@@ -111,7 +111,7 @@ public class TsbServiceImpl implements TsbService {
     }
 
     private List<TreinoRealizado> buscarTreinosDia(UUID atletaId, LocalDate data) {
-        return treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, data);
+        return treinoRealizadoRepository.findQueContamByAtletaIdAndDataTreino(atletaId, data);
     }
 
     private MetricasDiarias obterOuCriarMetricasDia(Atleta atleta, LocalDate data) {

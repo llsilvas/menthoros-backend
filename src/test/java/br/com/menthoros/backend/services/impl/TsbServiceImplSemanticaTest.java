@@ -277,7 +277,7 @@ class TsbServiceImplSemanticaTest {
                 TreinoRealizadoRepository.class.getClassLoader(),
                 new Class<?>[]{TreinoRealizadoRepository.class},
                 (proxy, method, args) -> {
-                    if ("findByAtletaIdAndDataTreino".equals(method.getName())) {
+                    if ("findQueContamByAtletaIdAndDataTreino".equals(method.getName())) {
                         // Retorna lista vazia — TSS será calculado pelo TssCalculatorService stub
                         return Collections.emptyList();
                     }

@@ -102,6 +102,17 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
 
     List<TreinoRealizado> findByAtletaIdAndDataTreino(UUID atletaId, LocalDate data);
 
+    /**
+     * Treino que conta na carga do dia (D8): {@code CANCELADO} nunca conta; {@code NULL} conta
+     * — é o estado normal dos caminhos FIT e manual, que não escrevem
+     * {@code statusSincronizacao}. Em SQL/JPQL {@code <> CANCELADO} sozinho excluiria o NULL, por
+     * isso o {@code OR ... IS NULL} explícito (achado do DoR, Codex #1).
+     */
+    @Query("SELECT t FROM TreinoRealizado t WHERE t.atleta.id = :atletaId AND t.dataTreino = :data "
+            + "AND (t.statusSincronizacao IS NULL OR t.statusSincronizacao <> br.com.menthoros.backend.enums.StatusSincronizacao.CANCELADO)")
+    List<TreinoRealizado> findQueContamByAtletaIdAndDataTreino(
+            @Param("atletaId") UUID atletaId, @Param("data") LocalDate data);
+
     @Query("SELECT MIN(t.dataTreino) FROM TreinoRealizado t WHERE t.atleta.id = :atletaId")
     LocalDate findDataPrimeiroTreino(@Param("atletaId") UUID atletaId);
 

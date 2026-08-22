@@ -126,7 +126,7 @@ class TsbServiceImplDiasConsecutivosTest {
                 TreinoRealizadoRepository.class.getClassLoader(),
                 new Class<?>[]{TreinoRealizadoRepository.class},
                 (proxy, method, args) -> {
-                    if ("findByAtletaIdAndDataTreino".equals(method.getName())
+                    if ("findQueContamByAtletaIdAndDataTreino".equals(method.getName())
                             && args != null && args.length == 2) {
                         LocalDate data = (LocalDate) args[1];
                         if (diasComTreino.contains(data)) {
