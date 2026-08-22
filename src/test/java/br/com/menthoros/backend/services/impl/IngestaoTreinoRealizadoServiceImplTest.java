@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.TsbService;
@@ -11,6 +12,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -18,6 +21,8 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.LocalDate;
 import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -68,6 +73,42 @@ class IngestaoTreinoRealizadoServiceImplTest {
                     .isInstanceOf(DomainRuleViolationException.class)
                     .hasMessageContaining("atleta");
         }
+
+        @ParameterizedTest
+        @EnumSource(value = FonteDados.class, names = {"GARMIN", "STRAVA", "INTERVALS_ICU"})
+        @DisplayName("externalId nulo para fonte externa lança DomainRuleViolationException [D4]")
+        void externalIdNuloParaFonteExternaRejeitado(FonteDados fonte) {
+            Atleta atleta = new Atleta();
+            atleta.setId(UUID.randomUUID());
+            TreinoRealizado treino = new TreinoRealizado();
+            treino.setAtleta(atleta);
+            treino.setDataTreino(LocalDate.now());
+            treino.setFonteDados(fonte);
+
+            assertThatThrownBy(() -> service.registrar(treino, null))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("externalId");
+
+            verifyNoInteractions(tssCalculatorService, tsbService, eventPublisher, treinoDedupHelper);
+        }
+
+        @Test
+        @DisplayName("externalId nulo para fonte MANUAL é aceito [D4]")
+        void externalIdNuloParaFonteManualAceito() {
+            Atleta atleta = new Atleta();
+            atleta.setId(UUID.randomUUID());
+            TreinoRealizado treino = new TreinoRealizado();
+            treino.setAtleta(atleta);
+            treino.setDataTreino(LocalDate.now());
+            treino.setFonteDados(FonteDados.MANUAL);
+
+            when(tssCalculatorService.calcularTss(any())).thenReturn(50);
+            when(treinoRealizadoRepository.save(treino)).thenReturn(treino);
+
+            TreinoDedupHelper.SaveResult resultado = service.registrar(treino, null);
+
+            assertThat(resultado.treino()).isSameAs(treino);
+        }
     }
 
     @Nested
@@ -90,6 +131,31 @@ class IngestaoTreinoRealizadoServiceImplTest {
 
             assertThatThrownBy(() -> service.registrar(treino, null))
                     .isSameAs(falhaSimulada);
+        }
+    }
+
+    @Nested
+    @DisplayName("registrar — SaveResult#inserted")
+    class SaveResultInserted {
+
+        @Test
+        @DisplayName("entidade já gerenciada (re-sync sem externalId) é UPDATE — inserted=false")
+        void entidadeGerenciadaSemExternalIdNaoContaComoInsercao() {
+            Atleta atleta = new Atleta();
+            atleta.setId(UUID.randomUUID());
+            TreinoRealizado treino = new TreinoRealizado();
+            treino.setId(UUID.randomUUID());
+            treino.setAtleta(atleta);
+            treino.setDataTreino(LocalDate.now());
+            treino.setFonteDados(FonteDados.MANUAL);
+
+            when(tssCalculatorService.calcularTss(any())).thenReturn(50);
+            when(treinoRealizadoRepository.save(treino)).thenReturn(treino);
+
+            TreinoDedupHelper.SaveResult resultado = service.registrar(treino, null);
+
+            assertThat(resultado.inserted()).isFalse();
+            verifyNoInteractions(eventPublisher);
         }
     }
 }

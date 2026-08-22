@@ -27,6 +27,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.support.TransactionTemplate;
 import jakarta.persistence.EntityManager;
@@ -147,6 +149,44 @@ class IngestaoTreinoRealizadoServiceReprocessarIT extends AbstractIntegrationTes
 
             MetricasDiarias metricas = metricasDiariasRepository.findByAtletaIdAndData(atleta.getId(), data).orElseThrow();
             assertThat(metricas.getCtl()).as("cancelado não conta na carga").isEqualTo(0.0);
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = StatusSincronizacao.class, names = "CANCELADO", mode = EnumSource.Mode.EXCLUDE)
+        @DisplayName("todo StatusSincronizacao exceto CANCELADO conta na carga [D8]")
+        void todoStatusMenosCanceladoContaNaCarga(StatusSincronizacao status) {
+            Atleta atleta = seedAtleta("Status" + status.name());
+            LocalDate data = LocalDate.now().minusDays(1);
+            TreinoRealizado treino = novoRealizado(atleta, data);
+            TreinoDedupHelper.SaveResult resultado = ingestaoTreinoRealizadoService.registrar(treino, null);
+
+            TreinoRealizado recarregado = treinoRealizadoRepository.findById(resultado.treino().getId()).orElseThrow();
+            recarregado.setStatusSincronizacao(status);
+            treinoRealizadoRepository.save(recarregado);
+
+            ingestaoTreinoRealizadoService.reprocessar(recarregado.getId(), null);
+
+            MetricasDiarias metricas = metricasDiariasRepository.findByAtletaIdAndData(atleta.getId(), data).orElseThrow();
+            assertThat(metricas.getCtl())
+                    .as("statusSincronizacao=" + status + " não é CANCELADO, deve contar na carga")
+                    .isNotEqualTo(0.0);
+        }
+
+        @Test
+        @DisplayName("statusSincronizacao nulo (estado normal de FIT/manual) conta na carga [D8]")
+        void statusNuloContaNaCarga() {
+            Atleta atleta = seedAtleta("StatusNulo");
+            LocalDate data = LocalDate.now().minusDays(1);
+            TreinoRealizado treino = novoRealizado(atleta, data);
+            TreinoDedupHelper.SaveResult resultado = ingestaoTreinoRealizadoService.registrar(treino, null);
+            assertThat(resultado.treino().getStatusSincronizacao()).isNull();
+
+            ingestaoTreinoRealizadoService.reprocessar(resultado.treino().getId(), null);
+
+            MetricasDiarias metricas = metricasDiariasRepository.findByAtletaIdAndData(atleta.getId(), data).orElseThrow();
+            assertThat(metricas.getCtl())
+                    .as("statusSincronizacao nulo não pode ser tratado como cancelado")
+                    .isNotEqualTo(0.0);
         }
 
         @Test

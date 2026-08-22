@@ -20,6 +20,16 @@ import java.util.UUID;
  * <p>Usado pelos imports externos (Strava, .fit) que compartilham exatamente esse padrão de
  * dedup — mantido em um único lugar para não divergir silenciosamente entre eles.
  *
+ * <p><b>Duas constraints únicas coexistem hoje sobre {@code tb_treino_realizado}:</b>
+ * {@code uk_treino_realizado_external_id_atleta} (external_id, atleta_id — V23), exatamente as
+ * colunas que {@code findByExternalIdAndAtletaId} consulta, e
+ * {@code uk_treino_realizado_tenant_fonte_external} (tenant_id, fonte_dados, external_id — V29).
+ * A busca de fallback abaixo só cobre a primeira: se for a segunda que disparar (mesmo
+ * external_id, mesma fonte, mesmo tenant, mas ATLETA DIFERENTE do desta chamada — dado corrompido
+ * ou fonte externa reaproveitando um id para outra pessoa), {@code findByExternalIdAndAtletaId}
+ * genuinamente não encontra nada para {@code atletaId} e a exceção original propaga — o
+ * comportamento correto, já que não é uma duplicata legítima para ESTE atleta.</p>
+ *
  * <p><b>O que este método garante e o que não garante:</b> a checagem prévia em
  * {@code IngestaoTreinoRealizadoServiceImpl.registrar} cobre o caso comum — duplicata cujo insert
  * original já commitou antes desta chamada começar. Para esse caso, {@code saveIdempotent} nem

@@ -33,7 +33,9 @@ public interface IngestaoTreinoRealizadoService {
      * nenhum evento é publicado, independente do resultado da deduplicação.</p>
      *
      * <p><b>Invariantes de entrada:</b> {@code treino.getDataTreino() != null} (CA8);
-     * {@code treino.getAtleta() != null}.</p>
+     * {@code treino.getAtleta() != null}; {@code externalId != null} quando
+     * {@code treino.getFonteDados()} é {@code GARMIN}, {@code STRAVA} ou {@code INTERVALS_ICU}
+     * (design.md D4) — sem ele não há como deduplicar reenvios dessas fontes.</p>
      *
      * Idempotent: YES — reenviar o mesmo (atleta, externalId) nunca duplica a linha.
      * Side Effects: Database insert/update do treino, das métricas diárias afetadas e do
@@ -41,10 +43,11 @@ public interface IngestaoTreinoRealizadoService {
      * Tenant-aware: NO — o tenant é derivado da entidade (@PrePersist), nunca do TenantContext.
      *
      * @param treino     o treino a registrar, novo ou já gerenciado
-     * @param externalId identificador da fonte externa, para deduplicação; {@code null} para
-     *                   fontes sem identificador externo (ex.: lançamento manual)
+     * @param externalId identificador da fonte externa, para deduplicação; {@code null} apenas
+     *                   para fontes sem identificador externo (ex.: lançamento manual)
      * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se
-     *                                                                         {@code dataTreino} for nulo (CA8)
+     *                                                                         {@code dataTreino} for nulo (CA8), {@code atleta} for nulo, ou
+     *                                                                         {@code externalId} for nulo para uma fonte externa (D4)
      */
     TreinoDedupHelper.SaveResult registrar(TreinoRealizado treino, @Nullable String externalId);
 
@@ -61,9 +64,13 @@ public interface IngestaoTreinoRealizadoService {
      * Idempotent: YES — reprocessar o mesmo treino sem mudança produz o mesmo resultado.
      * Side Effects: Database update do treino (quando recalcula tssCalculado) e das métricas
      * diárias afetadas.
-     * Tenant-aware: NO
+     * Tenant-aware: NO — busca por {@code treinoRealizadoId} sem filtro de tenant (D6). Contrato
+     * explícito para os chamadores do Bloco 2: {@code treinoRealizadoId} PRECISA já ter sido
+     * resolvido/validado contra o tenant atual antes desta chamada (ex.: carregado por uma query
+     * tenant-scoped, ou seu dono já confirmado por outro caminho) — este método não repete essa
+     * checagem.
      *
-     * @param treinoRealizadoId id do treino a reprocessar
+     * @param treinoRealizadoId id do treino a reprocessar; deve já pertencer ao tenant do chamador
      * @param dataAnterior      a data do treino antes da mudança que motivou o reprocessamento,
      *                          lida pelo chamador antes de mutar/salvar a entidade; {@code null}
      *                          quando a data não mudou (laps, cancelamento, reconciliação)

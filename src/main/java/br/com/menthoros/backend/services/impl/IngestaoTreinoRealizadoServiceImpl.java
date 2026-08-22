@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -18,6 +19,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.EnumSet;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -34,6 +37,10 @@ public class IngestaoTreinoRealizadoServiceImpl implements IngestaoTreinoRealiza
 
     private static final String METODO_DISPOSITIVO = "DISPOSITIVO";
 
+    // design.md D4: fontes cujo treino só é identificável/deduplicável via externalId.
+    private static final Set<FonteDados> FONTES_EXTERNAS =
+            EnumSet.of(FonteDados.GARMIN, FonteDados.STRAVA, FonteDados.INTERVALS_ICU);
+
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoDedupHelper treinoDedupHelper;
     private final TssCalculatorService tssCalculatorService;
@@ -49,7 +56,7 @@ public class IngestaoTreinoRealizadoServiceImpl implements IngestaoTreinoRealiza
     @Override
     @Transactional
     public TreinoDedupHelper.SaveResult registrar(TreinoRealizado treino, @Nullable String externalId) {
-        validarRegistrar(treino);
+        validarRegistrar(treino, externalId);
 
         // A entidade já tem id quando o chamador fez find-or-new + merge (re-sync) — nesse caso o
         // save é sempre um UPDATE e nunca conta como inserção nova, independente do que
@@ -75,7 +82,7 @@ public class IngestaoTreinoRealizadoServiceImpl implements IngestaoTreinoRealiza
         }
 
         aplicarTssSeNecessario(treino);
-        TreinoDedupHelper.SaveResult resultado = salvar(treino, externalId);
+        TreinoDedupHelper.SaveResult resultado = salvar(treino, externalId, eraNovo);
 
         if (eraNovo && resultado.inserted()) {
             eventPublisher.publishEvent(
@@ -117,12 +124,18 @@ public class IngestaoTreinoRealizadoServiceImpl implements IngestaoTreinoRealiza
                 treinoRealizadoId, dataAnterior, dataAlvo);
     }
 
-    private void validarRegistrar(TreinoRealizado treino) {
+    private void validarRegistrar(TreinoRealizado treino, @Nullable String externalId) {
         if (treino.getDataTreino() == null) {
             throw new DomainRuleViolationException("dataTreino não pode ser nulo");
         }
         if (treino.getAtleta() == null) {
             throw new DomainRuleViolationException("atleta não pode ser nulo");
+        }
+        // Invariante do design.md (D4): fontes externas identificam o treino de origem — sem
+        // externalId a dedup por (atleta, externalId) não existe e um reenvio duplicaria a linha.
+        if (externalId == null && FONTES_EXTERNAS.contains(treino.getFonteDados())) {
+            throw new DomainRuleViolationException(
+                    "externalId não pode ser nulo para fonteDados=" + treino.getFonteDados());
         }
     }
 
@@ -136,9 +149,12 @@ public class IngestaoTreinoRealizadoServiceImpl implements IngestaoTreinoRealiza
         }
     }
 
-    private TreinoDedupHelper.SaveResult salvar(TreinoRealizado treino, @Nullable String externalId) {
+    private TreinoDedupHelper.SaveResult salvar(TreinoRealizado treino, @Nullable String externalId, boolean eraNovo) {
         if (externalId == null) {
-            return new TreinoDedupHelper.SaveResult(treinoRealizadoRepository.save(treino), true);
+            // eraNovo, não `true` fixo: quando o chamador já fez find-or-new + merge (re-sync sem
+            // externalId), este save é um UPDATE — inserted() precisa refletir isso para quem o
+            // consome (ex.: decisão de publicar evento em outro caller futuro).
+            return new TreinoDedupHelper.SaveResult(treinoRealizadoRepository.save(treino), eraNovo);
         }
         // A constraint única (uk_treino_realizado_tenant_fonte_external, V29) só se aplica quando
         // a coluna external_id está preenchida — TreinoDedupHelper.saveIdempotent não a seta, é
