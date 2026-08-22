@@ -327,7 +327,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
         void athleteIdDivergenteRetorna404() {
             stubAteAntesDoClient();
             IcuActivityDto dtoDivergente = new IcuActivityDto(
-                    ACTIVITY_ID, "i999999", "Run", "Corrida", "2026-07-16T08:00:00",
+                    ACTIVITY_ID, "i999999", "Run", "Corrida", "2026-07-16T08:00:00", null,
                     1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
             when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dtoDivergente);
 
@@ -457,7 +457,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
 
     private IcuActivityDto icuDto() {
         return new IcuActivityDto(
-                ACTIVITY_ID, "i641775", "Run", "Corrida", "2026-07-16T08:00:00",
+                ACTIVITY_ID, "i641775", "Run", "Corrida", "2026-07-16T08:00:00", null,
                 1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
     }
 

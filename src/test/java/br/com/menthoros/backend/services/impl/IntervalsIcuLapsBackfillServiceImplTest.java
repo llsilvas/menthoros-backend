@@ -177,7 +177,7 @@ class IntervalsIcuLapsBackfillServiceImplTest {
     }
 
     private IcuActivityDto activity() {
-        return new IcuActivityDto("i1", "i641775", "Run", "Corrida", "2026-07-16T08:00:00",
+        return new IcuActivityDto("i1", "i641775", "Run", "Corrida", "2026-07-16T08:00:00", null,
                 1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
     }
 }

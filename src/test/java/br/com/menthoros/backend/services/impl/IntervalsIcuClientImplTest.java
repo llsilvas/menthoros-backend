@@ -268,6 +268,114 @@ class IntervalsIcuClientImplTest {
     }
 
     @Nested
+    @DisplayName("listarAtividades")
+    class ListarAtividades {
+
+        private static final String URL = "/api/v1/athlete/i641775/activities";
+
+        @Test
+        @DisplayName("200 lista as activities da janela por oldest/newest (Bearer), com start_date em UTC")
+        void listaActivitiesDaJanela() {
+            wireMock.stubFor(get(urlPathEqualTo(URL))
+                    .withHeader("Authorization", equalTo("Bearer " + TOKEN))
+                    .withQueryParam("oldest", equalTo("2026-05-24"))
+                    .withQueryParam("newest", equalTo("2026-08-22"))
+                    .willReturn(okJson("""
+                            [{"id":"i178232809","icu_athlete_id":"i641775","type":"Run",
+                              "start_date_local":"2026-08-21T07:15:06","start_date":"2026-08-21T10:15:06Z",
+                              "moving_time":3600,"distance":10000.0},
+                             {"id":"i177900063","icu_athlete_id":"i641775","type":"Run",
+                              "start_date_local":"2026-08-20T07:25:32","start_date":"2026-08-20T10:25:32Z",
+                              "moving_time":1800,"distance":5000.0}]
+                            """)));
+
+            List<IcuActivityDto> activities = client.listarAtividades(TOKEN, "i641775",
+                    LocalDate.of(2026, 5, 24), LocalDate.of(2026, 8, 22));
+
+            // a API devolve em ordem decrescente (gate 0.2); o client NÃO reordena — isso é do scheduler
+            assertThat(activities).extracting(IcuActivityDto::id)
+                    .containsExactly("i178232809", "i177900063");
+            assertThat(activities.get(0).startDate()).isEqualTo("2026-08-21T10:15:06Z");
+            assertThat(activities.get(0).startDateLocal()).isEqualTo("2026-08-21T07:15:06");
+            // a listagem não traz os laps: só buscarAtividade(..., true) os carrega
+            assertThat(activities.get(0).intervalos()).isNull();
+        }
+
+        @Test
+        @DisplayName("200 com array vazio retorna lista vazia, não nula")
+        void arrayVazioRetornaListaVazia() {
+            wireMock.stubFor(get(urlPathEqualTo(URL)).willReturn(okJson("[]")));
+
+            List<IcuActivityDto> activities = client.listarAtividades(TOKEN, "i641775",
+                    LocalDate.of(2026, 8, 20), LocalDate.of(2026, 8, 21));
+
+            assertThat(activities).isNotNull().isEmpty();
+        }
+
+        @Test
+        @DisplayName("401 lança IntervalsIcuApiException com status 401 (token revogado)")
+        void unauthorizedLancaExcecaoComStatus() {
+            wireMock.stubFor(get(urlPathEqualTo(URL)).willReturn(aResponse().withStatus(401)));
+
+            assertThatThrownBy(() -> client.listarAtividades(TOKEN, "i641775",
+                    LocalDate.of(2026, 8, 20), LocalDate.of(2026, 8, 21)))
+                    .isInstanceOf(IntervalsIcuApiException.class)
+                    .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus().value()).isEqualTo(401));
+        }
+
+        @Test
+        @DisplayName("429 lança IntervalsIcuApiException com status 429 — a classificação retryable é do scheduler")
+        void rateLimitLancaExcecaoComStatus() {
+            wireMock.stubFor(get(urlPathEqualTo(URL)).willReturn(aResponse().withStatus(429)));
+
+            assertThatThrownBy(() -> client.listarAtividades(TOKEN, "i641775",
+                    LocalDate.of(2026, 8, 20), LocalDate.of(2026, 8, 21)))
+                    .isInstanceOf(IntervalsIcuApiException.class)
+                    .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus().value()).isEqualTo(429));
+        }
+
+        @Test
+        @DisplayName("500 lança IntervalsIcuApiException com status 500")
+        void erroDoProvedorLancaExcecaoComStatus() {
+            wireMock.stubFor(get(urlPathEqualTo(URL)).willReturn(aResponse().withStatus(500)));
+
+            assertThatThrownBy(() -> client.listarAtividades(TOKEN, "i641775",
+                    LocalDate.of(2026, 8, 20), LocalDate.of(2026, 8, 21)))
+                    .isInstanceOf(IntervalsIcuApiException.class)
+                    .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus().value()).isEqualTo(500));
+        }
+
+        @Test
+        @DisplayName("falha de transporte lança IntervalsIcuApiException sem status HTTP")
+        void falhaDeTransporteLancaExcecaoSemStatus() {
+            wireMock.stop();
+
+            assertThatThrownBy(() -> client.listarAtividades(TOKEN, "i641775",
+                    LocalDate.of(2026, 8, 20), LocalDate.of(2026, 8, 21)))
+                    .isInstanceOf(IntervalsIcuApiException.class)
+                    .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus()).isNull());
+        }
+
+        @Test
+        @DisplayName("o token nunca aparece em log nem na exceção, mesmo em 401")
+        void tokenNaoVazaEmLogNem401() {
+            wireMock.stubFor(get(urlPathEqualTo(URL)).willReturn(aResponse().withStatus(401)));
+
+            assertThatThrownBy(() -> client.listarAtividades(TOKEN, "i641775",
+                    LocalDate.of(2026, 8, 20), LocalDate.of(2026, 8, 21)))
+                    .satisfies(e -> {
+                        assertThat(e.getMessage()).doesNotContain(TOKEN);
+                        assertThat(String.valueOf(e.getCause())).doesNotContain(TOKEN);
+                    });
+
+            String logs = java.util.Arrays.stream(logCapture.list.toArray(new ILoggingEvent[0]))
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .reduce("", (a, b) -> a + "\n" + b);
+            assertThat(logs).doesNotContain(TOKEN);
+        }
+    }
+
+    @Nested
     @DisplayName("revogarAcesso")
     class RevogarAcesso {
 

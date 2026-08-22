@@ -37,6 +37,18 @@ public interface IntervalsIcuClient {
     /** GET /api/v1/athlete/{id}/events?oldest=&newest=. */
     List<IcuEventDto> listarEventos(String token, String externalAthleteId, LocalDate oldest, LocalDate newest);
 
+    /**
+     * GET /api/v1/athlete/{id}/activities?oldest=&newest= — erro HTTP vira
+     * IntervalsIcuApiException(status, mensagem), sem tradução aqui: retryable vs. permanente é
+     * decisão do scheduler.
+     *
+     * <p>Contrato observado contra a API real (gate 0.2, 2026-08-22): sem paginação, filtro por
+     * data local inclusivo nas duas pontas, ordem <b>decrescente</b>, e o corpo é o summary completo
+     * <b>sem</b> {@code icu_intervals} — os laps só vêm por {@link #buscarAtividade} com
+     * {@code comIntervalos=true}.
+     */
+    List<IcuActivityDto> listarAtividades(String token, String externalAthleteId, LocalDate oldest, LocalDate newest);
+
     /** DELETE /api/v1/athlete/{id}/events/{eventId}. */
     void deletarEvento(String token, String externalAthleteId, long eventId);
 
