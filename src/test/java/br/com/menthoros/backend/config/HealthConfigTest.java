@@ -16,7 +16,12 @@ import org.springframework.boot.actuate.health.Status;
     "spring.datasource.username=sa",
     "spring.datasource.password=",
     "spring.flyway.enabled=false",
-    "spring.jpa.hibernate.ddl-auto=create-drop"
+    "spring.jpa.hibernate.ddl-auto=create-drop",
+    // Este teste sobe o contexto sem profile, entao herda o application.yml real, que deixa
+    // client-id/client-secret vazios (vem de env var em runtime). IntervalsIcuProperties e
+    // @NotBlank e sem isto o contexto nao sobe. Ver D11 da change intervals-icu-oauth2.
+    "app.intervals-icu.client-id=test-intervals-client-id",
+    "app.intervals-icu.client-secret=test-intervals-client-secret"
 })
 class HealthConfigTest {
 

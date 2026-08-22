@@ -27,6 +27,7 @@ import java.util.UUID;
 
 import static br.com.menthoros.backend.testsupport.JwtTestSupport.atletaJwt;
 import static br.com.menthoros.backend.testsupport.JwtTestSupport.tecnicoJwt;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -53,6 +54,9 @@ class IntervalsIcuConnectionControllerAuthTest {
     private IntervalsIcuConnectionService connectionService;
 
     @MockitoBean
+    private br.com.menthoros.backend.services.IntervalsIcuOAuthService oauthService;
+
+    @MockitoBean
     private AtletaProgressService atletaProgressService;
 
     @MockitoBean
@@ -75,44 +79,72 @@ class IntervalsIcuConnectionControllerAuthTest {
     }
 
     @Nested
-    @DisplayName("POST /api/v1/integracoes/me/intervals-icu")
-    class Conectar {
+    @DisplayName("GET /api/v1/integracoes/me/intervals-icu/authorize-url")
+    class AuthorizeUrl {
 
         @Test
-        @DisplayName("retorna 201 para ATLETA com key válida")
-        void retorna201ParaAtleta() throws Exception {
-            when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(atletaId);
-            when(connectionService.conectar(atletaId, "key-ok"))
-                    .thenReturn(new IntervalsIcuConnectionStatusDto(true, "i641775", Instant.now(), null, null));
+        @DisplayName("retorna 200 com a URL para ATLETA")
+        void retorna200ParaAtleta() throws Exception {
+            when(oauthService.getAuthorizationUrl())
+                    .thenReturn("https://intervals.icu/oauth/authorize?client_id=663&state=abc");
 
-            mockMvc.perform(post("/api/v1/integracoes/me/intervals-icu")
-                            .with(atletaJwt())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"apiKey\":\"key-ok\"}"))
-                    .andExpect(status().isCreated());
+            mockMvc.perform(get("/api/v1/integracoes/me/intervals-icu/authorize-url").with(atletaJwt()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.authorizationUrl")
+                            .value("https://intervals.icu/oauth/authorize?client_id=663&state=abc"));
         }
 
+        // ADMIN saiu do contrato: resolverAtletaIdAtual() exige Atleta vinculado ao Usuario, e um
+        // ADMIN sem vínculo receberia 404 em vez da URL — CA1 descrevia caminho inalcançável.
         @Test
         @DisplayName("retorna 403 para TECNICO")
         void retorna403ParaTecnico() throws Exception {
-            mockMvc.perform(post("/api/v1/integracoes/me/intervals-icu")
-                            .with(tecnicoJwt())
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"apiKey\":\"key-ok\"}"))
+            mockMvc.perform(get("/api/v1/integracoes/me/intervals-icu/authorize-url").with(tecnicoJwt()))
                     .andExpect(status().isForbidden());
 
-            verifyNoInteractions(connectionService);
+            verifyNoInteractions(oauthService);
         }
 
         @Test
         @DisplayName("retorna 401 sem token")
         void retorna401SemToken() throws Exception {
-            mockMvc.perform(post("/api/v1/integracoes/me/intervals-icu")
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"apiKey\":\"key-ok\"}"))
+            mockMvc.perform(get("/api/v1/integracoes/me/intervals-icu/authorize-url"))
                     .andExpect(status().isUnauthorized());
 
-            verifyNoInteractions(connectionService);
+            verifyNoInteractions(oauthService);
+        }
+
+        @Test
+        @DisplayName("a resposta não vaza o client_secret")
+        void naoVazaSecret() throws Exception {
+            when(oauthService.getAuthorizationUrl())
+                    .thenReturn("https://intervals.icu/oauth/authorize?client_id=663&state=abc");
+
+            String body = mockMvc.perform(
+                            get("/api/v1/integracoes/me/intervals-icu/authorize-url").with(atletaJwt()))
+                    .andReturn().getResponse().getContentAsString();
+
+            assertThat(body).doesNotContain("client_secret");
+        }
+    }
+
+    // CA8 — o fluxo de conexão por API key foi removido (D6). O que importa asserir é que o POST
+    // com corpo {apiKey} não é mais aceito e não toca no service. O status é 405 e não 404 porque
+    // a URL continua existindo para GET e DELETE: quem sumiu foi o método, não o recurso.
+    @Nested
+    @DisplayName("POST /api/v1/integracoes/me/intervals-icu (removido)")
+    class ConectarPorApiKeyRemovido {
+
+        @Test
+        @DisplayName("POST com {apiKey} não é aceito e nada chega ao service")
+        void postComApiKeyNaoExisteMais() throws Exception {
+            mockMvc.perform(post("/api/v1/integracoes/me/intervals-icu")
+                            .with(atletaJwt())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"apiKey\":\"key-ok\"}"))
+                    .andExpect(status().isMethodNotAllowed());
+
+            verifyNoInteractions(connectionService, oauthService);
         }
     }
 
@@ -157,15 +189,17 @@ class IntervalsIcuConnectionControllerAuthTest {
     @DisplayName("DELETE /api/v1/integracoes/me/intervals-icu")
     class Desconectar {
 
+        // Passa pelo OAuth service, não direto no connectionService: a revogação remota precisa
+        // acontecer antes do soft-disconnect local, enquanto o token ainda existe (D7).
         @Test
-        @DisplayName("retorna 204 para ATLETA")
+        @DisplayName("retorna 204 para ATLETA e revoga no provedor")
         void retorna204ParaAtleta() throws Exception {
             when(atletaProgressService.resolverAtletaIdAtual()).thenReturn(atletaId);
 
             mockMvc.perform(delete("/api/v1/integracoes/me/intervals-icu").with(atletaJwt()))
                     .andExpect(status().isNoContent());
 
-            verify(connectionService).desconectar(atletaId);
+            verify(oauthService).revogarEDesconectar(atletaId);
         }
 
         @Test
@@ -174,7 +208,7 @@ class IntervalsIcuConnectionControllerAuthTest {
             mockMvc.perform(delete("/api/v1/integracoes/me/intervals-icu").with(tecnicoJwt()))
                     .andExpect(status().isForbidden());
 
-            verifyNoInteractions(connectionService);
+            verifyNoInteractions(connectionService, oauthService);
         }
 
         @Test
@@ -183,7 +217,7 @@ class IntervalsIcuConnectionControllerAuthTest {
             mockMvc.perform(delete("/api/v1/integracoes/me/intervals-icu"))
                     .andExpect(status().isUnauthorized());
 
-            verifyNoInteractions(connectionService);
+            verifyNoInteractions(connectionService, oauthService);
         }
     }
 }

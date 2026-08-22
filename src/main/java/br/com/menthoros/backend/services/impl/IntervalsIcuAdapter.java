@@ -52,19 +52,19 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
         if (workout == null) {
             throw new IllegalArgumentException("workout não pode ser nulo");
         }
-        String apiKey = conexao.getAccessToken();
+        String token = conexao.getAccessToken();
         String externalAthleteId = conexao.getExternalAthleteId();
         JsonNode payload = montarPayload(workout);
 
         try {
             if (eventIdArmazenado != null) {
-                return atualizarOuRecriar(apiKey, externalAthleteId, eventIdArmazenado, payload);
+                return atualizarOuRecriar(token, externalAthleteId, eventIdArmazenado, payload);
             }
-            Long idExistente = buscarIdPorExternalId(apiKey, externalAthleteId, workout);
+            Long idExistente = buscarIdPorExternalId(token, externalAthleteId, workout);
             if (idExistente != null) {
-                return atualizarOuRecriar(apiKey, externalAthleteId, idExistente, payload);
+                return atualizarOuRecriar(token, externalAthleteId, idExistente, payload);
             }
-            IcuEventDto criado = client.criarEvento(apiKey, externalAthleteId, payload);
+            IcuEventDto criado = client.criarEvento(token, externalAthleteId, payload);
             return PushResult.okCriado(criado.id());
         } catch (IntervalsIcuApiException e) {
             return PushResult.erro(mapearStatus(e), mensagemCurada(e));
@@ -86,11 +86,11 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
         if (conexao == null) {
             throw new IllegalArgumentException("conexao não pode ser nula");
         }
-        String apiKey = conexao.getAccessToken();
+        String token = conexao.getAccessToken();
         String externalAthleteId = conexao.getExternalAthleteId();
         Set<String> atuais = externalIdsAtuais == null ? Set.of() : externalIdsAtuais;
 
-        List<IcuEventDto> eventos = client.listarEventos(apiKey, externalAthleteId, inicio, fim);
+        List<IcuEventDto> eventos = client.listarEventos(token, externalAthleteId, inicio, fim);
         for (IcuEventDto evento : eventos) {
             String externalId = evento.externalId();
             if (externalId == null || !externalId.startsWith(StructuredWorkout.PREFIXO_EXTERNAL_ID)) {
@@ -100,7 +100,7 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
                 continue;
             }
             try {
-                client.deletarEvento(apiKey, externalAthleteId, evento.id());
+                client.deletarEvento(token, externalAthleteId, evento.id());
             } catch (IntervalsIcuApiException e) {
                 if (!isStatus(e, 404)) {
                     log.warn("Falha ao remover evento órfão {} do intervals.icu: {}", evento.id(), e.getMessage());
@@ -121,11 +121,11 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
     @Override
     public void tocarEvento(IntegracaoExterna conexao, long eventId, String externalIdCanonico) {
         try {
-            String apiKey = conexao.getAccessToken();
+            String token = conexao.getAccessToken();
             String externalAthleteId = conexao.getExternalAthleteId();
             ObjectNode payload = objectMapper.createObjectNode();
             payload.put("external_id", externalIdCanonico);
-            client.atualizarEvento(apiKey, externalAthleteId, eventId, payload);
+            client.atualizarEvento(token, externalAthleteId, eventId, payload);
         } catch (Exception e) {
             log.warn("Nudge anti-debounce falhou para o evento {} (best-effort, treino não é afetado): {}",
                     eventId, e.getMessage());
@@ -134,22 +134,22 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
 
     // ===== Fluxo de idempotência =====
 
-    private PushResult atualizarOuRecriar(String apiKey, String externalAthleteId, long eventId, JsonNode payload) {
+    private PushResult atualizarOuRecriar(String token, String externalAthleteId, long eventId, JsonNode payload) {
         try {
-            IcuEventDto atualizado = client.atualizarEvento(apiKey, externalAthleteId, eventId, payload);
+            IcuEventDto atualizado = client.atualizarEvento(token, externalAthleteId, eventId, payload);
             return PushResult.okAtualizado(atualizado.id());
         } catch (IntervalsIcuApiException e) {
             if (isStatus(e, 404)) {
-                IcuEventDto criado = client.criarEvento(apiKey, externalAthleteId, payload);
+                IcuEventDto criado = client.criarEvento(token, externalAthleteId, payload);
                 return PushResult.okCriado(criado.id());
             }
             throw e;
         }
     }
 
-    private Long buscarIdPorExternalId(String apiKey, String externalAthleteId, StructuredWorkout workout) {
+    private Long buscarIdPorExternalId(String token, String externalAthleteId, StructuredWorkout workout) {
         LocalDate data = workout.scheduledDate();
-        List<IcuEventDto> existentes = client.listarEventos(apiKey, externalAthleteId, data, data);
+        List<IcuEventDto> existentes = client.listarEventos(token, externalAthleteId, data, data);
         Optional<IcuEventDto> match = existentes.stream()
                 .filter(ev -> workout.externalId().equals(ev.externalId()))
                 .findFirst();

@@ -8,25 +8,12 @@ import java.util.UUID;
 
 /**
  * Conexão do atleta com o intervals.icu (push de treinos planejados ao relógio).
- * Credencial é uma API key pessoal — validada contra a API do intervals.icu antes de persistir.
+ *
+ * <p>A credencial é um <b>token OAuth2</b>. A criação da conexão pertence ao
+ * {@code IntervalsIcuOAuthService}: o fluxo de API key foi removido e não convive com o OAuth
+ * (D6). Aqui ficam consulta, desconexão e o hook de pausa do Strava.
  */
 public interface IntervalsIcuConnectionService {
-
-    /**
-     * Valida a API key contra o intervals.icu e persiste a conexão. Reconecta (reusa o registro
-     * existente da unique atleta+plataforma) quando o atleta já teve uma conexão.
-     *
-     * <p>Idempotent: NO — cada chamada revalida a key contra a API externa; uma key inválida
-     * lança exceção sem alterar estado, mas uma key válida repetida reescreve o registro existente.
-     * <p>Side Effects: chamada HTTP externa (validação da key) + persistência (insert ou update).
-     * <p>Tenant-aware: YES — resolve o atleta via {@code TenantContext.getRequiredTenantId()}.
-     *
-     * @param atletaId ID do atleta dono da conexão
-     * @param apiKey   API key pessoal gerada em intervals.icu
-     * @return status da conexão recém-criada/atualizada (nunca contém a key)
-     * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se a key for inválida (422)
-     */
-    IntervalsIcuConnectionStatusDto conectar(UUID atletaId, String apiKey);
 
     /**
      * Status atual da conexão intervals.icu do atleta.
@@ -66,4 +53,25 @@ public interface IntervalsIcuConnectionService {
      * @return a entidade {@link IntegracaoExterna} ativa, se houver
      */
     Optional<IntegracaoExterna> conexaoAtiva(UUID atletaId, UUID tenantId);
+
+    /**
+     * Hook D5.2 — ao conectar o intervals.icu com o Strava ativo, pausa a sincronização automática
+     * do Strava daquele atleta, eliminando a colisão cross-fonte na origem. Sem Strava conectado é
+     * um no-op; se já pausado, não regrava.
+     *
+     * <p><b>Por que é público na interface e não privado no impl:</b> quem cria a conexão passou a
+     * ser o {@code IntervalsIcuOAuthService}, e D9 é explícito em preservar este hook em vez de
+     * reimplementá-lo. Duas cópias da regra divergiriam no primeiro ajuste.
+     *
+     * <p><b>Monotônico de propósito</b> (decisão do founder, "nunca auto-retomar"): só seta
+     * {@code autoSyncPausado=true}, nunca reverte. Retomar é ação manual do coach.
+     *
+     * <p>Idempotent: YES — pausar duas vezes é no-op na segunda.
+     * <p>Side Effects: Database update na linha do Strava, apenas quando havia Strava ativo e não pausado.
+     * <p>Tenant-aware: YES — tenant recebido explicitamente por parâmetro.
+     *
+     * @param atletaId ID do atleta
+     * @param tenantId ID do tenant do atleta
+     */
+    void pausarStravaAutomaticamente(UUID atletaId, UUID tenantId);
 }
