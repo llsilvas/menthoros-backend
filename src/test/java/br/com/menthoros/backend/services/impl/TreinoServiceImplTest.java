@@ -21,7 +21,6 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
 import org.hibernate.Hibernate;
 import org.junit.jupiter.api.AfterEach;
@@ -73,13 +72,15 @@ class TreinoServiceImplTest {
     @Mock
     private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock
-    private TsbService tsbService;
+    private br.com.menthoros.backend.services.IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     @Mock
     private PlanoMetadadosRepository planoMetaDadosRepository;
     @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock
     private TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
+    @Mock
+    private java.time.Clock clock;
 
     @InjectMocks
     private TreinoServiceImpl treinoService;
@@ -353,12 +354,12 @@ class TreinoServiceImplTest {
             assertThrows(DomainNotFoundException.class, () -> treinoService.lancarTreino(atletaId, dto));
 
             verify(treinoRealizadoRepository, never()).save(any());
-            verify(tsbService, never()).atualizarTsbDia(any(), any());
+            verifyNoInteractions(ingestaoTreinoRealizadoService);
         }
 
         @Test
-        @DisplayName("persiste manual, publica evento e atualiza TSB na data do treino")
-        void persisteEAtualizaTsb() {
+        @DisplayName("monta a entidade e delega dedup/evento/carga ao seam de ingestão (registrar)")
+        void persisteEDelegaAoIngestor() {
             UUID atletaId = UUID.randomUUID();
             LocalDate dataTreino = LocalDate.of(2026, 5, 10);
             TreinoRealizadoInputDto dto = novoInput(atletaId, 7, 12.0, dataTreino, null);
@@ -371,7 +372,8 @@ class TreinoServiceImplTest {
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoMapper.toEntity(dto)).thenReturn(entidade);
-            when(treinoRealizadoRepository.save(entidade)).thenReturn(salvo);
+            when(ingestaoTreinoRealizadoService.registrar(entidade, null))
+                    .thenReturn(new br.com.menthoros.backend.services.helper.TreinoDedupHelper.SaveResult(salvo, true));
             when(tipoTreinoConsistenciaValidator.validarEstrutura(salvo)).thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(salvo)).thenReturn(outputStub(salvo.getId()));
 
@@ -381,10 +383,10 @@ class TreinoServiceImplTest {
             assertEquals(TreinoExecucaoStatus.REALIZADO, entidade.getStatus());
             assertSame(atleta, entidade.getAtleta());
             assertEquals(tenantId, entidade.getTenantId());
+            assertEquals(dataTreino, entidade.getDataTreino());
 
-            verify(treinoRealizadoRepository).save(entidade);
-            verify(eventPublisher).publishEvent(any(TreinoRegistradoEvent.class));
-            verify(tsbService).atualizarTsbDia(atletaId, dataTreino);
+            verify(ingestaoTreinoRealizadoService).registrar(entidade, null);
+            verifyNoInteractions(eventPublisher);
         }
     }
 

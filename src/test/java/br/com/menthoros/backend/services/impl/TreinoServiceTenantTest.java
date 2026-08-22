@@ -11,7 +11,8 @@ import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.*;
-import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
+import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,7 +47,7 @@ class TreinoServiceTenantTest {
     @Mock private PlanoSemanalRepository planoSemanalRepository;
     @Mock private PlanoSemanalMapper planoSemanalMapper;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
-    @Mock private TsbService tsbService;
+    @Mock private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     @Mock private PlanoMetadadosRepository planoMetaDadosRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
 
@@ -117,8 +118,8 @@ class TreinoServiceTenantTest {
                 .thenReturn(Optional.empty());
         when(treinoMapper.toEntity(any(TreinoRealizadoInputDto.class)))
                 .thenReturn(treinoSalvo);
-        when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
-        doNothing().when(tsbService).atualizarTsbDia(any(), any());
+        when(ingestaoTreinoRealizadoService.registrar(any(), any()))
+                .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
 
         TreinoRealizadoInputDto dto = buildInputDto(atletaId);
 
@@ -171,8 +172,8 @@ class TreinoServiceTenantTest {
                 .thenReturn(Optional.empty());
         when(treinoMapper.toEntity(any(TreinoRealizadoInputDto.class)))
                 .thenReturn(treinoSalvo);
-        when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
-        doNothing().when(tsbService).atualizarTsbDia(any(), any());
+        when(ingestaoTreinoRealizadoService.registrar(any(), any()))
+                .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
 
         TreinoRealizadoInputDto dto = buildInputDto(atletaId);
 
