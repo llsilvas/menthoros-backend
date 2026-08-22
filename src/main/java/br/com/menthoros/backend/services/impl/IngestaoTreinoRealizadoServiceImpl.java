@@ -104,6 +104,7 @@ public class IngestaoTreinoRealizadoServiceImpl implements IngestaoTreinoRealiza
 
         if (contaNaCarga(treino) && !METODO_DISPOSITIVO.equals(treino.getMetodoCalculoTss())) {
             treino.setTssCalculado(tssCalculatorService.calcularTss(treino));
+            treino.setMetodoCalculoTss("CALCULADO");
             treinoRealizadoRepository.save(treino);
         }
 
@@ -128,6 +129,10 @@ public class IngestaoTreinoRealizadoServiceImpl implements IngestaoTreinoRealiza
     private void aplicarTssSeNecessario(TreinoRealizado treino) {
         if (treino.getTssCalculado() == null || !METODO_DISPOSITIVO.equals(treino.getMetodoCalculoTss())) {
             treino.setTssCalculado(tssCalculatorService.calcularTss(treino));
+            // TssCalculatorService não expõe qual método venceu internamente (FC/PACE/RPE) — a
+            // etiqueta genérica basta, já que nenhuma regra de negócio distingue os três; só
+            // DISPOSITIVO importa (D3.1).
+            treino.setMetodoCalculoTss("CALCULADO");
         }
     }
 
