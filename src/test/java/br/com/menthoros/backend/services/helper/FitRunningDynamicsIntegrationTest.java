@@ -7,8 +7,7 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
-import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.services.impl.FitParseServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,7 +17,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 
 import java.io.InputStream;
 import java.time.Duration;
@@ -50,12 +48,8 @@ import static org.mockito.Mockito.when;
 class FitRunningDynamicsIntegrationTest {
 
     @Mock private AtletaRepository atletaRepository;
-    @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private TreinoMapper treinoMapper;
-    @Mock private TsbService tsbService;
-    @Mock private TssCalculatorService tssCalculatorService;
-    @Mock private ApplicationEventPublisher eventPublisher;
-    @Mock private TreinoDedupHelper treinoDedupHelper;
+    @Mock private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
 
     private FitTreinoPersister service;
     private UUID tenantId;
@@ -66,14 +60,12 @@ class FitRunningDynamicsIntegrationTest {
         tenantId = UUID.randomUUID();
         atletaId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
-        service = new FitTreinoPersister(atletaRepository, treinoRealizadoRepository,
-                treinoMapper, tsbService, tssCalculatorService, eventPublisher, treinoDedupHelper);
+        service = new FitTreinoPersister(atletaRepository, treinoMapper, ingestaoTreinoRealizadoService);
 
         Atleta atleta = mock(Atleta.class);
         lenient().when(atleta.getId()).thenReturn(atletaId);
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-        when(treinoRealizadoRepository.findByExternalIdAndAtletaId(anyString(), any())).thenReturn(Optional.empty());
-        when(treinoDedupHelper.saveIdempotent(any(), anyString(), any()))
+        when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
                 .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
         when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
     }
@@ -151,7 +143,7 @@ class FitRunningDynamicsIntegrationTest {
             service.persistir(atletaId, dados);
         }
         ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
-        verify(treinoDedupHelper).saveIdempotent(captor.capture(), anyString(), any());
+        verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
         return captor.getValue();
     }
 }
