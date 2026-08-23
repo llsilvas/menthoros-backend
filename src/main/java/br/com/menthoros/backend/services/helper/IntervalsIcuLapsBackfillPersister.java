@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.helper;
 import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -36,6 +37,7 @@ import java.util.UUID;
 public class IntervalsIcuLapsBackfillPersister {
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
+    private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void gravarEtapas(UUID treinoId, List<EtapaRealizada> etapas, UUID tenantId) {
@@ -59,5 +61,9 @@ public class IntervalsIcuLapsBackfillPersister {
             treino.getEtapasRealizadas().add(etapa);
         }
         treinoRealizadoRepository.save(treino);
+
+        // CA5: etapas mudam tssCalculado/carga do dia — recalcula pelo seam único de ingestão,
+        // na mesma transação (REQUIRES_NEW) deste treino.
+        ingestaoTreinoRealizadoService.reprocessar(treinoId, null);
     }
 }
