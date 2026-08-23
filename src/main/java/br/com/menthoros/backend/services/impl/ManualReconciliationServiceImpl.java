@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.services.ManualReconciliationService;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.entity.TreinoReconciliacao;
@@ -29,14 +30,17 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoReconciliacaoRepository treinoReconciliacaoRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
+    private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
 
     public ManualReconciliationServiceImpl(
             TreinoRealizadoRepository treinoRealizadoRepository,
             TreinoReconciliacaoRepository treinoReconciliacaoRepository,
-            TreinoPlanejadoRepository treinoPlanejadoRepository) {
+            TreinoPlanejadoRepository treinoPlanejadoRepository,
+            IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService) {
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.treinoReconciliacaoRepository = treinoReconciliacaoRepository;
         this.treinoPlanejadoRepository = treinoPlanejadoRepository;
+        this.ingestaoTreinoRealizadoService = ingestaoTreinoRealizadoService;
     }
 
     /**
@@ -92,6 +96,11 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
                 tenantId
         );
 
+        // O seam único é quem decide se algo realmente mudou na carga (D2/D9) — chamado após
+        // toda mutação de TreinoRealizado por completude, mesmo quando este gesto específico não
+        // altera tssCalculado/carga hoje.
+        ingestaoTreinoRealizadoService.reprocessar(saved.getId(), null);
+
         return findByIdWithEtapas(saved.getId(), tenantId);
     }
 
@@ -130,6 +139,8 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
                 tenantId
         );
 
+        ingestaoTreinoRealizadoService.reprocessar(saved.getId(), null);
+
         return findByIdWithEtapas(saved.getId(), tenantId);
     }
 
@@ -167,6 +178,8 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
                 actorId,
                 tenantId
         );
+
+        ingestaoTreinoRealizadoService.reprocessar(saved.getId(), null);
 
         return findByIdWithEtapas(saved.getId(), tenantId);
     }

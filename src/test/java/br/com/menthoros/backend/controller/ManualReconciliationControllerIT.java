@@ -3,6 +3,7 @@ package br.com.menthoros.backend.controller;
 import br.com.menthoros.backend.dto.input.ReconciliacaoAcaoRequestDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.AtletaStatus;
@@ -16,6 +17,7 @@ import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -83,6 +85,9 @@ class ManualReconciliationControllerIT extends AbstractIntegrationTest {
     private TreinoRealizadoRepository treinoRealizadoRepository;
 
     @Autowired
+    private PlanoMetadadosRepository planoMetadadosRepository;
+
+    @Autowired
     private UsuarioRepository usuarioRepository;
 
     private Assessoria assessoria;
@@ -112,6 +117,14 @@ class ManualReconciliationControllerIT extends AbstractIntegrationTest {
         atleta.setAssessoria(assessoria);
         atleta = atletaRepository.save(atleta);
         atletaId = atleta.getId();
+
+        // reprocessar (task 7.4) recalcula TSB via TsbService.atualizarMetaDados, que exige
+        // PlanoMetaDados existente para o atleta — sem isso, "MetaDados não encontrado".
+        PlanoMetaDados meta = new PlanoMetaDados();
+        meta.setAtleta(atleta);
+        meta.setAssessoria(assessoria);
+        meta.setDiaPreferidoLongo(DiaSemana.SABADO);
+        planoMetadadosRepository.save(meta);
 
         // Create realized activity (AMBIGUO status for pending review)
         treinoRealizado = new TreinoRealizado();
