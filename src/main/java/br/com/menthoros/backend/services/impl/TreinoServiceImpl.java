@@ -232,7 +232,8 @@ public class TreinoServiceImpl implements TreinoService {
      * Atualiza os campos observacionais de um treino realizado.
      *
      * Idempotent: NO — atualiza dados a cada chamada.
-     * Side Effects: Database update + TreinoRegistradoEvent quando percepcaoEsforco != null.
+     * Side Effects: Database update + TreinoRegistradoEvent quando percepcaoEsforco != null +
+     * recálculo da carga do dia (e do dia anterior, se a data mudou — CA6).
      * Tenant-aware: YES — via TenantContext.getRequiredTenantId().
      */
     @Override
@@ -243,6 +244,9 @@ public class TreinoServiceImpl implements TreinoService {
         TreinoRealizado treino = treinoRealizadoRepository
                 .findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Treino não encontrado: " + id));
+        // Capturada ANTES de mutar/salvar (CA6): se a data mudar, o dia antigo precisa ser
+        // recalculado também — reprocessar recebe null quando não mudou (contrato do seam).
+        LocalDate dataAntiga = treino.getDataTreino();
 
         applyMutableFields(treino, dto);
 
@@ -251,6 +255,14 @@ public class TreinoServiceImpl implements TreinoService {
         if (salvo.getPercepcaoEsforco() != null) {
             eventPublisher.publishEvent(new TreinoRegistradoEvent(salvo.getId(), salvo.getTenantId()));
         }
+
+        // Recalcula tssCalculado/carga do dia pelo seam único de ingestão — antes desta migração
+        // updateTreino nunca tocava TSB/MetricasDiarias (gap real, design.md tabela de chamadores
+        // #7). reprocessar nunca publica evento (D5): o publish acima é uma preocupação separada
+        // (RPE atrasado), já existente antes desta migração.
+        LocalDate dataAnteriorParaReprocessar =
+                (dataAntiga != null && !dataAntiga.equals(salvo.getDataTreino())) ? dataAntiga : null;
+        ingestaoTreinoRealizadoService.reprocessar(salvo.getId(), dataAnteriorParaReprocessar);
 
         // Validação estrutural informativa — nunca altera o tipo automaticamente
         tipoTreinoConsistenciaValidator.validarEstrutura(salvo).ifPresent(sug ->

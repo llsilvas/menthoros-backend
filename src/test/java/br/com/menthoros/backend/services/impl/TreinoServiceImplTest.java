@@ -337,6 +337,32 @@ class TreinoServiceImplTest {
 
             verify(eventPublisher, never()).publishEvent(any());
         }
+
+        @Test
+        @DisplayName("recalcula a carga do dia via reprocessar (antes nunca tocava TSB/MetricasDiarias)")
+        void recalculaCargaViaReprocessar() {
+            UUID id = UUID.randomUUID();
+            LocalDate data = LocalDate.of(2026, 5, 1);
+            TreinoRealizadoInputDto dto = novoInput(UUID.randomUUID(), 6, null, data, null);
+
+            TreinoRealizado treino = new TreinoRealizado();
+            treino.setId(id);
+            treino.setTenantId(tenantId);
+            treino.setDataTreino(data);
+
+            when(treinoRealizadoRepository.findByIdAndTenantId(id, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoRealizadoRepository.save(treino)).thenReturn(treino);
+            when(tipoTreinoConsistenciaValidator.validarEstrutura(treino)).thenReturn(Optional.empty());
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(id));
+
+            treinoService.updateTreino(id, dto);
+
+            // dataTreino é imutável via updateTreino (não mexido por applyMutableFields,
+            // UpdateTreinoIntegrationTest.updateTreino_doesNotOverwriteImmutableFields garante
+            // isso) — dataAnterior é sempre null aqui, mas o recálculo em si é o que fecha o gap.
+            verify(ingestaoTreinoRealizadoService).reprocessar(id, null);
+        }
     }
 
     @Nested
