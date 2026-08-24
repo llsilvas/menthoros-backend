@@ -64,8 +64,14 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
         LocalDate inicio21d = hoje.minusDays(21);
         LocalDate inicio42d = hoje.minusDays(42);
 
+        // D8 (ingestao-treino-realizado): cancelado não conta na carga — mesmo predicado usado por
+        // TsbService/produtores; achado do /qa do Bloco 2 (Codex adversarial-review, 2026-08-24) —
+        // esta query alimenta a decisão de progressão do plano (volume/longão/RPE) e ficara de fora
+        // do inventário original da task 7.7.
         List<TreinoRealizado> treinos42d = treinoRealizadoRepository
-                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, inicio42d, hoje);
+                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, inicio42d, hoje).stream()
+                .filter(TreinoRealizado::contaNaCarga)
+                .toList();
 
         List<TreinoRealizado> treinos21d = treinos42d.stream()
                 .filter(t -> !t.getDataTreino().isBefore(inicio21d))

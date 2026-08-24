@@ -58,8 +58,15 @@ public class AthleteThresholdUpdater {
             return;
         }
         UUID tenantId = atleta.getAssessoria().getId();
+        // D8 (ingestao-treino-realizado): cancelado não conta na carga — mesmo predicado usado por
+        // TsbService/produtores; achado do /qa do Bloco 2 (Codex adversarial-review, 2026-08-24) —
+        // esta query alimenta a inferência de limiares de FC/pace e ficara de fora do inventário
+        // original da task 7.7.
         List<TreinoRealizado> treinos30d = treinoRealizadoRepository
-                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, hoje.minusDays(30), hoje);
+                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, hoje.minusDays(30), hoje)
+                .stream()
+                .filter(TreinoRealizado::contaNaCarga)
+                .toList();
 
         if (fcStale) {
             thresholdInferenceService.inferirFcLimiar(treinos30d, hoje)

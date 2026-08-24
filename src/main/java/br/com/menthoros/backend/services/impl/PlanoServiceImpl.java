@@ -884,9 +884,12 @@ public class PlanoServiceImpl implements PlanoService {
      */
     private double calcularVolumeRealizadoKm(
             UUID atletaId, UUID tenantId, LocalDate semanaInicio, LocalDate semanaFim) {
+        // D8 (ingestao-treino-realizado): cancelado não conta na carga — achado do /qa do Bloco 2
+        // (Codex adversarial-review, 2026-08-24).
         return treinoRealizadoRepository
                 .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, semanaInicio, semanaFim)
                 .stream()
+                .filter(TreinoRealizado::contaNaCarga)
                 .map(t -> Optional.ofNullable(t.getDistanciaKm()).orElse(BigDecimal.ZERO))
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .doubleValue();

@@ -182,6 +182,29 @@ class ProgressaoTreinoServiceImplTest {
             assertThat(resultado.longoesRealizados21d()).isEqualTo(1);
             assertThat(resultado.rpeMedioTreinosDuros()).isEqualTo(8.0);
         }
+
+        @Test
+        @DisplayName("D8: treino CANCELADO não conta na carga; status null conta normalmente")
+        void treinoCanceladoNaoContaNaCarga() {
+            TreinoRealizado longoValido = treino(HOJE.minusDays(3), TipoTreino.LONGO, 20.0, null);
+            TreinoRealizado longoCancelado = treino(HOJE.minusDays(5), TipoTreino.LONGO, 25.0, null);
+            longoCancelado.setStatusSincronizacao(br.com.menthoros.backend.enums.StatusSincronizacao.CANCELADO);
+            TreinoRealizado semStatus = treino(HOJE.minusDays(6), TipoTreino.FACIL, 8.0, null);
+            semStatus.setStatusSincronizacao(null);
+
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
+                    .thenReturn(List.of(longoValido, longoCancelado, semStatus));
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of(planejado(), planejado(), planejado()));
+            when(planoMetadadosService.buscarPorAtletaId(atletaId))
+                    .thenReturn(metaDados(-10.0, 50.0, 55.0));
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosConcluidos21d()).isEqualTo(2);
+            assertThat(resultado.longoesRealizados21d()).isEqualTo(1);
+            assertThat(resultado.volumeKm21d()).isEqualTo(28.0);
+        }
     }
 
     @Nested

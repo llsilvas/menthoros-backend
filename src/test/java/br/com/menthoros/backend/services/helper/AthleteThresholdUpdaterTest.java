@@ -360,6 +360,45 @@ class AthleteThresholdUpdaterTest {
     }
 
     @Nested
+    @DisplayName("D8: cancelado não conta na carga (achado /qa Bloco 2, ingestao-treino-realizado)")
+    class ExclusaoCancelado {
+
+        @Test
+        @DisplayName("treinos30d passado às inferências exclui CANCELADO e inclui status null")
+        void excluiCanceladoDosTreinosUsadosNaInferencia() {
+            Atleta atleta = atletaBase();
+            atleta.setFcLimiar(null);
+            atleta.setDataUltimoTesteFc(null);
+            PlanoMetaDados metaDados = metaDadosBase(atleta);
+
+            List<TreinoRealizado> treinosBrutos = treinos10ComFcMedia(163);
+            TreinoRealizado cancelado = new TreinoRealizado();
+            cancelado.setDataTreino(HOJE.minusDays(2));
+            cancelado.setFcMedia(999);
+            cancelado.setDuracaoMin(Duration.ofMinutes(45));
+            cancelado.setTipoTreino(TipoTreino.CONTINUO);
+            cancelado.setStatusSincronizacao(br.com.menthoros.backend.enums.StatusSincronizacao.CANCELADO);
+            List<TreinoRealizado> comCancelado = new ArrayList<>(treinosBrutos);
+            comCancelado.add(cancelado);
+
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
+                    .thenReturn(comCancelado);
+            when(thresholdInferenceService.inferirFcLimiar(treinosBrutos, HOJE))
+                    .thenReturn(Optional.of(new ThresholdEstimate<>(163, 10, ConfiancaInferencia.ALTA)));
+            when(thresholdInferenceService.inferirPaceLimiar(treinosBrutos, HOJE))
+                    .thenReturn(Optional.empty());
+
+            updater.atualizarLimiares(atleta, metaDados, HOJE);
+
+            verify(thresholdInferenceService).inferirFcLimiar(treinosBrutos, HOJE);
+            verify(thresholdInferenceService).inferirPaceLimiar(treinosBrutos, HOJE);
+            assertThat(metaDados.getFcLimiarEstimado()).isEqualTo(163);
+        }
+    }
+
+    @Nested
     @DisplayName("casos de borda")
     class CasosDeBorda {
 

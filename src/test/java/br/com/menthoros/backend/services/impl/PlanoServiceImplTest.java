@@ -1311,6 +1311,29 @@ class PlanoServiceImplTest {
         }
 
         @Test
+        @DisplayName("D8: treino CANCELADO não conta no volumeRealizadoKm; status null conta [achado /qa Bloco 2]")
+        void treinoCanceladoNaoContaNoVolumeRealizado() {
+            UUID atletaId = UUID.randomUUID();
+            PlanoSemanal plano = criarPlanoSemanalMock();
+
+            TreinoRealizado cancelado = criarTreinoRealizadoComDistancia(BigDecimal.valueOf(10.0));
+            cancelado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
+            TreinoRealizado semStatus = criarTreinoRealizadoComDistancia(BigDecimal.valueOf(5.5));
+            semStatus.setStatusSincronizacao(null);
+
+            when(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId))
+                    .thenReturn(List.of(plano));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    atletaId, tenantId, plano.getSemanaInicio(), plano.getSemanaFim()))
+                    .thenReturn(List.of(cancelado, semStatus));
+            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(planoSemanalOutputDtoStub(0.0));
+
+            PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, false);
+
+            assertEquals(5.5, resultado.volumeRealizadoKm());
+        }
+
+        @Test
         @DisplayName("apenasAprovados=true busca o plano aprovado mais recente e recalcula o volume")
         void apenasAprovadosBuscaPlanoAprovadoMaisRecente() {
             UUID atletaId = UUID.randomUUID();
