@@ -2,7 +2,6 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
-import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -164,6 +163,6 @@ public class IngestaoTreinoRealizadoServiceImpl implements IngestaoTreinoRealiza
     }
 
     private boolean contaNaCarga(TreinoRealizado treino) {
-        return treino.getStatusSincronizacao() != StatusSincronizacao.CANCELADO;
+        return treino.contaNaCarga();
     }
 }

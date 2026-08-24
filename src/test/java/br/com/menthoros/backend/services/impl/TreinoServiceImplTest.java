@@ -9,6 +9,7 @@ import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -488,6 +489,31 @@ class TreinoServiceImplTest {
             assertEquals(7, resultado.resumo().diasSemTreino());
             assertNull(resultado.resumo().ultimoTreino());
             assertEquals(7, resultado.resumo().diasDaSemana().size());
+        }
+
+        @Test
+        @DisplayName("D8: cancelado não conta no resumo, NULL conta [task 7.7]")
+        void canceladoNaoContaNullConta() {
+            UUID atletaId = UUID.randomUUID();
+            Atleta atleta = criarAtleta(atletaId);
+            LocalDate data = LocalDate.of(2026, 5, 6);
+
+            TreinoRealizado cancelado = new TreinoRealizado();
+            cancelado.setDataTreino(data);
+            cancelado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
+
+            TreinoRealizado semStatus = new TreinoRealizado();
+            semStatus.setDataTreino(data);
+            semStatus.setStatusSincronizacao(null);
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(treinoRealizadoRepository.findRealizedTrainingsByWeek(eq(atletaId), any(), any()))
+                    .thenReturn(List.of(cancelado, semStatus));
+
+            ResumoSemanalTreinoDto resultado = treinoService.getResumoSemanal(atletaId, data);
+
+            assertEquals(1, resultado.resumo().totalTreinos(),
+                    "só o treino sem status (NULL) conta — o CANCELADO fica de fora");
         }
     }
 

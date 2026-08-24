@@ -446,7 +446,11 @@ public class TreinoServiceImpl implements TreinoService {
         LocalDate startOfWeek = targetDate.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1);
         LocalDate endOfWeek = startOfWeek.plusDays(6);
 
-        List<TreinoRealizado> treinos = treinoRealizadoRepository.findRealizedTrainingsByWeek(atletaId, startOfWeek, endOfWeek);
+        // D8: cancelado não conta na carga — mesmo predicado usado por TsbService/produtores.
+        List<TreinoRealizado> treinos = treinoRealizadoRepository
+                .findRealizedTrainingsByWeek(atletaId, startOfWeek, endOfWeek).stream()
+                .filter(TreinoRealizado::contaNaCarga)
+                .toList();
 
         Map<String, ResumoDetalhesDto> diasDaSemana = new HashMap<>();
         for (DayOfWeek day : DayOfWeek.values()) {
