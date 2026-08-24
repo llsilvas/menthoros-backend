@@ -11,6 +11,7 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
@@ -187,7 +188,7 @@ class TsbServiceImplRecalculoSemanticaTest {
 
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, tssCalc, alertaService,
                 new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
-                new TsbRecalculoExecutorInline());
+                new TsbRecalculoExecutorInline(), planoMetadadosServiceStub(planoMetaDados));
     }
 
     private TsbServiceImpl construirServiceComPrimeiroTreino(
@@ -300,7 +301,7 @@ class TsbServiceImplRecalculoSemanticaTest {
 
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, tssCalc, alertaService,
                 new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
-                new TsbRecalculoExecutorInline());
+                new TsbRecalculoExecutorInline(), planoMetadadosServiceStub(planoMetaDados));
     }
 
     private static AtletaRepository atletaRepoStub(Atleta atleta) {
@@ -331,6 +332,20 @@ class TsbServiceImplRecalculoSemanticaTest {
                     throw new UnsupportedOperationException("Método não suportado: " + method.getName());
                 }
         );
+    }
+
+    private static PlanoMetadadosService planoMetadadosServiceStub(PlanoMetaDados planoMetaDados) {
+        return new PlanoMetadadosService() {
+            @Override
+            public PlanoMetaDados buscarOuCriarMetadados(Atleta atleta) {
+                return planoMetaDados;
+            }
+
+            @Override
+            public PlanoMetaDados buscarPorAtletaId(UUID atletaId) {
+                return planoMetaDados;
+            }
+        };
     }
 
     private static MetricasAlertaService alertaServiceStub() {

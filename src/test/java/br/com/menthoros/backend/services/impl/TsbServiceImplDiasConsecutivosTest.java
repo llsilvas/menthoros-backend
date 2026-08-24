@@ -158,7 +158,7 @@ class TsbServiceImplDiasConsecutivosTest {
         );
 
         return new TsbServiceImpl(repo, null, null, null, null, null, null,
-                new TsbRecalculoExecutorInline());
+                new TsbRecalculoExecutorInline(), null);
     }
 
     private int invocarContar(TsbServiceImpl service, LocalDate data, boolean hojeTemTreino) throws Exception {

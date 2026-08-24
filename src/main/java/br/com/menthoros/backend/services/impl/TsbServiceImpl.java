@@ -8,6 +8,7 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.services.helper.TsbRecalculoExecutor;
@@ -39,6 +40,7 @@ public class TsbServiceImpl implements TsbService {
     private final MetricasAlertaService metricasAlertaService;
     private final AthleteThresholdUpdater athleteThresholdUpdater;
     private final TsbRecalculoExecutor tsbRecalculoExecutor;
+    private final PlanoMetadadosService planoMetadadosService;
 
     private static final int CTL_TIME_CONSTANT = 42;
     private static final int ATL_TIME_CONSTANT = 7;
@@ -308,11 +310,12 @@ public class TsbServiceImpl implements TsbService {
      * Atualiza valores atuais no PlanoMetaDados
      */
     private void atualizarMetaDados(UUID atletaId, MetricasDiarias metricas) {
-        PlanoMetaDados metaDados = planoMetaDadosRepository
-                .findByAtletaId(atletaId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "MetaDados não encontrado para atleta: " + atletaId));
-
+        // Achado do /qa do Bloco 2 (Codex plain review, 2026-08-24): antes desta change,
+        // PlanoMetaDados só nascia via PlanoServiceImpl.getPreparaDadosPlano (ao gerar o primeiro
+        // plano). Com todos os caminhos de mutação agora convergindo em recalcularDesde/
+        // atualizarTsbDia, um atleta com treino mas sem plano ainda gerado 500ava aqui. Usa o
+        // mesmo seam de lazy-creation que o resto do sistema (PlanoMetadadosService).
+        PlanoMetaDados metaDados = planoMetadadosService.buscarOuCriarMetadados(metricas.getAtleta());
 
         metaDados.setCtlAtual(metricas.getCtl());
         metaDados.setAtlAtual(metricas.getAtl());

@@ -11,6 +11,7 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
@@ -364,8 +365,20 @@ class TsbServiceImplSemanticaTest {
             }
         };
 
+        PlanoMetadadosService planoMetadadosService = new PlanoMetadadosService() {
+            @Override
+            public PlanoMetaDados buscarOuCriarMetadados(Atleta a) {
+                return planoMetaDados;
+            }
+
+            @Override
+            public PlanoMetaDados buscarPorAtletaId(UUID atletaId) {
+                return planoMetaDados;
+            }
+        };
+
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, tssCalc, alertaService,
                 new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
-                new TsbRecalculoExecutorInline());
+                new TsbRecalculoExecutorInline(), planoMetadadosService);
     }
 }
