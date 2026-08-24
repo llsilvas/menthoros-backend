@@ -10,6 +10,7 @@ import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
@@ -24,6 +25,7 @@ public class StravaWebhookServiceImpl implements StravaWebhookService {
     private final IntegracaoExternaRepository integracaoExternaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final StravaActivityService stravaActivityService;
+    private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
 
     @Async("stravaWebhookExecutor")
     @Transactional
@@ -118,6 +120,10 @@ public class StravaWebhookServiceImpl implements StravaWebhookService {
             metadata = metadata.substring(0, metadata.length() - 1) + ",\"deletedOnStrava\":true}";
         }
         treino.setMetadadosSincronizacao(metadata);
-        treinoRealizadoRepository.save(treino);
+        TreinoRealizado salvo = treinoRealizadoRepository.save(treino);
+
+        // CA7: cancelado não conta na carga — recalcula pelo seam único de ingestão (achado do
+        // /qa, Codex review, 2026-08-22: este caminho nunca recalculava TSB após o cancelamento).
+        ingestaoTreinoRealizadoService.reprocessar(salvo.getId(), null);
     }
 }
