@@ -9,6 +9,7 @@ import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -21,7 +22,6 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
 import org.hibernate.Hibernate;
 import org.junit.jupiter.api.AfterEach;
@@ -73,13 +73,15 @@ class TreinoServiceImplTest {
     @Mock
     private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock
-    private TsbService tsbService;
+    private br.com.menthoros.backend.services.IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     @Mock
     private PlanoMetadadosRepository planoMetaDadosRepository;
     @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
     @Mock
     private TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
+    @Mock
+    private java.time.Clock clock;
 
     @InjectMocks
     private TreinoServiceImpl treinoService;
@@ -336,6 +338,32 @@ class TreinoServiceImplTest {
 
             verify(eventPublisher, never()).publishEvent(any());
         }
+
+        @Test
+        @DisplayName("recalcula a carga do dia via reprocessar (antes nunca tocava TSB/MetricasDiarias)")
+        void recalculaCargaViaReprocessar() {
+            UUID id = UUID.randomUUID();
+            LocalDate data = LocalDate.of(2026, 5, 1);
+            TreinoRealizadoInputDto dto = novoInput(UUID.randomUUID(), 6, null, data, null);
+
+            TreinoRealizado treino = new TreinoRealizado();
+            treino.setId(id);
+            treino.setTenantId(tenantId);
+            treino.setDataTreino(data);
+
+            when(treinoRealizadoRepository.findByIdAndTenantId(id, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoRealizadoRepository.save(treino)).thenReturn(treino);
+            when(tipoTreinoConsistenciaValidator.validarEstrutura(treino)).thenReturn(Optional.empty());
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(id));
+
+            treinoService.updateTreino(id, dto);
+
+            // dataTreino é imutável via updateTreino (não mexido por applyMutableFields,
+            // UpdateTreinoIntegrationTest.updateTreino_doesNotOverwriteImmutableFields garante
+            // isso) — dataAnterior é sempre null aqui, mas o recálculo em si é o que fecha o gap.
+            verify(ingestaoTreinoRealizadoService).reprocessar(id, null);
+        }
     }
 
     @Nested
@@ -353,12 +381,12 @@ class TreinoServiceImplTest {
             assertThrows(DomainNotFoundException.class, () -> treinoService.lancarTreino(atletaId, dto));
 
             verify(treinoRealizadoRepository, never()).save(any());
-            verify(tsbService, never()).atualizarTsbDia(any(), any());
+            verifyNoInteractions(ingestaoTreinoRealizadoService);
         }
 
         @Test
-        @DisplayName("persiste manual, publica evento e atualiza TSB na data do treino")
-        void persisteEAtualizaTsb() {
+        @DisplayName("monta a entidade e delega dedup/evento/carga ao seam de ingestão (registrar)")
+        void persisteEDelegaAoIngestor() {
             UUID atletaId = UUID.randomUUID();
             LocalDate dataTreino = LocalDate.of(2026, 5, 10);
             TreinoRealizadoInputDto dto = novoInput(atletaId, 7, 12.0, dataTreino, null);
@@ -371,7 +399,8 @@ class TreinoServiceImplTest {
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(treinoMapper.toEntity(dto)).thenReturn(entidade);
-            when(treinoRealizadoRepository.save(entidade)).thenReturn(salvo);
+            when(ingestaoTreinoRealizadoService.registrar(entidade, null))
+                    .thenReturn(new br.com.menthoros.backend.services.helper.TreinoDedupHelper.SaveResult(salvo, true));
             when(tipoTreinoConsistenciaValidator.validarEstrutura(salvo)).thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(salvo)).thenReturn(outputStub(salvo.getId()));
 
@@ -381,10 +410,10 @@ class TreinoServiceImplTest {
             assertEquals(TreinoExecucaoStatus.REALIZADO, entidade.getStatus());
             assertSame(atleta, entidade.getAtleta());
             assertEquals(tenantId, entidade.getTenantId());
+            assertEquals(dataTreino, entidade.getDataTreino());
 
-            verify(treinoRealizadoRepository).save(entidade);
-            verify(eventPublisher).publishEvent(any(TreinoRegistradoEvent.class));
-            verify(tsbService).atualizarTsbDia(atletaId, dataTreino);
+            verify(ingestaoTreinoRealizadoService).registrar(entidade, null);
+            verifyNoInteractions(eventPublisher);
         }
     }
 
@@ -460,6 +489,31 @@ class TreinoServiceImplTest {
             assertEquals(7, resultado.resumo().diasSemTreino());
             assertNull(resultado.resumo().ultimoTreino());
             assertEquals(7, resultado.resumo().diasDaSemana().size());
+        }
+
+        @Test
+        @DisplayName("D8: cancelado não conta no resumo, NULL conta [task 7.7]")
+        void canceladoNaoContaNullConta() {
+            UUID atletaId = UUID.randomUUID();
+            Atleta atleta = criarAtleta(atletaId);
+            LocalDate data = LocalDate.of(2026, 5, 6);
+
+            TreinoRealizado cancelado = new TreinoRealizado();
+            cancelado.setDataTreino(data);
+            cancelado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
+
+            TreinoRealizado semStatus = new TreinoRealizado();
+            semStatus.setDataTreino(data);
+            semStatus.setStatusSincronizacao(null);
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(treinoRealizadoRepository.findRealizedTrainingsByWeek(eq(atletaId), any(), any()))
+                    .thenReturn(List.of(cancelado, semStatus));
+
+            ResumoSemanalTreinoDto resultado = treinoService.getResumoSemanal(atletaId, data);
+
+            assertEquals(1, resultado.resumo().totalTreinos(),
+                    "só o treino sem status (NULL) conta — o CANCELADO fica de fora");
         }
     }
 

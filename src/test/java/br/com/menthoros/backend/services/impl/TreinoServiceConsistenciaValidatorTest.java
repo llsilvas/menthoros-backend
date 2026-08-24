@@ -10,8 +10,9 @@ import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.*;
-import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.services.helper.SugestaoReclassificacao;
+import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,7 +53,7 @@ class TreinoServiceConsistenciaValidatorTest {
     @Mock private PlanoSemanalRepository planoSemanalRepository;
     @Mock private PlanoSemanalMapper planoSemanalMapper;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
-    @Mock private TsbService tsbService;
+    @Mock private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     @Mock private PlanoMetadadosRepository planoMetaDadosRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private TipoTreinoConsistenciaValidator consistenciaValidator;
@@ -102,8 +103,8 @@ class TreinoServiceConsistenciaValidatorTest {
                 .thenReturn(Optional.of(atleta));
         when(treinoMapper.toEntity(any(TreinoRealizadoInputDto.class)))
                 .thenReturn(treinoSalvo);
-        when(treinoRealizadoRepository.save(any()))
-                .thenReturn(treinoSalvo);
+        when(ingestaoTreinoRealizadoService.registrar(any(), any()))
+                .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
         when(treinoMapper.toOutputDto(any(TreinoRealizado.class)))
                 .thenReturn(outputDto);
         when(consistenciaValidator.validarEstrutura(any()))
@@ -129,8 +130,8 @@ class TreinoServiceConsistenciaValidatorTest {
                 .thenReturn(Optional.of(atleta));
         when(treinoMapper.toEntity(any(TreinoRealizadoInputDto.class)))
                 .thenReturn(treinoSalvo);
-        when(treinoRealizadoRepository.save(any()))
-                .thenReturn(treinoSalvo);
+        when(ingestaoTreinoRealizadoService.registrar(any(), any()))
+                .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
         when(treinoMapper.toOutputDto(any(TreinoRealizado.class)))
                 .thenReturn(outputDto);
         when(consistenciaValidator.validarEstrutura(any()))
@@ -145,8 +146,8 @@ class TreinoServiceConsistenciaValidatorTest {
         // ASSERT — tipo original REGENERATIVO não deve ter sido alterado
         assertEquals(TipoTreino.REGENERATIVO, treinoSalvo.getTipoTreino(),
                 "O tipo declarado pelo coach NÃO deve ser alterado automaticamente");
-        // O treino deve ter sido salvo com o tipo original
-        verify(treinoRealizadoRepository).save(treinoSalvo);
+        // O treino deve ter sido delegado ao seam de ingestão com o tipo original
+        verify(ingestaoTreinoRealizadoService).registrar(treinoSalvo, null);
     }
 
     @Test
@@ -160,8 +161,8 @@ class TreinoServiceConsistenciaValidatorTest {
                 .thenReturn(Optional.of(atleta));
         when(treinoMapper.toEntity(any(TreinoRealizadoInputDto.class)))
                 .thenReturn(treinoSalvo);
-        when(treinoRealizadoRepository.save(any()))
-                .thenReturn(treinoSalvo);
+        when(ingestaoTreinoRealizadoService.registrar(any(), any()))
+                .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
         when(treinoMapper.toOutputDto(any(TreinoRealizado.class)))
                 .thenReturn(outputDto);
         when(consistenciaValidator.validarEstrutura(any()))

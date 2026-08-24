@@ -32,6 +32,8 @@ class StravaWebhookServiceTest {
     private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock
     private StravaActivityService stravaActivityService;
+    @Mock
+    private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
 
     @AfterEach
     void cleanUp() {
@@ -47,7 +49,8 @@ class StravaWebhookServiceTest {
         StravaWebhookService service = new StravaWebhookServiceImpl(
                 integracaoExternaRepository,
                 treinoRealizadoRepository,
-                stravaActivityService
+                stravaActivityService,
+                ingestaoTreinoRealizadoService
         );
 
         StravaWebhookEventDto event = new StravaWebhookEventDto(
@@ -74,7 +77,8 @@ class StravaWebhookServiceTest {
         StravaWebhookService service = new StravaWebhookServiceImpl(
                 integracaoExternaRepository,
                 treinoRealizadoRepository,
-                stravaActivityService
+                stravaActivityService,
+                ingestaoTreinoRealizadoService
         );
 
         service.processCreateEvent(1001L, 777L);
@@ -89,23 +93,29 @@ class StravaWebhookServiceTest {
     void shouldMarkTrainingAsCanceledOnDelete() {
         IntegracaoExterna integracao = mockIntegracao("888");
         TreinoRealizado treino = new TreinoRealizado();
+        treino.setId(UUID.randomUUID());
         treino.setMetadadosSincronizacao("{\"manual\":false}");
 
         when(integracaoExternaRepository.findActiveByExternalAthleteIdAndPlataforma("888", FonteDados.STRAVA))
                 .thenReturn(Optional.of(integracao));
         when(treinoRealizadoRepository.findByExternalIdAndAtletaId("4242", integracao.getAtleta().getId()))
                 .thenReturn(Optional.of(treino));
+        when(treinoRealizadoRepository.save(treino)).thenReturn(treino);
 
         StravaWebhookService service = new StravaWebhookServiceImpl(
                 integracaoExternaRepository,
                 treinoRealizadoRepository,
-                stravaActivityService
+                stravaActivityService,
+                ingestaoTreinoRealizadoService
         );
 
         service.processDeleteEvent(4242L, 888L);
 
         assertEquals(StatusSincronizacao.CANCELADO, treino.getStatusSincronizacao());
         verify(treinoRealizadoRepository).save(treino);
+        // CA7: cancelado não conta na carga — achado do /qa (Codex, 2026-08-22), este caminho
+        // nunca recalculava TSB antes da task 7.6.
+        verify(ingestaoTreinoRealizadoService).reprocessar(treino.getId(), null);
     }
 
     private IntegracaoExterna mockIntegracao(String externalAthleteId) {

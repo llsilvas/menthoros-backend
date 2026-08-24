@@ -224,6 +224,20 @@ public class TreinoRealizado extends TreinoBase{
     }
 
     /**
+     * "Treino que conta" (design.md D8, `ingestao-treino-realizado`) — {@code CANCELADO} nunca
+     * conta na carga; {@code NULL} conta (estado normal dos caminhos FIT e manual, que não
+     * escrevem {@code statusSincronizacao}). Fonte única deste predicado em Java — os produtores
+     * fora do TSB que já carregam a entidade inteira (`CoachDashboardServiceImpl`,
+     * `TreinoServiceImpl.getResumoSemanal`, `RaceProjectionServiceImpl`, `InjuryRiskEvaluator`)
+     * filtram por aqui em vez de duplicar a condição; `TsbService`/`TreinoRealizadoRepository`
+     * usam a versão em JPQL (`findQueContamByAtletaIdAndDataTreino`) pelo mesmo motivo que
+     * motivou o predicado em primeiro lugar — não trazer os cancelados do banco.
+     */
+    public boolean contaNaCarga() {
+        return statusSincronizacao == null || statusSincronizacao != StatusSincronizacao.CANCELADO;
+    }
+
+    /**
      * Calcula diferença entre TSS planejado vs realizado
      */
     public Integer getDiferencaTss() {

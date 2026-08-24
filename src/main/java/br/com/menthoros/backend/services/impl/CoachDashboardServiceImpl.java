@@ -136,8 +136,11 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
 
         for (CoachAtletaResumoDto r : roster) {
             double volumeAtleta = 0.0;
-            List<TreinoRealizado> treinos =
-                    treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(r.atletaId(), inicio, fim);
+            // D8: cancelado não conta na carga — mesmo predicado usado por TsbService/produtores.
+            List<TreinoRealizado> treinos = treinoRealizadoRepository
+                    .findByAtletaIdAndDataTreinoBetween(r.atletaId(), inicio, fim).stream()
+                    .filter(TreinoRealizado::contaNaCarga)
+                    .toList();
             for (TreinoRealizado t : treinos) {
                 double km = t.getDistanciaKm() != null ? t.getDistanciaKm().doubleValue() : 0.0;
                 int tss = t.getTssCalculado() != null ? t.getTssCalculado() : 0;

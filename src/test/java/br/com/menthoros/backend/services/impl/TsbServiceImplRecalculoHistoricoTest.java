@@ -50,7 +50,8 @@ class TsbServiceImplRecalculoHistoricoTest {
                 null,
                 null,
                 null,
-                new TsbRecalculoExecutorInline()
+                new TsbRecalculoExecutorInline(),
+                null
         );
 
         Method m = TsbServiceImpl.class.getDeclaredMethod("determinarIntervaloRecalculo", UUID.class);
@@ -94,7 +95,8 @@ class TsbServiceImplRecalculoHistoricoTest {
                 null,
                 metricasAlertaServiceStub(),
                 new AthleteThresholdUpdater(null, null, new ThresholdInferenceService()),
-                new TsbRecalculoExecutorInline()
+                new TsbRecalculoExecutorInline(),
+                null
         );
 
         service.recalcularHistoricoCompleto(atletaId);

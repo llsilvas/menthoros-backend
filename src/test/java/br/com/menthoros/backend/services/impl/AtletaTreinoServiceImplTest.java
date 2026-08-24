@@ -9,7 +9,6 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
-import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.entity.PlanoSemanal;
@@ -22,8 +21,9 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
+import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -48,6 +48,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -64,10 +65,11 @@ class AtletaTreinoServiceImplTest {
     @Mock private PlanoSemanalRepository planoSemanalRepository;
     @Mock private PlanoSemanalMapper planoSemanalMapper;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
-    @Mock private TsbService tsbService;
+    @Mock private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     @Mock private PlanoMetadadosRepository planoMetaDadosRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
+    @Mock private java.time.Clock clock;
 
     @InjectMocks private TreinoServiceImpl service;
 
@@ -100,6 +102,14 @@ class AtletaTreinoServiceImplTest {
     @DisplayName("registrarTreinoManualAtleta")
     class RegistrarTreinoManualAtleta {
 
+        @BeforeEach
+        void stubClock() {
+            // "hoje" (janela de 7 dias, CA da task) é resolvido no início do método em toda
+            // chamada — precisa de clock estável independente do cenário.
+            when(clock.instant()).thenReturn(java.time.Instant.now());
+            when(clock.getZone()).thenReturn(java.time.ZoneId.systemDefault());
+        }
+
         @Test
         @DisplayName("salva treino standalone com fonteDados=MANUAL quando não há planejado correspondente")
         void salvaTreinoStandaloneSemMatch() {
@@ -108,7 +118,8 @@ class AtletaTreinoServiceImplTest {
             var outputDto = stubOutputDto();
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
             when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
                     .thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(outputDto);
@@ -118,7 +129,7 @@ class AtletaTreinoServiceImplTest {
             assertThat(result).isEqualTo(outputDto);
 
             ArgumentCaptor<TreinoRealizado> captor = forClass(TreinoRealizado.class);
-            verify(treinoRealizadoRepository).save(captor.capture());
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), isNull());
             TreinoRealizado salvo = captor.getValue();
             assertThat(salvo.getFonteDados()).isEqualTo(FonteDados.MANUAL);
             assertThat(salvo.getStatus()).isEqualTo(TreinoExecucaoStatus.REALIZADO);
@@ -127,8 +138,7 @@ class AtletaTreinoServiceImplTest {
             assertThat(salvo.getFcMedia()).isNull();
             assertThat(salvo.getPaceMedia()).isNull();
 
-            verify(eventPublisher).publishEvent(any(TreinoRegistradoEvent.class));
-            verify(tsbService).atualizarTsbDia(atletaId, input.data());
+            verifyNoInteractions(eventPublisher);
             verify(treinoPlanejadoRepository, never()).save(any());
         }
 
@@ -141,7 +151,8 @@ class AtletaTreinoServiceImplTest {
             var outputDto = stubOutputDto();
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
             when(treinoPlanejadoRepository.findFirstForManualMatch(
                     eq(atletaId), eq(tenantId), eq(input.data()), eq(input.tipo()), any()))
                     .thenReturn(Optional.of(planejado));
@@ -164,7 +175,8 @@ class AtletaTreinoServiceImplTest {
             var outputDto = stubOutputDto();
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
             when(treinoPlanejadoRepository.findFirstForManualMatch(
                     eq(atletaId), eq(tenantId), eq(input.data()), eq(input.tipo()), any()))
                     .thenReturn(Optional.of(planejado));
@@ -191,7 +203,8 @@ class AtletaTreinoServiceImplTest {
             var outputDto = stubOutputDto();
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
             when(treinoPlanejadoRepository.findFirstForManualMatch(
                     eq(atletaId), eq(tenantId), eq(input.data()), eq(input.tipo()), any()))
                     .thenReturn(Optional.of(planejado));
@@ -215,7 +228,7 @@ class AtletaTreinoServiceImplTest {
                     .isInstanceOf(DomainRuleViolationException.class)
                     .hasMessageContaining("7 dias");
 
-            verifyNoInteractions(atletaRepository, treinoRealizadoRepository, eventPublisher, tsbService);
+            verifyNoInteractions(atletaRepository, treinoRealizadoRepository, eventPublisher, ingestaoTreinoRealizadoService);
         }
 
         @Test
@@ -225,7 +238,8 @@ class AtletaTreinoServiceImplTest {
             var treinoSalvo = stubTreinoRealizado();
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
             when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
                     .thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());
@@ -242,27 +256,29 @@ class AtletaTreinoServiceImplTest {
             assertThatThrownBy(() -> service.registrarTreinoManualAtleta(atletaId, input))
                     .isInstanceOf(DomainNotFoundException.class);
 
-            verifyNoInteractions(treinoRealizadoRepository, eventPublisher, tsbService);
+            verifyNoInteractions(treinoRealizadoRepository, eventPublisher, ingestaoTreinoRealizadoService);
         }
 
         @Test
-        @DisplayName("evento publicado com id do treino salvo e tenantId corretos")
-        void eventPublicadoComIdsCorretos() {
+        @DisplayName("delega ao seam de ingestão com tenantId e atleta corretos (evento/carga ficam por conta dele)")
+        void delegaAoIngestorComDadosCorretos() {
             var input = novoInput(LocalDate.now());
             var treinoSalvo = stubTreinoRealizado();
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
             when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
                     .thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());
 
             service.registrarTreinoManualAtleta(atletaId, input);
 
-            ArgumentCaptor<TreinoRegistradoEvent> captor = forClass(TreinoRegistradoEvent.class);
-            verify(eventPublisher).publishEvent(captor.capture());
-            assertThat(captor.getValue().treinoRealizadoId()).isEqualTo(treinoSalvo.getId());
-            assertThat(captor.getValue().tenantId()).isEqualTo(tenantId);
+            ArgumentCaptor<TreinoRealizado> captor = forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), isNull());
+            assertThat(captor.getValue().getTenantId()).isEqualTo(tenantId);
+            assertThat(captor.getValue().getAtleta()).isEqualTo(atleta);
+            verifyNoInteractions(eventPublisher);
         }
 
         @Test
@@ -272,7 +288,8 @@ class AtletaTreinoServiceImplTest {
             var treinoSalvo = stubTreinoRealizado();
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
             when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
                     .thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());
@@ -280,7 +297,7 @@ class AtletaTreinoServiceImplTest {
             service.registrarTreinoManualAtleta(atletaId, input);
 
             ArgumentCaptor<TreinoRealizado> captor = forClass(TreinoRealizado.class);
-            verify(treinoRealizadoRepository).save(captor.capture());
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), isNull());
             TreinoRealizado salvo = captor.getValue();
             assertThat(salvo.getNivelDor()).isEqualTo(3);
             assertThat(salvo.getNivelFadiga()).isEqualTo(4);
@@ -295,7 +312,8 @@ class AtletaTreinoServiceImplTest {
             var treinoSalvo = stubTreinoRealizado();
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
             when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
                     .thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());
@@ -303,7 +321,7 @@ class AtletaTreinoServiceImplTest {
             service.registrarTreinoManualAtleta(atletaId, input);
 
             ArgumentCaptor<TreinoRealizado> captor = forClass(TreinoRealizado.class);
-            verify(treinoRealizadoRepository).save(captor.capture());
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), isNull());
             TreinoRealizado salvo = captor.getValue();
             assertThat(salvo.getNivelDor()).isNull();
             assertThat(salvo.getNivelFadiga()).isNull();
@@ -318,7 +336,8 @@ class AtletaTreinoServiceImplTest {
             var treinoSalvo = stubTreinoRealizado();
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(treinoRealizadoRepository.save(any())).thenReturn(treinoSalvo);
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
             when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
                     .thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());

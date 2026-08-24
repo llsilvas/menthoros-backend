@@ -135,6 +135,29 @@ class RaceProjectionServiceImplTest {
         }
 
         @Test
+        @DisplayName("D8: cancelado não conta no histórico, NULL conta [task 7.7]")
+        void canceladoNaoContaNullConta() {
+            stubAtletaEncontrado();
+            TreinoRealizado cancelado = treino(LocalDate.now().minusWeeks(1), TipoTreino.LONGO);
+            cancelado.setStatusSincronizacao(br.com.menthoros.backend.enums.StatusSincronizacao.CANCELADO);
+            TreinoRealizado semStatus = treino(LocalDate.now().minusWeeks(2), TipoTreino.LONGO);
+            semStatus.setStatusSincronizacao(null);
+
+            when(treinoRealizadoRepository
+                    .findByAtletaAndDataTreinoGreaterThanEqualOrderByDataTreinoDesc(eq(atleta), any()))
+                    .thenReturn(List.of(cancelado, semStatus));
+            when(provaRepository.findByAtletaOrderByDataProvaAsc(atleta)).thenReturn(List.of());
+            when(athleteProfileMapper.from(atleta)).thenReturn(athleteProfile());
+            when(raceProjectionSkill.execute(any())).thenReturn(outputComConfidencias(ProjectionConfidence.HIGH));
+
+            service.generate(atletaId, tenantId, coachId, request(null, List.of(10000), 8));
+
+            RaceProjectionInput input = capturarInput();
+            assertEquals(1, input.trainingHistory().workouts().size(),
+                    "só o treino sem status (NULL) conta — o CANCELADO fica de fora");
+        }
+
+        @Test
         @DisplayName("converte unidades do treino corretamente (km→m, Duration→segundos)")
         void converteUnidadesDoTreino() {
             stubAtletaEncontrado();

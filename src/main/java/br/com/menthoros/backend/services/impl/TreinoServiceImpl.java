@@ -19,9 +19,10 @@ import br.com.menthoros.backend.repository.*;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import org.springframework.security.access.AccessDeniedException;
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.services.TreinoService;
-import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
+import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -32,6 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.DayOfWeek;
@@ -51,11 +53,23 @@ public class TreinoServiceImpl implements TreinoService {
     private final PlanoSemanalRepository planoSemanalRepository;
     private final PlanoSemanalMapper planoSemanalMapper;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
-    private final TsbService tsbService;
+    private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     private final PlanoMetadadosRepository planoMetaDadosRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
+    private final Clock clock;
 
+    /**
+     * Registra um treino realizado vinculado (opcionalmente) a um treino planejado.
+     *
+     * <p><strong>Idempotent:</strong> NO — cada chamada cria uma nova entidade, exceto quando o
+     * pre-check de duplicidade (passo 1, por externalId+atletaId) encontra um registro existente,
+     * caso em que retorna o duplicado sem chamar o seam de ingestão (achado do /qa do Bloco 2,
+     * ingestao-treino-realizado — comportamento pré-existente, não regressão desta migração).
+     * <p><strong>Side Effects:</strong> Database insert; delega dedup/TSS/evento/recálculo de TSB
+     * para {@link IngestaoTreinoRealizadoService#registrar}.
+     * <p><strong>Tenant-aware:</strong> YES — via {@code TenantContext} no seam de ingestão.
+     */
     @Transactional
     @Override
     public TreinoRealizado addTreino(UUID treinoPlanejadoId, TreinoRealizadoInputDto treinoRealizado) {
@@ -74,42 +88,31 @@ public class TreinoServiceImpl implements TreinoService {
         // 3) Resolve planejado (id explícito OU conciliação automática)
         TreinoPlanejado planejado = resolveTreinoPlanejado(treinoPlanejadoId, treinoRealizado).orElse(null);
 
-        // 4) Monta realizado
+        // 4) Monta realizado — data resolvida uma única vez (D7): antes duplicava LocalDate.now()
+        //    aqui e na resolução do plano semanal, podendo divergir numa fronteira de dia.
+        LocalDate dataTreino = treinoRealizado.dataTreino() != null
+                ? treinoRealizado.dataTreino()
+                : LocalDate.now(clock);
         TreinoRealizado realizado = montarTreinoRealizado(treinoRealizado, atleta, planejado);
+        realizado.setDataTreino(dataTreino);
 
         // 5) Resolve vínculo de plano semanal
-        PlanoSemanal semanal = resolverPlanoSemanal(planejado, treinoRealizado, atleta).orElse(null);
+        PlanoSemanal semanal = resolverPlanoSemanal(planejado, dataTreino, atleta).orElse(null);
         realizado.setPlanoSemanal(semanal);
 
-        // 6) Persiste realizado
-        TreinoRealizado salvo = treinoRealizadoRepository.save(realizado);
+        // 6) Persiste, deduplica, publica evento (só em inserção nova) e recalcula a carga do
+        //    dia — responsabilidade do seam único de ingestão (ingestao-treino-realizado); antes
+        //    dessa migração este caminho nunca publicava evento nem recalculava TSB corretamente.
+        TreinoDedupHelper.SaveResult resultado =
+                ingestaoTreinoRealizadoService.registrar(realizado, treinoRealizado.externalId());
+        TreinoRealizado salvo = resultado.treino();
 
-        // 7) Pós-processamentos isolados
+        // 7) Pós-processamentos isolados (fora do escopo do seam: vínculo com plano/planejado)
         finalizarTreinoPlanejadoSeAplicavel(planejado);
         atualizarPlanoSemanalSeAplicavel(semanal);
-        atualizarTsb(atleta, treinoRealizado.dataTreino());
         atualizarMetadadosSeAplicavel(semanal);
-        atualizarVolumeDiario(atleta, treinoRealizado);
 
         return salvo;
-    }
-
-    private void atualizarVolumeDiario(Atleta atleta, TreinoRealizadoInputDto treinoRealizado) {
-        LocalDate dataTreino = treinoRealizado.dataTreino() != null
-            ? treinoRealizado.dataTreino()
-            : LocalDate.now();
-
-        var metricasDiarias = atleta.getMetricasDiarias();
-
-        metricasDiarias.stream()
-                .filter(md -> md.getData() != null && md.getData().equals(dataTreino))
-                .findFirst()
-                .ifPresent(md -> {
-                    if (treinoRealizado.distanciaKm() != null) {
-                        md.setVolumeKm(BigDecimal.valueOf(treinoRealizado.distanciaKm()));
-                    }
-                    md.setTreinosRealizados(md.getTreinosRealizados() + 1);
-                });
     }
 
     private void atualizarMetadadosSeAplicavel(PlanoSemanal semanal) {
@@ -129,11 +132,6 @@ public class TreinoServiceImpl implements TreinoService {
         Hibernate.initialize(semanal);
         semanal.setVolumeRealizadoKm(BigDecimal.valueOf(volume));
         atualizarStatusDoPlano(semanal);
-    }
-
-    private void atualizarTsb(Atleta atleta, LocalDate dataTreino) {
-        LocalDate dataParaAtualizar = dataTreino != null ? dataTreino : LocalDate.now();
-        tsbService.atualizarTsbDia(atleta.getId(), dataParaAtualizar);
     }
 
     private void validarCompatibilidadeDeTipo(TreinoRealizadoInputDto input, TreinoPlanejado planejado) {
@@ -157,15 +155,12 @@ public class TreinoServiceImpl implements TreinoService {
         return realizado;
     }
 
-    private Optional<PlanoSemanal> resolverPlanoSemanal(TreinoPlanejado planejado, TreinoRealizadoInputDto input, Atleta atleta) {
+    private Optional<PlanoSemanal> resolverPlanoSemanal(TreinoPlanejado planejado, LocalDate dataTreino, Atleta atleta) {
         if (planejado != null && planejado.getPlanoSemanal() != null) {
             return Optional.of(planejado.getPlanoSemanal());
         }
-        if (input.dataTreino() == null) {
-            return Optional.empty();
-        }
         return planoSemanalRepository
-                .findPlanoSemanalByAtletaIdAndTreinosPlanejadosDataTreino(atleta.getId(), input.dataTreino());
+                .findPlanoSemanalByAtletaIdAndTreinosPlanejadosDataTreino(atleta.getId(), dataTreino);
     }
 
     private Optional<TreinoPlanejado> resolveTreinoPlanejado(UUID treinoPlanejadoId, TreinoRealizadoInputDto treinoRealizadoInputDto) {
@@ -248,7 +243,8 @@ public class TreinoServiceImpl implements TreinoService {
      * Atualiza os campos observacionais de um treino realizado.
      *
      * Idempotent: NO — atualiza dados a cada chamada.
-     * Side Effects: Database update + TreinoRegistradoEvent quando percepcaoEsforco != null.
+     * Side Effects: Database update + TreinoRegistradoEvent quando percepcaoEsforco != null +
+     * recálculo da carga do dia (e do dia anterior, se a data mudou — CA6).
      * Tenant-aware: YES — via TenantContext.getRequiredTenantId().
      */
     @Override
@@ -259,6 +255,13 @@ public class TreinoServiceImpl implements TreinoService {
         TreinoRealizado treino = treinoRealizadoRepository
                 .findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Treino não encontrado: " + id));
+        // Capturada ANTES de mutar/salvar (CA6): se a data mudar, o dia antigo precisa ser
+        // recalculado também — reprocessar recebe null quando não mudou (contrato do seam).
+        // Hoje este branch nunca dispara: applyMutableFields não atribui dataTreino (imutável via
+        // updateTreino, ver UpdateTreinoIntegrationTest#doesNotOverwriteImmutableFields) — achado
+        // do /qa do Bloco 2, documentado em tasks.md (task 7.3). Mantido pelo contrato genérico do
+        // seam, não código morto acidental.
+        LocalDate dataAntiga = treino.getDataTreino();
 
         applyMutableFields(treino, dto);
 
@@ -267,6 +270,14 @@ public class TreinoServiceImpl implements TreinoService {
         if (salvo.getPercepcaoEsforco() != null) {
             eventPublisher.publishEvent(new TreinoRegistradoEvent(salvo.getId(), salvo.getTenantId()));
         }
+
+        // Recalcula tssCalculado/carga do dia pelo seam único de ingestão — antes desta migração
+        // updateTreino nunca tocava TSB/MetricasDiarias (gap real, design.md tabela de chamadores
+        // #7). reprocessar nunca publica evento (D5): o publish acima é uma preocupação separada
+        // (RPE atrasado), já existente antes desta migração.
+        LocalDate dataAnteriorParaReprocessar =
+                (dataAntiga != null && !dataAntiga.equals(salvo.getDataTreino())) ? dataAntiga : null;
+        ingestaoTreinoRealizadoService.reprocessar(salvo.getId(), dataAnteriorParaReprocessar);
 
         // Validação estrutural informativa — nunca altera o tipo automaticamente
         tipoTreinoConsistenciaValidator.validarEstrutura(salvo).ifPresent(sug ->
@@ -341,24 +352,25 @@ public class TreinoServiceImpl implements TreinoService {
         treinoRealizado.setStatus(TreinoExecucaoStatus.REALIZADO);
         treinoRealizado.setAtleta(atleta);
         treinoRealizado.setTenantId(atleta.getAssessoria().getId());
+        // Default de data resolvido uma única vez (D7) — antes duplicava LocalDate.now() aqui e
+        // na chamada de TSB, podendo divergir numa fronteira de dia.
+        treinoRealizado.setDataTreino(treinoRealizadoInputDto.dataTreino() != null
+                ? treinoRealizadoInputDto.dataTreino()
+                : LocalDate.now(clock));
 
-        TreinoRealizado treinoSalvo = treinoRealizadoRepository.save(treinoRealizado);
+        // Persiste, deduplica, publica evento e recalcula a carga do dia — responsabilidade do
+        // seam único de ingestão (ingestao-treino-realizado); antes chamava tsbService.atualizarTsbDia
+        // diretamente (um único dia, sem propagar CTL/ATL para frente — D13).
+        TreinoDedupHelper.SaveResult resultado =
+                ingestaoTreinoRealizadoService.registrar(treinoRealizado, treinoRealizadoInputDto.externalId());
+        TreinoRealizado treinoSalvo = resultado.treino();
         log.info("Treino salvo com sucesso. ID: {}", treinoSalvo.getId());
-        eventPublisher.publishEvent(new TreinoRegistradoEvent(treinoSalvo.getId(), treinoSalvo.getTenantId()));
 
         // Validação estrutural informativa — nunca altera o tipo automaticamente
         tipoTreinoConsistenciaValidator.validarEstrutura(treinoSalvo).ifPresent(sug ->
             log.info("Sugestão de reclassificação para treino {}: {} → {} (confiança: {})",
                 treinoSalvo.getId(), treinoSalvo.getTipoTreino(), sug.tipoSugerido(), sug.confianca())
         );
-
-        // Atualizar TSB/CTL/ATL após salvar o treino
-        LocalDate dataTreino = treinoRealizadoInputDto.dataTreino() != null
-            ? treinoRealizadoInputDto.dataTreino()
-            : LocalDate.now();
-
-        log.info("Atualizando métricas TSB para atleta {} na data {}", atletaId, dataTreino);
-        tsbService.atualizarTsbDia(atletaId, dataTreino);
 
         return treinoMapper.toOutputDto(treinoSalvo);
     }
@@ -449,7 +461,11 @@ public class TreinoServiceImpl implements TreinoService {
         LocalDate startOfWeek = targetDate.with(WeekFields.of(Locale.ENGLISH).dayOfWeek(), 1);
         LocalDate endOfWeek = startOfWeek.plusDays(6);
 
-        List<TreinoRealizado> treinos = treinoRealizadoRepository.findRealizedTrainingsByWeek(atletaId, startOfWeek, endOfWeek);
+        // D8: cancelado não conta na carga — mesmo predicado usado por TsbService/produtores.
+        List<TreinoRealizado> treinos = treinoRealizadoRepository
+                .findRealizedTrainingsByWeek(atletaId, startOfWeek, endOfWeek).stream()
+                .filter(TreinoRealizado::contaNaCarga)
+                .toList();
 
         Map<String, ResumoDetalhesDto> diasDaSemana = new HashMap<>();
         for (DayOfWeek day : DayOfWeek.values()) {
@@ -533,7 +549,7 @@ public class TreinoServiceImpl implements TreinoService {
     @Override
     @Transactional
     public TreinoRealizadoOutputDto registrarTreinoManualAtleta(UUID atletaId, TreinoManualInputDto input) {
-        LocalDate hoje = LocalDate.now();
+        LocalDate hoje = LocalDate.now(clock);
         if (input.data().isBefore(hoje.minusDays(7))) {
             throw new DomainRuleViolationException("Data do treino não pode ser anterior a 7 dias atrás.");
         }
@@ -567,7 +583,11 @@ public class TreinoServiceImpl implements TreinoService {
         treino.setCriadoPor(CRIADO_POR_ATLETA);
         matchOpt.ifPresent(treino::setTreinoPlanejado);
 
-        TreinoRealizado treinoSalvo = treinoRealizadoRepository.save(treino);
+        // Persiste, publica evento e recalcula a carga do dia — responsabilidade do seam único
+        // de ingestão (ingestao-treino-realizado); antes chamava tsbService.atualizarTsbDia
+        // diretamente (um único dia, sem propagar CTL/ATL para frente — D13).
+        TreinoDedupHelper.SaveResult resultado = ingestaoTreinoRealizadoService.registrar(treino, null);
+        TreinoRealizado treinoSalvo = resultado.treino();
         log.info("Treino manual salvo: id={}, atletaId={}, data={}", treinoSalvo.getId(), atletaId, input.data());
 
         matchOpt.ifPresent(planejado -> {
@@ -578,9 +598,6 @@ public class TreinoServiceImpl implements TreinoService {
             atualizarPlanoSemanalSeAplicavel(planejado.getPlanoSemanal());
             log.info("TreinoPlanejado {} vinculado ao treino manual {}", planejado.getId(), treinoSalvo.getId());
         });
-
-        eventPublisher.publishEvent(new TreinoRegistradoEvent(treinoSalvo.getId(), tenantId));
-        tsbService.atualizarTsbDia(atletaId, input.data());
 
         return treinoMapper.toOutputDto(treinoSalvo);
     }

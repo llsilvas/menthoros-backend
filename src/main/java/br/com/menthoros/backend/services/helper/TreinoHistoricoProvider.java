@@ -50,9 +50,15 @@ public class TreinoHistoricoProvider {
         LocalDate hoje = LocalDate.now(clock);
 
         // Busca abrangente: 4 semanas (cobre todos os casos de uso)
+        // D8 (ingestao-treino-realizado, task 7.7): cancelado não conta na carga — filtro aplicado
+        // aqui alimenta toda a árvore de formatters de prompt do planner a jusante (variabilidade,
+        // alertas, recuperação, elegibilidade de intervalado), que só consomem este contexto.
         LocalDate quatroSemanas = hoje.minusWeeks(4);
         List<TreinoRealizado> treinosUltimas4Semanas = treinoRealizadoRepository
-                .findByAtletaAndDataTreinoGreaterThanEqualOrderByDataTreinoDesc(atleta, quatroSemanas);
+                .findByAtletaAndDataTreinoGreaterThanEqualOrderByDataTreinoDesc(atleta, quatroSemanas)
+                .stream()
+                .filter(TreinoRealizado::contaNaCarga)
+                .toList();
 
         // Provas preparatórias (próximos 6 meses, excluindo prova alvo)
         List<Prova> provasPreparatorias = provaRepository

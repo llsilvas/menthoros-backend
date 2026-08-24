@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.services.ManualReconciliationService;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.entity.TreinoReconciliacao;
@@ -29,20 +30,29 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoReconciliacaoRepository treinoReconciliacaoRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
+    private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
 
     public ManualReconciliationServiceImpl(
             TreinoRealizadoRepository treinoRealizadoRepository,
             TreinoReconciliacaoRepository treinoReconciliacaoRepository,
-            TreinoPlanejadoRepository treinoPlanejadoRepository) {
+            TreinoPlanejadoRepository treinoPlanejadoRepository,
+            IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService) {
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.treinoReconciliacaoRepository = treinoReconciliacaoRepository;
         this.treinoPlanejadoRepository = treinoPlanejadoRepository;
+        this.ingestaoTreinoRealizadoService = ingestaoTreinoRealizadoService;
     }
 
     /**
      * Vincula manualmente uma atividade realizada a um treino planejado.
      * Valida existência do TreinoPlanejado (tenant + atleta) antes de vincular.
      * Registra evento de auditoria e persiste estado.
+     *
+     * <p><strong>Idempotent:</strong> NO — reatribui o vínculo a cada chamada.
+     * <p><strong>Side Effects:</strong> Database update (vínculo + status) + evento de auditoria;
+     * dispara {@link IngestaoTreinoRealizadoService#reprocessar} para o seam de ingestão.
+     * <p><strong>Tenant-aware:</strong> YES — {@code treinoRealizadoId}/{@code treinoPlanejadoId}
+     * resolvidos via {@code findAndValidate} tenant-scoped.
      */
     @Transactional
     public TreinoRealizado linkManually(
@@ -92,12 +102,23 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
                 tenantId
         );
 
+        // O seam único é quem decide se algo realmente mudou na carga (D2/D9) — chamado após
+        // toda mutação de TreinoRealizado por completude, mesmo quando este gesto específico não
+        // altera tssCalculado/carga hoje.
+        ingestaoTreinoRealizadoService.reprocessar(saved.getId(), null);
+
         return findByIdWithEtapas(saved.getId(), tenantId);
     }
 
     /**
      * Marca uma atividade realizada como não planejada (orfã).
      * Desvincula de qualquer treino planejado e registra auditoria.
+     *
+     * <p><strong>Idempotent:</strong> NO — reatribui o status a cada chamada.
+     * <p><strong>Side Effects:</strong> Database update (desvínculo + status) + evento de
+     * auditoria; dispara {@link IngestaoTreinoRealizadoService#reprocessar}.
+     * <p><strong>Tenant-aware:</strong> YES — {@code treinoRealizadoId} resolvido via
+     * {@code findAndValidate} tenant-scoped.
      */
     @Transactional
     public TreinoRealizado markAsNotPlanned(
@@ -130,12 +151,20 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
                 tenantId
         );
 
+        ingestaoTreinoRealizadoService.reprocessar(saved.getId(), null);
+
         return findByIdWithEtapas(saved.getId(), tenantId);
     }
 
     /**
      * Desfaz o vínculo de uma atividade realizada com um treino planejado.
      * Volta para estado PENDENTE e registra auditoria.
+     *
+     * <p><strong>Idempotent:</strong> NO — reatribui o status a cada chamada.
+     * <p><strong>Side Effects:</strong> Database update (desvínculo + status) + evento de
+     * auditoria; dispara {@link IngestaoTreinoRealizadoService#reprocessar}.
+     * <p><strong>Tenant-aware:</strong> YES — {@code treinoRealizadoId} resolvido via
+     * {@code findAndValidate} tenant-scoped.
      */
     @Transactional
     public TreinoRealizado unlinkManually(
@@ -167,6 +196,8 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
                 actorId,
                 tenantId
         );
+
+        ingestaoTreinoRealizadoService.reprocessar(saved.getId(), null);
 
         return findByIdWithEtapas(saved.getId(), tenantId);
     }

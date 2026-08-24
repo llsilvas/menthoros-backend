@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.input.TreinoRealizadoInputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
@@ -18,6 +19,7 @@ import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.TreinoService;
 import org.junit.jupiter.api.AfterEach;
@@ -52,6 +54,9 @@ class UpdateTreinoIntegrationTest extends AbstractIntegrationTest {
     private AssessoriaRepository assessoriaRepository;
 
     @Autowired
+    private PlanoMetadadosRepository planoMetadadosRepository;
+
+    @Autowired
     private ApplicationEvents applicationEvents;
 
     private UUID tenantId;
@@ -74,6 +79,14 @@ class UpdateTreinoIntegrationTest extends AbstractIntegrationTest {
         atleta.setAtivo(AtletaStatus.ATIVO);
         atleta.setAssessoria(assessoria);
         atleta = atletaRepository.save(atleta);
+
+        // reprocessar (task 7.3) recalcula TSB via TsbService.atualizarMetaDados, que exige
+        // PlanoMetaDados existente para o atleta — sem isso, "MetaDados não encontrado".
+        PlanoMetaDados meta = new PlanoMetaDados();
+        meta.setAtleta(atleta);
+        meta.setAssessoria(assessoria);
+        meta.setDiaPreferidoLongo(DiaSemana.SABADO);
+        planoMetadadosRepository.save(meta);
 
         treinoExistente = new TreinoRealizado();
         treinoExistente.setAtleta(atleta);

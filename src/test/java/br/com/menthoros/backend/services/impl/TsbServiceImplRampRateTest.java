@@ -45,7 +45,8 @@ class TsbServiceImplRampRateTest {
                 null,
                 null,
                 null,
-                new TsbRecalculoExecutorInline()
+                new TsbRecalculoExecutorInline(),
+                null
         );
 
         Method m = TsbServiceImpl.class.getDeclaredMethod("calcularRampRate", UUID.class, LocalDate.class, double.class);
@@ -81,7 +82,8 @@ class TsbServiceImplRampRateTest {
                 null,
                 null,
                 null,
-                new TsbRecalculoExecutorInline()
+                new TsbRecalculoExecutorInline(),
+                null
         );
 
         Method m = TsbServiceImpl.class.getDeclaredMethod("calcularRampRate", UUID.class, LocalDate.class, double.class);

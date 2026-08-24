@@ -5,6 +5,7 @@ import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.services.StravaActivityService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -32,6 +33,8 @@ class StravaWebhookServiceImplTest {
     private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock
     private StravaActivityService stravaActivityService;
+    @Mock
+    private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
 
     private StravaWebhookServiceImpl service;
     private final Long ownerId = 641775L;
@@ -39,7 +42,7 @@ class StravaWebhookServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new StravaWebhookServiceImpl(integracaoExternaRepository, treinoRealizadoRepository, stravaActivityService);
+        service = new StravaWebhookServiceImpl(integracaoExternaRepository, treinoRealizadoRepository, stravaActivityService, ingestaoTreinoRealizadoService);
     }
 
     @Nested

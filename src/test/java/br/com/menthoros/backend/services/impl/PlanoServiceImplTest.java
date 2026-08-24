@@ -428,6 +428,66 @@ class PlanoServiceImplTest {
     }
 
     @Test
+    @DisplayName("D8: cancelado não conta em ultimosTreinos, NULL conta [task 7.7]")
+    void deveExcluirCanceladoDeUltimosTreinos() {
+        UUID atletaId = UUID.randomUUID();
+        ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.SEMANA_ATUAL;
+
+        Atleta atleta = criarAtletaMock(atletaId);
+        atleta.setDiaPreferidoLongo(DiaSemana.SABADO);
+        atleta.setDiasDisponiveis(List.of(DiaSemana.QUARTA, DiaSemana.DOMINGO));
+
+        PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
+        PlanoSemanalLlmDto planoDto = criarPlanoSemanalLlmDto();
+        List<TreinoPlanejadoLlmDto> treinosRedistribuidos = criarTreinosRedistribuidosMock();
+        PlanoSemanal planoSalvo = criarPlanoSemanalMock();
+        TreinoPlanejado treinoPlanejado = criarTreinoPlanejadoMock();
+
+        TreinoRealizado cancelado = new TreinoRealizado();
+        cancelado.setDataTreino(LocalDate.of(2026, 4, 13));
+        cancelado.setDiaSemana(DiaSemana.DOMINGO);
+        cancelado.setTipoTreino(TipoTreino.LONGO);
+        cancelado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
+
+        TreinoRealizado semStatus = new TreinoRealizado();
+        semStatus.setDataTreino(LocalDate.of(2026, 4, 6));
+        semStatus.setDiaSemana(DiaSemana.DOMINGO);
+        semStatus.setTipoTreino(TipoTreino.LONGO);
+        semStatus.setStatusSincronizacao(null);
+
+        mockMetricasAgregadasEAlertas(metaDados);
+
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class)))
+                .thenReturn(List.of(cancelado, semStatus));
+        when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
+        when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
+                any(), any(), any())).thenReturn(Optional.empty());
+
+        when(treinoMapper.toOutputDto(semStatus)).thenReturn(treinoRealizadoOutput(semStatus));
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao), any(), any(), any())).thenReturn(planoDto);
+        when(redistribuicaoHelper.redistribuirTreinos(any(), any(), any(), any(), any(), eq(modoGeracao), any()))
+                .thenReturn(treinosRedistribuidos);
+        when(planoMetadadosRepository.findByIdAndTenantId(any(), any())).thenReturn(Optional.of(metaDados));
+
+        when(planoSemanalMapper.toEntity(planoDto)).thenReturn(planoSalvo);
+        when(treinoMapper.toEntity(any(TreinoPlanejadoLlmDto.class))).thenReturn(treinoPlanejado);
+        when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenReturn(planoSalvo);
+        when(planoMetadadosRepository.save(any(PlanoMetaDados.class))).thenReturn(metaDados);
+
+        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+
+            PlanoSemanal resultado = planoService.gerarPlanoTreino(atletaId, modoGeracao);
+
+            assertNotNull(resultado);
+            verify(treinoMapper, never()).toOutputDto(cancelado);
+            verify(treinoMapper).toOutputDto(semStatus);
+        }
+    }
+
+    @Test
     @DisplayName("Deve lançar exceção quando lista de treinos da LLM está vazia")
     void deveLancarExcecaoQuandoListaTreinosLlmEstaVazia() {
         // Given
@@ -1248,6 +1308,29 @@ class PlanoServiceImplTest {
             PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, false);
 
             assertEquals(7.0, resultado.volumeRealizadoKm());
+        }
+
+        @Test
+        @DisplayName("D8: treino CANCELADO não conta no volumeRealizadoKm; status null conta [achado /qa Bloco 2]")
+        void treinoCanceladoNaoContaNoVolumeRealizado() {
+            UUID atletaId = UUID.randomUUID();
+            PlanoSemanal plano = criarPlanoSemanalMock();
+
+            TreinoRealizado cancelado = criarTreinoRealizadoComDistancia(BigDecimal.valueOf(10.0));
+            cancelado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
+            TreinoRealizado semStatus = criarTreinoRealizadoComDistancia(BigDecimal.valueOf(5.5));
+            semStatus.setStatusSincronizacao(null);
+
+            when(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId))
+                    .thenReturn(List.of(plano));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    atletaId, tenantId, plano.getSemanaInicio(), plano.getSemanaFim()))
+                    .thenReturn(List.of(cancelado, semStatus));
+            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(planoSemanalOutputDtoStub(0.0));
+
+            PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, false);
+
+            assertEquals(5.5, resultado.volumeRealizadoKm());
         }
 
         @Test

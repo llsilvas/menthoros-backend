@@ -717,8 +717,13 @@ public class PlanoServiceImpl implements PlanoService {
 
         LocalDate hoje = LocalDate.now();
         LocalDate inicio42d = hoje.minusDays(JANELA_HISTORICO_DIAS);
+        // D8: cancelado não conta na carga — mesmo predicado usado por TsbService/produtores.
+        // Alimenta PlannerShadowService/InjuryRiskEvaluator e os formatters de prompt do planner
+        // (PlanoTreinoPromptBuilder, VariabilidadePromptFormatter) a jusante.
         List<TreinoRealizado> realizados = treinoRealizadoRepository
-                .findByAtletaIdAndDataTreinoBetween(atletaId, inicio42d, hoje);
+                .findByAtletaIdAndDataTreinoBetween(atletaId, inicio42d, hoje).stream()
+                .filter(TreinoRealizado::contaNaCarga)
+                .toList();
 
         List<TreinoRealizadoOutputDto> ultimosTreinos = realizados.stream()
                 .map(treinoMapper::toOutputDto)
@@ -879,9 +884,12 @@ public class PlanoServiceImpl implements PlanoService {
      */
     private double calcularVolumeRealizadoKm(
             UUID atletaId, UUID tenantId, LocalDate semanaInicio, LocalDate semanaFim) {
+        // D8 (ingestao-treino-realizado): cancelado não conta na carga — achado do /qa do Bloco 2
+        // (Codex adversarial-review, 2026-08-24).
         return treinoRealizadoRepository
                 .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, semanaInicio, semanaFim)
                 .stream()
+                .filter(TreinoRealizado::contaNaCarga)
                 .map(t -> Optional.ofNullable(t.getDistanciaKm()).orElse(BigDecimal.ZERO))
                 .reduce(BigDecimal.ZERO, BigDecimal::add)
                 .doubleValue();

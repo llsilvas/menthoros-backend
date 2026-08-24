@@ -18,6 +18,7 @@ import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AtletaStatus;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.StatusVencimentoPlano;
 import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import br.com.menthoros.backend.enums.TipoTreino;
@@ -358,6 +359,29 @@ class CoachDashboardServiceImplTest {
             assertThat(insights.tendenciaCargaSemanal()).hasSize(1);
             assertThat(insights.tendenciaCargaSemanal().get(0).volumeTotalKm()).isEqualTo(12.0);
             assertThat(insights.topAtletas()).extracting(CoachInsightsDto.TopAtleta::nome).containsExactly("active S");
+        }
+
+        @Test
+        @DisplayName("D8: cancelado não conta no volume/TSS, NULL conta [task 7.7]")
+        void canceladoNaoContaNullConta() {
+            Atleta active = atletaRoster("active", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(active));
+            when(treinoPlanejadoRepository.findByTenantAndDataBetween(eq(tenantId), any(), any())).thenReturn(List.of());
+
+            TreinoRealizado cancelado = treino(LocalDate.of(2026, 6, 16), "12.0", 90);
+            cancelado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
+            TreinoRealizado semStatus = treino(LocalDate.of(2026, 6, 16), "5.0", 40);
+            semStatus.setStatusSincronizacao(null);
+
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(active.getId()), any(), any()))
+                    .thenReturn(List.of(cancelado, semStatus));
+
+            CoachInsightsDto insights = service.getInsights(null, null);
+
+            assertThat(insights.tendenciaCargaSemanal()).hasSize(1);
+            assertThat(insights.tendenciaCargaSemanal().get(0).volumeTotalKm())
+                    .as("só o treino sem status (NULL) conta — o CANCELADO fica de fora")
+                    .isEqualTo(5.0);
         }
 
         @Test

@@ -165,6 +165,8 @@ public class RaceProjectionServiceImpl implements RaceProjectionService {
         return treinoRealizadoRepository
                 .findByAtletaAndDataTreinoGreaterThanEqualOrderByDataTreinoDesc(atleta, cutoff)
                 .stream()
+                // D8: cancelado não conta na carga — mesmo predicado usado por TsbService/produtores.
+                .filter(TreinoRealizado::contaNaCarga)
                 .filter(tr -> tr.getDistanciaKm() != null && tr.getPaceMedia() != null)
                 .map(this::toWorkoutSummary)
                 .collect(Collectors.toList());
