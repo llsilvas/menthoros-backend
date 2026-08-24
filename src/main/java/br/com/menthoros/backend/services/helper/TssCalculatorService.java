@@ -8,7 +8,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.util.List;
 
 /**
  * Serviço dedicado ao cálculo de TSS (Training Stress Score).
@@ -35,19 +34,6 @@ public class TssCalculatorService {
     }
 
     private record ResultadoCalculo(int tssBase, MetodoCalculoTss metodo, boolean calculadoPorEtapas) {}
-
-    /**
-     * Calcula TSS total do dia (soma de todos os treinos).
-     *
-     * Idempotent: YES — cálculo puro, sem estado.
-     * Side Effects: NONE
-     * Tenant-aware: NO
-     */
-    public Integer calcularTssDia(List<TreinoRealizado> treinos) {
-        return treinos.stream()
-                .mapToInt(this::calcularTss)
-                .sum();
-    }
 
     /**
      * TSS estimado para treinos planejados, usando duração e RPE.
