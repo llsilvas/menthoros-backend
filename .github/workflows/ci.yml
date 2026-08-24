@@ -5,11 +5,11 @@ name: CI
 # acesso a secrets, mesmo em PR de fork — combinação que transforma um PR num vetor de execução.
 on:
   pull_request:
-    branches: [develop]
+    branches: [develop, main]
   # Rede para o que chegar em `develop` fora de um PR. Depois da branch protection isto vira quase
   # redundante, mas ainda cobre o resultado real do merge — e não a simulação que o PR testou.
   push:
-    branches: [develop]
+    branches: [develop, main]
   # Não é enfeite: `Task5p1ControllerIT` ficou vermelho por 2,5 meses porque nada o executava. CI
   # só-em-PR tem a mesma cegueira em períodos sem PR, e quebra por causa externa (imagem fora do ar,
   # limite de pull do Docker Hub) não gera sinal nenhum.
