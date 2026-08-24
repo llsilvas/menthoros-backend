@@ -59,6 +59,17 @@ public class TreinoServiceImpl implements TreinoService {
     private final TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
     private final Clock clock;
 
+    /**
+     * Registra um treino realizado vinculado (opcionalmente) a um treino planejado.
+     *
+     * <p><strong>Idempotent:</strong> NO — cada chamada cria uma nova entidade, exceto quando o
+     * pre-check de duplicidade (passo 1, por externalId+atletaId) encontra um registro existente,
+     * caso em que retorna o duplicado sem chamar o seam de ingestão (achado do /qa do Bloco 2,
+     * ingestao-treino-realizado — comportamento pré-existente, não regressão desta migração).
+     * <p><strong>Side Effects:</strong> Database insert; delega dedup/TSS/evento/recálculo de TSB
+     * para {@link IngestaoTreinoRealizadoService#registrar}.
+     * <p><strong>Tenant-aware:</strong> YES — via {@code TenantContext} no seam de ingestão.
+     */
     @Transactional
     @Override
     public TreinoRealizado addTreino(UUID treinoPlanejadoId, TreinoRealizadoInputDto treinoRealizado) {
@@ -246,6 +257,10 @@ public class TreinoServiceImpl implements TreinoService {
                 .orElseThrow(() -> new DomainNotFoundException("Treino não encontrado: " + id));
         // Capturada ANTES de mutar/salvar (CA6): se a data mudar, o dia antigo precisa ser
         // recalculado também — reprocessar recebe null quando não mudou (contrato do seam).
+        // Hoje este branch nunca dispara: applyMutableFields não atribui dataTreino (imutável via
+        // updateTreino, ver UpdateTreinoIntegrationTest#doesNotOverwriteImmutableFields) — achado
+        // do /qa do Bloco 2, documentado em tasks.md (task 7.3). Mantido pelo contrato genérico do
+        // seam, não código morto acidental.
         LocalDate dataAntiga = treino.getDataTreino();
 
         applyMutableFields(treino, dto);

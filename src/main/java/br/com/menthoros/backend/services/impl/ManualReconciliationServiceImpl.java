@@ -47,6 +47,12 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
      * Vincula manualmente uma atividade realizada a um treino planejado.
      * Valida existência do TreinoPlanejado (tenant + atleta) antes de vincular.
      * Registra evento de auditoria e persiste estado.
+     *
+     * <p><strong>Idempotent:</strong> NO — reatribui o vínculo a cada chamada.
+     * <p><strong>Side Effects:</strong> Database update (vínculo + status) + evento de auditoria;
+     * dispara {@link IngestaoTreinoRealizadoService#reprocessar} para o seam de ingestão.
+     * <p><strong>Tenant-aware:</strong> YES — {@code treinoRealizadoId}/{@code treinoPlanejadoId}
+     * resolvidos via {@code findAndValidate} tenant-scoped.
      */
     @Transactional
     public TreinoRealizado linkManually(
@@ -107,6 +113,12 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
     /**
      * Marca uma atividade realizada como não planejada (orfã).
      * Desvincula de qualquer treino planejado e registra auditoria.
+     *
+     * <p><strong>Idempotent:</strong> NO — reatribui o status a cada chamada.
+     * <p><strong>Side Effects:</strong> Database update (desvínculo + status) + evento de
+     * auditoria; dispara {@link IngestaoTreinoRealizadoService#reprocessar}.
+     * <p><strong>Tenant-aware:</strong> YES — {@code treinoRealizadoId} resolvido via
+     * {@code findAndValidate} tenant-scoped.
      */
     @Transactional
     public TreinoRealizado markAsNotPlanned(
@@ -147,6 +159,12 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
     /**
      * Desfaz o vínculo de uma atividade realizada com um treino planejado.
      * Volta para estado PENDENTE e registra auditoria.
+     *
+     * <p><strong>Idempotent:</strong> NO — reatribui o status a cada chamada.
+     * <p><strong>Side Effects:</strong> Database update (desvínculo + status) + evento de
+     * auditoria; dispara {@link IngestaoTreinoRealizadoService#reprocessar}.
+     * <p><strong>Tenant-aware:</strong> YES — {@code treinoRealizadoId} resolvido via
+     * {@code findAndValidate} tenant-scoped.
      */
     @Transactional
     public TreinoRealizado unlinkManually(
