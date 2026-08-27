@@ -46,7 +46,7 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
        select tp from TreinoPlanejado tp
        where tp.atleta.id = :atletaId
          and tp.dataTreino between :dataInicio and :dataFim
-       order by tp.dataTreino ASC
+       order by tp.dataTreino ASC, tp.criadoEm ASC, tp.id ASC
        """)
     List<TreinoPlanejado> findByAtletaIdAndDataBetween(@Param("atletaId") UUID atletaId,
                                                         @Param("dataInicio") LocalDate dataInicio,

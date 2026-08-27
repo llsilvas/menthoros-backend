@@ -27,6 +27,8 @@ import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
+import br.com.menthoros.backend.mapper.EtapaMapper;
+import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -77,6 +79,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     private final ZonaTreinoService zonaTreinoService;
     private final AuthenticatedPrincipalResolver principalResolver;
     private final CheckinProntidaoRepository checkinProntidaoRepository;
+    private final EtapaMapper etapaMapper;
     private final Clock clock;
 
     /**
@@ -213,10 +216,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
         AtletaHomeDto.ProximoTreino proximo = treinoPlanejadoRepository
                 .findByAtletaIdAndDataBetween(atletaId, hoje, hoje.plusDays(14))
                 .stream().findFirst()
-                .map(tp -> new AtletaHomeDto.ProximoTreino(
-                        tp.getDataTreino(),
-                        tp.getTipoTreino() != null ? tp.getTipoTreino().name() : null,
-                        tp.getDescricao()))
+                .map(this::toProximoTreino)
                 .orElse(null);
 
         AtletaHomeDto.MetricasChave metricas = metricasDiariasRepository.findLatestByAtletaId(atletaId)
@@ -225,6 +225,29 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                 .orElse(new AtletaHomeDto.MetricasChave(null, null, null, null, null, null));
 
         return new AtletaHomeDto(proximo, metricas);
+    }
+
+    /**
+     * O hero da Home do atleta mostra o mesmo perfil que o coach vê no detalhe: etapas no mesmo
+     * DTO (`EtapaTreinoDto`, com `blocoId`/`blocoRepeticoes` — sem índice de repetição, que o
+     * front deriva), duração em minutos inteiros (no modelo é `Duration`) e zona alvo. Roda dentro
+     * da transação de `getHome`, então as etapas LAZY carregam. Lista vazia vira `null`: o
+     * contrato omite o que não existe, e o front não desenha placeholder.
+     */
+    private AtletaHomeDto.ProximoTreino toProximoTreino(TreinoPlanejado tp) {
+        List<EtapaTreinoDto> etapas = tp.getEtapas() == null || tp.getEtapas().isEmpty()
+                ? null
+                : etapaMapper.toDtoList(tp.getEtapas());
+        Integer duracaoMin = tp.getDuracaoMin() != null ? (int) tp.getDuracaoMin().toMinutes() : null;
+        return new AtletaHomeDto.ProximoTreino(
+                tp.getDataTreino(),
+                tp.getTipoTreino() != null ? tp.getTipoTreino().name() : null,
+                tp.getDescricao(),
+                duracaoMin,
+                tp.getZonaAlvo(),
+                tp.getTssPlanejado(),
+                tp.getIntensidadePlanejada(),
+                etapas);
     }
 
     /**

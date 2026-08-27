@@ -127,7 +127,7 @@ class AtletaProgressControllerTest {
     void home() throws Exception {
         when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
         when(service.getHome(atletaId)).thenReturn(new AtletaHomeDto(
-                new AtletaHomeDto.ProximoTreino(LocalDate.now().plusDays(1), "INTERVALADO", "6x800m"),
+                new AtletaHomeDto.ProximoTreino(LocalDate.now().plusDays(1), "INTERVALADO", "6x800m", 45, "Z4", 70, 0.95, null),
                 new AtletaHomeDto.MetricasChave(52.0, 44.0, 8.0, 0, null, "FORMA_IDEAL")));
 
         mockMvc.perform(get("/api/v1/atletas/me/home"))
