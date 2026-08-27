@@ -10,6 +10,7 @@ import br.com.menthoros.backend.enums.MotivoKudos;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.PlanoAssessoria;
 import br.com.menthoros.backend.enums.UserRole;
+import br.com.menthoros.backend.services.impl.KudosServiceImpl;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,6 +44,7 @@ class KudosRepositoryTest extends AbstractIntegrationTest {
     private EntityManager entityManager;
 
     private static final Instant AGORA = Instant.parse("2026-08-27T12:00:00Z");
+    private static final Instant DESDE = AGORA.minus(KudosServiceImpl.JANELA_KUDOS_RECENTES_DIAS, ChronoUnit.DAYS);
 
     private static final MotivoKudos[] MOTIVOS = MotivoKudos.values();
 
@@ -81,11 +83,11 @@ class KudosRepositoryTest extends AbstractIntegrationTest {
     @DisplayName("kudo de 6 dias aparece, de 8 dias não; de exatamente 7 dias aparece (limite inclusivo)")
     void janelaDeSeteDias() {
         Kudos dentroDaJanela = salvarKudoEm(AGORA.minus(6, ChronoUnit.DAYS));
-        Kudos noLimite = salvarKudoEm(AGORA.minus(7, ChronoUnit.DAYS));
+        Kudos noLimite = salvarKudoEm(DESDE);
         salvarKudoEm(AGORA.minus(8, ChronoUnit.DAYS)); // fora da janela — não deve aparecer
 
         List<Kudos> resultado = kudosRepository.findRecentesByAtletaIdAndTenantId(
-                atleta.getId(), assessoria.getId(), AGORA.minus(7, ChronoUnit.DAYS));
+                atleta.getId(), assessoria.getId(), DESDE);
 
         assertThat(resultado).extracting(Kudos::getId)
                 .containsExactlyInAnyOrder(dentroDaJanela.getId(), noLimite.getId());
@@ -98,7 +100,7 @@ class KudosRepositoryTest extends AbstractIntegrationTest {
         Kudos maisRecente = salvarKudoEm(AGORA.minus(1, ChronoUnit.DAYS));
 
         List<Kudos> resultado = kudosRepository.findRecentesByAtletaIdAndTenantId(
-                atleta.getId(), assessoria.getId(), AGORA.minus(7, ChronoUnit.DAYS));
+                atleta.getId(), assessoria.getId(), DESDE);
 
         assertThat(resultado).extracting(Kudos::getId)
                 .containsExactly(maisRecente.getId(), maisAntigo.getId());
@@ -110,7 +112,7 @@ class KudosRepositoryTest extends AbstractIntegrationTest {
         salvarKudoEm(AGORA.minus(30, ChronoUnit.DAYS));
 
         List<Kudos> resultado = kudosRepository.findRecentesByAtletaIdAndTenantId(
-                atleta.getId(), assessoria.getId(), AGORA.minus(7, ChronoUnit.DAYS));
+                atleta.getId(), assessoria.getId(), DESDE);
 
         assertThat(resultado).isEmpty();
     }
@@ -122,7 +124,7 @@ class KudosRepositoryTest extends AbstractIntegrationTest {
         UUID outroTenant = UUID.randomUUID();
 
         List<Kudos> resultado = kudosRepository.findRecentesByAtletaIdAndTenantId(
-                atleta.getId(), outroTenant, AGORA.minus(7, ChronoUnit.DAYS));
+                atleta.getId(), outroTenant, DESDE);
 
         assertThat(resultado).isEmpty();
     }

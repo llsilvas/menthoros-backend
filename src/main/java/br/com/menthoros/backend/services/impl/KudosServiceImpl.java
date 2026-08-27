@@ -32,6 +32,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class KudosServiceImpl implements KudosService {
 
+    /** Janela de "kudos recentes" — decisão de produto alinhada ao ciclo semanal do app. */
+    public static final int JANELA_KUDOS_RECENTES_DIAS = 7;
+
     private final KudosRepository kudosRepository;
     private final AtletaRepository atletaRepository;
     private final UsuarioRepository usuarioRepository;
@@ -75,7 +78,7 @@ public class KudosServiceImpl implements KudosService {
     @Transactional(readOnly = true)
     public List<KudosRecenteOutputDto> listarRecentes(UUID atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
-        Instant desde = Instant.now(clock).minus(7, ChronoUnit.DAYS);
+        Instant desde = Instant.now(clock).minus(JANELA_KUDOS_RECENTES_DIAS, ChronoUnit.DAYS);
         return kudosRepository.findRecentesByAtletaIdAndTenantId(atletaId, tenantId, desde).stream()
                 .map(kudosMapper::toRecenteOutputDto)
                 .toList();

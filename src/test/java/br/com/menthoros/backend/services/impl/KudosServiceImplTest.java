@@ -31,6 +31,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -190,7 +191,8 @@ class KudosServiceImplTest {
     @DisplayName("listarRecentes")
     class ListarRecentes {
 
-        private static final Instant DESDE = Instant.parse("2026-06-10T12:00:00Z");
+        private static final Instant DESDE = Instant.parse("2026-06-17T12:00:00Z")
+                .minus(KudosServiceImpl.JANELA_KUDOS_RECENTES_DIAS, ChronoUnit.DAYS);
 
         @Test
         @DisplayName("retorna os kudos mapeados, mais recente primeiro")
