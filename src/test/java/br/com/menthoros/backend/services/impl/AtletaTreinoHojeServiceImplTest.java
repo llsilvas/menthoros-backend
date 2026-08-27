@@ -16,6 +16,7 @@ import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.EtapaAlvoResolver;
 import br.com.menthoros.backend.services.helper.IntervalsIcuFcAlvoResolver;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -54,6 +55,7 @@ class AtletaTreinoHojeServiceImplTest {
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
 
     private AtletaTreinoHojeServiceImpl service;
+    private SimpleMeterRegistry meterRegistry;
     private UUID tenantId;
     private UUID atletaId;
     private Atleta atleta;
@@ -65,10 +67,12 @@ class AtletaTreinoHojeServiceImplTest {
         TenantContext.setTenantId(tenantId);
         atleta = Atleta.builder().id(atletaId).fcLimiar(170).timezone("America/Manaus").build();
         Clock clock = Clock.fixed(MADRUGADA_UTC, ZoneOffset.UTC);
+        meterRegistry = new SimpleMeterRegistry();
         service = new AtletaTreinoHojeServiceImpl(
                 atletaRepository, treinoPlanejadoRepository,
                 new AtletaHojeResolver(clock),
-                new EtapaAlvoResolver(new IntervalsIcuFcAlvoResolver(new ZonaTreinoService())));
+                new EtapaAlvoResolver(new IntervalsIcuFcAlvoResolver(new ZonaTreinoService())),
+                meterRegistry);
     }
 
     @AfterEach
@@ -175,6 +179,7 @@ class AtletaTreinoHojeServiceImplTest {
             assertThat(dto.statusTreino()).isEqualTo("PERDIDO");
             assertThat(dto.motivoPulo()).isEqualTo("SEM_TEMPO");
             verify(treinoPlanejadoRepository).save(tp);
+            assertThat(meterRegistry.get("atleta_treino_pulo_total").counter().count()).isEqualTo(1.0);
         }
 
         @Test

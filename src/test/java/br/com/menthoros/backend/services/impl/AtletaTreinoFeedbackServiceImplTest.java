@@ -10,6 +10,7 @@ import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,6 +46,7 @@ class AtletaTreinoFeedbackServiceImplTest {
     @Mock private TreinoMapper treinoMapper;
 
     private AtletaTreinoFeedbackServiceImpl service;
+    private SimpleMeterRegistry meterRegistry;
     private UUID tenantId;
     private UUID atletaId;
     private UUID treinoId;
@@ -58,7 +60,8 @@ class AtletaTreinoFeedbackServiceImplTest {
         TenantContext.setTenantId(tenantId);
         atleta = Atleta.builder().id(atletaId).build();
         Clock clock = Clock.fixed(Instant.parse("2026-08-27T12:00:00Z"), ZoneOffset.UTC);
-        service = new AtletaTreinoFeedbackServiceImpl(treinoRealizadoRepository, ingestaoTreinoRealizadoService, treinoMapper, clock);
+        meterRegistry = new SimpleMeterRegistry();
+        service = new AtletaTreinoFeedbackServiceImpl(treinoRealizadoRepository, ingestaoTreinoRealizadoService, treinoMapper, clock, meterRegistry);
     }
 
     @AfterEach
@@ -131,6 +134,19 @@ class AtletaTreinoFeedbackServiceImplTest {
                 .isInstanceOf(DomainNotFoundException.class);
         verify(treinoRealizadoRepository, never()).save(any());
         verify(ingestaoTreinoRealizadoService, never()).reprocessar(any(), any());
+    }
+
+    @Test
+    @DisplayName("incrementa o contador de feedback (métrica de sucesso da change)")
+    void incrementaContador() {
+        TreinoRealizado tr = realizado();
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(tr));
+        when(treinoRealizadoRepository.save(tr)).thenReturn(tr);
+        when(treinoMapper.toOutputDto(tr)).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+        service.registrarFeedback(atletaId, treinoId, new FeedbackTreinoInputDto(6, null, null));
+
+        assertThat(meterRegistry.get("atleta_treino_feedback_total").counter().count()).isEqualTo(1.0);
     }
 
     @Test

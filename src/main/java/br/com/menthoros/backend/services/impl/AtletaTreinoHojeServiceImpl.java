@@ -13,6 +13,8 @@ import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.services.AtletaTreinoHojeService;
 import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.EtapaAlvoResolver;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,6 +38,7 @@ public class AtletaTreinoHojeServiceImpl implements AtletaTreinoHojeService {
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final AtletaHojeResolver hojeResolver;
     private final EtapaAlvoResolver etapaAlvoResolver;
+    private final MeterRegistry meterRegistry;
 
     /**
      * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
@@ -71,6 +74,11 @@ public class AtletaTreinoHojeServiceImpl implements AtletaTreinoHojeService {
         tp.setPuladoEm(hojeResolver.agoraDe(atleta));
         TreinoPlanejado salvo = treinoPlanejadoRepository.save(tp);
         log.info("Treino de hoje pulado: planejadoId={}, atletaId={}, motivo={}", salvo.getId(), atletaId, motivo);
+        // Métrica de sucesso da change (SPRINTS.md): quantos atletas avisam em vez de sumir.
+        Counter.builder("atleta_treino_pulo_total")
+                .description("Pulos do treino de hoje ('Não vou conseguir hoje'), com ou sem motivo")
+                .register(meterRegistry)
+                .increment();
         return toDto(salvo, atleta, hoje);
     }
 

@@ -9,6 +9,8 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.AtletaTreinoFeedbackService;
 import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -32,6 +34,7 @@ public class AtletaTreinoFeedbackServiceImpl implements AtletaTreinoFeedbackServ
     private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     private final TreinoMapper treinoMapper;
     private final Clock clock;
+    private final MeterRegistry meterRegistry;
 
     /**
      * Idempotent: YES — último envio vence. Side Effects: UPDATE em tb_treino_realizado (e,
@@ -58,6 +61,11 @@ public class AtletaTreinoFeedbackServiceImpl implements AtletaTreinoFeedbackServ
 
         log.info("Feedback registrado: treinoRealizadoId={}, atletaId={}, rpe={}",
                 treinoRealizadoId, atletaId, input.percepcaoEsforco());
+        // Métrica de sucesso da change (SPRINTS.md): treinos com feedback / treinos realizados.
+        Counter.builder("atleta_treino_feedback_total")
+                .description("Feedbacks pós-treino ('Como foi?') registrados, de qualquer origem")
+                .register(meterRegistry)
+                .increment();
         return treinoMapper.toOutputDto(treino);
     }
 }
