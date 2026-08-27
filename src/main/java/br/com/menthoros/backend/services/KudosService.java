@@ -34,8 +34,8 @@ public interface KudosService {
      * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
      *
      * @param atletaId atleta cujos kudos serão listados
-     * @return até os 10 kudos mais recentes do atleta, mais recente primeiro; lista vazia se
-     *         não houver nenhum
+     * @return os kudos dos últimos 7 dias do atleta, mais recente primeiro; lista vazia se não
+     *         houver nenhum na janela
      */
     List<KudosRecenteOutputDto> listarRecentes(UUID atletaId);
 }
