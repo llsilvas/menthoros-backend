@@ -576,6 +576,55 @@ class AtletaProgressServiceImplTest {
             assertThat(service.getHome(atletaId).realizadoHoje()).isNull();
         }
 
+        @Test
+        @DisplayName("realizado com feedback carimbado: o carimbo atravessa (o hero decide 'Como foi?' vs resumo por ele)")
+        void realizadoComFeedbackCarimbado() {
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any())).thenReturn(List.of());
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+            TreinoRealizado tr = realizado(HOJE, FonteDados.MANUAL, 6, LocalDateTime.of(2026, 6, 17, 7, 0));
+            tr.setFeedbackRegistradoEm(LocalDateTime.of(2026, 6, 17, 19, 0));
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, HOJE)).thenReturn(List.of(tr));
+
+            assertThat(service.getHome(atletaId).realizadoHoje().feedbackRegistradoEm())
+                    .isEqualTo(LocalDateTime.of(2026, 6, 17, 19, 0));
+        }
+
+        @Test
+        @DisplayName("próximo treino pulado: statusTreino e motivoPulo atravessam (D1 PULADO)")
+        void proximoTreinoPulado() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            tp.setTipoTreino(TipoTreino.FACIL);
+            tp.setStatusTreino(br.com.menthoros.backend.enums.TreinoExecucaoStatus.PERDIDO);
+            tp.setMotivoPulo(br.com.menthoros.backend.enums.MotivoPulo.DOR);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(tp));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, HOJE)).thenReturn(List.of());
+
+            AtletaHomeDto.ProximoTreino proximo = service.getHome(atletaId).proximoTreino();
+
+            assertThat(proximo.statusTreino()).isEqualTo("PERDIDO");
+            assertThat(proximo.motivoPulo()).isEqualTo("DOR");
+        }
+
+        @Test
+        @DisplayName("próximo treino pendente: statusTreino presente, motivoPulo ausente")
+        void proximoTreinoPendente() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            tp.setTipoTreino(TipoTreino.FACIL);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(tp));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, HOJE)).thenReturn(List.of());
+
+            AtletaHomeDto.ProximoTreino proximo = service.getHome(atletaId).proximoTreino();
+
+            assertThat(proximo.statusTreino()).isEqualTo("PENDENTE");
+            assertThat(proximo.motivoPulo()).isNull();
+        }
+
         private TreinoRealizado realizado(LocalDate data, FonteDados fonte, Integer rpe, LocalDateTime criadoEm) {
             TreinoRealizado tr = new TreinoRealizado();
             tr.setId(UUID.randomUUID());

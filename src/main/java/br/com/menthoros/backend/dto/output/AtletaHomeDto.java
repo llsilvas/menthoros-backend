@@ -78,7 +78,14 @@ public record AtletaHomeDto(
             @Schema(description = "IF planejado; omitido quando ausente", example = "0.95")
             Double intensidadePlanejada,
             @Schema(description = "Etapas do treino (mesmo DTO do detalhe do coach); omitidas quando o treino não tem etapas")
-            List<EtapaTreinoDto> etapas
+            List<EtapaTreinoDto> etapas,
+
+            @Schema(description = "Status de execução do planejado — o hero usa PERDIDO+motivoPulo para o estado 'pulado' (D1)",
+                    example = "PENDENTE")
+            String statusTreino,
+
+            @Schema(description = "Motivo do pulo, quando o atleta pulou hoje", example = "SEM_TEMPO")
+            String motivoPulo
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

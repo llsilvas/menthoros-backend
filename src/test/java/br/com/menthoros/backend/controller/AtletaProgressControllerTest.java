@@ -133,7 +133,8 @@ class AtletaProgressControllerTest {
                 LocalDate.of(2026, 8, 27),
                 new AtletaHomeDto.ProximoTreino(LocalDate.now().plusDays(1), "INTERVALADO", "6x800m", 45, "Z4", 70, 0.95,
                         List.of(new EtapaTreinoDto(1, "AQUECIMENTO", "Trote", 10, null, null, null, null, null, null),
-                                new EtapaTreinoDto(2, "ESFORCO", null, 4, null, null, null, null, bloco, 2))),
+                                new EtapaTreinoDto(2, "ESFORCO", null, 4, null, null, null, null, bloco, 2)),
+                        "PENDENTE", null),
                 new AtletaHomeDto.RealizadoHoje(realizadoId, "INTERVALS_ICU", "FACIL", 50, null, null, null),
                 new AtletaHomeDto.MetricasChave(52.0, 44.0, 8.0, 0, null, "FORMA_IDEAL")));
 
@@ -159,7 +160,7 @@ class AtletaProgressControllerTest {
         when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
         when(service.getHome(atletaId)).thenReturn(new AtletaHomeDto(
                 LocalDate.now(),
-                new AtletaHomeDto.ProximoTreino(LocalDate.now(), "FACIL", "Trote", null, null, null, null, null),
+                new AtletaHomeDto.ProximoTreino(LocalDate.now(), "FACIL", "Trote", null, null, null, null, null, null, null),
                 null,
                 new AtletaHomeDto.MetricasChave(null, null, null, null, null, null)));
 

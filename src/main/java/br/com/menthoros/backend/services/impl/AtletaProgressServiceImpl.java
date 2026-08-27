@@ -248,7 +248,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                 duracaoMin,
                 tr.getDistanciaKm(),
                 tr.getPercepcaoEsforco(),
-                null);
+                tr.getFeedbackRegistradoEm());
     }
 
     /**
@@ -274,7 +274,9 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                 tp.getZonaAlvo(),
                 tp.getTssPlanejado(),
                 tp.getIntensidadePlanejada(),
-                etapas);
+                etapas,
+                tp.getStatusTreino() != null ? tp.getStatusTreino().name() : null,
+                tp.getMotivoPulo() != null ? tp.getMotivoPulo().name() : null);
     }
 
     /**
