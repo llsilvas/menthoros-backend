@@ -248,6 +248,8 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                 duracaoMin,
                 tr.getDistanciaKm(),
                 tr.getPercepcaoEsforco(),
+                tr.getSensacoes() != null ? List.copyOf(tr.getSensacoes()) : null,
+                tr.getFeedbackAtleta(),
                 tr.getFeedbackRegistradoEm());
     }
 

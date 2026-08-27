@@ -53,6 +53,12 @@ public record AtletaHomeDto(
             @Schema(description = "RPE 1–10 já gravado (registro manual ou feedback); omitido quando ausente", example = "6")
             Integer percepcaoEsforco,
 
+            @Schema(description = "Sensações do treino, lista fechada; omitida quando ausente", example = "[\"PERNAS_PESADAS\"]")
+            List<br.com.menthoros.backend.enums.Sensacao> sensacoes,
+
+            @Schema(description = "Comentário do atleta sobre o treino; ausente quando não escrito")
+            String feedbackAtleta,
+
             @Schema(description = "Carimbo do feedback pós-treino; ausente = 'Como foi?' ainda não respondido")
             LocalDateTime feedbackRegistradoEm
     ) {}

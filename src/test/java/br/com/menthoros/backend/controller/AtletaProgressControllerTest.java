@@ -135,7 +135,7 @@ class AtletaProgressControllerTest {
                         List.of(new EtapaTreinoDto(1, "AQUECIMENTO", "Trote", 10, null, null, null, null, null, null),
                                 new EtapaTreinoDto(2, "ESFORCO", null, 4, null, null, null, null, bloco, 2)),
                         "PENDENTE", null),
-                new AtletaHomeDto.RealizadoHoje(realizadoId, "INTERVALS_ICU", "FACIL", 50, null, null, null),
+                new AtletaHomeDto.RealizadoHoje(realizadoId, "INTERVALS_ICU", "FACIL", 50, null, null, null, null, null),
                 new AtletaHomeDto.MetricasChave(52.0, 44.0, 8.0, 0, null, "FORMA_IDEAL")));
 
         mockMvc.perform(get("/api/v1/atletas/me/home"))

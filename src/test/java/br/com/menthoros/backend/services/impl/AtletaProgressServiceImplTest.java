@@ -567,6 +567,22 @@ class AtletaProgressServiceImplTest {
         }
 
         @Test
+        @DisplayName("realizado com sensações e comentário: atravessam para o hero mostrar o resumo completo (D3)")
+        void realizadoComSensacoesEComentario() {
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any())).thenReturn(List.of());
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+            TreinoRealizado tr = realizado(HOJE, FonteDados.MANUAL, 6, LocalDateTime.of(2026, 6, 17, 7, 0));
+            tr.setSensacoes(java.util.Set.of(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS));
+            tr.setFeedbackAtleta("Difícil no final");
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, HOJE)).thenReturn(List.of(tr));
+
+            AtletaHomeDto.RealizadoHoje hoje = service.getHome(atletaId).realizadoHoje();
+
+            assertThat(hoje.sensacoes()).containsExactly(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS);
+            assertThat(hoje.feedbackAtleta()).isEqualTo("Difícil no final");
+        }
+
+        @Test
         @DisplayName("sem realizado hoje → realizadoHoje omitido")
         void semRealizadoHoje() {
             when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any())).thenReturn(List.of());
