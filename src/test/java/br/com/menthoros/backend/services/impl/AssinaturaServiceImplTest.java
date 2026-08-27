@@ -229,6 +229,21 @@ class AssinaturaServiceImplTest {
         }
 
         @Test
+        @DisplayName("aceita o tier SCALE — plano novo do lançamento do MVP")
+        void atualizaTierParaScale() {
+            Assinatura ativa = assinaturaAtiva("sub_1");
+            when(assessoriaRepository.findById(assessoriaId)).thenReturn(Optional.of(assessoria));
+            when(assinaturaRepository.findByAssessoriaId(assessoriaId)).thenReturn(Optional.of(ativa));
+            when(assinaturaMapper.toOutputDto(any(), eq(PlanoAssessoria.SCALE))).thenReturn(outputStub);
+
+            service.atualizarTier(assessoriaId, new AssinaturaTierInputDto(PlanoAssessoria.SCALE, new BigDecimal("599.00")));
+
+            assertThat(assessoria.getPlano()).isEqualTo(PlanoAssessoria.SCALE);
+            assertThat(ativa.getValor()).isEqualByComparingTo("599.00");
+            verify(asaasGateway).atualizarValor(eq("sub_1"), eq(new BigDecimal("599.00")));
+        }
+
+        @Test
         @DisplayName("Asaas falha depois das escritas locais: exceção propaga (rollback via @Transactional) — CA15")
         void asaasFalhaPropagaParaRollback() {
             Assinatura ativa = assinaturaAtiva("sub_1");

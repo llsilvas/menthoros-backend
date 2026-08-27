@@ -5,6 +5,7 @@ public enum PlanoAssessoria {
     GRATUITO,
     BASIC,
     PRO,
-    ENTERPRISE
+    ENTERPRISE,
+    SCALE
 
 }
