@@ -1222,7 +1222,8 @@ class TreinoPlanejadoServiceTest {
         return new TreinoPlanejadoOutputDto(
                 UUID.randomUUID(), null, null, null, TipoTreino.CONTINUO, null, null, null, null,
                 null, null, null, null, null, null, null, null, null, false,
-                false, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null
+                false, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null,
+                null, null
         );
     }
 
@@ -1230,7 +1231,8 @@ class TreinoPlanejadoServiceTest {
         return new TreinoPlanejadoOutputDto(
                 id, null, null, null, TipoTreino.CONTINUO, null, null, "60:00", 10.0,
                 null, null, null, null, null, null, 55, null, null, editadoPeloCoach,
-                false, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null
+                false, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null,
+                null, null
         );
     }
 }

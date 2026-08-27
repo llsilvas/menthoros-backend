@@ -2,6 +2,7 @@ package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.ReconciliationStatus;
+import br.com.menthoros.backend.enums.Sensacao;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
@@ -19,6 +20,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
@@ -69,6 +71,23 @@ public class TreinoRealizado extends TreinoBase{
 
     @Column(name = "feedback_atleta", length = 1000)
     private String feedbackAtleta;
+
+    // EAGER, de propósito (e ao contrário de diasDisponiveis/etapasRealizadas): TreinoRealizado é
+    // serializado para DTO em caminhos de ingestão (.fit, Strava, intervals.icu) que não garantem
+    // sessão Hibernate aberta — LAZY aqui produz LazyInitializationException fora de transação.
+    // `Set`, não `List`: o EntityGraph que carrega esta coleção junto com `etapasRealizadas` (ver
+    // TreinoRealizadoRepository) não pode fazer join fetch de duas List/bag na mesma query
+    // (MultipleBagFetchException) — e sensação não tem ordem que importe, então Set é o tipo certo,
+    // não um contorno.
+    @ElementCollection(fetch = FetchType.EAGER)
+    @Enumerated(EnumType.STRING)
+    @CollectionTable(name = "tb_treino_realizado_sensacao", joinColumns = @JoinColumn(name = "treino_realizado_id"))
+    @Column(name = "sensacao")
+    private Set<Sensacao> sensacoes;
+
+    /** "Como foi?" completo ⇔ este campo não é nulo — nunca RPE/comentário isolados (D3). */
+    @Column(name = "feedback_registrado_em")
+    private LocalDateTime feedbackRegistradoEm;
 
     @Column(name = "qualidade_sono_noite_anterior")
     private Integer qualidadeSonoNoiteAnterior; // 1-10

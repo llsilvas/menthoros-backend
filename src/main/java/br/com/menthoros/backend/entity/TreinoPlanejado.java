@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.enums.MotivoPulo;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import jakarta.persistence.*;
@@ -60,12 +61,29 @@ public class TreinoPlanejado extends TreinoBase{
     @Column(name = "status_treino", nullable = false)
     private TreinoExecucaoStatus statusTreino = TreinoExecucaoStatus.PENDENTE;
 
+    // "Não vou conseguir hoje": o pulo é PERDIDO + motivo + carimbo, sem status novo (training-loop, D4).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "motivo_pulo", length = 20)
+    private MotivoPulo motivoPulo;
+
+    @Column(name = "pulado_em")
+    private LocalDateTime puladoEm;
+
     @OneToMany(mappedBy = "treinoPlanejado", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @OrderBy("ordem ASC")
     private List<EtapaTreino> etapas;
 
     @OneToOne(mappedBy = "treinoPlanejado", fetch = FetchType.LAZY)
     private TreinoRealizado treinoRealizado;
+
+    /**
+     * Um realizado vinculou este planejado: o pulo deixa de valer. Chamar em todo caminho que leva
+     * o status a REALIZADO — deixar o motivo para trás faria o coach ler um pulo num treino feito.
+     */
+    public void limparPulo() {
+        this.motivoPulo = null;
+        this.puladoEm = null;
+    }
 
     // ===== INTEGRAÇÃO EXTERNA (PARA FUTURO) =====
 

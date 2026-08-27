@@ -119,6 +119,7 @@ public class ReconciliationDecisionExecutor {
             TreinoPlanejado planned = decision.getSelectedPlanned();
             if (planned != null) {
                 planned.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
+                planned.limparPulo();
                 planned.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
                 realizado.setTreinoPlanejado(planned);
                 treinoPlanejadoRepository.save(planned);

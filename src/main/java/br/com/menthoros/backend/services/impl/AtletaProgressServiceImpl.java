@@ -26,6 +26,7 @@ import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
 import br.com.menthoros.backend.services.AtletaProgressService;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.mapper.EtapaMapper;
 import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
@@ -81,6 +82,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     private final CheckinProntidaoRepository checkinProntidaoRepository;
     private final EtapaMapper etapaMapper;
     private final Clock clock;
+    private final AtletaHojeResolver hojeResolver;
 
     /**
      * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
@@ -210,13 +212,22 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     @Override
     @Transactional(readOnly = true)
     public AtletaHomeDto getHome(UUID atletaId) {
-        validarAtletaNoTenant(atletaId);
+        Atleta atleta = validarAtletaNoTenant(atletaId);
 
-        LocalDate hoje = LocalDate.now(clock);
+        // "Hoje" é do atleta: o hero decide o estado do dia por esta data (D2b da training-loop).
+        LocalDate hoje = hojeResolver.hojeDe(atleta);
         AtletaHomeDto.ProximoTreino proximo = treinoPlanejadoRepository
                 .findByAtletaIdAndDataBetween(atletaId, hoje, hoje.plusDays(14))
                 .stream().findFirst()
                 .map(this::toProximoTreino)
+                .orElse(null);
+
+        AtletaHomeDto.RealizadoHoje realizadoHoje = treinoRealizadoRepository
+                .findByAtletaIdAndDataTreino(atletaId, hoje)
+                .stream()
+                .max(Comparator.comparing(TreinoRealizado::getCriadoEm,
+                        Comparator.nullsFirst(Comparator.naturalOrder())))
+                .map(this::toRealizadoHoje)
                 .orElse(null);
 
         AtletaHomeDto.MetricasChave metricas = metricasDiariasRepository.findLatestByAtletaId(atletaId)
@@ -224,7 +235,22 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                         FaixaTsb.classificarNome(m.getTsb())))
                 .orElse(new AtletaHomeDto.MetricasChave(null, null, null, null, null, null));
 
-        return new AtletaHomeDto(proximo, metricas);
+        return new AtletaHomeDto(hoje, proximo, realizadoHoje, metricas);
+    }
+
+    private AtletaHomeDto.RealizadoHoje toRealizadoHoje(TreinoRealizado tr) {
+        Integer duracaoMin = tr.getDuracaoMin() != null && !tr.getDuracaoMin().isZero()
+                ? (int) tr.getDuracaoMin().toMinutes() : null;
+        return new AtletaHomeDto.RealizadoHoje(
+                tr.getId(),
+                tr.getFonteDados() != null ? tr.getFonteDados().name() : null,
+                tr.getTipoTreino() != null ? tr.getTipoTreino().name() : null,
+                duracaoMin,
+                tr.getDistanciaKm(),
+                tr.getPercepcaoEsforco(),
+                tr.getSensacoes() != null ? List.copyOf(tr.getSensacoes()) : null,
+                tr.getFeedbackAtleta(),
+                tr.getFeedbackRegistradoEm());
     }
 
     /**
@@ -250,7 +276,9 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                 tp.getZonaAlvo(),
                 tp.getTssPlanejado(),
                 tp.getIntensidadePlanejada(),
-                etapas);
+                etapas,
+                tp.getStatusTreino() != null ? tp.getStatusTreino().name() : null,
+                tp.getMotivoPulo() != null ? tp.getMotivoPulo().name() : null);
     }
 
     /**

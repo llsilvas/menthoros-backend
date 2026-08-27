@@ -172,6 +172,8 @@ class AtletaTreinoServiceImplTest {
             var input = novoInput(LocalDate.now());
             var treinoSalvo = stubTreinoRealizado();
             var planejado = stubTreinoPlanejado(TreinoExecucaoStatus.PERDIDO);
+            planejado.setMotivoPulo(br.com.menthoros.backend.enums.MotivoPulo.CANSADO);
+            planejado.setPuladoEm(java.time.LocalDateTime.of(2026, 8, 27, 7, 0));
             var outputDto = stubOutputDto();
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
@@ -186,6 +188,9 @@ class AtletaTreinoServiceImplTest {
             service.registrarTreinoManualAtleta(atletaId, input);
 
             assertThat(planejado.getStatusTreino()).isEqualTo(TreinoExecucaoStatus.REALIZADO);
+            // Reversão do pulo: o motivo e o carimbo saem junto com o PERDIDO (training-loop, D4)
+            assertThat(planejado.getMotivoPulo()).isNull();
+            assertThat(planejado.getPuladoEm()).isNull();
             verify(treinoPlanejadoRepository).save(planejado);
         }
 
@@ -452,6 +457,6 @@ class AtletaTreinoServiceImplTest {
                 null, // runningDynamics
                 null, null, null, null, null, null, // decouplingPercentual..nivelEstresse
                 null, null, null, // nivelDor, nivelFadiga, nivelRecuperacao
-                FonteDados.MANUAL, TreinoExecucaoStatus.REALIZADO, null, null, null);
+                FonteDados.MANUAL, TreinoExecucaoStatus.REALIZADO, null, null, null, null, null);
     }
 }

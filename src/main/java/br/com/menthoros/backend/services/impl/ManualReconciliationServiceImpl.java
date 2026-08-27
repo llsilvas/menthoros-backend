@@ -81,6 +81,7 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
 
         // Vincular via relacionamento JPA (não via campo read-only)
         planejado.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
+        planejado.limparPulo();
         planejado.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
         realizado.setTreinoPlanejado(planejado);
         realizado.setReconciliationStatus(ReconciliationStatus.VINCULADO_MANUAL);
