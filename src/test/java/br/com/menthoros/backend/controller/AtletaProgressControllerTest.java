@@ -2,6 +2,7 @@ package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaHomeDto;
+import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
 import br.com.menthoros.backend.dto.output.ProvaOutputDto;
 import br.com.menthoros.backend.dto.output.ReadinessDto;
@@ -126,13 +127,37 @@ class AtletaProgressControllerTest {
     @DisplayName("GET /me/home → 200")
     void home() throws Exception {
         when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
+        UUID bloco = UUID.randomUUID();
         when(service.getHome(atletaId)).thenReturn(new AtletaHomeDto(
-                new AtletaHomeDto.ProximoTreino(LocalDate.now().plusDays(1), "INTERVALADO", "6x800m"),
+                new AtletaHomeDto.ProximoTreino(LocalDate.now().plusDays(1), "INTERVALADO", "6x800m", 45, "Z4", 70, 0.95,
+                        List.of(new EtapaTreinoDto(1, "AQUECIMENTO", "Trote", 10, null, null, null, null, null, null),
+                                new EtapaTreinoDto(2, "ESFORCO", null, 4, null, null, null, null, bloco, 2))),
                 new AtletaHomeDto.MetricasChave(52.0, 44.0, 8.0, 0, null, "FORMA_IDEAL")));
 
         mockMvc.perform(get("/api/v1/atletas/me/home"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.proximoTreino.tipoTreino").value("INTERVALADO"));
+                .andExpect(jsonPath("$.proximoTreino.tipoTreino").value("INTERVALADO"))
+                .andExpect(jsonPath("$.proximoTreino.duracaoMin").value(45))
+                .andExpect(jsonPath("$.proximoTreino.zonaAlvo").value("Z4"))
+                .andExpect(jsonPath("$.proximoTreino.etapas.length()").value(2))
+                .andExpect(jsonPath("$.proximoTreino.etapas[1].blocoId").value(bloco.toString()))
+                .andExpect(jsonPath("$.proximoTreino.etapas[1].blocoRepeticoes").value(2))
+                .andExpect(jsonPath("$.proximoTreino.etapas[0].blocoId").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /me/home → sem etapas nem duração, os campos são omitidos do JSON (não null, não [])")
+    void homeSemEtapasOmiteCampos() throws Exception {
+        when(service.resolverAtletaIdAtual()).thenReturn(atletaId);
+        when(service.getHome(atletaId)).thenReturn(new AtletaHomeDto(
+                new AtletaHomeDto.ProximoTreino(LocalDate.now(), "FACIL", "Trote", null, null, null, null, null),
+                new AtletaHomeDto.MetricasChave(null, null, null, null, null, null)));
+
+        mockMvc.perform(get("/api/v1/atletas/me/home"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.proximoTreino.tipoTreino").value("FACIL"))
+                .andExpect(jsonPath("$.proximoTreino.etapas").doesNotExist())
+                .andExpect(jsonPath("$.proximoTreino.duracaoMin").doesNotExist());
     }
 
     @Test

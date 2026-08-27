@@ -11,6 +11,9 @@ import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
+import org.mapstruct.factory.Mappers;
+import br.com.menthoros.backend.mapper.EtapaMapper;
+import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.NivelProntidao;
@@ -89,7 +92,7 @@ class AtletaProgressServiceImplTest {
         service = new AtletaProgressServiceImpl(
                 atletaRepository, usuarioRepository, metricasDiariasRepository, treinoRealizadoRepository,
                 treinoPlanejadoRepository, planoMetadadosRepository, zonaTreinoService, principalResolver,
-                checkinProntidaoRepository, clock);
+                checkinProntidaoRepository, Mappers.getMapper(EtapaMapper.class), clock);
     }
 
     @AfterEach
@@ -433,6 +436,71 @@ class AtletaProgressServiceImplTest {
             assertThat(home.proximoTreino()).isNotNull();
             assertThat(home.proximoTreino().tipoTreino()).isEqualTo("INTERVALADO");
             assertThat(home.metricasChave().ctl()).isEqualTo(52.0);
+        }
+
+        @Test
+        @DisplayName("expõe etapas (com bloco), duração em minutos inteiros e zona alvo do próximo treino")
+        void comEtapasDuracaoEZona() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            tp.setTipoTreino(TipoTreino.INTERVALADO);
+            tp.setDescricao("2x(4' forte / 2' leve)");
+            tp.setDuracaoMin(Duration.ofMinutes(45));
+            tp.setZonaAlvo("Z4");
+            tp.setTssPlanejado(70);
+            tp.setIntensidadePlanejada(0.95);
+            UUID bloco = UUID.randomUUID();
+            tp.setEtapas(List.of(
+                    EtapaTreino.builder().ordem(1).tipoEtapa("AQUECIMENTO").duracaoMin(10).build(),
+                    EtapaTreino.builder().ordem(2).tipoEtapa("ESFORCO").duracaoMin(4).blocoId(bloco).blocoRepeticoes(2).build(),
+                    EtapaTreino.builder().ordem(3).tipoEtapa("RECUPERACAO").duracaoMin(2).blocoId(bloco).blocoRepeticoes(2).build(),
+                    EtapaTreino.builder().ordem(4).tipoEtapa("ESFORCO").duracaoMin(4).blocoId(bloco).blocoRepeticoes(2).build(),
+                    EtapaTreino.builder().ordem(5).tipoEtapa("RECUPERACAO").duracaoMin(2).blocoId(bloco).blocoRepeticoes(2).build()));
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(tp));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+
+            AtletaHomeDto.ProximoTreino proximo = service.getHome(atletaId).proximoTreino();
+
+            assertThat(proximo.duracaoMin()).isEqualTo(45);
+            assertThat(proximo.zonaAlvo()).isEqualTo("Z4");
+            assertThat(proximo.tssPlanejado()).isEqualTo(70);
+            assertThat(proximo.intensidadePlanejada()).isEqualTo(0.95);
+            assertThat(proximo.etapas()).hasSize(5);
+            assertThat(proximo.etapas().get(1).blocoId()).isEqualTo(bloco);
+            assertThat(proximo.etapas().get(1).blocoRepeticoes()).isEqualTo(2);
+            assertThat(proximo.etapas().get(0).blocoId()).isNull();
+        }
+
+        @Test
+        @DisplayName("Duration.ZERO é a sentinela de 'não prescrita' → duracaoMin omitida, não 0")
+        void duracaoZeroEhAusencia() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            tp.setTipoTreino(TipoTreino.FACIL);
+            tp.setDuracaoMin(Duration.ZERO);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(tp));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+
+            assertThat(service.getHome(atletaId).proximoTreino().duracaoMin()).isNull();
+        }
+
+        @Test
+        @DisplayName("treino sem etapas nem duração → campos omitidos (null), sem lista vazia inventada")
+        void semEtapas() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            tp.setTipoTreino(TipoTreino.FACIL);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(tp));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+
+            AtletaHomeDto.ProximoTreino proximo = service.getHome(atletaId).proximoTreino();
+
+            assertThat(proximo.etapas()).isNull();
+            assertThat(proximo.duracaoMin()).isNull();
+            assertThat(proximo.zonaAlvo()).isNull();
         }
 
         @Test

@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * Resumo "hoje" do atleta: próximo treino planejado + métricas-chave do dia.
@@ -31,7 +32,17 @@ public record AtletaHomeDto(
             String tipoTreino,
 
             @Schema(description = "Descrição/objetivo do treino")
-            String descricao
+            String descricao,
+            @Schema(description = "Duração planejada em minutos inteiros; omitida quando não prescrita", example = "45")
+            Integer duracaoMin,
+            @Schema(description = "Zona alvo declarada no treino; omitida quando ausente", example = "Z2")
+            String zonaAlvo,
+            @Schema(description = "TSS planejado; omitido quando ausente", example = "70")
+            Integer tssPlanejado,
+            @Schema(description = "IF planejado; omitido quando ausente", example = "0.95")
+            Double intensidadePlanejada,
+            @Schema(description = "Etapas do treino (mesmo DTO do detalhe do coach); omitidas quando o treino não tem etapas")
+            List<EtapaTreinoDto> etapas
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
