@@ -1,9 +1,11 @@
 package br.com.menthoros.backend.dto.output;
 
 import br.com.menthoros.backend.enums.ConfiancaInferencia;
+import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.FonteLimiarInferencia;
 import br.com.menthoros.backend.enums.MotivoAtencao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
+import br.com.menthoros.backend.enums.Sensacao;
 import br.com.menthoros.backend.enums.Severidade;
 import br.com.menthoros.backend.enums.StatusSugestao;
 import br.com.menthoros.backend.enums.StatusVencimentoPlano;
@@ -14,6 +16,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -73,7 +76,10 @@ public record AtletaPerfilCoachOutputDto(
         LocalDate dataVencimentoPlano,
 
         @Schema(description = "Status de vencimento derivado (EM_DIA/PROXIMO_VENCIMENTO/VENCIDO); ausente quando dataVencimentoPlano não cadastrada", example = "PROXIMO_VENCIMENTO")
-        StatusVencimentoPlano statusVencimentoPlano
+        StatusVencimentoPlano statusVencimentoPlano,
+
+        @Schema(description = "Treinos realizados dos últimos 7 dias, mais recente primeiro — inclui feedback pós-treino (RPE/sensações/comentário) quando registrado")
+        List<RealizadoRecenteDto> realizadosRecentes
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -94,6 +100,41 @@ public record AtletaPerfilCoachOutputDto(
 
             @Schema(description = "Treinos planejados da semana; lista vazia quando reviewStatus != APROVADO")
             List<TreinoPlanejadoResumoDto> treinos
+    ) {}
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Treino realizado recente, com feedback do atleta quando registrado (athlete-training-loop, D3)")
+    public record RealizadoRecenteDto(
+
+            @Schema(description = "ID do treino realizado")
+            UUID id,
+
+            @Schema(description = "Data do treino")
+            LocalDate dataTreino,
+
+            @Schema(description = "Tipo do treino", example = "INTERVALADO")
+            String tipoTreino,
+
+            @Schema(description = "Origem do registro", example = "INTERVALS_ICU")
+            FonteDados fonteDados,
+
+            @Schema(description = "Duração em minutos inteiros; ausente quando não disponível", example = "50")
+            Integer duracaoMin,
+
+            @Schema(description = "Distância em km; ausente quando não disponível", example = "12.5")
+            Double distanciaKm,
+
+            @Schema(description = "Percepção de esforço (1-10); ausente até o atleta registrar", example = "6")
+            Integer percepcaoEsforco,
+
+            @Schema(description = "Sensações do treino; ausente quando não registradas")
+            List<Sensacao> sensacoes,
+
+            @Schema(description = "Comentário do atleta sobre o treino")
+            String feedbackAtleta,
+
+            @Schema(description = "Quando o feedback foi registrado; ausente = ainda não respondido")
+            LocalDateTime feedbackRegistradoEm
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

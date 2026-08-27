@@ -11,6 +11,7 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
+import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAthleteProfileService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
@@ -47,6 +48,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final ProvaRepository provaRepository;
     private final ProvaMapper provaMapper;
+    private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final IntervalsIcuConnectionService intervalsIcuConnectionService;
     private final ThresholdInferenceService thresholdInferenceService;
 
@@ -111,7 +113,12 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 : atleta.getNome();
 
         List<ProvaOutputDto> provas = buscarProvas(atletaId, tenantId);
-        
+
+        long t7 = System.nanoTime();
+        List<AtletaPerfilCoachOutputDto.RealizadoRecenteDto> realizadosRecentes = buscarLista(
+                "realizadosRecentes", avisos, () -> buscarRealizadosRecentes(atletaId, tenantId));
+        log.debug("[perfil] realizadosRecentes: {}ms", ms(t7));
+
         return new AtletaPerfilCoachOutputDto(
                 atletaId,
                 nome,
@@ -130,8 +137,31 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 limiareisInferidos,
                 atleta.getTipoPlanoAtleta(),
                 atleta.getDataVencimentoPlano(),
-                StatusVencimentoPlano.resolver(atleta.getDataVencimentoPlano(), LocalDate.now())
+                StatusVencimentoPlano.resolver(atleta.getDataVencimentoPlano(), LocalDate.now()),
+                realizadosRecentes
         );
+    }
+
+    /** Últimos 7 dias (hoje inclusive), mais recente primeiro — mesma janela do design.md D3. */
+    private List<AtletaPerfilCoachOutputDto.RealizadoRecenteDto> buscarRealizadosRecentes(UUID atletaId, UUID tenantId) {
+        LocalDate hoje = LocalDate.now();
+        return treinoRealizadoRepository
+                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, hoje.minusDays(6), hoje)
+                .stream()
+                .sorted(Comparator.comparing(TreinoRealizado::getDataTreino).reversed())
+                .map(tr -> new AtletaPerfilCoachOutputDto.RealizadoRecenteDto(
+                        tr.getId(),
+                        tr.getDataTreino(),
+                        tr.getTipoTreino() != null ? tr.getTipoTreino().name() : null,
+                        tr.getFonteDados(),
+                        tr.getDuracaoMin() != null && !tr.getDuracaoMin().isZero()
+                                ? (int) tr.getDuracaoMin().toMinutes() : null,
+                        tr.getDistanciaKm() != null ? tr.getDistanciaKm().doubleValue() : null,
+                        tr.getPercepcaoEsforco(),
+                        tr.getSensacoes() != null ? List.copyOf(tr.getSensacoes()) : null,
+                        tr.getFeedbackAtleta(),
+                        tr.getFeedbackRegistradoEm()))
+                .toList();
     }
 
     private static @Nullable ProvaOutputDto getProximaProva(List<ProvaOutputDto> provas) {
