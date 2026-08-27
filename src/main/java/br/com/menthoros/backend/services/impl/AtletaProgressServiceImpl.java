@@ -238,7 +238,10 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
         List<EtapaTreinoDto> etapas = tp.getEtapas() == null || tp.getEtapas().isEmpty()
                 ? null
                 : etapaMapper.toDtoList(tp.getEtapas());
-        Integer duracaoMin = tp.getDuracaoMin() != null ? (int) tp.getDuracaoMin().toMinutes() : null;
+        // `duracaoMin` é `nullable = false` no modelo e o backend usa `Duration.ZERO` como sentinela de
+        // "não prescrita" (ver `ReconciliationDecisionExecutor`): zero não é duração — é ausência.
+        Integer duracaoMin = tp.getDuracaoMin() != null && !tp.getDuracaoMin().isZero()
+                ? (int) tp.getDuracaoMin().toMinutes() : null;
         return new AtletaHomeDto.ProximoTreino(
                 tp.getDataTreino(),
                 tp.getTipoTreino() != null ? tp.getTipoTreino().name() : null,

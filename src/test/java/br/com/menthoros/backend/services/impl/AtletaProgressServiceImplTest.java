@@ -473,6 +473,20 @@ class AtletaProgressServiceImplTest {
         }
 
         @Test
+        @DisplayName("Duration.ZERO é a sentinela de 'não prescrita' → duracaoMin omitida, não 0")
+        void duracaoZeroEhAusencia() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            tp.setTipoTreino(TipoTreino.FACIL);
+            tp.setDuracaoMin(Duration.ZERO);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(tp));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+
+            assertThat(service.getHome(atletaId).proximoTreino().duracaoMin()).isNull();
+        }
+
+        @Test
         @DisplayName("treino sem etapas nem duração → campos omitidos (null), sem lista vazia inventada")
         void semEtapas() {
             TreinoPlanejado tp = new TreinoPlanejado();
