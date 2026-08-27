@@ -54,7 +54,7 @@ import java.util.UUID;
 @Service
 public class CoachSignupServiceImpl implements CoachSignupService {
 
-    private static final int MAX_ATLETAS_BASIC = 10;
+    private static final int MAX_ATLETAS_BASIC = 20;
     private static final int MAX_TECNICOS_BASIC = 1;
     /**
      * O fundador nasce dono da assessoria, não técnico contratado. {@code PROPRIETARIO} é
