@@ -21,7 +21,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -73,7 +75,8 @@ public class KudosServiceImpl implements KudosService {
     @Transactional(readOnly = true)
     public List<KudosRecenteOutputDto> listarRecentes(UUID atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
-        return kudosRepository.findTop10ByAtletaIdAndTenantIdOrderByCreatedAtDesc(atletaId, tenantId).stream()
+        Instant desde = Instant.now(clock).minus(7, ChronoUnit.DAYS);
+        return kudosRepository.findRecentesByAtletaIdAndTenantId(atletaId, tenantId, desde).stream()
                 .map(kudosMapper::toRecenteOutputDto)
                 .toList();
     }

@@ -31,7 +31,7 @@ public class AtletaKudosController {
     @GetMapping("/me/kudos/recentes")
     @PreAuthorize("hasRole('ATLETA')")
     @Operation(summary = "Últimos kudos recebidos pelo atleta autenticado",
-            description = "Retorna até os 10 kudos mais recentes recebidos pelo atleta, mais recente primeiro.")
+            description = "Retorna os kudos dos últimos 7 dias recebidos pelo atleta, mais recente primeiro.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Lista de kudos (vazia se não houver nenhum)"),
             @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado")

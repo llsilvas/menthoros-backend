@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -21,15 +22,15 @@ public interface KudosRepository extends JpaRepository<Kudos, UUID> {
             UUID atletaId, UUID coachId, MotivoKudos motivo, LocalDate data);
 
     /**
-     * Últimos 10 kudos de um atleta, mais recentes primeiro.
+     * Kudos de um atleta dentro de uma janela de tempo (createdAt >= desde), mais recentes
+     * primeiro. Sem LIMIT — a janela de tempo é o único filtro de "recente".
      * Tenant-aware: YES.
      */
     @Query("""
         SELECT k FROM Kudos k
-        WHERE k.atleta.id = :atletaId AND k.tenantId = :tenantId
+        WHERE k.atleta.id = :atletaId AND k.tenantId = :tenantId AND k.createdAt >= :desde
         ORDER BY k.createdAt DESC
-        LIMIT 10
         """)
-    List<Kudos> findTop10ByAtletaIdAndTenantIdOrderByCreatedAtDesc(
-            @Param("atletaId") UUID atletaId, @Param("tenantId") UUID tenantId);
+    List<Kudos> findRecentesByAtletaIdAndTenantId(
+            @Param("atletaId") UUID atletaId, @Param("tenantId") UUID tenantId, @Param("desde") Instant desde);
 }
