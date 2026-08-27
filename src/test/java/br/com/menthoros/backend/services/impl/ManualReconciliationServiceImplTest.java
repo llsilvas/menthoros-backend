@@ -82,6 +82,26 @@ class ManualReconciliationServiceImplTest {
 
             verify(ingestaoTreinoRealizadoService).reprocessar(treinoRealizadoId, null);
         }
+
+        @Test
+        @DisplayName("vincular a um planejado pulado reverte o pulo (motivo e carimbo saem)")
+        void revertePuloAoVincular() {
+            UUID treinoPlanejadoId = UUID.randomUUID();
+            TreinoPlanejado planejado = new TreinoPlanejado();
+            planejado.setId(treinoPlanejadoId);
+            planejado.setAtleta(atleta);
+            planejado.setStatusTreino(br.com.menthoros.backend.enums.TreinoExecucaoStatus.PERDIDO);
+            planejado.setMotivoPulo(br.com.menthoros.backend.enums.MotivoPulo.SEM_TEMPO);
+            planejado.setPuladoEm(java.time.LocalDateTime.of(2026, 8, 27, 7, 0));
+            when(treinoPlanejadoRepository.findById(treinoPlanejadoId)).thenReturn(Optional.of(planejado));
+
+            service.linkManually(treinoRealizadoId, treinoPlanejadoId, tenantId, "coach-1");
+
+            org.assertj.core.api.Assertions.assertThat(planejado.getStatusTreino())
+                    .isEqualTo(br.com.menthoros.backend.enums.TreinoExecucaoStatus.REALIZADO);
+            org.assertj.core.api.Assertions.assertThat(planejado.getMotivoPulo()).isNull();
+            org.assertj.core.api.Assertions.assertThat(planejado.getPuladoEm()).isNull();
+        }
     }
 
     @Nested

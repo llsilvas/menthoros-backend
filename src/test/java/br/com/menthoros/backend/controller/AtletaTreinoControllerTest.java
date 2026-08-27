@@ -1,13 +1,16 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.output.TreinoHojeDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.enums.MotivoPulo;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.security.JwtTenantFilter;
 import br.com.menthoros.backend.security.StructuredLoggingFilter;
 import br.com.menthoros.backend.services.AtletaProgressService;
+import br.com.menthoros.backend.services.AtletaTreinoHojeService;
 import br.com.menthoros.backend.services.TreinoService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -27,10 +30,12 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -48,6 +53,7 @@ class AtletaTreinoControllerTest {
     @Autowired private MockMvc mockMvc;
     @MockitoBean private TreinoService treinoService;
     @MockitoBean private AtletaProgressService atletaProgressService;
+    @MockitoBean private AtletaTreinoHojeService treinoHojeService;
 
     private final UUID atletaId = UUID.randomUUID();
     private ObjectMapper mapper;
@@ -205,6 +211,96 @@ class AtletaTreinoControllerTest {
             when(treinoService.listarTreinosRecentes(any(), anyInt())).thenReturn(List.of());
             mockMvc.perform(get("/api/v1/atletas/me/treinos").param("dias", "30"))
                     .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/v1/atletas/me/treinos/hoje")
+    class GetTreinoHoje {
+
+        @Test
+        @DisplayName("200 com o treino de hoje, 'hoje' e as etapas com alvo")
+        void retorna200ComTreino() throws Exception {
+            UUID treinoId = UUID.randomUUID();
+            when(treinoHojeService.getTreinoHoje(atletaId)).thenReturn(Optional.of(new TreinoHojeDto(
+                    LocalDate.of(2026, 8, 27), treinoId, "INTERVALADO", "2x(4' forte)", 45, "Z4", 70, "PENDENTE",
+                    null, null,
+                    List.of(new TreinoHojeDto.EtapaAlvoDto(1, "INTERVALADO", "Tiro", 4, null, null, null,
+                            TreinoHojeDto.AlvoPrimario.FC, 145, 151, null, "4:30-4:45")))));
+
+            mockMvc.perform(get("/api/v1/atletas/me/treinos/hoje"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.hoje").value("2026-08-27"))
+                    .andExpect(jsonPath("$.id").value(treinoId.toString()))
+                    .andExpect(jsonPath("$.etapas[0].alvoPrimario").value("FC"))
+                    .andExpect(jsonPath("$.etapas[0].fcAlvoMin").value(145))
+                    .andExpect(jsonPath("$.etapas[0].paceAlvo").doesNotExist())
+                    .andExpect(jsonPath("$.etapas[0].textoSecundario").value("4:30-4:45"));
+        }
+
+        @Test
+        @DisplayName("204 quando não há treino planejado hoje")
+        void retorna204SemTreino() throws Exception {
+            when(treinoHojeService.getTreinoHoje(atletaId)).thenReturn(Optional.empty());
+
+            mockMvc.perform(get("/api/v1/atletas/me/treinos/hoje"))
+                    .andExpect(status().isNoContent());
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/v1/atletas/me/treinos/hoje/pular")
+    class PostPularHoje {
+
+        private TreinoHojeDto pulado(String motivo) {
+            return new TreinoHojeDto(LocalDate.of(2026, 8, 27), UUID.randomUUID(), "FACIL", null, 40, null, null,
+                    "PERDIDO", motivo, java.time.LocalDateTime.of(2026, 8, 27, 7, 0), null);
+        }
+
+        @Test
+        @DisplayName("200 com motivo: devolve o planejado PERDIDO com motivo e carimbo")
+        void pulaComMotivo() throws Exception {
+            when(treinoHojeService.pularHoje(atletaId, MotivoPulo.DOR)).thenReturn(pulado("DOR"));
+
+            mockMvc.perform(post("/api/v1/atletas/me/treinos/hoje/pular")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"motivo\":\"DOR\"}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.statusTreino").value("PERDIDO"))
+                    .andExpect(jsonPath("$.motivoPulo").value("DOR"))
+                    .andExpect(jsonPath("$.puladoEm").exists());
+        }
+
+        @Test
+        @DisplayName("200 sem corpo: motivo é opcional")
+        void pulaSemCorpo() throws Exception {
+            when(treinoHojeService.pularHoje(atletaId, null)).thenReturn(pulado(null));
+
+            mockMvc.perform(post("/api/v1/atletas/me/treinos/hoje/pular"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.motivoPulo").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("400 quando o motivo não está na lista")
+        void motivoInvalido() throws Exception {
+            mockMvc.perform(post("/api/v1/atletas/me/treinos/hoje/pular")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"motivo\":\"PREGUICA\"}"))
+                    .andExpect(status().isBadRequest());
+            verify(treinoHojeService, never()).pularHoje(any(), any());
+        }
+
+        @Test
+        @DisplayName("422 quando não há treino hoje ou já foi realizado")
+        void regraDeNegocio() throws Exception {
+            when(treinoHojeService.pularHoje(any(), any()))
+                    .thenThrow(new DomainRuleViolationException("Não há treino planejado hoje"));
+
+            mockMvc.perform(post("/api/v1/atletas/me/treinos/hoje/pular")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{}"))
+                    .andExpect(status().isUnprocessableEntity());
         }
     }
 

@@ -90,6 +90,26 @@ class ReconciliationDecisionExecutorTest {
         }
 
         @Test
+        @DisplayName("VINCULADO_AUTOMATICO sobre um planejado pulado: reverte o pulo (motivo e carimbo saem)")
+        void vinculadoAutomaticoRevertePulo() {
+            TreinoRealizado realizado = realizadoCompleto();
+            TreinoPlanejado planejado = planejadoCompleto();
+            planejado.setStatusTreino(TreinoExecucaoStatus.PERDIDO);
+            planejado.setMotivoPulo(br.com.menthoros.backend.enums.MotivoPulo.DOR);
+            planejado.setPuladoEm(java.time.LocalDateTime.of(2026, 7, 16, 7, 0));
+            when(matchingScoreCalculator.calculate(realizado, planejado, atleta))
+                    .thenReturn(scoreCompleto(new BigDecimal("0.90")));
+            when(matchingDecisionEngine.decide(any(), any()))
+                    .thenReturn(decisao(ReconciliationStatus.VINCULADO_AUTOMATICO, planejado, "AUTO_MATCH", "0.90"));
+
+            executor.executar(realizado, List.of(planejado), atleta);
+
+            assertThat(planejado.getStatusTreino()).isEqualTo(TreinoExecucaoStatus.REALIZADO);
+            assertThat(planejado.getMotivoPulo()).isNull();
+            assertThat(planejado.getPuladoEm()).isNull();
+        }
+
+        @Test
         @DisplayName("AMBIGUO por faixa (0.50-0.79): registra estado, NÃO mexe no planejado")
         void ambiguoPorFaixaNaoMexeNoPlanejado() {
             TreinoRealizado realizado = realizadoCompleto();

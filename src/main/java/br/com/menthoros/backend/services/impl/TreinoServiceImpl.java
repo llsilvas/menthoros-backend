@@ -592,6 +592,7 @@ public class TreinoServiceImpl implements TreinoService {
 
         matchOpt.ifPresent(planejado -> {
             planejado.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
+            planejado.limparPulo();
             planejado.setTreinoRealizado(treinoSalvo);
             treinoPlanejadoRepository.save(planejado);
             // Reverter PERDIDO -> REALIZADO (registro retroativo) exige recalcular o plano.
