@@ -242,7 +242,7 @@ class TreinoServiceConsistenciaValidatorTest {
                 null, null, null,
                 null, null, null,
                 null, null, null, // nivelDor, nivelFadiga, nivelRecuperacao
-                null, null, null, null, null
+                null, null, null, null, null, null, null
         );
     }
 

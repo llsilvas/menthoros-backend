@@ -44,8 +44,14 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
      * fetch eager, {@code TreinoMapperImpl.toOutputDto} → {@code DecouplingCalculatorService}
      * acessa a coleção lazy e lança {@code LazyInitializationException} sempre que
      * {@code open-in-view=false} (perfil {@code dev}, produção).
+     *
+     * <p>{@code sensacoes} está na lista pelo mesmo motivo, achado no DoR de
+     * {@code athlete-training-loop}: o padrão do Spring Data para {@code @EntityGraph} sem
+     * {@code type} explícito é {@code FETCH} (não {@code LOAD}) — nesse modo, todo atributo
+     * **fora** da lista volta a LAZY na hora da query, mesmo que o mapeamento da entidade diga
+     * EAGER. Marcar {@code sensacoes} como EAGER na entidade não bastou; precisou entrar aqui.
      */
-    @EntityGraph(attributePaths = "etapasRealizadas")
+    @EntityGraph(attributePaths = {"etapasRealizadas", "sensacoes"})
     Optional<TreinoRealizado> findByTenantIdAndFonteDadosAndExternalId(UUID tenantId, FonteDados fonteDados, String externalId);
 
     /**

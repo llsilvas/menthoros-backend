@@ -3,11 +3,13 @@ package br.com.menthoros.backend.dto.output;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.enums.Sensacao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -141,5 +143,13 @@ public record TreinoRealizadoOutputDto(
 
         @Schema(description = "Sugestão de reclassificação do tipo de treino gerada por análise estrutural das etapas (opcional, apenas quando houver divergência detectada)")
         @JsonInclude(JsonInclude.Include.NON_NULL)
-        SugestaoReclassificacaoDto sugestaoReclassificacao
+        SugestaoReclassificacaoDto sugestaoReclassificacao,
+
+        // ===== FEEDBACK PÓS-TREINO (D3, athlete-training-loop) =====
+
+        @Schema(description = "Sensações do treino, lista fechada", example = "[\"PERNAS_PESADAS\"]")
+        List<Sensacao> sensacoes,
+
+        @Schema(description = "Quando o feedback foi registrado; ausente = 'Como foi?' ainda não respondido")
+        LocalDateTime feedbackRegistradoEm
 ) {}

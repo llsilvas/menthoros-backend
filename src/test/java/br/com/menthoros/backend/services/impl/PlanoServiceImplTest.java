@@ -1219,7 +1219,7 @@ class PlanoServiceImplTest {
                 null, // 34 status
                 null, // 35 externalId
                 null, // 36 etapasRealizadas
-                null  // 37 sugestaoReclassificacao
+                null, null, null  // 37 sugestaoReclassificacao + sensacoes, feedbackRegistradoEm
         );
     }
 

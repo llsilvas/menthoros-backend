@@ -1,11 +1,13 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.input.FeedbackTreinoInputDto;
 import br.com.menthoros.backend.dto.input.PularTreinoInputDto;
 import br.com.menthoros.backend.dto.input.TreinoManualInputDto;
 import br.com.menthoros.backend.dto.output.TreinoHojeDto;
 import br.com.menthoros.backend.enums.MotivoPulo;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.services.AtletaProgressService;
+import br.com.menthoros.backend.services.AtletaTreinoFeedbackService;
 import br.com.menthoros.backend.services.AtletaTreinoHojeService;
 import br.com.menthoros.backend.services.TreinoService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -44,6 +47,7 @@ public class AtletaTreinoController {
     private final TreinoService treinoService;
     private final AtletaProgressService atletaProgressService;
     private final AtletaTreinoHojeService treinoHojeService;
+    private final AtletaTreinoFeedbackService treinoFeedbackService;
 
     // @RequireTenant não se aplica: endpoints /me/ resolvem o atletaId do JWT via resolverAtletaIdAtual(),
     // sem receber um resource-ID como parâmetro. Isolamento garantido por TenantContext + queries tenant-scoped.
@@ -105,6 +109,25 @@ public class AtletaTreinoController {
         UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
         MotivoPulo motivo = input != null ? input.motivo() : null;
         return ResponseEntity.ok(treinoHojeService.pularHoje(atletaId, motivo));
+    }
+
+    @PostMapping("/me/realizados/{id}/feedback")
+    @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
+    @Operation(summary = "\"Como foi?\" — feedback pós-treino (RPE, sensações, comentário)",
+            description = "RPE é obrigatório (mesmo campo já usado pelo TSS e pelo readiness); sensações e "
+                    + "comentário são opcionais. Um segundo envio substitui tudo — completude é o carimbo.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Feedback registrado",
+                    content = @Content(schema = @Schema(implementation = TreinoRealizadoOutputDto.class))),
+            @ApiResponse(responseCode = "400", description = "percepcaoEsforco ausente ou fora de 1–10"),
+            @ApiResponse(responseCode = "401", description = "Token ausente ou inválido"),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — apenas atletas podem usar este endpoint"),
+            @ApiResponse(responseCode = "404", description = "Realizado inexistente, de outro atleta ou de outro tenant")
+    })
+    public ResponseEntity<TreinoRealizadoOutputDto> registrarFeedback(
+            @PathVariable UUID id, @Valid @RequestBody FeedbackTreinoInputDto input) {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return ResponseEntity.ok(treinoFeedbackService.registrarFeedback(atletaId, id, input));
     }
 
     @GetMapping("/me/treinos")
