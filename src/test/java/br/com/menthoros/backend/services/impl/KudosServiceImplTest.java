@@ -31,6 +31,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -190,11 +191,14 @@ class KudosServiceImplTest {
     @DisplayName("listarRecentes")
     class ListarRecentes {
 
+        private static final Instant DESDE = Instant.parse("2026-06-17T12:00:00Z")
+                .minus(KudosServiceImpl.JANELA_KUDOS_RECENTES_DIAS, ChronoUnit.DAYS);
+
         @Test
         @DisplayName("retorna os kudos mapeados, mais recente primeiro")
         void retornaKudos() {
             Kudos k1 = Kudos.builder().id(UUID.randomUUID()).motivo(MotivoKudos.CONSISTENCIA).createdAt(Instant.now()).build();
-            when(kudosRepository.findTop10ByAtletaIdAndTenantIdOrderByCreatedAtDesc(atletaId, tenantId))
+            when(kudosRepository.findRecentesByAtletaIdAndTenantId(atletaId, tenantId, DESDE))
                     .thenReturn(List.of(k1));
 
             List<KudosRecenteOutputDto> out = service.listarRecentes(atletaId);
@@ -206,10 +210,21 @@ class KudosServiceImplTest {
         @Test
         @DisplayName("sem kudos retorna lista vazia, não erro")
         void semKudosListaVazia() {
-            when(kudosRepository.findTop10ByAtletaIdAndTenantIdOrderByCreatedAtDesc(atletaId, tenantId))
+            when(kudosRepository.findRecentesByAtletaIdAndTenantId(atletaId, tenantId, DESDE))
                     .thenReturn(List.of());
 
             assertThat(service.listarRecentes(atletaId)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("calcula a janela de 7 dias a partir do clock injetado")
+        void calculaJanelaDeSeteDias() {
+            when(kudosRepository.findRecentesByAtletaIdAndTenantId(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of());
+
+            service.listarRecentes(atletaId);
+
+            verify(kudosRepository).findRecentesByAtletaIdAndTenantId(atletaId, tenantId, DESDE);
         }
     }
 }
