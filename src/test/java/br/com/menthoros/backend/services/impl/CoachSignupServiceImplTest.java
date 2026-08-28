@@ -152,7 +152,7 @@ class CoachSignupServiceImplTest {
             verify(assessoriaRepository, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
             Assessoria a = captor.getAllValues().getFirst();
 
-            assertThat(a.getMaxAtletas()).isEqualTo(10);
+            assertThat(a.getMaxAtletas()).isEqualTo(20);
             assertThat(a.getMaxTecnicos()).isEqualTo(1);
             assertThat(a.getDominio()).isEqualTo("corridasserra");
             assertThat(a.getAtivo()).isTrue();
