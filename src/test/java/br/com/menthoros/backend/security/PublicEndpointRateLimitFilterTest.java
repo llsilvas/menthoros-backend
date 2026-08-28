@@ -15,7 +15,7 @@ class PublicEndpointRateLimitFilterTest {
 
     private static final String PATH = "/api/v1/waitlist";
 
-    private final PublicEndpointRateLimitFilter filter = new PublicEndpointRateLimitFilter(3, 3);
+    private final PublicEndpointRateLimitFilter filter = new PublicEndpointRateLimitFilter(3, 3, 2);
 
     @Test
     void permiteAteOLimiteEBloqueiaAcima() throws Exception {
@@ -80,6 +80,40 @@ class PublicEndpointRateLimitFilterTest {
     void rotaNaoProtegidaPassaDireto() throws Exception {
         assertThat(postEm("/api/v1/atletas", "4.4.4.4").getStatus())
                 .isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
+
+    @Test
+    void limitaOGetDeConsultaDoConvite_queCasaPorPrefixo() throws Exception {
+        for (int i = 0; i < 2; i++) {
+            assertThat(getEm("/api/public/founding-invites/token-" + i, "5.5.5.5").getStatus())
+                    .isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+        }
+        assertThat(getEm("/api/public/founding-invites/token-x", "5.5.5.5").getStatus())
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
+
+    @Test
+    void getEmOutraRotaPublicaPassaDireto() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            assertThat(getEm("/api/public/coach-signups", "6.6.6.6").getStatus())
+                    .isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+        }
+    }
+
+    @Test
+    void postNoPrefixoDoConviteNaoUsaAPoliticaDoGet() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            assertThat(postEm("/api/public/founding-invites/token", "7.7.7.7").getStatus())
+                    .isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+        }
+    }
+
+    private MockHttpServletResponse getEm(String path, String ip) throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
+        request.setRemoteAddr(ip);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, new MockFilterChain());
+        return response;
     }
 
     private MockHttpServletResponse postEm(String path, String ip) throws ServletException, IOException {

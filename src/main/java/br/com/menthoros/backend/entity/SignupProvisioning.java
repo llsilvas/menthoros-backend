@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.entity;
 
+import br.com.menthoros.backend.enums.ProvisioningOrigin;
 import br.com.menthoros.backend.enums.SignupProvisioningStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -81,6 +82,16 @@ public class SignupProvisioning {
 
     @Column(name = "error_detail")
     private String errorDetail;
+
+    /** De onde veio o rastro: cadastro público ou aceite de convite de fundadora. */
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    @Column(name = "origin", nullable = false, length = 30)
+    private ProvisioningOrigin origin = ProvisioningOrigin.PUBLIC_SIGNUP;
+
+    /** Convite que originou a tentativa; sustenta a chave de idempotência por tentativa. */
+    @Column(name = "invite_id")
+    private UUID inviteId;
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
