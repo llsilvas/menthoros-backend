@@ -521,6 +521,32 @@ Standards for new or modified external integrations:
 - **No circuit breaker, by decision (ADR-0008).** Do NOT add Resilience4j or any circuit-breaker library — the re-evaluation trigger is recorded in the ADR. Where calls repeat in bursts (batch processing), stop after N consecutive failures instead: same useful behavior, no new dependency, no thresholds that can mask real errors.
 - **Expose metrics.** Timeouts, retries and call latency surface through the existing Micrometer/Prometheus registry, tagged by route.
 
+## E-mail transacional (desde 2026-08-28)
+
+O backend envia e-mail próprio — antes, todo e-mail saía do Keycloak (verify-email, convite de
+atleta), e o Keycloak continua com os dele. O que motivou: o convite das assessorias fundadoras
+precisa de e-mail **antes** de existir usuário ou organização no Keycloak.
+
+- **Porta única:** `services/email/EmailSender`. Nunca `JavaMailSender` direto num serviço.
+- **Duas implementações, por profile.** `SmtpEmailSender` (Spring Mail sobre o SMTP do Resend,
+  porta 2587/STARTTLS — 465 e 587 são bloqueadas no Railway) em qualquer profile que não seja
+  `local`/`test`/`integration`; `FileEmailSender` (grava `.eml` em `app.email.outbox-dir`, default
+  `target/outbox`) nesses três. **Nunca um sender que loga o corpo:** a mensagem pode carregar um
+  link com segredo, e log agrega e vai para ferramentas externas.
+- **No `cloud`, faltar `SMTP_HOST` derruba o startup** — de propósito (`application-cloud.yml` sem
+  default). Degradar para arquivo/log na nuvem colocaria o link em lugar errado. No `dev` (docker
+  local) há defaults e o envio falha em runtime (502), não no boot.
+- **Config:** credenciais em `spring.mail.*` lidas de `SMTP_*` (mesmos valores das `KC_SMTP_*` do
+  Keycloak, por referência no Railway); remetente e outbox em `app.email.*` (`EmailProperties`).
+- **Templates** em `resources/templates/email/<nome>.html` + `.txt`, renderizados por
+  `EmailTemplateRenderer` (`{{chave}}`, escape de HTML no `.html`, placeholder sem valor é erro). Sem
+  Thymeleaf/Freemarker — a dependência é só o `spring-boot-starter-mail`.
+- **Falha de envio** é `EmailDeliveryException` → 502; a mensagem nunca carrega o corpo. Quem chama
+  decide o que persiste antes/depois do envio (ver `FoundingInviteServiceImpl`: envia **fora** de
+  transação e só então marca `sent_at`).
+- **Segredos em mensagem** (token de convite): `EmailMessage.toString()` é mascarado; testes
+  afirmam que o token não aparece em log (`FileEmailSenderTest`, `FoundingInviteServiceImplTest`).
+
 ## Database and Migration Rules
 
 - All schema changes must go through Flyway (`src/main/resources/db/migration`).
