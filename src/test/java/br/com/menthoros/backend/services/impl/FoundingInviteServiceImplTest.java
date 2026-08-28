@@ -255,6 +255,18 @@ class FoundingInviteServiceImplTest {
         }
 
         @Test
+        @DisplayName("dois convites simultâneos: a UNIQUE parcial decide e quem perdeu recebe 409, sem e-mail")
+        void corridaNoInsert() {
+            stubInscrito(treinadora());
+            when(inviteRepository.save(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException("uk_founding_invite_open"));
+
+            assertThatThrownBy(() -> service.invite(waitlistId, ADMIN))
+                    .isInstanceOf(DomainConflictException.class);
+
+            verifyNoInteractions(emailSender);
+        }
+
+        @Test
         @DisplayName("SMTP recusa → EmailDeliveryException sobe, e o convite fica gravado SEM sentAt")
         void smtpFalha() {
             stubInscrito(treinadora());

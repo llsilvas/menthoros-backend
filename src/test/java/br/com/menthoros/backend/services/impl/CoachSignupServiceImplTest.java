@@ -834,6 +834,58 @@ class CoachSignupServiceImplTest {
         }
 
         @Test
+        @DisplayName("o convite é consumido ANTES de o rastro virar ACTIVE")
+        void consomeAntesDoActive() {
+            stubConviteAtivo();
+            stubProvisionamentoFeliz();
+
+            service.cadastrar(entradaComConvite(), CHAVE, CORR);
+
+            InOrder ordem = inOrder(foundingInviteRepository, provisioningRepository);
+            ordem.verify(foundingInviteRepository).save(convite);
+            ordem.verify(provisioningRepository).save(org.mockito.ArgumentMatchers.argThat(
+                    r -> r.getStatus() == SignupProvisioningStatus.ACTIVE));
+        }
+
+        @Test
+        @DisplayName("falha ao consumir o convite → compensa tudo e o rastro termina FAILED, nunca ACTIVE")
+        void falhaAoConsumirCompensa() {
+            stubConviteAtivo();
+            stubProvisionamentoFeliz();
+            when(foundingInviteRepository.save(any())).thenThrow(new org.springframework.dao.DataIntegrityViolationException("boom"));
+
+            assertThatThrownBy(() -> service.cadastrar(entradaComConvite(), CHAVE, CORR))
+                    .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+            verify(assessoriaRepository).deleteById(assessoriaId);
+            verify(keycloak).removerUsuario(usuarioKeycloakId.toString());
+            assertThat(ultimoRastro().getStatus()).isEqualTo(SignupProvisioningStatus.FAILED);
+        }
+
+        @Test
+        @DisplayName("falha DEPOIS do consumo (ao gravar o ACTIVE) reabre o convite na compensação")
+        void falhaAposConsumoReabre() {
+            stubConviteAtivo();
+            stubAteOrganizacao();
+            when(keycloak.criarUsuario(any())).thenReturn(usuarioKeycloakId.toString());
+            when(usuarioRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+            when(provisioningRepository.save(any())).thenAnswer(i -> {
+                SignupProvisioning r = i.getArgument(0);
+                if (r.getStatus() == SignupProvisioningStatus.ACTIVE) {
+                    throw new org.springframework.dao.DataIntegrityViolationException("boom");
+                }
+                return r;
+            });
+
+            assertThatThrownBy(() -> service.cadastrar(entradaComConvite(), CHAVE, CORR))
+                    .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+            assertThat(convite.getConvertedAt()).isNull();
+            assertThat(convite.getAssessoriaId()).isNull();
+            verify(foundingInviteRepository, org.mockito.Mockito.times(2)).save(convite);
+        }
+
+        @Test
         @DisplayName("os limites anti-abuso por e-mail e teto diário NÃO se aplicam — o token é o portão")
         void semLimites() {
             stubConviteAtivo();

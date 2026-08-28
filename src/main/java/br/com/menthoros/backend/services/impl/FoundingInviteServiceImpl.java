@@ -18,6 +18,7 @@ import br.com.menthoros.backend.services.email.EmailSender;
 import br.com.menthoros.backend.services.email.EmailTemplateRenderer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -96,13 +97,21 @@ public class FoundingInviteServiceImpl implements FoundingInviteService {
         });
 
         InviteToken token = InviteToken.generate();
-        FoundingInvite convite = inviteRepository.save(FoundingInvite.builder()
-                .waitlistId(waitlistId)
-                .tokenHash(token.hash())
-                .email(inscrito.getEmail())
-                .expiresAt(now.plusDays(validityDays))
-                .invitedBy(invitedBy)
-                .build());
+        FoundingInvite convite;
+        try {
+            convite = inviteRepository.save(FoundingInvite.builder()
+                    .waitlistId(waitlistId)
+                    .tokenHash(token.hash())
+                    .email(inscrito.getEmail())
+                    .expiresAt(now.plusDays(validityDays))
+                    .invitedBy(invitedBy)
+                    .build());
+        } catch (DataIntegrityViolationException corrida) {
+            // Dois convites simultâneos para o mesmo inscrito: entre o findOpen e o insert não há
+            // lock, e a UNIQUE parcial decidiu. Quem perdeu recebe 409; nenhum e-mail saiu. Só
+            // funciona porque a classe não é @Transactional (ver JavaDoc).
+            throw new DomainConflictException("Já existe um convite sendo emitido para este inscrito; tente de novo");
+        }
 
         // Fora de qualquer transação e depois do insert: se o SMTP recusar, o convite já existe sem
         // sentAt e a exceção sobe como 502 — o founder reenvia, e o reenvio invalida este.

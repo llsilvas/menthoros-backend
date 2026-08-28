@@ -21,6 +21,15 @@ public record EmailMessage(String to, String subject, String html, String text) 
         if (text == null || text.isBlank()) {
             throw new IllegalArgumentException("Corpo em texto do e-mail é obrigatório");
         }
+        // Cabeçalhos são linhas: CR/LF em destinatário ou assunto é header injection, e nenhum
+        // validador do chamador (@Email, constante) pode ser a única barreira.
+        if (temQuebraDeLinha(to) || temQuebraDeLinha(subject)) {
+            throw new IllegalArgumentException("Destinatário e assunto não podem conter quebra de linha");
+        }
+    }
+
+    private static boolean temQuebraDeLinha(String valor) {
+        return valor.indexOf('\r') >= 0 || valor.indexOf('\n') >= 0;
     }
 
     @Override

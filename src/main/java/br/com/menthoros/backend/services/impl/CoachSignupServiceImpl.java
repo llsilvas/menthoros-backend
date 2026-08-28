@@ -201,11 +201,13 @@ public class CoachSignupServiceImpl implements CoachSignupService {
             } else {
                 resposta = CoachSignupOutputDto.prontoParaEntrar(input.slug(), input.email());
             }
-            avancar(operacao, SignupProvisioningStatus.ACTIVE, op -> op.setResult(serializar(resposta)));
-
+            // Antes do ACTIVE, e na pilha de compensação: se o consumo falhar, o rastro ainda não diz
+            // "concluído" e a compensação desfaz tudo; se o ACTIVE falhar depois, o convite reabre.
             if (modo.porConvite()) {
                 consumirConvite(modo.invite(), assessoria.getId());
+                desfazer.push(() -> reabrirConvite(modo.invite()));
             }
+            avancar(operacao, SignupProvisioningStatus.ACTIVE, op -> op.setResult(serializar(resposta)));
 
             contar(modo.porConvite() ? "sucesso_convite" : "sucesso");
             log.info("Auto-cadastro concluído: tenantId={}, origin={}, correlationId={}",
@@ -276,12 +278,19 @@ public class CoachSignupServiceImpl implements CoachSignupService {
         return invite.getTokenHash() + ":" + (tentativas.size() + 1);
     }
 
-    /** Sucesso é o único momento em que o token deixa de valer. A compensação nunca chega aqui. */
+    /** O convite deixa de valer no último passo antes do ACTIVE; a compensação o reabre. */
     private void consumirConvite(FoundingInvite invite, UUID assessoriaId) {
         invite.setConvertedAt(OffsetDateTime.now());
         invite.setAssessoriaId(assessoriaId);
         foundingInviteRepository.save(invite);
         log.info("Convite de fundadora convertido: inviteId={}", invite.getId());
+    }
+
+    private void reabrirConvite(FoundingInvite invite) {
+        invite.setConvertedAt(null);
+        invite.setAssessoriaId(null);
+        foundingInviteRepository.save(invite);
+        log.info("Convite de fundadora reaberto pela compensação: inviteId={}", invite.getId());
     }
 
     /**
