@@ -145,6 +145,27 @@ app:
     url: ${FRONTEND_URL:http://localhost:5174}
 
   # ----------------------------------------
+  # E-MAIL TRANSACIONAL DO BACKEND
+  # ----------------------------------------
+  # Remetente e outbox. Credenciais SMTP ficam em spring.mail.* (perfis cloud/dev), lidas de
+  # SMTP_* — os mesmos valores das KC_SMTP_* do Keycloak. Em local/test/integration o carteiro
+  # grava .eml no outbox-dir e nao existe SMTP; na nuvem, sem SMTP_HOST o startup falha.
+  email:
+    from: ${SMTP_FROM:nao-responda@menthoros.com}
+    from-name: ${SMTP_FROM_NAME:Menthoros}
+    outbox-dir: ${EMAIL_OUTBOX_DIR:target/outbox}
+
+  # ----------------------------------------
+  # CONVITE DAS ASSESSORIAS FUNDADORAS
+  # ----------------------------------------
+  founding-invite:
+    # Validade do link. Reenvio gera token novo e invalida o anterior.
+    validity-days: ${FOUNDING_INVITE_VALIDITY_DAYS:7}
+    rate-limit:
+      # GET publico de consulta do convite, por IP, no PublicEndpointRateLimitFilter.
+      per-minute: ${FOUNDING_INVITE_LOOKUP_RATE_PER_MINUTE:10}
+
+  # ----------------------------------------
   # AUTO-CADASTRO PÚBLICO DE ASSESSORIA
   # ----------------------------------------
   # Três dimensões contra abuso. Os valores começam BAIXOS de propósito: com volume real

@@ -10,6 +10,7 @@ import br.com.menthoros.backend.exception.LgpdConsentRequiredException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
+import br.com.menthoros.backend.exception.EmailDeliveryException;
 import br.com.menthoros.backend.exception.FitParseException;
 import br.com.menthoros.backend.exception.IntervalsIcuRateLimitException;
 import br.com.menthoros.backend.exception.KeycloakIntegrationException;
@@ -217,6 +218,25 @@ public class GlobalExceptionHandler {
                 "status", 502,
                 "error", "Bad Gateway",
                 "message", "Falha na integração com o servidor de identidade. Tente novamente em alguns instantes."
+        );
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
+    }
+
+    /**
+     * Handler para falhas no envio de e-mail transacional do backend.
+     *
+     * Mapeamento: 502 Bad Gateway
+     * Gerada por: SmtpEmailSender / FileEmailSender (convite de fundadora).
+     *
+     * O provedor de e-mail é externo; a mensagem nunca carrega o corpo do e-mail.
+     */
+    @ExceptionHandler(EmailDeliveryException.class)
+    public ResponseEntity<Map<String, Object>> handleEmailDelivery(EmailDeliveryException ex) {
+        log.error("Falha no envio de e-mail: {}", ex.getMessage(), ex);
+        Map<String, Object> body = Map.of(
+                "status", 502,
+                "error", "Bad Gateway",
+                "message", "Falha ao enviar o e-mail. Tente novamente em alguns instantes."
         );
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
     }
