@@ -529,9 +529,10 @@ precisa de e-mail **antes** de existir usuário ou organização no Keycloak.
 
 - **Porta única:** `services/email/EmailSender`. Nunca `JavaMailSender` direto num serviço.
 - **Duas implementações, por profile.** `SmtpEmailSender` (Spring Mail sobre o SMTP do Resend,
-  porta 2587/STARTTLS — 465 e 587 são bloqueadas no Railway) em qualquer profile que não seja
-  `local`/`test`/`integration`; `FileEmailSender` (grava `.eml` em `app.email.outbox-dir`, default
-  `target/outbox`) nesses três. **Nunca um sender que loga o corpo:** a mensagem pode carregar um
+  porta 2587/STARTTLS — 465 e 587 são bloqueadas no Railway) **só em `cloud` e `dev`**;
+  `FileEmailSender` (grava `.eml` em `app.email.outbox-dir`, default `target/outbox`) em todo o
+  resto — inclusive **sem profile**, que é como os `@SpringBootTest` com H2 sobem (a primeira
+  versão, `!local & !test & !integration`, derrubou 15 desses no CI). **Nunca um sender que loga o corpo:** a mensagem pode carregar um
   link com segredo, e log agrega e vai para ferramentas externas.
 - **No `cloud`, faltar `SMTP_HOST` derruba o startup** — de propósito (`application-cloud.yml` sem
   default). Degradar para arquivo/log na nuvem colocaria o link em lugar errado. No `dev` (docker

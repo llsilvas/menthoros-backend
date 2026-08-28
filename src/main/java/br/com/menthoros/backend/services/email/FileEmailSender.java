@@ -18,12 +18,11 @@ import java.util.UUID;
  * Carteiro de desenvolvimento: grava cada mensagem como {@code .eml} em disco.
  *
  * <p>Em arquivo, <strong>nunca em log</strong>: o corpo pode carregar um link com token de convite,
- * e log agrega, é enviado a ferramentas externas e não tem dono. O bean só existe em
- * {@code local}/{@code test}/{@code integration} — na nuvem não há fallback, e a ausência de SMTP falha o startup.</p>
+ * e log agrega, é enviado a ferramentas externas e não tem dono.  * {@code local}/{@code test}/{@code integration} — na nuvem não há fallback, e a ausência de SMTP falha o startup.</p>
  */
 @Slf4j
 @Service
-@Profile("local | test | integration")
+@Profile("!cloud & !dev")
 public class FileEmailSender implements EmailSender {
 
     private static final DateTimeFormatter CARIMBO = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");

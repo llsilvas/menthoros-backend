@@ -17,13 +17,14 @@ import java.nio.charset.StandardCharsets;
 /**
  * Envio real por SMTP (Resend no Railway, porta 2587/STARTTLS — 465 e 587 são bloqueadas lá).
  *
- * <p>Único {@link EmailSender} fora de {@code local}/{@code test}/{@code integration}. Sem {@code spring.mail.host}
+ * <p>Único {@link EmailSender} em {@code cloud} e {@code dev} — os profiles com SMTP configurado. Em qualquer
+ * outro (inclusive nenhum profile, como nos {@code @SpringBootTest} com H2) o carteiro é o de arquivo. Sem {@code spring.mail.host}
  * o Spring não cria o {@link JavaMailSender}, este bean não sobe e o contexto falha — de
  * propósito: degradar para arquivo ou log na nuvem colocaria links com segredo em lugar errado.</p>
  */
 @Slf4j
 @Service
-@Profile("!local & !test & !integration")
+@Profile("cloud | dev")
 public class SmtpEmailSender implements EmailSender {
 
     private final JavaMailSender mailSender;
