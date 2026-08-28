@@ -53,7 +53,7 @@ class FoundingInviteMigrationTest extends AbstractIntegrationTest {
                 INSERT INTO tb_founding_invite
                     (id, waitlist_id, token_hash, email, expires_at, invalidated_at, converted_at, assessoria_id, invited_by)
                 VALUES (?, ?, ?, ?, NOW() + INTERVAL '7 days', ?, ?, ?, 'admin-sub')
-                """, id, waitlistId, hash, "coach@exemplo.com", invalidatedAt, convertedAt, assessoriaId, "admin-sub");
+                """, id, waitlistId, hash, "coach@exemplo.com", invalidatedAt, convertedAt, assessoriaId);
         return id;
     }
 
