@@ -52,6 +52,13 @@ public record CoachSignupInputDto(
 
         @Schema(description = "Campo honeypot anti-spam — deve vir vazio", hidden = true)
         String website
+,
+
+        @Schema(description = "Token do convite de assessoria fundadora, quando o cadastro vem do link do e-mail. "
+                + "Com ele o cadastro funciona mesmo com o auto-cadastro público desligado.",
+                example = "kJ8…", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+        @Size(max = 64)
+        String inviteToken
 ) {
 
     public static final int TAMANHO_MINIMO_DA_SENHA = 12;
@@ -72,11 +79,22 @@ public record CoachSignupInputDto(
             "signup", "cadastro", "static", "assets", "public", "health", "status", "docs",
             "suporte", "support", "blog", "mail", "keycloak");
 
+    /** Cadastro público, sem convite — mantém os chamadores existentes. */
+    public CoachSignupInputDto(String nome, String email, String senha, String nomeAssessoria, String slug,
+                               String website) {
+        this(nome, email, senha, nomeAssessoria, slug, website, null);
+    }
+
     public CoachSignupInputDto {
         nome = normalizar(nome);
         email = minuscula(normalizar(email));
         nomeAssessoria = normalizar(nomeAssessoria);
         slug = minuscula(normalizar(slug));
+        // Em branco vira null: "sem token" tem uma representação só, e o gate do controller olha null.
+        inviteToken = normalizar(inviteToken);
+        if (inviteToken != null && inviteToken.isBlank()) {
+            inviteToken = null;
+        }
         // `senha` NÃO passa por normalização: recortar bordas mudaria o segredo escolhido.
     }
 

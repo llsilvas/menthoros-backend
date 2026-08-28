@@ -77,6 +77,32 @@ class KeycloakOrganizationGatewayImplSignupTest {
     class CriarUsuario {
 
         @Test
+        @DisplayName("cadastro público: emailVerified false")
+        void emailVerifiedFalseNoCadastroPublico() {
+            esperaToken();
+            server.expect(requestTo(USERS)).andExpect(method(POST))
+                    .andExpect(content().string(containsString("\"emailVerified\":false")))
+                    .andRespond(withStatus(HttpStatus.CREATED).header("Location", USERS + "/" + USER_ID));
+
+            gateway.criarUsuario(novoUsuario());
+            server.verify();
+        }
+
+        @Test
+        @DisplayName("convite de fundadora: emailVerified true e sem VERIFY_EMAIL")
+        void emailVerifiedTrueNoConvite() {
+            esperaToken();
+            server.expect(requestTo(USERS)).andExpect(method(POST))
+                    .andExpect(content().string(containsString("\"emailVerified\":true")))
+                    .andExpect(content().string(org.hamcrest.Matchers.not(containsString("VERIFY_EMAIL"))))
+                    .andRespond(withStatus(HttpStatus.CREATED).header("Location", USERS + "/" + USER_ID));
+            gateway.criarUsuario(new NovoUsuarioKeycloak("maria@exemplo.com", "Maria Treinadora",
+                    "senha-secreta-123", true, List.of(), true));
+
+            server.verify();
+        }
+
+        @Test
         @DisplayName("extrai o id do header Location")
         void extraiIdDaLocation() {
             esperaToken();

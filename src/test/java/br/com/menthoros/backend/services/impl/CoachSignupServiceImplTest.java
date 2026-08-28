@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.input.CoachSignupInputDto;
+import br.com.menthoros.backend.dto.output.CoachSignupOutputDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.SignupProvisioning;
 import br.com.menthoros.backend.entity.Usuario;
@@ -12,6 +13,16 @@ import br.com.menthoros.backend.exception.SignupRateLimitException;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.SignupProvisioningRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
+import br.com.menthoros.backend.services.FoundingInviteService;
+import br.com.menthoros.backend.repository.FoundingInviteRepository;
+import br.com.menthoros.backend.entity.FoundingInvite;
+import br.com.menthoros.backend.enums.PlanoAssessoria;
+import br.com.menthoros.backend.enums.ProvisioningOrigin;
+import br.com.menthoros.backend.exception.DomainConflictException;
+import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import java.time.OffsetDateTime;
+import java.util.List;
 import br.com.menthoros.backend.services.KeycloakOrganizationGateway;
 import br.com.menthoros.backend.services.NovoUsuarioKeycloak;
 import ch.qos.logback.classic.Level;
@@ -55,6 +66,8 @@ class CoachSignupServiceImplTest {
     @Mock private UsuarioRepository usuarioRepository;
     @Mock private SignupProvisioningRepository provisioningRepository;
     @Mock private KeycloakOrganizationGateway keycloak;
+    @Mock private FoundingInviteService foundingInviteService;
+    @Mock private FoundingInviteRepository foundingInviteRepository;
 
     private CoachSignupServiceImpl service;
 
@@ -74,7 +87,8 @@ class CoachSignupServiceImplTest {
         usuarioKeycloakId = UUID.randomUUID();
         meterRegistry = new SimpleMeterRegistry();
         service = new CoachSignupServiceImpl(assessoriaRepository, usuarioRepository,
-                provisioningRepository, keycloak, meterRegistry, LIMITE_POR_EMAIL_DIA, TETO_DIARIO);
+                provisioningRepository, keycloak, foundingInviteService, foundingInviteRepository,
+                meterRegistry, LIMITE_POR_EMAIL_DIA, TETO_DIARIO);
     }
 
     /**
@@ -674,6 +688,262 @@ class CoachSignupServiceImplTest {
                     .isInstanceOf(RuntimeException.class);
 
             assertSemSegredo();
+        }
+    }
+
+    @Nested
+    @DisplayName("Cadastro por convite de fundadora")
+    class CadastrarPorConvite {
+
+        private static final String TOKEN = "tok-convite";
+        private FoundingInvite convite;
+
+        private CoachSignupInputDto entradaComConvite() {
+            return new CoachSignupInputDto("Maria Treinadora", "maria@exemplo.com",
+                    "senha-forte-o-suficiente", "Assessoria Corrida na Serra", "corridasserra", null, TOKEN);
+        }
+
+        private FoundingInvite conviteAtivo() {
+            return FoundingInvite.builder()
+                    .id(UUID.randomUUID())
+                    .waitlistId(UUID.randomUUID())
+                    .tokenHash("hash-do-token")
+                    .email("maria@exemplo.com")
+                    .expiresAt(OffsetDateTime.now().plusDays(5))
+                    .sentAt(OffsetDateTime.now().minusDays(1))
+                    .invitedBy("admin")
+                    .build();
+        }
+
+        /** Espelha o hash do serviço: nome, e-mail, assessoria e slug — sem senha e sem token. */
+        private static String hashDoPayload(CoachSignupInputDto input) {
+            try {
+                var digest = java.security.MessageDigest.getInstance("SHA-256").digest(
+                        String.join("\n", input.nome(), input.email(), input.nomeAssessoria(), input.slug())
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                return java.util.HexFormat.of().formatHex(digest);
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+
+        private void stubConviteAtivo() {
+            convite = conviteAtivo();
+            when(foundingInviteService.findActive(TOKEN)).thenReturn(Optional.of(convite));
+        }
+
+        @Test
+        @DisplayName("token inválido → DomainNotFoundException, nada é criado")
+        void tokenInvalido() {
+            when(foundingInviteService.findActive(TOKEN)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.cadastrar(entradaComConvite(), CHAVE, CORR))
+                    .isInstanceOf(DomainNotFoundException.class);
+
+            verifyNoInteractions(assessoriaRepository, keycloak, usuarioRepository, provisioningRepository);
+        }
+
+        @Test
+        @DisplayName("e-mail do formulário diferente do convidado → 422, nada é criado")
+        void emailDivergente() {
+            convite = conviteAtivo();
+            convite.setEmail("outra@exemplo.com");
+            when(foundingInviteService.findActive(TOKEN)).thenReturn(Optional.of(convite));
+
+            assertThatThrownBy(() -> service.cadastrar(entradaComConvite(), CHAVE, CORR))
+                    .isInstanceOf(DomainRuleViolationException.class);
+
+            verifyNoInteractions(assessoriaRepository, keycloak, usuarioRepository, provisioningRepository);
+        }
+
+        @Test
+        @DisplayName("assessoria nasce GRATUITO 10/1, fundadora, com data de conversão")
+        void assessoriaFundadora() {
+            stubConviteAtivo();
+            stubProvisionamentoFeliz();
+
+            service.cadastrar(entradaComConvite(), CHAVE, CORR);
+
+            var captor = ArgumentCaptor.forClass(Assessoria.class);
+            verify(assessoriaRepository, org.mockito.Mockito.atLeastOnce()).save(captor.capture());
+            Assessoria criada = captor.getAllValues().get(0);
+            assertThat(criada.getPlano()).isEqualTo(PlanoAssessoria.GRATUITO);
+            assertThat(criada.getMaxAtletas()).isEqualTo(10);
+            assertThat(criada.getMaxTecnicos()).isEqualTo(1);
+            assertThat(criada.getFounding()).isTrue();
+            assertThat(criada.getFoundingConvertedAt()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("usuário Keycloak nasce com emailVerified e SEM VERIFY_EMAIL; nenhum e-mail de verificação sai")
+        void usuarioSemVerificacao() {
+            stubConviteAtivo();
+            stubProvisionamentoFeliz();
+
+            service.cadastrar(entradaComConvite(), CHAVE, CORR);
+
+            var captor = ArgumentCaptor.forClass(NovoUsuarioKeycloak.class);
+            verify(keycloak).criarUsuario(captor.capture());
+            assertThat(captor.getValue().emailVerificado()).isTrue();
+            assertThat(captor.getValue().acoesObrigatorias()).isEmpty();
+            assertThat(captor.getValue().habilitado()).isTrue();
+            verify(keycloak, never()).enviarVerificacaoDeEmail(anyString());
+        }
+
+        @Test
+        @DisplayName("usuário local nasce com e-mail verificado e a resposta diz que pode entrar")
+        void usuarioLocalVerificado() {
+            stubConviteAtivo();
+            stubProvisionamentoFeliz();
+
+            var resposta = service.cadastrar(entradaComConvite(), CHAVE, CORR);
+
+            var captor = ArgumentCaptor.forClass(Usuario.class);
+            verify(usuarioRepository).save(captor.capture());
+            assertThat(captor.getValue().getEmailVerificado()).isTrue();
+            assertThat(resposta.proximoPasso()).isEqualTo(CoachSignupOutputDto.PRONTO_PARA_ENTRAR);
+        }
+
+        @Test
+        @DisplayName("rastro leva origin FOUNDING_INVITE, o id do convite e a chave por tentativa — o header é ignorado")
+        void rastroDoConvite() {
+            stubConviteAtivo();
+            stubProvisionamentoFeliz();
+
+            service.cadastrar(entradaComConvite(), "chave-do-header", CORR);
+
+            var rastro = ultimoRastro();
+            assertThat(rastro.getOrigin()).isEqualTo(ProvisioningOrigin.FOUNDING_INVITE);
+            assertThat(rastro.getInviteId()).isEqualTo(convite.getId());
+            assertThat(rastro.getIdempotencyKey()).isEqualTo("hash-do-token:1");
+            assertThat(rastro.getStatus()).isEqualTo(SignupProvisioningStatus.ACTIVE);
+            verify(provisioningRepository, never()).findByIdempotencyKey("chave-do-header");
+        }
+
+        @Test
+        @DisplayName("no sucesso o convite recebe convertedAt e o id da assessoria")
+        void consomeOConvite() {
+            stubConviteAtivo();
+            stubProvisionamentoFeliz();
+
+            service.cadastrar(entradaComConvite(), CHAVE, CORR);
+
+            assertThat(convite.getConvertedAt()).isNotNull();
+            assertThat(convite.getAssessoriaId()).isEqualTo(assessoriaId);
+            verify(foundingInviteRepository).save(convite);
+        }
+
+        @Test
+        @DisplayName("os limites anti-abuso por e-mail e teto diário NÃO se aplicam — o token é o portão")
+        void semLimites() {
+            stubConviteAtivo();
+            stubProvisionamentoFeliz();
+
+            service.cadastrar(entradaComConvite(), CHAVE, CORR);
+
+            verify(provisioningRepository, never()).countByEmailAndCreatedAtAfter(anyString(), any());
+            verify(provisioningRepository, never()).countByCreatedAtAfter(any());
+        }
+
+        @Test
+        @DisplayName("falha no Keycloak → compensa e o convite continua sem convertedAt")
+        void falhaNaoConsomeOConvite() {
+            stubConviteAtivo();
+            stubAteOrganizacao();
+            when(keycloak.criarUsuario(any())).thenThrow(new KeycloakIntegrationException("boom"));
+
+            assertThatThrownBy(() -> service.cadastrar(entradaComConvite(), CHAVE, CORR))
+                    .isInstanceOf(KeycloakIntegrationException.class);
+
+            assertThat(convite.getConvertedAt()).isNull();
+            verify(foundingInviteRepository, never()).save(any());
+            verify(assessoriaRepository).deleteById(assessoriaId);
+            assertThat(ultimoRastro().getStatus()).isEqualTo(SignupProvisioningStatus.FAILED);
+        }
+
+        @Test
+        @DisplayName("depois de um FAILED compensado, a nova tentativa usa a chave :2 e conclui — a :1 não é reusada")
+        void retentativaAposFailed() {
+            stubConviteAtivo();
+            var falhou = SignupProvisioning.builder().idempotencyKey("hash-do-token:1")
+                    .status(SignupProvisioningStatus.FAILED).inviteId(convite.getId()).build();
+            when(provisioningRepository.findByInviteIdOrderByCreatedAtAsc(convite.getId())).thenReturn(List.of(falhou));
+            stubProvisionamentoFeliz();
+
+            service.cadastrar(entradaComConvite(), CHAVE, CORR);
+
+            assertThat(ultimoRastro().getIdempotencyKey()).isEqualTo("hash-do-token:2");
+            assertThat(ultimoRastro().getStatus()).isEqualTo(SignupProvisioningStatus.ACTIVE);
+            verify(provisioningRepository, never()).findByIdempotencyKey("hash-do-token:1");
+        }
+
+        @Test
+        @DisplayName("rastro RECONCILIATION_REQUIRED bloqueia com 409 antes de tocar qualquer coisa")
+        void reconciliacaoBloqueia() {
+            stubConviteAtivo();
+            var residuo = SignupProvisioning.builder().idempotencyKey("hash-do-token:1")
+                    .status(SignupProvisioningStatus.RECONCILIATION_REQUIRED).inviteId(convite.getId()).build();
+            when(provisioningRepository.findByInviteIdOrderByCreatedAtAsc(convite.getId())).thenReturn(List.of(residuo));
+
+            assertThatThrownBy(() -> service.cadastrar(entradaComConvite(), CHAVE, CORR))
+                    .isInstanceOf(DomainConflictException.class);
+
+            verifyNoInteractions(assessoriaRepository, keycloak, usuarioRepository);
+            verify(provisioningRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("tentativa em estado intermediário (duplo clique) → 409")
+        void tentativaEmCurso() {
+            stubConviteAtivo();
+            var emCurso = SignupProvisioning.builder().idempotencyKey("hash-do-token:1")
+                    .status(SignupProvisioningStatus.ORGANIZATION_CREATED).inviteId(convite.getId()).build();
+            when(provisioningRepository.findByInviteIdOrderByCreatedAtAsc(convite.getId())).thenReturn(List.of(emCurso));
+
+            assertThatThrownBy(() -> service.cadastrar(entradaComConvite(), CHAVE, CORR))
+                    .isInstanceOf(DomainConflictException.class);
+
+            verifyNoInteractions(assessoriaRepository, keycloak, usuarioRepository);
+        }
+
+        @Test
+        @DisplayName("rastro ACTIVE já existente → devolve o resultado original sem provisionar de novo")
+        void reenvioAposSucesso() {
+            stubConviteAtivo();
+            var ativo = SignupProvisioning.builder().idempotencyKey("hash-do-token:1")
+                    .status(SignupProvisioningStatus.ACTIVE).inviteId(convite.getId())
+                    .slug("corridasserra").email("maria@exemplo.com")
+                    .requestHash(hashDoPayload(entradaComConvite())).build();
+            when(provisioningRepository.findByInviteIdOrderByCreatedAtAsc(convite.getId())).thenReturn(List.of(ativo));
+            when(provisioningRepository.findByIdempotencyKey("hash-do-token:1")).thenReturn(Optional.of(ativo));
+
+            service.cadastrar(entradaComConvite(), CHAVE, CORR);
+
+            var hashCaptor = ArgumentCaptor.forClass(SignupProvisioning.class);
+            verify(provisioningRepository, never()).save(hashCaptor.capture());
+            verifyNoInteractions(assessoriaRepository, keycloak, usuarioRepository);
+        }
+
+        @Test
+        @DisplayName("o token do convite nunca aparece no rastro nem no log")
+        void tokenNaoVaza() {
+            stubConviteAtivo();
+            stubProvisionamentoFeliz();
+            var appender = new ListAppender<ILoggingEvent>();
+            appender.start();
+            var logger = (Logger) org.slf4j.LoggerFactory.getLogger(CoachSignupServiceImpl.class);
+            logger.addAppender(appender);
+            try {
+                service.cadastrar(entradaComConvite(), CHAVE, CORR);
+            } finally {
+                logger.detachAppender(appender);
+            }
+
+            var rastro = ultimoRastro();
+            assertThat(rastro.getIdempotencyKey()).doesNotContain(TOKEN);
+            assertThat(rastro.getRequestHash()).doesNotContain(TOKEN);
+            String logs = appender.list.stream().map(ILoggingEvent::getFormattedMessage).reduce("", String::concat);
+            assertThat(logs).isNotEmpty().doesNotContain(TOKEN).doesNotContain("senha-forte-o-suficiente");
         }
     }
 }

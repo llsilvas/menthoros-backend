@@ -51,9 +51,10 @@ public class CoachSignupController {
             @ApiResponse(responseCode = "201", description = "Assessoria e coach provisionados; e-mail de verificação enviado"),
             @ApiResponse(responseCode = "400", description = "Dados inválidos"),
             @ApiResponse(responseCode = "409", description = "Identificador ou e-mail já em uso, ou chave de idempotência reusada com outro conteúdo"),
+            @ApiResponse(responseCode = "422", description = "Convite: e-mail do formulário diverge do e-mail convidado"),
             @ApiResponse(responseCode = "429", description = "Limite de cadastros excedido"),
             @ApiResponse(responseCode = "413", description = "Corpo acima do limite"),
-            @ApiResponse(responseCode = "404", description = "Auto-cadastro desligado por feature flag"),
+            @ApiResponse(responseCode = "404", description = "Auto-cadastro desligado por feature flag (sem token de convite), ou token de convite inválido"),
             @ApiResponse(responseCode = "502", description = "Falha na integração com o Keycloak")
     })
     @PostMapping
@@ -72,7 +73,9 @@ public class CoachSignupController {
          * Se um dia a flag for usada como kill switch de algo JÁ lançado, 503 passa a ser a resposta
          * mais honesta — aí é uma linha.
          */
-        if (!properties.isEnabled()) {
+        // Com token de convite o cadastro segue mesmo com a flag desligada: o portão passa a ser o
+        // token, validado no serviço (inválido responde 404 — indistinguível de "cadastro não existe").
+        if (!properties.isEnabled() && dto.inviteToken() == null) {
             return ResponseEntity.notFound().build();
         }
 

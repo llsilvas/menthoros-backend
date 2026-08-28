@@ -151,6 +151,59 @@ class CoachSignupControllerTest {
     }
 
     @Test
+    @DisplayName("com a flag DESLIGADA mas com token de convite, o cadastro segue para o serviço")
+    void flagDesligadaComConvitePassa() throws Exception {
+        properties.setEnabled(false);
+        try {
+            when(coachSignupService.cadastrar(any(), anyString(), anyString()))
+                    .thenReturn(CoachSignupOutputDto.prontoParaEntrar("corridasserra", "maria@exemplo.com"));
+            var corpo = new java.util.HashMap<String, Object>(corpoValido());
+            corpo.put("inviteToken", "tok-convite");
+
+            enviar(corpo)
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.proximoPasso").value(CoachSignupOutputDto.PRONTO_PARA_ENTRAR));
+
+            var captor = org.mockito.ArgumentCaptor.forClass(br.com.menthoros.backend.dto.input.CoachSignupInputDto.class);
+            verify(coachSignupService).cadastrar(captor.capture(), anyString(), anyString());
+            assertThat(captor.getValue().inviteToken()).isEqualTo("tok-convite");
+        } finally {
+            properties.setEnabled(true);
+        }
+    }
+
+    @Test
+    @DisplayName("token de convite inválido responde 404 — indistinguível de cadastro desligado")
+    void conviteInvalidoResponde404() throws Exception {
+        properties.setEnabled(false);
+        try {
+            when(coachSignupService.cadastrar(any(), anyString(), anyString()))
+                    .thenThrow(new br.com.menthoros.backend.exception.DomainNotFoundException("Convite inválido ou expirado"));
+            var corpo = new java.util.HashMap<String, Object>(corpoValido());
+            corpo.put("inviteToken", "tok-invalido");
+
+            enviar(corpo).andExpect(status().isNotFound());
+        } finally {
+            properties.setEnabled(true);
+        }
+    }
+
+    @Test
+    @DisplayName("token em branco conta como ausente: com a flag desligada, 404 sem chamar o serviço")
+    void tokenEmBrancoEhAusente() throws Exception {
+        properties.setEnabled(false);
+        try {
+            var corpo = new java.util.HashMap<String, Object>(corpoValido());
+            corpo.put("inviteToken", "   ");
+
+            enviar(corpo).andExpect(status().isNotFound());
+            org.mockito.Mockito.verifyNoInteractions(coachSignupService);
+        } finally {
+            properties.setEnabled(true);
+        }
+    }
+
+    @Test
     @DisplayName("o default da propriedade é DESLIGADO — o deploy nunca liga sozinho")
     void defaultEhDesligado() {
         assertThat(new CoachSignupProperties().isEnabled()).isFalse();

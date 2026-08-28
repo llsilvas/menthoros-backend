@@ -28,7 +28,15 @@ public record CoachSignupOutputDto(
     public static final String VERIFIQUE_O_EMAIL =
             "Enviamos um e-mail de verificação. Confirme o endereço para poder entrar.";
 
+    public static final String PRONTO_PARA_ENTRAR =
+            "Sua assessoria está pronta. Entre com seu e-mail e a senha que você acabou de criar.";
+
     public static CoachSignupOutputDto de(String slug, String email) {
         return new CoachSignupOutputDto(slug, email, VERIFIQUE_O_EMAIL);
+    }
+
+    /** Convite de fundadora: o e-mail já foi provado pelo token, não há verificação a esperar. */
+    public static CoachSignupOutputDto prontoParaEntrar(String slug, String email) {
+        return new CoachSignupOutputDto(slug, email, PRONTO_PARA_ENTRAR);
     }
 }
