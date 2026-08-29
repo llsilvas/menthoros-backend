@@ -4,6 +4,7 @@ import br.com.menthoros.backend.dto.input.AtletaInputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.Sexo;
 import br.com.menthoros.backend.mapper.AtletaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
@@ -83,7 +84,9 @@ class AtletaServiceTenantTest {
                 false,
                 null,
                 null,
-                null
+                null,
+                "teste@teste.com",
+                Sexo.FEMININO
         );
     }
 

@@ -5,6 +5,7 @@ import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.Sexo;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.FasePeriodizacao;
 import br.com.menthoros.backend.enums.NivelExperiencia;
@@ -215,7 +216,7 @@ final class PlanoPromptArquetipos {
         // sem depender de LocalDate.now() no caminho do PaceHistoricoFormatter.
         return Atleta.builder()
                 .dataNascimento(LocalDate.of(1990, 5, 20))
-                .sexo("M")
+                .sexo(Sexo.MASCULINO)
                 .pesoKg(new BigDecimal("70.0"))
                 .alturaCm(new BigDecimal("175.0"))
                 .diasDisponiveis(diasUteis())

@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.output.AtletaOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.Sexo;
 import br.com.menthoros.backend.enums.StatusVencimentoPlano;
 import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import org.junit.jupiter.api.DisplayName;
@@ -136,22 +137,68 @@ class AtletaMapperTest {
             assertThat(atleta.getNome()).isEqualTo("Atleta Teste");
         }
 
-        private AtletaInputDto inputCom(TipoPlanoAtleta tipoPlanoAtleta, LocalDate dataVencimentoPlano) {
-            return new AtletaInputDto(
-                    "Atleta Teste",
-                    null,
-                    BigDecimal.valueOf(70),
-                    BigDecimal.valueOf(175),
-                    "Correr 10K",
-                    NivelExperiencia.INTERMEDIARIO,
-                    Set.of(DiaSemana.SEGUNDA),
-                    null,
-                    false,
-                    null,
-                    tipoPlanoAtleta,
-                    dataVencimentoPlano
-            );
+    }
+
+    @Nested
+    @DisplayName("dados pessoais — email e sexo (bug: front envia MASCULINO, banco aceitava só M/F/O)")
+    class DadosPessoais {
+
+        @Test
+        @DisplayName("updateEntity copia sexo como enum e email para a entidade")
+        void updateEntityCopiaSexoEEmail() {
+            Atleta atleta = atletaBase().sexo(Sexo.MASCULINO).email("antigo@teste.com").build();
+
+            mapper.updateEntity(inputCom(null, null), atleta);
+
+            assertThat(atleta.getSexo()).isEqualTo(Sexo.FEMININO);
+            assertThat(atleta.getEmail()).isEqualTo("teste@teste.com");
         }
+
+        @Test
+        @DisplayName("toOutputDto expõe sexo e email — sem isso o front reenvia o default a cada edição")
+        void toOutputDtoExpoeSexoEEmail() {
+            Atleta atleta = atletaBase().sexo(Sexo.OUTRO).email("atleta@teste.com").build();
+
+            AtletaOutputDto dto = mapper.toOutputDto(atleta);
+
+            assertThat(dto.sexo()).isEqualTo(Sexo.OUTRO);
+            assertThat(dto.email()).isEqualTo("atleta@teste.com");
+        }
+
+        @Test
+        @DisplayName("sexo e email nulos no input → ficam nulos (atleta legado sem cadastro)")
+        void aceitaNulos() {
+            Atleta atleta = atletaBase().sexo(Sexo.MASCULINO).email("antigo@teste.com").build();
+
+            mapper.updateEntity(inputCom(null, null, null, null), atleta);
+
+            assertThat(atleta.getSexo()).isNull();
+            assertThat(atleta.getEmail()).isNull();
+        }
+    }
+
+    private AtletaInputDto inputCom(TipoPlanoAtleta tipoPlanoAtleta, LocalDate dataVencimentoPlano) {
+        return inputCom(tipoPlanoAtleta, dataVencimentoPlano, "teste@teste.com", Sexo.FEMININO);
+    }
+
+    private AtletaInputDto inputCom(TipoPlanoAtleta tipoPlanoAtleta, LocalDate dataVencimentoPlano,
+                                    String email, Sexo sexo) {
+        return new AtletaInputDto(
+                "Atleta Teste",
+                null,
+                BigDecimal.valueOf(70),
+                BigDecimal.valueOf(175),
+                "Correr 10K",
+                NivelExperiencia.INTERMEDIARIO,
+                Set.of(DiaSemana.SEGUNDA),
+                null,
+                false,
+                null,
+                tipoPlanoAtleta,
+                dataVencimentoPlano,
+                email,
+                sexo
+        );
     }
 
     private Atleta.AtletaBuilder atletaBase() {

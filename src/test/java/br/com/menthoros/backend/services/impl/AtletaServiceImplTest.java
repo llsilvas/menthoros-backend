@@ -7,6 +7,7 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.Sexo;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.mapper.AtletaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -107,7 +108,9 @@ class AtletaServiceImplTest {
                 false,
                 null,
                 null,
-                null
+                null,
+                "teste@teste.com",
+                Sexo.MASCULINO
         );
 
         atletaOutputDto = new AtletaOutputDto(
@@ -125,7 +128,9 @@ class AtletaServiceImplTest {
                 List.of(),
                 null,
                 null,
-                null
+                null,
+                "teste@teste.com",
+                Sexo.MASCULINO
         );
 
         // Setup TenantContext
