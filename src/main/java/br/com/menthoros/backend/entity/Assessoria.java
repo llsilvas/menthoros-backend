@@ -4,6 +4,7 @@ import br.com.menthoros.backend.enums.PlanoAssessoria;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -118,6 +119,18 @@ public class Assessoria {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    // ===== FUNDADORA =====
+    /**
+     * Convertida por convite (change convite-assessorias-fundadoras). Marca do grupo para leitura
+     * posterior; hoje não altera comportamento.
+     */
+    @Builder.Default
+    @Column(name = "founding", nullable = false)
+    private Boolean founding = false;
+
+    @Column(name = "founding_converted_at")
+    private OffsetDateTime foundingConvertedAt;
 
     // ===== FEATURES FLAGS =====
     @Column(name = "feature_ia_avancada")

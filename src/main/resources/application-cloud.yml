@@ -72,3 +72,23 @@ logging:
     "[org.springframework.orm.jpa]": warn
     "[org.springframework.transaction]": warn
     "[com.zaxxer.hikari]": warn
+
+  # ----------------------------------------
+  # SMTP — e-mail transacional do backend (Resend, porta 2587/STARTTLS)
+  #
+  # SEM default em SMTP_HOST de proposito: na nuvem, faltar SMTP deve
+  # derrubar o startup, nao degradar para arquivo/log (o link do convite
+  # carrega um segredo). Valores por referencia as KC_SMTP_* do Keycloak.
+  # ----------------------------------------
+  mail:
+    host: ${SMTP_HOST}
+    port: ${SMTP_PORT:2587}
+    username: ${SMTP_USER}
+    password: ${SMTP_PASSWORD}
+    properties:
+      "[mail.smtp.auth]": true
+      "[mail.smtp.starttls.enable]": ${SMTP_STARTTLS:true}
+      "[mail.smtp.starttls.required]": ${SMTP_STARTTLS:true}
+      "[mail.smtp.connectiontimeout]": 10000
+      "[mail.smtp.timeout]": 10000
+      "[mail.smtp.writetimeout]": 10000

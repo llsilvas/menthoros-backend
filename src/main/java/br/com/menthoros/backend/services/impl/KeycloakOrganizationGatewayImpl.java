@@ -181,7 +181,7 @@ public class KeycloakOrganizationGatewayImpl implements KeycloakOrganizationGate
                 "email", dados.email(),
                 "firstName", dados.nome(),
                 "enabled", dados.habilitado(),
-                "emailVerified", false,
+                "emailVerified", dados.emailVerificado(),
                 "requiredActions", dados.acoesObrigatorias(),
                 // temporary=false: senha temporária forçaria UPDATE_PASSWORD no primeiro login,
                 // logo depois de o usuário tê-la acabado de escolher no formulário.
