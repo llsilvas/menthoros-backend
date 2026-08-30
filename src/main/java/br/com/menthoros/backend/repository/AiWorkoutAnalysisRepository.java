@@ -12,4 +12,7 @@ public interface AiWorkoutAnalysisRepository extends JpaRepository<AnaliseWorkou
     Optional<AnaliseWorkout> findByTreinoRealizadoIdAndTenantId(UUID treinoRealizadoId, UUID tenantId);
 
     boolean existsByTreinoRealizadoIdAndStatus(UUID treinoRealizadoId, AnaliseStatus status);
+
+    /** Flag `analiseAtletaDisponivel` do plano (analise-ia-treino-atleta): uma consulta por plano, não N. */
+    java.util.List<AnaliseWorkout> findByTreinoRealizadoIdInAndTenantId(java.util.Collection<UUID> treinoRealizadoIds, UUID tenantId);
 }

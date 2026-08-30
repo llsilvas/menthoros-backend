@@ -1224,7 +1224,8 @@ class TreinoPlanejadoServiceTest {
                 null, null, null, null, null, null, null, null, null, false,
                 false, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null,
                 null, null
-        );
+        ,
+                false);
     }
 
     private TreinoPlanejadoOutputDto outputStub(UUID id, boolean editadoPeloCoach) {
@@ -1233,6 +1234,7 @@ class TreinoPlanejadoServiceTest {
                 null, null, null, null, null, null, 55, null, null, editadoPeloCoach,
                 false, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null,
                 null, null
-        );
+        ,
+                false);
     }
 }

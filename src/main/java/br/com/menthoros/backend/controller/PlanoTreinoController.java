@@ -4,6 +4,8 @@ import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
+import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.PlanoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -29,6 +31,7 @@ import java.util.UUID;
 public class PlanoTreinoController {
 
     private final PlanoService planoService;
+    private final AtletaProgressService atletaProgressService;
     private final PlanoSemanalMapper planoSemanalMapper;
 
     @PostMapping("/atletas/{atletaId}/gerar")
@@ -88,6 +91,11 @@ public class PlanoTreinoController {
             Authentication authentication) {
         boolean apenasAprovados = authentication.getAuthorities().stream()
                 .anyMatch(a -> "ROLE_ATLETA".equals(a.getAuthority()));
+        // Dono (analise-ia-treino-atleta, Codex #5): com ROLE_ATLETA, o path param precisa ser o
+        // próprio atleta — antes só o tenant filtrava, e um atleta lia o plano de outro.
+        if (apenasAprovados && !atletaProgressService.resolverAtletaIdAtual().equals(id)) {
+            throw new DomainNotFoundException("Plano não encontrado para o atleta: " + id);
+        }
         return ResponseEntity.ok(planoService.buscarPlanoPorAtleta(id, apenasAprovados));
     }
 }

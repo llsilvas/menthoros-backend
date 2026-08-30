@@ -114,6 +114,12 @@ class PlanoServiceImplTest {
     private br.com.menthoros.backend.services.prompt.WeeklyReviewPromptProvider weeklyReviewPromptProvider;
     @Mock
     private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Mock
+    private br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository aiWorkoutAnalysisRepository;
+    // Real: o serviço lê getAthleteMessage().isEnabled() — mock devolveria null.
+    @org.mockito.Spy
+    private br.com.menthoros.backend.config.core.WorkoutAnalysisProperties workoutAnalysisProperties =
+            new br.com.menthoros.backend.config.core.WorkoutAnalysisProperties();
 
     @InjectMocks
     private PlanoServiceImpl planoService;
@@ -1249,6 +1255,91 @@ class PlanoServiceImplTest {
     @Nested
     @DisplayName("buscarPlanoPorAtleta")
     class BuscarPlanoPorAtleta {
+
+        private br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto treinoDto(UUID realizadoId) {
+            return br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto.builder()
+                    .id(UUID.randomUUID())
+                    .treinoRealizadoId(realizadoId)
+                    .build();
+        }
+
+        private br.com.menthoros.backend.entity.AnaliseWorkout analiseComBloco(UUID realizadoId) {
+            var a = new br.com.menthoros.backend.entity.AnaliseWorkout();
+            a.setTreinoRealizadoId(realizadoId);
+            a.setStatus(br.com.menthoros.backend.enums.AnaliseStatus.COMPLETED);
+            a.setAtletaComoFoi("Saiu como planejado.");
+            return a;
+        }
+
+        @Test
+        @DisplayName("marca analiseAtletaDisponivel só no treino com bloco do atleta pronto")
+        void marcaFlagSoNoTreinoAnalisado() {
+            UUID atletaId = UUID.randomUUID();
+            UUID realizadoAnalisado = UUID.randomUUID();
+            UUID realizadoSemAnalise = UUID.randomUUID();
+            PlanoSemanal plano = criarPlanoSemanalMock();
+
+            when(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId)).thenReturn(List.of(plano));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    any(), any(), any(), any())).thenReturn(List.of());
+            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(planoSemanalOutputDtoStub(0.0).toBuilder()
+                    .treinosPlanejados(List.of(
+                            treinoDto(realizadoAnalisado), treinoDto(realizadoSemAnalise), treinoDto(null)))
+                    .build());
+            when(aiWorkoutAnalysisRepository.findByTreinoRealizadoIdInAndTenantId(
+                    List.of(realizadoAnalisado, realizadoSemAnalise), tenantId))
+                    .thenReturn(List.of(analiseComBloco(realizadoAnalisado)));
+
+            PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, false);
+
+            assertEquals(true, resultado.treinosPlanejados().get(0).analiseAtletaDisponivel());
+            assertEquals(false, resultado.treinosPlanejados().get(1).analiseAtletaDisponivel());
+            assertEquals(false, resultado.treinosPlanejados().get(2).analiseAtletaDisponivel());
+        }
+
+        @Test
+        @DisplayName("kill switch desligado: todos os treinos sem flag e nenhuma consulta às análises")
+        void killSwitchDesligadoTodosFalse() {
+            UUID atletaId = UUID.randomUUID();
+            workoutAnalysisProperties.getAthleteMessage().setEnabled(false);
+            PlanoSemanal plano = criarPlanoSemanalMock();
+
+            when(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId)).thenReturn(List.of(plano));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    any(), any(), any(), any())).thenReturn(List.of());
+            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(planoSemanalOutputDtoStub(0.0).toBuilder()
+                    .treinosPlanejados(List.of(treinoDto(UUID.randomUUID())))
+                    .build());
+
+            PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, false);
+
+            assertEquals(false, resultado.treinosPlanejados().get(0).analiseAtletaDisponivel());
+            org.mockito.Mockito.verifyNoInteractions(aiWorkoutAnalysisRepository);
+        }
+
+        @Test
+        @DisplayName("análise FAILED ou sem bloco não liga a flag")
+        void analiseSemBlocoNaoLigaFlag() {
+            UUID atletaId = UUID.randomUUID();
+            UUID realizadoId = UUID.randomUUID();
+            PlanoSemanal plano = criarPlanoSemanalMock();
+
+            var semBloco = analiseComBloco(realizadoId);
+            semBloco.setAtletaComoFoi(null);
+
+            when(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId)).thenReturn(List.of(plano));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    any(), any(), any(), any())).thenReturn(List.of());
+            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(planoSemanalOutputDtoStub(0.0).toBuilder()
+                    .treinosPlanejados(List.of(treinoDto(realizadoId)))
+                    .build());
+            when(aiWorkoutAnalysisRepository.findByTreinoRealizadoIdInAndTenantId(List.of(realizadoId), tenantId))
+                    .thenReturn(List.of(semBloco));
+
+            PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, false);
+
+            assertEquals(false, resultado.treinosPlanejados().get(0).analiseAtletaDisponivel());
+        }
 
         @Test
         @DisplayName("recalcula volumeRealizadoKm somando treinos reais na janela da semana, ignorando o campo persistido")

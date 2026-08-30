@@ -11,6 +11,7 @@ import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.dto.output.PadroesTreino;
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
+import br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.*;
@@ -84,6 +85,8 @@ public class PlanoServiceImpl implements PlanoService {
     private final PlannerShadowService plannerShadowService;
     private final OnboardingService onboardingService;
     private final PlanoReviewService planoReviewService;
+    private final br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository aiWorkoutAnalysisRepository;
+    private final br.com.menthoros.backend.config.core.WorkoutAnalysisProperties workoutAnalysisProperties;
 
     @Value("${onboarding.auto-approve.enabled:true}")
     private boolean autoApproveEnabled;
@@ -865,9 +868,48 @@ public class PlanoServiceImpl implements PlanoService {
         Hibernate.initialize(planoSemanal.getTreinosPlanejados());
         double volumeRealizadoKm = calcularVolumeRealizadoKm(
                 atletaId, tenantId, planoSemanal.getSemanaInicio(), planoSemanal.getSemanaFim());
-        return planoSemanalMapper.toOutputDto(planoSemanal).toBuilder()
+        PlanoSemanalOutputDto dto = planoSemanalMapper.toOutputDto(planoSemanal).toBuilder()
                 .volumeRealizadoKm(volumeRealizadoKm)
                 .build();
+        return dto.toBuilder()
+                .treinosPlanejados(comFlagDeAnalise(dto.treinosPlanejados(), tenantId))
+                .build();
+    }
+
+    /**
+     * Marca quais treinos têm análise pronta PARA O ATLETA (analise-ia-treino-atleta): bloco do
+     * atleta presente ({@code atletaComoFoi != null}), status COMPLETED e kill switch ligado.
+     * Uma consulta por plano ({@code findByTreinoRealizadoIdIn}), nunca N.
+     */
+    private List<TreinoPlanejadoOutputDto> comFlagDeAnalise(List<TreinoPlanejadoOutputDto> treinos, UUID tenantId) {
+        if (treinos == null || treinos.isEmpty()) {
+            return treinos;
+        }
+        if (!workoutAnalysisProperties.getAthleteMessage().isEnabled()) {
+            return treinos; // flag já nasce false no mapper
+        }
+        List<UUID> realizadoIds = treinos.stream()
+                .map(TreinoPlanejadoOutputDto::treinoRealizadoId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        if (realizadoIds.isEmpty()) {
+            return treinos;
+        }
+        java.util.Set<UUID> comAnalise = aiWorkoutAnalysisRepository
+                .findByTreinoRealizadoIdInAndTenantId(realizadoIds, tenantId)
+                .stream()
+                .filter(a -> a.getStatus() == br.com.menthoros.backend.enums.AnaliseStatus.COMPLETED
+                        && a.getAtletaComoFoi() != null)
+                .map(br.com.menthoros.backend.entity.AnaliseWorkout::getTreinoRealizadoId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (comAnalise.isEmpty()) {
+            return treinos;
+        }
+        return treinos.stream()
+                .map(t -> comAnalise.contains(t.treinoRealizadoId())
+                        ? t.toBuilder().analiseAtletaDisponivel(true).build()
+                        : t)
+                .toList();
     }
 
     /**
