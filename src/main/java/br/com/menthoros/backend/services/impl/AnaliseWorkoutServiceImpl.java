@@ -58,7 +58,11 @@ public class AnaliseWorkoutServiceImpl implements AnaliseWorkoutService {
                 a.getTags(),
                 a.getExecutionScore(),
                 a.getRationalePt(),
-                a.getAnalyzedAt()
+                a.getAnalyzedAt(),
+                a.getAtletaReconhecimento(),
+                a.getAtletaComoFoi(),
+                a.getAtletaEsforco(),
+                a.getAtletaProximoTreino()
         );
     }
 }
