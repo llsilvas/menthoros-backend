@@ -6,17 +6,21 @@ import br.com.menthoros.backend.dto.llm.AthleteMessageDto;
 import br.com.menthoros.backend.entity.AnaliseWorkout;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AnaliseStatus;
+import br.com.menthoros.backend.enums.PrimaryAnalysisCause;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
+import br.com.menthoros.backend.services.AthleteMessageClassifier;
 import br.com.menthoros.backend.services.AthleteMessageGenerator;
 import br.com.menthoros.backend.services.AthleteMessageValidator;
 import br.com.menthoros.backend.services.WorkoutAnalysisEligibility;
 import br.com.menthoros.backend.services.WorkoutAnalysisPromptDataBuilder;
 import br.com.menthoros.backend.services.WorkoutAnalysisTranslator;
 import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -54,6 +58,8 @@ public class WorkoutAnalysisListener {
     private final WorkoutAnalysisPromptDataBuilder promptDataBuilder;
     private final AthleteMessageGenerator athleteMessageGenerator;
     private final AthleteMessageValidator athleteMessageValidator;
+    private final AthleteMessageClassifier athleteMessageClassifier;
+    private final MeterRegistry meterRegistry;
 
     private static final String SKILL_PATH = "classpath:skills/analise/workout-analyzer/SKILL.md";
     private String cachedSkillContent;
@@ -127,6 +133,16 @@ public class WorkoutAnalysisListener {
             // chamada 1. Falha vira Optional.empty() dentro do gerador — o COMPLETED do coach
             // nunca depende dela.
             Optional<AthleteMessageDto> bloco = athleteMessageGenerator.gerar(promptData, raw.primaryCause());
+
+            // Métrica de sustentação da cláusula de reversão do gate (product review): quantas
+            // vezes o retorno do atleta nasce remetendo ao coach.
+            if (bloco.isPresent() && raw.primaryCause() != null
+                    && raw.primaryCause() != PrimaryAnalysisCause.NORMAL) {
+                Counter.builder("atleta_analise_remete_coach_total")
+                        .description("Blocos do atleta gerados com primary_cause != NORMAL")
+                        .register(meterRegistry)
+                        .increment();
+            }
 
             applyResult(analise, translated, translationFailed, bloco);
             log.info("Análise concluída: treinoRealizadoId={}, score={}", treinoId, analise.getExecutionScore());
@@ -209,6 +225,14 @@ public class WorkoutAnalysisListener {
             log.warn("Bloco do atleta bloqueado pelo validador ({}): treinoRealizadoId={}",
                     motivo.get(), analise.getTreinoRealizadoId());
             analise.setAtletaBloqueadoMotivo(motivo.get());
+            return;
+        }
+        // Barreira semântica (decisão 0.3): o regex pega jargão, não intenção. Fail-open no
+        // classificador — indisponibilidade do Haiku não derruba a feature.
+        if (athleteMessageClassifier.mandaMudarPlano(dto)) {
+            log.warn("Bloco do atleta bloqueado pelo classificador: treinoRealizadoId={}",
+                    analise.getTreinoRealizadoId());
+            analise.setAtletaBloqueadoMotivo(AthleteMessageClassifier.MOTIVO_CLASSIFICADOR);
             return;
         }
         analise.setAtletaReconhecimento(dto.recognition());

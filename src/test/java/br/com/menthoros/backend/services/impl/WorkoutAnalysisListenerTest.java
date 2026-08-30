@@ -12,12 +12,15 @@ import br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
+import br.com.menthoros.backend.services.AthleteMessageClassifier;
 import br.com.menthoros.backend.services.AthleteMessageGenerator;
 import br.com.menthoros.backend.services.AthleteMessageValidator;
 import br.com.menthoros.backend.services.WorkoutAnalysisEligibility;
 import br.com.menthoros.backend.services.WorkoutAnalysisPromptDataBuilder;
 import br.com.menthoros.backend.services.WorkoutAnalysisTranslator;
 import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +37,7 @@ import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +52,9 @@ class WorkoutAnalysisListenerTest {
     @Mock private PromptTemplateLoader templateLoader;
     @Mock private WorkoutAnalysisPromptDataBuilder promptDataBuilder;
     @Mock private AthleteMessageGenerator athleteMessageGenerator;
+    @Mock private AthleteMessageClassifier athleteMessageClassifier;
+
+    @Spy private MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     @Spy private WorkoutAnalysisProperties workoutAnalysisProperties = new WorkoutAnalysisProperties();
 
@@ -225,6 +232,10 @@ class WorkoutAnalysisListenerTest {
     }
 
     private AnaliseWorkoutRawDto stubCaminhoCompleto() {
+        return stubCaminhoCompleto(PrimaryAnalysisCause.NORMAL);
+    }
+
+    private AnaliseWorkoutRawDto stubCaminhoCompleto(PrimaryAnalysisCause causa) {
         TreinoRealizado treino = new TreinoRealizado();
         treino.setPercepcaoEsforco(7);
 
@@ -238,7 +249,7 @@ class WorkoutAnalysisListenerTest {
         when(templateLoader.loadAndFormat(anyString(), any())).thenReturn("prompt");
 
         AnaliseWorkoutRawDto raw = new AnaliseWorkoutRawDto(
-                "summary", "interpretation", PrimaryAnalysisCause.NORMAL,
+                "summary", "interpretation", causa,
                 "recommendation", null, 8, "rationale");
 
         ChatClient sonnet = mock(ChatClient.class);
@@ -290,6 +301,40 @@ class WorkoutAnalysisListenerTest {
                         && a.getAtletaComoFoi() == null
                         && AthleteMessageValidator.MOTIVO_JARGAO.equals(a.getAtletaBloqueadoMotivo())
                         && "summary".equals(a.getSummaryPt())));
+    }
+
+    @Test
+    void nulifica_bloco_marcado_pelo_classificador() {
+        stubCaminhoCompleto();
+        when(athleteMessageGenerator.gerar(anyString(), any())).thenReturn(Optional.of(blocoValido()));
+        when(athleteMessageClassifier.mandaMudarPlano(any())).thenReturn(true);
+
+        listener.onTreinoRegistrado(event);
+
+        verify(analiseRepository, atLeastOnce()).save(argThat(a ->
+                a.getStatus() == AnaliseStatus.COMPLETED
+                        && a.getAtletaComoFoi() == null
+                        && AthleteMessageClassifier.MOTIVO_CLASSIFICADOR.equals(a.getAtletaBloqueadoMotivo())));
+    }
+
+    @Test
+    void incrementa_contador_quando_causa_nao_normal_e_bloco_gerado() {
+        stubCaminhoCompleto(PrimaryAnalysisCause.ACCUMULATED_FATIGUE);
+        when(athleteMessageGenerator.gerar(anyString(), any())).thenReturn(Optional.of(blocoValido()));
+
+        listener.onTreinoRegistrado(event);
+
+        assertThat(meterRegistry.counter("atleta_analise_remete_coach_total").count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void nao_incrementa_contador_quando_causa_normal() {
+        stubCaminhoCompleto(PrimaryAnalysisCause.NORMAL);
+        when(athleteMessageGenerator.gerar(anyString(), any())).thenReturn(Optional.of(blocoValido()));
+
+        listener.onTreinoRegistrado(event);
+
+        assertThat(meterRegistry.counter("atleta_analise_remete_coach_total").count()).isEqualTo(0.0);
     }
 
     @Test
