@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.config.core.WorkoutAnalysisProperties;
 import br.com.menthoros.backend.dto.llm.AnaliseWorkoutRawDto;
+import br.com.menthoros.backend.dto.llm.AthleteMessageDto;
 import br.com.menthoros.backend.entity.AnaliseWorkout;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AnaliseStatus;
@@ -10,6 +11,8 @@ import br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
+import br.com.menthoros.backend.services.AthleteMessageGenerator;
+import br.com.menthoros.backend.services.AthleteMessageValidator;
 import br.com.menthoros.backend.services.WorkoutAnalysisEligibility;
 import br.com.menthoros.backend.services.WorkoutAnalysisPromptDataBuilder;
 import br.com.menthoros.backend.services.WorkoutAnalysisTranslator;
@@ -29,6 +32,7 @@ import jakarta.annotation.PostConstruct;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -48,6 +52,8 @@ public class WorkoutAnalysisListener {
     private final WorkoutAnalysisProperties workoutAnalysisProperties;
     private final WorkoutAnalysisEligibility eligibility;
     private final WorkoutAnalysisPromptDataBuilder promptDataBuilder;
+    private final AthleteMessageGenerator athleteMessageGenerator;
+    private final AthleteMessageValidator athleteMessageValidator;
 
     private static final String SKILL_PATH = "classpath:skills/analise/workout-analyzer/SKILL.md";
     private String cachedSkillContent;
@@ -117,7 +123,12 @@ public class WorkoutAnalysisListener {
                 translationFailed = true;
             }
 
-            applyResult(analise, translated, translationFailed);
+            // Chamada 2 (D2): bloco do atleta em PT-BR, com o primary_cause resultante da
+            // chamada 1. Falha vira Optional.empty() dentro do gerador — o COMPLETED do coach
+            // nunca depende dela.
+            Optional<AthleteMessageDto> bloco = athleteMessageGenerator.gerar(promptData, raw.primaryCause());
+
+            applyResult(analise, translated, translationFailed, bloco);
             log.info("Análise concluída: treinoRealizadoId={}, score={}", treinoId, analise.getExecutionScore());
 
         } catch (Exception e) {
@@ -131,6 +142,11 @@ public class WorkoutAnalysisListener {
             analise.setTags(null);
             analise.setExecutionScore(null);
             analise.setRationalePt(null);
+            analise.setAtletaReconhecimento(null);
+            analise.setAtletaComoFoi(null);
+            analise.setAtletaEsforco(null);
+            analise.setAtletaProximoTreino(null);
+            analise.setAtletaBloqueadoMotivo(null);
             analise.setTranslationFailed(false);
             analise.setErrorMessage(e.getMessage());
             analise.setAnalyzedAt(Instant.now());
@@ -160,7 +176,8 @@ public class WorkoutAnalysisListener {
         }
     }
 
-    private void applyResult(AnaliseWorkout analise, AnaliseWorkoutRawDto dto, boolean translationFailed) {
+    private void applyResult(AnaliseWorkout analise, AnaliseWorkoutRawDto dto, boolean translationFailed,
+                             Optional<AthleteMessageDto> bloco) {
         analise.setStatus(AnaliseStatus.COMPLETED);
         analise.setSummaryPt(dto.summary());
         analise.setTechnicalInterpretationPt(dto.technicalInterpretation());
@@ -170,7 +187,33 @@ public class WorkoutAnalysisListener {
         analise.setExecutionScore(dto.executionScore());
         analise.setRationalePt(dto.rationale());
         analise.setTranslationFailed(translationFailed);
+        aplicarBlocoAtleta(analise, bloco);
         analise.setAnalyzedAt(Instant.now());
         analiseRepository.save(analise);
+    }
+
+    /** Bloco ausente/incompleto → campos nulos sem motivo; bloqueado pelo validador → nulos com motivo. */
+    private void aplicarBlocoAtleta(AnaliseWorkout analise, Optional<AthleteMessageDto> bloco) {
+        analise.setAtletaReconhecimento(null);
+        analise.setAtletaComoFoi(null);
+        analise.setAtletaEsforco(null);
+        analise.setAtletaProximoTreino(null);
+        analise.setAtletaBloqueadoMotivo(null);
+
+        if (bloco.isEmpty() || !athleteMessageValidator.completo(bloco.get())) {
+            return;
+        }
+        AthleteMessageDto dto = bloco.get();
+        Optional<String> motivo = athleteMessageValidator.validar(dto);
+        if (motivo.isPresent()) {
+            log.warn("Bloco do atleta bloqueado pelo validador ({}): treinoRealizadoId={}",
+                    motivo.get(), analise.getTreinoRealizadoId());
+            analise.setAtletaBloqueadoMotivo(motivo.get());
+            return;
+        }
+        analise.setAtletaReconhecimento(dto.recognition());
+        analise.setAtletaComoFoi(dto.howItWent());
+        analise.setAtletaEsforco(dto.effortReading());
+        analise.setAtletaProximoTreino(dto.nextWorkoutTip());
     }
 }
