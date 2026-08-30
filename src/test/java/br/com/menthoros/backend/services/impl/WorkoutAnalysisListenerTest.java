@@ -6,12 +6,12 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AnaliseStatus;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository;
-import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.routing.ModelRouter;
+import br.com.menthoros.backend.services.WorkoutAnalysisEligibility;
+import br.com.menthoros.backend.services.WorkoutAnalysisPromptDataBuilder;
 import br.com.menthoros.backend.services.WorkoutAnalysisTranslator;
 import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,15 +34,17 @@ import static org.mockito.Mockito.*;
 class WorkoutAnalysisListenerTest {
 
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
-    @Mock private PlanoMetadadosRepository planoMetadadosRepository;
     @Mock private AiWorkoutAnalysisRepository analiseRepository;
     @Mock private ModelRouter modelRouter;
     @Mock private WorkoutAnalysisTranslator translator;
     @Mock private ResourceLoader resourceLoader;
     @Mock private PromptTemplateLoader templateLoader;
-    @Mock private ObjectMapper objectMapper;
+    @Mock private WorkoutAnalysisPromptDataBuilder promptDataBuilder;
 
     @Spy private WorkoutAnalysisProperties workoutAnalysisProperties = new WorkoutAnalysisProperties();
+
+    // Real, não mock: os testes de guard (sem RPE, idade) exercitam a regra de verdade.
+    @Spy private WorkoutAnalysisEligibility eligibility = new WorkoutAnalysisEligibility(workoutAnalysisProperties);
 
     @InjectMocks
     private WorkoutAnalysisListener listener;
