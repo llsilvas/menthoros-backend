@@ -4,6 +4,7 @@ import br.com.menthoros.backend.domain.audit.AuditableEntity;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.Sexo;
 import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import jakarta.persistence.*;
 import lombok.*;
@@ -42,8 +43,9 @@ public class Atleta extends AuditableEntity {
     @Column(name = "email", nullable = true, unique = true)
     private String email;
 
-    @Column(name = "sexo", nullable = true)
-    private String sexo;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sexo", nullable = true, length = 20)
+    private Sexo sexo;
 
     @Column(name = "peso_kg", precision = 5, scale = 2)
     private BigDecimal pesoKg;
