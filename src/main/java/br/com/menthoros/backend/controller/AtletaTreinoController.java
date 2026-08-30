@@ -9,6 +9,8 @@ import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.AtletaTreinoFeedbackService;
 import br.com.menthoros.backend.services.AtletaTreinoHojeService;
+import br.com.menthoros.backend.services.AtletaWorkoutAnalysisService;
+import br.com.menthoros.backend.dto.output.AthleteWorkoutAnalysisOutputDto;
 import br.com.menthoros.backend.services.TreinoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -48,6 +50,7 @@ public class AtletaTreinoController {
     private final AtletaProgressService atletaProgressService;
     private final AtletaTreinoHojeService treinoHojeService;
     private final AtletaTreinoFeedbackService treinoFeedbackService;
+    private final AtletaWorkoutAnalysisService atletaWorkoutAnalysisService;
 
     // @RequireTenant não se aplica: endpoints /me/ resolvem o atletaId do JWT via resolverAtletaIdAtual(),
     // sem receber um resource-ID como parâmetro. Isolamento garantido por TenantContext + queries tenant-scoped.
@@ -128,6 +131,27 @@ public class AtletaTreinoController {
             @PathVariable UUID id, @Valid @RequestBody FeedbackTreinoInputDto input) {
         UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
         return ResponseEntity.ok(treinoFeedbackService.registrarFeedback(atletaId, id, input));
+    }
+
+    @GetMapping("/me/realizados/{id}/analise")
+    @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
+    @Operation(summary = "Análise pós-treino em linguagem de atleta",
+            description = "Devolve o bloco do atleta da análise por IA. 200 PENDING vale por elegibilidade "
+                    + "(RPE presente e treino dentro da janela de análise), mesmo antes de o processamento "
+                    + "assíncrono criar a linha — logo após o registro. Nunca expõe os campos técnicos do coach.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Análise pronta (COMPLETED) ou em andamento (PENDING)",
+                    content = @Content(schema = @Schema(implementation = AthleteWorkoutAnalysisOutputDto.class))),
+            @ApiResponse(responseCode = "204", description = "Sem análise para mostrar — treino não elegível, análise falhou, bloco indisponível ou recurso desligado"),
+            @ApiResponse(responseCode = "401", description = "Token ausente ou inválido"),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — apenas atletas podem usar este endpoint"),
+            @ApiResponse(responseCode = "404", description = "Realizado inexistente, de outro atleta ou de outro tenant")
+    })
+    public ResponseEntity<AthleteWorkoutAnalysisOutputDto> buscarAnaliseDoRealizado(@PathVariable UUID id) {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return atletaWorkoutAnalysisService.buscarAnalise(atletaId, id)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @GetMapping("/me/treinos")
