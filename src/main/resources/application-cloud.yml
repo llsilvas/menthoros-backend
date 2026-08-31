@@ -59,20 +59,6 @@ spring:
         jwt:
           issuer-uri: ${KEYCLOAK_ISSUER_URI:https://auth.menthoros.com/realms/menthoros}
           jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:https://auth.menthoros.com/realms/menthoros/protocol/openid-connect/certs}
-
-# ========================================
-# LOGGING
-# ========================================
-logging:
-  level:
-    root: warn
-    "[org.hibernate.SQL]": off
-    "[org.hibernate.type.descriptor.sql.BasicBinder]": off
-    "[org.hibernate.orm.jdbc.bind]": off
-    "[org.springframework.orm.jpa]": warn
-    "[org.springframework.transaction]": warn
-    "[com.zaxxer.hikari]": warn
-
   # ----------------------------------------
   # SMTP — e-mail transacional do backend (Resend, porta 2587/STARTTLS)
   #
@@ -92,3 +78,16 @@ logging:
       "[mail.smtp.connectiontimeout]": 10000
       "[mail.smtp.timeout]": 10000
       "[mail.smtp.writetimeout]": 10000
+
+# ========================================
+# LOGGING
+# ========================================
+logging:
+  level:
+    root: warn
+    "[org.hibernate.SQL]": off
+    "[org.hibernate.type.descriptor.sql.BasicBinder]": off
+    "[org.hibernate.orm.jdbc.bind]": off
+    "[org.springframework.orm.jpa]": warn
+    "[org.springframework.transaction]": warn
+    "[com.zaxxer.hikari]": warn
