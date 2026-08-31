@@ -87,8 +87,12 @@ public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisSe
         if (analise.getAtletaPrimeiraVisualizacaoEm() != null) {
             return;
         }
-        analise.setAtletaPrimeiraVisualizacaoEm(Instant.now(clock));
-        analiseRepository.save(analise);
+        // Update condicional atômico (QA/Codex): só quem transiciona null → agora conta.
+        Instant agora = Instant.now(clock);
+        if (analiseRepository.marcarPrimeiraVisualizacao(analise.getId(), agora) != 1) {
+            return;
+        }
+        analise.setAtletaPrimeiraVisualizacaoEm(agora);
         Counter.builder("atleta_analise_visualizada_total")
                 .description("Análises pós-treino abertas pelo atleta (primeira visualização por análise)")
                 .register(meterRegistry)

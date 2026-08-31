@@ -20,8 +20,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -34,10 +32,11 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 @DisplayName("AtletaWorkoutAnalysisServiceImpl")
 class AtletaWorkoutAnalysisServiceImplTest {
 
@@ -86,6 +85,7 @@ class AtletaWorkoutAnalysisServiceImplTest {
 
     private AnaliseWorkout completa() {
         AnaliseWorkout a = new AnaliseWorkout();
+        a.setId(UUID.randomUUID());
         a.setTreinoRealizadoId(treinoId);
         a.setTenantId(tenantId);
         a.setStatus(AnaliseStatus.COMPLETED);
@@ -109,6 +109,7 @@ class AtletaWorkoutAnalysisServiceImplTest {
         AnaliseWorkout analise = completa();
         when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
                 .thenReturn(Optional.of(analise));
+        when(analiseRepository.marcarPrimeiraVisualizacao(eq(analise.getId()), any())).thenReturn(1);
 
         Optional<AthleteWorkoutAnalysisOutputDto> result = service.buscarAnalise(atletaId, treinoId);
 
@@ -136,6 +137,19 @@ class AtletaWorkoutAnalysisServiceImplTest {
         service.buscarAnalise(atletaId, treinoId);
 
         assertThat(analise.getAtletaPrimeiraVisualizacaoEm()).isEqualTo(primeira);
+        assertThat(meterRegistry.counter("atleta_analise_visualizada_total").count()).isEqualTo(0.0);
+    }
+
+    @Test
+    @DisplayName("corrida: outra requisição carimbou primeiro (0 linhas) — métrica não conta duas vezes")
+    void corridaNoCarimboNaoContaDuasVezes() {
+        realizado();
+        AnaliseWorkout analise = completa();
+        when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
+                .thenReturn(Optional.of(analise));
+        when(analiseRepository.marcarPrimeiraVisualizacao(eq(analise.getId()), any())).thenReturn(0);
+
+        assertThat(service.buscarAnalise(atletaId, treinoId)).isPresent();
         assertThat(meterRegistry.counter("atleta_analise_visualizada_total").count()).isEqualTo(0.0);
     }
 
@@ -214,8 +228,7 @@ class AtletaWorkoutAnalysisServiceImplTest {
     void killSwitchDesligadoEh204() {
         realizado();
         properties.getAthleteMessage().setEnabled(false);
-        when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
-                .thenReturn(Optional.of(completa()));
+        // Sem stub de análise de propósito: com o switch desligado o serviço nem consulta.
 
         assertThat(service.buscarAnalise(atletaId, treinoId)).isEmpty();
     }

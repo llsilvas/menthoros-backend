@@ -89,7 +89,9 @@ public class WorkoutAnalysisListener {
             return;
         }
 
-        TreinoRealizado treino = treinoRealizadoRepository.findById(treinoId).orElse(null);
+        // Tenant amarrado ao carregamento (QA/security): o evento traz treinoId e tenantId
+        // separados — divergência entre eles não pode virar análise gravada no tenant errado.
+        TreinoRealizado treino = treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId).orElse(null);
         if (treino == null) {
             log.warn("TreinoRealizado não encontrado: {}", treinoId);
             return;
@@ -158,11 +160,7 @@ public class WorkoutAnalysisListener {
             analise.setTags(null);
             analise.setExecutionScore(null);
             analise.setRationalePt(null);
-            analise.setAtletaReconhecimento(null);
-            analise.setAtletaComoFoi(null);
-            analise.setAtletaEsforco(null);
-            analise.setAtletaProximoTreino(null);
-            analise.setAtletaBloqueadoMotivo(null);
+            limparBlocoAtleta(analise);
             analise.setTranslationFailed(false);
             analise.setErrorMessage(e.getMessage());
             analise.setAnalyzedAt(Instant.now());
@@ -208,13 +206,18 @@ public class WorkoutAnalysisListener {
         analiseRepository.save(analise);
     }
 
-    /** Bloco ausente/incompleto → campos nulos sem motivo; bloqueado pelo validador → nulos com motivo. */
-    private void aplicarBlocoAtleta(AnaliseWorkout analise, Optional<AthleteMessageDto> bloco) {
+    /** Um só lugar zera o bloco (QA): FAILED e bloqueio não podem divergir num campo futuro. */
+    private void limparBlocoAtleta(AnaliseWorkout analise) {
         analise.setAtletaReconhecimento(null);
         analise.setAtletaComoFoi(null);
         analise.setAtletaEsforco(null);
         analise.setAtletaProximoTreino(null);
         analise.setAtletaBloqueadoMotivo(null);
+    }
+
+    /** Bloco ausente/incompleto → campos nulos sem motivo; bloqueado pelo validador → nulos com motivo. */
+    private void aplicarBlocoAtleta(AnaliseWorkout analise, Optional<AthleteMessageDto> bloco) {
+        limparBlocoAtleta(analise);
 
         if (bloco.isEmpty() || !athleteMessageValidator.completo(bloco.get())) {
             return;

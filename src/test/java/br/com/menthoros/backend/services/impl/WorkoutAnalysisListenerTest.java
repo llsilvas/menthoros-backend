@@ -91,7 +91,7 @@ class WorkoutAnalysisListenerTest {
     void skips_analysis_when_treino_not_found() {
         when(analiseRepository.existsByTreinoRealizadoIdAndStatus(treinoId, AnaliseStatus.COMPLETED))
                 .thenReturn(false);
-        when(treinoRealizadoRepository.findById(treinoId)).thenReturn(Optional.empty());
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.empty());
 
         listener.onTreinoRegistrado(event);
 
@@ -105,7 +105,7 @@ class WorkoutAnalysisListenerTest {
 
         when(analiseRepository.existsByTreinoRealizadoIdAndStatus(treinoId, AnaliseStatus.COMPLETED))
                 .thenReturn(false);
-        when(treinoRealizadoRepository.findById(treinoId)).thenReturn(Optional.of(treino));
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
 
         listener.onTreinoRegistrado(event);
 
@@ -121,7 +121,7 @@ class WorkoutAnalysisListenerTest {
 
         when(analiseRepository.existsByTreinoRealizadoIdAndStatus(treinoId, AnaliseStatus.COMPLETED))
                 .thenReturn(false);
-        when(treinoRealizadoRepository.findById(treinoId)).thenReturn(Optional.of(treino));
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
 
         listener.onTreinoRegistrado(event);
 
@@ -141,7 +141,7 @@ class WorkoutAnalysisListenerTest {
 
         when(analiseRepository.existsByTreinoRealizadoIdAndStatus(treinoId, AnaliseStatus.COMPLETED))
                 .thenReturn(false);
-        when(treinoRealizadoRepository.findById(treinoId)).thenReturn(Optional.of(treino));
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
         when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
                 .thenReturn(Optional.empty());
         when(analiseRepository.save(any())).thenReturn(saved);
@@ -164,7 +164,7 @@ class WorkoutAnalysisListenerTest {
 
         when(analiseRepository.existsByTreinoRealizadoIdAndStatus(treinoId, AnaliseStatus.COMPLETED))
                 .thenReturn(false);
-        when(treinoRealizadoRepository.findById(treinoId)).thenReturn(Optional.of(treino));
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
         when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
                 .thenReturn(Optional.empty());
         when(analiseRepository.save(any())).thenReturn(saved);
@@ -185,7 +185,7 @@ class WorkoutAnalysisListenerTest {
 
         when(analiseRepository.existsByTreinoRealizadoIdAndStatus(treinoId, AnaliseStatus.COMPLETED))
                 .thenReturn(false);
-        when(treinoRealizadoRepository.findById(treinoId)).thenReturn(Optional.of(treino));
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
         when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
                 .thenReturn(Optional.empty());
         when(analiseRepository.save(any())).thenReturn(saved);
@@ -210,7 +210,7 @@ class WorkoutAnalysisListenerTest {
 
         when(analiseRepository.existsByTreinoRealizadoIdAndStatus(treinoId, AnaliseStatus.COMPLETED))
                 .thenReturn(false);
-        when(treinoRealizadoRepository.findById(treinoId)).thenReturn(Optional.of(treino));
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
         when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
                 .thenReturn(Optional.empty());
         when(analiseRepository.save(any())).thenReturn(saved);
@@ -241,7 +241,7 @@ class WorkoutAnalysisListenerTest {
 
         when(analiseRepository.existsByTreinoRealizadoIdAndStatus(treinoId, AnaliseStatus.COMPLETED))
                 .thenReturn(false);
-        when(treinoRealizadoRepository.findById(treinoId)).thenReturn(Optional.of(treino));
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(treino));
         when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
                 .thenReturn(Optional.empty());
         when(analiseRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));

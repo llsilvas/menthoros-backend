@@ -13,8 +13,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.mockito.junit.jupiter.MockitoSettings;
-import org.mockito.quality.Strictness;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -25,10 +23,10 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-@MockitoSettings(strictness = Strictness.LENIENT)
 class WorkoutAnalysisPromptDataBuilderTest {
 
     @Mock private PlanoMetadadosRepository planoMetadadosRepository;
@@ -38,7 +36,8 @@ class WorkoutAnalysisPromptDataBuilderTest {
 
     @BeforeEach
     void setUp() {
-        when(planoMetadadosRepository.findByAtletaId(any())).thenReturn(Optional.empty());
+        // lenient pontual: o teste sem atleta não consulta metadados — strict no resto.
+        lenient().when(planoMetadadosRepository.findByAtletaId(any())).thenReturn(Optional.empty());
         builder = new WorkoutAnalysisPromptDataBuilder(planoMetadadosRepository, objectMapper);
     }
 
