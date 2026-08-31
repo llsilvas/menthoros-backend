@@ -13,6 +13,7 @@ import br.com.menthoros.backend.security.StructuredLoggingFilter;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.AtletaTreinoFeedbackService;
 import br.com.menthoros.backend.services.AtletaTreinoHojeService;
+import br.com.menthoros.backend.services.AtletaWorkoutAnalysisService;
 import br.com.menthoros.backend.services.TreinoService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -58,6 +59,7 @@ class AtletaTreinoControllerTest {
     @MockitoBean private AtletaProgressService atletaProgressService;
     @MockitoBean private AtletaTreinoHojeService treinoHojeService;
     @MockitoBean private AtletaTreinoFeedbackService treinoFeedbackService;
+    @MockitoBean private AtletaWorkoutAnalysisService atletaWorkoutAnalysisService;
 
     private final UUID atletaId = UUID.randomUUID();
     private ObjectMapper mapper;
