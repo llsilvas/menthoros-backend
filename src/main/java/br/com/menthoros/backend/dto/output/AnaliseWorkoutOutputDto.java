@@ -44,5 +44,19 @@ public record AnaliseWorkoutOutputDto(
         String rationale,
 
         @Schema(description = "Data/hora em que a análise foi concluída")
-        Instant analyzedAt
+        Instant analyzedAt,
+
+        // ===== O QUE O ATLETA LEU (analise-ia-treino-atleta, D3 — transparência) =====
+
+        @Schema(description = "Bloco do atleta: reconhecimento", nullable = true)
+        String atletaReconhecimento,
+
+        @Schema(description = "Bloco do atleta: como foi", nullable = true)
+        String atletaComoFoi,
+
+        @Schema(description = "Bloco do atleta: leitura do esforço", nullable = true)
+        String atletaEsforco,
+
+        @Schema(description = "Bloco do atleta: dica para o próximo treino", nullable = true)
+        String atletaProximoTreino
 ) {}

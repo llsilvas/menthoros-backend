@@ -145,6 +145,8 @@ public interface TreinoMapper {
     @Mapping(target = "treinoRealizadoId", expression = "java(safeGetTreinoRealizadoId(treinoPlanejado))")
     @Mapping(target = "percepcaoEsforcoRealizado", expression = "java(safeGetPercepcaoEsforcoRealizado(treinoPlanejado))")
     @Mapping(target = "etapas", expression = "java(safeGetEtapas(treinoPlanejado))")
+    // analiseAtletaDisponivel é enriquecido no PlanoServiceImpl (consulta às análises), não aqui.
+    @Mapping(target = "analiseAtletaDisponivel", ignore = true)
     TreinoPlanejadoOutputDto toOutputDto(TreinoPlanejado treinoPlanejado);
 
     // Hibernate.isInitialized é insuficiente para @OneToOne(mappedBy=...) fora de sessão.

@@ -15,6 +15,7 @@ import java.util.UUID;
 
 @Schema(description = "Dados de saída de um treino planejado")
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@lombok.Builder(toBuilder = true)
 public record TreinoPlanejadoOutputDto(
         @Schema(description = "Identificador único do treino planejado", example = "123e4567-e89b-12d3-a456-426614174003")
         UUID id,
@@ -109,5 +110,10 @@ public record TreinoPlanejadoOutputDto(
         MotivoPulo motivoPulo,
 
         @Schema(description = "Quando o atleta pulou (fuso do atleta); ausente quando o PERDIDO veio do encerramento da semana")
-        LocalDateTime puladoEm
+        LocalDateTime puladoEm,
+
+        // ===== ANÁLISE DO ATLETA (analise-ia-treino-atleta) =====
+
+        @Schema(description = "Há análise pós-treino pronta para o atleta neste treino (bloco do atleta disponível e recurso ligado)", example = "false")
+        boolean analiseAtletaDisponivel
 ) {}

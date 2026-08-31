@@ -56,7 +56,7 @@ class AnaliseWorkoutControllerTest {
                 8,
                 "RPE delta 0 indica execução precisa",
                 Instant.now()
-        );
+        , null, null, null, null);
     }
 
     @AfterEach
