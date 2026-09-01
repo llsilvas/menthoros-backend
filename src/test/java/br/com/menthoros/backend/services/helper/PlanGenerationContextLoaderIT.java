@@ -42,9 +42,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * transação.
  */
 @DisplayName("PlanGenerationContextLoader — contexto legível sem transação ativa")
+@org.springframework.test.context.TestPropertySource(properties = "planner-engine.shadow=true")
 class PlanGenerationContextLoaderIT extends AbstractIntegrationTest {
 
     @Autowired private PlanGenerationContextLoader loader;
+    @Autowired private PlannerShadowService plannerShadowService;
+    @Autowired private io.micrometer.core.instrument.MeterRegistry meterRegistry;
     @Autowired private AssessoriaRepository assessoriaRepository;
     @Autowired private AtletaRepository atletaRepository;
     @Autowired private ProvaRepository provaRepository;
@@ -113,5 +116,41 @@ class PlanGenerationContextLoaderIT extends AbstractIntegrationTest {
         assertThat(ctx.proximaProva().getNomeProva()).isEqualTo("Meia da Fronteira");
         assertThat(ctx.metaDados().getId()).as("metadados criados na fase 1 e commitados").isNotNull();
         assertThat(ctx.semanaInicio()).isAfter(LocalDate.now());
+    }
+
+    /**
+     * O único consumidor de {@code DadosPlanoDto} fora do fluxo do plano é o shadow do planner, e
+     * ele engole exceções (CA11) — um {@code LazyInitializationException} lá dentro não estoura,
+     * vira um contador. Por isso o teste roda o shadow real em contexto detached e afirma que o
+     * contador de erro por lazy loading ficou zerado, em vez de confiar na lista manual acima.
+     */
+    @Test
+    @DisplayName("o shadow do planner roda sobre o contexto detached sem LazyInitializationException")
+    void shadowDoPlannerNaoEstouraLazy() {
+        PlanGenerationContext ctx = loader.load(atleta.getId(), ModoGeracaoPlano.PROXIMA_SEMANA);
+        double antes = errosDeLazyNoShadow();
+
+        br.com.menthoros.backend.entity.PlanoSemanal plano = new br.com.menthoros.backend.entity.PlanoSemanal();
+        plano.setAtleta(ctx.atleta());
+        plano.setSemanaInicio(ctx.semanaInicio());
+        plano.setSemanaFim(ctx.semanaInicio().plusDays(6));
+        br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto treino = new br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto(
+                "SEGUNDA", "FACIL", "130-140 bpm", 40, 1.0, 4, "Base aeróbica", "45", 8.0, "5:40", List.of());
+        br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto planoDto = new br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto(
+                8.0, 8.0, null, null, "PLANEJADO", "Semana de base", List.of(treino));
+
+        assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
+        plannerShadowService.aplicarShadow(plano, planoDto, ctx.dados(), ctx.decisaoProgressao(),
+                ctx.semanaInicio(), false, java.util.Optional.empty());
+
+        assertThat(errosDeLazyNoShadow() - antes)
+                .as("o shadow leu provas e dias disponíveis do atleta detached sem sessão aberta")
+                .isZero();
+    }
+
+    private double errosDeLazyNoShadow() {
+        io.micrometer.core.instrument.Counter c = meterRegistry.find("planner.shadow.error.count")
+                .tag("reason", "LazyInitializationException").counter();
+        return c == null ? 0 : c.count();
     }
 }

@@ -49,9 +49,6 @@ import java.util.stream.Collectors;
 @Service
 public class PlanoServiceImpl implements PlanoService {
 
-    /** Nome do índice único parcial da V52 — a autoridade contra plano duplicado (design.md D3). */
-    static final String INDICE_PLANO_ATIVO = "uk_plano_semanal_atleta_semana_ativo";
-
     private final IaService iaService;
     private final PlanGenerationContextLoader contextLoader;
     private final PlanGenerationPersister persister;
@@ -90,7 +87,10 @@ public class PlanoServiceImpl implements PlanoService {
      *
      * <p>Contrato de erro preservado: exceções de domínio da fase 1 ({@code DomainNotFound},
      * {@code DomainRuleViolation}, {@code PlanoJaExistente}) e {@code IllegalStateException}
-     * propagam como antes; o resto das fases 2 e 3 vira {@link LLMException}.
+     * propagam como antes; {@link DataIntegrityViolationException} também propaga (antes ela
+     * nascia no commit do proxy, fora deste método, e chegava crua ao handler 409 — continua
+     * chegando), exceto a do índice de plano ativo, que vira {@code PlanoJaExistenteException};
+     * o resto das fases 2 e 3 vira {@link LLMException}.
      *
      * Idempotent: NÃO — cria o plano; duplicata bloqueada pela checagem cedo, pela re-checagem e
      *   pelo índice parcial da V52.
@@ -120,11 +120,11 @@ public class PlanoServiceImpl implements PlanoService {
             throw e;
         } catch (DataIntegrityViolationException e) {
             // Duas geracoes passaram pelas checagens e commitaram juntas: o indice da V52 decidiu.
-            if (violaIndiceDePlanoAtivo(e)) {
-                log.warn("Geração concorrente para atleta {} perdeu a corrida no índice {}", atletaId, INDICE_PLANO_ATIVO);
-                throw new PlanoJaExistenteException(
-                        "Já existe um plano semanal ativo para o atleta " + atletaId +
-                                " nesta semana (gerado simultaneamente). Não é possível gerar planos duplicados.");
+            // Qualquer outra constraint segue como conflito generico (design.md D3).
+            if (PlanoJaExistenteException.causadaPeloIndiceDePlanoAtivo(e)) {
+                log.warn("Geração concorrente para atleta {} perdeu a corrida no índice {}",
+                        atletaId, PlanoJaExistenteException.INDICE_PLANO_ATIVO);
+                throw PlanoJaExistenteException.paraCorridaNoIndice(atletaId);
             }
             throw e;
         } catch (IllegalArgumentException e) {
@@ -134,23 +134,6 @@ public class PlanoServiceImpl implements PlanoService {
             log.error("Erro inesperado ao gerar plano para atleta {}", atletaId, e);
             throw new LLMException("Erro inesperado ao gerar plano. Por favor, tente novamente.", e);
         }
-    }
-
-    /**
-     * So a violacao do indice de plano ativo vira {@code PlanoJaExistenteException}; qualquer
-     * outra constraint segue como conflito generico (design.md D3, achado do Codex no DoR).
-     */
-    static boolean violaIndiceDePlanoAtivo(DataIntegrityViolationException e) {
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            String msg = t.getMessage();
-            if (msg != null && msg.contains(INDICE_PLANO_ATIVO)) {
-                return true;
-            }
-            if (t.getCause() == t) {
-                break;
-            }
-        }
-        return false;
     }
 
     private PlanoSemanalLlmDto gerarPlanoSemanal(PlanGenerationContext ctx, ModoGeracaoPlano modoGeracao) {

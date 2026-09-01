@@ -167,8 +167,16 @@ public class BatchPlanProcessor {
             // Corrida entre fast-path e a checagem interna do gerarPlanoTreino.
             return registrarErro(jobId, atletaId, MOTIVO_PLANO_JA_EXISTE);
         } catch (DataIntegrityViolationException e) {
-            // Corrida entre lotes concorrentes: o índice único fechou a janela do fast-path.
-            return registrarErro(jobId, atletaId, MOTIVO_PLANO_JA_EXISTE);
+            // Corrida entre lotes concorrentes: o índice único fechou a janela do fast-path. Só a
+            // violação DESSE índice é "plano já existe" — outra constraint é erro real de dados e
+            // não pode ganhar o rótulo errado no relatório do job.
+            if (PlanoJaExistenteException.causadaPeloIndiceDePlanoAtivo(e)) {
+                return registrarErro(jobId, atletaId, MOTIVO_PLANO_JA_EXISTE);
+            }
+            log.warn("[batch-plan] violação de integridade ao gerar plano do atleta {} (job {}): {}",
+                    atletaId, jobId, e.getMostSpecificCause().getMessage());
+            falhasConsecutivas.incrementAndGet();
+            return registrarErro(jobId, atletaId, MOTIVO_ERRO_GERACAO);
         } catch (DomainRuleViolationException e) {
             // Outras violações de regra (ex.: "sem dias disponíveis") — erro genérico.
             falhasConsecutivas.incrementAndGet();

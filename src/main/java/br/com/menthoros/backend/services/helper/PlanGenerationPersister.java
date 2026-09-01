@@ -119,9 +119,7 @@ public class PlanGenerationPersister {
         // não bloqueia — casa com o índice único parcial da V52, que é a autoridade final.
         if (planoSemanalRepository.existePlanoAtivoNaSemana(atleta.getId(), semanaInicio, TenantContext.getRequiredTenantId())) {
             log.debug("Tentativa de gerar plano duplicado para atleta {} na semana de início {}.", atleta.getId(), semanaInicio);
-            throw new PlanoJaExistenteException(
-                    "Já existe um plano semanal ativo para o atleta " + atleta.getId() +
-                            " iniciando em " + semanaInicio + ". Não é possível gerar planos duplicados.");
+            throw PlanoJaExistenteException.paraSemana(atleta.getId(), semanaInicio);
         }
 
         log.info("Período calculado: {} a {} (Modo: {}, {} treinos no plano LLM)",

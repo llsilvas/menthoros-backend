@@ -244,6 +244,19 @@ class BatchPlanProcessorTest {
         }
 
         @Test
+        @DisplayName("DataIntegrityViolationException de OUTRA constraint → 'Erro ao gerar plano', não 'já existe'")
+        void outraConstraintNaoEMascarada() {
+            UUID id = atletaValido("Ana");
+            when(planoService.gerarPlanoTreino(eq(id), any()))
+                    .thenThrow(new DataIntegrityViolationException("violates foreign key constraint \"fk_outra\""));
+
+            processor.processarLote(jobId, List.of(id), ModoGeracaoPlano.PROXIMA_SEMANA, tenantId);
+
+            verify(jobRepository).incrementarErros(jobId);
+            assertThat(motivoErroPersistido()).isEqualTo(BatchPlanProcessor.MOTIVO_ERRO_GERACAO);
+        }
+
+        @Test
         @DisplayName("PlanoJaExistenteException (corrida fast-path/checagem interna) → 'Plano já existe'")
         void dupViaExcecaoTipada() {
             UUID id = atletaValido("Ana");

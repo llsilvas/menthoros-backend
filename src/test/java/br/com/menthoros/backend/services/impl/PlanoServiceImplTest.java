@@ -298,7 +298,7 @@ class PlanoServiceImplTest {
         when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenThrow(
                 new org.springframework.dao.DataIntegrityViolationException("could not execute statement",
                         new RuntimeException("ERROR: duplicate key value violates unique constraint \""
-                                + PlanoServiceImpl.INDICE_PLANO_ATIVO + "\"")));
+                                + br.com.menthoros.backend.exception.PlanoJaExistenteException.INDICE_PLANO_ATIVO + "\"")));
 
         try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
             hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);

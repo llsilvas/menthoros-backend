@@ -104,9 +104,7 @@ public class PlanGenerationContextLoader {
         if (planoSemanalRepository.existePlanoAtivoNaSemana(atletaId, semanaInicio, tenantId)) {
             log.debug("Plano ativo já existe para atleta {} na semana {} — geração abortada antes do LLM",
                     atletaId, semanaInicio);
-            throw new PlanoJaExistenteException(
-                    "Já existe um plano semanal ativo para o atleta " + atletaId +
-                            " iniciando em " + semanaInicio + ". Não é possível gerar planos duplicados.");
+            throw PlanoJaExistenteException.paraSemana(atletaId, semanaInicio);
         }
 
         // A mesma revisão alimenta o prompt e o vínculo gravado no plano (add-weekly-review-llm-focus

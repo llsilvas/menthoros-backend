@@ -200,36 +200,49 @@ class LotePlanosFundadorasIT extends AbstractIntegrationTest {
         assertThat(picoLlmEmVoo.get())
                 .as("CA2: a concorrência do LLM é limitada pelo semáforo, não pelo pool")
                 .isEqualTo(LLM_CONCORRENCIA);
+        // Com 100 tarefas em voo, sempre há alguma fase de leitura/escrita usando o pool no instante
+        // da amostra — a prova exata de "zero conexão presa durante o LLM" é o platô do teste A/B.
         assertThat(picoConexoesAtivasDuranteLlm.get())
                 .as("as conexões ativas nunca passam do pool — e o pool é menor que a concorrência do LLM")
                 .isLessThanOrEqualTo(POOL);
     }
 
     @Test
-    @DisplayName("A/B do acoplamento: com o LLM dentro da transação só `pool` gerações chegam ao LLM juntas; fora, `llm-concorrencia`")
+    @DisplayName("A/B do acoplamento: dentro da transação só `pool` gerações chegam ao LLM e o pool fica cheio; fora, todas chegam e o pool fica em zero")
     void acoplamentoAntesEDepois() throws Exception {
-        int chegamDentro = quantasChegamAoLlmAoMesmoTempo(true);
-        int chegamFora = quantasChegamAoLlmAoMesmoTempo(false);
+        Plato dentro = plato(true);
+        Plato fora = plato(false);
 
-        log.info("[fundadoras] gerações que chegam ao LLM ao mesmo tempo — dentro da transação (antes da change): {}; fora (depois): {}",
-                chegamDentro, chegamFora);
+        log.info("[fundadoras] platô no LLM — dentro da transação (antes da change): {} gerações, {} conexões ativas; fora (depois): {} gerações, {} conexões ativas",
+                dentro.noLlm(), dentro.conexoesAtivas(), fora.noLlm(), fora.conexoesAtivas());
 
-        assertThat(chegamDentro)
+        assertThat(dentro.noLlm())
                 .as("simulando o código antigo, cada geração segura uma conexão e o pool de %d é o teto", POOL)
                 .isLessThanOrEqualTo(POOL);
-        assertThat(chegamFora)
+        assertThat(dentro.conexoesAtivas())
+                .as("e as que chegaram estão segurando o pool inteiro enquanto esperam o modelo")
+                .isEqualTo(POOL);
+        assertThat(fora.noLlm())
                 .as("com a fronteira aberta, todas as %d gerações estão no LLM ao mesmo tempo com o mesmo pool", LLM_CONCORRENCIA)
                 .isEqualTo(LLM_CONCORRENCIA);
+        assertThat(fora.conexoesAtivas())
+                .as("CA1/CA2 exatos: com as 10 paradas dentro do LLM, nenhuma conexão do pool está em posse")
+                .isZero();
+    }
+
+    /** Medida no instante em que as gerações estão paradas dentro do stub do LLM. */
+    private record Plato(int noLlm, int conexoesAtivas) {
     }
 
     /**
-     * Dispara {@code LLM_CONCORRENCIA} gerações simultâneas de um tenant e conta quantas estão
-     * dentro do stub do LLM ao mesmo tempo. Com {@code dentroDaTransacao}, cada geração é
-     * envolvida por um {@code TransactionTemplate} — o que o antigo {@code @Transactional} de
+     * Dispara {@code LLM_CONCORRENCIA} gerações simultâneas de um tenant, segura todas dentro do
+     * stub do LLM e mede o platô: quantas chegaram e quantas conexões o pool tem ativas nesse
+     * instante. Com {@code dentroDaTransacao}, cada geração é envolvida por um
+     * {@code TransactionTemplate} — o que o antigo {@code @Transactional} de
      * {@code gerarPlanoTreino} fazia — e as que não conseguem conexão ficam presas no
      * {@code connection-timeout} de 3s enquanto as outras seguram o pool.
      */
-    private int quantasChegamAoLlmAoMesmoTempo(boolean dentroDaTransacao) throws Exception {
+    private Plato plato(boolean dentroDaTransacao) throws Exception {
         Assessoria assessoria = criarAssessoria(dentroDaTransacao ? "A/B dentro" : "A/B fora");
         List<UUID> atletas = new ArrayList<>();
         for (int j = 1; j <= LLM_CONCORRENCIA; j++) {
@@ -275,12 +288,15 @@ class LotePlanosFundadorasIT extends AbstractIntegrationTest {
             while (noLlm.get() < LLM_CONCORRENCIA && System.currentTimeMillis() < fim) {
                 Thread.sleep(50);
             }
-            int chegaram = noLlm.get();
+            // Todas as que vão chegar já chegaram e estão paradas no latch: o que o pool mostra
+            // agora é só o que a geração segura enquanto espera o modelo.
+            Thread.sleep(200);
+            Plato plato = new Plato(noLlm.get(), conexoesAtivas());
             segura.countDown();
             for (Future<?> f : futuros) {
                 f.get(30, TimeUnit.SECONDS);
             }
-            return chegaram;
+            return plato;
         } finally {
             executor.shutdownNow();
         }
