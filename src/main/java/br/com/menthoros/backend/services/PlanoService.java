@@ -4,13 +4,23 @@ package br.com.menthoros.backend.services;
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
-import jakarta.transaction.Transactional;
 
 import java.util.Optional;
 import java.util.UUID;
 
 public interface PlanoService {
-    @Transactional
+    /**
+     * Gera e persiste o plano semanal do atleta.
+     *
+     * <p>Deliberadamente SEM {@code @Transactional} — o Spring honra a anotação também na
+     * interface, e a chamada ao LLM precisa ficar fora de qualquer transação
+     * (refactor-llm-call-outside-transaction). As transações vivem nos colaboradores de leitura
+     * e de escrita; ver {@code PlanoServiceImpl#gerarPlanoTreino}.
+     *
+     * Idempotent: NÃO — cria o plano.
+     * Side Effects: persiste plano e metadados.
+     * Tenant-aware: YES.
+     */
     PlanoSemanal gerarPlanoTreino(UUID atletaId, ModoGeracaoPlano modoGeracao);
 
     /**
