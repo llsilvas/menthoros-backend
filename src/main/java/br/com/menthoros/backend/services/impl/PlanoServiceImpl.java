@@ -22,6 +22,7 @@ import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.IaService;
 import br.com.menthoros.backend.services.PlanoService;
+import br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter;
 import br.com.menthoros.backend.services.helper.PlanGenerationContext;
 import br.com.menthoros.backend.services.helper.PlanGenerationContextLoader;
 import br.com.menthoros.backend.services.helper.PlanGenerationPersister;
@@ -50,6 +51,7 @@ import java.util.stream.Collectors;
 public class PlanoServiceImpl implements PlanoService {
 
     private final IaService iaService;
+    private final LlmConcurrencyLimiter llmConcurrencyLimiter;
     private final PlanGenerationContextLoader contextLoader;
     private final PlanGenerationPersister persister;
     private final PlanoSemanalRepository planoSemanalRepository;
@@ -141,12 +143,18 @@ public class PlanoServiceImpl implements PlanoService {
         try {
             log.info("Iniciando geração de plano para atleta: {}", atletaId);
 
-            PlanoSemanalLlmDto planoDto = iaService.geraPlanoSemanalAvancado(
-                    ctx.atleta(), ctx.metaDados(), ctx.proximaProva(), modoGeracao,
-                    ctx.decisaoProgressao(), ctx.revisaoConsumida(), ctx.semanaInicio());
+            // Faixa interativa do limiter, só em volta da chamada ao LLM (nunca das transações).
+            // Para gerações vindas do lote é no-op: a thread já segura permits (reentrância).
+            PlanoSemanalLlmDto planoDto = llmConcurrencyLimiter.executarInterativo(() ->
+                    iaService.geraPlanoSemanalAvancado(
+                            ctx.atleta(), ctx.metaDados(), ctx.proximaProva(), modoGeracao,
+                            ctx.decisaoProgressao(), ctx.revisaoConsumida(), ctx.semanaInicio()));
 
             validaPlanoGerado(planoDto);
             return planoDto;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new LLMException("Geração de plano interrompida. Tente novamente.", e);
         } catch (LLMException e) {
             log.error("Falha na IA ao gerar o plano para o atleta: {}", atletaId);
             throw e;
