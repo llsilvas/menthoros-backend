@@ -69,9 +69,29 @@ class PlanoServiceTenantTest {
     @Mock private ProvaRepository provaRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private br.com.menthoros.backend.services.helper.PlannerShadowService plannerShadowService;
+    @Mock private ProgressaoTreinoService progressaoTreinoService;
+    @Mock private br.com.menthoros.backend.services.prompt.WeeklyReviewPromptProvider weeklyReviewPromptProvider;
+    @Mock private br.com.menthoros.backend.services.onboarding.OnboardingService onboardingService;
+    @Mock private PlanoReviewService planoReviewService;
+    @Mock private AiWorkoutAnalysisRepository aiWorkoutAnalysisRepository;
+    @Mock private br.com.menthoros.backend.config.core.WorkoutAnalysisProperties workoutAnalysisProperties;
 
-    @InjectMocks
+    // Loader e persister reais sobre os mesmos mocks (refactor-llm-call-outside-transaction).
     private PlanoServiceImpl planoService;
+
+    @BeforeEach
+    void montarServico() {
+        var contextLoader = new br.com.menthoros.backend.services.helper.PlanGenerationContextLoader(
+                atletaRepository, planoMetadadosService, treinoRealizadoRepository, treinoMapper,
+                planoSemanalRepository, planoSemanalMapper, progressaoTreinoService, weeklyReviewPromptProvider);
+        var persister = new br.com.menthoros.backend.services.helper.PlanGenerationPersister(
+                planoSemanalRepository, planoMetadadosRepository, treinoMapper, planoSemanalMapper,
+                redistribuicaoHelper, metricasAlertaService, metricasAgregadasService, plannerShadowService,
+                onboardingService, planoReviewService, eventPublisher);
+        planoService = new PlanoServiceImpl(iaService, contextLoader, persister, planoSemanalRepository,
+                treinoRealizadoRepository, planoSemanalMapper, eventPublisher, aiWorkoutAnalysisRepository,
+                workoutAnalysisProperties);
+    }
 
     private UUID tenantA;
     private UUID atletaId;

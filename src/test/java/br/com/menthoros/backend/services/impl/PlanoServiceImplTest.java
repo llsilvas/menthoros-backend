@@ -121,13 +121,30 @@ class PlanoServiceImplTest {
     private br.com.menthoros.backend.config.core.WorkoutAnalysisProperties workoutAnalysisProperties =
             new br.com.menthoros.backend.config.core.WorkoutAnalysisProperties();
 
-    @InjectMocks
+    // Loader e persister REAIS sobre os mesmos mocks (refactor-llm-call-outside-transaction): o
+    // comportamento observavel do fluxo continua sendo testado pelo orquestrador, e as
+    // asserções sobre repositorios/colaboradores seguem validas sem alteração.
+    private br.com.menthoros.backend.services.helper.PlanGenerationContextLoader contextLoader;
+    private br.com.menthoros.backend.services.helper.PlanGenerationPersister persister;
     private PlanoServiceImpl planoService;
 
     private UUID tenantId;
 
     @BeforeEach
     void setUpTenant() {
+        contextLoader = new br.com.menthoros.backend.services.helper.PlanGenerationContextLoader(
+                atletaRepository, planoMetadadosService, treinoRealizadoRepository, treinoMapper,
+                planoSemanalRepository, planoSemanalMapper, progressaoTreinoService, weeklyReviewPromptProvider);
+        persister = new br.com.menthoros.backend.services.helper.PlanGenerationPersister(
+                planoSemanalRepository, planoMetadadosRepository, treinoMapper, planoSemanalMapper,
+                redistribuicaoHelper, metricasAlertaService, metricasAgregadasService, plannerShadowService,
+                onboardingService, planoReviewService, eventPublisher);
+        org.springframework.test.util.ReflectionTestUtils.setField(persister, "autoApproveEnabled", true);
+        org.springframework.test.util.ReflectionTestUtils.setField(persister, "migrateExistingEnabled", true);
+        planoService = new PlanoServiceImpl(iaService, contextLoader, persister, planoSemanalRepository,
+                treinoRealizadoRepository, planoSemanalMapper, eventPublisher, aiWorkoutAnalysisRepository,
+                workoutAnalysisProperties);
+
         tenantId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
         lenient().when(onboardingService.possuiBaseline(any(), any())).thenReturn(true);
@@ -240,6 +257,97 @@ class PlanoServiceImplTest {
             verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao), any(), any(), any());
             verify(redistribuicaoHelper, never()).redistribuirTreinos(any(), any(), any(), any(), any(), any());
         }
+    }
+
+    @Test
+    @DisplayName("Plano ativo na semana aborta ANTES de chamar o LLM (checagem cedo, design D3)")
+    void planoAtivoNaSemanaAbortaAntesDoLlm() {
+        // Given
+        UUID atletaId = UUID.randomUUID();
+        ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+
+        Atleta atleta = criarAtletaMock(atletaId);
+        PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
+
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
+        when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
+        when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
+                any(), any(), any())).thenReturn(Optional.empty());
+        when(planoSemanalRepository.existePlanoAtivoNaSemana(eq(atletaId), any(LocalDate.class), eq(tenantId)))
+                .thenReturn(true);
+
+        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+
+            // When & Then
+            assertThrows(br.com.menthoros.backend.exception.PlanoJaExistenteException.class, () ->
+                    planoService.gerarPlanoTreino(atletaId, modoGeracao));
+
+            verifyNoInteractions(iaService);
+            verify(planoSemanalRepository, never()).save(any(PlanoSemanal.class));
+        }
+    }
+
+    @Test
+    @DisplayName("Violação do índice de plano ativo no commit vira PlanoJaExistenteException (design D3)")
+    void violacaoDoIndiceDePlanoAtivoViraPlanoJaExistente() {
+        UUID atletaId = UUID.randomUUID();
+        stubsDeGeracaoCompleta(atletaId);
+        when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenThrow(
+                new org.springframework.dao.DataIntegrityViolationException("could not execute statement",
+                        new RuntimeException("ERROR: duplicate key value violates unique constraint \""
+                                + br.com.menthoros.backend.exception.PlanoJaExistenteException.INDICE_PLANO_ATIVO + "\"")));
+
+        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+
+            assertThrows(br.com.menthoros.backend.exception.PlanoJaExistenteException.class, () ->
+                    planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+        }
+    }
+
+    @Test
+    @DisplayName("Violação de OUTRA constraint no commit NÃO vira PlanoJaExistenteException (segue 409)")
+    void violacaoDeOutraConstraintNaoEMascarada() {
+        UUID atletaId = UUID.randomUUID();
+        stubsDeGeracaoCompleta(atletaId);
+        org.springframework.dao.DataIntegrityViolationException outra =
+                new org.springframework.dao.DataIntegrityViolationException("could not execute statement",
+                        new RuntimeException("ERROR: duplicate key value violates unique constraint \"uk_outra_tabela\""));
+        when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenThrow(outra);
+
+        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+
+            org.springframework.dao.DataIntegrityViolationException lancada = assertThrows(
+                    org.springframework.dao.DataIntegrityViolationException.class,
+                    () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+            assertSame(outra, lancada);
+        }
+    }
+
+    /** Stubs do caminho feliz até o save do plano — compartilhados pelos testes de conflito. */
+    private void stubsDeGeracaoCompleta(UUID atletaId) {
+        Atleta atleta = criarAtletaMock(atletaId);
+        PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
+        PlanoSemanalLlmDto planoDto = criarPlanoSemanalLlmDto();
+        PlanoSemanal planoEntity = criarPlanoSemanalMock();
+        TreinoPlanejado treinoPlanejado = criarTreinoPlanejadoMock();
+
+        mockMetricasAgregadasEAlertas(metaDados);
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
+        when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
+        when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
+                any(), any(), any())).thenReturn(Optional.empty());
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), any(), any(), any(), any())).thenReturn(planoDto);
+        when(planoMetadadosRepository.findByIdAndTenantId(any(), any())).thenReturn(Optional.of(metaDados));
+        when(planoSemanalMapper.toEntity(planoDto)).thenReturn(planoEntity);
+        when(treinoMapper.toEntity(any(TreinoPlanejadoLlmDto.class))).thenReturn(treinoPlanejado);
+        when(planoMetadadosRepository.save(any(PlanoMetaDados.class))).thenReturn(metaDados);
     }
 
     @Test
@@ -674,7 +782,7 @@ class PlanoServiceImplTest {
 
         @BeforeEach
         void habilitarAutoApprove() {
-            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "autoApproveEnabled", true);
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "autoApproveEnabled", true);
         }
 
         @Test
@@ -750,7 +858,7 @@ class PlanoServiceImplTest {
         @Test
         @DisplayName("flag onboarding.auto-approve.enabled=false -> nunca auto-aprova mesmo elegivel")
         void naoAutoAprovaQuandoFlagDesabilitada() {
-            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "autoApproveEnabled", false);
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "autoApproveEnabled", false);
             UUID atletaId = UUID.randomUUID();
             ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
             configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
@@ -820,7 +928,7 @@ class PlanoServiceImplTest {
         @Test
         @DisplayName("atleta legado + flag desabilitada -> nao calcula OnboardingContext")
         void naoCalculaContextoParaAtletaLegadoComFlagDesabilitada() {
-            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "migrateExistingEnabled", false);
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "migrateExistingEnabled", false);
             UUID atletaId = UUID.randomUUID();
             ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
             configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
@@ -838,7 +946,7 @@ class PlanoServiceImplTest {
         @Test
         @DisplayName("atleta legado + flag habilitada -> calcula OnboardingContext normalmente")
         void calculaContextoParaAtletaLegadoComFlagHabilitada() {
-            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "migrateExistingEnabled", true);
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "migrateExistingEnabled", true);
             UUID atletaId = UUID.randomUUID();
             ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
             configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
@@ -855,7 +963,7 @@ class PlanoServiceImplTest {
         @Test
         @DisplayName("atleta ja migrado (possui baseline) + flag desabilitada -> recalcula mesmo assim (CA3)")
         void recalculaParaAtletaJaMigradoMesmoComFlagDesabilitada() {
-            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "migrateExistingEnabled", false);
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "migrateExistingEnabled", false);
             UUID atletaId = UUID.randomUUID();
             ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
             configurarCenarioFelizDeGeracao(atletaId, modoGeracao);

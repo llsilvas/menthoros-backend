@@ -47,6 +47,9 @@ class PlanoMetadadosCacheIT extends AbstractIntegrationTest {
     @Autowired private AssessoriaRepository assessoriaRepository;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private br.com.menthoros.backend.services.TsbService tsbService;
+    @Autowired private br.com.menthoros.backend.services.PlanoService planoService;
+    @org.springframework.test.context.bean.override.mockito.MockitoBean
+    private br.com.menthoros.backend.services.IaService iaService;
 
     private Assessoria assessoria;
     private Atleta atleta;
@@ -61,8 +64,12 @@ class PlanoMetadadosCacheIT extends AbstractIntegrationTest {
 
         Atleta novo = new Atleta();
         novo.setNome("Atleta Sem Histórico");
+        novo.setObjetivo("Primeiro 5k");
         novo.setNivelExperiencia(NivelExperiencia.INICIANTE);
         novo.setAtivo(AtletaStatus.ATIVO);
+        novo.setDiasDisponiveis(java.util.List.of(
+                br.com.menthoros.backend.enums.DiaSemana.SEGUNDA, br.com.menthoros.backend.enums.DiaSemana.QUARTA));
+        novo.setDiaPreferidoLongo(br.com.menthoros.backend.enums.DiaSemana.SABADO);
         novo.setAssessoria(assessoria);
         atleta = atletaRepository.save(novo);
 
@@ -100,6 +107,36 @@ class PlanoMetadadosCacheIT extends AbstractIntegrationTest {
         assertThat(planoMetadadosRepository.findByIdAndTenantId(metadados.getId(), assessoria.getId()))
                 .as("os metadados devolvidos precisam ser encontráveis pela leitura tenant-scoped")
                 .isPresent();
+    }
+
+    /**
+     * O contrato novo (refactor-llm-call-outside-transaction, design.md D1): a fase de leitura
+     * commita antes da chamada ao LLM, então o metadado criado ali <b>sobrevive</b> a uma falha do
+     * modelo — é idempotente por construção, e foi exatamente o rollback tardio de ~50s que
+     * produziu o incidente acima. Uma segunda tentativa reaproveita a mesma linha.
+     */
+    @Test
+    @DisplayName("metadado criado na fase de leitura sobrevive à falha do LLM e é reaproveitado")
+    void metadadoSobreviveAFalhaDoLlm() {
+        org.mockito.Mockito.when(iaService.geraPlanoSemanalAvancado(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new br.com.menthoros.backend.exception.LLMException("provedor indisponível"));
+
+        assertThatThrownBy(() -> planoService.gerarPlanoTreino(
+                atleta.getId(), br.com.menthoros.backend.enums.ModoGeracaoPlano.PROXIMA_SEMANA))
+                .isInstanceOf(br.com.menthoros.backend.exception.LLMException.class);
+
+        java.util.Optional<PlanoMetaDados> criado = planoMetadadosRepository.findLatestByAtletaId(atleta.getId());
+        assertThat(criado).as("a fase 1 commitou antes do LLM; a falha do modelo não a desfaz").isPresent();
+
+        PlanoMetaDados reaproveitado = planoMetadadosService.buscarOuCriarMetadados(atleta);
+        assertThat(reaproveitado.getId()).isEqualTo(criado.get().getId());
+        assertThat(planoMetadadosRepository.findAll().stream()
+                .filter(m -> m.getAtleta().getId().equals(atleta.getId()))
+                .count()).as("uma linha só, mesmo depois da falha").isEqualTo(1);
     }
 
     /**
