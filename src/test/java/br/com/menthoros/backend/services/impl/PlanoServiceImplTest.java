@@ -291,6 +291,66 @@ class PlanoServiceImplTest {
     }
 
     @Test
+    @DisplayName("Violação do índice de plano ativo no commit vira PlanoJaExistenteException (design D3)")
+    void violacaoDoIndiceDePlanoAtivoViraPlanoJaExistente() {
+        UUID atletaId = UUID.randomUUID();
+        stubsDeGeracaoCompleta(atletaId);
+        when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenThrow(
+                new org.springframework.dao.DataIntegrityViolationException("could not execute statement",
+                        new RuntimeException("ERROR: duplicate key value violates unique constraint \""
+                                + PlanoServiceImpl.INDICE_PLANO_ATIVO + "\"")));
+
+        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+
+            assertThrows(br.com.menthoros.backend.exception.PlanoJaExistenteException.class, () ->
+                    planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+        }
+    }
+
+    @Test
+    @DisplayName("Violação de OUTRA constraint no commit NÃO vira PlanoJaExistenteException (segue 409)")
+    void violacaoDeOutraConstraintNaoEMascarada() {
+        UUID atletaId = UUID.randomUUID();
+        stubsDeGeracaoCompleta(atletaId);
+        org.springframework.dao.DataIntegrityViolationException outra =
+                new org.springframework.dao.DataIntegrityViolationException("could not execute statement",
+                        new RuntimeException("ERROR: duplicate key value violates unique constraint \"uk_outra_tabela\""));
+        when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenThrow(outra);
+
+        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+
+            org.springframework.dao.DataIntegrityViolationException lancada = assertThrows(
+                    org.springframework.dao.DataIntegrityViolationException.class,
+                    () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+            assertSame(outra, lancada);
+        }
+    }
+
+    /** Stubs do caminho feliz até o save do plano — compartilhados pelos testes de conflito. */
+    private void stubsDeGeracaoCompleta(UUID atletaId) {
+        Atleta atleta = criarAtletaMock(atletaId);
+        PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
+        PlanoSemanalLlmDto planoDto = criarPlanoSemanalLlmDto();
+        PlanoSemanal planoEntity = criarPlanoSemanalMock();
+        TreinoPlanejado treinoPlanejado = criarTreinoPlanejadoMock();
+
+        mockMetricasAgregadasEAlertas(metaDados);
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
+        when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
+        when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
+                any(), any(), any())).thenReturn(Optional.empty());
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), any(), any(), any(), any())).thenReturn(planoDto);
+        when(planoMetadadosRepository.findByIdAndTenantId(any(), any())).thenReturn(Optional.of(metaDados));
+        when(planoSemanalMapper.toEntity(planoDto)).thenReturn(planoEntity);
+        when(treinoMapper.toEntity(any(TreinoPlanejadoLlmDto.class))).thenReturn(treinoPlanejado);
+        when(planoMetadadosRepository.save(any(PlanoMetaDados.class))).thenReturn(metaDados);
+    }
+
+    @Test
     @DisplayName("Deve lançar exceção quando não há treinos redistribuídos após redistribuição")
     void deveLancarExcecaoQuandoNaoHaTreinosRedistribuidosAposRedistribuicao() {
         // Given
