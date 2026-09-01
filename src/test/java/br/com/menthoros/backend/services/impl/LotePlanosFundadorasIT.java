@@ -279,11 +279,15 @@ class LotePlanosFundadorasIT extends AbstractIntegrationTest {
 
         java.util.Set<UUID> tenantsDoLote = lotes.keySet();
         CountDownLatch loteSegura = new CountDownLatch(1);
+        // Capacidade do lote = global − reserva = 9: só 9 gerações chegam ao stub enquanto o latch
+        // segura; a chegada é sinalizada por latch, não por polling (achado do clean-code no QA).
+        CountDownLatch noveNoLlm = new CountDownLatch(9);
         AtomicInteger loteNoLlm = new AtomicInteger();
         when(iaService.geraPlanoSemanalAvancado(any(), any(), any(), any(), any(), any(), any()))
                 .thenAnswer(inv -> {
                     if (tenantsDoLote.contains(TenantContext.getTenantId())) {
                         loteNoLlm.incrementAndGet();
+                        noveNoLlm.countDown();
                         if (!loteSegura.await(20, TimeUnit.SECONDS)) {
                             throw new IllegalStateException("latch do lote não liberado");
                         }
@@ -298,11 +302,9 @@ class LotePlanosFundadorasIT extends AbstractIntegrationTest {
                         new BatchGeracaoPlanoInputDto(e.getValue(), ModoGeracaoPlano.PROXIMA_SEMANA), e.getKey()).jobId());
                 TenantContext.clear();
             }
-            long fim = System.currentTimeMillis() + 5000;
-            while (loteNoLlm.get() < 9 && System.currentTimeMillis() < fim) {
-                Thread.sleep(50);
-            }
-            assertThat(loteNoLlm.get()).as("o lote saturou a capacidade dele (global − reserva)").isEqualTo(9);
+            assertThat(noveNoLlm.await(10, TimeUnit.SECONDS))
+                    .as("o lote saturou a capacidade dele (global − reserva)").isTrue();
+            assertThat(loteNoLlm.get()).isEqualTo(9);
 
             TenantContext.setTenantId(doCoach.getId());
             Instant antes = Instant.now();

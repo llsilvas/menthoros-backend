@@ -30,13 +30,13 @@ class LlmConcurrencyLimiterTest {
     }
 
     @Nested
-    @DisplayName("executar (legado)")
+    @DisplayName("teto global")
     class Executar {
 
         @Test
         @DisplayName("retorna o valor produzido pela chamada")
         void retornaValor() throws InterruptedException {
-            String resultado = limiter(4, 2, 1).executar(() -> "plano-gerado");
+            String resultado = limiter(4, 2, 1).executarInterativo(() -> "plano-gerado");
 
             assertThat(resultado).isEqualTo("plano-gerado");
         }
@@ -56,7 +56,7 @@ class LlmConcurrencyLimiterTest {
                 for (int i = 0; i < tarefas; i++) {
                     pool.submit(() -> {
                         try {
-                            limiter.executar(() -> {
+                            limiter.executarInterativo(() -> {
                                 int atual = emVoo.incrementAndGet();
                                 maxObservado.accumulateAndGet(atual, Math::max);
                                 sleepQuieto(30);

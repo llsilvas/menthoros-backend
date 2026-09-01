@@ -508,7 +508,14 @@ Skills are pure, deterministic domain logic — the easiest and most important c
 
 Every call that leaves the process (LLM via OpenAI/Anthropic, Keycloak, Strava, intervals.icu) must be defended against latency and cascading failure. **The strategy is decided in ADR-0008 — read it before changing anything here.**
 
-Why this matters more than "one thread gets stuck": plan generation is `@Transactional` and the LLM call happens **inside** the transaction, with the batch running 4 in parallel against a default Hikari pool of 10. A hung call holds a **database connection**, so a slow provider degrades login and athlete screens — not just the AI features.
+Why this matters more than "one thread gets stuck": a hung call blocks a real flow (plan
+generation, analysis) and, before `refactor-llm-call-outside-transaction` (2026-09-01), it also
+held a **database connection** — plan generation was `@Transactional` around the LLM call, and the
+batch pinned 4 of the 5 pool connections. That coupling is gone for plan generation: the LLM call
+now runs **outside any transaction** (loader → LLM → persister), throttled by
+`LlmConcurrencyLimiter` (global + per-tenant cap + interactive reserve). The `@Async` listeners
+(`WorkoutAnalysisListener`, `WeeklyFocusNarrativeService`) still hold a connection during their LLM
+calls — tracked in the `refactor-async-llm-listeners-outside-transaction` change.
 
 Current state (verified 2026-07-26): connect/read timeouts on Keycloak (`KeycloakAdminRestClientConfig`, 5s/10s — the reference) and intervals.icu (`IntervalsIcuWebClientConfig`, same values). Gaps being closed by `add-external-call-resilience`: no timeout on LLM calls or on the Strava `WebClient`; no latency instrumentation at all (`CostTrackingAdvisor` has only `Counter`, no `Timer`).
 

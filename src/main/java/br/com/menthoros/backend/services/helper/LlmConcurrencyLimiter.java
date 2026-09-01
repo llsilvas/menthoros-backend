@@ -29,9 +29,17 @@ import java.util.function.Supplier;
  * ciclo de espera possível: o interativo nunca segura tenant/capacidade, e o lote nunca adquire
  * fora da ordem.
  *
+ * <p>Os três semáforos são <b>justos</b> (FIFO): o cap por tenant é o que distribui a vazão entre
+ * assessorias; a justiça do semáforo só elimina o barging — sem ela, um waiter poderia perder a
+ * corrida pelo permit indefinidamente sob carga contínua. Com ~10 permits o custo é desprezível.
+ *
  * <p><b>Reentrante por thread:</b> uma geração vinda do lote já segura permits quando passa pela
  * fase 2 do {@code PlanoServiceImpl}; o wrap interativo detecta isso por {@link ThreadLocal} e
  * vira no-op — sem dupla aquisição, sem deadlock com global pequeno.
+ *
+ * <p><b>Risco aceito (proposal, Open Questions):</b> a faixa interativa não tem cap por tenant —
+ * é um humano clicando; abuso do endpoint é problema de rate-limiting HTTP, não deste limiter.
+ * Muitos cliques interativos de um mesmo tenant podem ocupar o global e atrasar o lote.
  *
  * <p>Os semáforos são por instância da JVM (não distribuídos): com escala horizontal, o teto real
  * vira {@code permits × nº de instâncias}. O mapa por tenant não é limpo — cresce com o nº de
@@ -39,6 +47,8 @@ import java.util.function.Supplier;
  */
 @Component
 public class LlmConcurrencyLimiter {
+
+    private static final boolean FAIR = true;
 
     private final Semaphore global;
     private final Semaphore capacidadeLote;
@@ -60,8 +70,8 @@ public class LlmConcurrencyLimiter {
             throw new IllegalArgumentException("llm-reserva-interativa deve estar em [0, llm-concorrencia): recebido "
                     + reservaInterativa + " com llm-concorrencia " + permits);
         }
-        this.global = new Semaphore(permits);
-        this.capacidadeLote = new Semaphore(permits - reservaInterativa);
+        this.global = new Semaphore(permits, FAIR);
+        this.capacidadeLote = new Semaphore(permits - reservaInterativa, FAIR);
         this.capPorTenant = capPorTenant;
     }
 
@@ -69,10 +79,14 @@ public class LlmConcurrencyLimiter {
      * Faixa do lote: chamada ao LLM de uma geração em lote, limitada pelo cap da assessoria, pela
      * capacidade do lote e pelo global — nesta ordem.
      *
+     * Idempotent: NÃO — cada invocação executa a chamada (billable) recebida.
+     * Side Effects: os do {@code Supplier} (chamada externa ao LLM); o limiter em si só bloqueia.
+     * Tenant-aware: YES — o cap é do {@code tenantId} recebido, explícito.
+     *
      * @throws InterruptedException se a thread for interrompida enquanto aguarda um permit
      */
     public <T> T executarLote(UUID tenantId, Supplier<T> chamadaLlm) throws InterruptedException {
-        Semaphore tenant = porTenant.computeIfAbsent(tenantId, id -> new Semaphore(capPorTenant));
+        Semaphore tenant = porTenant.computeIfAbsent(tenantId, id -> new Semaphore(capPorTenant, FAIR));
         tenant.acquire();
         try {
             capacidadeLote.acquire();
@@ -82,7 +96,7 @@ public class LlmConcurrencyLimiter {
                 try {
                     return chamadaLlm.get();
                 } finally {
-                    permitsDoLoteEmPosse.set(Boolean.FALSE);
+                    permitsDoLoteEmPosse.remove();
                     global.release();
                 }
             } finally {
@@ -98,6 +112,10 @@ public class LlmConcurrencyLimiter {
      * usar a capacidade ociosa do lote, e a reserva garante que nunca espera o lote drenar.
      * No-op quando a thread já segura permits do lote (reentrância).
      *
+     * Idempotent: NÃO — cada invocação executa a chamada (billable) recebida.
+     * Side Effects: os do {@code Supplier} (chamada externa ao LLM); o limiter em si só bloqueia.
+     * Tenant-aware: NO — sem cap por tenant nesta faixa (risco aceito; ver JavaDoc da classe).
+     *
      * @throws InterruptedException se a thread for interrompida enquanto aguarda um permit
      */
     public <T> T executarInterativo(Supplier<T> chamadaLlm) throws InterruptedException {
@@ -110,14 +128,5 @@ public class LlmConcurrencyLimiter {
         } finally {
             global.release();
         }
-    }
-
-    /**
-     * @deprecated use {@link #executarLote} (com o tenant) ou {@link #executarInterativo};
-     *             mantido só até os call sites migrarem.
-     */
-    @Deprecated(forRemoval = true)
-    public <T> T executar(Supplier<T> chamadaLlm) throws InterruptedException {
-        return executarInterativo(chamadaLlm);
     }
 }
