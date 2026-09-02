@@ -294,6 +294,15 @@ app:
     # com pool 5 em cloud, 4 em voo deixavam 1 conexão para o app inteiro). Com a chave no
     # tier 3 da OpenAI, 8-10 é folga suficiente para 100 planos caberem em ~15 min.
     llm-concorrencia: ${BATCH_PLAN_LLM_CONCORRENCIA:4}
+    # Máximo de gerações em voo POR ASSESSORIA dentro do lote (fair-llm-concurrency-per-tenant):
+    # com vários lotes na mesma janela, nenhuma assessoria monopoliza a fila — todas progridem a
+    # até este valor por vez. Não altera a vazão total (o global continua o teto).
+    # Neutralizar sem deploy: valor >= llm-concorrencia.
+    llm-concorrencia-por-tenant: ${BATCH_PLAN_LLM_CONCORRENCIA_POR_TENANT:2}
+    # Permits do global que o LOTE não pode ocupar, reservados para o "gerar" individual do
+    # treinador — quem clica durante um lote não espera a fila drenar. O interativo pode usar a
+    # capacidade ociosa do lote; o contrário, nunca. Neutralizar sem deploy: 0.
+    llm-reserva-interativa: ${BATCH_PLAN_LLM_RESERVA_INTERATIVA:1}
     # Idade mínima (min) para um job em andamento ser considerado órfão no recovery
     # de startup — nenhum lote real dura tanto.
     recovery-limite-min: ${BATCH_PLAN_RECOVERY_LIMITE_MIN:30}

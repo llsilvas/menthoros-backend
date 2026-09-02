@@ -83,8 +83,8 @@ class BatchPlanProcessorTest {
         }).when(transactionTemplate).executeWithoutResult(any());
 
         // limiter roda o supplier passado (só nos testes que chamam gerarPlanoTreino).
-        lenient().when(llmConcurrencyLimiter.executar(any())).thenAnswer(inv -> {
-            Supplier<?> s = inv.getArgument(0);
+        lenient().when(llmConcurrencyLimiter.executarLote(any(), any())).thenAnswer(inv -> {
+            Supplier<?> s = inv.getArgument(1);
             return s.get();
         });
     }

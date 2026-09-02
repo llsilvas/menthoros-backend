@@ -121,6 +121,10 @@ class PlanoServiceImplTest {
     private br.com.menthoros.backend.config.core.WorkoutAnalysisProperties workoutAnalysisProperties =
             new br.com.menthoros.backend.config.core.WorkoutAnalysisProperties();
 
+    // Limiter real com spy (fair-llm-concurrency-per-tenant): pass-through de verdade, e o spy
+    // permite afirmar que a fase 2 passa pela faixa interativa.
+    private br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter llmConcurrencyLimiter;
+
     // Loader e persister REAIS sobre os mesmos mocks (refactor-llm-call-outside-transaction): o
     // comportamento observavel do fluxo continua sendo testado pelo orquestrador, e as
     // asserções sobre repositorios/colaboradores seguem validas sem alteração.
@@ -141,7 +145,9 @@ class PlanoServiceImplTest {
                 onboardingService, planoReviewService, eventPublisher);
         org.springframework.test.util.ReflectionTestUtils.setField(persister, "autoApproveEnabled", true);
         org.springframework.test.util.ReflectionTestUtils.setField(persister, "migrateExistingEnabled", true);
-        planoService = new PlanoServiceImpl(iaService, contextLoader, persister, planoSemanalRepository,
+        llmConcurrencyLimiter = org.mockito.Mockito.spy(
+                new br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter(4, 2, 1));
+        planoService = new PlanoServiceImpl(iaService, llmConcurrencyLimiter, contextLoader, persister, planoSemanalRepository,
                 treinoRealizadoRepository, planoSemanalMapper, eventPublisher, aiWorkoutAnalysisRepository,
                 workoutAnalysisProperties);
 
@@ -256,6 +262,22 @@ class PlanoServiceImplTest {
 
             verify(iaService).geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao), any(), any(), any());
             verify(redistribuicaoHelper, never()).redistribuirTreinos(any(), any(), any(), any(), any(), any());
+        }
+    }
+
+    @Test
+    @DisplayName("A chamada ao LLM da geração interativa passa pela faixa interativa do limiter")
+    void geracaoInterativaPassaPeloLimiter() throws InterruptedException {
+        UUID atletaId = UUID.randomUUID();
+        stubsDeGeracaoCompleta(atletaId);
+        when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenReturn(criarPlanoSemanalMock());
+
+        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+
+            planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA);
+
+            verify(llmConcurrencyLimiter).executarInterativo(any());
         }
     }
 
