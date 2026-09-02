@@ -6,6 +6,7 @@ import br.com.menthoros.backend.dto.output.ProvaProximaDto;
 import br.com.menthoros.backend.dto.output.ProvasProximasResponseDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
+import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -13,6 +14,7 @@ import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.services.ProvaService;
+import br.com.menthoros.backend.services.helper.ProvaEnricher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,6 +24,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -33,6 +36,7 @@ public class ProvaServiceImpl implements ProvaService {
     private final AtletaRepository atletaRepository;
     private final AssessoriaRepository assessoriaRepository;
     private final ProvaMapper provaMapper;
+    private final ProvaEnricher provaEnricher;
 
     /**
      * Resolve o atleta pelo ID garantindo isolamento por tenant.
@@ -62,10 +66,11 @@ public class ProvaServiceImpl implements ProvaService {
     }
 
     /**
-     * Cria uma prova para o atleta dentro do tenant da requisição atual.
+     * Cria uma prova para o atleta dentro do tenant da requisição atual. Deriva os campos de
+     * preparação e, se a prova nasce como alvo, desmarca a alvo anterior do atleta.
      *
      * Idempotent: NO — Cria nova entidade a cada chamada.
-     * Side Effects: Database insert (nova Prova criada)
+     * Side Effects: Database insert (nova Prova criada); update na prova-alvo anterior, se houver
      * Tenant-aware: YES — usa TenantContext.getRequiredTenantId() via resolveAtleta()
      *
      * @param atletaId ID do atleta para quem a prova será criada
@@ -82,9 +87,13 @@ public class ProvaServiceImpl implements ProvaService {
         prova.setAtleta(atleta);
         prova.setAssessoria(atleta.getAssessoria());
         if (prova.getStatusProva() == null) {
-            prova.setStatusProva(br.com.menthoros.backend.enums.ProvaStatus.PLANEJADA);
+            prova.setStatusProva(ProvaStatus.PLANEJADA);
         }
-        return provaMapper.toOutputDto(provaRepository.save(prova));
+        provaEnricher.aplicarDerivados(prova);
+        garantirAlvoUnica(atleta, prova);
+        Prova salva = provaRepository.save(prova);
+        log.info("Prova criada: id={}, atletaId={}, alvo={}", salva.getId(), atletaId, salva.isProvaAlvo());
+        return provaMapper.toOutputDto(salva);
     }
 
     /**
@@ -130,10 +139,11 @@ public class ProvaServiceImpl implements ProvaService {
     }
 
     /**
-     * Atualiza uma prova de um atleta dentro do tenant da requisição atual.
+     * Atualiza uma prova de um atleta dentro do tenant da requisição atual. Recalcula os campos
+     * derivados e mantém a prova-alvo única.
      *
      * Idempotent: YES — Atualizar com os mesmos dados produz o mesmo resultado.
-     * Side Effects: Database update (Prova atualizada)
+     * Side Effects: Database update (Prova atualizada; prova-alvo anterior desmarcada, se houver)
      * Tenant-aware: YES — usa TenantContext.getRequiredTenantId() via resolveAtleta()
      *
      * @param atletaId ID do atleta proprietário da prova
@@ -149,6 +159,8 @@ public class ProvaServiceImpl implements ProvaService {
         Atleta atleta = resolveAtleta(atletaId);
         Prova prova = resolveProva(atleta, provaId);
         provaMapper.updateEntity(dto, prova);
+        provaEnricher.aplicarDerivados(prova);
+        garantirAlvoUnica(atleta, prova);
         return provaMapper.toOutputDto(provaRepository.save(prova));
     }
 
@@ -216,5 +228,26 @@ public class ProvaServiceImpl implements ProvaService {
             dtoList.size(),
             LocalDateTime.now().toString()
         );
+    }
+
+    /**
+     * Se {@code prova} é alvo, desmarca as demais provas-alvo não canceladas do atleta.
+     *
+     * @return nome da alvo substituída, quando havia outra prova como alvo
+     */
+    private Optional<String> garantirAlvoUnica(Atleta atleta, Prova prova) {
+        if (!prova.isProvaAlvo()) {
+            return Optional.empty();
+        }
+        String alvoAnterior = null;
+        for (Prova outra : provaRepository.findByAtletaAndProvaAlvoTrue(atleta)) {
+            if (prova.getId() != null && prova.getId().equals(outra.getId())) {
+                continue;
+            }
+            outra.setProvaAlvo(false);
+            provaRepository.save(outra);
+            alvoAnterior = outra.getNomeProva();
+        }
+        return Optional.ofNullable(alvoAnterior);
     }
 }

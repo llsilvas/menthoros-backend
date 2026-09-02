@@ -123,7 +123,7 @@ class OnboardingMapperTest {
             Prova prova = Prova.builder().id(UUID.randomUUID()).provaAlvo(true).build();
             ProvaOutputDto provaDto = new ProvaOutputDto(
                     prova.getId(), "Meia SP", LocalDate.now().plusMonths(3), null, null, null,
-                    true, null, null, null, null, null, null, null, null, null, null, null, null, null, 0);
+                    true, null, null, null, null, null, null, null, null, null, null, null, null, null, 0, false, null);
             when(provaMapper.toOutputDto(prova)).thenReturn(provaDto);
             OnboardingContext context = new OnboardingContext(
                     new AthleteBaseline(50.0, LocalDate.now()), 0.8,

@@ -443,6 +443,7 @@ public class PeriodizacaoPromptFormatter {
             case KM_10 -> BigDecimal.valueOf(10.0);
             case KM_21 -> BigDecimal.valueOf(21.0975);
             case KM_42 -> BigDecimal.valueOf(42.195);
+            case CUSTOMIZADA -> prova.getDistanciaKm();
         };
     }
 }

@@ -76,6 +76,12 @@ public record ProvaOutputDto(
         LocalDate inicioPreparacao,
 
         @Schema(description = "Dias faltando para a prova", example = "45")
-        int diasFaltando
+        int diasFaltando,
+
+        @Schema(description = "Indica se a preparação já deveria ter começado (prazo menor que o mínimo da distância)", example = "false")
+        boolean preparacaoCurta,
+
+        @Schema(description = "Semanas inteiras faltando até a prova", example = "12")
+        Integer semanasFaltando
 ) {
 }

@@ -3,13 +3,19 @@ package br.com.menthoros.backend.enums;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+/**
+ * Persistido por ORDINAL em {@code tb_prova.distancia} (smallint): novos valores entram somente no
+ * fim da lista, e a ordem existente nunca muda — reordenar corromperia as provas gravadas.
+ */
 @JsonFormat(shape = JsonFormat.Shape.OBJECT)
 public enum DistanciaProva {
 
     KM_5 ("5K", "5K", "5 KM", 0),
     KM_10 ("10K", "10K", "10 KM", 1),
     KM_21 ("21K", "21K", "21 KM", 2),
-    KM_42 ("42K", "42K", "42 KM", 3);
+    KM_42 ("42K", "42K", "42 KM", 3),
+    /** Distância livre: a quilometragem real fica em {@code Prova.distanciaKm}. */
+    CUSTOMIZADA ("OUTRA", "Outra", "Outra", 4);
 
     @JsonProperty("value")
     private final String value;

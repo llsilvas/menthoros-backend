@@ -115,6 +115,8 @@ public class ThresholdInferenceService {
             case KM_10 -> 10000;
             case KM_21 -> 21097;
             case KM_42 -> 42195;
+            // Sem distanciaKm não há como inferir; 0 cai fora da faixa válida e a prova é ignorada.
+            case CUSTOMIZADA -> 0;
         };
     }
 
