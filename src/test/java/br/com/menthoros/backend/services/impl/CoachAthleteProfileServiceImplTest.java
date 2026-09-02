@@ -722,6 +722,9 @@ class CoachAthleteProfileServiceImplTest {
                 null,
                 (int) ChronoUnit.DAYS.between(LocalDate.now(), data),
                 false,
+                null,
+                true,
+                null,
                 null
         );
     }

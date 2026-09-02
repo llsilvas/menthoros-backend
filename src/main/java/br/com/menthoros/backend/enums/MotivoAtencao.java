@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 public enum MotivoAtencao {
 
     FADIGA(50, "Revisar carga: reduzir volume/intensidade ou inserir recuperação até o TSB normalizar."),
+    PROVA_ATLETA(45, "Revise a prova e o plano das próximas semanas."),
     SOBRECARGA(40, "Reduzir a progressão da semana ou inserir recuperação ativa; evitar novo aumento de carga."),
     SEM_PLANO(35, "Atleta sem plano ativo: gerar ou ativar um plano de treino."),
     ADERENCIA(30, "Falar com o atleta sobre os treinos perdidos e ajustar o plano à rotina real."),

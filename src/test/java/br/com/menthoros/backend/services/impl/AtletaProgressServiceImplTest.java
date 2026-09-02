@@ -15,7 +15,6 @@ import org.mapstruct.factory.Mappers;
 import br.com.menthoros.backend.mapper.EtapaMapper;
 import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.TreinoRealizado;
-import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.NivelProntidao;
 import br.com.menthoros.backend.enums.TipoTreino;
@@ -28,8 +27,6 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.repository.UsuarioRepository;
-import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
 import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import org.junit.jupiter.api.AfterEach;
@@ -70,13 +67,12 @@ class AtletaProgressServiceImplTest {
     private static final LocalDate HOJE = LocalDate.of(2026, 6, 17);
 
     @Mock private AtletaRepository atletaRepository;
-    @Mock private UsuarioRepository usuarioRepository;
     @Mock private MetricasDiariasRepository metricasDiariasRepository;
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock private PlanoMetadadosRepository planoMetadadosRepository;
     @Mock private ZonaTreinoService zonaTreinoService;
-    @Mock private AuthenticatedPrincipalResolver principalResolver;
+    @Mock private br.com.menthoros.backend.security.AuthenticatedAtletaResolver atletaResolver;
     @Mock private CheckinProntidaoRepository checkinProntidaoRepository;
 
     private AtletaProgressServiceImpl service;
@@ -93,8 +89,8 @@ class AtletaProgressServiceImplTest {
         atleta = Atleta.builder().id(atletaId).nome("Teste").build();
         Clock clock = Clock.fixed(Instant.parse("2026-06-17T12:00:00Z"), ZoneOffset.UTC);
         service = new AtletaProgressServiceImpl(
-                atletaRepository, usuarioRepository, metricasDiariasRepository, treinoRealizadoRepository,
-                treinoPlanejadoRepository, planoMetadadosRepository, zonaTreinoService, principalResolver,
+                atletaRepository, metricasDiariasRepository, treinoRealizadoRepository,
+                treinoPlanejadoRepository, planoMetadadosRepository, zonaTreinoService, atletaResolver,
                 checkinProntidaoRepository, Mappers.getMapper(EtapaMapper.class), clock,
                 new AtletaHojeResolver(clock));
     }
@@ -526,8 +522,8 @@ class AtletaProgressServiceImplTest {
             // 03:50Z do dia 18 = 23:50 do dia 17 em Manaus (UTC−4); o clock do setUp é UTC
             Clock madrugadaUtc = Clock.fixed(Instant.parse("2026-06-18T03:50:00Z"), ZoneOffset.UTC);
             service = new AtletaProgressServiceImpl(
-                    atletaRepository, usuarioRepository, metricasDiariasRepository, treinoRealizadoRepository,
-                    treinoPlanejadoRepository, planoMetadadosRepository, zonaTreinoService, principalResolver,
+                    atletaRepository, metricasDiariasRepository, treinoRealizadoRepository,
+                    treinoPlanejadoRepository, planoMetadadosRepository, zonaTreinoService, atletaResolver,
                     checkinProntidaoRepository, Mappers.getMapper(EtapaMapper.class), madrugadaUtc,
                     new AtletaHojeResolver(madrugadaUtc));
             atleta.setTimezone("America/Manaus");
@@ -659,37 +655,11 @@ class AtletaProgressServiceImplTest {
     class ResolverAtletaIdAtual {
 
         @Test
-        @DisplayName("resolve o atleta vinculado ao usuário do token")
-        void resolveDoToken() {
-            UUID usuarioId = UUID.randomUUID();
-            Usuario usuario = new Usuario();
-            usuario.setId(usuarioId);
-            when(principalResolver.getCurrentSubject()).thenReturn("sub-123");
-            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id("sub-123", tenantId)).thenReturn(Optional.of(usuario));
-            when(atletaRepository.findByUsuario_IdAndAssessoria_Id(usuarioId, tenantId)).thenReturn(Optional.of(atleta));
+        @DisplayName("delega ao AuthenticatedAtletaResolver")
+        void delegaAoResolver() {
+            when(atletaResolver.resolverAtletaIdAtual()).thenReturn(atletaId);
 
             assertThat(service.resolverAtletaIdAtual()).isEqualTo(atletaId);
-        }
-
-        @Test
-        @DisplayName("usuário do token não encontrado no tenant → not found")
-        void usuarioNaoEncontrado() {
-            when(principalResolver.getCurrentSubject()).thenReturn("sub-x");
-            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id("sub-x", tenantId)).thenReturn(Optional.empty());
-            assertThatThrownBy(() -> service.resolverAtletaIdAtual()).isInstanceOf(DomainNotFoundException.class);
-        }
-
-        @Test
-        @DisplayName("usuário sem atleta vinculado → not found")
-        void semAtletaVinculado() {
-            UUID usuarioId = UUID.randomUUID();
-            Usuario usuario = new Usuario();
-            usuario.setId(usuarioId);
-            when(principalResolver.getCurrentSubject()).thenReturn("sub-123");
-            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id("sub-123", tenantId)).thenReturn(Optional.of(usuario));
-            when(atletaRepository.findByUsuario_IdAndAssessoria_Id(usuarioId, tenantId)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> service.resolverAtletaIdAtual()).isInstanceOf(DomainNotFoundException.class);
         }
     }
 

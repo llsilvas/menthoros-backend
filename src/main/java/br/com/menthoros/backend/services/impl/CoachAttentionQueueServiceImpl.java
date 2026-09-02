@@ -7,6 +7,9 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.enums.ExplanationConfidence;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
+import br.com.menthoros.backend.entity.Prova;
+import br.com.menthoros.backend.domain.planner.RacePreparationRule;
+import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.Severidade;
@@ -15,10 +18,12 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
 import br.com.menthoros.backend.services.helper.CoachAttentionSignalEvaluator;
+import br.com.menthoros.backend.services.helper.ProvaPendenteSinal;
 import br.com.menthoros.backend.services.helper.SinalAtencao;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -32,8 +37,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Implementação read-only/on-demand da fila de atenção do treinador. Agrega no escopo do tenant
@@ -65,6 +72,7 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
+    private final ProvaRepository provaRepository;
     private final CoachAttentionSignalEvaluator evaluator;
     private final Clock clock;
 
@@ -81,9 +89,15 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
         LocalDate inicioJanela = hoje.minusDays(JANELA_ADERENCIA_DIAS);
         Instant geradoEm = clock.instant();
 
+        // Uma consulta para o tenant inteiro, agrupada por atleta — evita N+1 no roster.
+        Map<UUID, List<Prova>> provasPendentes = provaRepository.findPendentesRevisaoByAssessoria(tenantId, hoje)
+                .stream()
+                .collect(Collectors.groupingBy(p -> p.getAtleta().getId()));
+
         List<CoachAttentionItemOutputDto> fila = atletaRepository.findAtivosByTenantIdOrderByNome(tenantId).stream()
                 .filter(atleta -> atleta.getAtivo() != AtletaStatus.INATIVO)
-                .map(atleta -> montarItem(atleta, hoje, inicioJanela, geradoEm))
+                .map(atleta -> montarItem(atleta, hoje, inicioJanela, geradoEm,
+                        provasPendentes.getOrDefault(atleta.getId(), List.of())))
                 .flatMap(Optional::stream)
                 .filter(item -> item.severity().getPeso() >= CORTE_SEVERIDADE)
                 .sorted(ORDENACAO)
@@ -106,7 +120,8 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
         Instant geradoEm = clock.instant();
 
         return atletaRepository.findByIdAndTenantId(atletaId, tenantId)
-                .flatMap(atleta -> montarItem(atleta, hoje, inicioJanela, geradoEm))
+                .flatMap(atleta -> montarItem(atleta, hoje, inicioJanela, geradoEm,
+                        provaRepository.findPendentesRevisaoByAtleta(atletaId, hoje)))
                 .stream()
                 .filter(item -> item.severity().getPeso() >= CORTE_SEVERIDADE)
                 .sorted(ORDENACAO)
@@ -116,7 +131,8 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
 
     /** Deriva todos os sinais do atleta e consolida em um único item (motivo principal = maior severidade). */
     private Optional<CoachAttentionItemOutputDto> montarItem(Atleta atleta, LocalDate hoje,
-                                                            LocalDate inicioJanela, Instant geradoEm) {
+                                                            LocalDate inicioJanela, Instant geradoEm,
+                                                            List<Prova> provasPendentes) {
         UUID atletaId = atleta.getId();
 
         Double tsb = metricasDiariasRepository.findLatestByAtletaId(atletaId)
@@ -140,6 +156,8 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
         evaluator.avaliarAderencia(perdidos).ifPresent(sinais::add);
         evaluator.avaliarInatividade(diasInativos).ifPresent(sinais::add);
         evaluator.avaliarZonasVencidas(atleta.precisaAtualizarTestes()).ifPresent(sinais::add);
+        evaluator.avaliarProvaPendente(provasPendentes.stream().map(p -> paraSinal(p, hoje)).toList())
+                .ifPresent(sinais::add);
 
         if (sinais.isEmpty()) {
             return Optional.empty();
@@ -189,6 +207,23 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
                 .map(TreinoRealizado::getDataTreino)
                 .map(data -> ChronoUnit.DAYS.between(data, hoje))
                 .orElse(null);
+    }
+
+    /** Reduz a entidade ao que o evaluator precisa; semanas mínimas vêm do enricher (fallback 0 em prova legada). */
+    private ProvaPendenteSinal paraSinal(Prova prova, LocalDate hoje) {
+        int semanasMinimas = prova.getSemanasPreparacao() != null ? prova.getSemanasPreparacao() : 0;
+        String distancia = prova.getDistancia() == DistanciaProva.CUSTOMIZADA && prova.getDistanciaKm() != null
+                ? prova.getDistanciaKm().stripTrailingZeros().toPlainString() + " km"
+                : (prova.getDistancia() != null ? prova.getDistancia().getShortName() : "-");
+        return new ProvaPendenteSinal(
+                prova.getNomeProva(),
+                prova.getDataProva(),
+                distancia,
+                RacePreparationRule.semanasFaltando(prova.getDataProva(), hoje),
+                semanasMinimas,
+                RacePreparationRule.preparacaoCurta(prova.getInicioPreparacao(), hoje),
+                prova.getMotivoRevisao(),
+                prova.getAlvoAnteriorNome());
     }
 
     private String nomeCompleto(Atleta atleta) {

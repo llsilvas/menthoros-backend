@@ -3,9 +3,11 @@ package br.com.menthoros.backend.services.helper;
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto.Evidencia;
 import br.com.menthoros.backend.enums.FaixaTsb;
 import br.com.menthoros.backend.enums.MotivoAtencao;
+import br.com.menthoros.backend.enums.MotivoRevisaoProva;
 import br.com.menthoros.backend.enums.Severidade;
 import org.springframework.stereotype.Component;
 
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -32,6 +34,9 @@ public class CoachAttentionSignalEvaluator {
     private static final String SOURCE_INATIVIDADE = "CoachAttentionSignalEvaluator.avaliarInatividade";
     private static final String SOURCE_ZONAS_VENCIDAS = "CoachAttentionSignalEvaluator.avaliarZonasVencidas";
     private static final String SOURCE_SEM_PLANO = "CoachAttentionSignalEvaluator.avaliarSemPlano";
+    private static final String SOURCE_PROVA_ATLETA = "CoachAttentionSignalEvaluator.avaliarProvaPendente";
+    private static final DateTimeFormatter FORMATO_DATA_CURTA =
+            DateTimeFormatter.ofPattern("dd MMM", Locale.forLanguageTag("pt-BR"));
 
     /** Fadiga/forma via classificação de TSB ({@link FaixaTsb}); INFO ou TSB nulo → sem sinal. */
     public Optional<SinalAtencao> avaliarFadiga(Double tsb) {
@@ -147,6 +152,46 @@ public class CoachAttentionSignalEvaluator {
                 List.of(new Evidencia("Zonas", "teste de FC/pace há 3+ meses")),
                 rationale,
                 List.of(SOURCE_ZONAS_VENCIDAS, "Atleta.precisaAtualizarTestes")));
+    }
+
+    /**
+     * Provas que o atleta criou/alterou/cancelou e o coach ainda não viu. CRITICA se alguma tem
+     * preparação curta ou trocou a prova-alvo; ALTA nos demais casos; lista vazia → sem sinal.
+     */
+    public Optional<SinalAtencao> avaliarProvaPendente(List<ProvaPendenteSinal> pendentes) {
+        if (pendentes == null || pendentes.isEmpty()) {
+            return Optional.empty();
+        }
+        boolean critica = pendentes.stream()
+                .anyMatch(p -> p.preparacaoCurta() || p.motivo() == MotivoRevisaoProva.ALVO_TROCADA);
+        Severidade severidade = critica ? Severidade.CRITICA : Severidade.ALTA;
+
+        List<Evidencia> evidencias = new ArrayList<>();
+        for (ProvaPendenteSinal p : pendentes) {
+            evidencias.add(new Evidencia("Prova", p.nome()));
+            evidencias.add(new Evidencia("Data", p.data().format(FORMATO_DATA_CURTA)));
+            evidencias.add(new Evidencia("Distância", p.distancia()));
+            evidencias.add(new Evidencia("Preparação", p.semanasFaltando() + " de " + p.semanasMinimas() + " semanas"));
+            evidencias.add(new Evidencia("Motivo", descreverMotivo(p)));
+        }
+
+        ProvaPendenteSinal principal = pendentes.get(0);
+        String rationale = String.format(Locale.US,
+                "Atleta alterou provas sem ciência do treinador (%s: %s, %s); %s.",
+                principal.nome(), descreverMotivo(principal),
+                principal.semanasFaltando() + " de " + principal.semanasMinimas() + " semanas",
+                critica ? "preparação curta ou troca de alvo exige revisão do plano" : "revisar antes da próxima semana");
+        return Optional.of(new SinalAtencao(MotivoAtencao.PROVA_ATLETA, severidade,
+                List.copyOf(evidencias), rationale,
+                List.of(SOURCE_PROVA_ATLETA, "Prova.revisadaPeloCoach")));
+    }
+
+    private static String descreverMotivo(ProvaPendenteSinal p) {
+        String label = p.motivo() != null ? p.motivo().getLabel() : "alteração";
+        if (p.motivo() == MotivoRevisaoProva.ALVO_TROCADA && p.alvoAnteriorNome() != null) {
+            return label + ": antes " + p.alvoAnteriorNome();
+        }
+        return label;
     }
 
     /** Atleta sem plano ativo → SEM_PLANO (ALTA), para não desaparecer da fila. */

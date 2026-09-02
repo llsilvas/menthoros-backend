@@ -2,6 +2,7 @@ package br.com.menthoros.backend.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import br.com.menthoros.backend.enums.DistanciaProva;
+import br.com.menthoros.backend.enums.MotivoRevisaoProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoProva;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -82,6 +83,15 @@ public record ProvaOutputDto(
         boolean preparacaoCurta,
 
         @Schema(description = "Semanas inteiras faltando até a prova", example = "12")
-        Integer semanasFaltando
+        Integer semanasFaltando,
+
+        @Schema(description = "Indica se o coach já tomou ciência da última alteração feita pelo atleta", example = "true")
+        boolean revisadaPeloCoach,
+
+        @Schema(description = "Motivo da pendência de ciência, quando houver", example = "NOVA")
+        MotivoRevisaoProva motivoRevisao,
+
+        @Schema(description = "Nome da prova-alvo substituída, quando o motivo é ALVO_TROCADA", example = "Meia do Rio")
+        String alvoAnteriorNome
 ) {
 }

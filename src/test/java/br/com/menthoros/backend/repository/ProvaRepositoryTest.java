@@ -190,6 +190,65 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         }
     }
 
+    @Nested
+    @DisplayName("findPendentesRevisao")
+    class FindPendentesRevisao {
+
+        @Test
+        @DisplayName("inclui futura pendente e cancelada pendente; exclui passada, revisada e de outro tenant")
+        void filtraPendentes() {
+            LocalDate hoje = LocalDate.now();
+            Prova futuraPendente = pendente("Futura", hoje.plusWeeks(10), ProvaStatus.PLANEJADA);
+            Prova canceladaPendente = pendente("Cancelada", hoje.plusWeeks(4), ProvaStatus.CANCELADA);
+            Prova passadaPendente = pendente("Passada", hoje.minusDays(1), ProvaStatus.CONCLUIDA);
+            Prova futuraRevisada = pendente("Revisada", hoje.plusWeeks(6), ProvaStatus.PLANEJADA);
+            futuraRevisada.setRevisadaPeloCoach(true);
+            provaRepository.saveAll(List.of(futuraPendente, canceladaPendente, passadaPendente, futuraRevisada));
+
+            Assessoria outra = new Assessoria();
+            outra.setNome("Outra");
+            outra.setDominio("outra-" + UUID.randomUUID());
+            outra.setPlano(PlanoAssessoria.BASIC);
+            outra = assessoriaRepository.save(outra);
+            Atleta atletaOutra = new Atleta();
+            atletaOutra.setNome("Outro");
+            atletaOutra.setEmail("outro-" + UUID.randomUUID() + "@test.com");
+            atletaOutra.setObjetivo("x");
+            atletaOutra.setNivelExperiencia(NivelExperiencia.INICIANTE);
+            atletaOutra.setAtivo(AtletaStatus.ATIVO);
+            atletaOutra.setAssessoria(outra);
+            atletaOutra = atletaRepository.save(atletaOutra);
+            Prova deOutroTenant = pendente("Outro tenant", hoje.plusWeeks(8), ProvaStatus.PLANEJADA);
+            deOutroTenant.setAtleta(atletaOutra);
+            deOutroTenant.setAssessoria(outra);
+            provaRepository.save(deOutroTenant);
+
+            List<Prova> porTenant = provaRepository.findPendentesRevisaoByAssessoria(assessoria.getId(), hoje);
+            List<Prova> porAtleta = provaRepository.findPendentesRevisaoByAtleta(atleta.getId(), hoje);
+
+            assertThat(porTenant).extracting(Prova::getNomeProva).containsExactly("Cancelada", "Futura");
+            assertThat(porAtleta).extracting(Prova::getNomeProva).containsExactly("Cancelada", "Futura");
+        }
+
+        @Test
+        @DisplayName("prova gravada sem tocar na flag nasce revisada (default true)")
+        void defaultRevisada() {
+            Prova prova = criarProva("Meia SP", LocalDate.now().plusWeeks(12), DistanciaProva.KM_21, null,
+                    false, null);
+            provaRepository.saveAndFlush(prova);
+
+            assertThat(provaRepository.findPendentesRevisaoByAtleta(atleta.getId(), LocalDate.now())).isEmpty();
+        }
+
+        private Prova pendente(String nome, LocalDate data, ProvaStatus status) {
+            Prova prova = criarProva(nome, data, DistanciaProva.KM_21, null, false, null);
+            prova.setStatusProva(status);
+            prova.setRevisadaPeloCoach(false);
+            prova.setMotivoRevisao(br.com.menthoros.backend.enums.MotivoRevisaoProva.NOVA);
+            return prova;
+        }
+    }
+
     private Prova criarProva(String nome, LocalDate dataProva, DistanciaProva distancia, BigDecimal distanciaKm,
                               boolean foiRealizada, LocalTime tempoRealizado) {
         Prova prova = new Prova();

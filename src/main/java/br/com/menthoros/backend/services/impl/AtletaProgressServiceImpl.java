@@ -12,7 +12,6 @@ import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
-import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.FaixaTsb;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -23,8 +22,7 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.repository.UsuarioRepository;
-import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
+import br.com.menthoros.backend.security.AuthenticatedAtletaResolver;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
@@ -72,13 +70,12 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     private record Alvo(String label, double min, double max) {}
 
     private final AtletaRepository atletaRepository;
-    private final UsuarioRepository usuarioRepository;
     private final MetricasDiariasRepository metricasDiariasRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final ZonaTreinoService zonaTreinoService;
-    private final AuthenticatedPrincipalResolver principalResolver;
+    private final AuthenticatedAtletaResolver atletaResolver;
     private final CheckinProntidaoRepository checkinProntidaoRepository;
     private final EtapaMapper etapaMapper;
     private final Clock clock;
@@ -327,13 +324,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     @Override
     @Transactional(readOnly = true)
     public UUID resolverAtletaIdAtual() {
-        UUID tenantId = TenantContext.getRequiredTenantId();
-        String sub = principalResolver.getCurrentSubject();
-        Usuario usuario = usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId)
-                .orElseThrow(() -> new DomainNotFoundException("Usuário autenticado não encontrado no tenant"));
-        Atleta atleta = atletaRepository.findByUsuario_IdAndAssessoria_Id(usuario.getId(), tenantId)
-                .orElseThrow(() -> new DomainNotFoundException("Atleta vinculado ao usuário não encontrado"));
-        return atleta.getId();
+        return atletaResolver.resolverAtletaIdAtual();
     }
 
     // ===== Helpers =====

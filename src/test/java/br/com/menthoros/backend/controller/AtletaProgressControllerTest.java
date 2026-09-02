@@ -359,6 +359,6 @@ class AtletaProgressControllerTest {
         return new ProvaOutputDto(
                 UUID.randomUUID(), "Maratona de São Paulo", LocalDate.of(2026, 8, 18),
                 TipoProva.MARATONA, DistanciaProva.KM_42, null, true, ProvaStatus.CONFIRMADA,
-                null, null, null, false, null, null, null, null, null, null, null, null, 45, false, null);
+                null, null, null, false, null, null, null, null, null, null, null, null, 45, false, null, true, null, null);
     }
 }

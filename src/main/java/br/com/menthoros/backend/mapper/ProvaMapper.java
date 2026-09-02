@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.mapper;
 
+import br.com.menthoros.backend.dto.input.ProvaAtletaInputDto;
 import br.com.menthoros.backend.dto.input.ProvaInputDto;
 import br.com.menthoros.backend.dto.output.ProvaOutputDto;
 import br.com.menthoros.backend.entity.Prova;
@@ -40,4 +41,14 @@ public abstract class ProvaMapper {
     @Mapping(target = "semanasPreparacao", ignore = true)
     @Mapping(target = "inicioPreparacao", ignore = true)
     public abstract void updateEntity(ProvaInputDto dto, @MappingTarget Prova prova);
+
+    /** Caminho do atleta: só os campos do subconjunto; status, resultado e derivados ficam intactos. */
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "atleta", ignore = true)
+    public abstract Prova toEntity(ProvaAtletaInputDto dto);
+
+    @BeanMapping(ignoreByDefault = false)
+    @Mapping(target = "id", ignore = true)
+    @Mapping(target = "atleta", ignore = true)
+    public abstract void updateEntity(ProvaAtletaInputDto dto, @MappingTarget Prova prova);
 }
