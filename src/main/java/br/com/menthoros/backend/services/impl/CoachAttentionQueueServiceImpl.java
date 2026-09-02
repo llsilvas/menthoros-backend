@@ -121,7 +121,7 @@ public class CoachAttentionQueueServiceImpl implements CoachAttentionQueueServic
 
         return atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .flatMap(atleta -> montarItem(atleta, hoje, inicioJanela, geradoEm,
-                        provaRepository.findPendentesRevisaoByAtleta(atletaId, hoje)))
+                        provaRepository.findPendentesRevisaoByAtleta(atletaId, tenantId, hoje)))
                 .stream()
                 .filter(item -> item.severity().getPeso() >= CORTE_SEVERIDADE)
                 .sorted(ORDENACAO)

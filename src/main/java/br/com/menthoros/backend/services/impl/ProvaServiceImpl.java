@@ -130,9 +130,12 @@ public class ProvaServiceImpl implements ProvaService {
             prova.setFoiRealizada(false);
         }
         provaEnricher.aplicarDerivados(prova);
-        garantirAlvoUnica(atleta, prova);
+        Optional<String> alvoSubstituida = garantirAlvoUnica(atleta, prova);
         if (atorAtleta) {
-            marcarPendente(prova, MotivoRevisaoProva.NOVA, null);
+            // Nascer como alvo substituindo outra é troca de alvo (CRITICA na fila), não prova nova.
+            marcarPendente(prova,
+                    alvoSubstituida.isPresent() ? MotivoRevisaoProva.ALVO_TROCADA : MotivoRevisaoProva.NOVA,
+                    alvoSubstituida.orElse(null));
         }
         Prova salva = provaRepository.save(prova);
         log.info("Prova criada: id={}, atletaId={}, alvo={}, atorAtleta={}",
@@ -319,7 +322,7 @@ public class ProvaServiceImpl implements ProvaService {
     @Transactional(readOnly = true)
     public List<ProvaOutputDto> listarPendentesRevisao(UUID atletaId) {
         Atleta atleta = resolveAtleta(atletaId);
-        return provaRepository.findPendentesRevisaoByAtleta(atleta.getId(), LocalDate.now(clock))
+        return provaRepository.findPendentesRevisaoByAtleta(atleta.getId(), atleta.getAssessoria().getId(), LocalDate.now(clock))
                 .stream()
                 .map(provaMapper::toOutputDto)
                 .toList();
@@ -381,6 +384,7 @@ public class ProvaServiceImpl implements ProvaService {
             return Optional.empty();
         }
         String alvoAnterior = null;
+        // Há no máximo uma alvo por atleta; o loop cobre dados legados com mais de uma marcada.
         for (Prova outra : provaRepository.findByAtletaAndProvaAlvoTrue(atleta)) {
             if (prova.getId() != null && prova.getId().equals(outra.getId())) {
                 continue;
@@ -433,8 +437,13 @@ public class ProvaServiceImpl implements ProvaService {
         boolean mesmaDataEDistancia(Prova prova) {
             return Objects.equals(dataProva, prova.getDataProva())
                     && distancia == prova.getDistancia()
-                    && (distanciaKm == null ? prova.getDistanciaKm() == null
-                        : prova.getDistanciaKm() != null && distanciaKm.compareTo(prova.getDistanciaKm()) == 0);
+                    && mesmaDistanciaKm(distanciaKm, prova.getDistanciaKm());
+        }
+
+        /** compareTo, não equals: 30 e 30.00 são a mesma quilometragem. */
+        private static boolean mesmaDistanciaKm(BigDecimal a, BigDecimal b) {
+            if (a == null || b == null) return a == b;
+            return a.compareTo(b) == 0;
         }
     }
 

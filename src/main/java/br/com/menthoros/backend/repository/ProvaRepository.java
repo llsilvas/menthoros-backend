@@ -106,16 +106,18 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
      * Mesmo critério de {@link #findPendentesRevisaoByAssessoria}, para um atleta — alimenta o card
      * de provas no perfil do coach sem depender do corte da fila.
      *
-     * Idempotent: YES · Side Effects: NONE · Tenant-aware: YES (via atleta do tenant)
+     * Idempotent: YES · Side Effects: NONE · Tenant-aware: YES
      */
     @Query("""
         SELECT p FROM Prova p
         WHERE p.atleta.id = :atletaId
+          AND p.assessoria.id = :tenantId
           AND p.revisadaPeloCoach = false
           AND (p.dataProva >= :hoje OR p.statusProva = 'CANCELADA')
         ORDER BY p.dataProva ASC
         """)
-    List<Prova> findPendentesRevisaoByAtleta(@Param("atletaId") UUID atletaId, @Param("hoje") LocalDate hoje);
+    List<Prova> findPendentesRevisaoByAtleta(@Param("atletaId") UUID atletaId, @Param("tenantId") UUID tenantId,
+                                             @Param("hoje") LocalDate hoje);
 
     /**
      * Valida se uma Prova pertence a um tenant específico.

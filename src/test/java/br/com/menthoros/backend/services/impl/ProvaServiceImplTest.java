@@ -579,6 +579,26 @@ class ProvaServiceImplTest {
         }
 
         @Test
+        @DisplayName("atleta cria prova já como alvo substituindo outra → ALVO_TROCADA com o nome da anterior")
+        void criarComoAlvoTrocaAlvo() {
+            Prova alvoAnterior = provaAlvoExistente("Meia do Rio");
+            Prova nova = prova.toBuilder().id(null).provaAlvo(true).build();
+            when(atletaResolver.atuaComoAtleta()).thenReturn(true);
+            when(atletaResolver.resolverAtletaIdAtual()).thenReturn(atletaId);
+            when(provaMapper.toEntity(any(ProvaAtletaInputDto.class))).thenReturn(nova);
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atleta)).thenReturn(List.of(alvoAnterior));
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(provaMapper.toOutputDto(nova)).thenReturn(outputDto);
+
+            provaService.criarProva(atletaId, novoInput(true));
+
+            assertThat(nova.isRevisadaPeloCoach()).isFalse();
+            assertThat(nova.getMotivoRevisao()).isEqualTo(MotivoRevisaoProva.ALVO_TROCADA);
+            assertThat(nova.getAlvoAnteriorNome()).isEqualTo("Meia do Rio");
+            assertThat(alvoAnterior.isProvaAlvo()).isFalse();
+        }
+
+        @Test
         @DisplayName("coach cria prova → continua revisada")
         void coachCriaNaoZera() {
             when(provaMapper.toEntity(inputDto)).thenReturn(prova);
@@ -718,7 +738,7 @@ class ProvaServiceImplTest {
         @Test
         @DisplayName("listarPendentesRevisao lê direto do repositório")
         void listaPendentes() {
-            when(provaRepository.findPendentesRevisaoByAtleta(eq(atletaId), any(LocalDate.class))).thenReturn(List.of(prova));
+            when(provaRepository.findPendentesRevisaoByAtleta(eq(atletaId), eq(tenantId), any(LocalDate.class))).thenReturn(List.of(prova));
             when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
 
             assertThat(provaService.listarPendentesRevisao(atletaId)).hasSize(1);

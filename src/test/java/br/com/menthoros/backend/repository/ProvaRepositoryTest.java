@@ -224,7 +224,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
             provaRepository.save(deOutroTenant);
 
             List<Prova> porTenant = provaRepository.findPendentesRevisaoByAssessoria(assessoria.getId(), hoje);
-            List<Prova> porAtleta = provaRepository.findPendentesRevisaoByAtleta(atleta.getId(), hoje);
+            List<Prova> porAtleta = provaRepository.findPendentesRevisaoByAtleta(atleta.getId(), assessoria.getId(), hoje);
 
             assertThat(porTenant).extracting(Prova::getNomeProva).containsExactly("Cancelada", "Futura");
             assertThat(porAtleta).extracting(Prova::getNomeProva).containsExactly("Cancelada", "Futura");
@@ -237,7 +237,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
                     false, null);
             provaRepository.saveAndFlush(prova);
 
-            assertThat(provaRepository.findPendentesRevisaoByAtleta(atleta.getId(), LocalDate.now())).isEmpty();
+            assertThat(provaRepository.findPendentesRevisaoByAtleta(atleta.getId(), assessoria.getId(), LocalDate.now())).isEmpty();
         }
 
         private Prova pendente(String nome, LocalDate data, ProvaStatus status) {
