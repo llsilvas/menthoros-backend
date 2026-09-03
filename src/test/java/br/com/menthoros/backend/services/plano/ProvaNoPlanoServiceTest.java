@@ -32,7 +32,7 @@ class ProvaNoPlanoServiceTest {
     @BeforeEach
     void setUp() {
         TreinoMapper treinoMapper = new TreinoMapperImpl(null, null);
-        service = new ProvaNoPlanoService(null, treinoMapper);
+        service = new ProvaNoPlanoService(null, treinoMapper, null, null);
     }
 
     @Nested

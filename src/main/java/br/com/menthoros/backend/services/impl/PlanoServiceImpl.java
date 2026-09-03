@@ -216,9 +216,12 @@ public class PlanoServiceImpl implements PlanoService {
         PlanoSemanal planoSemanal;
 
         if (apenasAprovados) {
+            // APROVADO ou AGUARDANDO_REVISAO reaberto por prova (prova-no-plano-semanal, D4) —
+            // o atleta continua vendo a versão vigente em vez de cair na semana anterior.
             planoSemanal = planoSemanalRepository
-                    .findTopByAtletaIdAndAssessoriaIdAndReviewStatusOrderBySemanaInicioDesc(
-                            atletaId, tenantId, PlanoReviewStatus.APROVADO)
+                    .findVisiveisParaAtletaOrderBySemanaInicioDesc(atletaId, tenantId)
+                    .stream()
+                    .findFirst()
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Nenhum plano aprovado encontrado para o atleta: " + atletaId));
         } else {

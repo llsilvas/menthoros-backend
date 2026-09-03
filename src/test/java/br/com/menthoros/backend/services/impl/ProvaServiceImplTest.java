@@ -69,6 +69,8 @@ class ProvaServiceImplTest {
     private AuthenticatedAtletaResolver atletaResolver;
     @Mock
     private AuthenticatedPrincipalResolver principalResolver;
+    @Mock
+    private br.com.menthoros.backend.services.plano.ProvaNoPlanoService provaNoPlanoService;
     @Spy
     private Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
     @Spy
@@ -205,6 +207,19 @@ class ProvaServiceImplTest {
 
             verify(provaRepository, never()).save(any());
         }
+
+        @Test
+        @DisplayName("prova-no-plano-semanal: aplica a prova recém-criada na semana existente")
+        void aplicaNaSemanaExistente() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(provaMapper.toEntity(inputDto)).thenReturn(prova);
+            when(provaRepository.save(prova)).thenReturn(prova);
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.criarProva(atletaId, inputDto);
+
+            verify(provaNoPlanoService).aplicarProvaEmSemanaExistente(prova);
+        }
     }
 
     @Nested
@@ -311,6 +326,42 @@ class ProvaServiceImplTest {
                 alvo.setProvaAlvo(true);
                 return null;
             }).when(provaMapper).updateEntity(eq(input), eq(prova));
+        }
+
+        @Test
+        @DisplayName("prova-no-plano-semanal: data alterada remove da semana antiga e aplica na nova")
+        void dataAlteradaRemoveEAplica() {
+            LocalDate dataAntiga = prova.getDataProva();
+            LocalDate dataNova = dataAntiga.plusDays(7);
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            org.mockito.Mockito.doAnswer(inv -> {
+                prova.setDataProva(dataNova);
+                return null;
+            }).when(provaMapper).updateEntity(inputDto, prova);
+            when(provaRepository.save(prova)).thenReturn(prova);
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.atualizarProva(atletaId, provaId, inputDto);
+
+            verify(provaNoPlanoService).removerProvaDeSemanaExistente(prova, dataAntiga);
+            verify(provaNoPlanoService).aplicarProvaEmSemanaExistente(prova);
+            verify(provaNoPlanoService, never()).atualizarTreinoVinculado(any());
+        }
+
+        @Test
+        @DisplayName("prova-no-plano-semanal: sem mudança de data, só atualiza o treino vinculado")
+        void semMudancaDeDataAtualizaTreinoVinculado() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.save(prova)).thenReturn(prova);
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.atualizarProva(atletaId, provaId, inputDto);
+
+            verify(provaNoPlanoService).atualizarTreinoVinculado(prova);
+            verify(provaNoPlanoService, never()).removerProvaDeSemanaExistente(any(), any());
+            verify(provaNoPlanoService, never()).aplicarProvaEmSemanaExistente(any());
         }
     }
 
@@ -481,6 +532,18 @@ class ProvaServiceImplTest {
             assertThat(prova.getStatusProva()).isEqualTo(ProvaStatus.CANCELADA);
             verify(provaRepository).save(prova);
             verify(provaRepository, never()).delete(any());
+        }
+
+        @Test
+        @DisplayName("prova-no-plano-semanal: cancelar remove a prova da semana existente")
+        void cancelarRemoveDaSemana() {
+            LocalDate dataProva = prova.getDataProva();
+            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.save(prova)).thenReturn(prova);
+
+            provaService.cancelarProva(atletaId, provaId);
+
+            verify(provaNoPlanoService).removerProvaDeSemanaExistente(prova, dataProva);
         }
 
         @Test

@@ -160,6 +160,49 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
             UUID atletaId, UUID assessoriaId, PlanoReviewStatus reviewStatus);
 
     /**
+     * Busca o plano mais recente visível ao atleta: `APROVADO`, ou `AGUARDANDO_REVISAO` reaberto
+     * por uma prova (prova-no-plano-semanal, D4 — o atleta continua vendo a versão vigente com
+     * o treino PROVA em vez de cair na semana anterior). Um plano nunca aprovado continua
+     * invisível ao atleta.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES — filtra por assessoria.id explicitamente
+     */
+    @Query("""
+            SELECT ps FROM PlanoSemanal ps
+            WHERE ps.atleta.id = :atletaId
+              AND ps.assessoria.id = :tenantId
+              AND (ps.reviewStatus = br.com.menthoros.backend.enums.PlanoReviewStatus.APROVADO
+                   OR (ps.reviewStatus = br.com.menthoros.backend.enums.PlanoReviewStatus.AGUARDANDO_REVISAO
+                       AND ps.motivoReabertura IS NOT NULL))
+            ORDER BY ps.semanaInicio DESC
+            """)
+    List<PlanoSemanal> findVisiveisParaAtletaOrderBySemanaInicioDesc(
+            @Param("atletaId") UUID atletaId, @Param("tenantId") UUID tenantId);
+
+    /**
+     * Localiza a semana aberta que contém {@code data}, para o gatilho de prova em semana já
+     * gerada (prova-no-plano-semanal, D5). Diferente de {@code findByAtletaIdAndSemana}
+     * (usado na geração): filtra tenant e exclui semana encerrada (`CONCLUIDO`) e plano
+     * rejeitado — tocar um `REJEITADO` não faz sentido, ele já não representa a semana.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES — filtra por assessoria.id explicitamente
+     */
+    @Query("""
+            SELECT ps FROM PlanoSemanal ps
+            WHERE ps.atleta.id = :atletaId
+              AND ps.assessoria.id = :tenantId
+              AND :data BETWEEN ps.semanaInicio AND ps.semanaFim
+              AND ps.status <> br.com.menthoros.backend.enums.PlanoStatus.CONCLUIDO
+              AND ps.reviewStatus <> br.com.menthoros.backend.enums.PlanoReviewStatus.REJEITADO
+            """)
+    Optional<PlanoSemanal> findSemanaAbertaParaProva(
+            @Param("atletaId") UUID atletaId, @Param("tenantId") UUID tenantId, @Param("data") LocalDate data);
+
+    /**
      * Lista planos de um tenant com reviewStatus específico cuja semana ainda não encerrou
      * (semanaFim >= dataReferencia), ordenados por semanaInicio ASC.
      *

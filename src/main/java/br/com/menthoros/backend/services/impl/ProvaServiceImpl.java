@@ -22,6 +22,7 @@ import br.com.menthoros.backend.security.AuthenticatedAtletaResolver;
 import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
 import br.com.menthoros.backend.services.ProvaService;
 import br.com.menthoros.backend.services.helper.ProvaEnricher;
+import br.com.menthoros.backend.services.plano.ProvaNoPlanoService;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
@@ -55,6 +56,7 @@ public class ProvaServiceImpl implements ProvaService {
     private final AuthenticatedPrincipalResolver principalResolver;
     private final Validator validator;
     private final Clock clock;
+    private final ProvaNoPlanoService provaNoPlanoService;
 
     /**
      * Resolve o atleta pelo ID garantindo isolamento por tenant.
@@ -138,6 +140,10 @@ public class ProvaServiceImpl implements ProvaService {
                     alvoSubstituida.orElse(null));
         }
         Prova salva = provaRepository.save(prova);
+        if (salva.getStatusProva() != ProvaStatus.CANCELADA) {
+            // Prova nova em semana já gerada (prova-no-plano-semanal, D5): mesma transação.
+            provaNoPlanoService.aplicarProvaEmSemanaExistente(salva);
+        }
         log.info("Prova criada: id={}, atletaId={}, alvo={}, atorAtleta={}",
                 salva.getId(), atletaId, salva.isProvaAlvo(), atorAtleta);
         return provaMapper.toOutputDto(salva);
@@ -220,7 +226,21 @@ public class ProvaServiceImpl implements ProvaService {
         if (atorAtleta) {
             registrarMudancaDoAtleta(prova, antes, alvoSubstituida);
         }
-        return provaMapper.toOutputDto(provaRepository.save(prova));
+        Prova salva = provaRepository.save(prova);
+
+        // prova-no-plano-semanal, D5, mesma transação: data mudou -> sai da semana antiga e
+        // entra na nova (reabre as duas, se aprovadas); só nome/tempo objetivo -> atualiza o
+        // treino já vinculado sem reabrir revisão.
+        if (salva.getStatusProva() == ProvaStatus.CANCELADA) {
+            provaNoPlanoService.removerProvaDeSemanaExistente(salva, antes.dataProva());
+        } else if (!Objects.equals(antes.dataProva(), salva.getDataProva())) {
+            provaNoPlanoService.removerProvaDeSemanaExistente(salva, antes.dataProva());
+            provaNoPlanoService.aplicarProvaEmSemanaExistente(salva);
+        } else {
+            provaNoPlanoService.atualizarTreinoVinculado(salva);
+        }
+
+        return provaMapper.toOutputDto(salva);
     }
 
     /**
@@ -263,8 +283,11 @@ public class ProvaServiceImpl implements ProvaService {
             exigirNaoRealizada(prova);
             marcarPendente(prova, MotivoRevisaoProva.CANCELADA, null);
         }
+        LocalDate dataProva = prova.getDataProva();
         prova.setStatusProva(ProvaStatus.CANCELADA);
-        provaRepository.save(prova);
+        Prova salva = provaRepository.save(prova);
+        // prova-no-plano-semanal, D5, mesma transação: cancelar remove o PROVA da semana, se houver.
+        provaNoPlanoService.removerProvaDeSemanaExistente(salva, dataProva);
         log.info("Prova cancelada: id={}, atletaId={}", provaId, atletaId);
     }
 

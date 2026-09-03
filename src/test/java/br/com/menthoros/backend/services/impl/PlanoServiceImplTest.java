@@ -1567,9 +1567,8 @@ class PlanoServiceImplTest {
             UUID atletaId = UUID.randomUUID();
             PlanoSemanal plano = criarPlanoSemanalMock();
 
-            when(planoSemanalRepository.findTopByAtletaIdAndAssessoriaIdAndReviewStatusOrderBySemanaInicioDesc(
-                    atletaId, tenantId, PlanoReviewStatus.APROVADO))
-                    .thenReturn(Optional.of(plano));
+            when(planoSemanalRepository.findVisiveisParaAtletaOrderBySemanaInicioDesc(atletaId, tenantId))
+                    .thenReturn(List.of(plano));
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
                     atletaId, tenantId, plano.getSemanaInicio(), plano.getSemanaFim()))
                     .thenReturn(List.of(criarTreinoRealizadoComDistancia(BigDecimal.valueOf(9.0))));
@@ -1586,9 +1585,8 @@ class PlanoServiceImplTest {
         void apenasAprovadosLancaExcecaoQuandoNaoHaPlanoAprovado() {
             UUID atletaId = UUID.randomUUID();
 
-            when(planoSemanalRepository.findTopByAtletaIdAndAssessoriaIdAndReviewStatusOrderBySemanaInicioDesc(
-                    atletaId, tenantId, PlanoReviewStatus.APROVADO))
-                    .thenReturn(Optional.empty());
+            when(planoSemanalRepository.findVisiveisParaAtletaOrderBySemanaInicioDesc(atletaId, tenantId))
+                    .thenReturn(List.of());
 
             assertThrows(ResourceNotFoundException.class,
                     () -> planoService.buscarPlanoPorAtleta(atletaId, true));
