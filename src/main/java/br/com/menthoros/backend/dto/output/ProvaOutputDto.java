@@ -1,15 +1,17 @@
 package br.com.menthoros.backend.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import br.com.menthoros.backend.dto.jackson.DurationHhMmSsSerializer;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.MotivoRevisaoProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoProva;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.UUID;
 
 @Schema(description = "Dados de saída de uma prova do atleta")
@@ -41,7 +43,8 @@ public record ProvaOutputDto(
         ProvaStatus statusProva,
 
         @Schema(description = "Meta de tempo para a prova", example = "01:45:00")
-        LocalTime tempoObjetivo,
+        @JsonSerialize(using = DurationHhMmSsSerializer.class)
+        Duration tempoObjetivo,
 
         @Schema(description = "Pace objetivo em min/km", example = "4.50")
         BigDecimal paceObjetivo,
@@ -53,7 +56,8 @@ public record ProvaOutputDto(
         Boolean foiRealizada,
 
         @Schema(description = "Tempo realizado na prova", example = "01:48:30")
-        LocalTime tempoRealizado,
+        @JsonSerialize(using = DurationHhMmSsSerializer.class)
+        Duration tempoRealizado,
 
         @Schema(description = "Posição geral na prova", example = "150")
         Integer posicaoGeral,

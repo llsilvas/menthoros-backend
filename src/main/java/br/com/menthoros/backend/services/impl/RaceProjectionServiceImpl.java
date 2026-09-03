@@ -197,7 +197,7 @@ public class RaceProjectionServiceImpl implements RaceProjectionService {
 
     private PastRace toPastRace(Prova prova) {
         int distanceM = resolveDistanceM(prova);
-        long finishTimeSec = prova.getTempoRealizado().toSecondOfDay();
+        long finishTimeSec = prova.getTempoRealizado().getSeconds();
         return new PastRace(distanceM, finishTimeSec, prova.getDataProva(), RaceConditions.IDEAL);
     }
 

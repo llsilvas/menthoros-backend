@@ -393,7 +393,7 @@ public class IaServiceImpl implements IaService {
                         treino.tssPlanejado(), treino.intensidadePlanejada(),
                         treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
                         treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(),
-                        etapasCorrigidas);
+                        etapasCorrigidas, treino.descricao(), treino.zonaAlvo(), treino.provaId());
                 // Expansão ANTES da validação: corrige alucinação de compressão "NxDist"
                 treino = expandirEtapasAgregadas(treino, zonasParaValidacao);
                 validarTreinoIntervalado(treino, atletaId);
@@ -410,7 +410,7 @@ public class IaServiceImpl implements IaService {
                         treino.tssPlanejado(), treino.intensidadePlanejada(),
                         treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
                         treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(),
-                        etapasCorrigidas);
+                        etapasCorrigidas, treino.descricao(), treino.zonaAlvo(), treino.provaId());
                 treino = expandirEtapasAgregadas(treino, zonasParaValidacao);
                 treino = reconciliarDistanciaComEtapas(treino);
             }
@@ -449,7 +449,8 @@ public class IaServiceImpl implements IaService {
                         treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
                         treino.tssPlanejado(), treino.intensidadePlanejada(),
                         treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                        treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(), etapasValidadas
+                        treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(), etapasValidadas,
+                        treino.descricao(), treino.zonaAlvo(), treino.provaId()
                 );
             }
 
@@ -467,7 +468,8 @@ public class IaServiceImpl implements IaService {
                         treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
                         treino.tssPlanejado(), treino.intensidadePlanejada(),
                         treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                        treino.duracaoMin(), treino.distanciaKm(), ritmoValidado, treino.etapas()
+                        treino.duracaoMin(), treino.distanciaKm(), ritmoValidado, treino.etapas(),
+                        treino.descricao(), treino.zonaAlvo(), treino.provaId()
                 );
             }
 
@@ -683,7 +685,8 @@ public class IaServiceImpl implements IaService {
                     treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
                     treino.tssPlanejado(), treino.intensidadePlanejada(),
                     treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                    treino.duracaoMin(), somaEtapas, treino.ritmoAlvo(), treino.etapas()
+                    treino.duracaoMin(), somaEtapas, treino.ritmoAlvo(), treino.etapas(),
+                    treino.descricao(), treino.zonaAlvo(), treino.provaId()
             );
         }
 
@@ -696,7 +699,8 @@ public class IaServiceImpl implements IaService {
                     treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
                     treino.tssPlanejado(), treino.intensidadePlanejada(),
                     treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                    treino.duracaoMin(), somaEtapas, treino.ritmoAlvo(), treino.etapas()
+                    treino.duracaoMin(), somaEtapas, treino.ritmoAlvo(), treino.etapas(),
+                    treino.descricao(), treino.zonaAlvo(), treino.provaId()
             );
         }
 
@@ -1167,7 +1171,10 @@ public class IaServiceImpl implements IaService {
                 novaDuracao,
                 treino.distanciaKm(),
                 treino.ritmoAlvo(),
-                etapas
+                etapas,
+                treino.descricao(),
+                treino.zonaAlvo(),
+                treino.provaId()
         );
     }
 

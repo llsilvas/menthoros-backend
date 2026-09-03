@@ -132,7 +132,7 @@ public class ThresholdInferenceService {
      */
     public BigDecimal inferirPaceLimiarDeProva(Prova provaValida) {
         int distanciaM = resolverDistanciaMetros(provaValida);
-        long tempoProvaSegundos = provaValida.getTempoRealizado().toSecondOfDay();
+        long tempoProvaSegundos = provaValida.getTempoRealizado().getSeconds();
 
         double tempo10kEquivalenteSegundos =
                 tempoProvaSegundos * Math.pow(10000.0 / distanciaM, EXPONENTE_RIEGEL);

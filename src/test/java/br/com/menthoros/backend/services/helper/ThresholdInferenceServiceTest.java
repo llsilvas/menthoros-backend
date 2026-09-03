@@ -17,7 +17,7 @@ import org.junit.jupiter.params.provider.CsvSource;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -218,14 +218,14 @@ class ThresholdInferenceServiceTest {
                 "KM_42, 42195"
         })
         void resolvePorEnumQuandoDistanciaKmNulo(DistanciaProva distancia, int metrosEsperados) {
-            Prova prova = provaCom(distancia, null, LocalTime.of(0, 45, 0));
+            Prova prova = provaCom(distancia, null, Duration.ofHours(0).plusMinutes(45));
             assertThat(service.resolverDistanciaMetros(prova)).isEqualTo(metrosEsperados);
         }
 
         @Test
         @DisplayName("prioriza distanciaKm customizado sobre o enum quando ambos presentes")
         void priorizaDistanciaKmCustomizadoSobreEnum() {
-            Prova prova = provaCom(DistanciaProva.KM_10, BigDecimal.valueOf(12.5), LocalTime.of(1, 0, 0));
+            Prova prova = provaCom(DistanciaProva.KM_10, BigDecimal.valueOf(12.5), Duration.ofHours(1));
             assertThat(service.resolverDistanciaMetros(prova)).isEqualTo(12500);
         }
     }
@@ -237,7 +237,7 @@ class ThresholdInferenceServiceTest {
         @Test
         @DisplayName("10K exato — sem normalização, offset direto (278s/km → 4.6333 min/km)")
         void dez_k_exato_semNormalizacao() {
-            Prova prova = provaCom(DistanciaProva.KM_10, null, LocalTime.of(0, 45, 0)); // 2700s
+            Prova prova = provaCom(DistanciaProva.KM_10, null, Duration.ofHours(0).plusMinutes(45)); // 2700s
             BigDecimal resultado = service.inferirPaceLimiarDeProva(prova);
             assertThat(resultado.toString()).isEqualTo("4.6333");
         }
@@ -245,7 +245,7 @@ class ThresholdInferenceServiceTest {
         @Test
         @DisplayName("5000m — normalização + offset")
         void cinco_mil_metros_normalizacaoEOffset() {
-            Prova prova = provaCom(DistanciaProva.KM_5, null, LocalTime.of(0, 25, 0)); // 1500s
+            Prova prova = provaCom(DistanciaProva.KM_5, null, Duration.ofHours(0).plusMinutes(25)); // 1500s
             BigDecimal resultado = service.inferirPaceLimiarDeProva(prova);
             assertThat(resultado.doubleValue()).isCloseTo(5.3457, within(0.02));
         }
@@ -253,7 +253,7 @@ class ThresholdInferenceServiceTest {
         @Test
         @DisplayName("21097m — normalização + offset")
         void meia_maratona_normalizacaoEOffset() {
-            Prova prova = provaCom(DistanciaProva.KM_21, null, LocalTime.of(1, 45, 0)); // 6300s
+            Prova prova = provaCom(DistanciaProva.KM_21, null, Duration.ofHours(1).plusMinutes(45)); // 6300s
             BigDecimal resultado = service.inferirPaceLimiarDeProva(prova);
             assertThat(resultado.doubleValue()).isCloseTo(4.8925, within(0.02));
         }
@@ -261,7 +261,7 @@ class ThresholdInferenceServiceTest {
         @Test
         @DisplayName("resultado é determinístico — mesma prova gera sempre o mesmo valor")
         void resultadoDeterministico() {
-            Prova prova = provaCom(DistanciaProva.KM_21, null, LocalTime.of(1, 45, 0));
+            Prova prova = provaCom(DistanciaProva.KM_21, null, Duration.ofHours(1).plusMinutes(45));
             BigDecimal primeira = service.inferirPaceLimiarDeProva(prova);
             BigDecimal segunda = service.inferirPaceLimiarDeProva(prova);
             assertThat(primeira).isEqualByComparingTo(segunda);
@@ -275,42 +275,42 @@ class ThresholdInferenceServiceTest {
         @Test
         @DisplayName("ignora prova fora da faixa (3K)")
         void ignoraProvaForaDaFaixa() {
-            Prova provaCurta = provaCom(DistanciaProva.KM_5, BigDecimal.valueOf(3.0), LocalTime.of(0, 12, 0));
+            Prova provaCurta = provaCom(DistanciaProva.KM_5, BigDecimal.valueOf(3.0), Duration.ofHours(0).plusMinutes(12));
             assertThat(service.encontrarProvaValidaMaisRecente(List.of(provaCurta))).isEmpty();
         }
 
         @Test
         @DisplayName("ignora prova 1m abaixo do limite mínimo (4999m)")
         void ignoraProvaUmMetroAbaixoDoMinimo() {
-            Prova prova = provaCom(DistanciaProva.KM_5, BigDecimal.valueOf(4.999), LocalTime.of(0, 20, 0));
+            Prova prova = provaCom(DistanciaProva.KM_5, BigDecimal.valueOf(4.999), Duration.ofHours(0).plusMinutes(20));
             assertThat(service.encontrarProvaValidaMaisRecente(List.of(prova))).isEmpty();
         }
 
         @Test
         @DisplayName("considera válida prova exatamente no limite mínimo (5000m)")
         void considerValidaNoLimiteMinimoExato() {
-            Prova prova = provaCom(DistanciaProva.KM_5, BigDecimal.valueOf(5.0), LocalTime.of(0, 20, 0));
+            Prova prova = provaCom(DistanciaProva.KM_5, BigDecimal.valueOf(5.0), Duration.ofHours(0).plusMinutes(20));
             assertThat(service.encontrarProvaValidaMaisRecente(List.of(prova))).contains(prova);
         }
 
         @Test
         @DisplayName("considera válida prova exatamente no limite máximo (21097m)")
         void considerValidaNoLimiteMaximoExato() {
-            Prova prova = provaCom(DistanciaProva.KM_21, BigDecimal.valueOf(21.097), LocalTime.of(1, 45, 0));
+            Prova prova = provaCom(DistanciaProva.KM_21, BigDecimal.valueOf(21.097), Duration.ofHours(1).plusMinutes(45));
             assertThat(service.encontrarProvaValidaMaisRecente(List.of(prova))).contains(prova);
         }
 
         @Test
         @DisplayName("ignora prova 1m acima do limite máximo (21098m)")
         void ignoraProvaUmMetroAcimaDoMaximo() {
-            Prova prova = provaCom(DistanciaProva.KM_21, BigDecimal.valueOf(21.098), LocalTime.of(1, 45, 0));
+            Prova prova = provaCom(DistanciaProva.KM_21, BigDecimal.valueOf(21.098), Duration.ofHours(1).plusMinutes(45));
             assertThat(service.encontrarProvaValidaMaisRecente(List.of(prova))).isEmpty();
         }
 
         @Test
         @DisplayName("considera válida prova de 21097m via enum KM_21 (distanciaKm nulo)")
         void considerValidaMeiaMaratonaViaEnum() {
-            Prova meia = provaCom(DistanciaProva.KM_21, null, LocalTime.of(1, 45, 0));
+            Prova meia = provaCom(DistanciaProva.KM_21, null, Duration.ofHours(1).plusMinutes(45));
             Optional<Prova> resultado = service.encontrarProvaValidaMaisRecente(List.of(meia));
             assertThat(resultado).contains(meia);
         }
@@ -318,7 +318,7 @@ class ThresholdInferenceServiceTest {
         @Test
         @DisplayName("considera válida prova de 10K com distanciaKm customizado")
         void considerValidaDezKCustomizado() {
-            Prova dezK = provaCom(DistanciaProva.KM_10, BigDecimal.valueOf(10.0), LocalTime.of(0, 45, 0));
+            Prova dezK = provaCom(DistanciaProva.KM_10, BigDecimal.valueOf(10.0), Duration.ofHours(0).plusMinutes(45));
             Optional<Prova> resultado = service.encontrarProvaValidaMaisRecente(List.of(dezK));
             assertThat(resultado).contains(dezK);
         }
@@ -332,8 +332,8 @@ class ThresholdInferenceServiceTest {
         @Test
         @DisplayName("retorna a primeira prova válida da lista (já ordenada por data DESC)")
         void retornaPrimeiraProvaValidaDaLista() {
-            Prova maisRecente = provaCom(DistanciaProva.KM_10, null, LocalTime.of(0, 45, 0));
-            Prova maisAntiga = provaCom(DistanciaProva.KM_21, null, LocalTime.of(1, 45, 0));
+            Prova maisRecente = provaCom(DistanciaProva.KM_10, null, Duration.ofHours(0).plusMinutes(45));
+            Prova maisAntiga = provaCom(DistanciaProva.KM_21, null, Duration.ofHours(1).plusMinutes(45));
             Optional<Prova> resultado = service.encontrarProvaValidaMaisRecente(List.of(maisRecente, maisAntiga));
             assertThat(resultado).contains(maisRecente);
         }
@@ -447,7 +447,7 @@ class ThresholdInferenceServiceTest {
         return atleta;
     }
 
-    private Prova provaCom(DistanciaProva distancia, BigDecimal distanciaKm, LocalTime tempoRealizado) {
+    private Prova provaCom(DistanciaProva distancia, BigDecimal distanciaKm, Duration tempoRealizado) {
         Prova prova = new Prova();
         prova.setDistancia(distancia);
         prova.setDistanciaKm(distanciaKm);

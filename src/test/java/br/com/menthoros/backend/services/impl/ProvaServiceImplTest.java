@@ -36,6 +36,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -410,7 +411,7 @@ class ProvaServiceImplTest {
             ProvaInputDto comResultado = new ProvaInputDto(
                     "Maratona SP", LocalDate.now().plusDays(60), TipoProva.MARATONA, DistanciaProva.KM_42,
                     null, false, ProvaStatus.CONCLUIDA, null, null, null, true,
-                    java.time.LocalTime.of(3, 30), null, null, null, null, null, 2, null);
+                    Duration.ofHours(3).plusMinutes(30), null, null, null, null, null, 2, null);
             when(provaMapper.toEntity(any(ProvaAtletaInputDto.class))).thenReturn(prova);
             when(provaRepository.save(prova)).thenReturn(prova);
             when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
@@ -659,7 +660,7 @@ class ProvaServiceImplTest {
         void mudaSoNome() {
             atletaAtualiza(p -> {
                 p.setNomeProva("Outro nome");
-                p.setTempoObjetivo(java.time.LocalTime.of(3, 30));
+                p.setTempoObjetivo(Duration.ofHours(3).plusMinutes(30));
             });
 
             assertThat(prova.isRevisadaPeloCoach()).isTrue();

@@ -115,5 +115,10 @@ public record TreinoPlanejadoOutputDto(
         // ===== ANÁLISE DO ATLETA (analise-ia-treino-atleta) =====
 
         @Schema(description = "Há análise pós-treino pronta para o atleta neste treino (bloco do atleta disponível e recurso ligado)", example = "false")
-        boolean analiseAtletaDisponivel
+        boolean analiseAtletaDisponivel,
+
+        // ===== PROVA (prova-no-plano-semanal) =====
+
+        @Schema(description = "ID da prova vinculada, quando tipoTreino = PROVA", example = "123e4567-e89b-12d3-a456-426614174010")
+        UUID provaId
 ) {}

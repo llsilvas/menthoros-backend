@@ -10,6 +10,7 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
@@ -49,7 +50,7 @@ public class PeriodizacaoPromptFormatter {
 
         BigDecimal distanciaKm = resolverDistanciaKm(provaAlvo);
         String dataProva = provaAlvo.getDataProva() != null ? provaAlvo.getDataProva().format(DATA_FMT) : "N/A";
-        String tempoObjetivo = provaAlvo.getTempoObjetivo() != null ? provaAlvo.getTempoObjetivo().toString() : "N/A";
+        String tempoObjetivo = formatarDuracaoParaPrompt(provaAlvo.getTempoObjetivo());
         String paceObjetivo = provaAlvo.getPaceObjetivo() != null
                 ? String.format("%.2f min/km", provaAlvo.getPaceObjetivo())
                 : "N/A";
@@ -417,6 +418,24 @@ public class PeriodizacaoPromptFormatter {
                 && prova.getDataProva() != null
                 && !prova.getDataProva().isBefore(inicioSemana)
                 && !prova.getDataProva().isAfter(fimSemana);
+    }
+
+    /**
+     * "HH:mm" ou "HH:mm:ss" — equivalente ao antigo {@code LocalTime.toString()} (Prova.tempoObjetivo
+     * migrou para Duration na V90, prova-no-plano-semanal D6; o prompt continua no formato antigo
+     * de propósito, para não mexer no golden fora do escopo desta task — ver 2.3).
+     */
+    private String formatarDuracaoParaPrompt(Duration duracao) {
+        if (duracao == null) {
+            return "N/A";
+        }
+        long totalSegundos = duracao.getSeconds();
+        long horas = totalSegundos / 3600;
+        long minutos = (totalSegundos % 3600) / 60;
+        long segundos = totalSegundos % 60;
+        return segundos == 0
+                ? String.format("%02d:%02d", horas, minutos)
+                : String.format("%02d:%02d:%02d", horas, minutos, segundos);
     }
 
     private String formatarDiaSemana(LocalDate data) {

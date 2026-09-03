@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -64,7 +64,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("retorna prova realizada válida independente de distanciaKm ser nulo")
         void retornaProvaValidaComDistanciaKmNulo() {
             Prova prova = criarProva("Meia SP", LocalDate.now().minusDays(10), DistanciaProva.KM_21, null,
-                    true, LocalTime.of(1, 45, 0));
+                    true, Duration.ofHours(1).plusMinutes(45));
             provaRepository.save(prova);
 
             List<Prova> resultado = provaRepository.findProvasRealizadasRecentes(
@@ -78,7 +78,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("retorna prova realizada válida com distanciaKm customizado preenchido")
         void retornaProvaValidaComDistanciaKmCustomizado() {
             Prova prova = criarProva("10K Custom", LocalDate.now().minusDays(5), DistanciaProva.KM_10,
-                    BigDecimal.valueOf(10.5), true, LocalTime.of(0, 50, 0));
+                    BigDecimal.valueOf(10.5), true, Duration.ofHours(0).plusMinutes(50));
             provaRepository.save(prova);
 
             List<Prova> resultado = provaRepository.findProvasRealizadasRecentes(
@@ -92,7 +92,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("exclui prova fora da janela de dias")
         void excluiProvaForaDaJanela() {
             Prova prova = criarProva("Prova Antiga", LocalDate.now().minusDays(120), DistanciaProva.KM_10, null,
-                    true, LocalTime.of(0, 50, 0));
+                    true, Duration.ofHours(0).plusMinutes(50));
             provaRepository.save(prova);
 
             List<Prova> resultado = provaRepository.findProvasRealizadasRecentes(
@@ -105,7 +105,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("exclui prova sem foiRealizada")
         void excluiProvaSemFoiRealizada() {
             Prova prova = criarProva("Prova Futura", LocalDate.now().minusDays(5), DistanciaProva.KM_10, null,
-                    false, LocalTime.of(0, 50, 0));
+                    false, Duration.ofHours(0).plusMinutes(50));
             provaRepository.save(prova);
 
             List<Prova> resultado = provaRepository.findProvasRealizadasRecentes(
@@ -118,7 +118,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("exclui prova com statusProva CANCELADA (mesmo com foiRealizada/tempoRealizado preenchidos)")
         void excluiProvaCancelada() {
             Prova prova = criarProva("Prova Cancelada", LocalDate.now().minusDays(5), DistanciaProva.KM_10, null,
-                    true, LocalTime.of(0, 50, 0));
+                    true, Duration.ofHours(0).plusMinutes(50));
             prova.setStatusProva(ProvaStatus.CANCELADA);
             provaRepository.save(prova);
 
@@ -160,7 +160,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
             outroAtleta = atletaRepository.save(outroAtleta);
 
             Prova provaOutroTenant = criarProva("Prova Outro Tenant", LocalDate.now().minusDays(5),
-                    DistanciaProva.KM_10, null, true, LocalTime.of(0, 50, 0));
+                    DistanciaProva.KM_10, null, true, Duration.ofHours(0).plusMinutes(50));
             provaOutroTenant.setAtleta(outroAtleta);
             provaOutroTenant.setAssessoria(outraAssessoria);
             provaRepository.save(provaOutroTenant);
@@ -175,9 +175,9 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("múltiplas provas válidas retornam ordenadas por dataProva DESC")
         void multiplasProvasOrdenadasPorDataDesc() {
             Prova maisAntiga = criarProva("Prova Mais Antiga", LocalDate.now().minusDays(60),
-                    DistanciaProva.KM_10, null, true, LocalTime.of(0, 50, 0));
+                    DistanciaProva.KM_10, null, true, Duration.ofHours(0).plusMinutes(50));
             Prova maisRecente = criarProva("Prova Mais Recente", LocalDate.now().minusDays(5),
-                    DistanciaProva.KM_21, null, true, LocalTime.of(1, 45, 0));
+                    DistanciaProva.KM_21, null, true, Duration.ofHours(1).plusMinutes(45));
             provaRepository.save(maisAntiga);
             provaRepository.save(maisRecente);
 
@@ -250,7 +250,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
     }
 
     private Prova criarProva(String nome, LocalDate dataProva, DistanciaProva distancia, BigDecimal distanciaKm,
-                              boolean foiRealizada, LocalTime tempoRealizado) {
+                              boolean foiRealizada, Duration tempoRealizado) {
         Prova prova = new Prova();
         prova.setNomeProva(nome);
         prova.setDataProva(dataProva);
