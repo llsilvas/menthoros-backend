@@ -1,10 +1,13 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.enums.MotivoAtencao;
+import br.com.menthoros.backend.enums.MotivoRevisaoProva;
 import br.com.menthoros.backend.enums.Severidade;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -228,6 +231,72 @@ class CoachAttentionSignalEvaluatorTest {
             assertThat(sinal.severidade()).isEqualTo(Severidade.ALTA);
             assertThat(sinal.rationale()).contains("sem plano ativo");
             assertThat(sinal.sourceRules()).contains("CoachAttentionSignalEvaluator.avaliarSemPlano");
+        }
+    }
+
+    @Nested
+    @DisplayName("avaliarProvaPendente")
+    class AvaliarProvaPendente {
+
+        @Test
+        @DisplayName("lista vazia ou nula → sem sinal")
+        void semPendentes() {
+            assertThat(evaluator.avaliarProvaPendente(List.of())).isEmpty();
+            assertThat(evaluator.avaliarProvaPendente(null)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("prova nova dentro do prazo → ALTA com evidências de prova, data, distância, preparação e motivo")
+        void novaDentroDoPrazo() {
+            var sinal = evaluator.avaliarProvaPendente(List.of(
+                    pendente("Maratona SP", 20, 16, false, MotivoRevisaoProva.NOVA, null))).orElseThrow();
+
+            assertThat(sinal.motivo()).isEqualTo(MotivoAtencao.PROVA_ATLETA);
+            assertThat(sinal.severidade()).isEqualTo(Severidade.ALTA);
+            assertThat(sinal.evidencias()).extracting(e -> e.label())
+                    .containsExactly("Prova", "Data", "Distância", "Preparação", "Motivo");
+            assertThat(sinal.evidencias().get(0).value()).isEqualTo("Maratona SP");
+            assertThat(sinal.evidencias().get(3).value()).isEqualTo("20 de 16 semanas");
+            assertThat(sinal.evidencias().get(4).value()).isEqualTo("prova nova");
+            assertThat(sinal.sourceRules()).contains("CoachAttentionSignalEvaluator.avaliarProvaPendente");
+        }
+
+        @Test
+        @DisplayName("preparação curta → CRITICA com '8 de 16 semanas'")
+        void preparacaoCurta() {
+            var sinal = evaluator.avaliarProvaPendente(List.of(
+                    pendente("Maratona SP", 8, 16, true, MotivoRevisaoProva.NOVA, null))).orElseThrow();
+
+            assertThat(sinal.severidade()).isEqualTo(Severidade.CRITICA);
+            assertThat(sinal.evidencias().get(3).value()).isEqualTo("8 de 16 semanas");
+            assertThat(sinal.rationale()).contains("preparação curta");
+        }
+
+        @Test
+        @DisplayName("troca de alvo → CRITICA com o nome da alvo anterior no motivo")
+        void trocaDeAlvo() {
+            var sinal = evaluator.avaliarProvaPendente(List.of(
+                    pendente("Maratona SP", 20, 16, false, MotivoRevisaoProva.ALVO_TROCADA, "Meia do Rio"))).orElseThrow();
+
+            assertThat(sinal.severidade()).isEqualTo(Severidade.CRITICA);
+            assertThat(sinal.evidencias().get(4).value()).isEqualTo("alvo trocada: antes Meia do Rio");
+        }
+
+        @Test
+        @DisplayName("duas provas pendentes → evidências das duas")
+        void duasProvas() {
+            var sinal = evaluator.avaliarProvaPendente(List.of(
+                    pendente("A", 20, 16, false, MotivoRevisaoProva.NOVA, null),
+                    pendente("B", 10, 12, false, MotivoRevisaoProva.CANCELADA, null))).orElseThrow();
+
+            assertThat(sinal.evidencias()).hasSize(10);
+            assertThat(sinal.severidade()).isEqualTo(Severidade.ALTA);
+        }
+
+        private ProvaPendenteSinal pendente(String nome, int faltando, int minimo, boolean curta,
+                                            MotivoRevisaoProva motivo, String alvoAnterior) {
+            return new ProvaPendenteSinal(nome, java.time.LocalDate.of(2026, 12, 6), "42 KM",
+                    faltando, minimo, curta, motivo, alvoAnterior);
         }
     }
 }

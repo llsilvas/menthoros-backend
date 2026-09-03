@@ -88,6 +88,38 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
     );
 
     /**
+     * Provas pendentes de ciência do coach no tenant: futuras (data >= hoje) ou canceladas, com
+     * {@code revisadaPeloCoach = false}. Atleta em JOIN FETCH para o agrupamento na fila.
+     *
+     * Idempotent: YES · Side Effects: NONE · Tenant-aware: YES
+     */
+    @Query("""
+        SELECT p FROM Prova p JOIN FETCH p.atleta
+        WHERE p.assessoria.id = :tenantId
+          AND p.revisadaPeloCoach = false
+          AND (p.dataProva >= :hoje OR p.statusProva = 'CANCELADA')
+        ORDER BY p.dataProva ASC
+        """)
+    List<Prova> findPendentesRevisaoByAssessoria(@Param("tenantId") UUID tenantId, @Param("hoje") LocalDate hoje);
+
+    /**
+     * Mesmo critério de {@link #findPendentesRevisaoByAssessoria}, para um atleta — alimenta o card
+     * de provas no perfil do coach sem depender do corte da fila.
+     *
+     * Idempotent: YES · Side Effects: NONE · Tenant-aware: YES
+     */
+    @Query("""
+        SELECT p FROM Prova p
+        WHERE p.atleta.id = :atletaId
+          AND p.assessoria.id = :tenantId
+          AND p.revisadaPeloCoach = false
+          AND (p.dataProva >= :hoje OR p.statusProva = 'CANCELADA')
+        ORDER BY p.dataProva ASC
+        """)
+    List<Prova> findPendentesRevisaoByAtleta(@Param("atletaId") UUID atletaId, @Param("tenantId") UUID tenantId,
+                                             @Param("hoje") LocalDate hoje);
+
+    /**
      * Valida se uma Prova pertence a um tenant específico.
      * Usado pelo TenantValidationAspect para validação de isolamento.
      */

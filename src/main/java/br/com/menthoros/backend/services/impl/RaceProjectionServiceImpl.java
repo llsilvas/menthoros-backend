@@ -210,6 +210,9 @@ public class RaceProjectionServiceImpl implements RaceProjectionService {
             case KM_10 -> 10000;
             case KM_21 -> 21097;
             case KM_42 -> 42195;
+            // O enricher garante distanciaKm para CUSTOMIZADA; chegar aqui é invariante quebrada.
+            case CUSTOMIZADA -> throw new IllegalStateException(
+                    "Prova customizada sem distanciaKm: " + prova.getId());
         };
     }
 

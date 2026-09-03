@@ -78,4 +78,11 @@ public record ProvaInputDto(
         @Schema(description = "Data de início da preparação para esta prova", example = "2025-06-22")
         LocalDate inicioPreparacao
 ) {
+
+    @jakarta.validation.constraints.AssertTrue(message = "Distância customizada exige distanciaKm positivo")
+    @Schema(hidden = true)
+    public boolean isDistanciaCustomizadaComKm() {
+        return distancia != DistanciaProva.CUSTOMIZADA
+                || (distanciaKm != null && distanciaKm.signum() > 0);
+    }
 }

@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.enums.DistanciaProva;
+import br.com.menthoros.backend.enums.MotivoRevisaoProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoProva;
 import jakarta.persistence.*;
@@ -94,6 +95,20 @@ public class Prova {
 
     @Column(name = "inicio_preparacao")
     private LocalDate inicioPreparacao;
+
+    // ===== CIÊNCIA DO COACH (mudanças feitas pelo atleta) =====
+
+    /** Default true: prova criada por coach/onboarding não entra na fila de atenção. */
+    @Builder.Default
+    @Column(name = "revisada_pelo_coach", nullable = false)
+    private boolean revisadaPeloCoach = true;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "motivo_revisao", length = 20)
+    private MotivoRevisaoProva motivoRevisao;
+
+    @Column(name = "alvo_anterior_nome", length = 100)
+    private String alvoAnteriorNome;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "atleta_id", nullable = false)

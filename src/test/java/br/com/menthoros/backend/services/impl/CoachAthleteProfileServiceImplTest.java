@@ -720,7 +720,12 @@ class CoachAthleteProfileServiceImplTest {
                 null,
                 null,
                 null,
-                (int) ChronoUnit.DAYS.between(LocalDate.now(), data)
+                (int) ChronoUnit.DAYS.between(LocalDate.now(), data),
+                false,
+                null,
+                true,
+                null,
+                null
         );
     }
 }

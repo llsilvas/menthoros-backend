@@ -3,6 +3,11 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto;
 import br.com.menthoros.backend.enums.ExplanationConfidence;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto.Evidencia;
+import br.com.menthoros.backend.enums.MotivoRevisaoProva;
+import br.com.menthoros.backend.enums.ProvaStatus;
+import br.com.menthoros.backend.enums.DistanciaProva;
+import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoRealizado;
@@ -48,6 +53,7 @@ class CoachAttentionQueueServiceImplTest {
     @Mock private PlanoMetadadosRepository planoMetadadosRepository;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
+    @Mock private br.com.menthoros.backend.repository.ProvaRepository provaRepository;
 
     private CoachAttentionQueueServiceImpl service;
     private UUID tenantId;
@@ -58,7 +64,7 @@ class CoachAttentionQueueServiceImplTest {
     void setUp() {
         service = new CoachAttentionQueueServiceImpl(
                 atletaRepository, metricasDiariasRepository, planoMetadadosRepository,
-                treinoPlanejadoRepository, treinoRealizadoRepository,
+                treinoPlanejadoRepository, treinoRealizadoRepository, provaRepository,
                 new CoachAttentionSignalEvaluator(), CLOCK);
         tenantId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
@@ -193,6 +199,96 @@ class CoachAttentionQueueServiceImplTest {
             roster(inativo);
 
             assertThat(service.getAttentionQueue()).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("prova pendente de ciência")
+    class ProvaPendente {
+
+        @Test
+        @DisplayName("atleta sem outros sinais com prova pendente → item PROVA_ATLETA ALTA com 'N de M semanas'")
+        void provaPendenteEntraNaFila() {
+            Atleta atleta = atletaAtivo("Ana", true);
+            roster(atleta);
+            semTsb(atleta);
+            comPlanoSemAlertas(atleta);
+            semPerdidos(atleta);
+            semAtividade(atleta);
+            comProvaPendente(atleta, "Maratona SP", 20, false);
+
+            List<CoachAttentionItemOutputDto> fila = service.getAttentionQueue();
+
+            assertThat(fila).singleElement().satisfies(item -> {
+                assertThat(item.primaryReason()).isEqualTo(MotivoAtencao.PROVA_ATLETA);
+                assertThat(item.severity()).isEqualTo(Severidade.ALTA);
+                assertThat(item.evidence()).extracting(Evidencia::value).contains("Maratona SP", "20 de 16 semanas");
+            });
+        }
+
+        @Test
+        @DisplayName("maratona em 8 semanas → CRITICA com '8 de 16 semanas'")
+        void preparacaoCurtaCritica() {
+            Atleta atleta = atletaAtivo("Ana", true);
+            roster(atleta);
+            semTsb(atleta);
+            comPlanoSemAlertas(atleta);
+            semPerdidos(atleta);
+            semAtividade(atleta);
+            comProvaPendente(atleta, "Maratona SP", 8, false);
+
+            assertThat(service.getAttentionQueue()).singleElement().satisfies(item -> {
+                assertThat(item.severity()).isEqualTo(Severidade.CRITICA);
+                assertThat(item.evidence()).extracting(Evidencia::value).contains("8 de 16 semanas");
+            });
+        }
+
+        @Test
+        @DisplayName("sem prova pendente → sem item; a consulta é uma só por tenant")
+        void semPendenteSomeDaFila() {
+            Atleta atleta = atletaAtivo("Ana", true);
+            roster(atleta);
+            semTsb(atleta);
+            comPlanoSemAlertas(atleta);
+            semPerdidos(atleta);
+            semAtividade(atleta);
+
+            assertThat(service.getAttentionQueue()).isEmpty();
+            verify(provaRepository).findPendentesRevisaoByAssessoria(eq(tenantId), any());
+        }
+
+        @Test
+        @DisplayName("atleta com fadiga CRITICA e prova pendente → um item só, FADIGA principal e prova nas evidências")
+        void consolidaComFadiga() {
+            Atleta atleta = atletaAtivo("Ana", true);
+            roster(atleta);
+            comTsb(atleta, -40.0);
+            comPlanoSemAlertas(atleta);
+            semPerdidos(atleta);
+            semAtividade(atleta);
+            comProvaPendente(atleta, "Maratona SP", 20, false);
+
+            assertThat(service.getAttentionQueue()).singleElement().satisfies(item -> {
+                assertThat(item.primaryReason()).isEqualTo(MotivoAtencao.FADIGA);
+                assertThat(item.evidence()).extracting(Evidencia::value).contains("Maratona SP");
+            });
+        }
+
+        private void comProvaPendente(Atleta atleta, String nome, int semanas, boolean cancelada) {
+            LocalDate hoje = LocalDate.now(CLOCK);
+            Prova prova = Prova.builder()
+                    .id(UUID.randomUUID())
+                    .nomeProva(nome)
+                    .dataProva(hoje.plusWeeks(semanas))
+                    .distancia(DistanciaProva.KM_42)
+                    .semanasPreparacao(16)
+                    .inicioPreparacao(hoje.plusWeeks(semanas).minusWeeks(16))
+                    .statusProva(cancelada ? ProvaStatus.CANCELADA : ProvaStatus.PLANEJADA)
+                    .revisadaPeloCoach(false)
+                    .motivoRevisao(MotivoRevisaoProva.NOVA)
+                    .atleta(atleta)
+                    .build();
+            when(provaRepository.findPendentesRevisaoByAssessoria(eq(tenantId), any())).thenReturn(List.of(prova));
         }
     }
 

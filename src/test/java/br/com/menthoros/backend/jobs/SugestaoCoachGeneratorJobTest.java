@@ -195,6 +195,36 @@ class SugestaoCoachGeneratorJobTest {
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
+    @Nested
+    @DisplayName("motivos ignorados")
+    class MotivosIgnorados {
+
+        @Test
+        @DisplayName("PROVA_ATLETA não vira sugestão e não gera aviso no log")
+        void ignoraProvaAtletaSemWarn() {
+            ch.qos.logback.classic.Logger logger =
+                    (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(SugestaoCoachGeneratorJob.class);
+            ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                    new ch.qos.logback.core.read.ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+            try {
+                CoachAttentionItemOutputDto item = itemDto(Severidade.CRITICA, MotivoAtencao.PROVA_ATLETA, null);
+                when(assessoriaRepository.findByAtivoTrue()).thenReturn(List.of(assessoria));
+                when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of(item));
+
+                job.gerarSugestoes();
+
+                verify(sugestaoCoachRepository, org.mockito.Mockito.never()).save(org.mockito.ArgumentMatchers.any());
+                verify(atletaRepository, org.mockito.Mockito.never()).findById(org.mockito.ArgumentMatchers.any());
+                assertThat(appender.list)
+                        .noneMatch(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN);
+            } finally {
+                logger.detachAppender(appender);
+            }
+        }
+    }
+
     private CoachAttentionItemOutputDto itemDto(Severidade severidade, MotivoAtencao motivo,
                                                  RecommendationExplanation explanation) {
         return new CoachAttentionItemOutputDto(
