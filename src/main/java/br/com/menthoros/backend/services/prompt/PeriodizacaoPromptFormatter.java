@@ -190,6 +190,16 @@ public class PeriodizacaoPromptFormatter {
                             prova.getDistancia())));
         }
 
+        // Garantia determinística no service (ProvaNoPlanoService, design.md D2) já força o
+        // treino PROVA no dia certo depois da geração; esta instrução é o complemento — sem ela
+        // o LLM planeja o resto da semana como se o domingo estivesse livre (ex.: coloca o longo
+        // no sábado achando que "sobra" o domingo). Uma linha por prova da semana.
+        eventosSemana.forEach(prova -> sb.append(String.format(
+                "- Prescreva no dia %s (%s) um único treino do tipo PROVA com o nome %s. Não prescreva outro treino nesse dia.\n",
+                formatarDiaSemana(prova.getDataProva()),
+                prova.getDataProva().format(DATA_FMT),
+                prova.getNomeProva())));
+
         sb.append("\n");
         return sb.toString();
     }
