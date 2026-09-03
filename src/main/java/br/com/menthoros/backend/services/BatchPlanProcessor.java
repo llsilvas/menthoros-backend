@@ -158,7 +158,9 @@ public class BatchPlanProcessor {
                 return registrarErro(jobId, atletaId, MOTIVO_PLANO_JA_EXISTE);
             }
 
-            PlanoSemanal plano = llmConcurrencyLimiter.executar(() -> planoService.gerarPlanoTreino(atletaId, modo));
+            // Faixa do lote: cap por assessoria + capacidade do lote + global (fair-llm-concurrency-per-tenant).
+            PlanoSemanal plano = llmConcurrencyLimiter.executarLote(tenantId,
+                    () -> planoService.gerarPlanoTreino(atletaId, modo));
             falhasConsecutivas.set(0);
             jobRepository.incrementarGerados(jobId);
             return ResultadoAtleta.ok(new BatchGeradoItemDto(atletaId, plano.getId(), atletaNome));

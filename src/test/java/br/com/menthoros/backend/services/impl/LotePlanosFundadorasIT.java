@@ -72,6 +72,8 @@ import static org.mockito.Mockito.when;
         "spring.datasource.hikari.maximum-pool-size=2",
         "spring.datasource.hikari.connection-timeout=3000",
         "app.batch-plan.llm-concorrencia=10",
+        "app.batch-plan.llm-concorrencia-por-tenant=2",
+        "app.batch-plan.llm-reserva-interativa=1",
         "onboarding.migrate-existing.enabled=false"
 })
 class LotePlanosFundadorasIT extends AbstractIntegrationTest {
@@ -82,6 +84,8 @@ class LotePlanosFundadorasIT extends AbstractIntegrationTest {
     private static final int ATLETAS_POR_ASSESSORIA = 10;
     private static final int POOL = 2;
     private static final int LLM_CONCORRENCIA = 10;
+    private static final int RESERVA_INTERATIVA = 1;
+    private static final int CAPACIDADE_LOTE = LLM_CONCORRENCIA - RESERVA_INTERATIVA;
     private static final long LATENCIA_LLM_MS = 250;
 
     @MockitoBean private IaService iaService;
@@ -99,6 +103,11 @@ class LotePlanosFundadorasIT extends AbstractIntegrationTest {
     private final AtomicInteger chamadasComTransacaoAtiva = new AtomicInteger();
     private final AtomicInteger picoConexoesAtivasDuranteLlm = new AtomicInteger();
     private final AtomicInteger totalChamadasLlm = new AtomicInteger();
+    // Justiça (fair-llm-concurrency-per-tenant): em voo por assessoria, medido pelo TenantContext
+    // da thread dentro do stub — o BatchPlanProcessor o seta por virtual thread.
+    private final java.util.concurrent.ConcurrentHashMap<UUID, AtomicInteger> emVooPorTenant = new java.util.concurrent.ConcurrentHashMap<>();
+    private final AtomicInteger picoEmVooDeUmTenant = new AtomicInteger();
+    private final AtomicInteger picoTenantsSimultaneos = new AtomicInteger();
 
     @BeforeEach
     void instrumentarLlm() {
@@ -111,11 +120,23 @@ class LotePlanosFundadorasIT extends AbstractIntegrationTest {
                         chamadasComTransacaoAtiva.incrementAndGet();
                     }
                     picoConexoesAtivasDuranteLlm.accumulateAndGet(conexoesAtivas(), Math::max);
+                    UUID tenant = TenantContext.getTenantId();
+                    AtomicInteger doTenant = tenant == null ? null
+                            : emVooPorTenant.computeIfAbsent(tenant, t -> new AtomicInteger());
+                    if (doTenant != null) {
+                        picoEmVooDeUmTenant.accumulateAndGet(doTenant.incrementAndGet(), Math::max);
+                        picoTenantsSimultaneos.accumulateAndGet(
+                                (int) emVooPorTenant.values().stream().filter(c -> c.get() > 0).count(),
+                                Math::max);
+                    }
                     try {
                         Thread.sleep(LATENCIA_LLM_MS);
                         return planoDeUmTreino();
                     } finally {
                         llmEmVoo.decrementAndGet();
+                        if (doTenant != null) {
+                            doTenant.decrementAndGet();
+                        }
                     }
                 });
     }
@@ -168,7 +189,7 @@ class LotePlanosFundadorasIT extends AbstractIntegrationTest {
         Duration total = Duration.between(inicio, Instant.now());
 
         // --- relatório (lido pelo founder na task 5.1) ---
-        long teorico = (long) ASSESSORIAS * ATLETAS_POR_ASSESSORIA * LATENCIA_LLM_MS / LLM_CONCORRENCIA;
+        long teorico = (long) ASSESSORIAS * ATLETAS_POR_ASSESSORIA * LATENCIA_LLM_MS / CAPACIDADE_LOTE;
         log.info("[fundadoras] 100 planos em {} ms (teórico com concorrência {}: {} ms); pico LLM em voo = {}; " +
                         "chamadas com transação ativa = {}; pico de conexões ativas durante o LLM = {} (pool {})",
                 total.toMillis(), LLM_CONCORRENCIA, teorico, picoLlmEmVoo.get(),
@@ -198,8 +219,19 @@ class LotePlanosFundadorasIT extends AbstractIntegrationTest {
         assertThat(totalChamadasLlm.get()).as("uma chamada de LLM por atleta").isEqualTo(ASSESSORIAS * ATLETAS_POR_ASSESSORIA);
         assertThat(chamadasComTransacaoAtiva.get()).as("CA1: nenhuma chamada ao LLM dentro de transação").isZero();
         assertThat(picoLlmEmVoo.get())
-                .as("CA2: a concorrência do LLM é limitada pelo semáforo, não pelo pool")
-                .isEqualTo(LLM_CONCORRENCIA);
+                .as("a concorrência do LLM é limitada pelo semáforo, não pelo pool — e o lote só usa a capacidade dele (global − reserva interativa)")
+                .isEqualTo(CAPACIDADE_LOTE);
+        // Justiça (fair-llm-concurrency-per-tenant, CA1): contadores determinísticos, não duração.
+        assertThat(picoEmVooDeUmTenant.get())
+                .as("nenhuma assessoria passa do cap por tenant")
+                .isLessThanOrEqualTo(2);
+        assertThat(picoTenantsSimultaneos.get())
+                .as("com global 10 e cap 2, pelo menos 5 assessorias progridem ao mesmo tempo")
+                .isGreaterThanOrEqualTo(5);
+        long primeira = duracaoPorAssessoria.values().stream().mapToLong(Duration::toMillis).min().orElse(0);
+        long ultima = duracaoPorAssessoria.values().stream().mapToLong(Duration::toMillis).max().orElse(0);
+        log.info("[fundadoras] justiça: razão última/primeira = {} (baseline pré-change: 2,6x) — métrica de log, não asserção",
+                primeira == 0 ? "n/a" : String.format("%.2fx", (double) ultima / primeira));
         // Com 100 tarefas em voo, sempre há alguma fase de leitura/escrita usando o pool no instante
         // da amostra — a prova exata de "zero conexão presa durante o LLM" é o platô do teste A/B.
         assertThat(picoConexoesAtivasDuranteLlm.get())
@@ -228,6 +260,85 @@ class LotePlanosFundadorasIT extends AbstractIntegrationTest {
         assertThat(fora.conexoesAtivas())
                 .as("CA1/CA2 exatos: com as 10 paradas dentro do LLM, nenhuma conexão do pool está em posse")
                 .isZero();
+    }
+
+    @Test
+    @DisplayName("o gerar interativo entra no LLM enquanto os lotes saturam a faixa deles (reserva)")
+    void interativoNaoEsperaOLote() throws Exception {
+        // 5 assessorias × 2 atletas = 10 gerações de lote; capacidade do lote = 10 − reserva 1 = 9
+        // em voo. O clique interativo usa o permit reservado e entra sem esperar o lote drenar.
+        Map<UUID, List<UUID>> lotes = new LinkedHashMap<>();
+        for (int i = 1; i <= 5; i++) {
+            Assessoria a = criarAssessoria("Reserva " + i);
+            lotes.put(a.getId(), List.of(
+                    criarAtleta(a, "Atleta R" + i + ".1").getId(),
+                    criarAtleta(a, "Atleta R" + i + ".2").getId()));
+        }
+        Assessoria doCoach = criarAssessoria("Coach clicando");
+        UUID atletaDoCoach = criarAtleta(doCoach, "Atleta do clique").getId();
+
+        java.util.Set<UUID> tenantsDoLote = lotes.keySet();
+        CountDownLatch loteSegura = new CountDownLatch(1);
+        // Capacidade do lote = global − reserva = 9: só 9 gerações chegam ao stub enquanto o latch
+        // segura; a chegada é sinalizada por latch, não por polling (achado do clean-code no QA).
+        CountDownLatch noveNoLlm = new CountDownLatch(9);
+        AtomicInteger loteNoLlm = new AtomicInteger();
+        when(iaService.geraPlanoSemanalAvancado(any(), any(), any(), any(), any(), any(), any()))
+                .thenAnswer(inv -> {
+                    if (tenantsDoLote.contains(TenantContext.getTenantId())) {
+                        loteNoLlm.incrementAndGet();
+                        noveNoLlm.countDown();
+                        if (!loteSegura.await(20, TimeUnit.SECONDS)) {
+                            throw new IllegalStateException("latch do lote não liberado");
+                        }
+                    }
+                    return planoDeUmTreino();
+                });
+
+        try {
+            for (Map.Entry<UUID, List<UUID>> e : lotes.entrySet()) {
+                TenantContext.setTenantId(e.getKey());
+                jobIdPorTenant.put(e.getKey(), batchPlanService.iniciarLote(
+                        new BatchGeracaoPlanoInputDto(e.getValue(), ModoGeracaoPlano.PROXIMA_SEMANA), e.getKey()).jobId());
+                TenantContext.clear();
+            }
+            assertThat(noveNoLlm.await(10, TimeUnit.SECONDS))
+                    .as("o lote saturou a capacidade dele (global − reserva)").isTrue();
+            assertThat(loteNoLlm.get()).isEqualTo(9);
+
+            TenantContext.setTenantId(doCoach.getId());
+            Instant antes = Instant.now();
+            planoService.gerarPlanoTreino(atletaDoCoach, ModoGeracaoPlano.PROXIMA_SEMANA);
+            Duration espera = Duration.between(antes, Instant.now());
+            TenantContext.clear();
+
+            log.info("[fundadoras] interativo entrou com o lote saturado em {} ms", espera.toMillis());
+            assertThat(espera).as("CA2: o interativo usa o permit reservado, não espera o lote drenar")
+                    .isLessThan(Duration.ofSeconds(2));
+        } finally {
+            loteSegura.countDown();
+        }
+
+        // Drenar: os lotes são @Async e continuariam rodando dentro do PRÓXIMO teste da classe,
+        // vazando chamadas de LLM para os contadores dele. Espera todos terminarem.
+        Instant limite = Instant.now().plusSeconds(30);
+        for (UUID tenantId : lotes.keySet()) {
+            while (Instant.now().isBefore(limite)) {
+                BatchJobStatusOutputDto st = jobsPorTenant(tenantId);
+                if (st != null && (st.status() == BatchJobStatus.CONCLUIDO
+                        || st.status() == BatchJobStatus.CONCLUIDO_COM_ERROS)) {
+                    break;
+                }
+                Thread.sleep(100);
+            }
+        }
+    }
+
+    private final Map<UUID, UUID> jobIdPorTenant = new LinkedHashMap<>();
+
+    private BatchJobStatusOutputDto jobsPorTenant(UUID tenantId) {
+        UUID jobId = jobIdPorTenant.get(tenantId);
+        return jobId == null ? null : batchPlanService.consultarStatus(jobId, tenantId);
     }
 
     /** Medida no instante em que as gerações estão paradas dentro do stub do LLM. */

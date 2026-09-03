@@ -88,7 +88,8 @@ class PlanoServiceTenantTest {
                 planoSemanalRepository, planoMetadadosRepository, treinoMapper, planoSemanalMapper,
                 redistribuicaoHelper, metricasAlertaService, metricasAgregadasService, plannerShadowService,
                 onboardingService, planoReviewService, eventPublisher);
-        planoService = new PlanoServiceImpl(iaService, contextLoader, persister, planoSemanalRepository,
+        var llmConcurrencyLimiter = new br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter(4, 2, 1);
+        planoService = new PlanoServiceImpl(iaService, llmConcurrencyLimiter, contextLoader, persister, planoSemanalRepository,
                 treinoRealizadoRepository, planoSemanalMapper, eventPublisher, aiWorkoutAnalysisRepository,
                 workoutAnalysisProperties);
     }
