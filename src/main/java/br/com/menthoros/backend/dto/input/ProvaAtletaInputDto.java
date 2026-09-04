@@ -1,7 +1,9 @@
 package br.com.menthoros.backend.dto.input;
 
+import br.com.menthoros.backend.dto.jackson.DurationHhMmSsDeserializer;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.TipoProva;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Future;
@@ -10,8 +12,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
 
 /**
  * Subconjunto de {@link ProvaInputDto} que um usuário com papel de atleta pode gravar: sem campos
@@ -42,7 +44,8 @@ public record ProvaAtletaInputDto(
         BigDecimal distanciaKm,
 
         @Schema(description = "Meta de tempo para a prova (HH:mm:ss)", example = "03:45:00")
-        LocalTime tempoObjetivo,
+        @JsonDeserialize(using = DurationHhMmSsDeserializer.class)
+        Duration tempoObjetivo,
 
         @Schema(description = "Indica se é a prova-alvo", example = "true")
         boolean provaAlvo

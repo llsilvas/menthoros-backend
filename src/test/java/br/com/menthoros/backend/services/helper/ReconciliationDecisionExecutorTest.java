@@ -50,6 +50,8 @@ class ReconciliationDecisionExecutorTest {
     private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock
     private TreinoReconciliacaoRepository treinoReconciliacaoRepository;
+    @Mock
+    private br.com.menthoros.backend.services.plano.ProvaResultadoSyncer provaResultadoSyncer;
 
     private ReconciliationDecisionExecutor executor;
     private Atleta atleta;
@@ -57,7 +59,8 @@ class ReconciliationDecisionExecutorTest {
     @BeforeEach
     void setUp() {
         executor = new ReconciliationDecisionExecutor(matchingScoreCalculator, matchingDecisionEngine,
-                treinoRealizadoRepository, treinoPlanejadoRepository, treinoReconciliacaoRepository);
+                treinoRealizadoRepository, treinoPlanejadoRepository, treinoReconciliacaoRepository,
+                provaResultadoSyncer);
         Assessoria assessoria = new Assessoria();
         assessoria.setId(UUID.randomUUID());
         atleta = new Atleta();
@@ -87,6 +90,7 @@ class ReconciliationDecisionExecutorTest {
             verify(treinoPlanejadoRepository).save(planejado);
             verify(treinoRealizadoRepository).save(realizado);
             verify(treinoReconciliacaoRepository).save(any(TreinoReconciliacao.class));
+            verify(provaResultadoSyncer).aoVincular(planejado, realizado);
         }
 
         @Test

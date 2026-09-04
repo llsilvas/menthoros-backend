@@ -57,6 +57,12 @@ public class TreinoPlanejado extends TreinoBase{
     @JoinColumn(name = "atleta_id", nullable = false)
     private Atleta atleta;
 
+    // Vínculo com a prova quando tipoTreino = PROVA (prova-no-plano-semanal, D1). Nullable porque
+    // nem todo treino é prova; ON DELETE SET NULL no banco cobre a deleção física da prova.
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "prova_id")
+    private Prova prova;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status_treino", nullable = false)
     private TreinoExecucaoStatus statusTreino = TreinoExecucaoStatus.PENDENTE;

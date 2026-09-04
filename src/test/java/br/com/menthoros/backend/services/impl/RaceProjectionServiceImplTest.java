@@ -40,7 +40,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -572,7 +572,7 @@ class RaceProjectionServiceImplTest {
         prova.setDistancia(DistanciaProva.KM_10);
         prova.setDistanciaKm(new BigDecimal("10.0"));
         prova.setFoiRealizada(true);
-        prova.setTempoRealizado(LocalTime.of(0, 45, 0));
+        prova.setTempoRealizado(Duration.ofHours(0).plusMinutes(45));
         prova.setDataProva(LocalDate.now().minusMonths(2));
         return prova;
     }

@@ -11,6 +11,7 @@ import br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.EtapaTreino;
+import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.services.helper.DecouplingCalculatorService;
@@ -147,6 +148,9 @@ public interface TreinoMapper {
     @Mapping(target = "etapas", expression = "java(safeGetEtapas(treinoPlanejado))")
     // analiseAtletaDisponivel é enriquecido no PlanoServiceImpl (consulta às análises), não aqui.
     @Mapping(target = "analiseAtletaDisponivel", ignore = true)
+    // provaId: ManyToOne (FK deste lado), o proxy lazy resolve o id sem tocar o banco — mesmo
+    // padrão de etapaPlanejadaId (fonte "etapaPlanejada.id") já usado neste mapper.
+    @Mapping(target = "provaId", source = "prova.id")
     TreinoPlanejadoOutputDto toOutputDto(TreinoPlanejado treinoPlanejado);
 
     // Hibernate.isInitialized é insuficiente para @OneToOne(mappedBy=...) fora de sessão.
@@ -194,7 +198,22 @@ public interface TreinoMapper {
     @Mapping(target = "atleta", ignore = true)
     @Mapping(target = "duracaoMin", source = "duracaoMin", qualifiedByName = "stringToDuration")
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "doubleToBigDecimal")
+    // A forma "prova.id" (source aninhada) do MapStruct SEMPRE instancia Prova, mesmo com
+    // provaId nulo — quebraria toda conversão de treino comum (não-PROVA). A expressão evita a
+    // instância vazia; provaFromId só constrói a referência quando há id de fato.
+    @Mapping(target = "prova", expression = "java(provaFromId(dto.provaId()))")
     TreinoPlanejado toEntity(TreinoPlanejadoLlmDto dto);
+
+    // Referência mínima (só id) para o Hibernate resolver a FK sem carregar a prova inteira —
+    // mesmo padrão de referência detached usado em PlanGenerationPersister.criarPlanoEntity.
+    default Prova provaFromId(UUID provaId) {
+        if (provaId == null) {
+            return null;
+        }
+        Prova prova = new Prova();
+        prova.setId(provaId);
+        return prova;
+    }
 
     @Named("treinoPlanejadoListToOutputDtoList")
     List<TreinoPlanejadoOutputDto> toOutputDtoListTreinoPlanejado(List<TreinoPlanejado> treinosPlanejados);

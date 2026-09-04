@@ -35,6 +35,7 @@ import br.com.menthoros.backend.services.MetricasAgregadasService;
 import br.com.menthoros.backend.services.PlanoReviewService;
 import br.com.menthoros.backend.services.impl.MetricasAlertaService;
 import br.com.menthoros.backend.services.onboarding.OnboardingService;
+import br.com.menthoros.backend.services.plano.ProvaNoPlanoService;
 import br.com.menthoros.backend.util.Utils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -83,6 +84,7 @@ public class PlanGenerationPersister {
     private final OnboardingService onboardingService;
     private final PlanoReviewService planoReviewService;
     private final ApplicationEventPublisher eventPublisher;
+    private final ProvaNoPlanoService provaNoPlanoService;
 
     @Value("${onboarding.auto-approve.enabled:true}")
     private boolean autoApproveEnabled;
@@ -129,7 +131,11 @@ public class PlanGenerationPersister {
         List<TreinoPlanejadoLlmDto> treinos = obterTreinosParaPlano(
                 planoDto.treinosPlanejados(), atleta, periodo, modoGeracao, diaPrioritarioLongo);
 
-        PlanoMetaDados metaDados = prepararMetadados(planoDto, dadosPlano);
+        // Volume recalculado da lista final (pós-garantia da prova), não o que o LLM declarou em
+        // planoDto.volumePlanejadoKm() — sem isso PlanoMetaDados e o alerta de progressão ficam
+        // desatualizados em relação ao plano de fato persistido (prova-no-plano-semanal, DoR 2.2).
+        double volumePlanejadoRecalculado = calcularVolumeTotalPlanejadoDto(treinos);
+        PlanoMetaDados metaDados = prepararMetadados(dadosPlano, volumePlanejadoRecalculado);
 
         PlanoSemanal plano = criarPlanoComTreinos(planoDto, atleta, periodo, metaDados, treinos);
 
@@ -256,8 +262,19 @@ public class PlanGenerationPersister {
                         diaPrioritarioLongo)
                 : treinosLlm;
 
+        // Garantia determinística (design.md D2): roda depois da redistribuição — senão o
+        // SEMANA_ATUAL poderia mexer no dia da prova — e antes da validação, para o resultado
+        // final ser o que é validado e vira volume.
+        treinos = provaNoPlanoService.garantirProvasNaSemana(treinos, atleta, periodo.inicio(), periodo.fim());
+
         validarTreinosGerados(treinos);
         return treinos;
+    }
+
+    private double calcularVolumeTotalPlanejadoDto(List<TreinoPlanejadoLlmDto> treinos) {
+        return treinos.stream()
+                .mapToDouble(t -> t.distanciaKm() != null ? t.distanciaKm() : 0.0)
+                .sum();
     }
 
     private DiaSemana inferirDiaPrioritarioLongo(DadosPlanoDto dadosPlano) {
@@ -385,7 +402,7 @@ public class PlanGenerationPersister {
      * Atualiza os metadados do atleta — metricas semanais medias, padroes de treino, volume
      * planejado, progressao e alertas — a partir de treinos REALIZADOS, e persiste.
      */
-    private PlanoMetaDados prepararMetadados(PlanoSemanalLlmDto planoDto, DadosPlanoDto dadosPlano) {
+    private PlanoMetaDados prepararMetadados(DadosPlanoDto dadosPlano, double volumePlanejadoKm) {
         PlanoMetaDados metaDadosCached = dadosPlano.metaDados();
 
         if (metaDadosCached.getId() == null) {
@@ -404,7 +421,7 @@ public class PlanGenerationPersister {
         UUID atletaId = dadosPlano.atleta().getId();
 
         log.debug("Atualizando metadados para atleta {} com volume planejado: {}km",
-                atletaId, planoDto.volumePlanejadoKm());
+                atletaId, volumePlanejadoKm);
 
         MetricasSemanaisMedias metricas = metricasAgregadasService.calcularMetricasSemanais(atletaId, 6);
         metaDados.setVolumeSemanalMedio(metricas.volumeMedio());
@@ -415,9 +432,9 @@ public class PlanGenerationPersister {
         metaDados.setDiasConsecutivosTreino(padroes.diasConsecutivos());
         metaDados.setDiasDesdeUltimoDescanso(padroes.diasDesdeDescanso());
 
-        metaDados.setVolumePlanejado(BigDecimal.valueOf(planoDto.volumePlanejadoKm()));
+        metaDados.setVolumePlanejado(BigDecimal.valueOf(volumePlanejadoKm));
 
-        atualizarProgressao(metaDados, planoDto.volumePlanejadoKm());
+        atualizarProgressao(metaDados, volumePlanejadoKm);
 
         metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados));
 

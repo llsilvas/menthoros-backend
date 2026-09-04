@@ -98,7 +98,8 @@ public class PlanoEstruturaReparador {
     private static TreinoPlanejadoLlmDto comEtapas(TreinoPlanejadoLlmDto t, List<EtapaTreinoLlmDto> etapas) {
         return new TreinoPlanejadoLlmDto(t.diaSemana(), t.tipoTreino(), t.fcAlvo(), t.tssPlanejado(),
                 t.intensidadePlanejada(), t.percepcaoEsforcoEsperada(), t.justificativaIa(),
-                t.duracaoMin(), t.distanciaKm(), t.ritmoAlvo(), etapas);
+                t.duracaoMin(), t.distanciaKm(), t.ritmoAlvo(), etapas,
+                t.descricao(), t.zonaAlvo(), t.provaId());
     }
 
     private void contar(String tipo, String acao) {

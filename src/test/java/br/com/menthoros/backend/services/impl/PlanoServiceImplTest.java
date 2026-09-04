@@ -130,6 +130,8 @@ class PlanoServiceImplTest {
     // asserções sobre repositorios/colaboradores seguem validas sem alteração.
     private br.com.menthoros.backend.services.helper.PlanGenerationContextLoader contextLoader;
     private br.com.menthoros.backend.services.helper.PlanGenerationPersister persister;
+    @org.mockito.Mock
+    private br.com.menthoros.backend.services.plano.ProvaNoPlanoService provaNoPlanoService;
     private PlanoServiceImpl planoService;
 
     private UUID tenantId;
@@ -139,10 +141,15 @@ class PlanoServiceImplTest {
         contextLoader = new br.com.menthoros.backend.services.helper.PlanGenerationContextLoader(
                 atletaRepository, planoMetadadosService, treinoRealizadoRepository, treinoMapper,
                 planoSemanalRepository, planoSemanalMapper, progressaoTreinoService, weeklyReviewPromptProvider);
+        org.mockito.Mockito.lenient()
+                .when(provaNoPlanoService.garantirProvasNaSemana(
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenAnswer(inv -> inv.getArgument(0));
         persister = new br.com.menthoros.backend.services.helper.PlanGenerationPersister(
                 planoSemanalRepository, planoMetadadosRepository, treinoMapper, planoSemanalMapper,
                 redistribuicaoHelper, metricasAlertaService, metricasAgregadasService, plannerShadowService,
-                onboardingService, planoReviewService, eventPublisher);
+                onboardingService, planoReviewService, eventPublisher, provaNoPlanoService);
         org.springframework.test.util.ReflectionTestUtils.setField(persister, "autoApproveEnabled", true);
         org.springframework.test.util.ReflectionTestUtils.setField(persister, "migrateExistingEnabled", true);
         llmConcurrencyLimiter = org.mockito.Mockito.spy(
@@ -1560,9 +1567,8 @@ class PlanoServiceImplTest {
             UUID atletaId = UUID.randomUUID();
             PlanoSemanal plano = criarPlanoSemanalMock();
 
-            when(planoSemanalRepository.findTopByAtletaIdAndAssessoriaIdAndReviewStatusOrderBySemanaInicioDesc(
-                    atletaId, tenantId, PlanoReviewStatus.APROVADO))
-                    .thenReturn(Optional.of(plano));
+            when(planoSemanalRepository.findVisiveisParaAtletaOrderBySemanaInicioDesc(atletaId, tenantId))
+                    .thenReturn(List.of(plano));
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
                     atletaId, tenantId, plano.getSemanaInicio(), plano.getSemanaFim()))
                     .thenReturn(List.of(criarTreinoRealizadoComDistancia(BigDecimal.valueOf(9.0))));
@@ -1579,9 +1585,8 @@ class PlanoServiceImplTest {
         void apenasAprovadosLancaExcecaoQuandoNaoHaPlanoAprovado() {
             UUID atletaId = UUID.randomUUID();
 
-            when(planoSemanalRepository.findTopByAtletaIdAndAssessoriaIdAndReviewStatusOrderBySemanaInicioDesc(
-                    atletaId, tenantId, PlanoReviewStatus.APROVADO))
-                    .thenReturn(Optional.empty());
+            when(planoSemanalRepository.findVisiveisParaAtletaOrderBySemanaInicioDesc(atletaId, tenantId))
+                    .thenReturn(List.of());
 
             assertThrows(ResourceNotFoundException.class,
                     () -> planoService.buscarPlanoPorAtleta(atletaId, true));

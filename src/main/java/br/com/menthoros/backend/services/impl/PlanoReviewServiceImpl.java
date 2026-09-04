@@ -4,11 +4,14 @@ import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.AthleteBaselineState;
 import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.enums.MotivoReaberturaRevisao;
 import br.com.menthoros.backend.enums.OrigemAprovacao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
+import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.ConsumedReviewOutcome;
 import br.com.menthoros.backend.enums.FocusSource;
 import br.com.menthoros.backend.events.PlanoAprovadoEvent;
+import br.com.menthoros.backend.events.PlanoReabertoEvent;
 import br.com.menthoros.backend.services.helper.ConsumedReviewOutcomeResolver;
 import io.micrometer.core.instrument.MeterRegistry;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -26,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -96,6 +100,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         plano.setReviewStatus(PlanoReviewStatus.APROVADO);
         plano.setReviewComment(null);
         plano.setOrigemAprovacao(origem);
+        limparReabertura(plano);
 
         PlanoSemanal salvo = planoSemanalRepository.save(plano);
         inicializarAssociacoes(salvo);
@@ -157,6 +162,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
 
         plano.setReviewStatus(PlanoReviewStatus.REJEITADO);
         plano.setReviewComment(motivo);
+        limparReabertura(plano);
 
         PlanoSemanal salvo = planoSemanalRepository.save(plano);
         inicializarAssociacoes(salvo);
@@ -216,6 +222,44 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
                 .map(AthleteBaselineState::getConfidenceTier)
                 .map(ConfidenceTier::valueOf)
                 .orElse(null);
+    }
+
+    /**
+     * Idempotent: NÃO — altera o estado do plano e publica evento a cada chamada.
+     * Side Effects: Database update (reviewStatus, motivoReabertura, reabertoEm) + save +
+     * publica {@link PlanoReabertoEvent}.
+     * Tenant-aware: SIM — {@code tenantId} explícito, usado no evento.
+     */
+    @Override
+    @Transactional
+    public PlanoSemanal reabrirRevisao(PlanoSemanal plano, MotivoReaberturaRevisao motivo, UUID tenantId) {
+        if (plano == null) throw new IllegalArgumentException("plano não pode ser nulo");
+        if (motivo == null) throw new IllegalArgumentException("motivo não pode ser nulo");
+        if (tenantId == null) throw new IllegalArgumentException("tenantId não pode ser nulo");
+
+        if (plano.getReviewStatus() != PlanoReviewStatus.APROVADO) {
+            throw new DomainRuleViolationException(
+                    "Só um plano aprovado pode ser reaberto por prova; status atual: "
+                            + plano.getReviewStatus().getLabel());
+        }
+        if (plano.getStatus() == PlanoStatus.CONCLUIDO) {
+            throw new DomainRuleViolationException("A semana já está encerrada; reabertura recusada.");
+        }
+
+        plano.setReviewStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
+        plano.setMotivoReabertura(motivo);
+        plano.setReabertoEm(LocalDateTime.now());
+
+        PlanoSemanal salvo = planoSemanalRepository.save(plano);
+        eventPublisher.publishEvent(new PlanoReabertoEvent(salvo.getId(), salvo.getAtleta().getId(), tenantId, motivo));
+
+        log.info("Plano {} reaberto para revisão (motivo={}) no tenant {}", salvo.getId(), motivo, tenantId);
+        return salvo;
+    }
+
+    private void limparReabertura(PlanoSemanal plano) {
+        plano.setMotivoReabertura(null);
+        plano.setReabertoEm(null);
     }
 
     private PlanoSemanal buscarPlanoDoTenant(UUID planoId, UUID tenantId) {

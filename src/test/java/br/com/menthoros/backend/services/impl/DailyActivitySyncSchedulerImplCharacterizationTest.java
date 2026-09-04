@@ -60,6 +60,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
     @Mock private MatchingScoreCalculator matchingScoreCalculator;
     @Mock private MatchingDecisionEngine matchingDecisionEngine;
     @Mock private ActivityTypeCompatibilityMatrix activityTypeCompatibilityMatrix;
+    @Mock private br.com.menthoros.backend.services.plano.ProvaResultadoSyncer provaResultadoSyncer;
 
     private DailyActivitySyncSchedulerImpl scheduler;
 
@@ -68,7 +69,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
         CandidateSelector candidateSelector = new CandidateSelector(treinoPlanejadoRepository, activityTypeCompatibilityMatrix);
         ReconciliationDecisionExecutor executor = new ReconciliationDecisionExecutor(
                 matchingScoreCalculator, matchingDecisionEngine, treinoRealizadoRepository,
-                treinoPlanejadoRepository, treinoReconciliacaoRepository);
+                treinoPlanejadoRepository, treinoReconciliacaoRepository, provaResultadoSyncer);
         scheduler = new DailyActivitySyncSchedulerImpl(atletaRepository, treinoRealizadoRepository, candidateSelector, executor);
     }
 

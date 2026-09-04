@@ -92,6 +92,26 @@ class AtletaTreinoControllerTest {
         }
 
         @Test
+        @DisplayName("201 com tipo=PROVA (prova-no-plano-semanal, 4.3: registro manual do treino de prova)")
+        void retorna201ComTipoProva() throws Exception {
+            var outputDto = stubOutputDto();
+            when(treinoService.registrarTreinoManualAtleta(any(), any())).thenReturn(outputDto);
+
+            var body = mapper.writeValueAsString(Map.of(
+                    "tipo", "PROVA",
+                    "data", LocalDate.now().toString(),
+                    "duracaoMinutos", 105,
+                    "distanciaKm", 21.1,
+                    "percepcaoEsforco", 8
+            ));
+
+            mockMvc.perform(post("/api/v1/atletas/me/treinos")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isCreated());
+        }
+
+        @Test
         @DisplayName("400 quando campo obrigatório tipo está ausente")
         void retorna400QuandoTipoAusente() throws Exception {
             var bodySemTipo = mapper.writeValueAsString(Map.of(

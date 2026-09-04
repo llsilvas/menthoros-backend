@@ -25,7 +25,7 @@ import org.springframework.core.io.DefaultResourceLoader;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -181,7 +181,7 @@ final class PlanoPromptArquetipos {
         prova.setDistancia(DistanciaProva.KM_21);
         prova.setDistanciaKm(new BigDecimal("21.097"));
         prova.setPaceObjetivo(new BigDecimal("4.10"));
-        prova.setTempoObjetivo(LocalTime.of(1, 28, 0));
+        prova.setTempoObjetivo(Duration.ofHours(1).plusMinutes(28));
         prova.setTsbIdealProva(20.0);
         prova.setProvaAlvo(true);
         return new Arquetipo("taper-semana-prova", atleta, meta, prova,

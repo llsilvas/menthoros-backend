@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.enums.MotivoReaberturaRevisao;
 import br.com.menthoros.backend.enums.OrigemAprovacao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 
@@ -88,4 +89,24 @@ public interface PlanoReviewService {
      * @return o plano salvo, com associações inicializadas
      */
     PlanoSemanal aprovarTransicao(PlanoSemanal plano, UUID tenantId, OrigemAprovacao origem);
+
+    /**
+     * Reabre a revisão de um plano aprovado porque uma prova entrou ou saiu da semana
+     * (prova-no-plano-semanal, design.md D4) — a exceção deliberada à regra "sem volta" de
+     * {@code validarTransicao}. Só de {@code APROVADO}; recusa semana encerrada
+     * ({@code status = CONCLUIDO}) e qualquer outro {@code reviewStatus} de origem.
+     *
+     * Idempotent: NÃO — altera o estado do plano e publica evento a cada chamada.
+     * Side Effects: Database update (reviewStatus = AGUARDANDO_REVISAO, motivoReabertura,
+     * reabertoEm) + save + publica {@link br.com.menthoros.backend.events.PlanoReabertoEvent}.
+     * Tenant-aware: SIM — {@code tenantId} explícito, usado no evento.
+     *
+     * @param plano    plano já carregado (managed ou detached) a reabrir
+     * @param motivo   por que a revisão reabriu
+     * @param tenantId tenant do plano
+     * @return o plano salvo, com reviewStatus = AGUARDANDO_REVISAO
+     * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se o plano não
+     *         estava {@code APROVADO} ou a semana já está encerrada
+     */
+    PlanoSemanal reabrirRevisao(PlanoSemanal plano, MotivoReaberturaRevisao motivo, UUID tenantId);
 }
