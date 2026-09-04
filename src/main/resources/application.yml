@@ -144,6 +144,7 @@ app:
   frontend:
     url: ${FRONTEND_URL:http://localhost:5174}
 
+
   # ----------------------------------------
   # E-MAIL TRANSACIONAL DO BACKEND
   # ----------------------------------------
@@ -311,6 +312,12 @@ app:
   # SECURITY CONFIGURATION
   # ----------------------------------------
   security:
+    user-sync:
+      # Janela mínima entre registros de "último acesso". O sync roda a cada requisição; sem
+      # throttle, cada uma é um UPDATE em tb_usuario (amplificador do incidente de pool de
+      # 2026-09-04). Diff de dados do JWT (email, role, owner...) escreve SEMPRE, independente
+      # da janela. PT0S desliga o throttle (rollback sem deploy de código).
+      access-throttle: ${USER_SYNC_ACCESS_THROTTLE:PT5M}
     public-paths:
       - "/api/public/**"
       - "/swagger-ui.html"
