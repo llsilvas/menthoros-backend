@@ -218,5 +218,18 @@ class UsuarioSyncServiceImplThrottleTest {
 
             verify(usuarioRepository).save(existente);
         }
+
+        @Test
+        @DisplayName("PT0S desliga o throttle: toda chamada volta a persistir (rollback sem deploy)")
+        void throttleZeradoPersisteSempre() {
+            org.springframework.test.util.ReflectionTestUtils.setField(
+                    service, "accessThrottle", java.time.Duration.ZERO);
+            Usuario existente = usuarioEspelhado(UserRole.TECNICO);
+            mockExistente(existente);
+
+            service.syncUsuarioFromJwt(jwt(List.of("TECNICO")), UUID.randomUUID());
+
+            verify(usuarioRepository).save(existente);
+        }
     }
 }

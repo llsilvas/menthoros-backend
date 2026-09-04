@@ -48,8 +48,18 @@ public class UsuarioSyncServiceImpl implements UsuarioSyncService {
     private Duration accessThrottle = Duration.ofMinutes(5);
 
     /**
-     * Sincroniza usuário a partir do JWT do Keycloak
-     * Chamado automaticamente pelo JwtTenantFilter em cada request
+     * Sincroniza usuário a partir do JWT do Keycloak.
+     * Chamado automaticamente pelo JwtTenantFilter em cada request.
+     *
+     * Idempotent: YES — dentro da janela de throttle, chamadas repetidas com o mesmo JWT são
+     *   no-op de escrita (nenhum UPDATE); divergência de campo espelhado escreve sempre.
+     * Side Effects: Database update CONDICIONAL (diff do JWT ou throttle vencido; usuário novo
+     *   sempre insere) + possível vínculo de Atleta órfão. NUNCA assuma que toda chamada grava
+     *   ultimoAcesso.
+     * Tenant-aware: YES — tenantId usado na criação do usuário e no vínculo de atleta.
+     *
+     * Retorna SEMPRE o Usuario resolvido, mesmo no caminho no-op — o LgpdConsentInterceptor
+     * depende dele via USUARIO_ATTR.
      *
      * @param jwt JWT do Keycloak com claims do usuário
      * @param tenantId UUID da assessoria (tenant)
@@ -104,7 +114,10 @@ public class UsuarioSyncServiceImpl implements UsuarioSyncService {
 
             usuario = usuarioRepository.save(usuario);
 
-            log.debug("Usuário sincronizado: id={}, email={}, role={}, tenant={}",
+            // INFO de propósito: este é o único registro de mudança de role/owner em produção
+            // (root INFO no cloud). O volume é seguro — só dispara em escrita real, que o
+            // throttle já limita por usuário.
+            log.info("Usuário sincronizado: id={}, email={}, role={}, tenant={}",
                     usuario.getId(), usuario.getEmail(), usuario.getRole(), tenantId);
         }
 
