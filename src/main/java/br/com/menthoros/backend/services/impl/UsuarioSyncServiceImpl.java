@@ -109,7 +109,9 @@ public class UsuarioSyncServiceImpl implements UsuarioSyncService {
         }
 
         // Fora da condição de escrita, de propósito: um atleta órfão pré-existente precisa ser
-        // vinculado mesmo quando o sync não tem nada a escrever no usuário.
+        // vinculado mesmo quando o sync não tem nada a escrever no usuário. Trade-off aceito: o
+        // SELECT por e-mail roda em toda requisição de ATLETA (como já rodava antes do throttle) —
+        // é leitura indexada e não segura lock; o amplificador do incidente eram as escritas.
         if (usuario.getRole() == UserRole.ATLETA) {
             vincularAtletaSeNecessario(usuario, tenantId);
         }

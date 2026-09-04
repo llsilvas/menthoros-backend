@@ -165,6 +165,31 @@ class UsuarioSyncServiceImplThrottleTest {
     }
 
     @Nested
+    @DisplayName("usuário novo")
+    class UsuarioNovo {
+
+        @Test
+        @DisplayName("sempre persiste, com os dados do JWT aplicados")
+        void usuarioNovoSemprePersiste() {
+            UUID tenantId = UUID.randomUUID();
+            br.com.menthoros.backend.entity.Assessoria assessoria =
+                    new br.com.menthoros.backend.entity.Assessoria();
+            assessoria.setId(tenantId);
+            when(usuarioRepository.findByKeycloakId(any())).thenReturn(Optional.empty());
+            when(assessoriaRepository.findById(tenantId)).thenReturn(Optional.of(assessoria));
+            when(usuarioRepository.save(any(Usuario.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            Usuario resultado = service.syncUsuarioFromJwt(jwt(List.of("TECNICO")), tenantId);
+
+            verify(usuarioRepository).save(any(Usuario.class));
+            assertThat(resultado.getEmail()).isEqualTo(EMAIL);
+            assertThat(resultado.getNome()).isEqualTo(NOME);
+            assertThat(resultado.getRole()).isEqualTo(UserRole.TECNICO);
+            assertThat(resultado.getUltimoAcesso()).isNotNull();
+        }
+    }
+
+    @Nested
     @DisplayName("throttle de último acesso")
     class ThrottleDeAcesso {
 
