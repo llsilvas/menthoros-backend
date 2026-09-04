@@ -379,6 +379,19 @@ class ProvaServiceImplTest {
 
             verify(provaRepository).delete(prova);
         }
+
+        @Test
+        @DisplayName("desvincula o treino PROVA da semana antes do delete físico")
+        void desvinculaTreinoDaSemana() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+
+            provaService.deletarProva(atletaId, provaId);
+
+            var inOrder = inOrder(provaNoPlanoService, provaRepository);
+            inOrder.verify(provaNoPlanoService).removerProvaDeSemanaExistente(prova, prova.getDataProva());
+            inOrder.verify(provaRepository).delete(prova);
+        }
     }
 
     @Nested

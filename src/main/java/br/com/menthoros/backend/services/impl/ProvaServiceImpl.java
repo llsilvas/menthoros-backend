@@ -260,6 +260,10 @@ public class ProvaServiceImpl implements ProvaService {
     public void deletarProva(UUID atletaId, UUID provaId) {
         Atleta atleta = resolveAtletaComPosse(atletaId);
         Prova prova = resolveProva(atleta, provaId);
+        LocalDate dataProva = prova.getDataProva();
+        // prova-no-plano-semanal: sem isso o DELETE físico (ON DELETE SET NULL na FK) deixa um
+        // TreinoPlanejado do tipo PROVA órfão no plano do atleta, sem reabrir a revisão do coach.
+        provaNoPlanoService.removerProvaDeSemanaExistente(prova, dataProva);
         provaRepository.delete(prova);
         log.info("Prova removida fisicamente: id={}, atletaId={}", provaId, atletaId);
     }
