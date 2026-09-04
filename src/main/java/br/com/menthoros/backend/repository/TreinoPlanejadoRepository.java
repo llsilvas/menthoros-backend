@@ -46,7 +46,7 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
        select tp from TreinoPlanejado tp
        where tp.atleta.id = :atletaId
          and tp.dataTreino between :dataInicio and :dataFim
-       order by tp.dataTreino ASC
+       order by tp.dataTreino ASC, tp.criadoEm ASC, tp.id ASC
        """)
     List<TreinoPlanejado> findByAtletaIdAndDataBetween(@Param("atletaId") UUID atletaId,
                                                         @Param("dataInicio") LocalDate dataInicio,
@@ -76,7 +76,12 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
 
     /**
      * Busca o primeiro TreinoPlanejado sem realizado vinculado para best-effort match no registro manual.
-     * Filtra por atleta, data, tipo e status elegível (PENDENTE ou PERDIDO), ordenado pelo mais antigo.
+     * Filtra por atleta, data, tipo e status elegível (PENDENTE ou PERDIDO).
+     *
+     * <p>Ordena {@code prova IS NOT NULL} primeiro (prova-no-plano-semanal, 4.3): quando o atleta
+     * registra tipo {@code PROVA} e o coach também adicionou um treino {@code PROVA} simulado no
+     * mesmo dia (sem prova vinculada), o vínculo real da prova não pode perder para o simulado só
+     * por ter sido criado antes. Dentro de cada grupo, o mais antigo primeiro.
      */
     @Query("""
        SELECT tp FROM TreinoPlanejado tp
@@ -86,7 +91,8 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
          AND tp.tipoTreino = :tipo
          AND tp.treinoRealizado IS NULL
          AND tp.statusTreino IN :statuses
-       ORDER BY tp.criadoEm ASC
+       ORDER BY (CASE WHEN tp.prova IS NOT NULL THEN 0 ELSE 1 END) ASC, tp.criadoEm ASC
+       LIMIT 1
        """)
     Optional<TreinoPlanejado> findFirstForManualMatch(@Param("atletaId") UUID atletaId,
                                                        @Param("tenantId") UUID tenantId,

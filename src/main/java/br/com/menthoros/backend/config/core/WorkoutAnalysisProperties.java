@@ -25,4 +25,18 @@ public class WorkoutAnalysisProperties {
 
     @Min(value = 1, message = "maxIdadeDias deve ser >= 1")
     private int maxIdadeDias = 30;
+
+    private final AthleteMessage athleteMessage = new AthleteMessage();
+
+    /**
+     * Kill switch da exposição do bloco do atleta (analise-ia-treino-atleta, D3):
+     * {@code app.workout-analysis.athlete-message.enabled=false} faz o endpoint do atleta
+     * devolver 204 e o flag do plano ficar false, SEM parar a geração do bloco no listener —
+     * reversão em produção sem deploy de front e sem perder dados.
+     */
+    @Getter
+    @Setter
+    public static class AthleteMessage {
+        private boolean enabled = true;
+    }
 }

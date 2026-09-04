@@ -5,6 +5,7 @@ import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.Sexo;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.FasePeriodizacao;
 import br.com.menthoros.backend.enums.NivelExperiencia;
@@ -24,7 +25,7 @@ import org.springframework.core.io.DefaultResourceLoader;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -180,7 +181,7 @@ final class PlanoPromptArquetipos {
         prova.setDistancia(DistanciaProva.KM_21);
         prova.setDistanciaKm(new BigDecimal("21.097"));
         prova.setPaceObjetivo(new BigDecimal("4.10"));
-        prova.setTempoObjetivo(LocalTime.of(1, 28, 0));
+        prova.setTempoObjetivo(Duration.ofHours(1).plusMinutes(28));
         prova.setTsbIdealProva(20.0);
         prova.setProvaAlvo(true);
         return new Arquetipo("taper-semana-prova", atleta, meta, prova,
@@ -215,7 +216,7 @@ final class PlanoPromptArquetipos {
         // sem depender de LocalDate.now() no caminho do PaceHistoricoFormatter.
         return Atleta.builder()
                 .dataNascimento(LocalDate.of(1990, 5, 20))
-                .sexo("M")
+                .sexo(Sexo.MASCULINO)
                 .pesoKg(new BigDecimal("70.0"))
                 .alturaCm(new BigDecimal("175.0"))
                 .diasDisponiveis(diasUteis())

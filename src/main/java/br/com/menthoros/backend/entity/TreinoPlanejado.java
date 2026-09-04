@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.enums.MotivoPulo;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import jakarta.persistence.*;
@@ -56,9 +57,23 @@ public class TreinoPlanejado extends TreinoBase{
     @JoinColumn(name = "atleta_id", nullable = false)
     private Atleta atleta;
 
+    // Vínculo com a prova quando tipoTreino = PROVA (prova-no-plano-semanal, D1). Nullable porque
+    // nem todo treino é prova; ON DELETE SET NULL no banco cobre a deleção física da prova.
+    @ManyToOne(fetch = FetchType.LAZY, optional = true)
+    @JoinColumn(name = "prova_id")
+    private Prova prova;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status_treino", nullable = false)
     private TreinoExecucaoStatus statusTreino = TreinoExecucaoStatus.PENDENTE;
+
+    // "Não vou conseguir hoje": o pulo é PERDIDO + motivo + carimbo, sem status novo (training-loop, D4).
+    @Enumerated(EnumType.STRING)
+    @Column(name = "motivo_pulo", length = 20)
+    private MotivoPulo motivoPulo;
+
+    @Column(name = "pulado_em")
+    private LocalDateTime puladoEm;
 
     @OneToMany(mappedBy = "treinoPlanejado", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @OrderBy("ordem ASC")
@@ -66,6 +81,15 @@ public class TreinoPlanejado extends TreinoBase{
 
     @OneToOne(mappedBy = "treinoPlanejado", fetch = FetchType.LAZY)
     private TreinoRealizado treinoRealizado;
+
+    /**
+     * Um realizado vinculou este planejado: o pulo deixa de valer. Chamar em todo caminho que leva
+     * o status a REALIZADO — deixar o motivo para trás faria o coach ler um pulo num treino feito.
+     */
+    public void limparPulo() {
+        this.motivoPulo = null;
+        this.puladoEm = null;
+    }
 
     // ===== INTEGRAÇÃO EXTERNA (PARA FUTURO) =====
 

@@ -2,6 +2,7 @@ package br.com.menthoros.backend.dto.input;
 
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.Sexo;
 import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
@@ -57,6 +58,14 @@ public record AtletaInputDto(
         TipoPlanoAtleta tipoPlanoAtleta,
 
         @Schema(description = "Data de vencimento do plano do atleta com a assessoria; opcional", example = "2026-08-15")
-        LocalDate dataVencimentoPlano
+        LocalDate dataVencimentoPlano,
+
+        @Schema(description = "E-mail do atleta; opcional para cadastrar, obrigatório para gerar convite de acesso", example = "joao@exemplo.com")
+        @Email(message = "Email inválido")
+        @Size(max = 255, message = "Email deve conter no máximo 255 caracteres")
+        String email,
+
+        @Schema(description = "Sexo do atleta; opcional", example = "MASCULINO")
+        Sexo sexo
 ) {
 }

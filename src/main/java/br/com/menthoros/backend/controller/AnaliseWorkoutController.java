@@ -28,13 +28,17 @@ public class AnaliseWorkoutController {
     private final AnaliseWorkoutService analiseWorkoutService;
 
     @GetMapping("/treino/{treinoRealizadoId}")
-    @PreAuthorize("isAuthenticated()")
+    // Endpoint do COACH (analise-ia-treino-atleta, Codex #1): antes era isAuthenticated() e só o
+    // tenant filtrava — com o bloco do atleta no DTO, um atleta leria a análise de outro. O
+    // atleta tem o próprio endpoint (/atletas/me/realizados/{id}/analise), escopado por dono.
+    @PreAuthorize("hasAnyRole('TECNICO','ADMIN')")
     @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Busca a análise pós-treino de um treino realizado")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Análise encontrada (COMPLETED ou FAILED)"),
             @ApiResponse(responseCode = "204", description = "Análise ainda em processamento (PENDING) ou não iniciada"),
             @ApiResponse(responseCode = "401", description = "Não autenticado"),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — endpoint de coach (TECNICO/ADMIN)"),
             @ApiResponse(responseCode = "404", description = "Treino não encontrado ou não pertence ao tenant")
     })
     public ResponseEntity<AnaliseWorkoutOutputDto> getAnalise(

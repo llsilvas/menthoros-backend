@@ -145,6 +145,27 @@ app:
     url: ${FRONTEND_URL:http://localhost:5174}
 
   # ----------------------------------------
+  # E-MAIL TRANSACIONAL DO BACKEND
+  # ----------------------------------------
+  # Remetente e outbox. Credenciais SMTP ficam em spring.mail.* (perfis cloud/dev), lidas de
+  # SMTP_* — os mesmos valores das KC_SMTP_* do Keycloak. Em local/test/integration o carteiro
+  # grava .eml no outbox-dir e nao existe SMTP; na nuvem, sem SMTP_HOST o startup falha.
+  email:
+    from: ${SMTP_FROM:nao-responda@menthoros.com}
+    from-name: ${SMTP_FROM_NAME:Menthoros}
+    outbox-dir: ${EMAIL_OUTBOX_DIR:target/outbox}
+
+  # ----------------------------------------
+  # CONVITE DAS ASSESSORIAS FUNDADORAS
+  # ----------------------------------------
+  founding-invite:
+    # Validade do link. Reenvio gera token novo e invalida o anterior.
+    validity-days: ${FOUNDING_INVITE_VALIDITY_DAYS:7}
+    rate-limit:
+      # GET publico de consulta do convite, por IP, no PublicEndpointRateLimitFilter.
+      per-minute: ${FOUNDING_INVITE_LOOKUP_RATE_PER_MINUTE:10}
+
+  # ----------------------------------------
   # AUTO-CADASTRO PÚBLICO DE ASSESSORIA
   # ----------------------------------------
   # Três dimensões contra abuso. Os valores começam BAIXOS de propósito: com volume real
@@ -266,9 +287,22 @@ app:
   # BATCH PLAN GENERATION CONFIGURATION
   # ----------------------------------------
   batch-plan:
-    # Máximo de chamadas ao LLM em voo simultaneamente no lote (Semaphore),
-    # independente do nº de virtual threads. Controla o risco de 429 do provedor.
+    # Máximo de chamadas ao LLM em voo simultaneamente no lote (Semaphore), global por JVM
+    # e independente do nº de virtual threads. Controla custo e risco de 429 do provedor —
+    # e SÓ isso: desde refactor-llm-call-outside-transaction a chamada ao LLM roda fora de
+    # transação, então subir este valor não fixa conexões do pool do Hikari (antes era 1:1 e,
+    # com pool 5 em cloud, 4 em voo deixavam 1 conexão para o app inteiro). Com a chave no
+    # tier 3 da OpenAI, 8-10 é folga suficiente para 100 planos caberem em ~15 min.
     llm-concorrencia: ${BATCH_PLAN_LLM_CONCORRENCIA:4}
+    # Máximo de gerações em voo POR ASSESSORIA dentro do lote (fair-llm-concurrency-per-tenant):
+    # com vários lotes na mesma janela, nenhuma assessoria monopoliza a fila — todas progridem a
+    # até este valor por vez. Não altera a vazão total (o global continua o teto).
+    # Neutralizar sem deploy: valor >= llm-concorrencia.
+    llm-concorrencia-por-tenant: ${BATCH_PLAN_LLM_CONCORRENCIA_POR_TENANT:2}
+    # Permits do global que o LOTE não pode ocupar, reservados para o "gerar" individual do
+    # treinador — quem clica durante um lote não espera a fila drenar. O interativo pode usar a
+    # capacidade ociosa do lote; o contrário, nunca. Neutralizar sem deploy: 0.
+    llm-reserva-interativa: ${BATCH_PLAN_LLM_RESERVA_INTERATIVA:1}
     # Idade mínima (min) para um job em andamento ser considerado órfão no recovery
     # de startup — nenhum lote real dura tanto.
     recovery-limite-min: ${BATCH_PLAN_RECOVERY_LIMITE_MIN:30}

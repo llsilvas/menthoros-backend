@@ -3,6 +3,7 @@ package br.com.menthoros.backend.dto.output;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.Sexo;
 import br.com.menthoros.backend.enums.StatusVencimentoPlano;
 import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -59,5 +60,11 @@ public record AtletaOutputDto(
         LocalDate dataVencimentoPlano,
 
         @Schema(description = "Status de vencimento derivado (EM_DIA/PROXIMO_VENCIMENTO/VENCIDO); ausente quando dataVencimentoPlano não cadastrada", example = "PROXIMO_VENCIMENTO")
-        StatusVencimentoPlano statusVencimentoPlano) {
+        StatusVencimentoPlano statusVencimentoPlano,
+
+        @Schema(description = "E-mail do atleta; ausente em atletas cadastrados antes do campo existir", example = "joao@exemplo.com")
+        String email,
+
+        @Schema(description = "Sexo do atleta; ausente quando não cadastrado", example = "MASCULINO")
+        Sexo sexo) {
 }

@@ -294,7 +294,9 @@ class CoachTreinoControllerTest {
         return new TreinoPlanejadoOutputDto(
                 id, null, null, null, TipoTreino.CONTINUO, null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                editadoPeloCoach, adicionadoPeloCoach, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null
-        );
+                editadoPeloCoach, adicionadoPeloCoach, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null,
+                null, null
+        ,
+                false, null);
     }
 }

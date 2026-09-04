@@ -21,6 +21,11 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * CRUD de provas do atleta. Sem {@code @RequireTenant}: o tenant e a posse são resolvidos no
+ * service ({@code resolveAtletaComPosse}) — um usuário com papel de atleta só opera no próprio
+ * {@code atletaId}, e a violação responde 404 como o isolamento de tenant.
+ */
 @RestController
 @RequestMapping("/api/v1/atletas/{atletaId}/provas")
 @Tag(name = "prova", description = "Operações relacionadas ao cadastro de provas do atleta")
@@ -34,16 +39,17 @@ public class ProvaController {
     }
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
-    @Operation(summary = "Cadastrar prova", description = "Cria uma nova prova para o atleta")
+    @PreAuthorize("hasAnyRole('ATLETA', 'TECNICO', 'ADMIN')")
+    @Operation(summary = "Cadastrar prova",
+            description = "Cria uma nova prova para o atleta. Atleta só cadastra para si, com data futura; campos de resultado e derivados enviados pelo atleta são ignorados")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "201", description = "Prova criada com sucesso",
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ProvaOutputDto.class))),
         @ApiResponse(responseCode = "400", description = "Dados inválidos",
                 content = @Content(mediaType = "application/json")),
-        @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado (ou não é o atleta autenticado)",
                 content = @Content(mediaType = "application/json")),
-        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem criar provas",
+        @ApiResponse(responseCode = "403", description = "Acesso negado",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<ProvaOutputDto> criarProva(
@@ -53,11 +59,14 @@ public class ProvaController {
     }
 
     @GetMapping
-    @Operation(summary = "Listar provas", description = "Retorna todas as provas do atleta ordenadas por data")
+    @PreAuthorize("hasAnyRole('ATLETA', 'TECNICO', 'ADMIN')")
+    @Operation(summary = "Listar provas", description = "Retorna as provas não canceladas do atleta ordenadas por data")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso",
                 content = @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ProvaOutputDto.class)))),
-        @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado (ou não é o atleta autenticado)",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "403", description = "Acesso negado",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<List<ProvaOutputDto>> listarProvas(
@@ -65,12 +74,32 @@ public class ProvaController {
         return ResponseEntity.ok(provaService.listarProvas(atletaId));
     }
 
+    @GetMapping("/pendentes-revisao")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @Operation(summary = "Listar provas pendentes de ciência do coach",
+            description = "Provas futuras ou canceladas que o atleta criou, alterou ou cancelou e o coach ainda não revisou. Independe do corte da fila de atenção")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Lista retornada com sucesso",
+                content = @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = ProvaOutputDto.class)))),
+        @ApiResponse(responseCode = "404", description = "Atleta não encontrado",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN",
+                content = @Content(mediaType = "application/json"))
+    })
+    public ResponseEntity<List<ProvaOutputDto>> listarPendentesRevisao(
+            @Parameter(description = "ID do atleta") @PathVariable UUID atletaId) {
+        return ResponseEntity.ok(provaService.listarPendentesRevisao(atletaId));
+    }
+
     @GetMapping("/{provaId}")
+    @PreAuthorize("hasAnyRole('ATLETA', 'TECNICO', 'ADMIN')")
     @Operation(summary = "Buscar prova por ID", description = "Retorna os dados de uma prova específica do atleta")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Prova encontrada",
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ProvaOutputDto.class))),
         @ApiResponse(responseCode = "404", description = "Prova ou atleta não encontrado",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "403", description = "Acesso negado",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<ProvaOutputDto> buscarProvaPorId(
@@ -80,8 +109,9 @@ public class ProvaController {
     }
 
     @PutMapping("/{provaId}")
-    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
-    @Operation(summary = "Atualizar prova", description = "Atualiza os dados de uma prova do atleta")
+    @PreAuthorize("hasAnyRole('ATLETA', 'TECNICO', 'ADMIN')")
+    @Operation(summary = "Atualizar prova",
+            description = "Atualiza os dados de uma prova do atleta. Atleta altera só nome, data, tipo, distância, tempo objetivo e prova-alvo, e não altera prova realizada")
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Prova atualizada com sucesso",
                 content = @Content(mediaType = "application/json", schema = @Schema(implementation = ProvaOutputDto.class))),
@@ -89,7 +119,9 @@ public class ProvaController {
                 content = @Content(mediaType = "application/json")),
         @ApiResponse(responseCode = "404", description = "Prova ou atleta não encontrado",
                 content = @Content(mediaType = "application/json")),
-        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN podem atualizar provas",
+        @ApiResponse(responseCode = "403", description = "Acesso negado",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "409", description = "Atleta tentou alterar prova já realizada",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<ProvaOutputDto> atualizarProva(
@@ -99,20 +131,41 @@ public class ProvaController {
         return ResponseEntity.ok(provaService.atualizarProva(atletaId, provaId, dto));
     }
 
-    @DeleteMapping("/{provaId}")
-    @PreAuthorize("hasRole('ADMIN')")
-    @Operation(summary = "Deletar prova", description = "Remove uma prova do atleta")
+    @PatchMapping("/{provaId}/ciente")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @Operation(summary = "Registrar ciência do coach",
+            description = "Marca que o coach viu a última mudança feita pelo atleta nesta prova. Idempotente")
     @ApiResponses(value = {
-        @ApiResponse(responseCode = "204", description = "Prova removida com sucesso"),
+        @ApiResponse(responseCode = "200", description = "Ciência registrada (ou já registrada)",
+                content = @Content(mediaType = "application/json", schema = @Schema(implementation = ProvaOutputDto.class))),
         @ApiResponse(responseCode = "404", description = "Prova ou atleta não encontrado",
                 content = @Content(mediaType = "application/json")),
-        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas ADMIN pode deletar provas",
+        @ApiResponse(responseCode = "403", description = "Acesso negado - apenas TECNICO e ADMIN",
+                content = @Content(mediaType = "application/json"))
+    })
+    public ResponseEntity<ProvaOutputDto> marcarCiente(
+            @Parameter(description = "ID do atleta") @PathVariable UUID atletaId,
+            @Parameter(description = "ID da prova") @PathVariable UUID provaId) {
+        return ResponseEntity.ok(provaService.marcarCiente(atletaId, provaId));
+    }
+
+    @DeleteMapping("/{provaId}")
+    @PreAuthorize("hasAnyRole('ATLETA', 'TECNICO', 'ADMIN')")
+    @Operation(summary = "Remover prova",
+            description = "ADMIN remove a prova permanentemente; atleta e treinador a cancelam (deixa de aparecer, mas é preservada)")
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "204", description = "Prova removida ou cancelada"),
+        @ApiResponse(responseCode = "404", description = "Prova ou atleta não encontrado",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "403", description = "Acesso negado",
+                content = @Content(mediaType = "application/json")),
+        @ApiResponse(responseCode = "409", description = "Atleta tentou cancelar prova já realizada",
                 content = @Content(mediaType = "application/json"))
     })
     public ResponseEntity<Void> deletarProva(
             @Parameter(description = "ID do atleta") @PathVariable UUID atletaId,
             @Parameter(description = "ID da prova") @PathVariable UUID provaId) {
-        provaService.deletarProva(atletaId, provaId);
+        provaService.removerProva(atletaId, provaId);
         return ResponseEntity.noContent().build();
     }
 }

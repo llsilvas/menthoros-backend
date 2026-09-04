@@ -76,4 +76,27 @@ public class AnaliseWorkout {
 
     @Column(name = "analyzed_at")
     private Instant analyzedAt;
+
+    // ===== Bloco do atleta (analise-ia-treino-atleta, V86) =====
+    // Gerado pela segunda chamada (athlete-workout-motivation); nulo quando a chamada falhou,
+    // o validador bloqueou (ver atletaBloqueadoMotivo) ou a análise é anterior à change.
+
+    @Column(name = "atleta_reconhecimento", columnDefinition = "TEXT")
+    private String atletaReconhecimento;
+
+    @Column(name = "atleta_como_foi", columnDefinition = "TEXT")
+    private String atletaComoFoi;
+
+    @Column(name = "atleta_esforco", columnDefinition = "TEXT")
+    private String atletaEsforco;
+
+    @Column(name = "atleta_proximo_treino", columnDefinition = "TEXT")
+    private String atletaProximoTreino;
+
+    @Column(name = "atleta_bloqueado_motivo", length = 40)
+    private String atletaBloqueadoMotivo;
+
+    /** Primeira resposta 200 COMPLETED ao dono — deduplica a métrica de visualização (Codex #6). */
+    @Column(name = "atleta_primeira_visualizacao_em")
+    private Instant atletaPrimeiraVisualizacaoEm;
 }

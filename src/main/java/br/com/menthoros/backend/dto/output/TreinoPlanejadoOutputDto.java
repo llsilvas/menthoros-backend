@@ -3,16 +3,19 @@ package br.com.menthoros.backend.dto.output;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.enums.MotivoPulo;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
 @Schema(description = "Dados de saída de um treino planejado")
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@lombok.Builder(toBuilder = true)
 public record TreinoPlanejadoOutputDto(
         @Schema(description = "Identificador único do treino planejado", example = "123e4567-e89b-12d3-a456-426614174003")
         UUID id,
@@ -98,5 +101,24 @@ public record TreinoPlanejadoOutputDto(
         UUID treinoRealizadoId,
 
         @Schema(description = "Percepção de esforço real do atleta (1-10)", example = "8")
-        Integer percepcaoEsforcoRealizado
+        Integer percepcaoEsforcoRealizado,
+
+        // ===== PULO ("Não vou conseguir hoje") =====
+
+        @Schema(description = "Motivo declarado pelo atleta ao pular o treino; só com statusTreino = PERDIDO e pulo explícito",
+                example = "SEM_TEMPO")
+        MotivoPulo motivoPulo,
+
+        @Schema(description = "Quando o atleta pulou (fuso do atleta); ausente quando o PERDIDO veio do encerramento da semana")
+        LocalDateTime puladoEm,
+
+        // ===== ANÁLISE DO ATLETA (analise-ia-treino-atleta) =====
+
+        @Schema(description = "Há análise pós-treino pronta para o atleta neste treino (bloco do atleta disponível e recurso ligado)", example = "false")
+        boolean analiseAtletaDisponivel,
+
+        // ===== PROVA (prova-no-plano-semanal) =====
+
+        @Schema(description = "ID da prova vinculada, quando tipoTreino = PROVA", example = "123e4567-e89b-12d3-a456-426614174010")
+        UUID provaId
 ) {}

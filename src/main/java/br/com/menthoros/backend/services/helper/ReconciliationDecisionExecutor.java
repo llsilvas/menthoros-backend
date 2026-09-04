@@ -16,6 +16,7 @@ import br.com.menthoros.backend.repository.TreinoReconciliacaoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.MatchingDecisionEngine;
 import br.com.menthoros.backend.services.MatchingScoreCalculator;
+import br.com.menthoros.backend.services.plano.ProvaResultadoSyncer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -60,6 +61,7 @@ public class ReconciliationDecisionExecutor {
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final TreinoReconciliacaoRepository treinoReconciliacaoRepository;
+    private final ProvaResultadoSyncer provaResultadoSyncer;
 
     public MatchingDecision executar(TreinoRealizado realizado, List<TreinoPlanejado> candidatos, Atleta atleta) {
         List<MatchingCandidate> scoredCandidates = new ArrayList<>();
@@ -119,9 +121,12 @@ public class ReconciliationDecisionExecutor {
             TreinoPlanejado planned = decision.getSelectedPlanned();
             if (planned != null) {
                 planned.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
+                planned.limparPulo();
                 planned.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
                 realizado.setTreinoPlanejado(planned);
                 treinoPlanejadoRepository.save(planned);
+                // prova-no-plano-semanal, D6: treino PROVA vinculado fecha o resultado da prova.
+                provaResultadoSyncer.aoVincular(planned, realizado);
             }
             log.info("Auto-matched activity {} to planned workout with score {}", realizado.getId(), scoreToRecord);
         } else if (decision.getStatus() == ReconciliationStatus.AMBIGUO) {

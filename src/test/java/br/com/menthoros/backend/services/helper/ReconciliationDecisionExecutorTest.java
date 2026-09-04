@@ -50,6 +50,8 @@ class ReconciliationDecisionExecutorTest {
     private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock
     private TreinoReconciliacaoRepository treinoReconciliacaoRepository;
+    @Mock
+    private br.com.menthoros.backend.services.plano.ProvaResultadoSyncer provaResultadoSyncer;
 
     private ReconciliationDecisionExecutor executor;
     private Atleta atleta;
@@ -57,7 +59,8 @@ class ReconciliationDecisionExecutorTest {
     @BeforeEach
     void setUp() {
         executor = new ReconciliationDecisionExecutor(matchingScoreCalculator, matchingDecisionEngine,
-                treinoRealizadoRepository, treinoPlanejadoRepository, treinoReconciliacaoRepository);
+                treinoRealizadoRepository, treinoPlanejadoRepository, treinoReconciliacaoRepository,
+                provaResultadoSyncer);
         Assessoria assessoria = new Assessoria();
         assessoria.setId(UUID.randomUUID());
         atleta = new Atleta();
@@ -87,6 +90,27 @@ class ReconciliationDecisionExecutorTest {
             verify(treinoPlanejadoRepository).save(planejado);
             verify(treinoRealizadoRepository).save(realizado);
             verify(treinoReconciliacaoRepository).save(any(TreinoReconciliacao.class));
+            verify(provaResultadoSyncer).aoVincular(planejado, realizado);
+        }
+
+        @Test
+        @DisplayName("VINCULADO_AUTOMATICO sobre um planejado pulado: reverte o pulo (motivo e carimbo saem)")
+        void vinculadoAutomaticoRevertePulo() {
+            TreinoRealizado realizado = realizadoCompleto();
+            TreinoPlanejado planejado = planejadoCompleto();
+            planejado.setStatusTreino(TreinoExecucaoStatus.PERDIDO);
+            planejado.setMotivoPulo(br.com.menthoros.backend.enums.MotivoPulo.DOR);
+            planejado.setPuladoEm(java.time.LocalDateTime.of(2026, 7, 16, 7, 0));
+            when(matchingScoreCalculator.calculate(realizado, planejado, atleta))
+                    .thenReturn(scoreCompleto(new BigDecimal("0.90")));
+            when(matchingDecisionEngine.decide(any(), any()))
+                    .thenReturn(decisao(ReconciliationStatus.VINCULADO_AUTOMATICO, planejado, "AUTO_MATCH", "0.90"));
+
+            executor.executar(realizado, List.of(planejado), atleta);
+
+            assertThat(planejado.getStatusTreino()).isEqualTo(TreinoExecucaoStatus.REALIZADO);
+            assertThat(planejado.getMotivoPulo()).isNull();
+            assertThat(planejado.getPuladoEm()).isNull();
         }
 
         @Test

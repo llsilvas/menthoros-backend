@@ -59,8 +59,10 @@ class RevisaoSemanalCoachInTheLoopTest {
     @Test
     @DisplayName("a geração do plano nunca aprova sozinha por causa da revisão (CA5)")
     void revisaoNaoAprovaPlano() throws IOException {
+        // O metodo migrou de PlanoServiceImpl para o persister da fase de escrita
+        // (refactor-llm-call-outside-transaction); a garantia e a mesma.
         String fonte = Files.readString(
-                Path.of("src/main/java/br/com/menthoros/backend/services/impl/PlanoServiceImpl.java"));
+                Path.of("src/main/java/br/com/menthoros/backend/services/helper/PlanGenerationPersister.java"));
 
         int inicio = fonte.indexOf("registrarRevisaoConsumida(PlanoSemanal plano");
         assertThat(inicio).as("método da revisão consumida deve existir").isPositive();

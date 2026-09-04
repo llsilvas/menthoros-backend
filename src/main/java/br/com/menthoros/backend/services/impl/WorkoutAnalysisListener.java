@@ -2,20 +2,25 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.config.core.WorkoutAnalysisProperties;
 import br.com.menthoros.backend.dto.llm.AnaliseWorkoutRawDto;
+import br.com.menthoros.backend.dto.llm.AthleteMessageDto;
 import br.com.menthoros.backend.entity.AnaliseWorkout;
-import br.com.menthoros.backend.entity.PlanoMetaDados;
-import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AnaliseStatus;
+import br.com.menthoros.backend.enums.PrimaryAnalysisCause;
 import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository;
-import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
+import br.com.menthoros.backend.services.AthleteMessageClassifier;
+import br.com.menthoros.backend.services.AthleteMessageGenerator;
+import br.com.menthoros.backend.services.AthleteMessageValidator;
+import br.com.menthoros.backend.services.WorkoutAnalysisEligibility;
+import br.com.menthoros.backend.services.WorkoutAnalysisPromptDataBuilder;
 import br.com.menthoros.backend.services.WorkoutAnalysisTranslator;
 import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -31,9 +36,6 @@ import jakarta.annotation.PostConstruct;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -46,16 +48,18 @@ import java.util.UUID;
 public class WorkoutAnalysisListener {
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
-    private final PlanoMetadadosRepository planoMetadadosRepository;
     private final AiWorkoutAnalysisRepository analiseRepository;
     private final ModelRouter modelRouter;
     private final WorkoutAnalysisTranslator translator;
     private final ResourceLoader resourceLoader;
     private final PromptTemplateLoader templateLoader;
-    // ObjectMapper mantido apenas para serializar os dados do treino no prompt (buildPromptData);
-    // o parse da resposta do LLM agora é feito por .entity().
-    private final ObjectMapper objectMapper;
     private final WorkoutAnalysisProperties workoutAnalysisProperties;
+    private final WorkoutAnalysisEligibility eligibility;
+    private final WorkoutAnalysisPromptDataBuilder promptDataBuilder;
+    private final AthleteMessageGenerator athleteMessageGenerator;
+    private final AthleteMessageValidator athleteMessageValidator;
+    private final AthleteMessageClassifier athleteMessageClassifier;
+    private final MeterRegistry meterRegistry;
 
     private static final String SKILL_PATH = "classpath:skills/analise/workout-analyzer/SKILL.md";
     private String cachedSkillContent;
@@ -85,36 +89,29 @@ public class WorkoutAnalysisListener {
             return;
         }
 
-        TreinoRealizado treino = treinoRealizadoRepository.findById(treinoId).orElse(null);
+        // Tenant amarrado ao carregamento (QA/security): o evento traz treinoId e tenantId
+        // separados — divergência entre eles não pode virar análise gravada no tenant errado.
+        TreinoRealizado treino = treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId).orElse(null);
         if (treino == null) {
             log.warn("TreinoRealizado não encontrado: {}", treinoId);
             return;
         }
 
-        if (treino.getPercepcaoEsforco() == null) {
-            log.debug("TreinoRealizado {} sem RPE, análise ignorada", treinoId);
+        // Elegibilidade compartilhada com o endpoint do atleta (Codex #2): sem RPE não há o que
+        // analisar, e o guard de custo (ingestao-treino-realizado, D5) corta atividade histórica —
+        // registrar publica evento em toda inserção, e a carga inicial de um atleta recém
+        // conectado dispararia uma chamada de LLM por atividade.
+        if (!eligibility.elegivel(treino)) {
+            log.debug("TreinoRealizado {} não elegível para análise (sem RPE ou mais antigo que {} dias)",
+                    treinoId, workoutAnalysisProperties.getMaxIdadeDias());
             return;
-        }
-
-        // Guard de custo (ingestao-treino-realizado, D5): registrar publica evento em toda
-        // inserção, independente da fonte — sem isso, a carga inicial de um atleta recém
-        // conectado dispararia uma chamada de LLM por atividade histórica. Ausência de
-        // dataTreino não bloqueia (defensivo; não deveria ocorrer em produção, CA8 do ingestor).
-        LocalDate dataTreino = treino.getDataTreino();
-        if (dataTreino != null) {
-            LocalDate limite = LocalDate.now().minusDays(workoutAnalysisProperties.getMaxIdadeDias());
-            if (dataTreino.isBefore(limite)) {
-                log.debug("TreinoRealizado {} mais antigo que {} dias, análise ignorada",
-                        treinoId, workoutAnalysisProperties.getMaxIdadeDias());
-                return;
-            }
         }
 
         AnaliseWorkout analise = createPending(treinoId, tenantId);
 
         try {
             String skillContent = cachedSkillContent;
-            String promptData = buildPromptData(treino);
+            String promptData = promptDataBuilder.build(treino);
             String userPrompt = templateLoader.loadAndFormat("workout-analysis-user-prompt.txt", promptData);
 
             ChatClient sonnet = modelRouter.route(TaskComplexity.COMPLEX);
@@ -134,7 +131,22 @@ public class WorkoutAnalysisListener {
                 translationFailed = true;
             }
 
-            applyResult(analise, translated, translationFailed);
+            // Chamada 2 (D2): bloco do atleta em PT-BR, com o primary_cause resultante da
+            // chamada 1. Falha vira Optional.empty() dentro do gerador — o COMPLETED do coach
+            // nunca depende dela.
+            Optional<AthleteMessageDto> bloco = athleteMessageGenerator.gerar(promptData, raw.primaryCause());
+
+            // Métrica de sustentação da cláusula de reversão do gate (product review): quantas
+            // vezes o retorno do atleta nasce remetendo ao coach.
+            if (bloco.isPresent() && raw.primaryCause() != null
+                    && raw.primaryCause() != PrimaryAnalysisCause.NORMAL) {
+                Counter.builder("atleta_analise_remete_coach_total")
+                        .description("Blocos do atleta gerados com primary_cause != NORMAL")
+                        .register(meterRegistry)
+                        .increment();
+            }
+
+            applyResult(analise, translated, translationFailed, bloco);
             log.info("Análise concluída: treinoRealizadoId={}, score={}", treinoId, analise.getExecutionScore());
 
         } catch (Exception e) {
@@ -148,6 +160,7 @@ public class WorkoutAnalysisListener {
             analise.setTags(null);
             analise.setExecutionScore(null);
             analise.setRationalePt(null);
+            limparBlocoAtleta(analise);
             analise.setTranslationFailed(false);
             analise.setErrorMessage(e.getMessage());
             analise.setAnalyzedAt(Instant.now());
@@ -177,45 +190,8 @@ public class WorkoutAnalysisListener {
         }
     }
 
-    // Only numeric/enum fields are included — never include free-text fields (feedbackAtleta, etc.)
-    // to prevent prompt injection from user-supplied content.
-    private String buildPromptData(TreinoRealizado treino) {
-        Map<String, Object> data = new HashMap<>();
-
-        Map<String, Object> planned = new HashMap<>();
-        TreinoPlanejado planejado = treino.getTreinoPlanejado();
-        if (planejado != null) {
-            planned.put("type", planejado.getTipoTreino());
-            planned.put("distance_km", planejado.getDistanciaKm());
-            planned.put("expected_rpe", planejado.getPercepcaoEsforcoEsperada());
-        }
-
-        Map<String, Object> actual = new HashMap<>();
-        actual.put("distance_km", treino.getDistanciaKm());
-        actual.put("rpe", treino.getPercepcaoEsforco());
-        if (treino.getFcMedia() != null) actual.put("avg_hr", treino.getFcMedia());
-
-        Map<String, Object> context = new HashMap<>();
-        Optional<PlanoMetaDados> metaDados = treino.getAtleta() != null
-                ? planoMetadadosRepository.findByAtletaId(treino.getAtleta().getId())
-                : Optional.empty();
-        metaDados.ifPresent(m -> {
-            context.put("tsb", m.getTsbAtual());
-            context.put("ctl", m.getCtlAtual());
-        });
-
-        data.put("planned", planned);
-        data.put("actual", actual);
-        data.put("athlete_context", context);
-
-        try {
-            return objectMapper.writeValueAsString(data);
-        } catch (Exception e) {
-            throw new RuntimeException("Falha ao serializar dados do treino", e);
-        }
-    }
-
-    private void applyResult(AnaliseWorkout analise, AnaliseWorkoutRawDto dto, boolean translationFailed) {
+    private void applyResult(AnaliseWorkout analise, AnaliseWorkoutRawDto dto, boolean translationFailed,
+                             Optional<AthleteMessageDto> bloco) {
         analise.setStatus(AnaliseStatus.COMPLETED);
         analise.setSummaryPt(dto.summary());
         analise.setTechnicalInterpretationPt(dto.technicalInterpretation());
@@ -225,7 +201,46 @@ public class WorkoutAnalysisListener {
         analise.setExecutionScore(dto.executionScore());
         analise.setRationalePt(dto.rationale());
         analise.setTranslationFailed(translationFailed);
+        aplicarBlocoAtleta(analise, bloco);
         analise.setAnalyzedAt(Instant.now());
         analiseRepository.save(analise);
+    }
+
+    /** Um só lugar zera o bloco (QA): FAILED e bloqueio não podem divergir num campo futuro. */
+    private void limparBlocoAtleta(AnaliseWorkout analise) {
+        analise.setAtletaReconhecimento(null);
+        analise.setAtletaComoFoi(null);
+        analise.setAtletaEsforco(null);
+        analise.setAtletaProximoTreino(null);
+        analise.setAtletaBloqueadoMotivo(null);
+    }
+
+    /** Bloco ausente/incompleto → campos nulos sem motivo; bloqueado pelo validador → nulos com motivo. */
+    private void aplicarBlocoAtleta(AnaliseWorkout analise, Optional<AthleteMessageDto> bloco) {
+        limparBlocoAtleta(analise);
+
+        if (bloco.isEmpty() || !athleteMessageValidator.completo(bloco.get())) {
+            return;
+        }
+        AthleteMessageDto dto = bloco.get();
+        Optional<String> motivo = athleteMessageValidator.validar(dto);
+        if (motivo.isPresent()) {
+            log.warn("Bloco do atleta bloqueado pelo validador ({}): treinoRealizadoId={}",
+                    motivo.get(), analise.getTreinoRealizadoId());
+            analise.setAtletaBloqueadoMotivo(motivo.get());
+            return;
+        }
+        // Barreira semântica (decisão 0.3): o regex pega jargão, não intenção. Fail-open no
+        // classificador — indisponibilidade do Haiku não derruba a feature.
+        if (athleteMessageClassifier.mandaMudarPlano(dto)) {
+            log.warn("Bloco do atleta bloqueado pelo classificador: treinoRealizadoId={}",
+                    analise.getTreinoRealizadoId());
+            analise.setAtletaBloqueadoMotivo(AthleteMessageClassifier.MOTIVO_CLASSIFICADOR);
+            return;
+        }
+        analise.setAtletaReconhecimento(dto.recognition());
+        analise.setAtletaComoFoi(dto.howItWent());
+        analise.setAtletaEsforco(dto.effortReading());
+        analise.setAtletaProximoTreino(dto.nextWorkoutTip());
     }
 }

@@ -22,4 +22,7 @@ public interface SignupProvisioningRepository extends JpaRepository<SignupProvis
 
     /** Varredura operacional: o que a compensação não conseguiu limpar. */
     List<SignupProvisioning> findByStatusOrderByCreatedAtAsc(SignupProvisioningStatus status);
+
+    /** Tentativas já feitas para um convite — define o sufixo da chave "<token_hash>:<n>". */
+    List<SignupProvisioning> findByInviteIdOrderByCreatedAtAsc(java.util.UUID inviteId);
 }

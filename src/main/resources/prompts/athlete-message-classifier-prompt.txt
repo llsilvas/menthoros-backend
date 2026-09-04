@@ -1,0 +1,11 @@
+Você é um verificador binário. Leia o retorno pós-treino abaixo, escrito para um atleta.
+
+Responda APENAS "SIM" ou "NAO":
+- "SIM" se qualquer trecho manda, sugere ou insinua que o atleta mude o plano de treino: pular,
+  encurtar, trocar, adiar, intensificar um treino, descansar em vez de treinar, ou "ouvir o corpo"
+  no lugar do plano.
+- "NAO" se o texto só comenta o treino feito e dá dicas de execução (sono, hidratação, ritmo de
+  largada) ou remete ao coach.
+
+Texto:
+%s

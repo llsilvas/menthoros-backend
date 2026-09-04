@@ -12,7 +12,6 @@ import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
-import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.FaixaTsb;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -23,10 +22,12 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.repository.UsuarioRepository;
-import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
+import br.com.menthoros.backend.security.AuthenticatedAtletaResolver;
 import br.com.menthoros.backend.services.AtletaProgressService;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
+import br.com.menthoros.backend.mapper.EtapaMapper;
+import br.com.menthoros.backend.dto.output.EtapaTreinoDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -69,15 +70,16 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     private record Alvo(String label, double min, double max) {}
 
     private final AtletaRepository atletaRepository;
-    private final UsuarioRepository usuarioRepository;
     private final MetricasDiariasRepository metricasDiariasRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final ZonaTreinoService zonaTreinoService;
-    private final AuthenticatedPrincipalResolver principalResolver;
+    private final AuthenticatedAtletaResolver atletaResolver;
     private final CheckinProntidaoRepository checkinProntidaoRepository;
+    private final EtapaMapper etapaMapper;
     private final Clock clock;
+    private final AtletaHojeResolver hojeResolver;
 
     /**
      * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
@@ -207,16 +209,22 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     @Override
     @Transactional(readOnly = true)
     public AtletaHomeDto getHome(UUID atletaId) {
-        validarAtletaNoTenant(atletaId);
+        Atleta atleta = validarAtletaNoTenant(atletaId);
 
-        LocalDate hoje = LocalDate.now(clock);
+        // "Hoje" é do atleta: o hero decide o estado do dia por esta data (D2b da training-loop).
+        LocalDate hoje = hojeResolver.hojeDe(atleta);
         AtletaHomeDto.ProximoTreino proximo = treinoPlanejadoRepository
                 .findByAtletaIdAndDataBetween(atletaId, hoje, hoje.plusDays(14))
                 .stream().findFirst()
-                .map(tp -> new AtletaHomeDto.ProximoTreino(
-                        tp.getDataTreino(),
-                        tp.getTipoTreino() != null ? tp.getTipoTreino().name() : null,
-                        tp.getDescricao()))
+                .map(this::toProximoTreino)
+                .orElse(null);
+
+        AtletaHomeDto.RealizadoHoje realizadoHoje = treinoRealizadoRepository
+                .findByAtletaIdAndDataTreino(atletaId, hoje)
+                .stream()
+                .max(Comparator.comparing(TreinoRealizado::getCriadoEm,
+                        Comparator.nullsFirst(Comparator.naturalOrder())))
+                .map(this::toRealizadoHoje)
                 .orElse(null);
 
         AtletaHomeDto.MetricasChave metricas = metricasDiariasRepository.findLatestByAtletaId(atletaId)
@@ -224,7 +232,50 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                         FaixaTsb.classificarNome(m.getTsb())))
                 .orElse(new AtletaHomeDto.MetricasChave(null, null, null, null, null, null));
 
-        return new AtletaHomeDto(proximo, metricas);
+        return new AtletaHomeDto(hoje, proximo, realizadoHoje, metricas);
+    }
+
+    private AtletaHomeDto.RealizadoHoje toRealizadoHoje(TreinoRealizado tr) {
+        Integer duracaoMin = tr.getDuracaoMin() != null && !tr.getDuracaoMin().isZero()
+                ? (int) tr.getDuracaoMin().toMinutes() : null;
+        return new AtletaHomeDto.RealizadoHoje(
+                tr.getId(),
+                tr.getFonteDados() != null ? tr.getFonteDados().name() : null,
+                tr.getTipoTreino() != null ? tr.getTipoTreino().name() : null,
+                duracaoMin,
+                tr.getDistanciaKm(),
+                tr.getPercepcaoEsforco(),
+                tr.getSensacoes() != null ? List.copyOf(tr.getSensacoes()) : null,
+                tr.getFeedbackAtleta(),
+                tr.getFeedbackRegistradoEm());
+    }
+
+    /**
+     * O hero da Home do atleta mostra o mesmo perfil que o coach vê no detalhe: etapas no mesmo
+     * DTO (`EtapaTreinoDto`, com `blocoId`/`blocoRepeticoes` — sem índice de repetição, que o
+     * front deriva), duração em minutos inteiros (no modelo é `Duration`) e zona alvo. Roda dentro
+     * da transação de `getHome`, então as etapas LAZY carregam. Lista vazia vira `null`: o
+     * contrato omite o que não existe, e o front não desenha placeholder.
+     */
+    private AtletaHomeDto.ProximoTreino toProximoTreino(TreinoPlanejado tp) {
+        List<EtapaTreinoDto> etapas = tp.getEtapas() == null || tp.getEtapas().isEmpty()
+                ? null
+                : etapaMapper.toDtoList(tp.getEtapas());
+        // `duracaoMin` é `nullable = false` no modelo e o backend usa `Duration.ZERO` como sentinela de
+        // "não prescrita" (ver `ReconciliationDecisionExecutor`): zero não é duração — é ausência.
+        Integer duracaoMin = tp.getDuracaoMin() != null && !tp.getDuracaoMin().isZero()
+                ? (int) tp.getDuracaoMin().toMinutes() : null;
+        return new AtletaHomeDto.ProximoTreino(
+                tp.getDataTreino(),
+                tp.getTipoTreino() != null ? tp.getTipoTreino().name() : null,
+                tp.getDescricao(),
+                duracaoMin,
+                tp.getZonaAlvo(),
+                tp.getTssPlanejado(),
+                tp.getIntensidadePlanejada(),
+                etapas,
+                tp.getStatusTreino() != null ? tp.getStatusTreino().name() : null,
+                tp.getMotivoPulo() != null ? tp.getMotivoPulo().name() : null);
     }
 
     /**
@@ -273,13 +324,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
     @Override
     @Transactional(readOnly = true)
     public UUID resolverAtletaIdAtual() {
-        UUID tenantId = TenantContext.getRequiredTenantId();
-        String sub = principalResolver.getCurrentSubject();
-        Usuario usuario = usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId)
-                .orElseThrow(() -> new DomainNotFoundException("Usuário autenticado não encontrado no tenant"));
-        Atleta atleta = atletaRepository.findByUsuario_IdAndAssessoria_Id(usuario.getId(), tenantId)
-                .orElseThrow(() -> new DomainNotFoundException("Atleta vinculado ao usuário não encontrado"));
-        return atleta.getId();
+        return atletaResolver.resolverAtletaIdAtual();
     }
 
     // ===== Helpers =====

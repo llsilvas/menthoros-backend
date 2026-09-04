@@ -47,6 +47,8 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
 
     static final String PATH_WAITLIST = "/api/v1/waitlist";
     static final String PATH_COACH_SIGNUP = "/api/public/coach-signups";
+    /** Prefixo: o token vai no path. Só GET. */
+    static final String PATH_FOUNDING_INVITE_LOOKUP = "/api/public/founding-invites/";
 
     /** Uma política por rota: limite, janela, e o contador que a materializa. */
     private record Politica(int limite, Duration janela, Cache<String, AtomicInteger> contador) {
@@ -59,11 +61,15 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
         }
     }
 
+    /** Políticas dos POSTs públicos, por URI exata. */
     private final Map<String, Politica> politicas;
+    /** Política do GET de consulta do convite, por prefixo. */
+    private final Politica consultaConvite;
 
     public PublicEndpointRateLimitFilter(
             @Value("${app.waitlist.rate-limit.per-minute:5}") int waitlistPorMinuto,
-            @Value("${app.coach-signup.rate-limit.per-hour:3}") int signupPorHora) {
+            @Value("${app.coach-signup.rate-limit.per-hour:3}") int signupPorHora,
+            @Value("${app.founding-invite.rate-limit.per-minute:10}") int consultaConvitePorMinuto) {
 
         this.politicas = new LinkedHashMap<>();
         // Propriedade preservada com o nome antigo: renomeá-la faria os ambientes que já a
@@ -72,6 +78,9 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
         // Janela de hora, e não de minuto: o cadastro é uma ação rara e cara. Um humano não faz
         // três num minuto, e quem faz não é humano.
         politicas.put(PATH_COACH_SIGNUP, Politica.de(signupPorHora, Duration.ofHours(1)));
+        // Um GET que devolve nome e e-mail para quem tiver um token: barato de servir, mas é PII e
+        // não pode ficar sem teto. Minuto, não hora: a página consulta uma vez ao abrir.
+        this.consultaConvite = Politica.de(consultaConvitePorMinuto, Duration.ofMinutes(1));
     }
 
     @Override
@@ -79,11 +88,19 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
         return politicaDe(request) == null;
     }
 
+    /**
+     * Method-aware: os POSTs públicos casam por URI exata; o único GET protegido casa por prefixo,
+     * porque o token faz parte do path. Qualquer outra combinação passa direto.
+     */
     private Politica politicaDe(HttpServletRequest request) {
-        if (!HttpMethod.POST.matches(request.getMethod())) {
-            return null;
+        String uri = request.getRequestURI();
+        if (HttpMethod.POST.matches(request.getMethod())) {
+            return politicas.get(uri);
         }
-        return politicas.get(request.getRequestURI());
+        if (HttpMethod.GET.matches(request.getMethod()) && uri.startsWith(PATH_FOUNDING_INVITE_LOOKUP)) {
+            return consultaConvite;
+        }
+        return null;
     }
 
     @Override

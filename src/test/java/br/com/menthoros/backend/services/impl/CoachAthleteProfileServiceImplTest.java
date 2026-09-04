@@ -12,6 +12,7 @@ import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.MotivoAtencao;
 import br.com.menthoros.backend.enums.NivelExperiencia;
@@ -80,6 +81,7 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private ProvaMapper provaMapper;
     @Mock private IntervalsIcuConnectionService intervalsIcuConnectionService;
     @Mock private ThresholdInferenceService thresholdInferenceService;
+    @Mock private br.com.menthoros.backend.repository.TreinoRealizadoRepository treinoRealizadoRepository;
 
     @InjectMocks
     private CoachAthleteProfileServiceImpl service;
@@ -101,6 +103,9 @@ class CoachAthleteProfileServiceImplTest {
                 .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
                 .build();
         lenient().when(provaRepository.findUpcomingByAtletaIdAndTenantId(eq(atletaId), eq(tenantId), any(LocalDate.class)))
+                .thenReturn(List.of());
+        lenient().when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                        eq(atletaId), eq(tenantId), any(LocalDate.class), any(LocalDate.class)))
                 .thenReturn(List.of());
     }
 
@@ -148,11 +153,48 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(perfil.aderenciaSemanal()).hasSize(1);
             assertThat(perfil.recordes()).hasSize(1);
             assertThat(perfil.planoVigente()).isNull();
+            assertThat(perfil.realizadosRecentes()).isEmpty();
             assertThat(perfil.proximaProva()).isNull();
             assertThat(perfil.sinaisRecentes()).isEmpty();
             assertThat(perfil.sugestoesRecentes()).isEmpty();
             assertThat(perfil.avisos()).isNull();
             assertThat(perfil.geradoEm()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("realizadosRecentes — janela de 7 dias, mais recente primeiro, com feedback quando carimbado")
+        void realizadosRecentesJanelaEOrdem() {
+            stubPerfilMinimo();
+            TreinoRealizado antigo = new TreinoRealizado();
+            antigo.setId(UUID.randomUUID());
+            antigo.setDataTreino(LocalDate.now().minusDays(3));
+            antigo.setTipoTreino(TipoTreino.FACIL);
+            antigo.setFonteDados(br.com.menthoros.backend.enums.FonteDados.INTERVALS_ICU);
+            antigo.setDuracaoMin(java.time.Duration.ofMinutes(40));
+            TreinoRealizado recente = new TreinoRealizado();
+            recente.setId(UUID.randomUUID());
+            recente.setDataTreino(LocalDate.now());
+            recente.setTipoTreino(TipoTreino.INTERVALADO);
+            recente.setFonteDados(br.com.menthoros.backend.enums.FonteDados.MANUAL);
+            recente.setDuracaoMin(java.time.Duration.ofMinutes(45));
+            recente.setPercepcaoEsforco(6);
+            recente.setSensacoes(java.util.Set.of(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS));
+            recente.setFeedbackAtleta("Difícil");
+            recente.setFeedbackRegistradoEm(java.time.LocalDateTime.now());
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    eq(atletaId), eq(tenantId), any(LocalDate.class), any(LocalDate.class)))
+                    .thenReturn(List.of(antigo, recente));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.realizadosRecentes()).hasSize(2);
+            assertThat(perfil.realizadosRecentes().get(0).id()).isEqualTo(recente.getId());
+            assertThat(perfil.realizadosRecentes().get(0).percepcaoEsforco()).isEqualTo(6);
+            assertThat(perfil.realizadosRecentes().get(0).sensacoes()).containsExactly(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS);
+            assertThat(perfil.realizadosRecentes().get(0).feedbackRegistradoEm()).isNotNull();
+            assertThat(perfil.realizadosRecentes().get(1).id()).isEqualTo(antigo.getId());
+            assertThat(perfil.realizadosRecentes().get(1).percepcaoEsforco()).isNull();
+            assertThat(perfil.realizadosRecentes().get(1).feedbackRegistradoEm()).isNull();
         }
 
         @Test
@@ -678,7 +720,12 @@ class CoachAthleteProfileServiceImplTest {
                 null,
                 null,
                 null,
-                (int) ChronoUnit.DAYS.between(LocalDate.now(), data)
+                (int) ChronoUnit.DAYS.between(LocalDate.now(), data),
+                false,
+                null,
+                true,
+                null,
+                null
         );
     }
 }

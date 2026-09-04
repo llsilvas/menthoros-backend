@@ -228,6 +228,7 @@ public class PlannerShadowService {
             case KM_10 -> 10.0;
             case KM_21 -> 21.0975;
             case KM_42 -> 42.195;
+            case CUSTOMIZADA -> prova.getDistanciaKm() != null ? prova.getDistanciaKm().doubleValue() : null;
         };
     }
 

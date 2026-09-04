@@ -83,8 +83,8 @@ class BatchPlanProcessorTest {
         }).when(transactionTemplate).executeWithoutResult(any());
 
         // limiter roda o supplier passado (só nos testes que chamam gerarPlanoTreino).
-        lenient().when(llmConcurrencyLimiter.executar(any())).thenAnswer(inv -> {
-            Supplier<?> s = inv.getArgument(0);
+        lenient().when(llmConcurrencyLimiter.executarLote(any(), any())).thenAnswer(inv -> {
+            Supplier<?> s = inv.getArgument(1);
             return s.get();
         });
     }
@@ -241,6 +241,19 @@ class BatchPlanProcessorTest {
 
             verify(jobRepository).incrementarErros(jobId);
             assertThat(motivoErroPersistido()).isEqualTo(BatchPlanProcessor.MOTIVO_PLANO_JA_EXISTE);
+        }
+
+        @Test
+        @DisplayName("DataIntegrityViolationException de OUTRA constraint → 'Erro ao gerar plano', não 'já existe'")
+        void outraConstraintNaoEMascarada() {
+            UUID id = atletaValido("Ana");
+            when(planoService.gerarPlanoTreino(eq(id), any()))
+                    .thenThrow(new DataIntegrityViolationException("violates foreign key constraint \"fk_outra\""));
+
+            processor.processarLote(jobId, List.of(id), ModoGeracaoPlano.PROXIMA_SEMANA, tenantId);
+
+            verify(jobRepository).incrementarErros(jobId);
+            assertThat(motivoErroPersistido()).isEqualTo(BatchPlanProcessor.MOTIVO_ERRO_GERACAO);
         }
 
         @Test

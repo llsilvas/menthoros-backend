@@ -21,7 +21,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,6 +31,9 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class KudosServiceImpl implements KudosService {
+
+    /** Janela de "kudos recentes" — decisão de produto alinhada ao ciclo semanal do app. */
+    public static final int JANELA_KUDOS_RECENTES_DIAS = 7;
 
     private final KudosRepository kudosRepository;
     private final AtletaRepository atletaRepository;
@@ -73,7 +78,8 @@ public class KudosServiceImpl implements KudosService {
     @Transactional(readOnly = true)
     public List<KudosRecenteOutputDto> listarRecentes(UUID atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
-        return kudosRepository.findTop10ByAtletaIdAndTenantIdOrderByCreatedAtDesc(atletaId, tenantId).stream()
+        Instant desde = Instant.now(clock).minus(JANELA_KUDOS_RECENTES_DIAS, ChronoUnit.DAYS);
+        return kudosRepository.findRecentesByAtletaIdAndTenantId(atletaId, tenantId, desde).stream()
                 .map(kudosMapper::toRecenteOutputDto)
                 .toList();
     }

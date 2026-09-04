@@ -316,7 +316,10 @@ public class RedistribuicaoTreinoHelper {
                 original.duracaoMin(),
                 original.distanciaKm(),
                 original.ritmoAlvo(),
-                original.etapas()
+                original.etapas(),
+                original.descricao(),
+                original.zonaAlvo(),
+                original.provaId()
         );
     }
 }

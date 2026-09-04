@@ -76,6 +76,6 @@ class TreinoRealizadoControllerTest {
                 null, // 23 runningDynamics
                 decoupling, null, null, null, null, null, null, // 24-30 (24=decouplingPercentual, 25=envelope, 26=serie)
                 null, null, null, // 31-33 (nivelDor, nivelFadiga, nivelRecuperacao)
-                null, null, null, null); // 34-37
+                null, null, null, null, null, null); // 34-37 + sensacoes, feedbackRegistradoEm
     }
 }

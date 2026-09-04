@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalTime;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -64,7 +64,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("retorna prova realizada válida independente de distanciaKm ser nulo")
         void retornaProvaValidaComDistanciaKmNulo() {
             Prova prova = criarProva("Meia SP", LocalDate.now().minusDays(10), DistanciaProva.KM_21, null,
-                    true, LocalTime.of(1, 45, 0));
+                    true, Duration.ofHours(1).plusMinutes(45));
             provaRepository.save(prova);
 
             List<Prova> resultado = provaRepository.findProvasRealizadasRecentes(
@@ -78,7 +78,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("retorna prova realizada válida com distanciaKm customizado preenchido")
         void retornaProvaValidaComDistanciaKmCustomizado() {
             Prova prova = criarProva("10K Custom", LocalDate.now().minusDays(5), DistanciaProva.KM_10,
-                    BigDecimal.valueOf(10.5), true, LocalTime.of(0, 50, 0));
+                    BigDecimal.valueOf(10.5), true, Duration.ofHours(0).plusMinutes(50));
             provaRepository.save(prova);
 
             List<Prova> resultado = provaRepository.findProvasRealizadasRecentes(
@@ -92,7 +92,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("exclui prova fora da janela de dias")
         void excluiProvaForaDaJanela() {
             Prova prova = criarProva("Prova Antiga", LocalDate.now().minusDays(120), DistanciaProva.KM_10, null,
-                    true, LocalTime.of(0, 50, 0));
+                    true, Duration.ofHours(0).plusMinutes(50));
             provaRepository.save(prova);
 
             List<Prova> resultado = provaRepository.findProvasRealizadasRecentes(
@@ -105,7 +105,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("exclui prova sem foiRealizada")
         void excluiProvaSemFoiRealizada() {
             Prova prova = criarProva("Prova Futura", LocalDate.now().minusDays(5), DistanciaProva.KM_10, null,
-                    false, LocalTime.of(0, 50, 0));
+                    false, Duration.ofHours(0).plusMinutes(50));
             provaRepository.save(prova);
 
             List<Prova> resultado = provaRepository.findProvasRealizadasRecentes(
@@ -118,7 +118,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("exclui prova com statusProva CANCELADA (mesmo com foiRealizada/tempoRealizado preenchidos)")
         void excluiProvaCancelada() {
             Prova prova = criarProva("Prova Cancelada", LocalDate.now().minusDays(5), DistanciaProva.KM_10, null,
-                    true, LocalTime.of(0, 50, 0));
+                    true, Duration.ofHours(0).plusMinutes(50));
             prova.setStatusProva(ProvaStatus.CANCELADA);
             provaRepository.save(prova);
 
@@ -160,7 +160,7 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
             outroAtleta = atletaRepository.save(outroAtleta);
 
             Prova provaOutroTenant = criarProva("Prova Outro Tenant", LocalDate.now().minusDays(5),
-                    DistanciaProva.KM_10, null, true, LocalTime.of(0, 50, 0));
+                    DistanciaProva.KM_10, null, true, Duration.ofHours(0).plusMinutes(50));
             provaOutroTenant.setAtleta(outroAtleta);
             provaOutroTenant.setAssessoria(outraAssessoria);
             provaRepository.save(provaOutroTenant);
@@ -175,9 +175,9 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         @DisplayName("múltiplas provas válidas retornam ordenadas por dataProva DESC")
         void multiplasProvasOrdenadasPorDataDesc() {
             Prova maisAntiga = criarProva("Prova Mais Antiga", LocalDate.now().minusDays(60),
-                    DistanciaProva.KM_10, null, true, LocalTime.of(0, 50, 0));
+                    DistanciaProva.KM_10, null, true, Duration.ofHours(0).plusMinutes(50));
             Prova maisRecente = criarProva("Prova Mais Recente", LocalDate.now().minusDays(5),
-                    DistanciaProva.KM_21, null, true, LocalTime.of(1, 45, 0));
+                    DistanciaProva.KM_21, null, true, Duration.ofHours(1).plusMinutes(45));
             provaRepository.save(maisAntiga);
             provaRepository.save(maisRecente);
 
@@ -190,8 +190,67 @@ class ProvaRepositoryTest extends AbstractIntegrationTest {
         }
     }
 
+    @Nested
+    @DisplayName("findPendentesRevisao")
+    class FindPendentesRevisao {
+
+        @Test
+        @DisplayName("inclui futura pendente e cancelada pendente; exclui passada, revisada e de outro tenant")
+        void filtraPendentes() {
+            LocalDate hoje = LocalDate.now();
+            Prova futuraPendente = pendente("Futura", hoje.plusWeeks(10), ProvaStatus.PLANEJADA);
+            Prova canceladaPendente = pendente("Cancelada", hoje.plusWeeks(4), ProvaStatus.CANCELADA);
+            Prova passadaPendente = pendente("Passada", hoje.minusDays(1), ProvaStatus.CONCLUIDA);
+            Prova futuraRevisada = pendente("Revisada", hoje.plusWeeks(6), ProvaStatus.PLANEJADA);
+            futuraRevisada.setRevisadaPeloCoach(true);
+            provaRepository.saveAll(List.of(futuraPendente, canceladaPendente, passadaPendente, futuraRevisada));
+
+            Assessoria outra = new Assessoria();
+            outra.setNome("Outra");
+            outra.setDominio("outra-" + UUID.randomUUID());
+            outra.setPlano(PlanoAssessoria.BASIC);
+            outra = assessoriaRepository.save(outra);
+            Atleta atletaOutra = new Atleta();
+            atletaOutra.setNome("Outro");
+            atletaOutra.setEmail("outro-" + UUID.randomUUID() + "@test.com");
+            atletaOutra.setObjetivo("x");
+            atletaOutra.setNivelExperiencia(NivelExperiencia.INICIANTE);
+            atletaOutra.setAtivo(AtletaStatus.ATIVO);
+            atletaOutra.setAssessoria(outra);
+            atletaOutra = atletaRepository.save(atletaOutra);
+            Prova deOutroTenant = pendente("Outro tenant", hoje.plusWeeks(8), ProvaStatus.PLANEJADA);
+            deOutroTenant.setAtleta(atletaOutra);
+            deOutroTenant.setAssessoria(outra);
+            provaRepository.save(deOutroTenant);
+
+            List<Prova> porTenant = provaRepository.findPendentesRevisaoByAssessoria(assessoria.getId(), hoje);
+            List<Prova> porAtleta = provaRepository.findPendentesRevisaoByAtleta(atleta.getId(), assessoria.getId(), hoje);
+
+            assertThat(porTenant).extracting(Prova::getNomeProva).containsExactly("Cancelada", "Futura");
+            assertThat(porAtleta).extracting(Prova::getNomeProva).containsExactly("Cancelada", "Futura");
+        }
+
+        @Test
+        @DisplayName("prova gravada sem tocar na flag nasce revisada (default true)")
+        void defaultRevisada() {
+            Prova prova = criarProva("Meia SP", LocalDate.now().plusWeeks(12), DistanciaProva.KM_21, null,
+                    false, null);
+            provaRepository.saveAndFlush(prova);
+
+            assertThat(provaRepository.findPendentesRevisaoByAtleta(atleta.getId(), assessoria.getId(), LocalDate.now())).isEmpty();
+        }
+
+        private Prova pendente(String nome, LocalDate data, ProvaStatus status) {
+            Prova prova = criarProva(nome, data, DistanciaProva.KM_21, null, false, null);
+            prova.setStatusProva(status);
+            prova.setRevisadaPeloCoach(false);
+            prova.setMotivoRevisao(br.com.menthoros.backend.enums.MotivoRevisaoProva.NOVA);
+            return prova;
+        }
+    }
+
     private Prova criarProva(String nome, LocalDate dataProva, DistanciaProva distancia, BigDecimal distanciaKm,
-                              boolean foiRealizada, LocalTime tempoRealizado) {
+                              boolean foiRealizada, Duration tempoRealizado) {
         Prova prova = new Prova();
         prova.setNomeProva(nome);
         prova.setDataProva(dataProva);

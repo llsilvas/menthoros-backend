@@ -81,7 +81,7 @@ class OnboardingServiceTest {
                 athleteBaselineStateRepository, athleteBaselineHistoryRepository, provaRepository,
                 activityNormalizer, activityDedupService,
                 baselineCalculator, confidenceScorer, planningPolicyResolver, calibrationService,
-                atletaProgressService);
+                atletaProgressService, new br.com.menthoros.backend.services.helper.ProvaEnricher());
         atletaId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
         atleta = Atleta.builder().id(atletaId).nome("João").nivelExperiencia(NivelExperiencia.INTERMEDIARIO).build();
@@ -262,6 +262,9 @@ class OnboardingServiceTest {
             assertThat(resultado.getDistancia()).isEqualTo(DistanciaProva.KM_21);
             assertThat(resultado.getNomeProva()).isEqualTo("Meia SP");
             assertThat(resultado.getAtleta()).isEqualTo(atletaComAssessoria);
+            assertThat(resultado.getSemanasPreparacao()).isEqualTo(12);
+            assertThat(resultado.getInicioPreparacao()).isEqualTo(dataProva.minusWeeks(12));
+            assertThat(resultado.getDistanciaKm()).isEqualByComparingTo(new java.math.BigDecimal("21.1"));
             verify(provaRepository).save(any(Prova.class));
         }
 

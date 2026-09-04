@@ -1,0 +1,6 @@
+Escreva o retorno pós-treino para o atleta, respondendo apenas com JSON válido.
+
+Dados do treino:
+%s
+
+primary_cause da análise técnica: %s

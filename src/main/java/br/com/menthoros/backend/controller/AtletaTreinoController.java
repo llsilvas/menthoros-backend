@@ -1,8 +1,16 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.input.FeedbackTreinoInputDto;
+import br.com.menthoros.backend.dto.input.PularTreinoInputDto;
 import br.com.menthoros.backend.dto.input.TreinoManualInputDto;
+import br.com.menthoros.backend.dto.output.TreinoHojeDto;
+import br.com.menthoros.backend.enums.MotivoPulo;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.services.AtletaProgressService;
+import br.com.menthoros.backend.services.AtletaTreinoFeedbackService;
+import br.com.menthoros.backend.services.AtletaTreinoHojeService;
+import br.com.menthoros.backend.services.AtletaWorkoutAnalysisService;
+import br.com.menthoros.backend.dto.output.AthleteWorkoutAnalysisOutputDto;
 import br.com.menthoros.backend.services.TreinoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -25,6 +33,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -39,6 +48,9 @@ public class AtletaTreinoController {
 
     private final TreinoService treinoService;
     private final AtletaProgressService atletaProgressService;
+    private final AtletaTreinoHojeService treinoHojeService;
+    private final AtletaTreinoFeedbackService treinoFeedbackService;
+    private final AtletaWorkoutAnalysisService atletaWorkoutAnalysisService;
 
     // @RequireTenant não se aplica: endpoints /me/ resolvem o atletaId do JWT via resolverAtletaIdAtual(),
     // sem receber um resource-ID como parâmetro. Isolamento garantido por TenantContext + queries tenant-scoped.
@@ -59,6 +71,87 @@ public class AtletaTreinoController {
         UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
         TreinoRealizadoOutputDto output = treinoService.registrarTreinoManualAtleta(atletaId, input);
         return ResponseEntity.status(HttpStatus.CREATED).body(output);
+    }
+
+    @GetMapping("/me/treinos/hoje")
+    @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
+    @Operation(summary = "Treino planejado de hoje com alvos resolvidos (modo treino)",
+            description = "'Hoje' é no fuso do atleta. Cada etapa traz o alvo efetivo (FC vence pace) "
+                    + "resolvido pela mesma cadeia do push ao intervals.icu.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Treino de hoje",
+                    content = @Content(schema = @Schema(implementation = TreinoHojeDto.class))),
+            @ApiResponse(responseCode = "204", description = "Sem treino planejado hoje"),
+            @ApiResponse(responseCode = "401", description = "Token ausente ou inválido"),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — apenas atletas podem usar este endpoint"),
+            @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado")
+    })
+    public ResponseEntity<TreinoHojeDto> getTreinoHoje() {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return treinoHojeService.getTreinoHoje(atletaId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @PostMapping("/me/treinos/hoje/pular")
+    @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
+    @Operation(summary = "Pular o treino de hoje (\"Não vou conseguir hoje\")",
+            description = "Marca o planejado de hoje como PERDIDO com motivo opcional e carimbo. "
+                    + "Não cria treino realizado; um registro posterior que vincule o planejado reverte o pulo.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Treino de hoje marcado como pulado",
+                    content = @Content(schema = @Schema(implementation = TreinoHojeDto.class))),
+            @ApiResponse(responseCode = "400", description = "Motivo fora da lista"),
+            @ApiResponse(responseCode = "401", description = "Token ausente ou inválido"),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — apenas atletas podem usar este endpoint"),
+            @ApiResponse(responseCode = "404", description = "Atleta do usuário autenticado não encontrado"),
+            @ApiResponse(responseCode = "422", description = "Sem treino planejado hoje, ou já realizado")
+    })
+    public ResponseEntity<TreinoHojeDto> pularTreinoHoje(
+            @RequestBody(required = false) PularTreinoInputDto input) {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        MotivoPulo motivo = input != null ? input.motivo() : null;
+        return ResponseEntity.ok(treinoHojeService.pularHoje(atletaId, motivo));
+    }
+
+    @PostMapping("/me/realizados/{id}/feedback")
+    @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
+    @Operation(summary = "\"Como foi?\" — feedback pós-treino (RPE, sensações, comentário)",
+            description = "RPE é obrigatório (mesmo campo já usado pelo TSS e pelo readiness); sensações e "
+                    + "comentário são opcionais. Um segundo envio substitui tudo — completude é o carimbo.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Feedback registrado",
+                    content = @Content(schema = @Schema(implementation = TreinoRealizadoOutputDto.class))),
+            @ApiResponse(responseCode = "400", description = "percepcaoEsforco ausente ou fora de 1–10"),
+            @ApiResponse(responseCode = "401", description = "Token ausente ou inválido"),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — apenas atletas podem usar este endpoint"),
+            @ApiResponse(responseCode = "404", description = "Realizado inexistente, de outro atleta ou de outro tenant")
+    })
+    public ResponseEntity<TreinoRealizadoOutputDto> registrarFeedback(
+            @PathVariable UUID id, @Valid @RequestBody FeedbackTreinoInputDto input) {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return ResponseEntity.ok(treinoFeedbackService.registrarFeedback(atletaId, id, input));
+    }
+
+    @GetMapping("/me/realizados/{id}/analise")
+    @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
+    @Operation(summary = "Análise pós-treino em linguagem de atleta",
+            description = "Devolve o bloco do atleta da análise por IA. 200 PENDING vale por elegibilidade "
+                    + "(RPE presente e treino dentro da janela de análise), mesmo antes de o processamento "
+                    + "assíncrono criar a linha — logo após o registro. Nunca expõe os campos técnicos do coach.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Análise pronta (COMPLETED) ou em andamento (PENDING)",
+                    content = @Content(schema = @Schema(implementation = AthleteWorkoutAnalysisOutputDto.class))),
+            @ApiResponse(responseCode = "204", description = "Sem análise para mostrar — treino não elegível, análise falhou, bloco indisponível ou recurso desligado"),
+            @ApiResponse(responseCode = "401", description = "Token ausente ou inválido"),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — apenas atletas podem usar este endpoint"),
+            @ApiResponse(responseCode = "404", description = "Realizado inexistente, de outro atleta ou de outro tenant")
+    })
+    public ResponseEntity<AthleteWorkoutAnalysisOutputDto> buscarAnaliseDoRealizado(@PathVariable UUID id) {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return atletaWorkoutAnalysisService.buscarAnalise(atletaId, id)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.noContent().build());
     }
 
     @GetMapping("/me/treinos")

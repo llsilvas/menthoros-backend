@@ -23,6 +23,7 @@ import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.services.TreinoService;
 import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
 import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
+import br.com.menthoros.backend.services.plano.ProvaResultadoSyncer;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -58,6 +59,7 @@ public class TreinoServiceImpl implements TreinoService {
     private final ApplicationEventPublisher eventPublisher;
     private final TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
     private final Clock clock;
+    private final ProvaResultadoSyncer provaResultadoSyncer;
 
     /**
      * Registra um treino realizado vinculado (opcionalmente) a um treino planejado.
@@ -111,6 +113,8 @@ public class TreinoServiceImpl implements TreinoService {
         finalizarTreinoPlanejadoSeAplicavel(planejado);
         atualizarPlanoSemanalSeAplicavel(semanal);
         atualizarMetadadosSeAplicavel(semanal);
+        // prova-no-plano-semanal, D6: treino PROVA vinculado fecha o resultado da prova.
+        provaResultadoSyncer.aoVincular(planejado, salvo);
 
         return salvo;
     }
@@ -592,10 +596,13 @@ public class TreinoServiceImpl implements TreinoService {
 
         matchOpt.ifPresent(planejado -> {
             planejado.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
+            planejado.limparPulo();
             planejado.setTreinoRealizado(treinoSalvo);
             treinoPlanejadoRepository.save(planejado);
             // Reverter PERDIDO -> REALIZADO (registro retroativo) exige recalcular o plano.
             atualizarPlanoSemanalSeAplicavel(planejado.getPlanoSemanal());
+            // prova-no-plano-semanal, D6: treino PROVA vinculado fecha o resultado da prova.
+            provaResultadoSyncer.aoVincular(planejado, treinoSalvo);
             log.info("TreinoPlanejado {} vinculado ao treino manual {}", planejado.getId(), treinoSalvo.getId());
         });
 

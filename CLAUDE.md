@@ -508,7 +508,14 @@ Skills are pure, deterministic domain logic — the easiest and most important c
 
 Every call that leaves the process (LLM via OpenAI/Anthropic, Keycloak, Strava, intervals.icu) must be defended against latency and cascading failure. **The strategy is decided in ADR-0008 — read it before changing anything here.**
 
-Why this matters more than "one thread gets stuck": plan generation is `@Transactional` and the LLM call happens **inside** the transaction, with the batch running 4 in parallel against a default Hikari pool of 10. A hung call holds a **database connection**, so a slow provider degrades login and athlete screens — not just the AI features.
+Why this matters more than "one thread gets stuck": a hung call blocks a real flow (plan
+generation, analysis) and, before `refactor-llm-call-outside-transaction` (2026-09-01), it also
+held a **database connection** — plan generation was `@Transactional` around the LLM call, and the
+batch pinned 4 of the 5 pool connections. That coupling is gone for plan generation: the LLM call
+now runs **outside any transaction** (loader → LLM → persister), throttled by
+`LlmConcurrencyLimiter` (global + per-tenant cap + interactive reserve). The `@Async` listeners
+(`WorkoutAnalysisListener`, `WeeklyFocusNarrativeService`) still hold a connection during their LLM
+calls — tracked in the `refactor-async-llm-listeners-outside-transaction` change.
 
 Current state (verified 2026-07-26): connect/read timeouts on Keycloak (`KeycloakAdminRestClientConfig`, 5s/10s — the reference) and intervals.icu (`IntervalsIcuWebClientConfig`, same values). Gaps being closed by `add-external-call-resilience`: no timeout on LLM calls or on the Strava `WebClient`; no latency instrumentation at all (`CostTrackingAdvisor` has only `Counter`, no `Timer`).
 
@@ -520,6 +527,33 @@ Standards for new or modified external integrations:
 - **Bound the total, not just each attempt.** Where a retry loop wraps a slow call, the worst case is `timeout × attempts`. Check the elapsed budget before starting another attempt (see `PlanoResilienceService`).
 - **No circuit breaker, by decision (ADR-0008).** Do NOT add Resilience4j or any circuit-breaker library — the re-evaluation trigger is recorded in the ADR. Where calls repeat in bursts (batch processing), stop after N consecutive failures instead: same useful behavior, no new dependency, no thresholds that can mask real errors.
 - **Expose metrics.** Timeouts, retries and call latency surface through the existing Micrometer/Prometheus registry, tagged by route.
+
+## E-mail transacional (desde 2026-08-28)
+
+O backend envia e-mail próprio — antes, todo e-mail saía do Keycloak (verify-email, convite de
+atleta), e o Keycloak continua com os dele. O que motivou: o convite das assessorias fundadoras
+precisa de e-mail **antes** de existir usuário ou organização no Keycloak.
+
+- **Porta única:** `services/email/EmailSender`. Nunca `JavaMailSender` direto num serviço.
+- **Duas implementações, por profile.** `SmtpEmailSender` (Spring Mail sobre o SMTP do Resend,
+  porta 2587/STARTTLS — 465 e 587 são bloqueadas no Railway) **só em `cloud` e `dev`**;
+  `FileEmailSender` (grava `.eml` em `app.email.outbox-dir`, default `target/outbox`) em todo o
+  resto — inclusive **sem profile**, que é como os `@SpringBootTest` com H2 sobem (a primeira
+  versão, `!local & !test & !integration`, derrubou 15 desses no CI). **Nunca um sender que loga o corpo:** a mensagem pode carregar um
+  link com segredo, e log agrega e vai para ferramentas externas.
+- **No `cloud`, faltar `SMTP_HOST` derruba o startup** — de propósito (`application-cloud.yml` sem
+  default). Degradar para arquivo/log na nuvem colocaria o link em lugar errado. No `dev` (docker
+  local) há defaults e o envio falha em runtime (502), não no boot.
+- **Config:** credenciais em `spring.mail.*` lidas de `SMTP_*` (mesmos valores das `KC_SMTP_*` do
+  Keycloak, por referência no Railway); remetente e outbox em `app.email.*` (`EmailProperties`).
+- **Templates** em `resources/templates/email/<nome>.html` + `.txt`, renderizados por
+  `EmailTemplateRenderer` (`{{chave}}`, escape de HTML no `.html`, placeholder sem valor é erro). Sem
+  Thymeleaf/Freemarker — a dependência é só o `spring-boot-starter-mail`.
+- **Falha de envio** é `EmailDeliveryException` → 502; a mensagem nunca carrega o corpo. Quem chama
+  decide o que persiste antes/depois do envio (ver `FoundingInviteServiceImpl`: envia **fora** de
+  transação e só então marca `sent_at`).
+- **Segredos em mensagem** (token de convite): `EmailMessage.toString()` é mascarado; testes
+  afirmam que o token não aparece em log (`FileEmailSenderTest`, `FoundingInviteServiceImplTest`).
 
 ## Database and Migration Rules
 

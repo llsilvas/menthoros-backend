@@ -12,6 +12,7 @@ import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.TreinoReconciliacaoRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
+import br.com.menthoros.backend.services.plano.ProvaResultadoSyncer;
 import org.hibernate.Hibernate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,16 +32,19 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
     private final TreinoReconciliacaoRepository treinoReconciliacaoRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
+    private final ProvaResultadoSyncer provaResultadoSyncer;
 
     public ManualReconciliationServiceImpl(
             TreinoRealizadoRepository treinoRealizadoRepository,
             TreinoReconciliacaoRepository treinoReconciliacaoRepository,
             TreinoPlanejadoRepository treinoPlanejadoRepository,
-            IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService) {
+            IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService,
+            ProvaResultadoSyncer provaResultadoSyncer) {
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.treinoReconciliacaoRepository = treinoReconciliacaoRepository;
         this.treinoPlanejadoRepository = treinoPlanejadoRepository;
         this.ingestaoTreinoRealizadoService = ingestaoTreinoRealizadoService;
+        this.provaResultadoSyncer = provaResultadoSyncer;
     }
 
     /**
@@ -70,9 +74,12 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
         ReconciliationStatus beforeStatus = realizado.getReconciliationStatus();
         UUID beforePlannedId = realizado.getTreinoPlanejadoId();
 
-        // Carregar e validar TreinoPlanejado
+        // Carregar e validar TreinoPlanejado — tenant-aware (achado do DoR do Codex, 2026-09-03):
+        // findById sem filtro de tenant permitia vincular um realizado a um planejado de OUTRO
+        // tenant, desde que os dois atletas compartilhassem id (praticamente impossível, mas o
+        // ponto era a ausência do filtro em si — não a probabilidade de exploração).
         TreinoPlanejado planejado = treinoPlanejadoRepository
-                .findById(treinoPlanejadoId)
+                .findByIdAndTenantId(treinoPlanejadoId, tenantId)
                 .orElseThrow(() -> new IllegalArgumentException("TreinoPlanejado não encontrado: " + treinoPlanejadoId));
 
         if (!planejado.getAtleta().getId().equals(realizado.getAtleta().getId())) {
@@ -81,6 +88,7 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
 
         // Vincular via relacionamento JPA (não via campo read-only)
         planejado.setStatusTreino(TreinoExecucaoStatus.REALIZADO);
+        planejado.limparPulo();
         planejado.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
         realizado.setTreinoPlanejado(planejado);
         realizado.setReconciliationStatus(ReconciliationStatus.VINCULADO_MANUAL);
@@ -88,6 +96,8 @@ public class ManualReconciliationServiceImpl implements ManualReconciliationServ
         realizado.setReconciledBy(actorId);
 
         TreinoRealizado saved = treinoRealizadoRepository.save(realizado);
+        // prova-no-plano-semanal, D6: treino PROVA vinculado fecha o resultado da prova.
+        provaResultadoSyncer.aoVincular(planejado, saved);
 
         createAuditEvent(
                 saved,

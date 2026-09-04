@@ -70,6 +70,7 @@ class AtletaTreinoServiceImplTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
     @Mock private java.time.Clock clock;
+    @Mock private br.com.menthoros.backend.services.plano.ProvaResultadoSyncer provaResultadoSyncer;
 
     @InjectMocks private TreinoServiceImpl service;
 
@@ -140,6 +141,7 @@ class AtletaTreinoServiceImplTest {
 
             verifyNoInteractions(eventPublisher);
             verify(treinoPlanejadoRepository, never()).save(any());
+            verify(provaResultadoSyncer, never()).aoVincular(any(), any());
         }
 
         @Test
@@ -167,11 +169,35 @@ class AtletaTreinoServiceImplTest {
         }
 
         @Test
+        @DisplayName("prova-no-plano-semanal: registro manual com match chama o syncer da prova")
+        void chamaProvaResultadoSyncerQuandoHaMatch() {
+            var input = novoInput(LocalDate.now());
+            var treinoSalvo = stubTreinoRealizado();
+            var planejado = stubTreinoPlanejado(TreinoExecucaoStatus.PENDENTE);
+            var outputDto = stubOutputDto();
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
+            when(treinoPlanejadoRepository.findFirstForManualMatch(
+                    eq(atletaId), eq(tenantId), eq(input.data()), eq(input.tipo()), any()))
+                    .thenReturn(Optional.of(planejado));
+            when(treinoPlanejadoRepository.save(planejado)).thenReturn(planejado);
+            when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(outputDto);
+
+            service.registrarTreinoManualAtleta(atletaId, input);
+
+            verify(provaResultadoSyncer).aoVincular(planejado, treinoSalvo);
+        }
+
+        @Test
         @DisplayName("vincula ao TreinoPlanejado PERDIDO e muda seu status para REALIZADO")
         void vinculaAoPlanejadoPerdidoQuandoHaMatch() {
             var input = novoInput(LocalDate.now());
             var treinoSalvo = stubTreinoRealizado();
             var planejado = stubTreinoPlanejado(TreinoExecucaoStatus.PERDIDO);
+            planejado.setMotivoPulo(br.com.menthoros.backend.enums.MotivoPulo.CANSADO);
+            planejado.setPuladoEm(java.time.LocalDateTime.of(2026, 8, 27, 7, 0));
             var outputDto = stubOutputDto();
 
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
@@ -186,6 +212,9 @@ class AtletaTreinoServiceImplTest {
             service.registrarTreinoManualAtleta(atletaId, input);
 
             assertThat(planejado.getStatusTreino()).isEqualTo(TreinoExecucaoStatus.REALIZADO);
+            // Reversão do pulo: o motivo e o carimbo saem junto com o PERDIDO (training-loop, D4)
+            assertThat(planejado.getMotivoPulo()).isNull();
+            assertThat(planejado.getPuladoEm()).isNull();
             verify(treinoPlanejadoRepository).save(planejado);
         }
 
@@ -452,6 +481,6 @@ class AtletaTreinoServiceImplTest {
                 null, // runningDynamics
                 null, null, null, null, null, null, // decouplingPercentual..nivelEstresse
                 null, null, null, // nivelDor, nivelFadiga, nivelRecuperacao
-                FonteDados.MANUAL, TreinoExecucaoStatus.REALIZADO, null, null, null);
+                FonteDados.MANUAL, TreinoExecucaoStatus.REALIZADO, null, null, null, null, null);
     }
 }

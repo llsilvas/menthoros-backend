@@ -26,6 +26,7 @@ import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
+import br.com.menthoros.backend.services.helper.ProvaEnricher;
 import br.com.menthoros.backend.services.onboarding.ActivityDedupService;
 import br.com.menthoros.backend.services.onboarding.ActivityNormalizer;
 import br.com.menthoros.backend.services.onboarding.BaselineCalculator;
@@ -85,6 +86,7 @@ public class OnboardingServiceImpl implements OnboardingService {
     private final PlanningPolicyResolver planningPolicyResolver;
     private final CalibrationService calibrationService;
     private final AtletaProgressService atletaProgressService;
+    private final ProvaEnricher provaEnricher;
 
     @Override
     @Transactional(readOnly = true)
@@ -160,6 +162,8 @@ public class OnboardingServiceImpl implements OnboardingService {
         provaAlvo.setDistanciaKm(distanciaKm);
         provaAlvo.setNomeProva(nomeProva != null && !nomeProva.isBlank() ? nomeProva : "Prova alvo (onboarding)");
         provaAlvo.setProvaAlvo(true);
+
+        provaEnricher.aplicarDerivados(provaAlvo);
 
         Prova salva = provaRepository.save(provaAlvo);
 

@@ -24,6 +24,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -47,6 +48,12 @@ public class SugestaoCoachGeneratorJob {
     private final SugestaoCoachRepository sugestaoCoachRepository;
     private final AtletaRepository atletaRepository;
     private final ObjectMapper objectMapper;
+
+    /**
+     * Motivos que pedem ciência do coach, não sugestão automática — o atleta já sinalizou a
+     * mudança e a ação é dele revisar. Checados antes do lookup, sem log.
+     */
+    private static final Set<MotivoAtencao> MOTIVOS_IGNORADOS = Set.of(MotivoAtencao.PROVA_ATLETA);
 
     private static final Map<MotivoAtencao, TipoSugestao> MOTIVO_TIPO = Map.of(
             MotivoAtencao.FADIGA,        TipoSugestao.RECOVERY,
@@ -87,6 +94,10 @@ public class SugestaoCoachGeneratorJob {
         int ignoradas = 0;
 
         for (CoachAttentionItemOutputDto item : elegiveis) {
+            if (MOTIVOS_IGNORADOS.contains(item.primaryReason())) {
+                ignoradas++;
+                continue;
+            }
             TipoSugestao tipo = MOTIVO_TIPO.get(item.primaryReason());
             if (tipo == null) {
                 log.warn("SugestaoCoachGeneratorJob: MotivoAtencao {} sem mapeamento, ignorado", item.primaryReason());

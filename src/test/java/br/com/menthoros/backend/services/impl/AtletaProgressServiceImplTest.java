@@ -11,8 +11,11 @@ import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
+import org.mapstruct.factory.Mappers;
+import br.com.menthoros.backend.mapper.EtapaMapper;
+import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.TreinoRealizado;
-import br.com.menthoros.backend.entity.Usuario;
+import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.NivelProntidao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -24,8 +27,7 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.repository.UsuarioRepository;
-import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -45,6 +47,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
@@ -64,13 +67,12 @@ class AtletaProgressServiceImplTest {
     private static final LocalDate HOJE = LocalDate.of(2026, 6, 17);
 
     @Mock private AtletaRepository atletaRepository;
-    @Mock private UsuarioRepository usuarioRepository;
     @Mock private MetricasDiariasRepository metricasDiariasRepository;
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock private PlanoMetadadosRepository planoMetadadosRepository;
     @Mock private ZonaTreinoService zonaTreinoService;
-    @Mock private AuthenticatedPrincipalResolver principalResolver;
+    @Mock private br.com.menthoros.backend.security.AuthenticatedAtletaResolver atletaResolver;
     @Mock private CheckinProntidaoRepository checkinProntidaoRepository;
 
     private AtletaProgressServiceImpl service;
@@ -87,9 +89,10 @@ class AtletaProgressServiceImplTest {
         atleta = Atleta.builder().id(atletaId).nome("Teste").build();
         Clock clock = Clock.fixed(Instant.parse("2026-06-17T12:00:00Z"), ZoneOffset.UTC);
         service = new AtletaProgressServiceImpl(
-                atletaRepository, usuarioRepository, metricasDiariasRepository, treinoRealizadoRepository,
-                treinoPlanejadoRepository, planoMetadadosRepository, zonaTreinoService, principalResolver,
-                checkinProntidaoRepository, clock);
+                atletaRepository, metricasDiariasRepository, treinoRealizadoRepository,
+                treinoPlanejadoRepository, planoMetadadosRepository, zonaTreinoService, atletaResolver,
+                checkinProntidaoRepository, Mappers.getMapper(EtapaMapper.class), clock,
+                new AtletaHojeResolver(clock));
     }
 
     @AfterEach
@@ -436,6 +439,71 @@ class AtletaProgressServiceImplTest {
         }
 
         @Test
+        @DisplayName("expõe etapas (com bloco), duração em minutos inteiros e zona alvo do próximo treino")
+        void comEtapasDuracaoEZona() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            tp.setTipoTreino(TipoTreino.INTERVALADO);
+            tp.setDescricao("2x(4' forte / 2' leve)");
+            tp.setDuracaoMin(Duration.ofMinutes(45));
+            tp.setZonaAlvo("Z4");
+            tp.setTssPlanejado(70);
+            tp.setIntensidadePlanejada(0.95);
+            UUID bloco = UUID.randomUUID();
+            tp.setEtapas(List.of(
+                    EtapaTreino.builder().ordem(1).tipoEtapa("AQUECIMENTO").duracaoMin(10).build(),
+                    EtapaTreino.builder().ordem(2).tipoEtapa("ESFORCO").duracaoMin(4).blocoId(bloco).blocoRepeticoes(2).build(),
+                    EtapaTreino.builder().ordem(3).tipoEtapa("RECUPERACAO").duracaoMin(2).blocoId(bloco).blocoRepeticoes(2).build(),
+                    EtapaTreino.builder().ordem(4).tipoEtapa("ESFORCO").duracaoMin(4).blocoId(bloco).blocoRepeticoes(2).build(),
+                    EtapaTreino.builder().ordem(5).tipoEtapa("RECUPERACAO").duracaoMin(2).blocoId(bloco).blocoRepeticoes(2).build()));
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(tp));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+
+            AtletaHomeDto.ProximoTreino proximo = service.getHome(atletaId).proximoTreino();
+
+            assertThat(proximo.duracaoMin()).isEqualTo(45);
+            assertThat(proximo.zonaAlvo()).isEqualTo("Z4");
+            assertThat(proximo.tssPlanejado()).isEqualTo(70);
+            assertThat(proximo.intensidadePlanejada()).isEqualTo(0.95);
+            assertThat(proximo.etapas()).hasSize(5);
+            assertThat(proximo.etapas().get(1).blocoId()).isEqualTo(bloco);
+            assertThat(proximo.etapas().get(1).blocoRepeticoes()).isEqualTo(2);
+            assertThat(proximo.etapas().get(0).blocoId()).isNull();
+        }
+
+        @Test
+        @DisplayName("Duration.ZERO é a sentinela de 'não prescrita' → duracaoMin omitida, não 0")
+        void duracaoZeroEhAusencia() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            tp.setTipoTreino(TipoTreino.FACIL);
+            tp.setDuracaoMin(Duration.ZERO);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(tp));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+
+            assertThat(service.getHome(atletaId).proximoTreino().duracaoMin()).isNull();
+        }
+
+        @Test
+        @DisplayName("treino sem etapas nem duração → campos omitidos (null), sem lista vazia inventada")
+        void semEtapas() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            tp.setTipoTreino(TipoTreino.FACIL);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(tp));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+
+            AtletaHomeDto.ProximoTreino proximo = service.getHome(atletaId).proximoTreino();
+
+            assertThat(proximo.etapas()).isNull();
+            assertThat(proximo.duracaoMin()).isNull();
+            assertThat(proximo.zonaAlvo()).isNull();
+        }
+
+        @Test
         @DisplayName("sem próximo treino → omite, mantém métricas")
         void semProximoTreino() {
             when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any())).thenReturn(List.of());
@@ -447,6 +515,139 @@ class AtletaProgressServiceImplTest {
             assertThat(home.proximoTreino()).isNull();
             assertThat(home.metricasChave().tsb()).isEqualTo(8.0);
         }
+
+        @Test
+        @DisplayName("'hoje' vem no fuso do atleta: às 23:50 de Manaus o servidor em UTC já virou o dia")
+        void hojeNoFusoDoAtleta() {
+            // 03:50Z do dia 18 = 23:50 do dia 17 em Manaus (UTC−4); o clock do setUp é UTC
+            Clock madrugadaUtc = Clock.fixed(Instant.parse("2026-06-18T03:50:00Z"), ZoneOffset.UTC);
+            service = new AtletaProgressServiceImpl(
+                    atletaRepository, metricasDiariasRepository, treinoRealizadoRepository,
+                    treinoPlanejadoRepository, planoMetadadosRepository, zonaTreinoService, atletaResolver,
+                    checkinProntidaoRepository, Mappers.getMapper(EtapaMapper.class), madrugadaUtc,
+                    new AtletaHojeResolver(madrugadaUtc));
+            atleta.setTimezone("America/Manaus");
+            TreinoPlanejado deHoje = new TreinoPlanejado();
+            deHoje.setDataTreino(HOJE);
+            deHoje.setTipoTreino(TipoTreino.FACIL);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(deHoje));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+
+            AtletaHomeDto home = service.getHome(atletaId);
+
+            assertThat(home.hoje()).isEqualTo(HOJE);
+            assertThat(home.proximoTreino().data()).isEqualTo(HOJE);
+        }
+
+        @Test
+        @DisplayName("realizado de hoje entra com origem, RPE e carimbo de feedback; o mais recente vence")
+        void comRealizadoHoje() {
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any())).thenReturn(List.of());
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+            TreinoRealizado antigo = realizado(HOJE, FonteDados.MANUAL, 6, LocalDateTime.of(2026, 6, 17, 7, 0));
+            TreinoRealizado recente = realizado(HOJE, FonteDados.INTERVALS_ICU, null, LocalDateTime.of(2026, 6, 17, 9, 0));
+            recente.setDistanciaKm(new BigDecimal("12.5"));
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, HOJE))
+                    .thenReturn(List.of(antigo, recente));
+
+            AtletaHomeDto.RealizadoHoje hoje = service.getHome(atletaId).realizadoHoje();
+
+            assertThat(hoje.id()).isEqualTo(recente.getId());
+            assertThat(hoje.fonteDados()).isEqualTo("INTERVALS_ICU");
+            assertThat(hoje.tipoTreino()).isEqualTo("FACIL");
+            assertThat(hoje.duracaoMin()).isEqualTo(50);
+            assertThat(hoje.distanciaKm()).isEqualByComparingTo("12.5");
+            assertThat(hoje.percepcaoEsforco()).isNull();
+            assertThat(hoje.feedbackRegistradoEm()).isNull();
+        }
+
+        @Test
+        @DisplayName("realizado com sensações e comentário: atravessam para o hero mostrar o resumo completo (D3)")
+        void realizadoComSensacoesEComentario() {
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any())).thenReturn(List.of());
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+            TreinoRealizado tr = realizado(HOJE, FonteDados.MANUAL, 6, LocalDateTime.of(2026, 6, 17, 7, 0));
+            tr.setSensacoes(java.util.Set.of(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS));
+            tr.setFeedbackAtleta("Difícil no final");
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, HOJE)).thenReturn(List.of(tr));
+
+            AtletaHomeDto.RealizadoHoje hoje = service.getHome(atletaId).realizadoHoje();
+
+            assertThat(hoje.sensacoes()).containsExactly(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS);
+            assertThat(hoje.feedbackAtleta()).isEqualTo("Difícil no final");
+        }
+
+        @Test
+        @DisplayName("sem realizado hoje → realizadoHoje omitido")
+        void semRealizadoHoje() {
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any())).thenReturn(List.of());
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, HOJE)).thenReturn(List.of());
+
+            assertThat(service.getHome(atletaId).realizadoHoje()).isNull();
+        }
+
+        @Test
+        @DisplayName("realizado com feedback carimbado: o carimbo atravessa (o hero decide 'Como foi?' vs resumo por ele)")
+        void realizadoComFeedbackCarimbado() {
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(eq(atletaId), any(), any())).thenReturn(List.of());
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+            TreinoRealizado tr = realizado(HOJE, FonteDados.MANUAL, 6, LocalDateTime.of(2026, 6, 17, 7, 0));
+            tr.setFeedbackRegistradoEm(LocalDateTime.of(2026, 6, 17, 19, 0));
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, HOJE)).thenReturn(List.of(tr));
+
+            assertThat(service.getHome(atletaId).realizadoHoje().feedbackRegistradoEm())
+                    .isEqualTo(LocalDateTime.of(2026, 6, 17, 19, 0));
+        }
+
+        @Test
+        @DisplayName("próximo treino pulado: statusTreino e motivoPulo atravessam (D1 PULADO)")
+        void proximoTreinoPulado() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            tp.setTipoTreino(TipoTreino.FACIL);
+            tp.setStatusTreino(br.com.menthoros.backend.enums.TreinoExecucaoStatus.PERDIDO);
+            tp.setMotivoPulo(br.com.menthoros.backend.enums.MotivoPulo.DOR);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(tp));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, HOJE)).thenReturn(List.of());
+
+            AtletaHomeDto.ProximoTreino proximo = service.getHome(atletaId).proximoTreino();
+
+            assertThat(proximo.statusTreino()).isEqualTo("PERDIDO");
+            assertThat(proximo.motivoPulo()).isEqualTo("DOR");
+        }
+
+        @Test
+        @DisplayName("próximo treino pendente: statusTreino presente, motivoPulo ausente")
+        void proximoTreinoPendente() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            tp.setTipoTreino(TipoTreino.FACIL);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE, HOJE.plusDays(14)))
+                    .thenReturn(List.of(tp));
+            when(metricasDiariasRepository.findLatestByAtletaId(atletaId)).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, HOJE)).thenReturn(List.of());
+
+            AtletaHomeDto.ProximoTreino proximo = service.getHome(atletaId).proximoTreino();
+
+            assertThat(proximo.statusTreino()).isEqualTo("PENDENTE");
+            assertThat(proximo.motivoPulo()).isNull();
+        }
+
+        private TreinoRealizado realizado(LocalDate data, FonteDados fonte, Integer rpe, LocalDateTime criadoEm) {
+            TreinoRealizado tr = new TreinoRealizado();
+            tr.setId(UUID.randomUUID());
+            tr.setDataTreino(data);
+            tr.setTipoTreino(TipoTreino.FACIL);
+            tr.setFonteDados(fonte);
+            tr.setDuracaoMin(Duration.ofMinutes(50));
+            tr.setPercepcaoEsforco(rpe);
+            tr.setCriadoEm(criadoEm);
+            return tr;
+        }
     }
 
     @Nested
@@ -454,37 +655,11 @@ class AtletaProgressServiceImplTest {
     class ResolverAtletaIdAtual {
 
         @Test
-        @DisplayName("resolve o atleta vinculado ao usuário do token")
-        void resolveDoToken() {
-            UUID usuarioId = UUID.randomUUID();
-            Usuario usuario = new Usuario();
-            usuario.setId(usuarioId);
-            when(principalResolver.getCurrentSubject()).thenReturn("sub-123");
-            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id("sub-123", tenantId)).thenReturn(Optional.of(usuario));
-            when(atletaRepository.findByUsuario_IdAndAssessoria_Id(usuarioId, tenantId)).thenReturn(Optional.of(atleta));
+        @DisplayName("delega ao AuthenticatedAtletaResolver")
+        void delegaAoResolver() {
+            when(atletaResolver.resolverAtletaIdAtual()).thenReturn(atletaId);
 
             assertThat(service.resolverAtletaIdAtual()).isEqualTo(atletaId);
-        }
-
-        @Test
-        @DisplayName("usuário do token não encontrado no tenant → not found")
-        void usuarioNaoEncontrado() {
-            when(principalResolver.getCurrentSubject()).thenReturn("sub-x");
-            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id("sub-x", tenantId)).thenReturn(Optional.empty());
-            assertThatThrownBy(() -> service.resolverAtletaIdAtual()).isInstanceOf(DomainNotFoundException.class);
-        }
-
-        @Test
-        @DisplayName("usuário sem atleta vinculado → not found")
-        void semAtletaVinculado() {
-            UUID usuarioId = UUID.randomUUID();
-            Usuario usuario = new Usuario();
-            usuario.setId(usuarioId);
-            when(principalResolver.getCurrentSubject()).thenReturn("sub-123");
-            when(usuarioRepository.findByKeycloakIdAndAssessoria_Id("sub-123", tenantId)).thenReturn(Optional.of(usuario));
-            when(atletaRepository.findByUsuario_IdAndAssessoria_Id(usuarioId, tenantId)).thenReturn(Optional.empty());
-
-            assertThatThrownBy(() -> service.resolverAtletaIdAtual()).isInstanceOf(DomainNotFoundException.class);
         }
     }
 

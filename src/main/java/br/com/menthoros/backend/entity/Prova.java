@@ -1,14 +1,17 @@
 package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.enums.DistanciaProva;
+import br.com.menthoros.backend.enums.MotivoRevisaoProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoProva;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.UUID;
 
 @Entity
@@ -55,8 +58,11 @@ public class Prova {
 
     // ===== OBJETIVOS =====
 
+    // Duração, não horário — meta de tempo (ex: 01:45:00). Migrou de LocalTime para Duration na
+    // V90 (prova-no-plano-semanal, D6); o JSON continua "HH:mm:ss" via DurationHhMmSsSerializer.
+    @JdbcTypeCode(SqlTypes.INTERVAL_SECOND)
     @Column(name = "tempo_objetivo")
-    private LocalTime tempoObjetivo; // Meta de tempo (ex: 01:45:00)
+    private Duration tempoObjetivo;
 
     @Column(name = "pace_objetivo", precision = 5, scale = 2)
     private BigDecimal paceObjetivo; // min/km objetivo
@@ -69,8 +75,9 @@ public class Prova {
     @Column(name = "foi_realizada")
     private Boolean foiRealizada = false;
 
+    @JdbcTypeCode(SqlTypes.INTERVAL_SECOND)
     @Column(name = "tempo_realizado")
-    private LocalTime tempoRealizado;
+    private Duration tempoRealizado;
 
     @Column(name = "posicao_geral")
     private Integer posicaoGeral;
@@ -94,6 +101,20 @@ public class Prova {
 
     @Column(name = "inicio_preparacao")
     private LocalDate inicioPreparacao;
+
+    // ===== CIÊNCIA DO COACH (mudanças feitas pelo atleta) =====
+
+    /** Default true: prova criada por coach/onboarding não entra na fila de atenção. */
+    @Builder.Default
+    @Column(name = "revisada_pelo_coach", nullable = false)
+    private boolean revisadaPeloCoach = true;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "motivo_revisao", length = 20)
+    private MotivoRevisaoProva motivoRevisao;
+
+    @Column(name = "alvo_anterior_nome", length = 100)
+    private String alvoAnteriorNome;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "atleta_id", nullable = false)

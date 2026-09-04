@@ -1,16 +1,18 @@
 package br.com.menthoros.backend.dto.input;
 
+import br.com.menthoros.backend.dto.jackson.DurationHhMmSsDeserializer;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoProva;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
-import java.time.LocalTime;
 
 @Schema(description = "Dados de entrada para cadastro ou atualização de prova do atleta")
 public record ProvaInputDto(
@@ -42,7 +44,8 @@ public record ProvaInputDto(
         ProvaStatus statusProva,
 
         @Schema(description = "Meta de tempo para a prova (HH:mm:ss)", example = "01:45:00")
-        LocalTime tempoObjetivo,
+        @JsonDeserialize(using = DurationHhMmSsDeserializer.class)
+        Duration tempoObjetivo,
 
         @Schema(description = "Pace objetivo em min/km", example = "4.50")
         BigDecimal paceObjetivo,
@@ -54,7 +57,8 @@ public record ProvaInputDto(
         Boolean foiRealizada,
 
         @Schema(description = "Tempo realizado na prova (HH:mm:ss)", example = "01:48:30")
-        LocalTime tempoRealizado,
+        @JsonDeserialize(using = DurationHhMmSsDeserializer.class)
+        Duration tempoRealizado,
 
         @Schema(description = "Posição geral na prova", example = "150")
         Integer posicaoGeral,
@@ -78,4 +82,11 @@ public record ProvaInputDto(
         @Schema(description = "Data de início da preparação para esta prova", example = "2025-06-22")
         LocalDate inicioPreparacao
 ) {
+
+    @jakarta.validation.constraints.AssertTrue(message = "Distância customizada exige distanciaKm positivo")
+    @Schema(hidden = true)
+    public boolean isDistanciaCustomizadaComKm() {
+        return distancia != DistanciaProva.CUSTOMIZADA
+                || (distanciaKm != null && distanciaKm.signum() > 0);
+    }
 }

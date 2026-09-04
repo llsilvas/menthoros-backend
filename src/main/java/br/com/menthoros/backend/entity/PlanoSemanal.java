@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.enums.ConsumedReviewOutcome;
+import br.com.menthoros.backend.enums.MotivoReaberturaRevisao;
 import br.com.menthoros.backend.enums.OrigemAprovacao;
 import br.com.menthoros.backend.enums.OrigemEncerramento;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
@@ -12,6 +13,7 @@ import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -97,6 +99,17 @@ public class PlanoSemanal {
     @Enumerated(EnumType.STRING)
     @Column(name = "consumed_review_outcome", length = 20)
     private ConsumedReviewOutcome consumedReviewOutcome;
+
+    // --- Reabertura de revisão por prova (prova-no-plano-semanal, D4) ---
+    // A prova entrou/saiu de uma semana já aprovada: o plano volta a AGUARDANDO_REVISAO em vez
+    // de ficar sinalizado por fora. aprovarTransicao/rejeitar limpam os dois campos.
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "motivo_reabertura", length = 20)
+    private MotivoReaberturaRevisao motivoReabertura;
+
+    @Column(name = "reaberto_em")
+    private LocalDateTime reabertoEm;
 
     @Column(name = "objetivo_semana")
     private String objetivoSemanal;

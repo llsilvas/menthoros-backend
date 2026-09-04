@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import br.com.menthoros.backend.enums.MotivoReaberturaRevisao;
 import br.com.menthoros.backend.enums.OrigemEncerramento;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
@@ -67,5 +68,9 @@ public record PlanoSemanalOutputDto(
                 "B/C indicam que o plano não foi auto-aprovado por baixa confiança (Cenário B/C, " +
                 "athlete-onboarding-baseline); null se o atleta ainda não passou pelo onboarding",
                 example = "B")
-        ConfidenceTier confidenceTier
+        ConfidenceTier confidenceTier,
+
+        @Schema(description = "Motivo pelo qual um plano aprovado voltou a AGUARDANDO_REVISAO por causa de uma prova; " +
+                "null fora dessa reabertura (prova-no-plano-semanal)", example = "PROVA_INSERIDA")
+        MotivoReaberturaRevisao motivoReabertura
 ) {}

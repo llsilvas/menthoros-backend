@@ -39,6 +39,11 @@ class ProvaServiceTenantTest {
     @Mock private AtletaRepository atletaRepository;
     @Mock private AssessoriaRepository assessoriaRepository;
     @Mock private ProvaMapper provaMapper;
+    @Mock private br.com.menthoros.backend.services.helper.ProvaEnricher provaEnricher;
+    @Mock private br.com.menthoros.backend.security.AuthenticatedAtletaResolver atletaResolver;
+    @Mock private br.com.menthoros.backend.security.AuthenticatedPrincipalResolver principalResolver;
+    @Mock private jakarta.validation.Validator validator;
+    @Mock private br.com.menthoros.backend.services.plano.ProvaNoPlanoService provaNoPlanoService;
 
     private ProvaServiceImpl provaService;
 
@@ -48,7 +53,13 @@ class ProvaServiceTenantTest {
                 provaRepository,
                 atletaRepository,
                 assessoriaRepository,
-                provaMapper
+                provaMapper,
+                provaEnricher,
+                atletaResolver,
+                principalResolver,
+                validator,
+                java.time.Clock.systemUTC(),
+                provaNoPlanoService
         );
         // CRÍTICO: TenantContext vazio — simula chamada sem JWT
         TenantContext.clear();
