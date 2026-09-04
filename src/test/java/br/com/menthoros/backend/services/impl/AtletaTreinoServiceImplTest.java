@@ -70,6 +70,7 @@ class AtletaTreinoServiceImplTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
     @Mock private java.time.Clock clock;
+    @Mock private br.com.menthoros.backend.services.plano.ProvaResultadoSyncer provaResultadoSyncer;
 
     @InjectMocks private TreinoServiceImpl service;
 
@@ -140,6 +141,7 @@ class AtletaTreinoServiceImplTest {
 
             verifyNoInteractions(eventPublisher);
             verify(treinoPlanejadoRepository, never()).save(any());
+            verify(provaResultadoSyncer, never()).aoVincular(any(), any());
         }
 
         @Test
@@ -164,6 +166,28 @@ class AtletaTreinoServiceImplTest {
             assertThat(planejado.getStatusTreino()).isEqualTo(TreinoExecucaoStatus.REALIZADO);
             assertThat(planejado.getTreinoRealizado()).isEqualTo(treinoSalvo);
             verify(treinoPlanejadoRepository).save(planejado);
+        }
+
+        @Test
+        @DisplayName("prova-no-plano-semanal: registro manual com match chama o syncer da prova")
+        void chamaProvaResultadoSyncerQuandoHaMatch() {
+            var input = novoInput(LocalDate.now());
+            var treinoSalvo = stubTreinoRealizado();
+            var planejado = stubTreinoPlanejado(TreinoExecucaoStatus.PENDENTE);
+            var outputDto = stubOutputDto();
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
+            when(treinoPlanejadoRepository.findFirstForManualMatch(
+                    eq(atletaId), eq(tenantId), eq(input.data()), eq(input.tipo()), any()))
+                    .thenReturn(Optional.of(planejado));
+            when(treinoPlanejadoRepository.save(planejado)).thenReturn(planejado);
+            when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(outputDto);
+
+            service.registrarTreinoManualAtleta(atletaId, input);
+
+            verify(provaResultadoSyncer).aoVincular(planejado, treinoSalvo);
         }
 
         @Test

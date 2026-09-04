@@ -82,6 +82,8 @@ class TreinoServiceImplTest {
     private TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
     @Mock
     private java.time.Clock clock;
+    @Mock
+    private br.com.menthoros.backend.services.plano.ProvaResultadoSyncer provaResultadoSyncer;
 
     @InjectMocks
     private TreinoServiceImpl treinoService;
@@ -452,6 +454,44 @@ class TreinoServiceImplTest {
             assertThrows(DomainNotFoundException.class, () -> treinoService.addTreino(null, dto));
 
             verify(treinoRealizadoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("prova-no-plano-semanal: vincular a um TreinoPlanejado chama o syncer da prova")
+        void chamaProvaResultadoSyncerAoVincular() {
+            UUID atletaId = UUID.randomUUID();
+            UUID treinoPlanejadoId = UUID.randomUUID();
+            TreinoRealizadoInputDto dto = novoInput(atletaId, 6, 9.0, LocalDate.now(), null);
+
+            Atleta atleta = new Atleta();
+            atleta.setId(atletaId);
+            Assessoria assessoria = new Assessoria();
+            assessoria.setId(tenantId);
+            atleta.setAssessoria(assessoria);
+
+            PlanoSemanal semanal = new PlanoSemanal();
+            semanal.setId(UUID.randomUUID());
+            semanal.setAtleta(atleta);
+
+            TreinoPlanejado planejado = new TreinoPlanejado();
+            planejado.setId(treinoPlanejadoId);
+            planejado.setAtleta(atleta);
+            planejado.setPlanoSemanal(semanal);
+            semanal.setTreinosPlanejados(new ArrayList<>(List.of(planejado)));
+
+            TreinoRealizado salvo = new TreinoRealizado();
+            salvo.setId(UUID.randomUUID());
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoPlanejadoId, tenantId))
+                    .thenReturn(Optional.of(planejado));
+            when(treinoMapper.toEntity(dto)).thenReturn(new TreinoRealizado());
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new br.com.menthoros.backend.services.helper.TreinoDedupHelper.SaveResult(salvo, true));
+
+            treinoService.addTreino(treinoPlanejadoId, dto);
+
+            verify(provaResultadoSyncer).aoVincular(planejado, salvo);
         }
     }
 

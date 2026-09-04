@@ -50,6 +50,7 @@ class TreinoServiceTenantTest {
     @Mock private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     @Mock private PlanoMetadadosRepository planoMetaDadosRepository;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private br.com.menthoros.backend.services.plano.ProvaResultadoSyncer provaResultadoSyncer;
 
     @InjectMocks
     private TreinoServiceImpl treinoService;
