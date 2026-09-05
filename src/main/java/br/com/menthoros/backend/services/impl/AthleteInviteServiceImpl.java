@@ -1,15 +1,25 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.input.AthleteInviteAcceptInputDto;
+import br.com.menthoros.backend.dto.output.AthleteInviteLookupOutputDto;
+import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.AthleteInvite;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.Usuario;
+import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.exception.DomainConflictException;
+import br.com.menthoros.backend.exception.DomainGoneException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AthleteInviteRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.security.InviteToken;
 import br.com.menthoros.backend.services.AthleteInviteService;
+import br.com.menthoros.backend.services.KeycloakOrganizationGateway;
+import br.com.menthoros.backend.services.NovoUsuarioKeycloak;
 import br.com.menthoros.backend.services.email.EmailMessage;
 import br.com.menthoros.backend.services.email.EmailSender;
 import br.com.menthoros.backend.services.email.EmailTemplateRenderer;
@@ -17,9 +27,13 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -39,10 +53,16 @@ public class AthleteInviteServiceImpl implements AthleteInviteService {
     static final String SUBJECT = "Seu treinador te convidou para o Menthoros";
     static final String INVITE_PATH = "/#/cadastro?convite=";
 
+    static final String ROLE_ATLETA = "ATLETA";
+
     private final AtletaRepository atletaRepository;
     private final AthleteInviteRepository inviteRepository;
+    private final AssessoriaRepository assessoriaRepository;
+    private final UsuarioRepository usuarioRepository;
+    private final KeycloakOrganizationGateway keycloak;
     private final EmailSender emailSender;
     private final EmailTemplateRenderer templates;
+    private final TransactionTemplate transactionTemplate;
     private final Clock clock;
     private final String frontendUrl;
     private final int validityDays;
@@ -50,15 +70,23 @@ public class AthleteInviteServiceImpl implements AthleteInviteService {
     public AthleteInviteServiceImpl(
             AtletaRepository atletaRepository,
             AthleteInviteRepository inviteRepository,
+            AssessoriaRepository assessoriaRepository,
+            UsuarioRepository usuarioRepository,
+            KeycloakOrganizationGateway keycloak,
             EmailSender emailSender,
             EmailTemplateRenderer templates,
+            TransactionTemplate transactionTemplate,
             Clock clock,
             @Value("${app.frontend.url}") String frontendUrl,
             @Value("${app.athlete-invite.validity-days:7}") int validityDays) {
         this.atletaRepository = atletaRepository;
         this.inviteRepository = inviteRepository;
+        this.assessoriaRepository = assessoriaRepository;
+        this.usuarioRepository = usuarioRepository;
+        this.keycloak = keycloak;
         this.emailSender = emailSender;
         this.templates = templates;
+        this.transactionTemplate = transactionTemplate;
         this.clock = clock;
         this.frontendUrl = frontendUrl.endsWith("/")
                 ? frontendUrl.substring(0, frontendUrl.length() - 1) : frontendUrl;
@@ -112,6 +140,147 @@ public class AthleteInviteServiceImpl implements AthleteInviteService {
 
         log.info("Convite de atleta enviado: inviteId={}, atletaId={}, expiresAt={}",
                 convite.getId(), atletaId, convite.getExpiresAt());
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public AthleteInviteLookupOutputDto lookup(String rawToken) {
+        AthleteInvite convite = findActive(rawToken)
+                .orElseThrow(() -> new DomainNotFoundException("Convite inválido ou expirado"));
+        Atleta atleta = atletaRepository.findByIdAndTenantId(convite.getAtletaId(), convite.getTenantId())
+                .orElseThrow(() -> new DomainNotFoundException("Convite inválido ou expirado"));
+        Assessoria assessoria = assessoriaRepository.findById(convite.getTenantId())
+                .orElseThrow(() -> new DomainNotFoundException("Convite inválido ou expirado"));
+        return new AthleteInviteLookupOutputDto(
+                atleta.getNome(), assessoria.getNome(), convite.getEmailEnviado());
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p><strong>Deliberadamente SEM {@code @Transactional}:</strong> os passos 2–4 são chamadas
+     * externas (Keycloak) e não podem segurar conexão; a escrita local roda numa transação curta
+     * via {@code TransactionTemplate} no final. O claim atômico (passo 1) é a exclusão mútua.</p>
+     */
+    @Override
+    public void aceitar(AthleteInviteAcceptInputDto input) {
+        AthleteInvite convite = resolverConviteParaAceite(input.token());
+        Atleta atleta = atletaRepository.findByIdAndTenantId(convite.getAtletaId(), convite.getTenantId())
+                .orElseThrow(() -> new DomainNotFoundException("Convite inválido ou expirado"));
+        if (atleta.getUsuario() != null) {
+            throw new DomainConflictException("Este atleta já está vinculado a uma conta; fale com o seu treinador");
+        }
+        Assessoria assessoria = assessoriaRepository.findById(convite.getTenantId())
+                .orElseThrow(() -> new DomainNotFoundException("Convite inválido ou expirado"));
+        String orgId = assessoria.getKeycloakOrganizationId();
+        if (orgId == null || orgId.isBlank()) {
+            throw new DomainRuleViolationException(
+                    "Assessoria sem keycloakOrganizationId — execute o onboarding da assessoria primeiro");
+        }
+
+        String emailEscolhido = (input.email() == null || input.email().isBlank())
+                ? convite.getEmailEnviado() : input.email().trim();
+        // O token provou a posse do e-mail do convite (mesmo racional das fundadoras, risco aceito
+        // no proposal); e-mail trocado nasce não-verificado e recebe o e-mail de verificação.
+        boolean emailVerificado = emailEscolhido.equalsIgnoreCase(convite.getEmailEnviado());
+
+        if (keycloak.buscarUsuarioIdPorEmail(emailEscolhido).isPresent()) {
+            inviteRepository.liberarClaim(convite.getId());
+            throw new DomainConflictException("Este e-mail já possui conta");
+        }
+
+        // Compensação em pilha (padrão do coach signup): falha desfaz os passos externos na ordem
+        // inversa e reabre o claim — o token continua válido para retry.
+        Deque<Runnable> desfazer = new ArrayDeque<>();
+        try {
+            String usuarioKeycloakId = keycloak.criarUsuario(new NovoUsuarioKeycloak(
+                    emailEscolhido, input.nome(), input.senha(), true, List.of(), emailVerificado));
+            desfazer.push(() -> keycloak.removerUsuario(usuarioKeycloakId));
+
+            keycloak.atribuirRoleDeRealm(usuarioKeycloakId, ROLE_ATLETA);
+            // Adicionar membro já existente é no-op no Keycloak — o retry pós-falha é idempotente.
+            keycloak.adicionarMembroNaOrganization(orgId, usuarioKeycloakId);
+
+            if (!emailVerificado) {
+                keycloak.enviarVerificacaoDeEmail(usuarioKeycloakId);
+            }
+
+            OffsetDateTime now = OffsetDateTime.now(clock);
+            transactionTemplate.executeWithoutResult(tx -> {
+                Usuario usuario = usuarioRepository.save(Usuario.builder()
+                        .id(UUID.fromString(usuarioKeycloakId))
+                        .keycloakId(usuarioKeycloakId)
+                        .assessoria(assessoria)
+                        .email(emailEscolhido)
+                        .nome(input.nome())
+                        .role(UserRole.ATLETA)
+                        .ativo(true)
+                        .emailVerificado(emailVerificado)
+                        .build());
+                Atleta gerenciado = atletaRepository.findByIdAndTenantId(
+                                convite.getAtletaId(), convite.getTenantId())
+                        .orElseThrow(() -> new DomainNotFoundException("Convite inválido ou expirado"));
+                gerenciado.setUsuario(usuario);
+                atletaRepository.save(gerenciado);
+                convite.setAcceptedAt(now);
+                inviteRepository.save(convite);
+            });
+
+            log.info("Convite de atleta aceito: inviteId={}, atletaId={}, tenantId={}, emailVerificado={}",
+                    convite.getId(), convite.getAtletaId(), convite.getTenantId(), emailVerificado);
+        } catch (RuntimeException falha) {
+            compensar(desfazer, convite.getId());
+            throw falha;
+        }
+    }
+
+    /** Valida o token e reivindica o convite atomicamente — só o primeiro aceite provisiona. */
+    private AthleteInvite resolverConviteParaAceite(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            throw new DomainNotFoundException("Convite inválido ou expirado");
+        }
+        AthleteInvite convite = inviteRepository.findByTokenHash(InviteToken.hashOf(rawToken))
+                .orElseThrow(() -> new DomainNotFoundException("Convite inválido ou expirado"));
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        if (!convite.isActive(now)) {
+            throw new DomainGoneException("Este convite não é mais válido; peça um novo ao seu treinador");
+        }
+        if (inviteRepository.claim(convite.getId(), now) == 0) {
+            // Outro aceite venceu a corrida (ou já concluiu) — não distinguir para o cliente.
+            throw new DomainGoneException("Este convite não é mais válido; peça um novo ao seu treinador");
+        }
+        return convite;
+    }
+
+    /**
+     * Desfaz na ordem inversa e reabre o claim. Se a própria compensação falhar, registra e segue —
+     * insistir num Keycloak que acabou de falhar trocaria um recurso órfão logado por um loop
+     * dentro do request do atleta (mesma decisão do coach signup).
+     */
+    private void compensar(Deque<Runnable> desfazer, UUID inviteId) {
+        while (!desfazer.isEmpty()) {
+            try {
+                desfazer.pop().run();
+            } catch (RuntimeException e) {
+                log.error("Compensação do aceite de convite falhou: inviteId={}", inviteId, e);
+            }
+        }
+        try {
+            inviteRepository.liberarClaim(inviteId);
+        } catch (RuntimeException e) {
+            log.error("Não foi possível reabrir o claim do convite: inviteId={}", inviteId, e);
+        }
+    }
+
+    private java.util.Optional<AthleteInvite> findActive(String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        return inviteRepository.findByTokenHash(InviteToken.hashOf(rawToken))
+                .filter(c -> c.isActive(now));
     }
 
     private EmailMessage mensagem(Atleta atleta, InviteToken token) {

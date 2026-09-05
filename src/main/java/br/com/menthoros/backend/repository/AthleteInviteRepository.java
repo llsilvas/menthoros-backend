@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
@@ -37,6 +38,7 @@ public interface AthleteInviteRepository extends JpaRepository<AthleteInvite, UU
      * <p><strong>Side Effects:</strong> Database update.
      * <p><strong>Tenant-aware:</strong> NO — o token é o segredo; o tenant sai do próprio convite.
      */
+    @Transactional // o serviço que chama roda sem transação (chamadas externas); o claim é atômico sozinho
     @Modifying
     @Query("""
             UPDATE AthleteInvite i
@@ -49,6 +51,7 @@ public interface AthleteInviteRepository extends JpaRepository<AthleteInvite, UU
     int claim(@Param("id") UUID id, @Param("now") OffsetDateTime now);
 
     /** Reabre o convite após falha do provisionamento (compensação do aceite). */
+    @Transactional
     @Modifying
     @Query("UPDATE AthleteInvite i SET i.claimedAt = NULL WHERE i.id = :id AND i.acceptedAt IS NULL")
     int liberarClaim(@Param("id") UUID id);

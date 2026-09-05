@@ -48,8 +48,12 @@ class AthleteInviteServiceImplInviteTest {
 
     @Mock private AtletaRepository atletaRepository;
     @Mock private AthleteInviteRepository inviteRepository;
+    @Mock private br.com.menthoros.backend.repository.AssessoriaRepository assessoriaRepository;
+    @Mock private br.com.menthoros.backend.repository.UsuarioRepository usuarioRepository;
+    @Mock private br.com.menthoros.backend.services.KeycloakOrganizationGateway keycloak;
     @Mock private EmailSender emailSender;
     @Mock private EmailTemplateRenderer templates;
+    @Mock private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
 
     private AthleteInviteServiceImpl service;
 
@@ -76,7 +80,8 @@ class AthleteInviteServiceImplInviteTest {
         atleta.setAssessoria(assessoria);
 
         service = new AthleteInviteServiceImpl(
-                atletaRepository, inviteRepository, emailSender, templates, CLOCK,
+                atletaRepository, inviteRepository, assessoriaRepository, usuarioRepository,
+                keycloak, emailSender, templates, transactionTemplate, CLOCK,
                 "https://app.menthoros.com/", 7);
 
         lenient().when(templates.render(anyString(), anyMap())).thenReturn("corpo");

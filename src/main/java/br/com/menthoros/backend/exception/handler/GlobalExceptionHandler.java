@@ -361,6 +361,17 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
     }
 
+    @ExceptionHandler(br.com.menthoros.backend.exception.DomainGoneException.class)
+    public ResponseEntity<Map<String, Object>> handleDomainGone(br.com.menthoros.backend.exception.DomainGoneException ex) {
+        log.warn("Recurso não mais disponível: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 410,
+                "error", "Gone",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.GONE).body(body);
+    }
+
     @ExceptionHandler(DomainRuleViolationException.class)
     public ResponseEntity<Map<String, Object>> handleDomainRuleViolation(DomainRuleViolationException ex) {
         log.warn("Violação de regra de domínio: {}", ex.getMessage());
