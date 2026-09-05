@@ -112,6 +112,12 @@ public class AthleteInviteServiceImpl implements AthleteInviteService {
         if (atleta.getEmail() == null || atleta.getEmail().isBlank()) {
             throw new DomainRuleViolationException("Atleta sem email não pode ser convidado");
         }
+        // Pelo repositório, NUNCA por atleta.getAssessoria(): o método roda sem transação (e-mail
+        // fora de TX, ver JavaDoc da classe) e o proxy LAZY estouraria fora de sessão — 500 real
+        // pego no ensaio do runbook em 2026-09-05, no primeiro convite emitido em develop.
+        String nomeAssessoria = assessoriaRepository.findById(tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Assessoria não encontrada: " + tenantId))
+                .getNome();
 
         OffsetDateTime now = OffsetDateTime.now(clock);
         inviteRepository.findOpenByAtletaId(atletaId).ifPresent(anterior -> {
@@ -139,7 +145,7 @@ public class AthleteInviteServiceImpl implements AthleteInviteService {
 
         // Fora de transação e depois do insert: se o SMTP recusar, o convite existe sem sentAt e a
         // exceção sobe como 502 — o coach reenvia, e o reenvio invalida este.
-        emailSender.send(mensagem(atleta, token));
+        emailSender.send(mensagem(atleta, nomeAssessoria, token));
 
         convite.setSentAt(OffsetDateTime.now(clock));
         inviteRepository.save(convite);
@@ -293,10 +299,10 @@ public class AthleteInviteServiceImpl implements AthleteInviteService {
                 .filter(c -> c.isActive(now));
     }
 
-    private EmailMessage mensagem(Atleta atleta, InviteToken token) {
+    private EmailMessage mensagem(Atleta atleta, String nomeAssessoria, InviteToken token) {
         Map<String, String> valores = Map.of(
                 "nome", atleta.getNome(),
-                "assessoria", atleta.getAssessoria().getNome(),
+                "assessoria", nomeAssessoria,
                 "link", frontendUrl + INVITE_PATH + token.value(),
                 "validade", validityDays + (validityDays == 1 ? " dia" : " dias"));
         return new EmailMessage(atleta.getEmail(), SUBJECT,

@@ -87,6 +87,10 @@ class AthleteInviteServiceImplInviteTest {
         lenient().when(templates.render(anyString(), anyMap())).thenReturn("corpo");
         lenient().when(inviteRepository.save(any(AthleteInvite.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
+        // A assessoria vem do repositório, nunca de atleta.getAssessoria() — proxy LAZY fora de
+        // sessão estourava no serviço sem transação (bug do ensaio de 2026-09-05).
+        lenient().when(assessoriaRepository.findById(tenantId))
+                .thenReturn(java.util.Optional.of(atleta.getAssessoria()));
     }
 
     @AfterEach
