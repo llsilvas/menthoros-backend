@@ -21,6 +21,9 @@ public interface AthleteInviteRepository extends JpaRepository<AthleteInvite, UU
      * O convite "aberto" do atleta — nem aceito nem invalidado — <strong>inclusive expirado ou sem
      * {@code sent_at}</strong>. É o que o reenvio precisa invalidar antes de inserir: o índice
      * parcial único não olha {@code expires_at}. No máximo um por atleta, garantido pelo índice.
+     *
+     * <p>Tenant-aware: NO por design — o {@code atletaId} chega validado contra o tenant pelo
+     * chamador ({@code findByIdAndTenantId} antes desta consulta); não é filtro esquecido.</p>
      */
     @Query("""
             SELECT i FROM AthleteInvite i

@@ -205,6 +205,9 @@ class AthleteInviteServiceImplAceitarTest {
         @DisplayName("duplo POST concorrente: quem perde o claim recebe 410 e não provisiona")
         void corridaDeAceite() {
             when(inviteRepository.findByTokenHash(InviteToken.hashOf(TOKEN))).thenReturn(Optional.of(convite));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(assessoriaRepository.findById(tenantId)).thenReturn(Optional.of(assessoria));
+            when(keycloak.buscarUsuarioIdPorEmail(EMAIL_CONVITE)).thenReturn(Optional.empty());
             when(inviteRepository.claim(eq(convite.getId()), any())).thenReturn(0);
 
             assertThatThrownBy(() -> service.aceitar(input(null)))
@@ -212,33 +215,61 @@ class AthleteInviteServiceImplAceitarTest {
             verify(keycloak, never()).criarUsuario(any());
         }
 
+        // Rejeições de domínio rodam ANTES do claim (achado do QA: claim vazado responderia 410
+        // para sempre num erro recuperável) — todas verificam que o claim nem foi tentado.
+
         @Test
-        @DisplayName("atleta já vinculado a outra conta é 409")
+        @DisplayName("atleta já vinculado a outra conta é 409 — sem claim")
         void atletaJaVinculado() {
             Usuario outro = new Usuario();
             outro.setId(UUID.randomUUID());
             atleta.setUsuario(outro);
             when(inviteRepository.findByTokenHash(InviteToken.hashOf(TOKEN))).thenReturn(Optional.of(convite));
-            when(inviteRepository.claim(eq(convite.getId()), any())).thenReturn(1);
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
 
             assertThatThrownBy(() -> service.aceitar(input(null)))
                     .isInstanceOf(DomainConflictException.class);
+            verify(inviteRepository, never()).claim(any(), any());
             verify(keycloak, never()).criarUsuario(any());
         }
 
         @Test
-        @DisplayName("e-mail já existente no realm é 409 e reabre o claim")
+        @DisplayName("assessoria do convite não encontrada é 404 — sem claim")
+        void assessoriaNaoEncontrada() {
+            when(inviteRepository.findByTokenHash(InviteToken.hashOf(TOKEN))).thenReturn(Optional.of(convite));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(assessoriaRepository.findById(tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.aceitar(input(null)))
+                    .isInstanceOf(DomainNotFoundException.class);
+            verify(inviteRepository, never()).claim(any(), any());
+        }
+
+        @Test
+        @DisplayName("assessoria sem keycloakOrganizationId é 422 — sem claim, e o retry funciona pós-onboarding")
+        void assessoriaSemOrganizationId() {
+            assessoria.setKeycloakOrganizationId(null);
+            when(inviteRepository.findByTokenHash(InviteToken.hashOf(TOKEN))).thenReturn(Optional.of(convite));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(assessoriaRepository.findById(tenantId)).thenReturn(Optional.of(assessoria));
+
+            assertThatThrownBy(() -> service.aceitar(input(null)))
+                    .isInstanceOf(br.com.menthoros.backend.exception.DomainRuleViolationException.class);
+            verify(inviteRepository, never()).claim(any(), any());
+            verify(keycloak, never()).criarUsuario(any());
+        }
+
+        @Test
+        @DisplayName("e-mail já existente no realm é 409 — sem claim, token continua utilizável")
         void emailJaExiste() {
             when(inviteRepository.findByTokenHash(InviteToken.hashOf(TOKEN))).thenReturn(Optional.of(convite));
-            when(inviteRepository.claim(eq(convite.getId()), any())).thenReturn(1);
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
             when(assessoriaRepository.findById(tenantId)).thenReturn(Optional.of(assessoria));
             when(keycloak.buscarUsuarioIdPorEmail(EMAIL_CONVITE)).thenReturn(Optional.of("existente"));
 
             assertThatThrownBy(() -> service.aceitar(input(null)))
                     .isInstanceOf(DomainConflictException.class);
-            verify(inviteRepository).liberarClaim(convite.getId());
+            verify(inviteRepository, never()).claim(any(), any());
             verify(keycloak, never()).criarUsuario(any());
         }
     }

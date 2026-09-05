@@ -60,7 +60,8 @@ public class AthleteInviteController {
             @ApiResponse(responseCode = "404", description = "Token desconhecido", content = @Content),
             @ApiResponse(responseCode = "409", description = "E-mail já possui conta ou atleta já vinculado", content = @Content),
             @ApiResponse(responseCode = "410", description = "Convite expirado, invalidado ou já utilizado", content = @Content),
-            @ApiResponse(responseCode = "422", description = "Payload inválido", content = @Content),
+            @ApiResponse(responseCode = "400", description = "Payload inválido (Bean Validation)", content = @Content),
+            @ApiResponse(responseCode = "422", description = "Assessoria sem onboarding no Keycloak", content = @Content),
             @ApiResponse(responseCode = "429", description = "Muitas tentativas do mesmo IP", content = @Content),
             @ApiResponse(responseCode = "502", description = "Falha no Keycloak", content = @Content)
     })

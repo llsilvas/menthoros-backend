@@ -35,6 +35,7 @@ import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -45,6 +46,11 @@ import java.util.UUID;
  * {@link FoundingInviteServiceImpl}). A ordem das escritas torna a falha parcial inofensiva:
  * invalidar o anterior e só então inserir; se o e-mail falhar, o convite fica sem {@code sentAt}
  * e o próximo reenvio o invalida.</p>
+ *
+ * <p><strong>Duplicação conhecida e aceita</strong> com {@link FoundingInviteServiceImpl} (emissão,
+ * invalidação do anterior, lookup): dois usos não justificam a abstração, e o aceite diverge
+ * demais (só este provisiona conta). Extrair um template de emissão quando surgir o terceiro tipo
+ * de convite — e aplicar bug-fix de emissão SEMPRE nos dois arquivos até lá.</p>
  */
 @Slf4j
 @Service
@@ -166,7 +172,12 @@ public class AthleteInviteServiceImpl implements AthleteInviteService {
      */
     @Override
     public void aceitar(AthleteInviteAcceptInputDto input) {
-        AthleteInvite convite = resolverConviteParaAceite(input.token());
+        AthleteInvite convite = conviteAtivoPara(input.token());
+
+        // TODAS as validações rodam ANTES do claim atômico, de propósito (achado convergente do
+        // QA): são leituras puras que não competem pela corrida de aceite, e qualquer rejeição
+        // aqui não pode deixar o convite reivindicado — um claim vazado responderia 410 para
+        // sempre num erro que é 404/409/422 e recuperável.
         Atleta atleta = atletaRepository.findByIdAndTenantId(convite.getAtletaId(), convite.getTenantId())
                 .orElseThrow(() -> new DomainNotFoundException("Convite inválido ou expirado"));
         if (atleta.getUsuario() != null) {
@@ -187,8 +198,12 @@ public class AthleteInviteServiceImpl implements AthleteInviteService {
         boolean emailVerificado = emailEscolhido.equalsIgnoreCase(convite.getEmailEnviado());
 
         if (keycloak.buscarUsuarioIdPorEmail(emailEscolhido).isPresent()) {
-            inviteRepository.liberarClaim(convite.getId());
             throw new DomainConflictException("Este e-mail já possui conta");
+        }
+
+        // Só agora o claim: quem perde a corrida de dois aceites simultâneos recebe 410.
+        if (inviteRepository.claim(convite.getId(), OffsetDateTime.now(clock)) == 0) {
+            throw new DomainGoneException("Este convite não é mais válido; peça um novo ao seu treinador");
         }
 
         // Compensação em pilha (padrão do coach signup): falha desfaz os passos externos na ordem
@@ -236,19 +251,14 @@ public class AthleteInviteServiceImpl implements AthleteInviteService {
         }
     }
 
-    /** Valida o token e reivindica o convite atomicamente — só o primeiro aceite provisiona. */
-    private AthleteInvite resolverConviteParaAceite(String rawToken) {
+    /** Resolve o convite ativo do token — 404 para desconhecido, 410 para não-ativo. SEM claim. */
+    private AthleteInvite conviteAtivoPara(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
             throw new DomainNotFoundException("Convite inválido ou expirado");
         }
         AthleteInvite convite = inviteRepository.findByTokenHash(InviteToken.hashOf(rawToken))
                 .orElseThrow(() -> new DomainNotFoundException("Convite inválido ou expirado"));
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        if (!convite.isActive(now)) {
-            throw new DomainGoneException("Este convite não é mais válido; peça um novo ao seu treinador");
-        }
-        if (inviteRepository.claim(convite.getId(), now) == 0) {
-            // Outro aceite venceu a corrida (ou já concluiu) — não distinguir para o cliente.
+        if (!convite.isActive(OffsetDateTime.now(clock))) {
             throw new DomainGoneException("Este convite não é mais válido; peça um novo ao seu treinador");
         }
         return convite;
@@ -274,9 +284,9 @@ public class AthleteInviteServiceImpl implements AthleteInviteService {
         }
     }
 
-    private java.util.Optional<AthleteInvite> findActive(String rawToken) {
+    private Optional<AthleteInvite> findActive(String rawToken) {
         if (rawToken == null || rawToken.isBlank()) {
-            return java.util.Optional.empty();
+            return Optional.empty();
         }
         OffsetDateTime now = OffsetDateTime.now(clock);
         return inviteRepository.findByTokenHash(InviteToken.hashOf(rawToken))
