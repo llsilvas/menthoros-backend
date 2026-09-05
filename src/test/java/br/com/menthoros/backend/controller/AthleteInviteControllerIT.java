@@ -102,6 +102,38 @@ class AthleteInviteControllerIT extends AbstractIntegrationTest {
     }
 
     @Nested
+    @DisplayName("POST /api/v1/atletas/{id}/convite (emissão — coach)")
+    class Emissao {
+
+        /**
+         * Regressão do ensaio de 2026-09-05: a emissão roda sem transação e lia
+         * {@code atleta.getAssessoria().getNome()} — proxy LAZY fora de sessão, 500 no primeiro
+         * convite real. Este IT exercita a emissão inteira contra o contexto real (o carteiro do
+         * profile integration grava .eml em disco, sem SMTP).
+         */
+        @Test
+        @DisplayName("coach emite o convite: 202, hash persistido e sent_at preenchido")
+        void coachEmiteConvite() throws Exception {
+            inviteRepository.deleteAll(); // remove o convite do preparar() — a emissão cria o dela
+
+            mockMvc.perform(post("/api/v1/atletas/{id}/convite", atleta.getId())
+                            .with(jwt()
+                                    .authorities(new SimpleGrantedAuthority("ROLE_TECNICO"))
+                                    .jwt(j -> j.subject(UUID.randomUUID().toString())
+                                            .claim("email", "coach@it.test")
+                                            .claim("organization", Map.of("assessoria-it",
+                                                    Map.of("tenant_id", List.of(assessoria.getId().toString())))))))
+                    .andExpect(status().isAccepted());
+
+            var convites = inviteRepository.findAll();
+            assertThat(convites).hasSize(1);
+            assertThat(convites.get(0).getAtletaId()).isEqualTo(atleta.getId());
+            assertThat(convites.get(0).getTokenHash()).hasSize(64);
+            assertThat(convites.get(0).getSentAt()).isNotNull();
+        }
+    }
+
+    @Nested
     @DisplayName("GET /{token} (lookup)")
     class Lookup {
 
