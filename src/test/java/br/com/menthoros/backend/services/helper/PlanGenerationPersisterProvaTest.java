@@ -41,6 +41,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
@@ -327,6 +328,55 @@ class PlanGenerationPersisterProvaTest {
     }
 
     // ---- helpers ----
+
+    @Nested
+    @DisplayName("redistribuicao no PROXIMA_SEMANA (fix-cold-start-load-model §4.1)")
+    class RedistribuicaoProximaSemana {
+
+        @Test
+        @DisplayName("enabled=true: roda a redistribuicao tambem no PROXIMA_SEMANA")
+        void enabledRedistribuiProximaSemana() {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerEnabled", true);
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+
+            // skeleton indisponivel -> diasAlvo vazio (fallback); nao impede a redistribuicao de rodar
+            when(plannerShadowService.computarSkeleton(any(), any(), any(), any()))
+                    .thenThrow(new RuntimeException("skeleton indisponivel no teste"));
+            when(redistribuicaoHelper.redistribuirTreinos(anyList(), any(), any(), any(), any(),
+                    eq(ModoGeracaoPlano.PROXIMA_SEMANA), any(), anyMap())).thenReturn(List.of(longo));
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+
+            verify(redistribuicaoHelper).redistribuirTreinos(anyList(), any(), any(), any(), any(),
+                    eq(ModoGeracaoPlano.PROXIMA_SEMANA), any(), anyMap());
+        }
+
+        @Test
+        @DisplayName("enabled=false: PROXIMA_SEMANA byte-a-byte, sem redistribuir (CA9)")
+        void disabledPreservaLlmProximaSemana() {
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+
+            verify(redistribuicaoHelper, org.mockito.Mockito.never())
+                    .redistribuirTreinos(anyList(), any(), any(), any(), any(), any(), any(), anyMap());
+        }
+    }
 
     private Atleta atletaComAssessoria() {
         Assessoria assessoria = new Assessoria();

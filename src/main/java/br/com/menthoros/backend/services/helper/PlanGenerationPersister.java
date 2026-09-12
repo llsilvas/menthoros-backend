@@ -315,8 +315,10 @@ public class PlanGenerationPersister {
     }
 
     /**
-     * Para SEMANA_ATUAL, redistribui considerando dias ja passados; nos demais modos usa os
-     * treinos da LLM diretamente.
+     * SEMANA_ATUAL sempre redistribui (considera dias ja passados). PROXIMA_SEMANA redistribui
+     * apenas com {@code planner-engine.enabled=true} — aplicando a alocacao de dias do skeleton
+     * (longao ancorado, duras nao-adjacentes, leve pos-dura via {@code diasAlvoPorTipo}); com
+     * {@code enabled=false} preserva os dias do LLM byte-a-byte (CA9). Demais modos usam a LLM direto.
      */
     private List<TreinoPlanejadoLlmDto> obterTreinosParaPlano(List<TreinoPlanejadoLlmDto> treinosLlm,
                                                               Atleta atleta,
@@ -324,7 +326,9 @@ public class PlanGenerationPersister {
                                                               ModoGeracaoPlano modoGeracao,
                                                               DiaSemana diaPrioritarioLongo,
                                                               java.util.Map<TipoTreino, DiaSemana> diasAlvoPorTipo) {
-        List<TreinoPlanejadoLlmDto> treinos = ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracao)
+        boolean redistribui = ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracao)
+                || (plannerEnabled && ModoGeracaoPlano.PROXIMA_SEMANA.equals(modoGeracao));
+        List<TreinoPlanejadoLlmDto> treinos = redistribui
                 ? redistribuicaoHelper.redistribuirTreinos(
                         treinosLlm,
                         atleta.getDiasDisponiveis(),
