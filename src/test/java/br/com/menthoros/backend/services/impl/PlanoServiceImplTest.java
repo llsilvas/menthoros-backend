@@ -171,7 +171,7 @@ class PlanoServiceImplTest {
                         new AthleteBaseline(null, null),
                         0.0,
                         new PlanningPolicy(ReviewMode.MANDATORY_BLOCKING, 0.0, true),
-                        new AthleteConstraints(List.of(), null, null, List.of())));
+                        new AthleteConstraints(List.of(), null, null, List.of()), null));
     }
 
     @AfterEach
@@ -990,7 +990,7 @@ class PlanoServiceImplTest {
                             new AthleteBaseline(50.0, LocalDate.now()),
                             0.8,
                             new PlanningPolicy(reviewMode, 1.0, false),
-                            new AthleteConstraints(List.of(), null, null, List.of())));
+                            new AthleteConstraints(List.of(), null, null, List.of()), null));
         }
 
         private void stubShadow(WeekPlanSkeleton skeleton) {

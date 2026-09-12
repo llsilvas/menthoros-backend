@@ -189,7 +189,7 @@ class PlanGenerationPersisterProvaTest {
                         1.0,
                         new br.com.menthoros.backend.domain.planner.PlanningPolicy(
                                 br.com.menthoros.backend.domain.planner.ReviewMode.EXCEPTION_ONLY, 0.0, false),
-                        new br.com.menthoros.backend.domain.planner.AthleteConstraints(List.of(), null, null, List.of()));
+                        new br.com.menthoros.backend.domain.planner.AthleteConstraints(List.of(), null, null, List.of()), null);
 
         private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeletonSemReview() {
             return new br.com.menthoros.backend.domain.planner.WeekPlanSkeleton(

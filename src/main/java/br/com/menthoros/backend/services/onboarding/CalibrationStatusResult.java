@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.services.onboarding;
 
+import br.com.menthoros.backend.domain.planner.CalibrationStage;
+
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 
 /**
