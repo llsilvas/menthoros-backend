@@ -163,6 +163,41 @@ class PlanGenerationPersisterProvaTest {
         }
 
         @Test
+        @DisplayName("carga fora da faixa (cold-start) + fail-open=true: FAILED + review, persiste (CA6)")
+        void cargaColdStartFailOpen() throws Exception {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", true);
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+                    .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
+                            br.com.menthoros.backend.domain.compliance.PlannerViolationKey.TSS_FORA_DA_FAIXA,
+                            "carga semanal fora da banda +-25% do cold-start")));
+            PlanoSemanal plano = new PlanoSemanal();
+
+            invoke(plano);
+
+            assertThat(plano.getPlannerComplianceStatus())
+                    .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FAILED.name());
+            assertThat(plano.getPlannerRequiresCoachReview()).isTrue();
+            assertThat(postFailureCount()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("carga fora da faixa (cold-start) + fail-open=false: 422, nada persistido (CA6)")
+        void cargaColdStartFailClosed() {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", false);
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+                    .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
+                            br.com.menthoros.backend.domain.compliance.PlannerViolationKey.TSS_FORA_DA_FAIXA,
+                            "carga semanal fora da banda +-25% do cold-start")));
+            PlanoSemanal plano = new PlanoSemanal();
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> invoke(plano))
+                    .isInstanceOf(br.com.menthoros.backend.exception.DomainRuleViolationException.class)
+                    .hasMessageContaining("TSS_FORA_DA_FAIXA");
+            assertThat(plano.getPlannerComplianceStatus()).isNull();
+            assertThat(postFailureCount()).isZero();
+        }
+
+        @Test
         @DisplayName("violacao + fail-open=false: erro de dominio, nada mutado, sem metrica")
         void violacaoFailClosed() {
             org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", false);
