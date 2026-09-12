@@ -86,6 +86,42 @@ class LoadTargetResolverTest {
         }
 
         @Test
+        @DisplayName("RECOVERY (normal) reduz de verdade: 0,5 x baseline")
+        void recoveryReduzNormal() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.RECOVERY, manter(), historico(40.0), null, null);
+
+            assertThat(alvo.targetTss()).isCloseTo(140.0, within(0.01)); // 0,5 x (40 x 7)
+        }
+
+        @Test
+        @DisplayName("POST_RACE (normal) reduz igual a RECOVERY")
+        void postRaceReduzNormal() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.POST_RACE, manter(), historico(40.0), null, null);
+
+            assertThat(alvo.targetTss()).isCloseTo(140.0, within(0.01));
+        }
+
+        @Test
+        @DisplayName("cold-start lesionado empilha rampa e reducao: 40 x 7 x 0,90 x 0,5")
+        void coldStartLesionadoEmpilha() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.RECOVERY, manter(), historico(null), CalibrationStage.STABILIZATION, 40.0);
+
+            assertThat(alvo.targetTss()).isCloseTo(40 * 7 * 0.90 * 0.5, within(0.01)); // 126
+        }
+
+        @Test
+        @DisplayName("TAPER (normal) nao sofre o fator 0,5 — segue min-cap do baseline")
+        void taperNaoSofreReducao() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.TAPER, manter(), historico(40.0), null, null);
+
+            assertThat(alvo.targetTss()).isCloseTo(280.0, within(0.01)); // min(280, 280), sem x0,5
+        }
+
+        @Test
         @DisplayName("banda +-25% no cold-start")
         void bandaColdStart() {
             WeeklyLoadTarget alvo = resolver.resolve(
