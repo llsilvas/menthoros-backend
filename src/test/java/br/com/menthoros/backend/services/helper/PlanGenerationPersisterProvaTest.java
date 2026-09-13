@@ -216,6 +216,92 @@ class PlanGenerationPersisterProvaTest {
     }
 
     @Nested
+    @DisplayName("skeleton pre-prompt threadado ate a persistencia (planner-engine-enforcement 8.5.h)")
+    class SkeletonPrePromptThreadeado {
+
+        private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeletonValido() {
+            return new br.com.menthoros.backend.domain.planner.WeekPlanSkeleton(
+                    br.com.menthoros.backend.domain.planner.TrainingPhase.BASE,
+                    new br.com.menthoros.backend.domain.planner.WeeklyLoadTarget(200.0, 180.0, 220.0, "teste"),
+                    List.of(),
+                    new br.com.menthoros.backend.domain.planner.InjuryRiskAssessment(
+                            br.com.menthoros.backend.domain.planner.InjuryRiskLevel.SAFE, false, null),
+                    new br.com.menthoros.backend.domain.planner.ConstraintValidationResult(true, List.of()),
+                    false, null, LocalDate.of(2026, 9, 7), null, Optional.empty());
+        }
+
+        @Test
+        @DisplayName("fallback da fase 2 (planner falhou antes do LLM): FALLBACK, sem enforcar o estagio 2")
+        void fallbackMarcaStatusSemEnforcarEstagio2() {
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.viaFallback());
+
+            assertThat(salvo.getPlannerComplianceStatus())
+                    .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FALLBACK.name());
+            org.mockito.Mockito.verify(plannerShadowService, org.mockito.Mockito.never())
+                    .checkPostRedistribution(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("sucesso da fase 2: estagio 2 enforca contra o MESMO objeto de skeleton, sem recomputar no persister")
+        void sucessoReusaOMesmoSkeletonSemRecomputar() {
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+            br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeletonDaFase2 = skeletonValido();
+
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+            when(plannerShadowService.checkPostRedistribution(any(), eq(skeletonDaFase2), any(), any()))
+                    .thenReturn(List.of());
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA,
+                    SkeletonPrePrompt.sucesso(skeletonDaFase2));
+
+            assertThat(salvo.getPlannerComplianceStatus())
+                    .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.PASSED.name());
+            org.mockito.Mockito.verify(plannerShadowService)
+                    .checkPostRedistribution(any(), eq(skeletonDaFase2), any(), any());
+            // a persistencia nunca recomputa o skeleton — nem para o estagio 2, nem para guiar a
+            // redistribuicao (diasAlvoDaRedistribuicao usa skeletonDaFase2 diretamente).
+            org.mockito.Mockito.verify(plannerShadowService, org.mockito.Mockito.never())
+                    .computarSkeleton(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("flag desligado: sem status de compliance, sem enforcar o estagio 2 (CA9)")
+        void desligadoSemStatusSemEnforcamento() {
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
+
+            assertThat(salvo.getPlannerComplianceStatus()).isNull();
+            org.mockito.Mockito.verify(plannerShadowService, org.mockito.Mockito.never())
+                    .checkPostRedistribution(any(), any(), any(), any());
+        }
+    }
+
+    @Nested
     @DisplayName("veto do enforcement na auto-aprovacao (Codex blocker 3)")
     class VetoAutoAprovacao {
 
@@ -291,7 +377,7 @@ class PlanGenerationPersisterProvaTest {
 
             PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
 
-            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
             verify(provaNoPlanoService).garantirProvasNaSemana(eq(List.of(longoNoDomingo)), eq(atleta),
                     eq(semanaInicio), eq(semanaInicio.plusDays(6)));
@@ -317,7 +403,7 @@ class PlanGenerationPersisterProvaTest {
 
             PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
 
-            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
             assertThat(salvo.getVolumePlanejadoKm()).isEqualByComparingTo(BigDecimal.valueOf(8.0 + 21.1));
         }
@@ -354,7 +440,7 @@ class PlanGenerationPersisterProvaTest {
 
             PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
 
-            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
             ArgumentCaptor<PlanoMetaDados> captor = ArgumentCaptor.forClass(PlanoMetaDados.class);
             verify(planoMetadadosRepository).save(captor.capture());
@@ -378,16 +464,15 @@ class PlanGenerationPersisterProvaTest {
             PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
             DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
 
-            // skeleton indisponivel -> diasAlvo vazio (fallback); nao impede a redistribuicao de rodar
-            when(plannerShadowService.computarSkeleton(any(), any(), any(), any()))
-                    .thenThrow(new RuntimeException("skeleton indisponivel no teste"));
             when(redistribuicaoHelper.redistribuirTreinos(anyList(), any(), any(), any(), any(),
                     eq(ModoGeracaoPlano.PROXIMA_SEMANA), any(), anyMap())).thenReturn(List.of(longo));
             when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
             PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
-            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+            // Fase 2 (pre-prompt) caiu no fallback (planner-engine-enforcement 8.5.h) -> diasAlvo
+            // vazio, mas isso NAO impede a redistribuicao de rodar no PROXIMA_SEMANA com enabled=true.
+            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.viaFallback());
 
             verify(redistribuicaoHelper).redistribuirTreinos(anyList(), any(), any(), any(), any(),
                     eq(ModoGeracaoPlano.PROXIMA_SEMANA), any(), anyMap());
@@ -406,7 +491,7 @@ class PlanGenerationPersisterProvaTest {
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
             PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
-            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
             verify(redistribuicaoHelper, org.mockito.Mockito.never())
                     .redistribuirTreinos(anyList(), any(), any(), any(), any(), any(), any(), anyMap());

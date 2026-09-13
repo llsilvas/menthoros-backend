@@ -27,6 +27,7 @@ import br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter;
 import br.com.menthoros.backend.services.helper.PlanGenerationContext;
 import br.com.menthoros.backend.services.helper.PlanGenerationContextLoader;
 import br.com.menthoros.backend.services.helper.PlannerShadowService;
+import br.com.menthoros.backend.services.helper.SkeletonPrePrompt;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import org.jspecify.annotations.Nullable;
 import org.springframework.beans.factory.annotation.Value;
@@ -127,13 +128,16 @@ public class PlanoServiceImpl implements PlanoService {
         try {
             PlanGenerationContext ctx = contextLoader.load(atletaId, modoGeracao);
 
-            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(ctx, modoGeracao);
+            // planner-engine-enforcement 8.5.h: computado aqui (fora de qualquer transação) e
+            // threadado ATÉ o persister — nunca recomputado lá, ver SkeletonPrePrompt.
+            SkeletonPrePrompt skeletonPrePrompt = computarSkeletonSeHabilitado(ctx);
+            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(ctx, modoGeracao, skeletonPrePrompt.skeleton());
 
             if (planoDto == null) {
                 throw new LLMException("Falha ao gerar plano: IA retornou resposta nula. Tente novamente.");
             }
 
-            return persister.persist(planoDto, ctx, modoGeracao);
+            return persister.persist(planoDto, ctx, modoGeracao, skeletonPrePrompt);
         } catch (LLMException | DomainRuleViolationException | DomainNotFoundException | IllegalStateException e) {
             log.error("Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
             throw e;
@@ -157,23 +161,27 @@ public class PlanoServiceImpl implements PlanoService {
 
     /**
      * Computa o {@link WeekPlanSkeleton} pré-prompt quando {@code planner-engine.enabled=true}.
-     * Fail-open (design Decisão 3): qualquer falha aqui NÃO derruba a geração — devolve {@code null}
-     * e o prompt cai no caminho legado. Onboarding vazio: o planner usa os dias disponíveis do atleta.
+     * Fail-open (design Decisão 3): qualquer falha aqui NÃO derruba a geração — {@link SkeletonPrePrompt#fallback()}
+     * fica {@code true} e o prompt cai no caminho legado. Onboarding vazio: o planner usa os dias
+     * disponíveis do atleta.
+     *
+     * <p>planner-engine-enforcement 8.5.h: o resultado (sucesso, desligado ou fallback) é threadado
+     * até {@code PlanGenerationPersister} — nunca recomputado lá. Ver {@link SkeletonPrePrompt}.
      */
-    @Nullable
-    private WeekPlanSkeleton computarSkeletonSeHabilitado(PlanGenerationContext ctx) {
+    private SkeletonPrePrompt computarSkeletonSeHabilitado(PlanGenerationContext ctx) {
         if (!plannerEnabled) {
-            return null;
+            return SkeletonPrePrompt.desligado();
         }
         try {
             // fix-cold-start-load-model: reusa o OnboardingContext resolvido pelo loader — antes ia
             // Optional.empty() aqui, então o skeleton que guia o prompt nunca via calibrationStage/CTL
             // de calibração (o regime cold-start só auditava depois de gerado, no estágio 2).
-            return plannerShadowService.computarSkeleton(
+            WeekPlanSkeleton skeleton = plannerShadowService.computarSkeleton(
                     ctx.dados(), ctx.decisaoProgressao(), ctx.semanaInicio(), ctx.onboardingContext());
+            return SkeletonPrePrompt.sucesso(skeleton);
         } catch (Exception e) {
             // Planner falha ANTES do LLM (design Decisao 3, matriz fail-open):
-            //   fail-open=true  -> null => pipeline legado (1ª e unica geracao) + planner.fallback_legacy.count
+            //   fail-open=true  -> fallback => pipeline legado (1ª e unica geracao) + planner.fallback_legacy.count
             //   fail-open=false -> erro de dominio, nada gerado
             if (!plannerFailOpen) {
                 throw new DomainRuleViolationException(
@@ -181,17 +189,15 @@ public class PlanoServiceImpl implements PlanoService {
             }
             meterRegistry.counter("planner.fallback_legacy.count").increment();
             log.warn("Falha ao computar skeleton do planner (fail-open, seguindo com pipeline legado): {}", e.getMessage());
-            return null;
+            return SkeletonPrePrompt.viaFallback();
         }
     }
 
-    private PlanoSemanalLlmDto gerarPlanoSemanal(PlanGenerationContext ctx, ModoGeracaoPlano modoGeracao) {
+    private PlanoSemanalLlmDto gerarPlanoSemanal(PlanGenerationContext ctx, ModoGeracaoPlano modoGeracao,
+                                                 @Nullable WeekPlanSkeleton skeleton) {
         UUID atletaId = ctx.atleta().getId();
         try {
             log.info("Iniciando geração de plano para atleta: {}", atletaId);
-
-            // planner-engine-enforcement §3: skeleton prescritivo computado ANTES do prompt (fail-open).
-            WeekPlanSkeleton skeleton = computarSkeletonSeHabilitado(ctx);
 
             // Faixa interativa do limiter, só em volta da chamada ao LLM (nunca das transações).
             // Para gerações vindas do lote é no-op: a thread já segura permits (reentrância).

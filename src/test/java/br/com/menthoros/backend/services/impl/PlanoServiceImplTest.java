@@ -197,17 +197,17 @@ class PlanoServiceImplTest {
                     dados, null, LocalDate.of(2026, 9, 7), null, null, onboardingContext);
         }
 
-        private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton invoke() throws Exception {
+        private br.com.menthoros.backend.services.helper.SkeletonPrePrompt invoke() throws Exception {
             return invoke(ctx());
         }
 
-        private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton invoke(
+        private br.com.menthoros.backend.services.helper.SkeletonPrePrompt invoke(
                 br.com.menthoros.backend.services.helper.PlanGenerationContext ctx) throws Exception {
             var m = PlanoServiceImpl.class.getDeclaredMethod("computarSkeletonSeHabilitado",
                     br.com.menthoros.backend.services.helper.PlanGenerationContext.class);
             m.setAccessible(true);
             try {
-                return (br.com.menthoros.backend.domain.planner.WeekPlanSkeleton) m.invoke(planoService, ctx);
+                return (br.com.menthoros.backend.services.helper.SkeletonPrePrompt) m.invoke(planoService, ctx);
             } catch (java.lang.reflect.InvocationTargetException e) {
                 if (e.getCause() instanceof RuntimeException re) throw re;
                 throw e;
@@ -220,24 +220,30 @@ class PlanoServiceImplTest {
         }
 
         @Test
-        @DisplayName("flag off: skeleton null, planner nem é chamado, sem métrica de fallback")
+        @DisplayName("flag off: skeleton null, sem fallback, planner nem é chamado, sem métrica de fallback")
         void flagOff() throws Exception {
             org.springframework.test.util.ReflectionTestUtils.setField(planoService, "plannerEnabled", false);
 
-            assertNull(invoke());
+            var resultado = invoke();
+
+            assertThat(resultado.skeleton()).isNull();
+            assertThat(resultado.fallback()).isFalse();
             verify(plannerShadowService, never()).computarSkeleton(any(), any(), any(), any());
             assertThat(fallbackCount()).isZero();
         }
 
         @Test
-        @DisplayName("planner falha ANTES do LLM + fail-open=true: null (pipeline legado) + planner.fallback_legacy.count")
+        @DisplayName("planner falha ANTES do LLM + fail-open=true: skeleton null + fallback=true (pipeline legado) + planner.fallback_legacy.count")
         void falhaComFailOpen() throws Exception {
             org.springframework.test.util.ReflectionTestUtils.setField(planoService, "plannerEnabled", true);
             org.springframework.test.util.ReflectionTestUtils.setField(planoService, "plannerFailOpen", true);
             when(plannerShadowService.computarSkeleton(any(), any(), any(), any()))
                     .thenThrow(new IllegalStateException("planner indisponível"));
 
-            assertNull(invoke());
+            var resultado = invoke();
+
+            assertThat(resultado.skeleton()).isNull();
+            assertThat(resultado.fallback()).isTrue();
             assertThat(fallbackCount()).isEqualTo(1.0);
         }
 
@@ -279,7 +285,8 @@ class PlanoServiceImplTest {
 
             var resultado = invoke(ctx(Optional.of(onboardingContext)));
 
-            assertThat(resultado).isSameAs(skeletonEsperado);
+            assertThat(resultado.skeleton()).isSameAs(skeletonEsperado);
+            assertThat(resultado.fallback()).isFalse();
             verify(plannerShadowService).computarSkeleton(any(), any(), any(), eq(Optional.of(onboardingContext)));
         }
     }
