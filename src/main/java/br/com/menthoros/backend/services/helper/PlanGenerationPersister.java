@@ -119,7 +119,7 @@ public class PlanGenerationPersister {
      */
     @Transactional
     public PlanoSemanal persist(PlanoSemanalLlmDto planoDto, PlanGenerationContext ctx,
-                                ModoGeracaoPlano modoGeracao) {
+                                ModoGeracaoPlano modoGeracao, SkeletonPrePrompt skeletonPrePrompt) {
         DadosPlanoDto dadosPlano = ctx.dados();
         Atleta atleta = ctx.atleta();
         LocalDate semanaInicio = ctx.semanaInicio();
@@ -144,11 +144,10 @@ public class PlanGenerationPersister {
         // guiou (ou não) o skeleton pré-prompt, sem re-derivar aqui (evita divergência entre os dois).
         Optional<OnboardingContext> onboardingContext = ctx.onboardingContext();
 
-        // §5.3: com o planner ligado, os dias prescritos pelos SessionSlot guiam a redistribuicao.
-        // O skeleton e recomputado (planWeek e puro/deterministico) para nao acoplar a redistribuicao
-        // ao shadow; enabled=false => mapa vazio => comportamento legado byte-a-byte (CA9).
-        java.util.Map<TipoTreino, DiaSemana> diasAlvoPorTipo = diasAlvoDaRedistribuicao(
-                dadosPlano, decisaoProgressao, periodo.inicio(), onboardingContext);
+        // §5.3 + 8.5.h: dias prescritos pelos SessionSlot do skeleton da FASE 2 (pre-prompt) — nao
+        // recomputado aqui. enabled=false ou fallback (fase 2 falhou) => mapa vazio => comportamento
+        // legado byte-a-byte (CA9).
+        java.util.Map<TipoTreino, DiaSemana> diasAlvoPorTipo = diasAlvoDaRedistribuicao(skeletonPrePrompt);
 
         DiaSemana diaPrioritarioLongo = inferirDiaPrioritarioLongo(dadosPlano);
         List<TreinoPlanejadoLlmDto> treinos = obterTreinosParaPlano(
@@ -168,13 +167,18 @@ public class PlanGenerationPersister {
         Optional<WeekPlanSkeleton> weekPlanSkeleton = plannerShadowService.aplicarShadow(
                 plano, planoDto, dadosPlano, decisaoProgressao, periodo.inicio(), false, onboardingContext);
 
-        // planner-engine-enforcement §5 (Decisao 2): estagio 2 terminal — roda sobre os treinos ja
-        // redistribuidos E com prova garantida (plano.getTreinosPlanejados()), como ULTIMO passo antes
-        // de aprovar/salvar/emitir eventos. So enforca com enabled=true; caso contrario e no-op e o
-        // shadow acima segue como auditoria (CA9). Usa periodo.inicio() como referenceDate (nunca now()).
-        if (plannerEnabled) {
-            weekPlanSkeleton.ifPresent(skeleton ->
-                    aplicarEnforcementEstagio2(plano, skeleton, atleta, periodo.inicio()));
+        // planner-engine-enforcement §5 (Decisao 2) + 8.5.h: estagio 2 terminal — roda sobre os treinos
+        // ja redistribuidos E com prova garantida (plano.getTreinosPlanejados()), como ULTIMO passo
+        // antes de aprovar/salvar/emitir eventos. Enforca contra o MESMO skeleton que guiou o prompt na
+        // fase 2 (skeletonPrePrompt), nao um recomputado aqui pelo shadow (weekPlanSkeleton acima e so
+        // para auditoria/metricas — CA12) — evita enforcar um plano contra estrutura que o LLM nunca
+        // viu. Fallback da fase 2 (planner falhou antes do LLM) marca FALLBACK em vez de tentar
+        // enforcar; flag desligado permanece no-op (CA9). Usa periodo.inicio() como referenceDate
+        // (nunca now()).
+        if (skeletonPrePrompt.fallback()) {
+            plano.setPlannerComplianceStatus(PlannerComplianceStatus.FALLBACK.name());
+        } else if (skeletonPrePrompt.skeleton() != null) {
+            aplicarEnforcementEstagio2(plano, skeletonPrePrompt.skeleton(), atleta, periodo.inicio());
         }
 
         // Auto-approve Cenario A (athlete-onboarding-baseline CA5, Decisao 7).
@@ -248,7 +252,11 @@ public class PlanGenerationPersister {
         }
         // Veto do enforcement (planner-engine-enforcement §5, Codex blocker 3): plano que o estagio 2
         // marcou FAILED / requiresCoachReview NUNCA e auto-aprovado — entra em AGUARDANDO_REVISAO.
+        // FALLBACK (8.5.h, achado do security-reviewer): o planner falhou antes do LLM e o estagio 2
+        // NUNCA rodou sobre este plano — nao tem base para confianca alta automatica, mesmo que o
+        // shadow (recomputado dentro da transacao) tenha tido sucesso onde a fase 2 falhou.
         if (PlannerComplianceStatus.FAILED.name().equals(plano.getPlannerComplianceStatus())
+                || PlannerComplianceStatus.FALLBACK.name().equals(plano.getPlannerComplianceStatus())
                 || Boolean.TRUE.equals(plano.getPlannerRequiresCoachReview())) {
             return;
         }
@@ -336,26 +344,15 @@ public class PlanGenerationPersister {
     }
 
     /**
-     * §5.3: mapa tipo->dia-alvo para guiar a redistribuicao, derivado dos {@code SessionSlot} do
-     * skeleton. Vazio quando o planner esta desligado (comportamento legado) ou quando o calculo
-     * falha (fail-open local — o estagio 2 e o gate real). O skeleton e recomputado aqui porque a
-     * redistribuicao roda ANTES do shadow; {@code planWeek} e puro/deterministico, entao coincide.
+     * §5.3 + 8.5.h: mapa tipo->dia-alvo para guiar a redistribuicao, derivado dos {@code SessionSlot}
+     * do skeleton da FASE 2 (pre-prompt, {@code skeletonPrePrompt}) — nao recomputado aqui. Vazio
+     * quando o planner esta desligado ou quando a fase 2 caiu no fallback (skeleton nulo).
      */
-    private Map<TipoTreino, DiaSemana> diasAlvoDaRedistribuicao(DadosPlanoDto dadosPlano,
-                                                               DecisaoProgressao decisaoProgressao,
-                                                               LocalDate semanaInicio,
-                                                               Optional<OnboardingContext> onboardingContext) {
-        if (!plannerEnabled) {
+    private Map<TipoTreino, DiaSemana> diasAlvoDaRedistribuicao(SkeletonPrePrompt skeletonPrePrompt) {
+        if (skeletonPrePrompt.skeleton() == null) {
             return Map.of();
         }
-        try {
-            WeekPlanSkeleton skeleton = plannerShadowService.computarSkeleton(
-                    dadosPlano, decisaoProgressao, semanaInicio, onboardingContext);
-            return diasAlvoDosSlots(skeleton);
-        } catch (Exception e) {
-            log.warn("Falha ao computar skeleton para guiar a redistribuicao (seguindo sem guia): {}", e.getMessage());
-            return Map.of();
-        }
+        return diasAlvoDosSlots(skeletonPrePrompt.skeleton());
     }
 
     private Map<TipoTreino, DiaSemana> diasAlvoDosSlots(WeekPlanSkeleton skeleton) {
