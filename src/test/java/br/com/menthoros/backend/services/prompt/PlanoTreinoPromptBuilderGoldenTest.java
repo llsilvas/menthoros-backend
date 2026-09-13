@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.prompt;
 
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
 import br.com.menthoros.backend.services.prompt.PlanoPromptArquetipos.Arquetipo;
+import br.com.menthoros.backend.ai.ledger.PromptHashCalculator;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -117,5 +118,18 @@ class PlanoTreinoPromptBuilderGoldenTest {
         Files.createDirectories(SRC_GOLDEN_DIR);
         Files.writeString(SRC_GOLDEN_DIR.resolve(nome + ".txt"), conteudo, StandardCharsets.UTF_8);
         System.out.printf("[golden] baseline gravada: %s%n", SRC_GOLDEN_DIR.resolve(nome + ".txt"));
+        gravarHashDoTemplate();
+    }
+
+    /**
+     * Regenera {@code prompt.sha256} junto da baseline (add-plan-generation-ledger, D9): o hash do
+     * template estático viaja em cada Chamada LLM, e {@code PromptHashCalculatorTest} falha se o
+     * template mudar sem este arquivo acompanhar — o sinal de que falta subir {@code PromptVersion}.
+     */
+    private static void gravarHashDoTemplate() throws IOException {
+        String template = new ClassPathResource("prompts/plano-treino-otimizado-claude.txt")
+                .getContentAsString(StandardCharsets.UTF_8);
+        Files.writeString(SRC_GOLDEN_DIR.resolve("prompt.sha256"),
+                PromptHashCalculator.sha256(template) + System.lineSeparator(), StandardCharsets.UTF_8);
     }
 }
