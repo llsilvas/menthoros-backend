@@ -62,7 +62,14 @@ public class PlannerEngine {
         InjuryRiskAssessment risco = injuryRiskEvaluator.assess(
                 snapshot.progressaoHistorico(), snapshot.historico(), snapshot.referenceDate());
 
-        WeeklyLoadTarget loadTarget = loadTargetResolver.resolve(fase, snapshot.decisaoProgressao(), snapshot.progressaoHistorico());
+        CalibrationStage calibrationStage = snapshot.onboardingContext()
+                .map(OnboardingContext::calibrationStage)
+                .orElse(null);
+        Double ctlBaseline = snapshot.onboardingContext()
+                .map(oc -> oc.baseline() != null ? oc.baseline().ctlEstimado() : null)
+                .orElse(null);
+        WeeklyLoadTarget loadTarget = loadTargetResolver.resolve(
+                fase, snapshot.decisaoProgressao(), snapshot.progressaoHistorico(), calibrationStage, ctlBaseline);
         loadTarget = aplicarTaperSeAplicavel(loadTarget, fase, periodizacao, snapshot.referenceDate());
 
         AthleteConstraints constraints = resolverConstraints(snapshot);

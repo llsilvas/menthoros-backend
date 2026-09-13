@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.input.DadosPlanoDto;
 import br.com.menthoros.backend.entity.Atleta;
@@ -31,12 +32,16 @@ import java.util.Optional;
  * @param semanaInicio       semana do plano, resolvida uma única vez para prompt e persistência
  * @param revisaoConsumida   revisão da semana anterior que alimenta o prompt, ou {@code null}
  * @param proximaProva       prova alvo (ou a mais próxima) do atleta, ou {@code null}
+ * @param onboardingContext  regime de calibração/cold-start (ADR-0012), resolvido UMA vez aqui e
+ *                           reutilizado tanto no skeleton pré-prompt quanto na persistência —
+ *                           evita que os dois pontos derivem calibrationStage/CTL de forma divergente
  */
 public record PlanGenerationContext(DadosPlanoDto dados,
                                     @Nullable DecisaoProgressao decisaoProgressao,
                                     LocalDate semanaInicio,
                                     @Nullable RevisaoSemanal revisaoConsumida,
-                                    @Nullable Prova proximaProva) {
+                                    @Nullable Prova proximaProva,
+                                    Optional<OnboardingContext> onboardingContext) {
 
     public PlanGenerationContext {
         if (dados == null) {
@@ -44,6 +49,9 @@ public record PlanGenerationContext(DadosPlanoDto dados,
         }
         if (semanaInicio == null) {
             throw new IllegalArgumentException("semanaInicio é obrigatória");
+        }
+        if (onboardingContext == null) {
+            throw new IllegalArgumentException("onboardingContext é obrigatório (use Optional.empty())");
         }
     }
 

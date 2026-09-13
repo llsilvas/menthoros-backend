@@ -38,7 +38,14 @@ public class TaperStrategy {
         String rationale = String.format(
                 "Taper: reducao de %.0f%% sobre o pico pre-taper (%d dias para a prova)",
                 reducao * 100, diasParaProva);
-        return new WeeklyLoadTarget(alvo, alvo * (1 - FAIXA_TOLERANCIA), alvo * (1 + FAIXA_TOLERANCIA), rationale);
+        // Preserva a banda relativa do alvo pre-taper (fix-cold-start-load-model): o cold-start
+        // (ADR-0012) resolve com +-25%, o caminho normal com +-10% — sobrescrever aqui com a
+        // tolerancia fixa do modulo perdia a banda alargada e gerava FAILED espurio em TAPER/RACE_WEEK
+        // para atleta em calibracao. Sem alvo pre-taper (0), cai na tolerancia padrao do modulo.
+        double toleranciaRelativa = picoPreTaper.targetTss() != 0
+                ? (picoPreTaper.targetTss() - picoPreTaper.minTss()) / picoPreTaper.targetTss()
+                : FAIXA_TOLERANCIA;
+        return new WeeklyLoadTarget(alvo, alvo * (1 - toleranciaRelativa), alvo * (1 + toleranciaRelativa), rationale);
     }
 
     /**

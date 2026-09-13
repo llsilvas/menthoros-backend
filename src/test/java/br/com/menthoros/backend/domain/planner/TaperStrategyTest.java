@@ -88,6 +88,32 @@ class TaperStrategyTest {
             assertThat(alvoComTaper.targetTss()).isCloseTo(400.0 * (1 - reducaoEsperada), offset(0.01));
             assertThat(alvoComTaper.targetTss()).isLessThan(picoPreTaper.targetTss());
         }
+
+        @Test
+        @DisplayName("aplicar preserva a banda +-25% do cold-start (ADR-0012), nao sobrescreve com +-10%")
+        void aplicarPreservaBandaColdStart() {
+            // banda +-25% (LoadTargetResolver.resolveColdStart): min/max a 0,75x/1,25x do alvo
+            WeeklyLoadTarget picoPreTaperColdStart = new WeeklyLoadTarget(200.0, 150.0, 250.0, "cold-start pico pre-taper");
+
+            WeeklyLoadTarget alvoComTaper = taper.aplicar(picoPreTaperColdStart, 10);
+
+            double bandaRelativa = (alvoComTaper.targetTss() - alvoComTaper.minTss()) / alvoComTaper.targetTss();
+            assertThat(bandaRelativa).isCloseTo(0.25, offset(0.0001));
+            double bandaRelativaSuperior = (alvoComTaper.maxTss() - alvoComTaper.targetTss()) / alvoComTaper.targetTss();
+            assertThat(bandaRelativaSuperior).isCloseTo(0.25, offset(0.0001));
+        }
+
+        @Test
+        @DisplayName("aplicar com alvo pre-taper zero cai na tolerancia padrao do modulo (sem divisao por zero)")
+        void aplicarComAlvoZeroCaiNaToleranciaPadrao() {
+            WeeklyLoadTarget picoPreTaperZerado = new WeeklyLoadTarget(0.0, 0.0, 0.0, "cold-start zerado em contencao");
+
+            WeeklyLoadTarget alvoComTaper = taper.aplicar(picoPreTaperZerado, 10);
+
+            assertThat(alvoComTaper.targetTss()).isZero();
+            assertThat(alvoComTaper.minTss()).isZero();
+            assertThat(alvoComTaper.maxTss()).isZero();
+        }
     }
 
     @Nested

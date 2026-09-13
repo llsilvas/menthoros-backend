@@ -166,8 +166,11 @@ public class PlanoServiceImpl implements PlanoService {
             return null;
         }
         try {
+            // fix-cold-start-load-model: reusa o OnboardingContext resolvido pelo loader — antes ia
+            // Optional.empty() aqui, então o skeleton que guia o prompt nunca via calibrationStage/CTL
+            // de calibração (o regime cold-start só auditava depois de gerado, no estágio 2).
             return plannerShadowService.computarSkeleton(
-                    ctx.dados(), ctx.decisaoProgressao(), ctx.semanaInicio(), Optional.empty());
+                    ctx.dados(), ctx.decisaoProgressao(), ctx.semanaInicio(), ctx.onboardingContext());
         } catch (Exception e) {
             // Planner falha ANTES do LLM (design Decisao 3, matriz fail-open):
             //   fail-open=true  -> null => pipeline legado (1ª e unica geracao) + planner.fallback_legacy.count

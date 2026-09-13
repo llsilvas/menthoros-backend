@@ -94,9 +94,6 @@ public class PlanGenerationPersister {
     @Value("${onboarding.auto-approve.enabled:true}")
     private boolean autoApproveEnabled;
 
-    @Value("${onboarding.migrate-existing.enabled:true}")
-    private boolean migrateExistingEnabled;
-
     // planner-engine-enforcement §5: com enabled=true, o estagio 2 (compliance pos-redistribuicao)
     // roda como ultimo passo antes de aprovar/salvar. Default false — rollout gated (tasks 8.4).
     @Value("${planner-engine.enabled:false}")
@@ -143,7 +140,9 @@ public class PlanGenerationPersister {
                 periodo.inicio(), periodo.fim(), modoGeracao, planoDto.treinosPlanejados().size());
 
         UUID tenantId = TenantContext.getRequiredTenantId();
-        Optional<OnboardingContext> onboardingContext = resolverOnboardingContext(atleta.getId(), tenantId);
+        // Resolvido UMA vez em PlanGenerationContextLoader.load e repassado — o mesmo Optional que
+        // guiou (ou não) o skeleton pré-prompt, sem re-derivar aqui (evita divergência entre os dois).
+        Optional<OnboardingContext> onboardingContext = ctx.onboardingContext();
 
         // §5.3: com o planner ligado, os dias prescritos pelos SessionSlot guiam a redistribuicao.
         // O skeleton e recomputado (planWeek e puro/deterministico) para nao acoplar a redistribuicao
@@ -233,19 +232,6 @@ public class PlanGenerationPersister {
     }
 
     /**
-     * Resolve o {@code OnboardingContext} respeitando o kill-switch
-     * {@code onboarding.migrate-existing.enabled}: atleta com baseline sempre tem o contexto
-     * recalculado; atleta legado sem snapshot so e migrado com a flag ligada.
-     */
-    private Optional<OnboardingContext> resolverOnboardingContext(UUID atletaId, UUID tenantId) {
-        boolean atletaLegado = !onboardingService.possuiBaseline(atletaId, tenantId);
-        if (atletaLegado && !migrateExistingEnabled) {
-            return Optional.empty();
-        }
-        return Optional.of(onboardingService.montarContexto(atletaId, tenantId));
-    }
-
-    /**
      * Auto-aprova quando o atleta esta em Cenario A (EXCEPTION_ONLY) e o ciclo nao apresenta
      * risco; a dupla checagem com HIGH_RISK e defesa em profundidade, redundante por design.
      */
@@ -315,8 +301,10 @@ public class PlanGenerationPersister {
     }
 
     /**
-     * Para SEMANA_ATUAL, redistribui considerando dias ja passados; nos demais modos usa os
-     * treinos da LLM diretamente.
+     * SEMANA_ATUAL sempre redistribui (considera dias ja passados). PROXIMA_SEMANA redistribui
+     * apenas com {@code planner-engine.enabled=true} — aplicando a alocacao de dias do skeleton
+     * (longao ancorado, duras nao-adjacentes, leve pos-dura via {@code diasAlvoPorTipo}); com
+     * {@code enabled=false} preserva os dias do LLM byte-a-byte (CA9). Demais modos usam a LLM direto.
      */
     private List<TreinoPlanejadoLlmDto> obterTreinosParaPlano(List<TreinoPlanejadoLlmDto> treinosLlm,
                                                               Atleta atleta,
@@ -324,7 +312,9 @@ public class PlanGenerationPersister {
                                                               ModoGeracaoPlano modoGeracao,
                                                               DiaSemana diaPrioritarioLongo,
                                                               java.util.Map<TipoTreino, DiaSemana> diasAlvoPorTipo) {
-        List<TreinoPlanejadoLlmDto> treinos = ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracao)
+        boolean redistribui = ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracao)
+                || (plannerEnabled && ModoGeracaoPlano.PROXIMA_SEMANA.equals(modoGeracao));
+        List<TreinoPlanejadoLlmDto> treinos = redistribui
                 ? redistribuicaoHelper.redistribuirTreinos(
                         treinosLlm,
                         atleta.getDiasDisponiveis(),

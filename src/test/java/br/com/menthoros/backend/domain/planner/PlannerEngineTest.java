@@ -42,7 +42,8 @@ class PlannerEngineTest {
                     new AthleteBaseline(45.0, referencia.minusDays(90)),
                     0.8,
                     new PlanningPolicy(ReviewMode.EXCEPTION_ONLY, 0.1, false),
-                    constraints);
+                    constraints,
+                    null);
 
             PlannerInputSnapshot snapshot = snapshotBase(Optional.of(onboarding), false, null, null, -2.0, 45.0, 0);
 

@@ -23,7 +23,36 @@ public class LoadTargetResolver {
     private static final double STEP_BACK_FACTOR = 0.80; // reducao de 20%, dentro da banda 15-25%
     private static final double FAIXA_TOLERANCIA = 0.10;
 
+    // Regime cold-start (ADR-0012) — atleta em calibracao, sem PMC confiavel.
+    private static final double TETO_CTL_COLD_START = 40.0; // cap contra autodeclaracao inflada
+    private static final double PISO_COLD_START = 120.0; // TSS/sem, so em fase progressiva
+    private static final double BANDA_COLD_START = 0.25; // +-25% (vs +-10% do caminho normal)
+    private static final double RAMPA_OBSERVATION = 0.60;
+    private static final double RAMPA_CALIBRATION = 0.75;
+    private static final double RAMPA_STABILIZATION = 0.90;
+
+    // RECOVERY/POST_RACE reduzem de verdade (ADR-0012, Decisao 3) — distinto do taper por prova
+    // (TaperStrategy) e multiplicativo com a rampa do cold-start.
+    private static final double FATOR_REDUCAO = 0.5;
+
+    /**
+     * Caminho normal (PMC): atleta graduado da calibracao ou legado. Delega com {@code null},
+     * mantendo o comportamento historico (banda +-10%, teto de rampa por CTL).
+     */
     public WeeklyLoadTarget resolve(TrainingPhase phase, DecisaoProgressao decisao, ProgressaoHistoricoResumo historico) {
+        return resolve(phase, decisao, historico, null, null);
+    }
+
+    /**
+     * Regime cold-start quando {@code calibrationStage != null} (ADR-0012): o alvo parte do CTL de
+     * baseline capado em 40, rampado por estagio, com piso 120 (so em fase progressiva) e banda
+     * +-25%. Ausente, cai no caminho normal (CTL de PMC).
+     */
+    public WeeklyLoadTarget resolve(TrainingPhase phase, DecisaoProgressao decisao,
+            ProgressaoHistoricoResumo historico, CalibrationStage calibrationStage, Double ctlBaseline) {
+        if (calibrationStage != null) {
+            return resolveColdStart(phase, calibrationStage, ctlBaseline, decisao);
+        }
         double ctlAtual = historico.ctlAtual() != null ? historico.ctlAtual() : 0.0;
         double baselineWeeklyTss = ctlAtual * 7;
 
@@ -40,14 +69,18 @@ public class LoadTargetResolver {
             targetWeeklyTss = Math.min(targetWeeklyTss, tetoDeRampa);
         }
 
-        if (isFaseDeContencao(phase)) {
-            // Prova na semana / taper / pos-prova tem precedencia sobre a progressao (hierarquia P0,
+        if (isFaseDeReducao(phase)) {
+            // RECOVERY/POST_RACE reduzem de verdade sobre o baseline (ADR-0012) — nao apenas capam.
+            targetWeeklyTss = baselineWeeklyTss * FATOR_REDUCAO;
+        } else if (isFaseDeContencao(phase)) {
+            // Prova na semana / taper tem precedencia sobre a progressao (hierarquia P0,
             // design.md Decisao 6) — o desenho fino da curva de reducao fica com a TaperStrategy.
             targetWeeklyTss = Math.min(targetWeeklyTss, baselineWeeklyTss);
         }
 
         String rationale = decisao.motivo();
-        if (permiteAumento && historico.semanasProgressaoContinua() >= SEMANAS_PARA_STEP_BACK) {
+        if (permiteAumento && !isFaseDeReducao(phase)
+                && historico.semanasProgressaoContinua() >= SEMANAS_PARA_STEP_BACK) {
             targetWeeklyTss = targetWeeklyTss * STEP_BACK_FACTOR; // CA2
             rationale = "Step-back apos " + historico.semanasProgressaoContinua()
                     + " semanas consecutivas de progressao; " + rationale;
@@ -57,6 +90,38 @@ public class LoadTargetResolver {
         double max = targetWeeklyTss * (1 + FAIXA_TOLERANCIA);
 
         return new WeeklyLoadTarget(targetWeeklyTss, min, max, rationale);
+    }
+
+    private WeeklyLoadTarget resolveColdStart(TrainingPhase phase, CalibrationStage stage,
+            Double ctlBaseline, DecisaoProgressao decisao) {
+        double ctlUsado = Math.min(ctlBaseline != null ? ctlBaseline : 0.0, TETO_CTL_COLD_START);
+        double rampa = rampaPorEstagio(stage);
+        double fatorContencao = isFaseDeReducao(phase) ? FATOR_REDUCAO : 1.0; // multiplicativo com a rampa
+        double target = ctlUsado * 7 * rampa * fatorContencao;
+
+        boolean contencao = isFaseDeContencao(phase);
+        if (!contencao && target < PISO_COLD_START) {
+            target = PISO_COLD_START; // piso so em fase progressiva
+        }
+
+        double min = target * (1 - BANDA_COLD_START);
+        double max = target * (1 + BANDA_COLD_START);
+        String rationale = String.format(
+                "Cold-start %s (CTL baseline capado %.0f, rampa %.2f, contencao %.1f); %s",
+                stage, ctlUsado, rampa, fatorContencao, decisao.motivo());
+        return new WeeklyLoadTarget(target, min, max, rationale);
+    }
+
+    private double rampaPorEstagio(CalibrationStage stage) {
+        return switch (stage) {
+            case OBSERVATION -> RAMPA_OBSERVATION;
+            case CALIBRATION -> RAMPA_CALIBRATION;
+            case STABILIZATION -> RAMPA_STABILIZATION;
+        };
+    }
+
+    private boolean isFaseDeReducao(TrainingPhase phase) {
+        return phase == TrainingPhase.RECOVERY || phase == TrainingPhase.POST_RACE;
     }
 
     private boolean isFaseDeContencao(TrainingPhase phase) {

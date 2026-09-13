@@ -8,7 +8,7 @@ import br.com.menthoros.backend.services.onboarding.BaselineCalculator;
 import br.com.menthoros.backend.services.onboarding.BaselineResult;
 import br.com.menthoros.backend.services.onboarding.CalibrationEvaluation;
 import br.com.menthoros.backend.services.onboarding.CalibrationService;
-import br.com.menthoros.backend.services.onboarding.CalibrationStage;
+import br.com.menthoros.backend.domain.planner.CalibrationStage;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScoreResult;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScorer;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScorerInput;

@@ -1,4 +1,4 @@
-package br.com.menthoros.backend.services.onboarding;
+package br.com.menthoros.backend.domain.planner;
 
 /**
  * Estagio interno de {@code TrainingPhase.CALIBRATION} (design.md Decisao 5,

@@ -33,7 +33,7 @@ import br.com.menthoros.backend.services.onboarding.BaselineCalculator;
 import br.com.menthoros.backend.services.onboarding.BaselineResult;
 import br.com.menthoros.backend.services.onboarding.CalibrationEvaluation;
 import br.com.menthoros.backend.services.onboarding.CalibrationService;
-import br.com.menthoros.backend.services.onboarding.CalibrationStage;
+import br.com.menthoros.backend.domain.planner.CalibrationStage;
 import br.com.menthoros.backend.services.onboarding.CalibrationStatusResult;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScoreResult;
 import br.com.menthoros.backend.services.onboarding.ConfidenceScorer;
@@ -120,16 +120,17 @@ public class OnboardingServiceImpl implements OnboardingService {
 
         PlanningPolicy planningPolicy = planningPolicyResolver.resolver(confidenceScore.tier());
 
-        persistirBaselineSnapshot(atletaId, tenantId, baseline, confidenceScore);
+        AthleteBaselineState estado = persistirBaselineSnapshot(atletaId, tenantId, baseline, confidenceScore);
+        CalibrationStage calibrationStage = resolverCalibrationStage(estado);
 
         AthleteBaseline athleteBaseline = new AthleteBaseline(baseline.ctl(), LocalDate.now());
         AthleteConstraints constraints = montarConstraints(atleta, perfil);
         double confidenceScoreNormalizado = confidenceScore.scoreBruto() / 100.0;
 
-        log.info("OnboardingContext montado para atleta {}: ctl={}, confidenceScore={}, tier={}",
-                atletaId, baseline.ctl(), confidenceScoreNormalizado, confidenceScore.tier());
+        log.info("OnboardingContext montado para atleta {}: ctl={}, confidenceScore={}, tier={}, calibrationStage={}",
+                atletaId, baseline.ctl(), confidenceScoreNormalizado, confidenceScore.tier(), calibrationStage);
 
-        return new OnboardingContext(athleteBaseline, confidenceScoreNormalizado, planningPolicy, constraints);
+        return new OnboardingContext(athleteBaseline, confidenceScoreNormalizado, planningPolicy, constraints, calibrationStage);
     }
 
     @Override
@@ -441,12 +442,17 @@ public class OnboardingServiceImpl implements OnboardingService {
      * evolução do score durante a calibração, dado necessário para calibrar as próprias
      * heurísticas hardcoded desta change com dado real de produção.
      */
-    private void persistirBaselineSnapshot(UUID atletaId, UUID tenantId, BaselineResult baseline, ConfidenceScoreResult confidenceScore) {
+    private AthleteBaselineState persistirBaselineSnapshot(UUID atletaId, UUID tenantId, BaselineResult baseline, ConfidenceScoreResult confidenceScore) {
         Instant calculatedAt = Instant.now();
 
         AthleteBaselineState estado = athleteBaselineStateRepository
                 .findByAtletaIdAndTenantId(atletaId, tenantId)
                 .orElseGet(AthleteBaselineState::new);
+        // Distingue "nunca existiu linha" (id ainda nulo, atleta genuinamente novo) de "ja existe
+        // linha, mas graduou" (calibracaoIniciadaEm foi zerada por avaliarCalibracaoSeAplicavel,
+        // id permanece nao-nulo) — sem isso, um atleta que graduou com tier != A reiniciava a
+        // calibracao no proximo montarContexto (fix-cold-start-load-model: saida deve ser definitiva).
+        boolean atletaNuncaTeveEstado = estado.getId() == null;
 
         if (estado.getAtleta() == null) {
             Atleta ref = new Atleta();
@@ -464,7 +470,7 @@ public class OnboardingServiceImpl implements OnboardingService {
         estado.setConfidenceTier(confidenceScore.tier().name());
         estado.setCalculatedAt(calculatedAt);
 
-        if (confidenceScore.tier() != ConfidenceTier.A && estado.getCalibracaoIniciadaEm() == null) {
+        if (atletaNuncaTeveEstado && confidenceScore.tier() != ConfidenceTier.A) {
             estado.setCalibracaoIniciadaEm(calculatedAt);
         }
 
@@ -485,5 +491,22 @@ public class OnboardingServiceImpl implements OnboardingService {
         historico.setCalculatedAt(calculatedAt);
 
         athleteBaselineHistoryRepository.save(historico);
+
+        return estado;
+    }
+
+    /**
+     * Resolve o {@link CalibrationStage} para o regime cold-start do modelo de carga (ADR-0012):
+     * presente enquanto o atleta está em calibração ({@code calibracaoIniciadaEm != null}), {@code null}
+     * quando graduou (a saída zera o campo) ou nunca calibrou (tier A). {@code null} sinaliza ao
+     * {@code LoadTargetResolver} o caminho normal (CTL de PMC, sem rampa/cap).
+     */
+    private CalibrationStage resolverCalibrationStage(AthleteBaselineState estado) {
+        Instant iniciada = estado.getCalibracaoIniciadaEm();
+        if (iniciada == null) {
+            return null;
+        }
+        int semana = calcularSemanaDesdeInicioCalibracao(iniciada, LocalDate.now());
+        return calibrationService.determinarEstagio(semana);
     }
 }

@@ -1,7 +1,7 @@
 package br.com.menthoros.backend.dto.output;
 
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
-import br.com.menthoros.backend.services.onboarding.CalibrationStage;
+import br.com.menthoros.backend.domain.planner.CalibrationStage;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 

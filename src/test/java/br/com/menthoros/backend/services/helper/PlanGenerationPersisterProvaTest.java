@@ -41,6 +41,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
@@ -162,6 +163,41 @@ class PlanGenerationPersisterProvaTest {
         }
 
         @Test
+        @DisplayName("carga fora da faixa (cold-start) + fail-open=true: FAILED + review, persiste (CA6)")
+        void cargaColdStartFailOpen() throws Exception {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", true);
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+                    .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
+                            br.com.menthoros.backend.domain.compliance.PlannerViolationKey.TSS_FORA_DA_FAIXA,
+                            "carga semanal fora da banda +-25% do cold-start")));
+            PlanoSemanal plano = new PlanoSemanal();
+
+            invoke(plano);
+
+            assertThat(plano.getPlannerComplianceStatus())
+                    .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FAILED.name());
+            assertThat(plano.getPlannerRequiresCoachReview()).isTrue();
+            assertThat(postFailureCount()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("carga fora da faixa (cold-start) + fail-open=false: 422, nada persistido (CA6)")
+        void cargaColdStartFailClosed() {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", false);
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+                    .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
+                            br.com.menthoros.backend.domain.compliance.PlannerViolationKey.TSS_FORA_DA_FAIXA,
+                            "carga semanal fora da banda +-25% do cold-start")));
+            PlanoSemanal plano = new PlanoSemanal();
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> invoke(plano))
+                    .isInstanceOf(br.com.menthoros.backend.exception.DomainRuleViolationException.class)
+                    .hasMessageContaining("TSS_FORA_DA_FAIXA");
+            assertThat(plano.getPlannerComplianceStatus()).isNull();
+            assertThat(postFailureCount()).isZero();
+        }
+
+        @Test
         @DisplayName("violacao + fail-open=false: erro de dominio, nada mutado, sem metrica")
         void violacaoFailClosed() {
             org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", false);
@@ -189,7 +225,7 @@ class PlanGenerationPersisterProvaTest {
                         1.0,
                         new br.com.menthoros.backend.domain.planner.PlanningPolicy(
                                 br.com.menthoros.backend.domain.planner.ReviewMode.EXCEPTION_ONLY, 0.0, false),
-                        new br.com.menthoros.backend.domain.planner.AthleteConstraints(List.of(), null, null, List.of()));
+                        new br.com.menthoros.backend.domain.planner.AthleteConstraints(List.of(), null, null, List.of()), null);
 
         private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeletonSemReview() {
             return new br.com.menthoros.backend.domain.planner.WeekPlanSkeleton(
@@ -253,7 +289,7 @@ class PlanGenerationPersisterProvaTest {
             DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, metaDadosSemId);
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
 
             PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
 
@@ -279,7 +315,7 @@ class PlanGenerationPersisterProvaTest {
             DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
 
             PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
 
@@ -316,7 +352,7 @@ class PlanGenerationPersisterProvaTest {
                             "OK", "Manter", null, false, false, false, false, List.of()));
             when(planoMetadadosRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
 
             persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
 
@@ -327,6 +363,55 @@ class PlanGenerationPersisterProvaTest {
     }
 
     // ---- helpers ----
+
+    @Nested
+    @DisplayName("redistribuicao no PROXIMA_SEMANA (fix-cold-start-load-model §4.1)")
+    class RedistribuicaoProximaSemana {
+
+        @Test
+        @DisplayName("enabled=true: roda a redistribuicao tambem no PROXIMA_SEMANA")
+        void enabledRedistribuiProximaSemana() {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerEnabled", true);
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+
+            // skeleton indisponivel -> diasAlvo vazio (fallback); nao impede a redistribuicao de rodar
+            when(plannerShadowService.computarSkeleton(any(), any(), any(), any()))
+                    .thenThrow(new RuntimeException("skeleton indisponivel no teste"));
+            when(redistribuicaoHelper.redistribuirTreinos(anyList(), any(), any(), any(), any(),
+                    eq(ModoGeracaoPlano.PROXIMA_SEMANA), any(), anyMap())).thenReturn(List.of(longo));
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+
+            verify(redistribuicaoHelper).redistribuirTreinos(anyList(), any(), any(), any(), any(),
+                    eq(ModoGeracaoPlano.PROXIMA_SEMANA), any(), anyMap());
+        }
+
+        @Test
+        @DisplayName("enabled=false: PROXIMA_SEMANA byte-a-byte, sem redistribuir (CA9)")
+        void disabledPreservaLlmProximaSemana() {
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+
+            verify(redistribuicaoHelper, org.mockito.Mockito.never())
+                    .redistribuirTreinos(anyList(), any(), any(), any(), any(), any(), any(), anyMap());
+        }
+    }
 
     private Atleta atletaComAssessoria() {
         Assessoria assessoria = new Assessoria();
