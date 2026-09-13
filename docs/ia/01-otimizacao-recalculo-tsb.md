@@ -17,6 +17,18 @@ autodescreve como custoso no log:
 O disparo vem de `ActivityDedupServiceImpl`, quando uma atividade chega duplicada por mais de
 uma fonte (Strava, Garmin, intervals.icu) e precisa ser reconciliada.
 
+Segunda ocorrência real, capturada após a limpeza dos logs para a nova geração do atleta
+Leandro (2026-09-13, mesmo dia):
+
+```
+2026-09-13 17:54:38,964 virtual-169 WARN  b.c.m.b.services.impl.TsbServiceImpl [] [] - 🔄 RECALCULANDO HISTÓRICO COMPLETO para atleta d83c4c31-607b-4370-8bfe-de270ad33121 - operação custosa!
+2026-09-13 17:54:39,074 virtual-169 INFO  b.c.m.b.services.impl.TsbServiceImpl [] [] - 📅 Intervalo de recálculo: 2025-08-05 até 2026-09-13
+2026-09-13 17:54:39,074 virtual-169 INFO  b.c.m.b.services.impl.TsbServiceImpl [] [] - 📊 Recalculando 405 dias em 14 blocos de até 30 dias (de 2025-08-05 até 2026-09-13)
+```
+
+Mesmo atleta (`d83c4c31`) e mesmo padrão da primeira ocorrência: 405 dias de histórico
+reprocessados numa única reconciliação, minutos depois da sessão original.
+
 ## Evidência
 
 Na sessão do HomeLab analisada (boot iniciado 17:17:37, 5 gerações reais de plano entre
