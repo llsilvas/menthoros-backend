@@ -8,7 +8,7 @@ package br.com.menthoros.backend.domain.compliance;
  */
 public final class PromptVersion {
 
-    public static final String CURRENT = "plano-v1";
+    public static final String CURRENT = "plano-v2";
 
     private PromptVersion() {
     }
