@@ -266,6 +266,42 @@ class WorkoutAnalysisListenerTest {
     }
 
     @Test
+    void publica_tenant_do_evento_durante_a_chamada_ao_llm_e_limpa_depois() {
+        // add-plan-generation-ledger CA12: sem isso o custo desta chamada ficaria sem assessoria no ledger
+        stubCaminhoCompleto();
+        java.util.concurrent.atomic.AtomicReference<UUID> vistoDentro = new java.util.concurrent.atomic.AtomicReference<>();
+        when(athleteMessageGenerator.gerar(anyString(), any())).thenAnswer(inv -> {
+            vistoDentro.set(br.com.menthoros.backend.multitenancy.TenantContext.getTenantId());
+            return Optional.empty();
+        });
+
+        listener.onTreinoRegistrado(event);
+
+        assertThat(vistoDentro.get()).isEqualTo(tenantId);
+        assertThat(br.com.menthoros.backend.multitenancy.TenantContext.getTenantId()).isNull();
+    }
+
+    @Test
+    void limpa_tenant_mesmo_quando_a_analise_falha() {
+        stubCaminhoCompleto();
+        when(promptDataBuilder.build(any())).thenThrow(new IllegalStateException("prompt quebrado"));
+
+        listener.onTreinoRegistrado(event);
+
+        assertThat(br.com.menthoros.backend.multitenancy.TenantContext.getTenantId()).isNull();
+    }
+
+    @Test
+    void limpa_tenant_quando_sai_cedo_sem_treino() {
+        when(analiseRepository.existsByTreinoRealizadoIdAndStatus(treinoId, AnaliseStatus.COMPLETED)).thenReturn(false);
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.empty());
+
+        listener.onTreinoRegistrado(event);
+
+        assertThat(br.com.menthoros.backend.multitenancy.TenantContext.getTenantId()).isNull();
+    }
+
+    @Test
     void persiste_bloco_do_atleta_quando_valido() {
         AnaliseWorkoutRawDto raw = stubCaminhoCompleto();
         when(athleteMessageGenerator.gerar(anyString(), eq(raw.primaryCause())))

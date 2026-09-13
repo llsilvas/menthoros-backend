@@ -81,6 +81,8 @@ class PlanoServiceImplTest {
     @Mock
     private IaService iaService;
     @Mock
+    private br.com.menthoros.backend.services.helper.LlmCallLedger llmCallLedger;
+    @Mock
     private ProgressaoTreinoService progressaoTreinoService;
     @Mock
     private AtletaRepository atletaRepository;
@@ -162,7 +164,7 @@ class PlanoServiceImplTest {
         planoService = new PlanoServiceImpl(iaService, llmConcurrencyLimiter, contextLoader, persister, planoSemanalRepository,
                 treinoRealizadoRepository, planoSemanalMapper, eventPublisher, aiWorkoutAnalysisRepository,
                 workoutAnalysisProperties, plannerShadowService,
-                meterRegistry);
+                meterRegistry, llmCallLedger);
 
         tenantId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
@@ -194,7 +196,7 @@ class PlanoServiceImplTest {
             var dados = new br.com.menthoros.backend.dto.input.DadosPlanoDto(
                     atleta, LocalDate.now(), null, Collections.emptyList(), criarPlanoMetaDadosMock());
             return new br.com.menthoros.backend.services.helper.PlanGenerationContext(
-                    dados, null, LocalDate.of(2026, 9, 7), null, null, onboardingContext);
+                    dados, null, LocalDate.of(2026, 9, 7), null, null, onboardingContext, java.util.UUID.randomUUID());
         }
 
         private br.com.menthoros.backend.services.helper.SkeletonPrePrompt invoke() throws Exception {
@@ -544,6 +546,238 @@ class PlanoServiceImplTest {
     }
 
     /** Stubs do caminho feliz até o save do plano — compartilhados pelos testes de conflito. */
+    @Nested
+    @DisplayName("desfecho da requisição no ledger (add-plan-generation-ledger, D6)")
+    // Lenient: o helper stubsDeGeracaoCompleta cobre o caminho inteiro e vários cenários abortam cedo.
+    @org.mockito.junit.jupiter.MockitoSettings(strictness = org.mockito.quality.Strictness.LENIENT)
+    class DesfechoNoLedger {
+
+        private void stubsAteAPersistencia(UUID atletaId) {
+            stubsDeGeracaoCompleta(atletaId);
+            when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenAnswer(inv -> inv.getArgument(0));
+        }
+
+        private org.springframework.dao.DataIntegrityViolationException violacaoDoIndice() {
+            return new org.springframework.dao.DataIntegrityViolationException("could not execute statement",
+                    new RuntimeException("ERROR: duplicate key value violates unique constraint \""
+                            + br.com.menthoros.backend.exception.PlanoJaExistenteException.INDICE_PLANO_ATIVO + "\""));
+        }
+
+        @Test
+        @DisplayName("plano persistido → PERSISTED com o id da requisição que foi ao plano")
+        void persistido() {
+            UUID atletaId = UUID.randomUUID();
+            stubsAteAPersistencia(atletaId);
+            org.mockito.ArgumentCaptor<PlanoSemanal> salvo = org.mockito.ArgumentCaptor.forClass(PlanoSemanal.class);
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA);
+            }
+
+            verify(planoSemanalRepository).save(salvo.capture());
+            org.mockito.ArgumentCaptor<UUID> req = org.mockito.ArgumentCaptor.forClass(UUID.class);
+            verify(llmCallLedger).registrarDesfecho(req.capture(),
+                    eq(br.com.menthoros.backend.ai.ledger.GenerationOutcome.PERSISTED));
+            assertNotNull(req.getValue());
+            assertEquals(req.getValue(), salvo.getValue().getGenerationRequestId());
+        }
+
+        @Test
+        @DisplayName("corrida perdida no índice da V52 depois do LLM → CONFLICT")
+        void conflitoNoIndice() {
+            UUID atletaId = UUID.randomUUID();
+            stubsDeGeracaoCompleta(atletaId);
+            when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenThrow(violacaoDoIndice());
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                assertThrows(br.com.menthoros.backend.exception.PlanoJaExistenteException.class,
+                        () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+            }
+
+            verify(llmCallLedger).registrarDesfecho(any(UUID.class),
+                    eq(br.com.menthoros.backend.ai.ledger.GenerationOutcome.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("re-checagem do persister acha plano ativo depois do LLM → CONFLICT")
+        void conflitoNaRechecagem() {
+            UUID atletaId = UUID.randomUUID();
+            stubsDeGeracaoCompleta(atletaId);
+            // fast-path (antes do LLM) diz que não existe; a re-checagem na transação de escrita diz que existe
+            when(planoSemanalRepository.existePlanoAtivoNaSemana(eq(atletaId), any(), any()))
+                    .thenReturn(false).thenReturn(true);
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                assertThrows(br.com.menthoros.backend.exception.PlanoJaExistenteException.class,
+                        () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+            }
+
+            verify(iaService).geraPlanoSemanalAvancado(any(), any(), any(), any(), any(), any(), any(), any());
+            verify(llmCallLedger).registrarDesfecho(any(UUID.class),
+                    eq(br.com.menthoros.backend.ai.ledger.GenerationOutcome.CONFLICT));
+        }
+
+        @Test
+        @DisplayName("regra de domínio violada na persistência (pós-LLM) → REJECTED_POST_LLM")
+        void rejeitadoPosLlm() {
+            UUID atletaId = UUID.randomUUID();
+            stubsDeGeracaoCompleta(atletaId);
+            // A garantia da prova devolve lista vazia → validarTreinosGerados lança regra de domínio
+            // depois de o LLM ter sido aceito (mesma classe de erro do estágio 2 fail-closed).
+            when(provaNoPlanoService.garantirProvasNaSemana(any(), any(), any(), any())).thenReturn(java.util.List.of());
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                assertThrows(DomainRuleViolationException.class,
+                        () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+            }
+
+            verify(llmCallLedger).registrarDesfecho(any(UUID.class),
+                    eq(br.com.menthoros.backend.ai.ledger.GenerationOutcome.REJECTED_POST_LLM));
+        }
+
+        @Test
+        @DisplayName("erro inesperado na persistência → PERSIST_ERROR, e a exceção segue como 503")
+        void erroDePersistencia() {
+            UUID atletaId = UUID.randomUUID();
+            stubsDeGeracaoCompleta(atletaId);
+            when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenThrow(new RuntimeException("banco fora"));
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                assertThrows(LLMException.class,
+                        () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+            }
+
+            verify(llmCallLedger).registrarDesfecho(any(UUID.class),
+                    eq(br.com.menthoros.backend.ai.ledger.GenerationOutcome.PERSIST_ERROR));
+        }
+
+        @Test
+        @DisplayName("outra constraint violada na persistência → PERSIST_ERROR (não é conflito de plano)")
+        void outraConstraint() {
+            UUID atletaId = UUID.randomUUID();
+            stubsDeGeracaoCompleta(atletaId);
+            when(planoSemanalRepository.save(any(PlanoSemanal.class))).thenThrow(
+                    new org.springframework.dao.DataIntegrityViolationException("x",
+                            new RuntimeException("violates unique constraint \"uk_outra\"")));
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                assertThrows(org.springframework.dao.DataIntegrityViolationException.class,
+                        () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+            }
+
+            verify(llmCallLedger).registrarDesfecho(any(UUID.class),
+                    eq(br.com.menthoros.backend.ai.ledger.GenerationOutcome.PERSIST_ERROR));
+        }
+
+        @Test
+        @DisplayName("LLM falha antes de aceitar → nenhum desfecho (a linha da chamada já diz tudo)")
+        void semDesfechoQuandoLlmFalha() {
+            UUID atletaId = UUID.randomUUID();
+            stubsDeGeracaoCompleta(atletaId);
+            when(iaService.geraPlanoSemanalAvancado(any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenThrow(new LLMException("503"));
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                assertThrows(LLMException.class,
+                        () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+            }
+
+            verify(llmCallLedger, never()).registrarDesfecho(any(), any());
+        }
+
+        @Test
+        @DisplayName("LLM devolve nulo → nenhum desfecho")
+        void semDesfechoQuandoLlmDevolveNulo() {
+            UUID atletaId = UUID.randomUUID();
+            stubsDeGeracaoCompleta(atletaId);
+            when(iaService.geraPlanoSemanalAvancado(any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenReturn(null);
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                assertThrows(LLMException.class,
+                        () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+            }
+
+            verify(llmCallLedger, never()).registrarDesfecho(any(), any());
+        }
+
+        @Test
+        @DisplayName("plano ativo detectado antes do LLM → nenhum desfecho e nenhuma chamada")
+        void semDesfechoQuandoAbortaAntesDoLlm() {
+            UUID atletaId = UUID.randomUUID();
+            stubsDeGeracaoCompleta(atletaId);
+            when(planoSemanalRepository.existePlanoAtivoNaSemana(eq(atletaId), any(), any())).thenReturn(true);
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                assertThrows(br.com.menthoros.backend.exception.PlanoJaExistenteException.class,
+                        () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+            }
+
+            verifyNoInteractions(iaService);
+            verify(llmCallLedger, never()).registrarDesfecho(any(), any());
+        }
+
+        @Test
+        @DisplayName("loader falha (atleta inexistente) → nenhum desfecho")
+        void semDesfechoQuandoLoaderFalha() {
+            UUID atletaId = UUID.randomUUID();
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThrows(br.com.menthoros.backend.exception.DomainNotFoundException.class,
+                    () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+
+            verify(llmCallLedger, never()).registrarDesfecho(any(), any());
+        }
+
+        @Test
+        @DisplayName("escopo da requisição fica aberto durante o IaService, com o id do contexto e o nome do atleta, e fecha depois")
+        void escopoDaRequisicaoEmVoltaDoIaService() {
+            UUID atletaId = UUID.randomUUID();
+            stubsAteAPersistencia(atletaId);
+            java.util.concurrent.atomic.AtomicReference<java.util.Optional<UUID>> vistoDentro = new java.util.concurrent.atomic.AtomicReference<>();
+            when(iaService.geraPlanoSemanalAvancado(any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenAnswer(inv -> {
+                        vistoDentro.set(br.com.menthoros.backend.ai.ledger.LlmCallScope.currentGenerationRequestId());
+                        return criarPlanoSemanalLlmDto();
+                    });
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                PlanoSemanal salvo = planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA);
+                assertEquals(vistoDentro.get().orElseThrow(), salvo.getGenerationRequestId());
+            }
+
+            assertTrue(br.com.menthoros.backend.ai.ledger.LlmCallScope.currentGenerationRequestId().isEmpty(),
+                    "o escopo tem de fechar ao sair do IaService");
+        }
+
+        @Test
+        @DisplayName("escopo da requisição fecha mesmo quando o IaService lança")
+        void escopoFechaNaFalha() {
+            UUID atletaId = UUID.randomUUID();
+            stubsDeGeracaoCompleta(atletaId);
+            when(iaService.geraPlanoSemanalAvancado(any(), any(), any(), any(), any(), any(), any(), any()))
+                    .thenThrow(new LLMException("503"));
+
+            try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+                hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+                assertThrows(LLMException.class,
+                        () -> planoService.gerarPlanoTreino(atletaId, ModoGeracaoPlano.PROXIMA_SEMANA));
+            }
+
+            assertTrue(br.com.menthoros.backend.ai.ledger.LlmCallScope.currentGenerationRequestId().isEmpty());
+        }
+    }
+
     private void stubsDeGeracaoCompleta(UUID atletaId) {
         Atleta atleta = criarAtletaMock(atletaId);
         PlanoMetaDados metaDados = criarPlanoMetaDadosMock();

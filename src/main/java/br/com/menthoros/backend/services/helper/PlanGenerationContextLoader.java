@@ -104,6 +104,10 @@ public class PlanGenerationContextLoader {
     @Transactional
     public PlanGenerationContext load(UUID atletaId, ModoGeracaoPlano modoGeracao) {
         UUID tenantId = TenantContext.getRequiredTenantId();
+        // A Requisição de geração começa aqui (fase 1 das três): o id agrupa as Chamadas LLM no
+        // ledger e é gravado no plano persistido (add-plan-generation-ledger, D4).
+        UUID generationRequestId = UUID.randomUUID();
+        log.info("[llm-ledger] requisição de geração {} para atleta {}", generationRequestId, atletaId);
 
         DadosPlanoDto dados = prepararDadosPlano(atletaId, tenantId);
         Atleta atleta = dados.atleta();
@@ -143,7 +147,8 @@ public class PlanGenerationContextLoader {
         Optional<OnboardingContext> onboardingContext = resolverOnboardingContext(atletaId, tenantId);
 
         return new PlanGenerationContext(
-                dados, decisaoProgressao, semanaInicio, revisaoConsumida, proximaProva, onboardingContext);
+                dados, decisaoProgressao, semanaInicio, revisaoConsumida, proximaProva, onboardingContext,
+                generationRequestId);
     }
 
     /**

@@ -160,6 +160,8 @@ public class PlanGenerationPersister {
         PlanoMetaDados metaDados = prepararMetadados(dadosPlano, volumePlanejadoRecalculado);
 
         PlanoSemanal plano = criarPlanoComTreinos(planoDto, atleta, periodo, metaDados, treinos);
+        // Ligação plano ↔ chamadas LLM por join (add-plan-generation-ledger, D4): mesmo save, sem UPDATE.
+        plano.setGenerationRequestId(ctx.generationRequestId());
 
         // Shadow do PlannerEngine (deterministic-planner-engine, Decisao 10): roda apos a geracao
         // legada, nunca altera plano/prompt/persistencia (CA12); falha isolada internamente (CA11).
