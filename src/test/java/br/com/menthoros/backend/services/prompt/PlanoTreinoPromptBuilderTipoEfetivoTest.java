@@ -82,7 +82,7 @@ class PlanoTreinoPromptBuilderTipoEfetivoTest {
 
         try (MockedStatic<LocalDate> now = mockStatic(LocalDate.class, CALLS_REAL_METHODS)) {
             now.when(LocalDate::now).thenReturn(HOJE);
-            return builder.buildOptimizedPrompt(atleta, meta, null, INICIO_SEMANA, diasUteis()).prompt();
+            return builder.buildOptimizedPrompt(atleta, meta, null, INICIO_SEMANA, diasUteis()).user();
         }
     }
 

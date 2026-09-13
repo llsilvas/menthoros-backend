@@ -67,13 +67,14 @@ class PlanoTreinoPromptBuilderGoldenTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("arquetipos")
-    @DisplayName("prompt do arquétipo bate com o golden-master")
+    @DisplayName("user do arquétipo bate com o golden-master; system é byte-idêntico entre arquétipos (CA1)")
     void promptCongeladoBateComGolden(Arquetipo arq) throws IOException {
-        String prompt = montarPrompt(arq);
-        assertGolden(arq.nome(), prompt);
+        PlanoTreinoPromptBuilder.PromptGerado gerado = montarPrompt(arq);
+        assertGolden("system", gerado.system());
+        assertGolden(arq.nome() + ".user", gerado.user());
     }
 
-    private String montarPrompt(Arquetipo arq) {
+    private PlanoTreinoPromptBuilder.PromptGerado montarPrompt(Arquetipo arq) {
         TreinoHistoricoProvider provider = mock(TreinoHistoricoProvider.class);
         when(provider.prepararContexto(any())).thenReturn(arq.contexto());
 
@@ -82,7 +83,7 @@ class PlanoTreinoPromptBuilderGoldenTest {
         try (MockedStatic<LocalDate> now = mockStatic(LocalDate.class, CALLS_REAL_METHODS)) {
             now.when(LocalDate::now).thenReturn(PlanoPromptArquetipos.HOJE);
             return builder.buildOptimizedPrompt(
-                    arq.atleta(), arq.meta(), arq.prova(), arq.inicioSemana(), arq.diasEfetivos()).prompt();
+                    arq.atleta(), arq.meta(), arq.prova(), arq.inicioSemana(), arq.diasEfetivos());
         }
     }
 
@@ -127,7 +128,7 @@ class PlanoTreinoPromptBuilderGoldenTest {
      * template mudar sem este arquivo acompanhar — o sinal de que falta subir {@code PromptVersion}.
      */
     private static void gravarHashDoTemplate() throws IOException {
-        String template = new ClassPathResource("prompts/plano-treino-otimizado-claude.txt")
+        String template = new ClassPathResource("prompts/plano-treino-system.txt")
                 .getContentAsString(StandardCharsets.UTF_8);
         Files.writeString(SRC_GOLDEN_DIR.resolve("prompt.sha256"),
                 PromptHashCalculator.sha256(template) + System.lineSeparator(), StandardCharsets.UTF_8);

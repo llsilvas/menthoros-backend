@@ -118,7 +118,7 @@ class IaServiceImplSchemaTest {
         int schemaMax = (int) treinos(schema).get("maxItems");
 
         String template = new String(new org.springframework.core.io.ClassPathResource(
-                "prompts/plano-treino-otimizado-claude.txt").getInputStream().readAllBytes(),
+                "prompts/plano-treino-system.txt").getInputStream().readAllBytes(),
                 java.nio.charset.StandardCharsets.UTF_8);
 
         // O template deve declarar exatamente o teto do schema — divergir aqui quebra o teste (CA10).

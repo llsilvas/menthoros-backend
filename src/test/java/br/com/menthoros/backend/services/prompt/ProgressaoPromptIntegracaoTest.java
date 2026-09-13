@@ -53,7 +53,7 @@ class ProgressaoPromptIntegracaoTest {
             now.when(LocalDate::now).thenReturn(PlanoPromptArquetipos.HOJE);
             return builder.buildOptimizedPrompt(
                     arq.atleta(), arq.meta(), arq.prova(),
-                    arq.inicioSemana(), arq.diasEfetivos(), decisao).prompt();
+                    arq.inicioSemana(), arq.diasEfetivos(), decisao).user();
         }
     }
 }
