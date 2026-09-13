@@ -336,7 +336,10 @@ public class IaServiceImpl implements IaService {
                 : null;
 
         var promptGerado = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos, decisaoProgressao, revisaoConsumida, skeleton);
-        String prompt = promptGerado.prompt();
+        // system é byte-idêntico entre tentativas — capturado aqui e aplicado direto no
+        // ChatClient; nunca passa pelo PlanoResilienceService, então o retry (que só reescreve o
+        // `user` com o feedback de correção) não pode divergir o cache de prefixo (CA4).
+        String system = promptGerado.system();
 
         ChatClient chatClient = modelRouter.route(TaskComplexity.PLANO);
         log.info("Geração de plano (avançado) roteada via TaskComplexity.PLANO (bean gpt4oPlanoClient)");
@@ -351,14 +354,15 @@ public class IaServiceImpl implements IaService {
             PlanoLlmLedgerHook.Sessao sessao = ledgerHook.novaSessao();
             plano = planoResilienceService.gerarComResiliencia(
                     t -> sessao.chamar(t.numero(), () -> {
-                        var resposta = chatClient.prompt().user(t.prompt()).options(defaultJsonSchemaOptions())
+                        var resposta = chatClient.prompt().system(system).user(t.prompt())
+                                .options(defaultJsonSchemaOptions())
                                 .call().responseEntity(PlanoSemanalLlmDto.class);
                         llmUsageLogger.registrar(resposta.getResponse()); // best-effort, nunca lança
                         return resposta.getEntity();
                     }),
                     p -> sessao.validar(() -> aplicarComplianceEstagio1(
                             validarENormalizarPlanoGerado(p, atleta.getId()), atleta, skeleton, inicioSemana)),
-                    prompt);
+                    promptGerado.user());
         } catch (DomainRuleViolationException e) {
             throw e; // falha estrutural final → mensagem ao treinador (não re-empacotar como 503)
         } catch (Exception e) {
