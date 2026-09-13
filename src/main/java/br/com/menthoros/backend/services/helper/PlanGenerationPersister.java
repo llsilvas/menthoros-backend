@@ -94,9 +94,6 @@ public class PlanGenerationPersister {
     @Value("${onboarding.auto-approve.enabled:true}")
     private boolean autoApproveEnabled;
 
-    @Value("${onboarding.migrate-existing.enabled:true}")
-    private boolean migrateExistingEnabled;
-
     // planner-engine-enforcement §5: com enabled=true, o estagio 2 (compliance pos-redistribuicao)
     // roda como ultimo passo antes de aprovar/salvar. Default false — rollout gated (tasks 8.4).
     @Value("${planner-engine.enabled:false}")
@@ -143,7 +140,9 @@ public class PlanGenerationPersister {
                 periodo.inicio(), periodo.fim(), modoGeracao, planoDto.treinosPlanejados().size());
 
         UUID tenantId = TenantContext.getRequiredTenantId();
-        Optional<OnboardingContext> onboardingContext = resolverOnboardingContext(atleta.getId(), tenantId);
+        // Resolvido UMA vez em PlanGenerationContextLoader.load e repassado — o mesmo Optional que
+        // guiou (ou não) o skeleton pré-prompt, sem re-derivar aqui (evita divergência entre os dois).
+        Optional<OnboardingContext> onboardingContext = ctx.onboardingContext();
 
         // §5.3: com o planner ligado, os dias prescritos pelos SessionSlot guiam a redistribuicao.
         // O skeleton e recomputado (planWeek e puro/deterministico) para nao acoplar a redistribuicao
@@ -230,19 +229,6 @@ public class PlanGenerationPersister {
                 planoSalvo.getSemanaInicio(),
                 planoSalvo.getConsumedReview().getId(),
                 planoSalvo.getId()));
-    }
-
-    /**
-     * Resolve o {@code OnboardingContext} respeitando o kill-switch
-     * {@code onboarding.migrate-existing.enabled}: atleta com baseline sempre tem o contexto
-     * recalculado; atleta legado sem snapshot so e migrado com a flag ligada.
-     */
-    private Optional<OnboardingContext> resolverOnboardingContext(UUID atletaId, UUID tenantId) {
-        boolean atletaLegado = !onboardingService.possuiBaseline(atletaId, tenantId);
-        if (atletaLegado && !migrateExistingEnabled) {
-            return Optional.empty();
-        }
-        return Optional.of(onboardingService.montarContexto(atletaId, tenantId));
     }
 
     /**

@@ -19,15 +19,18 @@ import br.com.menthoros.backend.exception.PlanoJaExistenteException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.ProgressaoTreinoService;
+import br.com.menthoros.backend.services.onboarding.OnboardingService;
 import br.com.menthoros.backend.services.prompt.WeeklyReviewPromptProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -64,6 +67,12 @@ public class PlanGenerationContextLoader {
     private final PlanoSemanalMapper planoSemanalMapper;
     private final ProgressaoTreinoService progressaoTreinoService;
     private final WeeklyReviewPromptProvider weeklyReviewPromptProvider;
+    private final OnboardingService onboardingService;
+
+    // athlete-onboarding-baseline: atleta legado sem snapshot só é migrado com a flag ligada — mesmo
+    // kill-switch usado em PlanGenerationPersister.resolverOnboardingContext (mantido em sincronia).
+    @Value("${onboarding.migrate-existing.enabled:true}")
+    private boolean migrateExistingEnabled;
 
     /**
      * Carrega o contexto da geração e inicializa todo caminho lazy lido depois da fronteira.
@@ -118,7 +127,26 @@ public class PlanGenerationContextLoader {
             log.warn("Atleta {} não possui provas futuras cadastradas — plano gerado sem prova alvo", atletaId);
         }
 
-        return new PlanGenerationContext(dados, decisaoProgressao, semanaInicio, revisaoConsumida, proximaProva);
+        // Resolvido UMA vez aqui (design.md §4 do fix-cold-start-load-model: "resolvidos antes do
+        // prompt") e repassado tanto ao skeleton pré-prompt quanto à persistência — antes cada um
+        // derivava seu próprio Optional<OnboardingContext>, e o pré-prompt sempre recebia vazio.
+        Optional<OnboardingContext> onboardingContext = resolverOnboardingContext(atletaId, tenantId);
+
+        return new PlanGenerationContext(
+                dados, decisaoProgressao, semanaInicio, revisaoConsumida, proximaProva, onboardingContext);
+    }
+
+    /**
+     * Resolve o {@code OnboardingContext} respeitando o kill-switch
+     * {@code onboarding.migrate-existing.enabled}: atleta com baseline sempre tem o contexto
+     * recalculado; atleta legado sem snapshot só é migrado com a flag ligada.
+     */
+    private Optional<OnboardingContext> resolverOnboardingContext(UUID atletaId, UUID tenantId) {
+        boolean atletaLegado = !onboardingService.possuiBaseline(atletaId, tenantId);
+        if (atletaLegado && !migrateExistingEnabled) {
+            return Optional.empty();
+        }
+        return Optional.of(onboardingService.montarContexto(atletaId, tenantId));
     }
 
     /**

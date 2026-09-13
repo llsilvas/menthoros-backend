@@ -143,7 +143,9 @@ class PlanoServiceImplTest {
     void setUpTenant() {
         contextLoader = new br.com.menthoros.backend.services.helper.PlanGenerationContextLoader(
                 atletaRepository, planoMetadadosService, treinoRealizadoRepository, treinoMapper,
-                planoSemanalRepository, planoSemanalMapper, progressaoTreinoService, weeklyReviewPromptProvider);
+                planoSemanalRepository, planoSemanalMapper, progressaoTreinoService, weeklyReviewPromptProvider,
+                onboardingService);
+        org.springframework.test.util.ReflectionTestUtils.setField(contextLoader, "migrateExistingEnabled", true);
         org.mockito.Mockito.lenient()
                 .when(provaNoPlanoService.garantirProvasNaSemana(
                         org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
@@ -155,7 +157,6 @@ class PlanoServiceImplTest {
                 redistribuicaoHelper, metricasAlertaService, metricasAgregadasService, plannerShadowService,
                 onboardingService, planoReviewService, eventPublisher, provaNoPlanoService, meterRegistry);
         org.springframework.test.util.ReflectionTestUtils.setField(persister, "autoApproveEnabled", true);
-        org.springframework.test.util.ReflectionTestUtils.setField(persister, "migrateExistingEnabled", true);
         llmConcurrencyLimiter = org.mockito.Mockito.spy(
                 new br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter(4, 2, 1));
         planoService = new PlanoServiceImpl(iaService, llmConcurrencyLimiter, contextLoader, persister, planoSemanalRepository,
@@ -184,19 +185,29 @@ class PlanoServiceImplTest {
     class ComputarSkeletonSeHabilitado {
 
         private br.com.menthoros.backend.services.helper.PlanGenerationContext ctx() {
+            return ctx(Optional.empty());
+        }
+
+        private br.com.menthoros.backend.services.helper.PlanGenerationContext ctx(
+                Optional<OnboardingContext> onboardingContext) {
             var atleta = criarAtletaMock(UUID.randomUUID());
             var dados = new br.com.menthoros.backend.dto.input.DadosPlanoDto(
                     atleta, LocalDate.now(), null, Collections.emptyList(), criarPlanoMetaDadosMock());
             return new br.com.menthoros.backend.services.helper.PlanGenerationContext(
-                    dados, null, LocalDate.of(2026, 9, 7), null, null);
+                    dados, null, LocalDate.of(2026, 9, 7), null, null, onboardingContext);
         }
 
         private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton invoke() throws Exception {
+            return invoke(ctx());
+        }
+
+        private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton invoke(
+                br.com.menthoros.backend.services.helper.PlanGenerationContext ctx) throws Exception {
             var m = PlanoServiceImpl.class.getDeclaredMethod("computarSkeletonSeHabilitado",
                     br.com.menthoros.backend.services.helper.PlanGenerationContext.class);
             m.setAccessible(true);
             try {
-                return (br.com.menthoros.backend.domain.planner.WeekPlanSkeleton) m.invoke(planoService, ctx());
+                return (br.com.menthoros.backend.domain.planner.WeekPlanSkeleton) m.invoke(planoService, ctx);
             } catch (java.lang.reflect.InvocationTargetException e) {
                 if (e.getCause() instanceof RuntimeException re) throw re;
                 throw e;
@@ -241,6 +252,35 @@ class PlanoServiceImplTest {
             assertThatThrownBy(this::invoke)
                     .isInstanceOf(br.com.menthoros.backend.exception.DomainRuleViolationException.class);
             assertThat(fallbackCount()).isZero();
+        }
+
+        @Test
+        @DisplayName("fix-cold-start-load-model: o OnboardingContext do ctx chega ao skeleton pré-prompt "
+                + "(antes ia Optional.empty() hardcoded, e o regime cold-start nunca guiava a IA)")
+        void onboardingContextDoCtxChegaAoSkeletonPrePrompt() throws Exception {
+            org.springframework.test.util.ReflectionTestUtils.setField(planoService, "plannerEnabled", true);
+            var calibrationStage = br.com.menthoros.backend.domain.planner.CalibrationStage.OBSERVATION;
+            var onboardingContext = new OnboardingContext(
+                    new AthleteBaseline(20.0, LocalDate.now()),
+                    0.5,
+                    new PlanningPolicy(ReviewMode.MANDATORY_BLOCKING, 0.0, true),
+                    new AthleteConstraints(List.of(), null, null, List.of()),
+                    calibrationStage);
+            var skeletonEsperado = new br.com.menthoros.backend.domain.planner.WeekPlanSkeleton(
+                    br.com.menthoros.backend.domain.planner.TrainingPhase.BASE,
+                    new br.com.menthoros.backend.domain.planner.WeeklyLoadTarget(120.0, 90.0, 150.0, "teste"),
+                    List.of(),
+                    new br.com.menthoros.backend.domain.planner.InjuryRiskAssessment(
+                            br.com.menthoros.backend.domain.planner.InjuryRiskLevel.SAFE, false, null),
+                    new br.com.menthoros.backend.domain.planner.ConstraintValidationResult(true, List.of()),
+                    false, null, LocalDate.now(), "escopo-teste", Optional.empty());
+            when(plannerShadowService.computarSkeleton(any(), any(), any(), eq(Optional.of(onboardingContext))))
+                    .thenReturn(skeletonEsperado);
+
+            var resultado = invoke(ctx(Optional.of(onboardingContext)));
+
+            assertThat(resultado).isSameAs(skeletonEsperado);
+            verify(plannerShadowService).computarSkeleton(any(), any(), any(), eq(Optional.of(onboardingContext)));
         }
     }
 
@@ -1027,7 +1067,7 @@ class PlanoServiceImplTest {
         @Test
         @DisplayName("atleta legado + flag desabilitada -> nao calcula OnboardingContext")
         void naoCalculaContextoParaAtletaLegadoComFlagDesabilitada() {
-            org.springframework.test.util.ReflectionTestUtils.setField(persister, "migrateExistingEnabled", false);
+            org.springframework.test.util.ReflectionTestUtils.setField(contextLoader, "migrateExistingEnabled", false);
             UUID atletaId = UUID.randomUUID();
             ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
             configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
@@ -1045,7 +1085,7 @@ class PlanoServiceImplTest {
         @Test
         @DisplayName("atleta legado + flag habilitada -> calcula OnboardingContext normalmente")
         void calculaContextoParaAtletaLegadoComFlagHabilitada() {
-            org.springframework.test.util.ReflectionTestUtils.setField(persister, "migrateExistingEnabled", true);
+            org.springframework.test.util.ReflectionTestUtils.setField(contextLoader, "migrateExistingEnabled", true);
             UUID atletaId = UUID.randomUUID();
             ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
             configurarCenarioFelizDeGeracao(atletaId, modoGeracao);
@@ -1062,7 +1102,7 @@ class PlanoServiceImplTest {
         @Test
         @DisplayName("atleta ja migrado (possui baseline) + flag desabilitada -> recalcula mesmo assim (CA3)")
         void recalculaParaAtletaJaMigradoMesmoComFlagDesabilitada() {
-            org.springframework.test.util.ReflectionTestUtils.setField(persister, "migrateExistingEnabled", false);
+            org.springframework.test.util.ReflectionTestUtils.setField(contextLoader, "migrateExistingEnabled", false);
             UUID atletaId = UUID.randomUUID();
             ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
             configurarCenarioFelizDeGeracao(atletaId, modoGeracao);

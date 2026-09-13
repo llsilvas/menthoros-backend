@@ -289,7 +289,7 @@ class PlanGenerationPersisterProvaTest {
             DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, metaDadosSemId);
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
 
             PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
 
@@ -315,7 +315,7 @@ class PlanGenerationPersisterProvaTest {
             DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
 
             PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
 
@@ -352,7 +352,7 @@ class PlanGenerationPersisterProvaTest {
                             "OK", "Manter", null, false, false, false, false, List.of()));
             when(planoMetadadosRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
 
             persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
 
@@ -386,7 +386,7 @@ class PlanGenerationPersisterProvaTest {
             when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
             persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
 
             verify(redistribuicaoHelper).redistribuirTreinos(anyList(), any(), any(), any(), any(),
@@ -405,7 +405,7 @@ class PlanGenerationPersisterProvaTest {
             when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
             persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
 
             verify(redistribuicaoHelper, org.mockito.Mockito.never())
