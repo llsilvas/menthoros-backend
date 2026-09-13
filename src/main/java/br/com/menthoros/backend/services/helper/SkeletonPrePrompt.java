@@ -26,6 +26,13 @@ import org.jspecify.annotations.Nullable;
  */
 public record SkeletonPrePrompt(@Nullable WeekPlanSkeleton skeleton, boolean fallback) {
 
+    public SkeletonPrePrompt {
+        if (fallback && skeleton != null) {
+            throw new IllegalArgumentException(
+                    "SkeletonPrePrompt inconsistente: fallback=true com skeleton presente — use as factories estáticas (desligado/sucesso/viaFallback)");
+        }
+    }
+
     public static SkeletonPrePrompt desligado() {
         return new SkeletonPrePrompt(null, false);
     }

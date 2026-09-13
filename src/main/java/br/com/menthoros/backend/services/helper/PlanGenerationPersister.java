@@ -252,7 +252,11 @@ public class PlanGenerationPersister {
         }
         // Veto do enforcement (planner-engine-enforcement §5, Codex blocker 3): plano que o estagio 2
         // marcou FAILED / requiresCoachReview NUNCA e auto-aprovado — entra em AGUARDANDO_REVISAO.
+        // FALLBACK (8.5.h, achado do security-reviewer): o planner falhou antes do LLM e o estagio 2
+        // NUNCA rodou sobre este plano — nao tem base para confianca alta automatica, mesmo que o
+        // shadow (recomputado dentro da transacao) tenha tido sucesso onde a fase 2 falhou.
         if (PlannerComplianceStatus.FAILED.name().equals(plano.getPlannerComplianceStatus())
+                || PlannerComplianceStatus.FALLBACK.name().equals(plano.getPlannerComplianceStatus())
                 || Boolean.TRUE.equals(plano.getPlannerRequiresCoachReview())) {
             return;
         }

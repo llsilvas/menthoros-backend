@@ -353,6 +353,21 @@ class PlanGenerationPersisterProvaTest {
             verify(planoReviewService, org.mockito.Mockito.never())
                     .aprovarTransicao(any(), any(), any());
         }
+
+        @Test
+        @DisplayName("plano FALLBACK nao e auto-aprovado (8.5.h, achado do security-reviewer): o estagio 2 "
+                + "nunca rodou sobre este plano, mesmo que o shadow (recomputado dentro da transacao) tenha "
+                + "tido sucesso onde a fase 2 pre-prompt falhou")
+        void planoFallbackNaoAprovado() throws Exception {
+            PlanoSemanal plano = new PlanoSemanal();
+            plano.setPlannerComplianceStatus(
+                    br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FALLBACK.name());
+
+            invoke(plano);
+
+            verify(planoReviewService, org.mockito.Mockito.never())
+                    .aprovarTransicao(any(), any(), any());
+        }
     }
 
     @Nested
