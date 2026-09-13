@@ -21,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -200,6 +201,73 @@ class LlmCallLedgerTest {
                     .doesNotContainIgnoringCase("maria")
                     .doesNotContainIgnoringCase("souza")
                     .contains("[ATLETA]");
+        }
+    }
+
+    @Nested
+    @DisplayName("anonimizarRespostasDoAtleta")
+    class AnonimizarRespostasDoAtleta {
+
+        @Test
+        @DisplayName("repassa o atletaId ao writer e loga quando anula alguma linha")
+        void repassaAoWriter() {
+            when(writer.anonimizarRespostasDoAtleta(ATLETA)).thenReturn(3);
+
+            ledger().anonimizarRespostasDoAtleta(ATLETA);
+
+            verify(writer).anonimizarRespostasDoAtleta(ATLETA);
+        }
+
+        @Test
+        @DisplayName("zero linhas anuladas não lança nem exige nada além da chamada")
+        void zeroLinhas() {
+            when(writer.anonimizarRespostasDoAtleta(ATLETA)).thenReturn(0);
+
+            assertThatCode(() -> ledger().anonimizarRespostasDoAtleta(ATLETA)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("atletaId nulo é no-op — não chama o writer")
+        void atletaIdNulo() {
+            ledger().anonimizarRespostasDoAtleta(null);
+
+            verifyNoInteractions(writer);
+        }
+
+        @Test
+        @DisplayName("writer lançando é engolido (CA8)")
+        void writerLancandoNaoPropaga() {
+            when(writer.anonimizarRespostasDoAtleta(ATLETA)).thenThrow(new RuntimeException("banco fora"));
+
+            assertThatCode(() -> ledger().anonimizarRespostasDoAtleta(ATLETA)).doesNotThrowAnyException();
+        }
+    }
+
+    @Nested
+    @DisplayName("purgarRespostasAntigas")
+    class PurgarRespostasAntigas {
+
+        private final Instant corte = Instant.parse("2026-06-01T00:00:00Z");
+
+        @Test
+        @DisplayName("repassa o corte ao writer e devolve o total anulado")
+        void repassaAoWriterEDevolveTotal() {
+            when(writer.purgarRespostasAntesDe(corte)).thenReturn(7);
+
+            int total = ledger().purgarRespostasAntigas(corte);
+
+            assertThat(total).isEqualTo(7);
+            verify(writer).purgarRespostasAntesDe(corte);
+        }
+
+        @Test
+        @DisplayName("writer lançando é engolido e devolve 0 (CA8)")
+        void writerLancandoDevolveZero() {
+            when(writer.purgarRespostasAntesDe(corte)).thenThrow(new RuntimeException("banco fora"));
+
+            int total = ledger().purgarRespostasAntigas(corte);
+
+            assertThat(total).isZero();
         }
     }
 

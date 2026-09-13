@@ -93,6 +93,43 @@ public class LlmCallLedger {
         }
     }
 
+    /**
+     * Anula {@code response_json} das chamadas do atleta (design D7). Chamado no soft-delete
+     * (hoje o único "exclusão" que existe em {@code Atleta} — não há hard delete no domínio; a FK
+     * {@code ON DELETE SET NULL} de {@code atleta_id} fica como piso defensivo para uma eventual
+     * erradicação física futura).
+     * Idempotent: SIM. Side Effects: Database update. Nunca lança. Tenant-aware: NÃO.
+     */
+    public void anonimizarRespostasDoAtleta(@Nullable UUID atletaId) {
+        if (atletaId == null) {
+            return;
+        }
+        try {
+            int total = writer.anonimizarRespostasDoAtleta(atletaId);
+            if (total > 0) {
+                log.info("[llm-ledger] {} resposta(s) anulada(s) do atleta {} (exclusão)", total, atletaId);
+            }
+        } catch (Exception e) {
+            log.warn("[llm-ledger] falha ao anonimizar respostas do atleta {} (ignorado): {}", atletaId, e.getMessage());
+        }
+    }
+
+    /**
+     * Anula {@code response_json} das linhas com {@code created_at} anterior a {@code corte}
+     * (retenção, design D8). Idempotent: SIM. Side Effects: Database update. Nunca lança.
+     * Tenant-aware: NÃO — cross-tenant por natureza (D2).
+     *
+     * @return total de linhas anuladas (0 em falha — best-effort)
+     */
+    public int purgarRespostasAntigas(java.time.Instant corte) {
+        try {
+            return writer.purgarRespostasAntesDe(corte);
+        } catch (Exception e) {
+            log.warn("[llm-ledger] falha ao purgar respostas antigas (ignorado): {}", e.getMessage());
+            return 0;
+        }
+    }
+
     private LlmCall toEntity(LlmCallRegistro registro) throws JsonProcessingException {
         LlmCall chamada = new LlmCall();
         chamada.setTenantId(registro.tenantId());

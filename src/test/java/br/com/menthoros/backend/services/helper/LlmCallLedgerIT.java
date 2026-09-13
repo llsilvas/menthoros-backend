@@ -41,6 +41,24 @@ class LlmCallLedgerIT extends AbstractIntegrationTest {
                 800, result, UUID.randomUUID(), 0, "{\"ok\":true}", Optional.ofNullable(ctx));
     }
 
+    private UUID inserirAssessoria() {
+        var id = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO tb_assessoria (id, nome, dominio, plano, ativo, max_atletas, max_tecnicos)
+                VALUES (?, ?, ?, 'GRATUITO', true, 10, 1)
+                """, id, "Assessoria " + id, "slug-" + id);
+        return id;
+    }
+
+    private UUID inserirAtleta() {
+        var id = UUID.randomUUID();
+        jdbc.update("""
+                INSERT INTO tb_atleta (id, tenant_id, nome, email, nivel_experiencia)
+                VALUES (?, ?, 'Fixture', ?, 'INICIANTE')
+                """, id, inserirAssessoria(), "fixture-" + id + "@exemplo.com");
+        return id;
+    }
+
     @Test
     @DisplayName("rollback do chamador em REQUIRES_NEW não apaga a linha gravada")
     void sobreviveAoRollbackDoChamador() {
@@ -79,6 +97,46 @@ class LlmCallLedgerIT extends AbstractIntegrationTest {
         assertThat(linha2.get("result")).isEqualTo("SUCCESS");
         assertThat(linha2.get("v")).isNull();
         assertThat(linha2.get("request_outcome")).isEqualTo("PERSISTED");
+    }
+
+    @Test
+    @DisplayName("anonimizarRespostasDoAtleta anula response_json só das linhas daquele atleta")
+    void anonimizarRespostasDoAtletaSoDaqueleAtleta() {
+        UUID atleta1 = inserirAtleta();
+        UUID atleta2 = inserirAtleta();
+        var ctx1 = new LlmCallContext(UUID.randomUUID(), atleta1, "Maria", 1, "plano-v1", "h", "schema-v1");
+        var ctx2 = new LlmCallContext(UUID.randomUUID(), atleta2, "João", 1, "plano-v1", "h", "schema-v1");
+        UUID id1 = ledger.registrarChamada(registro(LlmCallResult.SUCCESS, ctx1)).orElseThrow();
+        UUID id2 = ledger.registrarChamada(registro(LlmCallResult.SUCCESS, ctx2)).orElseThrow();
+
+        ledger.anonimizarRespostasDoAtleta(atleta1);
+
+        assertThat(jdbc.queryForObject("SELECT response_json FROM tb_llm_call WHERE id = ?", String.class, id1))
+                .isNull();
+        assertThat(jdbc.queryForObject("SELECT response_json FROM tb_llm_call WHERE id = ?", String.class, id2))
+                .isNotNull();
+    }
+
+    @Test
+    @DisplayName("purgarRespostasAntigas anula só as linhas com created_at antes do corte")
+    void purgarRespostasAntigasRespeitaOCorte() {
+        // Contexto (não null) é o que faz o response_json ser gravado — sem ele a coluna já nasce
+        // nula e o corte de created_at nunca chegaria a ser exercitado (mesma pegadinha de D2).
+        var ctxAntiga = new LlmCallContext(UUID.randomUUID(), null, null, 1, "plano-v1", "h", "schema-v1");
+        var ctxRecente = new LlmCallContext(UUID.randomUUID(), null, null, 1, "plano-v1", "h", "schema-v1");
+        UUID id = ledger.registrarChamada(registro(LlmCallResult.SUCCESS, ctxAntiga)).orElseThrow();
+        jdbc.update("UPDATE tb_llm_call SET created_at = NOW() - INTERVAL '91 days' WHERE id = ?", id);
+        UUID idRecente = ledger.registrarChamada(registro(LlmCallResult.SUCCESS, ctxRecente)).orElseThrow();
+
+        int total = ledger.purgarRespostasAntigas(java.time.Instant.now().minus(90, java.time.temporal.ChronoUnit.DAYS));
+
+        assertThat(total).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT response_json FROM tb_llm_call WHERE id = ?", String.class, id)).isNull();
+        assertThat(jdbc.queryForObject("SELECT response_json FROM tb_llm_call WHERE id = ?", String.class, idRecente))
+                .isNotNull();
+
+        int segundaExecucao = ledger.purgarRespostasAntigas(java.time.Instant.now().minus(90, java.time.temporal.ChronoUnit.DAYS));
+        assertThat(segundaExecucao).isZero();
     }
 
     @Test

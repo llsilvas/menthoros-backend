@@ -23,4 +23,18 @@ public interface LlmCallRepository extends JpaRepository<LlmCall, UUID> {
                            @Param("violations") String violations);
 
     Optional<LlmCall> findTopByGenerationRequestIdOrderByAttemptDescCreatedAtDesc(UUID generationRequestId);
+
+    /**
+     * Anula {@code response_json} do atleta (add-plan-generation-ledger, D7). Chamado no soft-delete
+     * do atleta — hoje não há hard delete em {@code Atleta} (a FK {@code ON DELETE SET NULL} cobre
+     * uma eventual erradicação física futura, ver {@code AtletaServiceImpl.deleteAtleta}).
+     */
+    @Modifying
+    @Query("update LlmCall c set c.responseJson = null where c.atletaId = :atletaId and c.responseJson is not null")
+    int anonimizarRespostasDoAtleta(@Param("atletaId") UUID atletaId);
+
+    /** Purga diária de retenção (D8): anula respostas mais antigas que o corte, preserva o resto. */
+    @Modifying
+    @Query("update LlmCall c set c.responseJson = null where c.createdAt < :corte and c.responseJson is not null")
+    int purgarRespostasAntesDe(@Param("corte") java.time.Instant corte);
 }

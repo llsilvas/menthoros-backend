@@ -10,6 +10,7 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.services.helper.LlmCallLedger;
 import br.com.menthoros.backend.services.impl.AtletaServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,6 +50,7 @@ class AtletaServiceTenantTest {
     @Mock private PlanoMetadadosRepository planoMetaDadosRepository;
     @Mock private TsbService tsbService;
     @Mock private AthleteInviteService athleteInviteService;
+    @Mock private LlmCallLedger llmCallLedger;
 
     private AtletaServiceImpl atletaService;
 
@@ -60,7 +62,8 @@ class AtletaServiceTenantTest {
                 atletaMapper,
                 planoMetaDadosRepository,
                 tsbService,
-                athleteInviteService
+                athleteInviteService,
+                llmCallLedger
         );
         // CRÍTICO: TenantContext vazio — simula chamada sem JWT
         TenantContext.clear();

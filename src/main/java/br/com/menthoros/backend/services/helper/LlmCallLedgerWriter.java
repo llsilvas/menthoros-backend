@@ -66,4 +66,24 @@ public class LlmCallLedgerWriter {
                 })
                 .orElse(false);
     }
+
+    /**
+     * Idempotent: SIM — anular de novo é no-op.
+     * Side Effects: Database update.
+     * Tenant-aware: NÃO.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = TIMEOUT_SEGUNDOS)
+    public int anonimizarRespostasDoAtleta(UUID atletaId) {
+        return repository.anonimizarRespostasDoAtleta(atletaId);
+    }
+
+    /**
+     * Idempotent: SIM — a segunda execução do dia anula 0.
+     * Side Effects: Database update.
+     * Tenant-aware: NÃO — cross-tenant por natureza (D2).
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW, timeout = TIMEOUT_SEGUNDOS)
+    public int purgarRespostasAntesDe(java.time.Instant corte) {
+        return repository.purgarRespostasAntesDe(corte);
+    }
 }
