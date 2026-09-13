@@ -192,10 +192,19 @@ public final class CostTrackingAdvisor implements CallAdvisor {
     }
 
     /**
-     * Grava a linha do ledger. {@code resultadoForcado} vem do caminho de exceção; no caminho feliz
-     * a rota {@code plano} (escopo aberto) nasce {@code PENDING} e as demais {@code SUCCESS}. O texto
-     * bruto só é lido com escopo — é dado sensível e só a rota {@code plano} tem uso para ele.
-     * Best-effort: nada aqui pode derrubar a chamada.
+     * Grava a linha do ledger. {@code resultadoForcado} vem do caminho de exceção (a linha já nasce
+     * terminal — {@code LLM_ERROR}/{@code TIMEOUT}); no caminho feliz a rota {@code plano} (escopo
+     * aberto) nasce {@code PENDING} e as demais {@code SUCCESS}. O texto bruto só é lido com escopo
+     * — é dado sensível e só a rota {@code plano} tem uso para ele. Best-effort: nada aqui pode
+     * derrubar a chamada.
+     *
+     * <p><b>{@code registerCallId} só no caminho feliz (bug real, achado no `/qa` de
+     * add-plan-generation-ledger):</b> {@code br.com.menthoros.backend.services.helper.PlanoLlmLedgerHook.Sessao#chamar} usa
+     * {@code LlmCallScope.lastCallId()} para distinguir "chamada aceita, conversão falhou depois"
+     * (id presente → {@code PARSE_ERROR}) de "provider já terminalizou a linha" (id ausente → nada
+     * a fazer). Registrar o id também no caminho de exceção fazia o hook sobrescrever toda linha
+     * {@code LLM_ERROR}/{@code TIMEOUT} para {@code PARSE_ERROR} — nenhuma chamada da rota
+     * {@code plano} jamais persistia como erro de provider.
      */
     private void gravarNoLedger(@Nullable Medicao medicao, @Nullable ChatClientResponse response,
                                 int latenciaMs, @Nullable LlmCallResult resultadoForcado) {
@@ -219,7 +228,9 @@ public final class CostTrackingAdvisor implements CallAdvisor {
                     contexto.isPresent() ? textoDaResposta(response) : null,
                     contexto);
             Optional<UUID> callId = ledger.registrarChamada(registro);
-            LlmCallScope.registerCallId(callId.orElse(null));
+            if (resultadoForcado == null) {
+                LlmCallScope.registerCallId(callId.orElse(null));
+            }
         } catch (Exception e) {
             log.warn("[llm-ledger] falha ao montar a linha da rota {} (ignorado): {}", rota, e.getMessage());
         }

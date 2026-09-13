@@ -152,20 +152,22 @@ public class PlanoServiceImpl implements PlanoService {
             registrarDesfecho(ctx, llmAceito, GenerationOutcome.PERSISTED);
             return salvo;
         } catch (PlanoJaExistenteException e) {
-            registrarDesfecho(ctx, llmAceito, GenerationOutcome.CONFLICT);
-            log.error("Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
+            falhar(ctx, llmAceito, GenerationOutcome.CONFLICT,
+                    "Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
             throw e;
         } catch (DomainRuleViolationException e) {
-            registrarDesfecho(ctx, llmAceito, GenerationOutcome.REJECTED_POST_LLM);
-            log.error("Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
+            falhar(ctx, llmAceito, GenerationOutcome.REJECTED_POST_LLM,
+                    "Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
             throw e;
         } catch (LLMException | DomainNotFoundException | IllegalStateException e) {
-            registrarDesfecho(ctx, llmAceito, GenerationOutcome.PERSIST_ERROR);
-            log.error("Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
+            falhar(ctx, llmAceito, GenerationOutcome.PERSIST_ERROR,
+                    "Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
             throw e;
         } catch (DataIntegrityViolationException e) {
             // Duas geracoes passaram pelas checagens e commitaram juntas: o indice da V52 decidiu.
             // Qualquer outra constraint segue como conflito generico (design.md D3).
+            // Nível de log e presença de mensagem divergem do padrão comum (warn vs. error; a
+            // segunda branch não loga nada, de propósito), por isso ficam fora de `falhar`.
             if (PlanoJaExistenteException.causadaPeloIndiceDePlanoAtivo(e)) {
                 registrarDesfecho(ctx, llmAceito, GenerationOutcome.CONFLICT);
                 log.warn("Geração concorrente para atleta {} perdeu a corrida no índice {}",
@@ -175,10 +177,12 @@ public class PlanoServiceImpl implements PlanoService {
             registrarDesfecho(ctx, llmAceito, GenerationOutcome.PERSIST_ERROR);
             throw e;
         } catch (IllegalArgumentException e) {
-            registrarDesfecho(ctx, llmAceito, GenerationOutcome.PERSIST_ERROR);
-            log.error("Erro de validação ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
+            falhar(ctx, llmAceito, GenerationOutcome.PERSIST_ERROR,
+                    "Erro de validação ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
             throw new LLMException("Erro ao gerar plano semanal: " + e.getMessage(), e);
         } catch (Exception e) {
+            // Loga o objeto da exceção (não só a mensagem) de propósito: é a única branch para
+            // erro genuinamente inesperado, e é aqui que o stack trace completo importa.
             registrarDesfecho(ctx, llmAceito, GenerationOutcome.PERSIST_ERROR);
             log.error("Erro inesperado ao gerar plano para atleta {}", atletaId, e);
             throw new LLMException("Erro inesperado ao gerar plano. Por favor, tente novamente.", e);
@@ -195,6 +199,17 @@ public class PlanoServiceImpl implements PlanoService {
             return;
         }
         llmCallLedger.registrarDesfecho(ctx.generationRequestId(), outcome);
+    }
+
+    /**
+     * Registra o desfecho e loga em ERROR — o par que os catches "comuns" de {@code gerarPlanoTreino}
+     * sempre precisam dos dois juntos. Extraído no `/qa` (clean-code-reviewer): 6 catches repetiam
+     * essa dupla chamada, risco real de um catch novo esquecer uma das duas.
+     */
+    private void falhar(@Nullable PlanGenerationContext ctx, boolean llmAceito, GenerationOutcome outcome,
+                        String mensagemLog, Object... args) {
+        registrarDesfecho(ctx, llmAceito, outcome);
+        log.error(mensagemLog, args);
     }
 
     /**

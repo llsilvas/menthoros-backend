@@ -340,6 +340,11 @@ class CostTrackingAdvisorTest {
             assertThat(r.costUsd()).isNull();
             assertThat(r.responseText()).isNull();
             assertThat(r.context()).isPresent();
+            // Bug real achado no /qa: registrar o id também no caminho de exceção fazia o
+            // PlanoLlmLedgerHook sobrescrever esta linha TIMEOUT para PARSE_ERROR (CA3).
+            assertThat(br.com.menthoros.backend.ai.ledger.LlmCallScope.lastCallId())
+                    .as("caminho de exceção não deve expor o id no escopo")
+                    .isEmpty();
         }
 
         @Test
@@ -351,6 +356,19 @@ class CostTrackingAdvisorTest {
                     .adviseCall(request, chain)).isInstanceOf(IllegalStateException.class);
 
             assertThat(registroGravado().result()).isEqualTo(LlmCallResult.LLM_ERROR);
+        }
+
+        @Test
+        @DisplayName("erro do provider na rota plano também não expõe o id no escopo (mesmo bug do TIMEOUT)")
+        void erroComumNaRotaPlanoNaoExpoeId() {
+            abrirEscopoPlano();
+            when(chain.nextCall(request)).thenThrow(new IllegalStateException("503 do provider"));
+
+            assertThatThrownBy(() -> CostTrackingAdvisor.paraRota("plano", pricing, meterRegistry, ledger)
+                    .adviseCall(request, chain)).isInstanceOf(IllegalStateException.class);
+
+            assertThat(registroGravado().result()).isEqualTo(LlmCallResult.LLM_ERROR);
+            assertThat(br.com.menthoros.backend.ai.ledger.LlmCallScope.lastCallId()).isEmpty();
         }
 
         @Test

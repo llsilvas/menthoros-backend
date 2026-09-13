@@ -296,6 +296,21 @@ class LlmCallLedgerTest {
             assertThat(LlmCallLedger.redigirNome(texto, nome)).isEqualTo(esperado);
         }
 
+        @ParameterizedTest
+        @CsvSource({
+                // Achado do /qa (security-reviewer): sem (?U), \b não trata letra acentuada como
+                // borda de palavra, e o nome inteiro escapava da redação — nomes citados sozinhos
+                // (sem sobrenome), o padrão mais provável em texto livre do LLM.
+                "'José', 'Bom treino, José! Continue assim José.', 'Bom treino, [ATLETA]! Continue assim [ATLETA].'",
+                "'Álvaro', 'Oi Álvaro, tudo bem?', 'Oi [ATLETA], tudo bem?'",
+                "'Íris', 'Parabéns, Íris.', 'Parabéns, [ATLETA].'",
+                "'André', 'André correu bem', '[ATLETA] correu bem'",
+        })
+        @DisplayName("nome iniciado ou terminado em vogal acentuada é redigido mesmo sem sobrenome")
+        void nomeComAcentoEmBorda(String nome, String texto, String esperado) {
+            assertThat(LlmCallLedger.redigirNome(texto, nome)).isEqualTo(esperado);
+        }
+
         @Test
         @DisplayName("nome com caracteres especiais de regex não quebra")
         void nomeComRegex() {

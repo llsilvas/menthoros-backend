@@ -180,11 +180,15 @@ public class LlmCallLedger {
             return texto;
         }
         String resultado = texto;
-        // Nome completo primeiro, depois cada parte com 3+ letras (evita apagar "de", "da").
+        // (?U) — achado do /qa (security-reviewer): (?iu) só ativa UNICODE_CASE, não
+        // UNICODE_CHARACTER_CLASS. Sem (?U) maiúsculo, \b usa a classe ASCII [a-zA-Z0-9_], e uma
+        // letra acentuada na borda do nome (José, André, Álvaro) nunca casa como fronteira de
+        // palavra — o nome inteiro escapava da redação. Nome completo primeiro (sem \b: substring
+        // literal, não sofre esse problema), depois cada parte com 3+ letras (evita apagar "de", "da").
         resultado = resultado.replaceAll("(?iu)" + Pattern.quote(atletaNome.trim()), MARCADOR_ATLETA);
         for (String parte : atletaNome.trim().split("\\s+")) {
             if (parte.length() >= 3) {
-                resultado = resultado.replaceAll("(?iu)\\b" + Pattern.quote(parte) + "\\b", MARCADOR_ATLETA);
+                resultado = resultado.replaceAll("(?iuU)\\b" + Pattern.quote(parte) + "\\b", MARCADOR_ATLETA);
             }
         }
         return resultado;
