@@ -50,8 +50,8 @@ class PlanoResilienceServiceTest {
                     new PlanoResilienceService(registry, java.time.Duration.ofMillis(50));
             List<String> chamadas = new ArrayList<>();
 
-            Function<String, PlanoSemanalLlmDto> gerarLento = prompt -> {
-                chamadas.add(prompt);
+            Function<PlanoResilienceService.Tentativa, PlanoSemanalLlmDto> gerarLento = t -> {
+                chamadas.add(t.prompt());
                 try {
                     Thread.sleep(120);
                 } catch (InterruptedException e) {
@@ -78,8 +78,8 @@ class PlanoResilienceServiceTest {
                     new PlanoResilienceService(registry, java.time.Duration.ofSeconds(30));
             List<String> chamadas = new ArrayList<>();
 
-            Function<String, PlanoSemanalLlmDto> gerar = prompt -> {
-                chamadas.add(prompt);
+            Function<PlanoResilienceService.Tentativa, PlanoSemanalLlmDto> gerar = t -> {
+                chamadas.add(t.prompt());
                 return plano();
             };
             Function<PlanoSemanalLlmDto, PlanoSemanalLlmDto> rejeita = p -> {
@@ -103,7 +103,7 @@ class PlanoResilienceServiceTest {
     @DisplayName("sucesso na 1ª tentativa → sem retry")
     void sucessoPrimeira() {
         PlanoSemanalLlmDto p = plano();
-        PlanoSemanalLlmDto r = service.gerarComResiliencia(prompt -> p, plano -> plano, "base");
+        PlanoSemanalLlmDto r = service.gerarComResiliencia(t -> p, plano -> plano, "base");
         assertThat(r).isSameAs(p);
         assertThat(contador("plano_retry")).isZero();
         assertThat(contador("plano_geracao_falha_final")).isZero();
@@ -113,7 +113,7 @@ class PlanoResilienceServiceTest {
     @DisplayName("falha estrutural → retry com feedback → sucesso")
     void falhaDepoisSucesso() {
         List<String> prompts = new ArrayList<>();
-        Function<String, PlanoSemanalLlmDto> gerar = prompt -> { prompts.add(prompt); return plano(); };
+        Function<PlanoResilienceService.Tentativa, PlanoSemanalLlmDto> gerar = t -> { prompts.add(t.prompt()); return plano(); };
         int[] chamadas = {0};
         Function<PlanoSemanalLlmDto, PlanoSemanalLlmDto> validar = plano -> {
             if (++chamadas[0] == 1) throw new LLMException("REGENERATIVO inválido: 2 etapas");
@@ -131,11 +131,35 @@ class PlanoResilienceServiceTest {
     }
 
     @Test
+    @DisplayName("gerar recebe a tentativa numerada: 1 com o prompt base, 2 com o feedback (ledger D3)")
+    void tentativaNumerada() {
+        List<PlanoResilienceService.Tentativa> tentativas = new ArrayList<>();
+        int[] chamadas = {0};
+        Function<PlanoSemanalLlmDto, PlanoSemanalLlmDto> validar = plano -> {
+            if (++chamadas[0] == 1) throw new LLMException("rejeitado");
+            return plano;
+        };
+
+        service.gerarComResiliencia(t -> { tentativas.add(t); return plano(); }, validar, "base");
+
+        assertThat(tentativas).extracting(PlanoResilienceService.Tentativa::numero).containsExactly(1, 2);
+        assertThat(tentativas.get(0).prompt()).isEqualTo("base");
+        assertThat(tentativas.get(1).prompt()).startsWith("base").contains("CORRECAO OBRIGATORIA");
+    }
+
+    @Test
+    @DisplayName("Tentativa rejeita número menor que 1 e prompt nulo")
+    void tentativaInvalida() {
+        assertThatThrownBy(() -> new PlanoResilienceService.Tentativa(0, "x")).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new PlanoResilienceService.Tentativa(1, null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     @DisplayName("falha estrutural em ambas → DomainRuleViolationException (não 503) + falha final contada")
     void falhaDupla() {
         Function<PlanoSemanalLlmDto, PlanoSemanalLlmDto> validar = plano -> { throw new LLMException("falta PRINCIPAL"); };
 
-        assertThatThrownBy(() -> service.gerarComResiliencia(prompt -> plano(), validar, "base"))
+        assertThatThrownBy(() -> service.gerarComResiliencia(t -> plano(), validar, "base"))
                 .isInstanceOf(DomainRuleViolationException.class)
                 .hasMessageContaining("Não foi possível gerar o plano");
         assertThat(contador("plano_geracao_falha_final")).isEqualTo(1.0);
@@ -145,7 +169,7 @@ class PlanoResilienceServiceTest {
     @Test
     @DisplayName("falha de geração (infra) propaga — não vira retry nem erro de domínio")
     void falhaGeracaoPropaga() {
-        Function<String, PlanoSemanalLlmDto> gerar = prompt -> { throw new LLMException("LLM indisponível"); };
+        Function<PlanoResilienceService.Tentativa, PlanoSemanalLlmDto> gerar = t -> { throw new LLMException("LLM indisponível"); };
 
         assertThatThrownBy(() -> service.gerarComResiliencia(gerar, plano -> plano, "base"))
                 .isInstanceOf(LLMException.class);
@@ -162,7 +186,7 @@ class PlanoResilienceServiceTest {
         void naoUltrapassaTeto() {
             var orcamento = new GenerationBudget(2, java.time.Duration.ofSeconds(30));
             List<String> chamadas = new ArrayList<>();
-            Function<String, PlanoSemanalLlmDto> gerar = p -> { chamadas.add(p); return plano(); };
+            Function<PlanoResilienceService.Tentativa, PlanoSemanalLlmDto> gerar = p -> { chamadas.add(p.prompt()); return plano(); };
             Function<PlanoSemanalLlmDto, PlanoSemanalLlmDto> rejeita = p -> { throw new LLMException("x"); };
 
             // 1º caminho (enforced): esgota as 2 gerações do orçamento
@@ -183,7 +207,7 @@ class PlanoResilienceServiceTest {
             var orcamento = new GenerationBudget(1, java.time.Duration.ofSeconds(30));
             orcamento.tentarDebitar(); // esgota o único slot fora do service
             List<String> chamadas = new ArrayList<>();
-            Function<String, PlanoSemanalLlmDto> gerar = p -> { chamadas.add(p); return plano(); };
+            Function<PlanoResilienceService.Tentativa, PlanoSemanalLlmDto> gerar = p -> { chamadas.add(p.prompt()); return plano(); };
 
             assertThatThrownBy(() -> service.gerarComResiliencia(gerar, p -> p, "base", orcamento))
                     .isInstanceOf(DomainRuleViolationException.class);

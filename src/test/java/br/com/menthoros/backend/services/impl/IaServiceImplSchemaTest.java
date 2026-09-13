@@ -50,6 +50,7 @@ class IaServiceImplSchemaTest {
     @Mock private PlanoResilienceService planoResilienceService;
     @Mock private LlmUsageLogger llmUsageLogger;
     @Mock private br.com.menthoros.backend.services.helper.PlannerShadowService plannerShadowService;
+    @Mock private br.com.menthoros.backend.services.helper.PlanoLlmLedgerHook ledgerHook;
 
     private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
@@ -64,7 +65,7 @@ class IaServiceImplSchemaTest {
         IaServiceImpl service = new IaServiceImpl(modelRouter, promptBuilder, atletaRepository,
                 regraGeracaoTreino, treinoHistoricoProvider, paceHistoricoFormatter, paceValidator,
                 zonaTreinoService, planQualityChecker, estruturaReparador, planoResilienceService,
-                meterRegistry, llmUsageLogger, plannerShadowService);
+                meterRegistry, llmUsageLogger, plannerShadowService, ledgerHook);
 
         Method build = IaServiceImpl.class.getDeclaredMethod("buildSchemaTightInlineOrDefs");
         build.setAccessible(true);
@@ -88,7 +89,7 @@ class IaServiceImplSchemaTest {
         IaServiceImpl service = new IaServiceImpl(modelRouter, promptBuilder, atletaRepository,
                 regraGeracaoTreino, treinoHistoricoProvider, paceHistoricoFormatter, paceValidator,
                 zonaTreinoService, planQualityChecker, estruturaReparador, planoResilienceService,
-                meterRegistry, llmUsageLogger, plannerShadowService);
+                meterRegistry, llmUsageLogger, plannerShadowService, ledgerHook);
 
         Method build = IaServiceImpl.class.getDeclaredMethod("buildSchemaTightInlineOrDefs");
         build.setAccessible(true);
@@ -107,7 +108,7 @@ class IaServiceImplSchemaTest {
         IaServiceImpl service = new IaServiceImpl(modelRouter, promptBuilder, atletaRepository,
                 regraGeracaoTreino, treinoHistoricoProvider, paceHistoricoFormatter, paceValidator,
                 zonaTreinoService, planQualityChecker, estruturaReparador, planoResilienceService,
-                meterRegistry, llmUsageLogger, plannerShadowService);
+                meterRegistry, llmUsageLogger, plannerShadowService, ledgerHook);
 
         Method build = IaServiceImpl.class.getDeclaredMethod("buildSchemaTightInlineOrDefs");
         build.setAccessible(true);

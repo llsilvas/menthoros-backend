@@ -29,6 +29,22 @@ import java.util.function.Function;
 public class PlanoResilienceService {
 
     /** 1 geração + 1 retry. */
+    /**
+     * O que a função {@code gerar} recebe a cada volta: o número da tentativa (1..N) e o prompt
+     * daquela volta (o base, ou o base + feedback de correção). O número é o que o ledger grava em
+     * {@code tb_llm_call.attempt} (add-plan-generation-ledger, D3).
+     */
+    public record Tentativa(int numero, String prompt) {
+        public Tentativa {
+            if (numero < 1) {
+                throw new IllegalArgumentException("tentativa começa em 1, recebido " + numero);
+            }
+            if (prompt == null) {
+                throw new IllegalArgumentException("prompt é obrigatório");
+            }
+        }
+    }
+
     static final int MAX_TENTATIVAS = 2;
 
     /**
@@ -59,11 +75,11 @@ public class PlanoResilienceService {
     }
 
     /**
-     * @param gerar    prompt → plano (chama o LLM); falhas de geração propagam (não são retry)
+     * @param gerar    tentativa (número + prompt) → plano (chama o LLM); falhas de geração propagam (não são retry)
      * @param validar  plano → plano validado/normalizado; lança {@link LLMException} em violação estrutural residual
      * @param promptBase prompt inicial; no retry é acrescido do motivo da rejeição anterior
      */
-    public PlanoSemanalLlmDto gerarComResiliencia(Function<String, PlanoSemanalLlmDto> gerar,
+    public PlanoSemanalLlmDto gerarComResiliencia(Function<Tentativa, PlanoSemanalLlmDto> gerar,
                                                   Function<PlanoSemanalLlmDto, PlanoSemanalLlmDto> validar,
                                                   String promptBase) {
         // Orçamento por invocação (comportamento atual). O overload abaixo recebe um orçamento
@@ -77,7 +93,7 @@ public class PlanoResilienceService {
      * e esgotado o orçamento (contagem ou deadline) nenhuma nova geração é iniciada. Usado quando o
      * enforcement e um eventual fallback legado precisam somar no mesmo teto (design 3b).
      */
-    public PlanoSemanalLlmDto gerarComResiliencia(Function<String, PlanoSemanalLlmDto> gerar,
+    public PlanoSemanalLlmDto gerarComResiliencia(Function<Tentativa, PlanoSemanalLlmDto> gerar,
                                                   Function<PlanoSemanalLlmDto, PlanoSemanalLlmDto> validar,
                                                   String promptBase,
                                                   GenerationBudget orcamento) {
@@ -97,7 +113,7 @@ public class PlanoResilienceService {
                         + "Motivo: " + motivo + "\n"
                         + "Gere o plano novamente corrigindo exatamente esse ponto, mantendo as demais regras.";
             }
-            PlanoSemanalLlmDto plano = gerar.apply(prompt); // falha de geração propaga (infra → 503); a tentativa já foi debitada
+            PlanoSemanalLlmDto plano = gerar.apply(new Tentativa(geracoes, prompt)); // falha de geração propaga (infra → 503); a tentativa já foi debitada
             try {
                 return validar.apply(plano);
             } catch (LLMException e) {

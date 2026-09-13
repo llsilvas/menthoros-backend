@@ -61,7 +61,8 @@ class IaServiceImplComplianceEstagio1Test {
                 mock(br.com.menthoros.backend.services.helper.PlanoResilienceService.class),
                 meterRegistry,
                 new LlmUsageLogger(),
-                plannerShadowService
+                plannerShadowService,
+                mock(br.com.menthoros.backend.services.helper.PlanoLlmLedgerHook.class)
         );
     }
 
@@ -139,6 +140,12 @@ class IaServiceImplComplianceEstagio1Test {
 
             assertThatThrownBy(() -> invoke(plano(), skeletonMinimo()))
                     .isInstanceOf(LLMException.class)
+                    // subtipo com as keys reais para o ledger (add-plan-generation-ledger, D6)
+                    .isInstanceOf(br.com.menthoros.backend.exception.PlanoNaoConformeException.class)
+                    .satisfies(e -> org.assertj.core.api.Assertions.assertThat(
+                            ((br.com.menthoros.backend.exception.PlanoNaoConformeException) e).violacoes())
+                            .isNotEmpty()
+                            .allSatisfy(v -> org.assertj.core.api.Assertions.assertThat(v.key()).isNotBlank()))
                     .hasMessageContaining("FASE_DIVERGENTE")
                     .hasMessageContaining("TSS_FORA_DA_FAIXA")
                     .hasMessageContaining("fase esperada BASE");

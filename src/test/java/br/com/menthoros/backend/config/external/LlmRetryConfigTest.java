@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.config.external;
 
+import br.com.menthoros.backend.ai.ledger.LlmCallScope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -78,6 +79,45 @@ class LlmRetryConfigTest {
             })).isInstanceOf(TransientAiException.class);
 
             assertThat(tentativas).hasValue(3);
+        }
+
+        @Test
+        @DisplayName("cada retry de transporte incrementa o contador do escopo da tentativa (ledger, D13)")
+        void contaRetriesNoEscopo() {
+            LlmCallScope.openRequest(java.util.UUID.randomUUID(), null, null);
+            LlmCallScope.openAttempt(1, "v", "h", "s");
+            try {
+                AtomicInteger chamadas = new AtomicInteger();
+                String resultado = retryTemplate.execute(ctx -> {
+                    if (chamadas.incrementAndGet() < 3) {
+                        throw new TransientAiException("500");
+                    }
+                    return "200";
+                });
+
+                assertThat(resultado).isEqualTo("200");
+                assertThat(LlmCallScope.transportRetries()).as("500 -> 500 -> 200 = 2 retries").contains(2);
+            } finally {
+                LlmCallScope.closeRequest();
+            }
+        }
+
+        @Test
+        @DisplayName("sem escopo aberto, o retry não deixa rastro na próxima tentativa")
+        void semEscopoNaoVaza() {
+            AtomicInteger chamadas = new AtomicInteger();
+            assertThatThrownBy(() -> retryTemplate.execute(ctx -> {
+                chamadas.incrementAndGet();
+                throw new TransientAiException("503");
+            })).isInstanceOf(TransientAiException.class);
+
+            LlmCallScope.openRequest(java.util.UUID.randomUUID(), null, null);
+            LlmCallScope.openAttempt(1, "v", "h", "s");
+            try {
+                assertThat(LlmCallScope.transportRetries()).contains(0);
+            } finally {
+                LlmCallScope.closeRequest();
+            }
         }
 
         @Test

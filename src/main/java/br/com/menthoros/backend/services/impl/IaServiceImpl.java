@@ -17,7 +17,10 @@ import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.ai.ledger.Violacao;
 import br.com.menthoros.backend.exception.LLMException;
+import br.com.menthoros.backend.exception.PlanoNaoConformeException;
+import br.com.menthoros.backend.services.helper.PlanoLlmLedgerHook;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.services.IaService;
@@ -76,6 +79,7 @@ public class IaServiceImpl implements IaService {
     private final MeterRegistry meterRegistry;
     private final LlmUsageLogger llmUsageLogger;
     private final PlannerShadowService plannerShadowService;
+    private final PlanoLlmLedgerHook ledgerHook;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
@@ -88,7 +92,8 @@ public class IaServiceImpl implements IaService {
                          PlanoResilienceService planoResilienceService,
                          MeterRegistry meterRegistry,
                          LlmUsageLogger llmUsageLogger,
-                         PlannerShadowService plannerShadowService) {
+                         PlannerShadowService plannerShadowService,
+                         PlanoLlmLedgerHook ledgerHook) {
         this.modelRouter = modelRouter;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
@@ -103,6 +108,7 @@ public class IaServiceImpl implements IaService {
         this.meterRegistry = meterRegistry;
         this.llmUsageLogger = llmUsageLogger;
         this.plannerShadowService = plannerShadowService;
+        this.ledgerHook = ledgerHook;
     }
 
     private OpenAiChatOptions defaultJsonSchemaOptions() {
@@ -340,15 +346,18 @@ public class IaServiceImpl implements IaService {
         try {
             // Geração resiliente: reparo já aplicado no validar; aqui, retry único com feedback se a
             // validação ainda falhar estruturalmente. Falha final → DomainRuleViolationException (4xx).
+            // Ledger (add-plan-generation-ledger, D3): a sessão abre a tentativa em volta da chamada e
+            // fecha o resultado após a validação; a IaServiceImpl não conhece escopo nem versões.
+            PlanoLlmLedgerHook.Sessao sessao = ledgerHook.novaSessao();
             plano = planoResilienceService.gerarComResiliencia(
-                    p -> {
-                        var resposta = chatClient.prompt().user(p).options(defaultJsonSchemaOptions())
+                    t -> sessao.chamar(t.numero(), () -> {
+                        var resposta = chatClient.prompt().user(t.prompt()).options(defaultJsonSchemaOptions())
                                 .call().responseEntity(PlanoSemanalLlmDto.class);
                         llmUsageLogger.registrar(resposta.getResponse()); // best-effort, nunca lança
                         return resposta.getEntity();
-                    },
-                    p -> aplicarComplianceEstagio1(
-                            validarENormalizarPlanoGerado(p, atleta.getId()), atleta, skeleton, inicioSemana),
+                    }),
+                    p -> sessao.validar(() -> aplicarComplianceEstagio1(
+                            validarENormalizarPlanoGerado(p, atleta.getId()), atleta, skeleton, inicioSemana)),
                     prompt);
         } catch (DomainRuleViolationException e) {
             throw e; // falha estrutural final → mensagem ao treinador (não re-empacotar como 503)
@@ -392,7 +401,8 @@ public class IaServiceImpl implements IaService {
             String motivos = violacoes.stream()
                     .map(v -> v.key() + ": " + v.mensagem())
                     .collect(java.util.stream.Collectors.joining("; "));
-            throw new LLMException("Plano diverge da estrutura prescrita pelo planner: " + motivos);
+            throw new PlanoNaoConformeException("Plano diverge da estrutura prescrita pelo planner: " + motivos,
+                    violacoes.stream().map(v -> new Violacao(v.key().name(), v.mensagem())).toList());
         }
         return validado;
     }
