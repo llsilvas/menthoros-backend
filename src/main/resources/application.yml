@@ -95,6 +95,17 @@ spring:
   # AI/OPENAI + ANTHROPIC CONFIGURATION
   # ----------------------------------------
   ai:
+    # Retry de transporte do Spring AI. LlmRetryConfig restringe a TransientAiException
+    # (5xx/429); timeout nunca é retentado (ADR-0008). Sem este bloco vale o default do
+    # Spring AI: 10 tentativas com backoff 2s x5 até 3min — pior caso acima do orçamento de
+    # 100s da geração de plano (PlanoResilienceService). Aqui o pior caso fica em ~13s.
+    retry:
+      max-attempts: 3
+      backoff:
+        initial-interval: 1s
+        multiplier: 2
+        max-interval: 10s
+      on-client-errors: false
     anthropic:
       api-key: ${ANTHROPIC_API_KEY}
     openai:
