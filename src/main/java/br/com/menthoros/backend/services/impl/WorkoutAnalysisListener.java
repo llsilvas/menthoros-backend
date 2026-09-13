@@ -22,6 +22,7 @@ import br.com.menthoros.backend.services.prompt.PromptTemplateLoader;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
+import br.com.menthoros.backend.multitenancy.TenantContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.core.io.ResourceLoader;
@@ -80,91 +81,98 @@ public class WorkoutAnalysisListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void onTreinoRegistrado(TreinoRegistradoEvent event) {
-        UUID treinoId = event.treinoRealizadoId();
-        UUID tenantId = event.tenantId();
-        log.info("Iniciando análise de treino: treinoRealizadoId={}, tenantId={}", treinoId, tenantId);
-
-        if (analiseRepository.existsByTreinoRealizadoIdAndStatus(treinoId, AnaliseStatus.COMPLETED)) {
-            log.debug("Análise COMPLETED já existe para treinoRealizadoId={}, ignorando", treinoId);
-            return;
-        }
-
-        // Tenant amarrado ao carregamento (QA/security): o evento traz treinoId e tenantId
-        // separados — divergência entre eles não pode virar análise gravada no tenant errado.
-        TreinoRealizado treino = treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId).orElse(null);
-        if (treino == null) {
-            log.warn("TreinoRealizado não encontrado: {}", treinoId);
-            return;
-        }
-
-        // Elegibilidade compartilhada com o endpoint do atleta (Codex #2): sem RPE não há o que
-        // analisar, e o guard de custo (ingestao-treino-realizado, D5) corta atividade histórica —
-        // registrar publica evento em toda inserção, e a carga inicial de um atleta recém
-        // conectado dispararia uma chamada de LLM por atividade.
-        if (!eligibility.elegivel(treino)) {
-            log.debug("TreinoRealizado {} não elegível para análise (sem RPE ou mais antigo que {} dias)",
-                    treinoId, workoutAnalysisProperties.getMaxIdadeDias());
-            return;
-        }
-
-        AnaliseWorkout analise = createPending(treinoId, tenantId);
-
+        // Publica o tenant que o evento já traz (add-plan-generation-ledger, CA12): sem isso o custo
+        // desta chamada LLM ficaria sem assessoria no ledger. Limpa sempre — thread do executor.
+        TenantContext.setTenantId(event.tenantId());
         try {
-            String skillContent = cachedSkillContent;
-            String promptData = promptDataBuilder.build(treino);
-            String userPrompt = templateLoader.loadAndFormat("workout-analysis-user-prompt.txt", promptData);
+            UUID treinoId = event.treinoRealizadoId();
+            UUID tenantId = event.tenantId();
+            log.info("Iniciando análise de treino: treinoRealizadoId={}, tenantId={}", treinoId, tenantId);
 
-            ChatClient sonnet = modelRouter.route(TaskComplexity.COMPLEX);
-            AnaliseWorkoutRawDto raw = sonnet.prompt()
-                    .system(skillContent)
-                    .user(userPrompt)
-                    .call()
-                    .entity(AnaliseWorkoutRawDto.class);
+            if (analiseRepository.existsByTreinoRealizadoIdAndStatus(treinoId, AnaliseStatus.COMPLETED)) {
+                log.debug("Análise COMPLETED já existe para treinoRealizadoId={}, ignorando", treinoId);
+                return;
+            }
 
-            AnaliseWorkoutRawDto translated;
-            boolean translationFailed = false;
+            // Tenant amarrado ao carregamento (QA/security): o evento traz treinoId e tenantId
+            // separados — divergência entre eles não pode virar análise gravada no tenant errado.
+            TreinoRealizado treino = treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId).orElse(null);
+            if (treino == null) {
+                log.warn("TreinoRealizado não encontrado: {}", treinoId);
+                return;
+            }
+
+            // Elegibilidade compartilhada com o endpoint do atleta (Codex #2): sem RPE não há o que
+            // analisar, e o guard de custo (ingestao-treino-realizado, D5) corta atividade histórica —
+            // registrar publica evento em toda inserção, e a carga inicial de um atleta recém
+            // conectado dispararia uma chamada de LLM por atividade.
+            if (!eligibility.elegivel(treino)) {
+                log.debug("TreinoRealizado {} não elegível para análise (sem RPE ou mais antigo que {} dias)",
+                        treinoId, workoutAnalysisProperties.getMaxIdadeDias());
+                return;
+            }
+
+            AnaliseWorkout analise = createPending(treinoId, tenantId);
+
             try {
-                translated = translator.translate(raw);
+                String skillContent = cachedSkillContent;
+                String promptData = promptDataBuilder.build(treino);
+                String userPrompt = templateLoader.loadAndFormat("workout-analysis-user-prompt.txt", promptData);
+
+                ChatClient sonnet = modelRouter.route(TaskComplexity.COMPLEX);
+                AnaliseWorkoutRawDto raw = sonnet.prompt()
+                        .system(skillContent)
+                        .user(userPrompt)
+                        .call()
+                        .entity(AnaliseWorkoutRawDto.class);
+
+                AnaliseWorkoutRawDto translated;
+                boolean translationFailed = false;
+                try {
+                    translated = translator.translate(raw);
+                } catch (Exception e) {
+                    log.warn("Falha na tradução para treinoId={}, persistindo em inglês: {}", treinoId, e.getMessage());
+                    translated = raw;
+                    translationFailed = true;
+                }
+
+                // Chamada 2 (D2): bloco do atleta em PT-BR, com o primary_cause resultante da
+                // chamada 1. Falha vira Optional.empty() dentro do gerador — o COMPLETED do coach
+                // nunca depende dela.
+                Optional<AthleteMessageDto> bloco = athleteMessageGenerator.gerar(promptData, raw.primaryCause());
+
+                // Métrica de sustentação da cláusula de reversão do gate (product review): quantas
+                // vezes o retorno do atleta nasce remetendo ao coach.
+                if (bloco.isPresent() && raw.primaryCause() != null
+                        && raw.primaryCause() != PrimaryAnalysisCause.NORMAL) {
+                    Counter.builder("atleta_analise_remete_coach_total")
+                            .description("Blocos do atleta gerados com primary_cause != NORMAL")
+                            .register(meterRegistry)
+                            .increment();
+                }
+
+                applyResult(analise, translated, translationFailed, bloco);
+                log.info("Análise concluída: treinoRealizadoId={}, score={}", treinoId, analise.getExecutionScore());
+
             } catch (Exception e) {
-                log.warn("Falha na tradução para treinoId={}, persistindo em inglês: {}", treinoId, e.getMessage());
-                translated = raw;
-                translationFailed = true;
+                log.error("Falha na análise de treino: treinoRealizadoId={}, tenantId={}: {}", treinoId, tenantId, e.getMessage(), e);
+                // Reset all completed fields to avoid partially-set state persisting alongside FAILED status
+                analise.setStatus(AnaliseStatus.FAILED);
+                analise.setSummaryPt(null);
+                analise.setTechnicalInterpretationPt(null);
+                analise.setPrimaryCause(null);
+                analise.setRecommendationPt(null);
+                analise.setTags(null);
+                analise.setExecutionScore(null);
+                analise.setRationalePt(null);
+                limparBlocoAtleta(analise);
+                analise.setTranslationFailed(false);
+                analise.setErrorMessage(e.getMessage());
+                analise.setAnalyzedAt(Instant.now());
+                analiseRepository.save(analise);
             }
-
-            // Chamada 2 (D2): bloco do atleta em PT-BR, com o primary_cause resultante da
-            // chamada 1. Falha vira Optional.empty() dentro do gerador — o COMPLETED do coach
-            // nunca depende dela.
-            Optional<AthleteMessageDto> bloco = athleteMessageGenerator.gerar(promptData, raw.primaryCause());
-
-            // Métrica de sustentação da cláusula de reversão do gate (product review): quantas
-            // vezes o retorno do atleta nasce remetendo ao coach.
-            if (bloco.isPresent() && raw.primaryCause() != null
-                    && raw.primaryCause() != PrimaryAnalysisCause.NORMAL) {
-                Counter.builder("atleta_analise_remete_coach_total")
-                        .description("Blocos do atleta gerados com primary_cause != NORMAL")
-                        .register(meterRegistry)
-                        .increment();
-            }
-
-            applyResult(analise, translated, translationFailed, bloco);
-            log.info("Análise concluída: treinoRealizadoId={}, score={}", treinoId, analise.getExecutionScore());
-
-        } catch (Exception e) {
-            log.error("Falha na análise de treino: treinoRealizadoId={}, tenantId={}: {}", treinoId, tenantId, e.getMessage(), e);
-            // Reset all completed fields to avoid partially-set state persisting alongside FAILED status
-            analise.setStatus(AnaliseStatus.FAILED);
-            analise.setSummaryPt(null);
-            analise.setTechnicalInterpretationPt(null);
-            analise.setPrimaryCause(null);
-            analise.setRecommendationPt(null);
-            analise.setTags(null);
-            analise.setExecutionScore(null);
-            analise.setRationalePt(null);
-            limparBlocoAtleta(analise);
-            analise.setTranslationFailed(false);
-            analise.setErrorMessage(e.getMessage());
-            analise.setAnalyzedAt(Instant.now());
-            analiseRepository.save(analise);
+        } finally {
+            TenantContext.clear();
         }
     }
 

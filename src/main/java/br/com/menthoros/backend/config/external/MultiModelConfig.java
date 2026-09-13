@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.config.external;
 
 import br.com.menthoros.backend.ai.cost.CostTrackingAdvisor;
+import br.com.menthoros.backend.services.helper.LlmCallLedger;
 import br.com.menthoros.backend.ai.cost.LlmPricingRegistry;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,7 @@ public class MultiModelConfig {
     private final LlmRoutingProperties props;
     private final LlmPricingRegistry pricingRegistry;
     private final MeterRegistry meterRegistry;
+    private final LlmCallLedger llmCallLedger;
 
     /**
      * Rota {@code simple} — tradução, extração de dados, tarefas simples.
@@ -125,7 +127,7 @@ public class MultiModelConfig {
     }
 
     private CostTrackingAdvisor advisorDeCusto(String rota) {
-        return CostTrackingAdvisor.paraRota(rota, pricingRegistry, meterRegistry);
+        return CostTrackingAdvisor.paraRota(rota, pricingRegistry, meterRegistry, llmCallLedger);
     }
 
     /**

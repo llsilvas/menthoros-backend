@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.config.external;
 
+import br.com.menthoros.backend.ai.ledger.LlmCallScope;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.retry.TransientAiException;
 import org.springframework.ai.retry.autoconfigure.SpringAiRetryProperties;
@@ -51,6 +52,9 @@ public class LlmRetryConfig {
                                                                  Throwable throwable) {
                         log.warn("[llm-retry] tentativa {} falhou: {}",
                                 context.getRetryCount(), throwable.getMessage(), throwable);
+                        // O retry roda na mesma thread da chamada: o advisor vê uma chamada lógica,
+                        // e este contador é o que expõe os reenvios (ledger, design D13).
+                        LlmCallScope.incrementTransportRetry();
                     }
                 })
                 .build();

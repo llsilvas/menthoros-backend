@@ -18,6 +18,7 @@ import br.com.menthoros.backend.repository.specification.AtletaSpecification;
 import br.com.menthoros.backend.services.AtletaService;
 import br.com.menthoros.backend.services.AthleteInviteService;
 import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.helper.LlmCallLedger;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
@@ -43,6 +44,7 @@ public class AtletaServiceImpl implements AtletaService {
     private final PlanoMetadadosRepository planoMetaDadosRepository;
     private final TsbService tsbService;
     private final AthleteInviteService athleteInviteService;
+    private final LlmCallLedger llmCallLedger;
 
     private static final String HAS_TENANT =
             "T(br.com.menthoros.backend.multitenancy.TenantContext).hasTenant()";
@@ -131,8 +133,13 @@ public class AtletaServiceImpl implements AtletaService {
      * Remove (soft delete) um atleta do tenant da requisição atual.
      *
      * Idempotent: YES — Deletar duas vezes é seguro (já está inativo).
-     * Side Effects: Database update (Atleta marcado como INATIVO)
+     * Side Effects: Database update (Atleta marcado como INATIVO); anula response_json das
+     *   Chamadas LLM do atleta no ledger (add-plan-generation-ledger, D7) — best-effort, nunca lança.
      * Tenant-aware: YES — usa TenantContext.getRequiredTenantId()
+     *
+     * <p>Este é hoje o único "exclusão" que existe em {@code Atleta} — soft delete, a linha
+     * permanece. É por isso que o ledger é anonimizado aqui em vez de depender só da FK
+     * {@code ON DELETE SET NULL} (que cobriria uma eventual erradicação física futura).
      *
      * @param id UUID do atleta a ser removido
      * @throws IllegalStateException se o tenant não estiver configurado (ausência de JWT)
@@ -152,6 +159,7 @@ public class AtletaServiceImpl implements AtletaService {
 
         atleta.setAtivo(AtletaStatus.INATIVO);
         atletaRepository.save(atleta);
+        llmCallLedger.anonimizarRespostasDoAtleta(id);
     }
 
     /**

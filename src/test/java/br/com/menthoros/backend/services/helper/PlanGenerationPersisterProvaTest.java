@@ -250,9 +250,11 @@ class PlanGenerationPersisterProvaTest {
             when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
             PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.viaFallback());
 
+            // add-plan-generation-ledger D4: a ligação plano ↔ chamadas viaja no mesmo save
+            assertThat(salvo.getGenerationRequestId()).isEqualTo(ctx.generationRequestId());
             assertThat(salvo.getPlannerComplianceStatus())
                     .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FALLBACK.name());
             org.mockito.Mockito.verify(plannerShadowService, org.mockito.Mockito.never())
@@ -288,7 +290,7 @@ class PlanGenerationPersisterProvaTest {
                     eq(ModoGeracaoPlano.PROXIMA_SEMANA), any(), diasAlvoCaptor.capture()))
                     .thenReturn(List.of(longo));
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
             PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA,
                     SkeletonPrePrompt.sucesso(skeletonDaFase2));
 
@@ -316,7 +318,7 @@ class PlanGenerationPersisterProvaTest {
             when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
             PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
             assertThat(salvo.getPlannerComplianceStatus()).isNull();
@@ -414,7 +416,7 @@ class PlanGenerationPersisterProvaTest {
             DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, metaDadosSemId);
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
 
             PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
@@ -440,7 +442,7 @@ class PlanGenerationPersisterProvaTest {
             DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
 
             PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
@@ -477,7 +479,7 @@ class PlanGenerationPersisterProvaTest {
                             "OK", "Manter", null, false, false, false, false, List.of()));
             when(planoMetadadosRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
 
             persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
@@ -508,7 +510,7 @@ class PlanGenerationPersisterProvaTest {
             when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
             // Fase 2 (pre-prompt) caiu no fallback (planner-engine-enforcement 8.5.h) -> diasAlvo
             // vazio, mas isso NAO impede a redistribuicao de rodar no PROXIMA_SEMANA com enabled=true.
             persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.viaFallback());
@@ -529,7 +531,7 @@ class PlanGenerationPersisterProvaTest {
             when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty());
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
             persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
             verify(redistribuicaoHelper, org.mockito.Mockito.never())

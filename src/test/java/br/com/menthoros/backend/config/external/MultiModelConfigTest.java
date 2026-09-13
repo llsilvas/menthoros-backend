@@ -82,7 +82,8 @@ class MultiModelConfigTest {
             LlmRoutingProperties props = routingVigente();
             SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
             MultiModelConfig config = new MultiModelConfig(
-                    props, new LlmPricingRegistry(props), meterRegistry);
+                    props, new LlmPricingRegistry(props), meterRegistry,
+                    mock(br.com.menthoros.backend.services.helper.LlmCallLedger.class));
 
             OpenAiChatModel chatModel = mock(OpenAiChatModel.class);
             ChatResponse resposta = new ChatResponse(

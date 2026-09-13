@@ -132,6 +132,34 @@ class WeeklyFocusNarrativeServiceTest {
             verifyNoInteractions(modelClient);
         }
 
+        @Test
+        @DisplayName("publica o tenant recebido no TenantContext durante a chamada ao LLM e limpa depois (ledger CA12)")
+        void publicaTenantDuranteChamada() {
+            UUID tenant = UUID.randomUUID();
+            java.util.concurrent.atomic.AtomicReference<UUID> vistoDentro = new java.util.concurrent.atomic.AtomicReference<>();
+            when(revisaoSemanalRepository.findByIdAndTenant(eq(revisaoId), any())).thenReturn(Optional.of(revisao));
+            when(modelClient.redigirFoco(revisao)).thenAnswer(inv -> {
+                vistoDentro.set(br.com.menthoros.backend.multitenancy.TenantContext.getTenantId());
+                return "Mantenha a carga desta semana e priorize a consistência dos treinos.";
+            });
+
+            service(true).gerarNarrativa(revisaoId, tenant);
+
+            assertThat(vistoDentro.get()).isEqualTo(tenant);
+            assertThat(br.com.menthoros.backend.multitenancy.TenantContext.getTenantId()).isNull();
+        }
+
+        @Test
+        @DisplayName("limpa o TenantContext mesmo quando o LLM falha")
+        void limpaTenantNaFalha() {
+            when(revisaoSemanalRepository.findByIdAndTenant(eq(revisaoId), any())).thenReturn(Optional.of(revisao));
+            when(modelClient.redigirFoco(revisao)).thenThrow(new IllegalStateException("fora"));
+
+            service(true).gerarNarrativa(revisaoId, UUID.randomUUID());
+
+            assertThat(br.com.menthoros.backend.multitenancy.TenantContext.getTenantId()).isNull();
+        }
+
         private void stubLlm(String resposta) {
             when(revisaoSemanalRepository.findByIdAndTenant(eq(revisaoId), any()))
                     .thenReturn(Optional.of(revisao));
