@@ -393,6 +393,41 @@ class PlanoServiceImplTest {
     }
 
     @Test
+    @DisplayName("planner-engine-enforcement 8.5.h: fail-open=false propaga DomainRuleViolationException "
+            + "(422) pelo fluxo publico gerarPlanoTreino — antes do refactor, a falha pre-prompt caia no "
+            + "catch generico de gerarPlanoSemanal e virava LLMException (503), status errado para o "
+            + "'erro de dominio, nada gerado' que a Decisao 3 do design documenta")
+    void falhaComFailOpenFalsoPropagaDomainRuleViolationPeloFluxoPublico() {
+        UUID atletaId = UUID.randomUUID();
+        ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+        org.springframework.test.util.ReflectionTestUtils.setField(planoService, "plannerEnabled", true);
+        org.springframework.test.util.ReflectionTestUtils.setField(planoService, "plannerFailOpen", false);
+
+        Atleta atleta = criarAtletaMock(atletaId);
+        PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
+
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
+        when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
+        when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
+                any(), any(), any())).thenReturn(Optional.empty());
+        when(plannerShadowService.computarSkeleton(any(), any(), any(), any()))
+                .thenThrow(new IllegalStateException("planner indisponível"));
+
+        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+
+            assertThatThrownBy(() -> planoService.gerarPlanoTreino(atletaId, modoGeracao))
+                    .isInstanceOf(br.com.menthoros.backend.exception.DomainRuleViolationException.class)
+                    .isNotInstanceOf(LLMException.class);
+
+            verify(iaService, never())
+                    .geraPlanoSemanalAvancado(any(), any(), any(), any(), any(), any(), any(), any());
+        }
+    }
+
+    @Test
     @DisplayName("Deve lançar exceção quando LLM retorna plano nulo")
     void deveLancarExcecaoQuandoLlmRetornaPlanoNulo() {
         // Given
