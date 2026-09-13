@@ -260,6 +260,33 @@ class OnboardingServiceTest {
 
             assertThat(contexto.calibrationStage()).isNull();
         }
+
+        @Test
+        @DisplayName("atleta ja graduado (linha existe, calibracaoIniciadaEm nula) que regride a tier B "
+                + "NAO reinicia a calibracao — saida da calibracao e definitiva (fix-cold-start-load-model)")
+        void naoReiniciaCalibracaoParaGraduadoQueRegrideDeTier() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(List.of());
+            when(activityDedupService.deduplicar(List.of(), tenantId)).thenReturn(List.of());
+            when(baselineCalculator.calcular(any(), any(), any()))
+                    .thenReturn(new BaselineResult(35, OrigemDado.MEASURED, 35, OrigemDado.MEASURED, 0, OrigemDado.MEASURED));
+            when(confidenceScorer.calcular(any())).thenReturn(new ConfidenceScoreResult(40, ConfidenceTier.B, false));
+            when(planningPolicyResolver.resolver(ConfidenceTier.B))
+                    .thenReturn(new PlanningPolicy(ReviewMode.MANDATORY_NON_BLOCKING, 0.5, true));
+            AthleteBaselineState graduado = new AthleteBaselineState();
+            graduado.setId(UUID.randomUUID()); // linha ja existe — atleta ja passou pela calibracao
+            graduado.setCalibracaoIniciadaEm(null); // graduou: avaliarCalibracaoSeAplicavel zerou o campo
+            when(athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(graduado));
+
+            OnboardingContext contexto = service.montarContexto(atletaId, tenantId);
+
+            assertThat(contexto.calibrationStage()).isNull();
+            ArgumentCaptor<AthleteBaselineState> captor = ArgumentCaptor.forClass(AthleteBaselineState.class);
+            verify(athleteBaselineStateRepository).save(captor.capture());
+            assertThat(captor.getValue().getCalibracaoIniciadaEm()).isNull();
+        }
     }
 
     @Nested

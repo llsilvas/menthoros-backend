@@ -448,6 +448,11 @@ public class OnboardingServiceImpl implements OnboardingService {
         AthleteBaselineState estado = athleteBaselineStateRepository
                 .findByAtletaIdAndTenantId(atletaId, tenantId)
                 .orElseGet(AthleteBaselineState::new);
+        // Distingue "nunca existiu linha" (id ainda nulo, atleta genuinamente novo) de "ja existe
+        // linha, mas graduou" (calibracaoIniciadaEm foi zerada por avaliarCalibracaoSeAplicavel,
+        // id permanece nao-nulo) — sem isso, um atleta que graduou com tier != A reiniciava a
+        // calibracao no proximo montarContexto (fix-cold-start-load-model: saida deve ser definitiva).
+        boolean atletaNuncaTeveEstado = estado.getId() == null;
 
         if (estado.getAtleta() == null) {
             Atleta ref = new Atleta();
@@ -465,7 +470,7 @@ public class OnboardingServiceImpl implements OnboardingService {
         estado.setConfidenceTier(confidenceScore.tier().name());
         estado.setCalculatedAt(calculatedAt);
 
-        if (confidenceScore.tier() != ConfidenceTier.A && estado.getCalibracaoIniciadaEm() == null) {
+        if (atletaNuncaTeveEstado && confidenceScore.tier() != ConfidenceTier.A) {
             estado.setCalibracaoIniciadaEm(calculatedAt);
         }
 
