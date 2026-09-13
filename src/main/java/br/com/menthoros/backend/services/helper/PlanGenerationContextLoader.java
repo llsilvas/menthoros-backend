@@ -84,7 +84,17 @@ public class PlanGenerationContextLoader {
      * Idempotent: NÃO — {@code buscarOuCriarMetadados} pode inserir a linha de metadados, e ela
      *   sobrevive a uma falha posterior do LLM (design.md D1, decisão do founder em 2026-09-01:
      *   é idempotente por construção e evita o rollback tardio que causou o incidente do cache).
-     * Side Effects: possível INSERT em tb_plano_metadados.
+     *   {@code resolverOnboardingContext} (fix-cold-start-load-model) tem o mesmo perfil: chama
+     *   {@code OnboardingService#montarContexto}, que faz UPSERT em {@code tb_athlete_baseline_state}
+     *   e INSERT append-only em {@code tb_athlete_baseline_history} — roda em TODA tentativa de
+     *   geração (mesmo as que falham depois no LLM), não só nas que persistem um plano. A escrita
+     *   antecipada é deliberada: o {@code OnboardingContext} precisa estar resolvido ANTES do prompt
+     *   (design.md §4) para o skeleton pré-prompt guiar o regime cold-start, e resolver duas vezes
+     *   (aqui e na persistência) reabriria a divergência que motivou centralizar a resolução aqui.
+     *   Efeito aceito: tentativas malsucedidas também deixam uma linha em
+     *   {@code tb_athlete_baseline_history} — ruído no histórico de calibração, não incorreção.
+     * Side Effects: possível INSERT em tb_plano_metadados; UPSERT em tb_athlete_baseline_state +
+     *   INSERT em tb_athlete_baseline_history (via resolverOnboardingContext, ver acima).
      * Tenant-aware: YES — atleta resolvido por {@code findByIdAndTenantId}.
      *
      * @throws DomainNotFoundException      atleta inexistente ou de outro tenant

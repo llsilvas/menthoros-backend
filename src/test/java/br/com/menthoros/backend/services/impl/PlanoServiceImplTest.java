@@ -352,6 +352,40 @@ class PlanoServiceImplTest {
     }
 
     @Test
+    @DisplayName("fix-cold-start-load-model: falha do LLM depois do loader NAO impede que o "
+            + "OnboardingContext ja tenha sido resolvido/persistido na Fase 1 (efeito documentado em "
+            + "PlanGenerationContextLoader.load — resolverOnboardingContext roda em toda tentativa)")
+    void llmFalhaDepoisDoLoaderMasOnboardingContextJaFoiResolvido() {
+        UUID atletaId = UUID.randomUUID();
+        ModoGeracaoPlano modoGeracao = ModoGeracaoPlano.PROXIMA_SEMANA;
+
+        Atleta atleta = criarAtletaMock(atletaId);
+        PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
+
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
+        when(treinoRealizadoRepository.findByAtletaIdAndDataTreinoBetween(eq(atletaId), any(LocalDate.class), any(LocalDate.class))).thenReturn(Collections.emptyList());
+        when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(atletaId)).thenReturn(Optional.empty());
+        when(planoSemanalRepository.findTopByAtletaIdAndSemanaInicioBeforeAndStatusOrderBySemanaInicioDesc(
+                any(), any(), any())).thenReturn(Optional.empty());
+        when(iaService.geraPlanoSemanalAvancado(eq(atleta), eq(metaDados), any(), eq(modoGeracao), any(), any(), any(), any()))
+                .thenThrow(new RuntimeException("timeout do LLM"));
+
+        try (MockedStatic<Hibernate> hibernateMock = mockStatic(Hibernate.class)) {
+            hibernateMock.when(() -> Hibernate.initialize(any())).thenAnswer(invocation -> null);
+
+            assertThrows(LLMException.class, () -> planoService.gerarPlanoTreino(atletaId, modoGeracao));
+
+            // A geração falhou (nenhum plano persistido), mas o loader (Fase 1) ja resolveu o
+            // OnboardingContext antes de chamar o LLM — comportamento intencional documentado em
+            // PlanGenerationContextLoader.load: montarContexto roda em toda tentativa, nao so nas
+            // que persistem um plano.
+            verify(onboardingService).montarContexto(atletaId, tenantId);
+            verify(planoSemanalRepository, never()).save(any(PlanoSemanal.class));
+        }
+    }
+
+    @Test
     @DisplayName("Deve lançar exceção quando LLM retorna plano nulo")
     void deveLancarExcecaoQuandoLlmRetornaPlanoNulo() {
         // Given
