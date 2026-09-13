@@ -9,6 +9,36 @@ Este documento consolida a análise feita em 2026-09-13 e o plano de implementa�
 Ele complementa `LLM_BEST_PRACTICES.md` (práticas gerais) e `PROMPTS_EVOLUCAO.md` (histórico do
 prompt). As changes citadas vivem em `menthoros-product/openspec/changes/`.
 
+## Observações de implementação (atualizado 2026-09-13)
+
+**Fase 0 (`add-plan-generation-ledger`) implementada.** As seis primeiras seções da change estão
+commitadas em `feature/add-plan-generation-ledger`, com `./mvnw clean verify` verde (3.419 testes
+unitários + 182 de integração): schema (`tb_llm_call`, `generation_request_id` em
+`tb_plano_semanal`), versionamento (`PromptVersion`/`SchemaVersion`/hash do template), o advisor
+gravando cada Chamada LLM em toda rota, a ligação e o desfecho da Requisição de geração, a purga de
+90 dias e a anonimização no soft-delete do atleta, e o glossário em `CONTEXT.md`. Falta só a seção
+7 (QA e PR) para fechar a change. Isso muda o estado dos achados A4 e A5 abaixo, e algumas decisões
+saíram diferentes do que o rascunho original desta análise previa — ver as notas em cada uma:
+
+- **Nome da tabela:** `tb_llm_call`, não `tb_plan_generation` — uma linha por Chamada LLM, em toda
+  rota; enriquecimento (atleta, tentativa, versões, resposta) só na rota `plano`.
+- **Grão do resultado:** seis estados (`PENDING`/`SUCCESS`/`VALIDATION_REJECTED`/`PARSE_ERROR`/
+  `LLM_ERROR`/`TIMEOUT`), não um genérico "OK/FAILED" — a rota `plano` abre a linha `PENDING` antes
+  da validação, o que a análise original não previa.
+- **Ligação com o plano é por `generation_request_id`, com desfecho próprio.** A ideia original de
+  "ligar `review_status` do plano à linha" foi descartada no grilling: quatro casos (corrida
+  perdida no índice, rejeição pós-LLM, erro de persistência, exclusão posterior) são
+  indistinguíveis só por join, então a última chamada da requisição grava um
+  `GenerationOutcome` explícito.
+- **Escrita em transação própria (`REQUIRES_NEW`), não "fora de transação".** Achado do Codex
+  adversarial na DoR: os listeners assíncronos (`WorkoutAnalysisListener`,
+  `WeeklyFocusNarrativeService`) chamam o LLM **dentro** de uma transação; se o ledger participasse
+  dela, o rollback deles apagaria a linha.
+- **`Atleta` não tem hard delete.** A seção 5 da change descobriu isso na prática:
+  `AtletaServiceImpl.deleteAtleta` é soft delete (`AtletaStatus.INATIVO`), então a "exclusão do
+  atleta" do design é o soft delete, não um `DELETE` real — registrado como item de radar
+  separado (hard delete / erradicação LGPD) no `SPRINTS.md`.
+
 ---
 
 ## 1. Tese
@@ -110,7 +140,7 @@ já economiza", que os dados desmentem.
 Evidência: `plano-treino-otimizado-claude.txt:6-12`, `PlanoTreinoPromptBuilder.java:376-388`,
 logs de 2026-09-07 00:24 a 00:34.
 
-### A4 (alto) — Não existe registro persistido de geração
+### A4 (alto) — Não existe registro persistido de geração — ✅ **resolvido em 2026-09-13**
 
 Tokens, custo, latência, modelo, versão do prompt, número de tentativas, violações e resultado da
 revisão do coach não vivem em tabela nenhuma. Há métricas Prometheus agregadas e um log de uso, mas
@@ -118,15 +148,25 @@ nada que permita perguntar "quais planos rejeitados vieram de qual versão do pr
 nenhuma mudança de prompt, schema ou modelo pode ser avaliada com evidência, e o sinal de ouro que
 já existe (ACCEPTED / MODIFIED / REJECTED do coach) não se conecta à geração que o produziu.
 
-Evidência: `LlmUsageLogger.java:40`, `CostTrackingAdvisor.java:146-152`, migration V58
-(`planner_metadata_json`, sem prompt nem tokens).
+Evidência (do achado original): `LlmUsageLogger.java:40`, `CostTrackingAdvisor.java:146-152`,
+migration V58 (`planner_metadata_json`, sem prompt nem tokens).
 
-### A5 (alto) — Prompt sem versão; eval mede o texto, não o resultado
+**Resolvido pela Fase 0** (`add-plan-generation-ledger`): `tb_llm_call` (migration V94),
+`LlmCallLedger`/`LlmCallLedgerWriter`, `CostTrackingAdvisor` gravando cada chamada. A ligação com o
+veredito do coach continua sendo join, agora por `generation_request_id` em vez de `plano_id`.
+
+### A5 (alto) — Prompt sem versão; eval mede o texto, não o resultado — **parcialmente resolvido**
 
 Só o planner tem versão (`PlannerVersion.CURRENT = "planner-v1"`). O prompt é "versionado" pelo
 golden-master (`PlanoTreinoPromptBuilderGoldenTest`), que garante que o texto não mudou, não que o
 plano ficou melhor. Não há conjunto de avaliação de planos gerados nem juiz (determinístico ou
 LLM) que rode quando o prompt muda.
+
+**A parte de versionamento foi resolvida pela Fase 0**: `PromptVersion.CURRENT` (`plano-v1`) e
+`SchemaVersion.CURRENT` ao lado de `PlannerVersion`, mais o hash SHA-256 do template calculado no
+startup e gravado em cada chamada (`PromptHashCalculator`). O que continua em aberto é a segunda
+metade do achado — não há eval nem juiz; isso é a Fase 5 (`plan-generation-eval-set`), que agora
+tem o dataset de que precisa (o próprio `tb_llm_call`).
 
 ### A6 (alto) — `IaServiceImpl` está acoplada à OpenAI apesar do `ModelRouter`
 
@@ -229,6 +269,7 @@ Princípios:
 
 | Change | Estado (2026-09-13) | Recomendação |
 |---|---|---|
+| `add-plan-generation-ledger` | **Seções 1-6/7 implementadas**, `verify` verde | Fase 0, escalonada depois desta análise. Falta só QA e PR (seção 7). Ver "Observações de implementação" no topo do documento para o que mudou do rascunho original para a versão implementada. |
 | `planner-engine-enforcement` | 27/29, gate 8.4 | **Terminar.** Alicerce de tudo; gate de duas portas continua fail-closed. Não está mais bloqueada: a Decisão 4b foi fechada em 2026-09-09 e virou ADR-0011. |
 | `fix-cold-start-load-model` | 8/11, DoR fechado | **Terminar** (piloto, QA, PR). Independente do resto. |
 | `system-user-prompt-split` | deferida (ROI ~0) | **Reabrir** com a premissa corrigida (A3). Vira a Fase 1. |
