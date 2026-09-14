@@ -154,11 +154,20 @@ public class IaServiceImpl implements IaService {
             PlanoLlmLedgerHook.Sessao sessao = ledgerHook.novaSessao();
             plano = planoResilienceService.gerarComResiliencia(
                     t -> sessao.chamar(t.numero(), () -> {
-                        var resposta = chatClient.prompt().system(system).user(t.prompt())
+                        // TODO(plan-generation-repair-turn, seção 4): ainda usa .responseEntity() e
+                        // ignora t.jsonAnterior()/t.violacoesAnteriores() — adoção mínima da nova
+                        // assinatura de PlanoResilienceService.Tentativa/ChamadaLlm (seção 2) para
+                        // manter a compilação; a task 4.0 troca para .call().content() + parse
+                        // manual e a 4.2 monta a conversa multi-mensagem no turno de reparo.
+                        var resposta = chatClient.prompt().system(system).user(t.promptOriginal())
                                 .options(llmJsonSchemaBuilder.defaultJsonSchemaOptions())
                                 .call().responseEntity(PlanoSemanalLlmDto.class);
                         llmUsageLogger.registrar(resposta.getResponse()); // best-effort, nunca lança
-                        return resposta.getEntity();
+                        String jsonBruto = resposta.getResponse() != null
+                                && resposta.getResponse().getResult() != null
+                                && resposta.getResponse().getResult().getOutput() != null
+                                ? resposta.getResponse().getResult().getOutput().getText() : null;
+                        return new PlanoResilienceService.ChamadaLlm(resposta.getEntity(), jsonBruto);
                     }),
                     p -> sessao.validar(() -> aplicarComplianceEstagio1(
                             validarENormalizarPlanoGerado(p, atleta.getId()), atleta, skeleton, inicioSemana)),
