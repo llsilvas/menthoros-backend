@@ -12,6 +12,9 @@ import java.util.regex.Pattern;
  * Valida e corrige a FC alvo de uma etapa contra a zona fisiológica esperada (LTHR),
  * considerando o tipo de etapa e o tipo de treino.
  * Extraído de {@code IaServiceImpl} (refactor-iaservice-decomposition, seção 4).
+ *
+ * <p>Idempotent: YES — mesma entrada sempre produz a mesma saída. Side Effects: NONE.
+ * Tenant-aware: NO — pura transformação de DTOs, sem acesso a dados persistidos.</p>
  */
 @Slf4j
 @Component

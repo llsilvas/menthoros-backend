@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -46,7 +47,7 @@ class PlanoLlmValidatorTest {
         @DisplayName("≠ 3 etapas → LLMException (hoje derruba o plano inteiro)")
         void numeroEtapasErrado() {
             var treino = treino("REGENERATIVO", etapa("AQUECIMENTO"), etapa("PRINCIPAL")); // 2 etapas
-            assertThatThrownBy(() -> validator.validarEstrutura3Etapas(treino, "REGENERATIVO", "atleta", true))
+            assertThatThrownBy(() -> validator.validarEstrutura3Etapas(treino, "REGENERATIVO", UUID.randomUUID(), true))
                     .isInstanceOf(LLMException.class);
         }
 
@@ -55,14 +56,14 @@ class PlanoLlmValidatorTest {
         void ordemCanonica() {
             var treino = treino("REGENERATIVO", etapa("AQUECIMENTO"), etapa("PRINCIPAL"), etapa("DESAQUECIMENTO"));
             assertThatNoException().isThrownBy(
-                    () -> validator.validarEstrutura3Etapas(treino, "REGENERATIVO", "atleta", true));
+                    () -> validator.validarEstrutura3Etapas(treino, "REGENERATIVO", UUID.randomUUID(), true));
         }
 
         @Test
         @DisplayName("fora de ordem com validarOrdem=true → LLMException")
         void ordemTrocada() {
             var treino = treino("REGENERATIVO", etapa("PRINCIPAL"), etapa("AQUECIMENTO"), etapa("DESAQUECIMENTO"));
-            assertThatThrownBy(() -> validator.validarEstrutura3Etapas(treino, "REGENERATIVO", "atleta", true))
+            assertThatThrownBy(() -> validator.validarEstrutura3Etapas(treino, "REGENERATIVO", UUID.randomUUID(), true))
                     .isInstanceOf(LLMException.class);
         }
 
@@ -73,14 +74,14 @@ class PlanoLlmValidatorTest {
             // trocados), mas a etapa central segue tendo que ser PRINCIPAL (fix IA-04).
             var treino = treino("LONGO", etapa("DESAQUECIMENTO"), etapa("PRINCIPAL"), etapa("AQUECIMENTO"));
             assertThatNoException().isThrownBy(
-                    () -> validator.validarEstrutura3Etapas(treino, "LONGO", "atleta", false));
+                    () -> validator.validarEstrutura3Etapas(treino, "LONGO", UUID.randomUUID(), false));
         }
 
         @Test
         @DisplayName("IA-04: etapa central que não é PRINCIPAL → LLMException (validarOrdem=true)")
         void etapaCentralNaoPrincipal_validarOrdemTrue_lancaExcecao() {
             var treino = treino("REGENERATIVO", etapa("AQUECIMENTO"), etapa("RECUPERACAO"), etapa("DESAQUECIMENTO"));
-            assertThatThrownBy(() -> validator.validarEstrutura3Etapas(treino, "REGENERATIVO", "atleta", true))
+            assertThatThrownBy(() -> validator.validarEstrutura3Etapas(treino, "REGENERATIVO", UUID.randomUUID(), true))
                     .isInstanceOf(LLMException.class);
         }
 
@@ -88,7 +89,7 @@ class PlanoLlmValidatorTest {
         @DisplayName("IA-04 (achado do Codex): etapa central que não é PRINCIPAL → LLMException também em LONGO (validarOrdem=false)")
         void etapaCentralNaoPrincipal_validarOrdemFalse_lancaExcecao() {
             var treino = treino("LONGO", etapa("AQUECIMENTO"), etapa("RECUPERACAO"), etapa("DESAQUECIMENTO"));
-            assertThatThrownBy(() -> validator.validarEstrutura3Etapas(treino, "LONGO", "atleta", false))
+            assertThatThrownBy(() -> validator.validarEstrutura3Etapas(treino, "LONGO", UUID.randomUUID(), false))
                     .isInstanceOf(LLMException.class);
         }
 
