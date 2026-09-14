@@ -1,14 +1,11 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
-import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.exception.LLMException;
-import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.ContextoTreino;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
-import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,37 +13,35 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /**
- * Rede de caracterização de {@link PlanoLlmValidator#validarENormalizarPlano} — a composição
- * completa de transformações que a geração aplica à resposta da LLM (correção temporal → expansão
- * → gate estrutural → normalização → reparo → validação por tipo → FC → pace → duração → distância
- * → triângulo). Testar a composição, não os métodos isolados, é a rede de segurança da decomposição:
- * os 2 bugs de ordem achados no `/qa` de refactor-iaservice-decomposition eram invisíveis aos testes
- * das peças.
+ * Rede de caracterização de {@link NormalizacaoDeTreino#normalizar} — a receita completa que a
+ * geração aplica a cada treino da resposta da LLM (correção temporal → expansão → gates
+ * estruturais → normalização → reparo → validação por tipo → FC → pace → duração → distância →
+ * triângulo). Testar a composição pela interface do module, não os passos isolados, é a rede de
+ * segurança da ordem: os 2 bugs de ordem achados no `/qa` de refactor-iaservice-decomposition eram
+ * invisíveis aos testes das peças.
  *
  * <p><b>Baseline capturado em {@code develop} 72304b9 ANTES de qualquer refactor</b>
- * (pipeline-normalizacao-treino, task 0.4). Cada record esperado foi obtido rodando uma vez e
- * copiando a saída — é caracterização, não especificação: congela o que o sistema faz hoje,
- * inclusive o que parece estranho (ex.: aquec/desaq sintetizados pelo reparo saem com
+ * (pipeline-normalizacao-treino, task 0.4, então via {@code PlanoLlmValidator}; a task 3.1 trocou só
+ * o arranjo — os records esperados são byte a byte os mesmos). Cada record esperado foi obtido
+ * rodando uma vez e copiando a saída — é caracterização, não especificação: congela o que o sistema
+ * faz hoje, inclusive o que parece estranho (ex.: aquec/desaq sintetizados pelo reparo saem com
  * {@code distanciaKm = null}). Mudar um esperado aqui é mudar comportamento, e exige decisão.</p>
  *
- * <p>Colaboradores reais onde a transformação importa ({@code TreinoNormalizador},
- * {@code EtapaFcValidator}, {@code PaceValidator}, {@code PlanoEstruturaReparador}); mocks só nas
- * fontes de dados ({@code TreinoHistoricoProvider}, {@code PaceHistoricoFormatter},
- * {@code ZonaTreinoService}). paceLimiar = 5.0 min/km em todo cenário (paceZ2 = 6.0, paceZ1 = 6.75).</p>
+ * <p>Colaboradores reais em tudo ({@code TreinoNormalizador}, {@code EtapaFcValidator},
+ * {@code PaceValidator}, {@code PlanoEstruturaReparador}); sem mock nenhum — o
+ * {@link ContextoNormalizacao} é montado à mão (zonas de FC só no atleta com FC, teto/piso de pace
+ * vazios). paceLimiar = 5.0 min/km em todo cenário (paceZ2 = 6.0, paceZ1 = 6.75).</p>
  */
-@DisplayName("PlanoLlmValidator — caracterização da composição completa (baseline 72304b9)")
-class PlanoLlmValidatorCaracterizacaoTest {
+@DisplayName("NormalizacaoDeTreino — caracterização da composição completa (baseline 72304b9)")
+class NormalizacaoDeTreinoCaracterizacaoTest {
 
     private static final UUID ATLETA_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
     private static final List<ZonaFC> ZONAS_FC_160 = List.of(
@@ -251,30 +246,22 @@ class PlanoLlmValidatorCaracterizacaoTest {
     // ======================================================================================
 
     private TreinoPlanejadoLlmDto normalizar(Atleta atleta, TreinoPlanejadoLlmDto treino) {
-        PlanoSemanalLlmDto plano = new PlanoSemanalLlmDto(30.0, 30.0, null, null, "ATIVO", "base aeróbica", List.of(treino));
-        return validador(atleta).validarENormalizarPlano(plano, atleta, atleta.getId()).treinosPlanejados().get(0);
+        return normalizacao().normalizar(treino, contexto(atleta));
     }
 
-    private PlanoLlmValidator validador(Atleta atleta) {
-        TreinoHistoricoProvider treinoHistoricoProvider = mock(TreinoHistoricoProvider.class);
-        when(treinoHistoricoProvider.prepararContexto(atleta)).thenReturn(
-                new ContextoTreino(LocalDate.of(2026, 9, 14), List.of(), List.of(), List.of()));
-        PaceHistoricoFormatter paceHistoricoFormatter = mock(PaceHistoricoFormatter.class);
-        when(paceHistoricoFormatter.calcularTetoPorTipo(any())).thenReturn(java.util.Map.of());
-        when(paceHistoricoFormatter.calcularPisoPorTipo(any())).thenReturn(java.util.Map.of());
-        ZonaTreinoService zonaTreinoService = mock(ZonaTreinoService.class);
-        when(zonaTreinoService.calcularZonasFC(any(), any())).thenReturn(ZONAS_FC_160);
+    private static NormalizacaoDeTreino normalizacao() {
+        return new NormalizacaoDeTreino(
+                new TreinoNormalizador(new PaceValidator()),
+                new EtapaFcValidator(),
+                new PlanoEstruturaReparador(new SimpleMeterRegistry()),
+                new PaceValidator(),
+                new SimpleMeterRegistry());
+    }
 
-        return new PlanoLlmValidator(
-                treinoHistoricoProvider,
-                paceHistoricoFormatter,
-                zonaTreinoService,
-                new NormalizacaoDeTreino(
-                        new TreinoNormalizador(new PaceValidator()),
-                        new EtapaFcValidator(),
-                        new PlanoEstruturaReparador(new SimpleMeterRegistry()),
-                        new PaceValidator(),
-                        new SimpleMeterRegistry()));
+    /** Espelha o que {@code PlanoLlmValidator#contexto} monta: zonas só com dado fisiológico. */
+    private static ContextoNormalizacao contexto(Atleta atleta) {
+        List<ZonaFC> zonas = (atleta.getFcLimiar() != null || atleta.getFcMaxima() != null) ? ZONAS_FC_160 : null;
+        return new ContextoNormalizacao(atleta, atleta.getId(), zonas, Map.of(), Map.of());
     }
 
     private static Atleta atleta(boolean comFc) {

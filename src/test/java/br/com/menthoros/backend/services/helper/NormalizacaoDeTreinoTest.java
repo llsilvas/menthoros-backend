@@ -102,6 +102,92 @@ class NormalizacaoDeTreinoTest {
         }
     }
 
+    /**
+     * Família TRES_ETAPAS pela interface: {@code reparar-3-etapas} roda ANTES de
+     * {@code validar-por-tipo}, então o que chega ao gate é só o que o reparo não conserta —
+     * exatamente 1 PRINCIPAL é reparável (falta/ordem de aquec/desaq); 0 ou 2+ não. Os 6 casos
+     * vieram de {@code PlanoLlmValidatorTest#Estrutura3Etapas} (chamavam o gate direto) — task 3.2.
+     */
+    @Nested
+    @DisplayName("família TRES_ETAPAS — reparar-3-etapas antes de validar-por-tipo")
+    class TresEtapas {
+
+        @Test
+        @DisplayName("≠ 3 etapas que o reparo não conserta (2 PRINCIPAL) → LLMException")
+        void numeroEtapasErradoNaoReparavel() {
+            var treino = tresEtapas("REGENERATIVO",
+                    etapa3("AQUECIMENTO"), etapa3("PRINCIPAL"), etapa3("PRINCIPAL"), etapa3("DESAQUECIMENTO"));
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("esperado 3");
+        }
+
+        @Test
+        @DisplayName("3 etapas na ordem canônica → passa intacto")
+        void ordemCanonica() {
+            var treino = tresEtapas("REGENERATIVO", etapa3("AQUECIMENTO"), etapa3("PRINCIPAL"), etapa3("DESAQUECIMENTO"));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(tipos(resultado)).containsExactly("AQUECIMENTO", "PRINCIPAL", "DESAQUECIMENTO");
+        }
+
+        @Test
+        @DisplayName("fora de ordem com os 3 tipos presentes: o reparo reordena antes do gate, não rejeita")
+        void ordemTrocadaEhReparada() {
+            var treino = tresEtapas("REGENERATIVO", etapa3("PRINCIPAL"), etapa3("AQUECIMENTO"), etapa3("DESAQUECIMENTO"));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(tipos(resultado)).containsExactly("AQUECIMENTO", "PRINCIPAL", "DESAQUECIMENTO");
+        }
+
+        @Test
+        @DisplayName("REGENERATIVO (validarOrdem=true) sem DESAQUECIMENTO no fim e não reparável (2 PRINCIPAL) → LLMException")
+        void regenerativoExigePosicaoDeAquecDesaq() {
+            var treino = tresEtapas("REGENERATIVO", etapa3("AQUECIMENTO"), etapa3("PRINCIPAL"), etapa3("PRINCIPAL"));
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("AQUECIMENTO → PRINCIPAL → DESAQUECIMENTO");
+        }
+
+        @Test
+        @DisplayName("LONGO (validarOrdem=false) ignora só a posição de aquec/desaq — a mesma entrada passa")
+        void longoIgnoraPosicaoDeAquecDesaq() {
+            var treino = tresEtapas("LONGO", etapa3("AQUECIMENTO"), etapa3("PRINCIPAL"), etapa3("PRINCIPAL"));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(tipos(resultado)).containsExactly("AQUECIMENTO", "PRINCIPAL", "PRINCIPAL");
+        }
+
+        @Test
+        @DisplayName("IA-04: etapa central que não é PRINCIPAL → LLMException (REGENERATIVO, validarOrdem=true)")
+        void etapaCentralNaoPrincipal_regenerativo() {
+            var treino = tresEtapas("REGENERATIVO", etapa3("AQUECIMENTO"), etapa3("RECUPERACAO"), etapa3("DESAQUECIMENTO"));
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("etapa central deve ser PRINCIPAL");
+        }
+
+        @Test
+        @DisplayName("IA-04 (achado do Codex): etapa central que não é PRINCIPAL → LLMException também em LONGO (validarOrdem=false)")
+        void etapaCentralNaoPrincipal_longo() {
+            var treino = tresEtapas("LONGO", etapa3("AQUECIMENTO"), etapa3("RECUPERACAO"), etapa3("DESAQUECIMENTO"));
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("etapa central deve ser PRINCIPAL");
+        }
+
+        private List<String> tipos(TreinoPlanejadoLlmDto treino) {
+            return treino.etapas().stream().map(EtapaTreinoLlmDto::tipoEtapa).toList();
+        }
+    }
+
     @Nested
     @DisplayName("runner")
     class Runner {
@@ -190,5 +276,14 @@ class NormalizacaoDeTreinoTest {
     private static TreinoPlanejadoLlmDto intervalado(double distanciaKm, EtapaTreinoLlmDto... etapas) {
         return new TreinoPlanejadoLlmDto("TERCA", "INTERVALADO", "150-160 bpm", 60, 8.0, 6, "VO2max",
                 "50:00", distanciaKm, "5:00-5:15/km", List.of(etapas));
+    }
+
+    // mínimo pra família TRES_ETAPAS: só o tipo das etapas importa ao reparo e ao gate
+    private static EtapaTreinoLlmDto etapa3(String tipoEtapa) {
+        return new EtapaTreinoLlmDto(1, tipoEtapa, "x", 10, 1.0, null, 1, null);
+    }
+
+    private static TreinoPlanejadoLlmDto tresEtapas(String tipoTreino, EtapaTreinoLlmDto... etapas) {
+        return new TreinoPlanejadoLlmDto("SEGUNDA", tipoTreino, null, null, null, null, null, null, null, null, List.of(etapas));
     }
 }

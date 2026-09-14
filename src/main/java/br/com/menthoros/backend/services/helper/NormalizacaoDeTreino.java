@@ -378,7 +378,7 @@ public class NormalizacaoDeTreino {
      * quando {@code validarOrdem} — AQUECIMENTO/DESAQUECIMENTO fora de posição (LONGO não valida
      * a posição de aquec/desaq, só a contagem e a etapa central).
      */
-    public void validarEstrutura3Etapas(TreinoPlanejadoLlmDto treino, String tipo, UUID atletaId, boolean validarOrdem) {
+    private void validarEstrutura3Etapas(TreinoPlanejadoLlmDto treino, String tipo, UUID atletaId, boolean validarOrdem) {
         var etapas = treino.etapas();
         if (etapas == null || etapas.size() != 3) {
             log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} tem {} etapas (esperado: 3)",
