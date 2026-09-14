@@ -24,7 +24,10 @@ import br.com.menthoros.backend.services.helper.RegraGeracaoTreino;
 import br.com.menthoros.backend.services.helper.PlanoResilienceService;
 import br.com.menthoros.backend.services.helper.PlannerShadowService;
 import br.com.menthoros.backend.services.helper.PlanoLlmValidator;
+import br.com.menthoros.backend.services.helper.RepairTurnMessageBuilder;
 import br.com.menthoros.backend.domain.compliance.PlannerViolation;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import br.com.menthoros.backend.services.prompt.LlmJsonSchemaBuilder;
 import br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder;
@@ -32,6 +35,10 @@ import br.com.menthoros.backend.services.quality.PlanQualityChecker;
 import br.com.menthoros.backend.services.quality.ViolacaoQualidade;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatResponse;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
 import org.springframework.context.annotation.Primary;
@@ -58,6 +65,8 @@ public class IaServiceImpl implements IaService {
     private final LlmUsageLogger llmUsageLogger;
     private final PlannerShadowService plannerShadowService;
     private final PlanoLlmLedgerHook ledgerHook;
+    private final RepairTurnMessageBuilder repairTurnMessageBuilder;
+    private final ObjectMapper objectMapper;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          LlmJsonSchemaBuilder llmJsonSchemaBuilder,
@@ -68,7 +77,9 @@ public class IaServiceImpl implements IaService {
                          MeterRegistry meterRegistry,
                          LlmUsageLogger llmUsageLogger,
                          PlannerShadowService plannerShadowService,
-                         PlanoLlmLedgerHook ledgerHook) {
+                         PlanoLlmLedgerHook ledgerHook,
+                         RepairTurnMessageBuilder repairTurnMessageBuilder,
+                         ObjectMapper objectMapper) {
         this.modelRouter = modelRouter;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
@@ -81,6 +92,8 @@ public class IaServiceImpl implements IaService {
         this.llmUsageLogger = llmUsageLogger;
         this.plannerShadowService = plannerShadowService;
         this.ledgerHook = ledgerHook;
+        this.repairTurnMessageBuilder = repairTurnMessageBuilder;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -153,22 +166,7 @@ public class IaServiceImpl implements IaService {
             // fecha o resultado após a validação; a IaServiceImpl não conhece escopo nem versões.
             PlanoLlmLedgerHook.Sessao sessao = ledgerHook.novaSessao();
             plano = planoResilienceService.gerarComResiliencia(
-                    t -> sessao.chamar(t.numero(), () -> {
-                        // TODO(plan-generation-repair-turn, seção 4): ainda usa .responseEntity() e
-                        // ignora t.jsonAnterior()/t.violacoesAnteriores() — adoção mínima da nova
-                        // assinatura de PlanoResilienceService.Tentativa/ChamadaLlm (seção 2) para
-                        // manter a compilação; a task 4.0 troca para .call().content() + parse
-                        // manual e a 4.2 monta a conversa multi-mensagem no turno de reparo.
-                        var resposta = chatClient.prompt().system(system).user(t.promptOriginal())
-                                .options(llmJsonSchemaBuilder.defaultJsonSchemaOptions())
-                                .call().responseEntity(PlanoSemanalLlmDto.class);
-                        llmUsageLogger.registrar(resposta.getResponse()); // best-effort, nunca lança
-                        String jsonBruto = resposta.getResponse() != null
-                                && resposta.getResponse().getResult() != null
-                                && resposta.getResponse().getResult().getOutput() != null
-                                ? resposta.getResponse().getResult().getOutput().getText() : null;
-                        return new PlanoResilienceService.ChamadaLlm(resposta.getEntity(), jsonBruto);
-                    }),
+                    t -> sessao.chamar(t.numero(), () -> gerarChamadaLlm(chatClient, system, t)),
                     p -> sessao.validar(() -> aplicarComplianceEstagio1(
                             validarENormalizarPlanoGerado(p, atleta.getId()), atleta, skeleton, inicioSemana)),
                     promptGerado.user());
@@ -189,6 +187,53 @@ public class IaServiceImpl implements IaService {
         long totalTime = System.currentTimeMillis() - startTime;
         log.info("Plano gerado com sucesso via structured output para atleta: {} - {} s", atleta.getId(), totalTime / 1000.0);
         return plano;
+    }
+
+    /**
+     * Chama a LLM: 1ª tentativa é {@code system + user} simples; a partir da 2ª (turno de reparo,
+     * plan-generation-repair-turn) a conversa acrescenta o JSON da tentativa anterior como
+     * {@code AssistantMessage} e as violações completas como a última {@code UserMessage} — o
+     * {@code system}/{@code user} original nunca são reescritos (design.md, Decisão 1).
+     *
+     * <p>Sem {@code .responseEntity(Class)}/{@code BeanOutputConverter} de propósito: o converter
+     * embutido injeta texto de formato na última {@code UserMessage} da conversa, o que quebraria
+     * a igualdade de prefixo entre tentativas (achado do pré-mortem, confirmado por bytecode do
+     * Spring AI 1.1.6 e provado em {@code ChatClientRepairTurnPrefixSpikeTest}). O parse do JSON
+     * é manual, com guarda de conteúdo nulo/vazio: preserva o caminho de retry de hoje (entidade
+     * {@code null} chega a {@code validar}, que já rejeita com {@link LLMException}) em vez de
+     * lançar dentro desta função (que não teria retry).</p>
+     *
+     * <p>Idempotent: NO — invoca o LLM. Side Effects: chamada ao LLM (billable). Tenant-aware: NO.</p>
+     */
+    private PlanoResilienceService.ChamadaLlm gerarChamadaLlm(ChatClient chatClient, String system,
+                                                              PlanoResilienceService.Tentativa tentativa) {
+        ChatClient.ChatClientRequestSpec pedido = tentativa.numero() == 1
+                ? chatClient.prompt().system(system).user(tentativa.promptOriginal())
+                : chatClient.prompt().messages(List.of(
+                        new SystemMessage(system),
+                        new UserMessage(tentativa.promptOriginal()),
+                        new AssistantMessage(tentativa.jsonAnterior()),
+                        new UserMessage(repairTurnMessageBuilder.construirCorrecao(tentativa.violacoesAnteriores()))));
+
+        ChatResponse resposta = pedido.options(llmJsonSchemaBuilder.defaultJsonSchemaOptions())
+                .call().chatResponse();
+        llmUsageLogger.registrar(resposta); // best-effort, nunca lança
+
+        String json = resposta != null && resposta.getResult() != null && resposta.getResult().getOutput() != null
+                ? resposta.getResult().getOutput().getText() : null;
+
+        PlanoSemanalLlmDto entidade = (json == null || json.isBlank()) ? null : parsearPlano(json);
+        return new PlanoResilienceService.ChamadaLlm(entidade, json);
+    }
+
+    private PlanoSemanalLlmDto parsearPlano(String json) {
+        try {
+            return objectMapper.readValue(json, PlanoSemanalLlmDto.class);
+        } catch (JsonProcessingException e) {
+            // JSON não-vazio malformado: lança dentro de gerar → propaga sem retry (mesmo
+            // comportamento de hoje, quando o converter do Spring AI lançava no mesmo ponto).
+            throw new LLMException("Resposta da LLM não é um JSON válido: " + e.getMessage(), e);
+        }
     }
 
     /**
