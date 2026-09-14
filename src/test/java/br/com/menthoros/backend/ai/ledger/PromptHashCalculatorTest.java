@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class PromptHashCalculatorTest {
 
-    private static final String TEMPLATE_PLANO = "plano-treino-otimizado-claude.txt";
+    private static final String TEMPLATE_PLANO = "plano-treino-system.txt";
 
     @Nested
     @DisplayName("sha256")

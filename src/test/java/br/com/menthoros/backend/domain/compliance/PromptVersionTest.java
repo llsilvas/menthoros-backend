@@ -14,7 +14,8 @@ class PromptVersionTest {
     @Test
     @DisplayName("prompt e schema têm versões independentes, no mesmo formato do planner")
     void versoesIndependentes() {
-        assertThat(PromptVersion.CURRENT).isEqualTo("plano-v1");
+        // plano-v2: split system/user (system-user-prompt-split, F1) — schema inalterado nesta fase.
+        assertThat(PromptVersion.CURRENT).isEqualTo("plano-v2");
         assertThat(SchemaVersion.CURRENT).isEqualTo("schema-v1");
         assertThat(PlannerVersion.CURRENT).isEqualTo("planner-v1");
     }

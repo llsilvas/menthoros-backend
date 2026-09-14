@@ -1,0 +1,264 @@
+### PERFIL DO ATLETA
+- Nome: Eva SemDados
+- Idade: null anos
+- Objetivo Principal: Melhorar condicionamento
+- Nível: INTERMEDIARIO
+- Dias disponíveis: Segunda-feira, Quarta-feira, Sexta-feira, Sábado
+- Dia preferido do longo: SABADO
+- Provas planejadas: null
+
+### HISTÓRICO RECENTE (últimas 3-4 semanas)
+
+**Formato esperado por treino:**
+- Data, Dia da Semana, Tipo de Treino
+- Volume: duração (min) + distância (km)
+- Intensidade: TSS, IF, zonas de FC predominantes
+- Status: realizado/cancelado + percepção de esforço real
+
+**Dados:**
+## ⛔ REGRAS QUE VOCÊ NÃO PODE VIOLAR
+
+- Gere treinos EXCLUSIVAMENTE nos dias permitidos: Segunda-feira, Quarta-feira, Sexta-feira, Sábado. NÃO inclua treinos em nenhum outro dia da semana.
+- No máximo 5 dias de treino consecutivos; intercale descanso completo ou regenerativo.
+
+(Estas regras são determinísticas, baseadas em dados reais do atleta, e SUBSTITUEM qualquer raciocínio independente. Não as viole.)
+
+## ⛔ ALERTAS OBRIGATÓRIOS (PROCESSE PRIMEIRO)
+
+1. 🟡 FARTLEK: NUNCA realizado → CONSIDERAR INCLUSÃO
+2. 🟡 TEMPO_RUN: NUNCA realizado → CONSIDERAR INCLUSÃO
+3. 🟡 INTERVALADO: NUNCA realizado → CONSIDERAR INCLUSÃO
+
+**HIERARQUIA:** Alertas 🔴 têm prioridade sobre 🟡. Segurança primeiro!
+
+## 🎯 HIERARQUIA DE DECISÃO (resolver conflitos nesta ordem)
+
+**NÍVEL 1 - SEGURANÇA (sempre vence):**
+- Se RPE médio > 7.5 → FORÇAR semana leve
+- Se TSB < -25 → APENAS Z1-Z2, máximo 3 treinos
+- Se lesão ativa → máximo Z2, sem intervalados
+- Se dias consecutivos >= limite → DESCANSO OBRIGATÓRIO
+
+**NÍVEL 2 - RECUPERAÇÃO:**
+- Se recomendação = regenerativa → REDUZIR volume 40-50%
+
+**NÍVEL 3 - VARIABILIDADE:**
+- Incluir estímulos ausentes há >14 dias
+- Alternar categorias de intervalado (não repetir 2 semanas seguidas)
+- Se conflitar com N1/N2 → usar versão LEVE do estímulo
+
+**NÍVEL 4 - OBJETIVO:**
+- Alinhar treino-chave com meta do atleta
+- Respeitar fase de periodização (BASE/BUILD/ESPECÍFICO/TAPER)
+
+## EVENTO COMPETITIVO NA SEMANA - INSTRUCAO OBRIGATORIA
+
+[NAO]
+- Semana planejada: 19/01/2026 a 25/01/2026.
+- Nenhuma prova cadastrada dentro desta semana.
+- Aplicar periodizacao normal da fase atual.
+
+## 🚨 RESTRIÇÕES E HISTÓRICO DE SAÚDE
+
+✅ Nenhuma lesão ativa ou histórico de lesões reportado
+
+## 📊 DADOS FISIOLÓGICOS E ZONAS DE TREINO
+
+**Frequência Cardíaca (estimada por fórmula etária — sem teste formal):**
+- FC Máxima: 180 bpm (estimada: 220 - idade)
+- FC Repouso: 60 bpm
+- FC Limiar: 153 bpm (estimativa: 85% FCmáx)
+
+**Pace/Velocidade:** sem dados — não prescrever pace até teste formal.
+
+**⚠️ ATENÇÃO:** Use EXATAMENTE as zonas de FC listadas abaixo.
+NÃO invente outros valores de BPM. Recomende teste de limiar urgente ao atleta.
+
+**Zonas de Treino (estimadas — USE ESTES VALORES DE BPM):**
+- Z1 (Recuperação): 115-130 bpm
+- Z2 (Aeróbico): 130-136 bpm
+- Z3 (Tempo): 136-144 bpm
+- Z4 (Limiar): 144-153 bpm
+- Z5 (VO2max): 153-162 bpm
+- Z6 (Sprint): 153-162 bpm
+
+
+## ⚠️ FALLBACKS PARA DADOS INCOMPLETOS
+
+⚠️ **Pace Limiar inválido/zerado** → Usar estimativa por nível
+  - Pace estimado: 5:30-6:00 min/km
+  - **USAR APENAS FC para prescrição, não pace
+⚠️ **Zonas de pace inutilizáveis** → Usar apenas FC (Z1-Z5 por percentual FCmax)
+
+**Ao prescrever treinos:**
+- Se pace inválido: usar formato "Z2 (140-160 bpm)" em vez de incluir pace
+- Se FC disponível: priorizar FC sobre pace estimado
+- Adicionar na justificativa: "Zonas estimadas - recomenda-se teste de limiar"
+
+## 🌡️ READINESS (PRONTIDÃO SUBJETIVA DIÁRIA)
+
+- **Últimos 7 dias:** [SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO]
+- **Hoje:** sem checkin registrado — decisão de intervalado não considera readiness.
+
+
+## MÉTRICAS DE CARGA E FADIGA
+
+**Status Geral:** COLETANDO DADOS
+**Recomendação:** Continuar treinamento normalmente, respeitando os princípios de progressão.
+
+### Métricas Principais
+- **CTL (Fitness):** 0,0 pontos - Forma física acumulada (6 semanas)
+- **ATL (Fadiga):** 0,0 pontos - Fadiga recente (última semana)
+- **TSB (Prontidão hoje):** 0,0 pontos - Sem dados
+- **Ramp Rate:** 0.0 pts/sem - Sem dados suficientes
+
+### Médias Semanais
+- Volume: 0,0 km | TSS: 0 pts | Treinos: 0,0 sessões
+
+### Padrões de Treino
+- Dias consecutivos: 0 | Desde último descanso: 0 | Progressão: 0 semanas
+- Dia preferido longo: SABADO
+
+---
+
+
+Nenhum treino realizado nos últimos 14 dias.
+
+## 🏃 PACE DEMONSTRADO NOS ÚLTIMOS TREINOS
+
+⚠️ Sem histórico de pace disponível. Usar zonas teóricas calculadas como referência.
+
+
+⚠️ **Pace limiar não cadastrado.**
+   Paces calculados com base no histórico recente. Margem ampliada em ±15 seg/km.
+   Recomendado: realizar teste de Cooper ou corrida de 20 min para definir o limiar.
+
+
+## 📅 PADRÕES DE TREINO E DISPONIBILIDADE
+
+**Semana referência:** 19/01/2026 a 25/01/2026
+
+### ⚠️ SEMANA EM ANDAMENTO
+**Dias já passados não podem receber treinos.**
+**Dias restantes disponíveis para treino nesta semana:** Segunda-feira, Quarta-feira, Sexta-feira, Sábado
+**Total de dias restantes:** 4
+
+### Disponibilidade Semanal
+**Dias disponíveis para treinar (configuração do atleta):** Segunda-feira, Quarta-feira, Sexta-feira, Sábado
+**Total:** 4 dias/semana
+
+**Dia preferido para treino longo:** Sábado
+
+### Padrão Atual de Treino
+- **Dias consecutivos treinando:** 0 dias
+- **Dias desde último descanso:** 0 dias
+- **Semanas de progressão contínua:** 0 semanas
+
+### Recomendações para Esta Semana
+- **Máximo de dias consecutivos recomendado:** 5 dias
+
+
+---
+
+
+**ANÁLISE PRÉ-PLANEJAMENTO:**
+
+❌ Nenhum treino realizado nos últimos 28 dias.
+⚠️ RECOMENDAÇÃO: Iniciar com volume conservador (progressão lenta).
+
+
+## 📈 VOLUME MÉDIO DAS ÚLTIMAS 3 SEMANAS
+- **Volume Médio:** 0,0 km
+- **Tendência:** SEM DADOS
+- **Semana Mais Recente:** 0,0 km
+- **Semana Anterior:** 0,0 km
+- **2 Semanas Atrás:** 0,0 km
+
+**MATRIZ DE VARIABILIDADE:**
+
+⚠️ Nenhum treino realizado nos últimos 28 dias.
+✅ RECOMENDAÇÃO: Começar com INTERVALADO Categoria A ou B (VO2max)
+
+✅ Sem alertas de variabilidade (nenhum treino realizado).
+
+**INSTRUÇÕES DE RECUPERAÇÃO/REGENERAÇÃO:**
+
+### 1. Estado de Recuperação
+- **TSB:** 0 (Status: MODERADAMENTE RECUPERADO (Recomendado regenerativo))
+- **Fadiga (ATL):** 0,0 (Nível: MODERADA 🟡 (Preparado))
+- **Forma (CTL):** 0,0
+- **Ramp Rate:** 0,0% (Progressão: CONSERVADORA)
+
+### 2. Treinos Regenerativos Recomendados
+**RECOMENDAÇÃO: Treinos Z1 com duração moderada**
+
+- **Corrida Fácil Curta (30-40 min)**: FC = 95-114 bpm
+  - Conversa fácil mantida, ritmo muito relaxado
+
+- **Corrida Fácil com Estímulos (40 min total)**:
+  - 10 min aquecimento em Z1
+  - 4-6 x [1 min em Z2 + 2-3 min em Z1]
+  - 5 min arremate em Z1
+
+
+### 3. Parâmetros Técnicos para Zona Z1
+**Zona Z1 (Regenerativa)**:
+- FC Alvo: 95-114 bpm (50-60% da FCMax)
+- Pace Estimado: ~7:00-7:30 /km
+- RPE (Escala 1-10): 2-3 (Muito Fácil)
+- Respiração: Nasal, leve, ritmo natural
+- Conversa: Conversa fácil, sem ofegância
+- Sensação: Leve, movimento fluido, sem tensão
+
+**Zona Z2 (Base Aeróbica)**:
+- FC Alvo: 114-134 bpm (60-70% da FCMax)
+- Pace Estimado: ~6:30-7:00 /km
+- RPE: 3-4 (Fácil com esforço moderado)
+- Respiração: Nasal predominante, ritmo controlado
+- Conversa: Conversa possível com pequenos ajustes respiratórios
+
+### 4. Recuperação Ativa
+- **Alongamento estático** (15 min): Pós-treino, mantendo 20-30s cada
+- **Espuma de rolagem** (10 min): Quadríceps, glúteos, panturrilhas, TFL
+- **Banho frio/morno** (5-10 min): Promove vasodilatação e circulação
+- **Mobilidade dinâmica** (10 min): Squats, lunges, rotações
+
+### 5. Recomendações de Sono e Nutrição
+**Sono**:
+- Alvo: 7-8h por noite
+- Cochilos: Opcional, se sentir fadiga
+
+**Nutrição**:
+- Manutenção calórica normal
+- Equilíbrio: 50% CHO, 20% Proteína, 30% Gordura
+- Hidratação: 2.5-3L/dia
+
+
+## 📅 PERIODIZAÇÃO E FASE ATUAL
+
+N/A - sem prova alvo
+
+## 🎯 METAS PARA ESTA SEMANA
+
+**Tipo de Semana:** DESENVOLVIMENTO
+
+- **TSS Alvo Semanal:** 150 pontos
+  - Baseado em CTL atual: 0,0
+  - Ajustado por TSB: 0,0 (Sem dados suficientes)
+  - Ramp Rate atual: 0,0 pts/sem (Sem dados suficientes)
+
+  - Recomendação Ramp Rate:  ()- **Máximo de Dias Consecutivos Recomendado:** 5 dias
+  - Atual: 0 dias consecutivos
+  - Baseado em TSB, experiência e histórico
+
+- **Distribuição Semanal Sugerida:** Sugestão: 2-1-1 (2 dias, descanso, 1 dia, descanso, 1 dia)
+
+** STATUS GERAL ** 
+  - ** Status geral: (COLETANDO DADOS - Aguardando histórico de treinos para análise)
+
+**ANÁLISE OBRIGATÓRIA:**
+Antes de gerar o plano, identifique:
+1. Tipos de treino NÃO realizados há mais de 14 dias
+2. Volume médio semanal das últimas 3 semanas
+3. Padrão de intensidade (predominância de zonas)
+4. Treinos cancelados ou subexecutados (possível fadiga)

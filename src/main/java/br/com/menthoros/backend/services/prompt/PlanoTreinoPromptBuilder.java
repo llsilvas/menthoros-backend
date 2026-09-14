@@ -374,9 +374,13 @@ public class PlanoTreinoPromptBuilder {
         historicoFinal.append(String.format("** STATUS GERAL ** \n"));
         historicoFinal.append(String.format("  - ** Status geral: (%s)", metricasPromptFormatter.avaliarStatusGeral(metaDados)));
 
-        // 10. Carregar e formatar o novo template otimizado
-        String prompt = templateLoader.loadAndFormat(
-                "plano-treino-otimizado-claude.txt",
+        // 10. system: template estático cru (persona + regras) — byte-idêntico entre atletas e
+        // tentativas, liga o cache de prefixo da OpenAI (system-user-prompt-split, F1).
+        String system = templateLoader.loadTemplate("plano-treino-system.txt");
+
+        // 11. user: perfil do atleta + histórico dinâmico (com alertas no topo)
+        String user = templateLoader.loadAndFormat(
+                "plano-treino-user.txt",
                 atleta.getNome(),                                                                              // %s - Nome
                 atleta.getIdade(),                                                                             // %d - Idade
                 atleta.getObjetivo() != null ? atleta.getObjetivo() : "Melhorar condicionamento",             // %s - Objetivo
@@ -386,12 +390,17 @@ public class PlanoTreinoPromptBuilder {
                 provas,                                                                                        // %s - Provas
                 historicoFinal.toString()                                                                      // %s - Histórico completo (com alertas no topo)
         );
-        // Retorna o prompt + as Constraint já computadas (evita recomputar contexto pós-geração).
-        return new PromptGerado(prompt, regras);
+        // Retorna system + user + as Constraint já computadas (evita recomputar contexto pós-geração).
+        return new PromptGerado(system, user, regras);
     }
 
-    /** Prompt montado + as {@link Constraint} ativas usadas no bloco [1] e pelo {@code PlanQualityChecker}. */
-    public record PromptGerado(String prompt, List<Constraint> regras) {}
+    /**
+     * {@code system}: template estático cru (persona + regras), byte-idêntico entre atletas e
+     * tentativas — liga o cache de prefixo do provedor. {@code user}: perfil do atleta + histórico
+     * dinâmico. {@code regras}: {@link Constraint} ativas usadas no bloco [1] e pelo
+     * {@code PlanQualityChecker} (system-user-prompt-split, CA1).
+     */
+    public record PromptGerado(String system, String user, List<Constraint> regras) {}
 
     // ======================== MÉTODOS AUXILIARES (mantidos) ========================
 

@@ -1,0 +1,26 @@
+### PERFIL DO ATLETA
+- Nome: %s
+- Idade: %d anos
+- Objetivo Principal: %s
+- Nível: %s
+- Dias disponíveis: %s
+- Dia preferido do longo: %s
+- Provas planejadas: %s
+
+### HISTÓRICO RECENTE (últimas 3-4 semanas)
+
+**Formato esperado por treino:**
+- Data, Dia da Semana, Tipo de Treino
+- Volume: duração (min) + distância (km)
+- Intensidade: TSS, IF, zonas de FC predominantes
+- Status: realizado/cancelado + percepção de esforço real
+
+**Dados:**
+%s
+
+**ANÁLISE OBRIGATÓRIA:**
+Antes de gerar o plano, identifique:
+1. Tipos de treino NÃO realizados há mais de 14 dias
+2. Volume médio semanal das últimas 3 semanas
+3. Padrão de intensidade (predominância de zonas)
+4. Treinos cancelados ou subexecutados (possível fadiga)

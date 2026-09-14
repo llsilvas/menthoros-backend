@@ -28,7 +28,7 @@ public class PromptHashCalculator {
     private final String valor;
 
     public PromptHashCalculator(ResourceLoader resourceLoader,
-                                @Value("${app.llm.plano.template:plano-treino-otimizado-claude.txt}") String templateName) {
+                                @Value("${app.llm.plano.template:plano-treino-system.txt}") String templateName) {
         Resource resource = resourceLoader.getResource(PROMPTS_BASE_PATH + templateName);
         if (!resource.exists()) {
             throw new IllegalStateException("Template do prompt de plano não encontrado no classpath: " + templateName);
