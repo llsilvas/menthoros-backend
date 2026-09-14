@@ -32,7 +32,7 @@ class TreinoNormalizadorIntervaladoTest {
 
     @BeforeEach
     void setUp() {
-        normalizador = new TreinoNormalizador();
+        normalizador = new TreinoNormalizador(new PaceValidator());
         zonasFC160 = List.of(
                 new ZonaFC(1, "Recuperação", 120, 136),
                 new ZonaFC(2, "Aeróbico",    136, 142),
@@ -143,6 +143,90 @@ class TreinoNormalizadorIntervaladoTest {
                     treino, NivelExperiencia.INTERMEDIARIO, zonasFC160);
 
             assertThat(resultado.etapas()).isEqualTo(treino.etapas());
+        }
+    }
+
+    @Nested
+    @DisplayName("IA-05: duracaoMin consistente com ritmoAlvo após ajuste de distanciaKm")
+    class DuracaoConsistenteComRitmoAlvo {
+
+        @Test
+        @DisplayName("clamp de AQUECIMENTO com ritmoAlvo preenchido recalcula duracaoMin (não fica com o valor antigo)")
+        void clampAquecimento_comRitmoAlvo_recalculaDuracaoMin() {
+            // AQUECIMENTO com 3.0km (acima do teto 2.0) e duracaoMin=99 claramente desatualizado.
+            // ritmoAlvo="5:00-5:00/km" -> pace médio 5.0 min/km. Após o clamp pra 2.0km, duracaoMin
+            // deve virar 10 (2.0 * 5.0), não continuar 99.
+            var aquecimento = new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 99, 3.0,
+                    "120-136 bpm", 1, "5:00-5:00/km");
+            TreinoPlanejadoLlmDto treino = intervalado(6.8,
+                    aquecimento,
+                    tiro(0.8), rec(0.3),
+                    tiro(0.8), rec(0.3),
+                    tiro(0.8), rec(0.3),
+                    tiro(0.8), rec(0.3),
+                    tiro(0.8),
+                    etapa("DESAQUECIMENTO", 10, 1.3)
+            );
+
+            TreinoPlanejadoLlmDto resultado = normalizador.normalizarTreinoIntervalado(
+                    treino, NivelExperiencia.INTERMEDIARIO, zonasFC160);
+
+            var aquecimentoCorrigido = resultado.etapas().stream()
+                    .filter(e -> "AQUECIMENTO".equals(e.tipoEtapa())).findFirst().orElseThrow();
+            assertThat(aquecimentoCorrigido.distanciaKm()).isEqualTo(2.0);
+            assertThat(aquecimentoCorrigido.duracaoMin()).isEqualTo(10);
+        }
+
+        @Test
+        @DisplayName("distribuição de delta positivo nos tiros com ritmoAlvo preenchido recalcula duracaoMin")
+        void distribuirDeltaTiros_comRitmoAlvo_recalculaDuracaoMin() {
+            // Mesmo cenário de CA3 (gap positivo distribuído nos tiros: 0.8 -> 0.9km), mas agora
+            // os tiros têm ritmoAlvo="4:00-4:00/km" (pace 4.0 min/km) -> duracaoMin esperado após
+            // crescer pra 0.9km é 3.6, arredondado pra 4 (Math.round).
+            // duracaoMin=1 é deliberadamente errado pra 0.8km — só fica certo se o fix recalcular
+            // a partir da nova distanciaKm; se o fix não rodar, o teste falha (não passa "por
+            // acidente" coincidindo com o valor esperado).
+            var tiroComRitmo = new EtapaTreinoLlmDto(1, "INTERVALADO", "Intervalo Z5", 1, 0.8,
+                    "90-95% FCmax", 1, "4:00-4:00/km");
+            TreinoPlanejadoLlmDto treino = intervalado(7.3,
+                    etapa("AQUECIMENTO", 10, 1.5),
+                    tiroComRitmo, rec(0.3),
+                    tiroComRitmo, rec(0.3),
+                    tiroComRitmo, rec(0.3),
+                    tiroComRitmo,
+                    etapa("DESAQUECIMENTO", 10, 1.3)
+            );
+
+            TreinoPlanejadoLlmDto resultado = normalizador.normalizarTreinoIntervalado(
+                    treino, NivelExperiencia.INTERMEDIARIO, zonasFC160);
+
+            assertThat(resultado.etapas())
+                    .filteredOn(e -> "INTERVALADO".equals(e.tipoEtapa()))
+                    .extracting(EtapaTreinoLlmDto::duracaoMin)
+                    .containsOnly(4);
+        }
+
+        @Test
+        @DisplayName("regressão: sem ritmoAlvo, duracaoMin permanece intocado após o clamp")
+        void clampAquecimento_semRitmoAlvo_duracaoMinInalterado() {
+            var aquecimento = etapa("AQUECIMENTO", 99, 3.0); // ritmoAlvo=null (helper padrão)
+            TreinoPlanejadoLlmDto treino = intervalado(6.8,
+                    aquecimento,
+                    tiro(0.8), rec(0.3),
+                    tiro(0.8), rec(0.3),
+                    tiro(0.8), rec(0.3),
+                    tiro(0.8), rec(0.3),
+                    tiro(0.8),
+                    etapa("DESAQUECIMENTO", 10, 1.3)
+            );
+
+            TreinoPlanejadoLlmDto resultado = normalizador.normalizarTreinoIntervalado(
+                    treino, NivelExperiencia.INTERMEDIARIO, zonasFC160);
+
+            var aquecimentoCorrigido = resultado.etapas().stream()
+                    .filter(e -> "AQUECIMENTO".equals(e.tipoEtapa())).findFirst().orElseThrow();
+            assertThat(aquecimentoCorrigido.distanciaKm()).isEqualTo(2.0);
+            assertThat(aquecimentoCorrigido.duracaoMin()).isEqualTo(99);
         }
     }
 

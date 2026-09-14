@@ -24,7 +24,7 @@ class TreinoNormalizadorDistanciaContinuoTest {
 
     @BeforeEach
     void setUp() {
-        normalizador = new TreinoNormalizador();
+        normalizador = new TreinoNormalizador(new PaceValidator());
     }
 
     private static EtapaTreinoLlmDto etapa(int ordem, String tipo, Integer duracaoMin, Double dist) {

@@ -24,7 +24,7 @@ class TreinoNormalizadorFartlekExpansaoTest {
 
     @BeforeEach
     void setUp() {
-        normalizador = new TreinoNormalizador();
+        normalizador = new TreinoNormalizador(new PaceValidator());
         zonasFC160 = List.of(
                 new ZonaFC(1, "Recuperação", 120, 136),
                 new ZonaFC(2, "Aeróbico",    136, 142),

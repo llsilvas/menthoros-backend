@@ -270,6 +270,14 @@ public class PlanoServiceImpl implements PlanoService {
         } catch (LLMException e) {
             log.error("Falha na IA ao gerar o plano para o atleta: {}", atletaId);
             throw e;
+        } catch (DomainRuleViolationException e) {
+            // Fix IA-06 (review.md 2026-09-05): sem este catch, o orçamento de retries esgotado em
+            // PlanoResilienceService.gerarComResiliencia (DomainRuleViolationException) caía no
+            // catch (Exception) genérico abaixo e virava LLMException — o treinador recebia 503
+            // (indisponibilidade) para um erro de domínio (estrutura do plano rejeitada), que deveria
+            // chegar como 422. Espelha o catch já existente em gerarPlanoTreino.
+            log.error("Erro de domínio ao gerar o plano para o atleta: {}", atletaId);
+            throw e;
         } catch (Exception e) {
             log.error("Erro inesperado ao gerar o plano para o atleta: {}", atletaId, e);
             throw new LLMException("Erro inesperado ao gerar plano", e);

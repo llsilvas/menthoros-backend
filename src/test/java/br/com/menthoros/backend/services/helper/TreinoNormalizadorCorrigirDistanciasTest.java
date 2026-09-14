@@ -24,7 +24,7 @@ class TreinoNormalizadorCorrigirDistanciasTest {
 
     @BeforeEach
     void setUp() {
-        normalizador = new TreinoNormalizador();
+        normalizador = new TreinoNormalizador(new PaceValidator());
     }
 
     // paceZ2 = 4.5 × 1.20 = 5.4 min/km → 10min → arredondar2(10/5.4) = 1.85

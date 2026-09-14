@@ -29,6 +29,12 @@ import java.util.stream.Collectors;
 @Component
 public class TreinoNormalizador {
 
+    private final PaceValidator paceValidator;
+
+    public TreinoNormalizador(PaceValidator paceValidator) {
+        this.paceValidator = paceValidator;
+    }
+
     private static final double PACE_Z2_DEFAULT_MIN_KM = 7.0;  // 7:00/km — Z2 genérico sem limiar cadastrado
     private static final double PACE_Z1_DEFAULT_MIN_KM = 8.0;  // 8:00/km — Z1 genérico sem limiar cadastrado
     private static final double FATOR_PACE_Z2 = 1.20;          // Z2 ≈ limiar × 1.20
@@ -522,12 +528,28 @@ public class TreinoNormalizador {
             if (d == null || d <= 0) return e;
             if (d >= min && d <= max) return e;
 
+            double novaDistancia = Math.max(min, Math.min(max, d));
             return new EtapaTreinoLlmDto(
                     e.ordem(), e.tipoEtapa(), e.descricaoEtapa(),
-                    e.duracaoMin(), Math.max(min, Math.min(max, d)),
+                    recalcularDuracaoDePace(e.ritmoAlvo(), novaDistancia, e.duracaoMin()), novaDistancia,
                     e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo()
             );
         }).collect(Collectors.toList());
+    }
+
+    /**
+     * IA-05 (review.md 2026-09-05): quando a etapa tem {@code ritmoAlvo}, ele é a fonte de
+     * verdade — qualquer ajuste de {@code distanciaKm} feito por {@code clampDistanciaPorTipo}/
+     * {@code distribuirDeltaPorTipo} precisa recalcular {@code duracaoMin} a partir do pace médio,
+     * senão a etapa fica com distância nova e duração antiga (inconsistente). Sem
+     * {@code ritmoAlvo}, não há pace pra recalcular a partir dele — {@code duracaoMin} original é
+     * preservado.
+     */
+    private Integer recalcularDuracaoDePace(String ritmoAlvo, double distanciaKm, Integer duracaoMinOriginal) {
+        if (ritmoAlvo == null) return duracaoMinOriginal;
+        var paceMedia = paceValidator.calcularPaceMedia(ritmoAlvo);
+        if (paceMedia.isEmpty()) return duracaoMinOriginal;
+        return (int) Math.round(distanciaKm * paceMedia.getAsDouble());
     }
 
     /**
@@ -565,9 +587,10 @@ public class TreinoNormalizador {
 
                 double aplicado = novo - atual;
                 if ((restante > 0 && aplicado > 0) || (restante < 0 && aplicado < 0)) {
+                    double novaDistancia = atual + aplicado;
                     resultado.set(i, new EtapaTreinoLlmDto(
                             e.ordem(), e.tipoEtapa(), e.descricaoEtapa(),
-                            e.duracaoMin(), atual + aplicado,
+                            recalcularDuracaoDePace(e.ritmoAlvo(), novaDistancia, e.duracaoMin()), novaDistancia,
                             e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo()
                     ));
                     restante -= aplicado;

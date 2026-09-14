@@ -19,7 +19,7 @@ class TreinoNormalizadorRepeticoesPatternTest {
 
     @BeforeEach
     void setUp() {
-        normalizador = new TreinoNormalizador();
+        normalizador = new TreinoNormalizador(new PaceValidator());
     }
 
     @Nested
