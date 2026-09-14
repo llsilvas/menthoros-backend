@@ -46,7 +46,7 @@ public class IntervalsIcuActivityController {
         @ApiResponse(responseCode = "403", description = "Sem papel TECNICO/ADMIN ou atleta de outro tenant"),
         @ApiResponse(responseCode = "404", description = "Atleta, conexão intervals.icu ou activity não encontrados"),
         @ApiResponse(responseCode = "409", description = "Precondição de conexão/Strava não satisfeita (ver D5.2)"),
-        @ApiResponse(responseCode = "422", description = "Modalidade não suportada ou activity rejeitada pelo intervals.icu"),
+        @ApiResponse(responseCode = "422", description = "Modalidade não suportada, atividade mais antiga que o limite de retroatividade, ou activity rejeitada pelo intervals.icu"),
         @ApiResponse(responseCode = "429", description = "Limite de requisições do intervals.icu atingido")
     })
     public ResponseEntity<TreinoRealizadoOutputDto> importarAtividade(
