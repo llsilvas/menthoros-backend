@@ -59,19 +59,23 @@ endpoint manual `AtletaController` → `AtletaServiceImpl.recalcularMetricasAtle
 de integridade identificado que a justifique — `MetricasDiarias` já deveria estar correto pelo
 caminho incremental no momento em que o baseline é calculado.
 
-## Achado colateral (bug real, distinto deste achado)
+## Achado colateral — ✅ RESOLVIDO (2026-09-13/14)
 
-`IntervalsIcuActivityPersister.persistir` (usado por
+~~`IntervalsIcuActivityPersister.persistir` (usado por
 `IntervalsIcuActivityIngestionServiceImpl.importarAtividade`, import individual de atividade do
-intervals.icu, potencialmente retroativa) chama `TsbService.atualizarTsbDia` **diretamente**, em
-vez de `recalcularDesde`. Isso contraria o contrato documentado no próprio `TsbService.java`
-("todo caminho de ingestão retroativo precisa deste método [`recalcularDesde`] em vez de
-`atualizarTsbDia` isolado"): se a atividade importada for de uma data passada, os dias
-subsequentes em `MetricasDiarias` ficam desatualizados, sem que nada os corrija depois.
+intervals.icu, potencialmente retroativa) chama `TsbService.atualizarTsbDia` diretamente, em
+vez de `recalcularDesde`.~~ Corrigido pela change `fix-intervals-icu-retroactive-tsb-recalc`
+(PR backend #119, mergeado `cf84117`). O persister agora chama `recalcularDesde`, propagando a
+recorrência CTL/ATL/TSB até hoje em vez de atualizar só o dia importado.
 
-Este é um bug incremental separado — **não valida a chamada em `BaselineCalculatorImpl`**, que
-continua sem justificativa própria. Não registrado como item de radar próprio ainda; mencionado
-aqui para não se perder.
+QA daquela change também encontrou e fechou um segundo risco (achado do `security-reviewer`):
+o endpoint manual de import não tinha limite de retroatividade, o que faria o recálculo mais
+caro reprocessar milhares de dias dentro da transação síncrona de um request HTTP. Corrigido no
+mesmo PR, com o mesmo teto de 90 dias já usado pelo scheduler automático.
+
+Este era um bug incremental separado — **não valida a chamada em `BaselineCalculatorImpl`**, que
+continua sem justificativa própria e segue como achado principal deste documento, agora como
+change própria: `remove-redundant-tsb-baseline-recalc`.
 
 ## Evidência de custo (mantém-se válida)
 
