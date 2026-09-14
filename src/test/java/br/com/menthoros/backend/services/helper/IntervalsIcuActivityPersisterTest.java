@@ -104,7 +104,7 @@ class IntervalsIcuActivityPersisterTest {
 
             assertThat(resultado).isSameAs(mapeado);
             assertThat(mapeado.getTssCalculado()).isEqualTo(55);
-            verify(tsbService).atualizarTsbDia(atleta.getId(), mapeado.getDataTreino());
+            verify(tsbService).recalcularDesde(atleta.getId(), mapeado.getDataTreino());
             verify(reconciliationDecisionExecutor).executar(mapeado, candidatos, atleta);
             verify(eventPublisher).publishEvent(any(br.com.menthoros.backend.events.TreinoRegistradoEvent.class));
         }
@@ -124,7 +124,7 @@ class IntervalsIcuActivityPersisterTest {
 
             assertThat(resultado).isSameAs(jaExistente);
             verify(tssCalculatorService, never()).calcularTss(any());
-            verify(tsbService, never()).atualizarTsbDia(any(), any());
+            verify(tsbService, never()).recalcularDesde(any(), any());
             verify(candidateSelector, never()).buscarCandidatos(any(), any());
             verify(reconciliationDecisionExecutor, never()).executar(any(), any(), any());
             verify(eventPublisher, never()).publishEvent(any());
@@ -216,7 +216,7 @@ class IntervalsIcuActivityPersisterTest {
 
             assertThat(salvo).isSameAs(vencedor);
             assertThat(salvo.getEtapasRealizadas()).hasSize(3);
-            verify(tsbService, never()).atualizarTsbDia(any(), any());
+            verify(tsbService, never()).recalcularDesde(any(), any());
         }
 
         @Test
@@ -233,7 +233,7 @@ class IntervalsIcuActivityPersisterTest {
             TreinoRealizado salvo = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
 
             assertThat(salvo.getEtapasRealizadas()).isEmpty();
-            verify(tsbService).atualizarTsbDia(eq(atleta.getId()), any());
+            verify(tsbService).recalcularDesde(eq(atleta.getId()), any());
         }
     }
 
