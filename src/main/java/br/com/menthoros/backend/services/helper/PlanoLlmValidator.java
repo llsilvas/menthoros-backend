@@ -135,9 +135,14 @@ public class PlanoLlmValidator {
                     etapasCorrigidas, treino.descricao(), treino.zonaAlvo(), treino.provaId());
             // Expansão ANTES da validação: corrige alucinação de compressão "NxDist"
             treino = treinoNormalizador.expandirEtapasAgregadas(treino, zonasParaValidacao);
-            validarTreinoIntervalado(treino, atletaId);
+            // Validação DEPOIS da normalização (achado do Codex, adversarial review 2026-09-14):
+            // normalizarTreinoIntervalado ajusta distanciaKm dos tiros/recuperações e, desde o
+            // fix IA-05, recalcula duracaoMin a partir do ritmoAlvo — validar antes checaria a
+            // duração antiga e deixaria passar um tiro que só viola o teto de 10min depois do
+            // crescimento de distância.
             treino = treinoNormalizador.normalizarTreinoIntervalado(treino, atleta.getNivelExperiencia(), zonasParaValidacao);
             treino = treinoNormalizador.reconciliarDistanciaComEtapas(treino);
+            validarTreinoIntervalado(treino, atletaId);
         }
 
         // Fartlek: expande alucinações "Nx (AccelMin + RecovMin)" e reconcilia distância
