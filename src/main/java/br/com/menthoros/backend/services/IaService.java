@@ -4,7 +4,6 @@ import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.output.AtletaOutputDto;
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
-import br.com.menthoros.backend.dto.output.PlanoTreinoOutputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
@@ -16,7 +15,6 @@ import org.jspecify.annotations.Nullable;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
 public interface IaService {
 
@@ -32,6 +30,4 @@ public interface IaService {
      *        quando {@code planner-engine.enabled=false} — nesse caso o prompt é idêntico ao legado.
      */
     PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracao, @Nullable DecisaoProgressao decisaoProgressao, @Nullable RevisaoSemanal revisaoConsumida, LocalDate inicioSemana, @Nullable WeekPlanSkeleton skeleton);
-
-    Map<Long, PlanoTreinoOutputDto> gerarPlanosEmLote(Map<AtletaOutputDto, List<TreinoRealizadoOutputDto>> atletaDtoListMap);
 }
