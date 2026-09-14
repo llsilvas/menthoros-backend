@@ -32,6 +32,7 @@ import br.com.menthoros.backend.services.helper.PlanoEstruturaReparador;
 import br.com.menthoros.backend.services.helper.PlanoResilienceService;
 import br.com.menthoros.backend.services.helper.PlannerShadowService;
 import br.com.menthoros.backend.services.helper.TreinoNormalizador;
+import br.com.menthoros.backend.services.helper.EtapaFcValidator;
 import br.com.menthoros.backend.domain.compliance.PlannerViolation;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import io.micrometer.core.instrument.Counter;
@@ -55,7 +56,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -75,6 +75,7 @@ public class IaServiceImpl implements IaService {
     private final PlanQualityChecker planQualityChecker;
     private final PlanoEstruturaReparador estruturaReparador;
     private final TreinoNormalizador treinoNormalizador;
+    private final EtapaFcValidator etapaFcValidator;
     private final PlanoResilienceService planoResilienceService;
     private final MeterRegistry meterRegistry;
     private final LlmUsageLogger llmUsageLogger;
@@ -91,6 +92,7 @@ public class IaServiceImpl implements IaService {
                          PlanQualityChecker planQualityChecker,
                          PlanoEstruturaReparador estruturaReparador,
                          TreinoNormalizador treinoNormalizador,
+                         EtapaFcValidator etapaFcValidator,
                          PlanoResilienceService planoResilienceService,
                          MeterRegistry meterRegistry,
                          LlmUsageLogger llmUsageLogger,
@@ -108,6 +110,7 @@ public class IaServiceImpl implements IaService {
         this.planQualityChecker = planQualityChecker;
         this.estruturaReparador = estruturaReparador;
         this.treinoNormalizador = treinoNormalizador;
+        this.etapaFcValidator = etapaFcValidator;
         this.planoResilienceService = planoResilienceService;
         this.meterRegistry = meterRegistry;
         this.llmUsageLogger = llmUsageLogger;
@@ -325,7 +328,7 @@ public class IaServiceImpl implements IaService {
             if (zonasParaValidacao != null && treino.etapas() != null) {
                 final String tipoTreinoFinal = treino.tipoTreino();
                 List<EtapaTreinoLlmDto> etapasValidadas = treino.etapas().stream()
-                        .map(etapa -> validarFcEtapa(etapa, tipoTreinoFinal, zonasParaValidacao))
+                        .map(etapa -> etapaFcValidator.validarFcEtapa(etapa, tipoTreinoFinal, zonasParaValidacao))
                         .collect(Collectors.toList());
                 treino = new TreinoPlanejadoLlmDto(
                         treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
@@ -395,100 +398,7 @@ public class IaServiceImpl implements IaService {
     }
 
     // ======================== VALIDAÇÃO FC POR ZONA (LTHR) ========================
-
-    /**
-     * Extrai o range de FC do formato "NNN-NNN bpm".
-     * Retorna null se o formato não for reconhecido ou o valor for nulo.
-     */
-    private int[] parseFcRange(String fcAlvoEtapa) {
-        if (fcAlvoEtapa == null) return null;
-        var matcher = Pattern.compile("^(\\d{2,3})-(\\d{2,3}) bpm$").matcher(fcAlvoEtapa.trim());
-        if (!matcher.matches()) return null;
-        return new int[]{ Integer.parseInt(matcher.group(1)), Integer.parseInt(matcher.group(2)) };
-    }
-
-    /**
-     * Retorna o range de FC esperado para o tipo de etapa, considerando também o tipo de treino.
-     * <p>O tipoTreino afina o mapeamento da etapa PRINCIPAL, que varia de Z1-Z2 (REGENERATIVO)
-     * até Z4-Z5 (INTERVALADO/TIRO). Sem tipoTreino, PRINCIPAL cai no default Z2-Z4.</p>
-     * <table border="1">
-     *   <tr><th>tipoEtapa</th><th>tipoTreino</th><th>Zona</th></tr>
-     *   <tr><td>AQUECIMENTO / DESAQUECIMENTO</td><td>qualquer</td><td>Z1</td></tr>
-     *   <tr><td>RECUPERACAO</td><td>qualquer</td><td>Z1</td></tr>
-     *   <tr><td>INTERVALADO</td><td>qualquer</td><td>Z4–Z5</td></tr>
-     *   <tr><td>PRINCIPAL</td><td>REGENERATIVO</td><td>Z1–Z2</td></tr>
-     *   <tr><td>PRINCIPAL</td><td>CONTINUO / FACIL / LONGO</td><td>Z2–Z3</td></tr>
-     *   <tr><td>PRINCIPAL</td><td>FARTLEK</td><td>Z2–Z4</td></tr>
-     *   <tr><td>PRINCIPAL</td><td>TEMPO_RUN</td><td>Z3–Z4</td></tr>
-     *   <tr><td>PRINCIPAL</td><td>INTERVALADO / TIRO</td><td>Z4–Z5</td></tr>
-     *   <tr><td>PRINCIPAL</td><td>default/null</td><td>Z2–Z4</td></tr>
-     * </table>
-     */
-    private int[] zonaEsperadaFC(String tipoEtapa, String tipoTreino, List<ZonaFC> zonasFC) {
-        if (tipoEtapa == null || zonasFC == null || zonasFC.size() < 5) return null;
-        return switch (tipoEtapa.toUpperCase()) {
-            case "AQUECIMENTO", "RECUPERACAO", "DESAQUECIMENTO" ->
-                    new int[]{ zonasFC.get(0).fcMin(), zonasFC.get(0).fcMax() }; // Z1
-            case "PRINCIPAL" -> zonaParaEtapaPrincipal(tipoTreino, zonasFC);
-            case "INTERVALADO" ->
-                    new int[]{ zonasFC.get(3).fcMin(), zonasFC.get(4).fcMax() }; // Z4–Z5
-            default -> null;
-        };
-    }
-
-    /** Resolve a zona esperada para etapa PRINCIPAL com base no tipo do treino. */
-    private int[] zonaParaEtapaPrincipal(String tipoTreino, List<ZonaFC> zonasFC) {
-        if (tipoTreino == null) return new int[]{ zonasFC.get(1).fcMin(), zonasFC.get(3).fcMax() }; // Z2-Z4 default
-        return switch (tipoTreino.toUpperCase()) {
-            case "REGENERATIVO"            -> new int[]{ zonasFC.get(0).fcMin(), zonasFC.get(1).fcMax() }; // Z1-Z2
-            case "CONTINUO", "FACIL", "LONGO" -> new int[]{ zonasFC.get(1).fcMin(), zonasFC.get(2).fcMax() }; // Z2-Z3
-            case "FARTLEK"                 -> new int[]{ zonasFC.get(1).fcMin(), zonasFC.get(3).fcMax() }; // Z2-Z4
-            case "TEMPO_RUN"               -> new int[]{ zonasFC.get(2).fcMin(), zonasFC.get(3).fcMax() }; // Z3-Z4
-            case "INTERVALADO", "TIRO"     -> new int[]{ zonasFC.get(3).fcMin(), zonasFC.get(4).fcMax() }; // Z4-Z5
-            default                        -> new int[]{ zonasFC.get(1).fcMin(), zonasFC.get(3).fcMax() }; // Z2-Z4
-        };
-    }
-
-    /**
-     * Verifica se o {@code fcAlvoEtapa} tem sobreposição ≥50% com a zona fisiológica esperada.
-     * <p>Em caso de divergência, corrige o valor para o quartil central da zona esperada
-     * e registra um {@code WARN}. Nunca lança exceção — manter o plano válido é prioridade.</p>
-     */
-    private EtapaTreinoLlmDto validarFcEtapa(EtapaTreinoLlmDto etapa, String tipoTreino, List<ZonaFC> zonasFC) {
-        int[] prescrito = parseFcRange(etapa.fcAlvoEtapa());
-        if (prescrito == null) {
-            if (etapa.fcAlvoEtapa() != null) {
-                log.warn("fcAlvoEtapa não parseable, mantendo original: tipo='{}' valor='{}'",
-                        etapa.tipoEtapa(), etapa.fcAlvoEtapa());
-            }
-            return etapa;
-        }
-
-        int[] esperado = zonaEsperadaFC(etapa.tipoEtapa(), tipoTreino, zonasFC);
-        if (esperado == null) return etapa;
-
-        int prescMin = prescrito[0], prescMax = prescrito[1];
-        int espMin   = esperado[0],  espMax   = esperado[1];
-
-        int overlap = Math.max(0, Math.min(prescMax, espMax) - Math.max(prescMin, espMin));
-        int larguraPrescrita = Math.max(1, prescMax - prescMin);
-        double overlapPct = (double) overlap / larguraPrescrita;
-
-        if (overlapPct < 0.50) {
-            // Corrigir para o quartil central da zona esperada
-            int amplitude = espMax - espMin;
-            int centroMin = espMin + amplitude / 4;
-            int centroMax = espMax - amplitude / 4;
-            String fcCorrigida = centroMin + "-" + centroMax + " bpm";
-            log.warn("FC fora da zona esperada: tipo='{}', prescrito='{}', esperado='{}-{} bpm', corrigindo para '{}'",
-                    etapa.tipoEtapa(), etapa.fcAlvoEtapa(), espMin, espMax, fcCorrigida);
-            return new EtapaTreinoLlmDto(
-                    etapa.ordem(), etapa.tipoEtapa(), etapa.descricaoEtapa(),
-                    etapa.duracaoMin(), etapa.distanciaKm(), fcCorrigida, etapa.repeticoes(), etapa.ritmoAlvo()
-            );
-        }
-        return etapa;
-    }
+    // Delegada para EtapaFcValidator (refactor-iaservice-decomposition, seção 4).
 
     /**
      * Valida treino intervalado: mínimo 8 etapas, tiros e recuperações balanceados
