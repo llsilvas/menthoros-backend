@@ -1,11 +1,13 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.ai.ledger.Violacao;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.LLMException;
+import br.com.menthoros.backend.exception.PlanoNaoConformeException;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
 import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +20,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Validação e normalização do <b>plano semanal</b> gerado pela LLM: pré-computa o contexto do
@@ -57,9 +60,27 @@ public class PlanoLlmValidator {
 
         ContextoNormalizacao ctx = contexto(atleta, atletaId);
 
-        List<TreinoPlanejadoLlmDto> treinosNormalizados = plano.treinosPlanejados().stream()
-                .map(treino -> normalizacaoDeTreino.normalizar(treino, ctx))
-                .toList();
+        // Percorre TODOS os treinos antes de decidir — não aborta no primeiro inválido (achado do
+        // pré-mortem de plan-generation-repair-turn: um .stream().map().toList() aqui escondia um
+        // 2º treino malformado, e com só 2 tentativas de reparo isso podia esgotar o orçamento sem
+        // o modelo nunca ver o 2º problema). NormalizacaoDeTreino continua abortando na 1ª violação
+        // DENTRO de um treino (F2.5, não reaberto).
+        List<TreinoPlanejadoLlmDto> treinosNormalizados = new ArrayList<>();
+        List<Violacao> violacoesEstruturais = new ArrayList<>();
+        for (TreinoPlanejadoLlmDto treino : plano.treinosPlanejados()) {
+            try {
+                treinosNormalizados.add(normalizacaoDeTreino.normalizar(treino, ctx));
+            } catch (LLMException e) {
+                String dia = treino.diaSemana() != null ? treino.diaSemana() : "DIA_DESCONHECIDO";
+                violacoesEstruturais.add(new Violacao("NORMALIZACAO_" + dia, e.getMessage()));
+            }
+        }
+        if (!violacoesEstruturais.isEmpty()) {
+            throw new PlanoNaoConformeException(
+                    "Plano gerado com " + violacoesEstruturais.size() + " treino(s) inválido(s): "
+                            + violacoesEstruturais.stream().map(Violacao::mensagem).collect(Collectors.joining("; ")),
+                    violacoesEstruturais);
+        }
 
         validarDistribuicaoCargaSemanal(treinosNormalizados);
 

@@ -1,0 +1,150 @@
+package br.com.menthoros.backend.services.helper;
+
+import br.com.menthoros.backend.ai.ledger.Violacao;
+import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
+import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
+import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
+import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.exception.PlanoNaoConformeException;
+import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.ContextoTreino;
+import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+/**
+ * {@code plan-generation-repair-turn}, seção 3 — {@code validarENormalizarPlano} passa a percorrer
+ * TODOS os treinos do plano antes de decidir, em vez de abortar no primeiro treino inválido
+ * (achado do pré-mortem: {@code .stream().map(normalizar).toList()} escondia o 2º treino quebrado
+ * de um plano com 2+ treinos malformados). {@code NormalizacaoDeTreino} continua abortando na 1ª
+ * violação <b>dentro</b> de um treino (F2.5, não reaberto) — o gatilho de falha aqui é
+ * {@code validar-repeticoes} (família-agnóstico: qualquer etapa com {@code repeticoes != 1}).
+ */
+@DisplayName("PlanoLlmValidator — coleta de violações de todos os treinos")
+class PlanoLlmValidatorTest {
+
+    private static final UUID ATLETA_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
+
+    private Atleta atleta;
+
+    @BeforeEach
+    void setUp() {
+        atleta = Atleta.builder()
+                .id(ATLETA_ID)
+                .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
+                .paceLimiar(BigDecimal.valueOf(5.0))
+                .build();
+    }
+
+    @Nested
+    @DisplayName("validarENormalizarPlano")
+    class ValidarENormalizarPlano {
+
+        @Test
+        @DisplayName("plano sem treinos inválidos passa normalmente")
+        void planoValidoPassa() {
+            var plano = plano(treinoValido("SEGUNDA"), treinoValido("QUARTA"));
+
+            var resultado = validador().validarENormalizarPlano(plano, atleta, ATLETA_ID);
+
+            assertThat(resultado.treinosPlanejados()).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("1 treino inválido entre 2 → PlanoNaoConformeException com 1 Violacao")
+        void umTreinoInvalido() {
+            var plano = plano(treinoValido("SEGUNDA"), treinoInvalido("QUARTA"));
+
+            assertThatThrownBy(() -> validador().validarENormalizarPlano(plano, atleta, ATLETA_ID))
+                    .isInstanceOf(PlanoNaoConformeException.class)
+                    .satisfies(e -> {
+                        var violacoes = ((PlanoNaoConformeException) e).violacoes();
+                        assertThat(violacoes).hasSize(1);
+                        assertThat(violacoes.get(0).key()).contains("QUARTA");
+                        assertThat(violacoes.get(0).mensagem()).contains("repeticoes");
+                    });
+        }
+
+        @Test
+        @DisplayName("2 treinos inválidos → PlanoNaoConformeException carrega as 2 Violacao, uma por dia — não só a primeira")
+        void doisTreinosInvalidos() {
+            var plano = plano(treinoValido("SEGUNDA"), treinoInvalido("QUARTA"), treinoInvalido("SEXTA"));
+
+            assertThatThrownBy(() -> validador().validarENormalizarPlano(plano, atleta, ATLETA_ID))
+                    .isInstanceOf(PlanoNaoConformeException.class)
+                    .satisfies(e -> {
+                        var violacoes = ((PlanoNaoConformeException) e).violacoes();
+                        assertThat(violacoes).hasSize(2);
+                        assertThat(violacoes).extracting(Violacao::key)
+                                .anyMatch(k -> k.contains("QUARTA"))
+                                .anyMatch(k -> k.contains("SEXTA"));
+                    });
+        }
+
+        @Test
+        @DisplayName("todos os treinos inválidos → todas as violações chegam, nenhuma perdida por abortar cedo")
+        void todosInvalidos() {
+            var plano = plano(treinoInvalido("SEGUNDA"), treinoInvalido("QUARTA"), treinoInvalido("SEXTA"));
+
+            assertThatThrownBy(() -> validador().validarENormalizarPlano(plano, atleta, ATLETA_ID))
+                    .isInstanceOf(PlanoNaoConformeException.class)
+                    .satisfies(e -> assertThat(((PlanoNaoConformeException) e).violacoes()).hasSize(3));
+        }
+    }
+
+    // ---------- arranjo ----------
+
+    private PlanoLlmValidator validador() {
+        TreinoHistoricoProvider treinoHistoricoProvider = mock(TreinoHistoricoProvider.class);
+        when(treinoHistoricoProvider.prepararContexto(atleta)).thenReturn(
+                new ContextoTreino(LocalDate.of(2026, 9, 14), List.of(), List.of(), List.of()));
+        PaceHistoricoFormatter paceHistoricoFormatter = mock(PaceHistoricoFormatter.class);
+        when(paceHistoricoFormatter.calcularTetoPorTipo(any())).thenReturn(java.util.Map.of());
+        when(paceHistoricoFormatter.calcularPisoPorTipo(any())).thenReturn(java.util.Map.of());
+        ZonaTreinoService zonaTreinoService = mock(ZonaTreinoService.class);
+
+        return new PlanoLlmValidator(
+                treinoHistoricoProvider,
+                paceHistoricoFormatter,
+                zonaTreinoService,
+                new NormalizacaoDeTreino(
+                        new TreinoNormalizador(new PaceValidator()),
+                        new EtapaFcValidator(),
+                        new PlanoEstruturaReparador(new SimpleMeterRegistry()),
+                        new PaceValidator(),
+                        new SimpleMeterRegistry()));
+    }
+
+    private static PlanoSemanalLlmDto plano(TreinoPlanejadoLlmDto... treinos) {
+        return new PlanoSemanalLlmDto(30.0, 30.0, null, null, "ATIVO", "base aeróbica", List.of(treinos));
+    }
+
+    private static TreinoPlanejadoLlmDto treinoValido(String dia) {
+        return new TreinoPlanejadoLlmDto(dia, "FACIL", "130-145 bpm", 40, 0.7, 4,
+                "Rodagem fácil", "40:00", 6.5, "6:00-6:30/km",
+                List.of(new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 5, 0.8, "120-136 bpm", 1, null),
+                        new EtapaTreinoLlmDto(2, "PRINCIPAL", "Rodagem confortável", 30, 5.0, "130-145 bpm", 1, "6:00-6:30/km"),
+                        new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Caminhada", 5, 0.7, "120-136 bpm", 1, null)));
+    }
+
+    /** repeticoes=2 é rejeitado por validar-repeticoes (cauda comum, família-agnóstico). */
+    private static TreinoPlanejadoLlmDto treinoInvalido(String dia) {
+        return new TreinoPlanejadoLlmDto(dia, "FACIL", "130-145 bpm", 40, 0.7, 4,
+                "Rodagem fácil", "40:00", 6.5, "6:00-6:30/km",
+                List.of(new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 5, 0.8, "120-136 bpm", 2, null)));
+    }
+}
