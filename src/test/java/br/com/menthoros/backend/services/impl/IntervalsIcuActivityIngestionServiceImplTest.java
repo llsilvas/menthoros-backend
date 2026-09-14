@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.config.external.IntervalsIcuProperties;
 import br.com.menthoros.backend.dto.intervalsicu.IcuActivityDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.Assessoria;
@@ -31,6 +32,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatusCode;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -59,6 +61,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
     @Mock private IntervalsIcuActivityMapper intervalsIcuActivityMapper;
     @Mock private TreinoMapper treinoMapper;
     @Mock private IntervalsIcuActivityPersister persister;
+    @Mock private IntervalsIcuProperties intervalsIcuProperties;
 
     private IntervalsIcuActivityIngestionServiceImpl service;
 
@@ -73,7 +76,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
         service = new IntervalsIcuActivityIngestionServiceImpl(
                 intervalsIcuConnectionService, integracaoExternaRepository, atletaRepository,
                 treinoRealizadoRepository, intervalsIcuClient, intervalsIcuActivityMapper,
-                treinoMapper, persister);
+                treinoMapper, persister, intervalsIcuProperties);
 
         atletaId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
@@ -349,6 +352,62 @@ class IntervalsIcuActivityIngestionServiceImplTest {
                     .isInstanceOf(DomainRuleViolationException.class);
 
             verifyNoInteractions(persister);
+        }
+    }
+
+    @Nested
+    @DisplayName("importarAtividade — limite de retroatividade (achado do security-reviewer, fix-intervals-icu-retroactive-tsb-recalc)")
+    class LimiteDeRetroatividade {
+
+        @Test
+        @DisplayName("atividade mais antiga que syncDaysBack retorna 422, nada persistido")
+        void atividadeMuitoAntigaRetorna422() {
+            stubAteAntesDoClient();
+            IcuActivityDto dto = icuDto();
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
+            when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
+            when(intervalsIcuActivityMapper.parseDataTreino(dto.startDateLocal()))
+                    .thenReturn(LocalDate.now().minusDays(200));
+            when(intervalsIcuProperties.getSyncDaysBack()).thenReturn(90);
+
+            assertThatThrownBy(() -> service.importarAtividade(atletaId, ACTIVITY_ID, tenantId))
+                    .isInstanceOf(DomainRuleViolationException.class);
+
+            verifyNoInteractions(persister);
+        }
+
+        @Test
+        @DisplayName("atividade dentro do limite segue normalmente para o persister")
+        void atividadeDentroDoLimiteSegue() {
+            stubAteAntesDoClient();
+            IcuActivityDto dto = icuDto();
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
+            when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
+            when(intervalsIcuActivityMapper.parseDataTreino(dto.startDateLocal()))
+                    .thenReturn(LocalDate.now().minusDays(10));
+            when(intervalsIcuProperties.getSyncDaysBack()).thenReturn(90);
+            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoRealizado());
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mockOutputDto());
+
+            service.importarAtividade(atletaId, ACTIVITY_ID, tenantId);
+
+            verify(persister).persistir(dto, atleta, tenantId, ACTIVITY_ID);
+        }
+
+        @Test
+        @DisplayName("data não parseável (null) não bloqueia o import — validação best-effort")
+        void dataNaoParseavelNaoBloqueia() {
+            stubAteAntesDoClient();
+            IcuActivityDto dto = icuDto();
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
+            when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
+            when(intervalsIcuActivityMapper.parseDataTreino(dto.startDateLocal())).thenReturn(null);
+            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoRealizado());
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mockOutputDto());
+
+            service.importarAtividade(atletaId, ACTIVITY_ID, tenantId);
+
+            verify(persister).persistir(dto, atleta, tenantId, ACTIVITY_ID);
         }
     }
 

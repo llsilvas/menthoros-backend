@@ -27,7 +27,8 @@ import java.util.UUID;
  *
  * <p>Idempotent: YES — {@link TreinoDedupHelper#saveIdempotent} garante que uma corrida de
  * concorrência não duplica o insert.
- * <p>Side Effects: Database insert (TreinoRealizado, quando novo), update de TSB do dia,
+ * <p>Side Effects: Database insert (TreinoRealizado, quando novo), recálculo de TSB a partir do
+ * dia do treino (import pode ser retroativo — {@link TsbService#recalcularDesde}),
  * reconciliação (via {@link CandidateSelector}/{@link ReconciliationDecisionExecutor}),
  * publicação de {@link TreinoRegistradoEvent}.
  * <p>Tenant-aware: YES — {@code tenantId} recebido explicitamente por parâmetro.
@@ -61,7 +62,10 @@ public class IntervalsIcuActivityPersister {
 
         if (resultado.inserted()) {
             salvo.setTssCalculado(tssCalculatorService.calcularTss(salvo));
-            tsbService.atualizarTsbDia(atleta.getId(), salvo.getDataTreino());
+            // fix-intervals-icu-retroactive-tsb-recalc: import pode ser retroativo (atividade
+            // antiga sincronizada depois) — atualizarTsbDia só tocaria o dia importado, deixando
+            // os dias seguintes já materializados com CTL/ATL/TSB desatualizados.
+            tsbService.recalcularDesde(atleta.getId(), salvo.getDataTreino());
 
             List<TreinoPlanejado> candidatos = candidateSelector.buscarCandidatos(salvo, tenantId);
             reconciliationDecisionExecutor.executar(salvo, candidatos, atleta);
