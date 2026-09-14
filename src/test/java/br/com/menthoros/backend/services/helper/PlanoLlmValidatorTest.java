@@ -13,6 +13,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 /**
  * Testes de {@link PlanoLlmValidator#validarEstrutura3Etapas} — extraído de {@code IaServiceImpl}
@@ -25,7 +26,16 @@ class PlanoLlmValidatorTest {
 
     @BeforeEach
     void setUp() {
-        validator = new PlanoLlmValidator(new SimpleMeterRegistry(), new PaceValidator());
+        validator = new PlanoLlmValidator(
+                new SimpleMeterRegistry(),
+                new PaceValidator(),
+                mock(TreinoHistoricoProvider.class),
+                mock(br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter.class),
+                mock(ZonaTreinoService.class),
+                new TreinoNormalizador(new PaceValidator()),
+                new EtapaFcValidator(),
+                mock(PlanoEstruturaReparador.class)
+        );
     }
 
     @Nested

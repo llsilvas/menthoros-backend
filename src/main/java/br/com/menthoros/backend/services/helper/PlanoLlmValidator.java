@@ -1,26 +1,36 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
+import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.LLMException;
+import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
+import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
- * Validações estruturais e de coerência física do plano gerado pela LLM, por tipo de treino.
- * Extraído de {@code IaServiceImpl} (refactor-iaservice-decomposition, seção 5). Nunca corrige o
- * plano — hard-fail ({@link LLMException}) nas violações estruturais, WARN nas fisiológicas/de
- * coerência (não bloqueiam a geração).
+ * Validação e normalização completa do plano gerado pela LLM: pré-computa contexto (tetos/pisos
+ * de pace, zonas de FC), dispara os normalizadores por tipo de treino e os validadores estruturais
+ * (LLMException em violação estrutural; WARN nas fisiológicas/de coerência, que não bloqueiam a
+ * geração). Extraído de {@code IaServiceImpl} (refactor-iaservice-decomposition, seções 5-6) — o
+ * ponto único de entrada é {@link #validarENormalizarPlano}; os demais métodos públicos existem
+ * pra teste direto de cada regra.
  */
 @Slf4j
 @Component
@@ -28,10 +38,184 @@ public class PlanoLlmValidator {
 
     private final MeterRegistry meterRegistry;
     private final PaceValidator paceValidator;
+    private final TreinoHistoricoProvider treinoHistoricoProvider;
+    private final PaceHistoricoFormatter paceHistoricoFormatter;
+    private final ZonaTreinoService zonaTreinoService;
+    private final TreinoNormalizador treinoNormalizador;
+    private final EtapaFcValidator etapaFcValidator;
+    private final PlanoEstruturaReparador estruturaReparador;
 
-    public PlanoLlmValidator(MeterRegistry meterRegistry, PaceValidator paceValidator) {
+    public PlanoLlmValidator(MeterRegistry meterRegistry, PaceValidator paceValidator,
+                             TreinoHistoricoProvider treinoHistoricoProvider,
+                             PaceHistoricoFormatter paceHistoricoFormatter,
+                             ZonaTreinoService zonaTreinoService,
+                             TreinoNormalizador treinoNormalizador,
+                             EtapaFcValidator etapaFcValidator,
+                             PlanoEstruturaReparador estruturaReparador) {
         this.meterRegistry = meterRegistry;
         this.paceValidator = paceValidator;
+        this.treinoHistoricoProvider = treinoHistoricoProvider;
+        this.paceHistoricoFormatter = paceHistoricoFormatter;
+        this.zonaTreinoService = zonaTreinoService;
+        this.treinoNormalizador = treinoNormalizador;
+        this.etapaFcValidator = etapaFcValidator;
+        this.estruturaReparador = estruturaReparador;
+    }
+
+    /**
+     * Ponto único de entrada: valida e normaliza o plano gerado pela LLM para um atleta —
+     * expansão/normalização por tipo de treino, validação estrutural, FC por zona, pace (teto/piso
+     * + triângulo pace×distância×duração) e distribuição de carga semanal.
+     */
+    public PlanoSemanalLlmDto validarENormalizarPlano(PlanoSemanalLlmDto plano, Atleta atleta, Object atletaId) {
+        if (plano == null || plano.treinosPlanejados() == null) {
+            throw new LLMException("Plano gerado está nulo ou sem treinos");
+        }
+
+        // Pré-computar tetos e pisos de pace para validação
+        var ctx = treinoHistoricoProvider.prepararContexto(atleta);
+        Map<TipoTreino, BigDecimal> tetoPorTipo = paceHistoricoFormatter.calcularTetoPorTipo(ctx.treinosUltimas4Semanas());
+        Map<TipoTreino, BigDecimal> pisoPorTipo = paceHistoricoFormatter.calcularPisoPorTipo(ctx.treinosUltimas4Semanas());
+
+        // Pré-computar zonas de FC para validação de etapas (LTHR) — null se sem dados fisiológicos
+        final List<ZonaFC> zonasParaValidacao;
+        if (atleta.getFcLimiar() != null || atleta.getFcMaxima() != null) {
+            zonasParaValidacao = zonaTreinoService.calcularZonasFC(
+                    atleta.getFcMaximaCalculada(), atleta.getFcLimiarCalculada());
+        } else {
+            zonasParaValidacao = null;
+        }
+
+        List<TreinoPlanejadoLlmDto> treinosNormalizados = plano.treinosPlanejados().stream().map(treino -> {
+            String tipoTreino = treino.tipoTreino();
+
+            // Validar treinos INTERVALADO ou TIRO
+            if ("INTERVALADO".equals(tipoTreino) || "TIRO".equals(tipoTreino)) {
+                // (Passo 0) corrige distâncias de etapas temporais antes de expandir e normalizar
+                List<EtapaTreinoLlmDto> etapasCorrigidas =
+                        treinoNormalizador.corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar());
+                treino = new TreinoPlanejadoLlmDto(
+                        treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
+                        treino.tssPlanejado(), treino.intensidadePlanejada(),
+                        treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
+                        treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(),
+                        etapasCorrigidas, treino.descricao(), treino.zonaAlvo(), treino.provaId());
+                // Expansão ANTES da validação: corrige alucinação de compressão "NxDist"
+                treino = treinoNormalizador.expandirEtapasAgregadas(treino, zonasParaValidacao);
+                validarTreinoIntervalado(treino, atletaId);
+                treino = treinoNormalizador.normalizarTreinoIntervalado(treino, atleta.getNivelExperiencia(), zonasParaValidacao);
+                treino = treinoNormalizador.reconciliarDistanciaComEtapas(treino);
+            }
+
+            // Fartlek: expande alucinações "Nx (AccelMin + RecovMin)" e reconcilia distância
+            if ("FARTLEK".equals(tipoTreino)) {
+                List<EtapaTreinoLlmDto> etapasCorrigidas =
+                        treinoNormalizador.corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar());
+                treino = new TreinoPlanejadoLlmDto(
+                        treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
+                        treino.tssPlanejado(), treino.intensidadePlanejada(),
+                        treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
+                        treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(),
+                        etapasCorrigidas, treino.descricao(), treino.zonaAlvo(), treino.provaId());
+                treino = treinoNormalizador.expandirEtapasAgregadas(treino, zonasParaValidacao);
+                treino = treinoNormalizador.reconciliarDistanciaComEtapas(treino);
+            }
+
+            // Reparo determinístico de estrutura "3 etapas" ANTES da validação (não-op p/ outros tipos):
+            // sintetiza aquecimento/desaquecimento faltante ou reordena, evitando derrubar o plano por
+            // violação trivial. Falta-PRINCIPAL/ambíguo não é reparado → cai na validação (retry).
+            treino = estruturaReparador.reparar(treino, tipoTreino);
+
+            // Validar treino LONGO
+            if ("LONGO".equals(tipoTreino)) {
+                validarTreinoLongo(treino, atletaId);
+            }
+
+            // Validar estrutura de treinos REGENERATIVO, CONTINUO e TEMPO_RUN
+            if ("REGENERATIVO".equals(tipoTreino)) {
+                validarTreinoRegenerativo(treino, atletaId);
+            }
+            if ("CONTINUO".equals(tipoTreino)) {
+                validarTreinoContinuo(treino, atletaId);
+            }
+            if ("TEMPO_RUN".equals(tipoTreino)) {
+                validarTreinoTempoRun(treino, atletaId, atleta);
+            }
+
+            // Validar repeticoes = 1 em todas as etapas
+            validarRepeticoes(treino, atletaId);
+
+            // Validar FC das etapas contra zonas fisiológicas LTHR
+            if (zonasParaValidacao != null && treino.etapas() != null) {
+                final String tipoTreinoFinal = treino.tipoTreino();
+                List<EtapaTreinoLlmDto> etapasValidadas = treino.etapas().stream()
+                        .map(etapa -> etapaFcValidator.validarFcEtapa(etapa, tipoTreinoFinal, zonasParaValidacao))
+                        .collect(Collectors.toList());
+                treino = new TreinoPlanejadoLlmDto(
+                        treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
+                        treino.tssPlanejado(), treino.intensidadePlanejada(),
+                        treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
+                        treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(), etapasValidadas,
+                        treino.descricao(), treino.zonaAlvo(), treino.provaId()
+                );
+            }
+
+            // Validar ritmoAlvo contra teto e piso de pace
+            BigDecimal teto = null;
+            BigDecimal piso = null;
+            try {
+                TipoTreino tipoEnum = TipoTreino.valueOf(tipoTreino);
+                teto = tetoPorTipo.get(tipoEnum);
+                piso = pisoPorTipo.get(tipoEnum);
+            } catch (IllegalArgumentException ignored) {}
+            String ritmoValidado = paceValidator.validar(treino.ritmoAlvo(), teto, piso);
+            if (!Objects.equals(ritmoValidado, treino.ritmoAlvo())) {
+                treino = new TreinoPlanejadoLlmDto(
+                        treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
+                        treino.tssPlanejado(), treino.intensidadePlanejada(),
+                        treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
+                        treino.duracaoMin(), treino.distanciaKm(), ritmoValidado, treino.etapas(),
+                        treino.descricao(), treino.zonaAlvo(), treino.provaId()
+                );
+            }
+
+            // Recalcular duração total com base na soma das etapas (override do valor gerado pelo LLM)
+            if (treino.etapas() != null && !treino.etapas().isEmpty()) {
+                int totalMinEtapas = treinoNormalizador.somarDuracoesMin(treino.etapas());
+                if (totalMinEtapas > 0) {
+                    String duracaoAtual = treino.duracaoMin();
+                    treino = treinoNormalizador.recalcularDuracaoTreino(treino, treino.etapas());
+                    if (!Objects.equals(duracaoAtual, treino.duracaoMin())) {
+                        log.info("DURAÇÃO RECALCULADA [{}]: '{}' → '{}' (baseado nas {} etapas)",
+                                tipoTreino, duracaoAtual, treino.duracaoMin(), treino.etapas().size());
+                    }
+                }
+            }
+
+            // Distância zerada em treino contínuo (ex.: REGENERATIVO sintetizado pelo reparo estrutural /
+            // substituição por lesão): as etapas nascem só com duração, e corrigirDistanciasEtapasTemporais
+            // não deriva a etapa PRINCIPAL. Aqui derivamos de duração×pace e reconciliamos o total — sem
+            // sobrescrever distância válida já existente.
+            treino = treinoNormalizador.garantirDistanciaContinuo(treino, atleta.getPaceLimiar());
+
+            // Validar triângulo pace × distância × duração (após recálculo)
+            validarTrianguloPaceDuracaoDistancia(treino);
+
+            return treino;
+        }).collect(Collectors.toList());
+
+        // Validar distribuição de carga semanal (dias consecutivos intensos)
+        validarDistribuicaoCargaSemanal(treinosNormalizados);
+
+        return new PlanoSemanalLlmDto(
+                plano.volumePlanejadoKm(),
+                plano.volumeAlvoKm(),
+                plano.tsbInicio(),
+                plano.tsbFim(),
+                plano.status(),
+                plano.objetivoSemanal(),
+                treinosNormalizados
+        );
     }
 
     public void validarTreinoIntervalado(TreinoPlanejadoLlmDto treino, Object atletaId) {
