@@ -87,19 +87,16 @@ public class PlanoEstruturaReparador {
     }
 
     private static EtapaTreinoLlmDto sintetizar(String tipoEtapa, String descricao, int duracaoMin) {
+        // criação: sem record de origem (aquec/desaq faltante é inventado, não copiado)
         return new EtapaTreinoLlmDto(null, tipoEtapa, descricao, duracaoMin, null, null, 1, null);
     }
 
     private static EtapaTreinoLlmDto comOrdem(EtapaTreinoLlmDto e, int ordem) {
-        return new EtapaTreinoLlmDto(ordem, e.tipoEtapa(), e.descricaoEtapa(), e.duracaoMin(),
-                e.distanciaKm(), e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo());
+        return e.comOrdem(ordem);
     }
 
     private static TreinoPlanejadoLlmDto comEtapas(TreinoPlanejadoLlmDto t, List<EtapaTreinoLlmDto> etapas) {
-        return new TreinoPlanejadoLlmDto(t.diaSemana(), t.tipoTreino(), t.fcAlvo(), t.tssPlanejado(),
-                t.intensidadePlanejada(), t.percepcaoEsforcoEsperada(), t.justificativaIa(),
-                t.duracaoMin(), t.distanciaKm(), t.ritmoAlvo(), etapas,
-                t.descricao(), t.zonaAlvo(), t.provaId());
+        return t.comEtapas(etapas);
     }
 
     private void contar(String tipo, String acao) {

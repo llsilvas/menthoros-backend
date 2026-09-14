@@ -124,6 +124,7 @@ public class TreinoNormalizador {
                 String ritmoTiro = etapa.ritmoAlvo();
                 String ritmoRec  = recTemplate != null ? recTemplate.ritmoAlvo() : null;
                 for (int rep = 1; rep <= n; rep++) {
+                    // criação: sem record de origem (série comprimida vira N etapas novas)
                     resultado.add(new EtapaTreinoLlmDto(0, "INTERVALADO",
                             "Intervalo " + rep + "/" + n + " - Z5", durTiro, distTiro, fcTiro, 1, ritmoTiro));
                     resultado.add(new EtapaTreinoLlmDto(0, "RECUPERACAO",
@@ -159,6 +160,7 @@ public class TreinoNormalizador {
                 String ritmoAccel = etapa.ritmoAlvo();
                 String ritmoRecov = recTemplate != null ? recTemplate.ritmoAlvo() : null;
                 for (int rep = 1; rep <= fp.n(); rep++) {
+                    // criação: sem record de origem (fartlek comprimido vira N pares aceleração+recuperação)
                     resultado.add(new EtapaTreinoLlmDto(0, "INTERVALADO",
                             "Aceleração " + rep + "/" + fp.n() + " - " + fp.duracaoAceleracao() + "min",
                             fp.duracaoAceleracao(), distAccel, fcAccel, 1, ritmoAccel));
@@ -262,10 +264,7 @@ public class TreinoNormalizador {
             default -> -1.0;
         };
         if (pace <= 0) return e;
-        double distancia = arredondar2(e.duracaoMin() / pace);
-        return new EtapaTreinoLlmDto(
-                e.ordem(), e.tipoEtapa(), e.descricaoEtapa(),
-                e.duracaoMin(), distancia, e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo());
+        return e.comDistancia(arredondar2(e.duracaoMin() / pace));
     }
 
     /**
@@ -283,16 +282,11 @@ public class TreinoNormalizador {
         List<EtapaTreinoLlmDto> etapas = treino.etapas().stream().map(e -> {
             if (e.duracaoMin() == null || e.duracaoMin() <= 0) return e;
             if (e.distanciaKm() != null && e.distanciaKm() > 0) return e;
-            return new EtapaTreinoLlmDto(e.ordem(), e.tipoEtapa(), e.descricaoEtapa(),
-                    e.duracaoMin(), arredondar2(e.duracaoMin() / pace), e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo());
+            return e.comDistancia(arredondar2(e.duracaoMin() / pace));
         }).toList();
         double total = somarDistancias(etapas);
         if (total <= 0) return treino;
-        return new TreinoPlanejadoLlmDto(
-                treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
-                treino.tssPlanejado(), treino.intensidadePlanejada(), treino.percepcaoEsforcoEsperada(),
-                treino.justificativaIa(), treino.duracaoMin(), total, treino.ritmoAlvo(), etapas,
-                treino.descricao(), treino.zonaAlvo(), treino.provaId());
+        return treino.comEtapas(etapas).comDistancia(total);
     }
 
     /**
@@ -368,22 +362,7 @@ public class TreinoNormalizador {
         int totalMin = somarDuracoesMin(etapas);
         String novaDuracao = String.format("%02d:00", totalMin);
 
-        return new TreinoPlanejadoLlmDto(
-                treino.diaSemana(),
-                treino.tipoTreino(),
-                treino.fcAlvo(),
-                treino.tssPlanejado(),
-                treino.intensidadePlanejada(),
-                treino.percepcaoEsforcoEsperada(),
-                treino.justificativaIa(),
-                novaDuracao,
-                treino.distanciaKm(),
-                treino.ritmoAlvo(),
-                etapas,
-                treino.descricao(),
-                treino.zonaAlvo(),
-                treino.provaId()
-        );
+        return treino.comDuracao(novaDuracao).comEtapas(etapas);
     }
 
     /**
@@ -474,13 +453,7 @@ public class TreinoNormalizador {
         if (distanciaAtual <= 0) {
             log.info("RECONCILIAÇÃO [{}]: distanciaKm não definida → usando soma das etapas: {} km",
                     treino.tipoTreino(), somaEtapas);
-            return new TreinoPlanejadoLlmDto(
-                    treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
-                    treino.tssPlanejado(), treino.intensidadePlanejada(),
-                    treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                    treino.duracaoMin(), somaEtapas, treino.ritmoAlvo(), treino.etapas(),
-                    treino.descricao(), treino.zonaAlvo(), treino.provaId()
-            );
+            return treino.comDistancia(somaEtapas);
         }
 
         double desvioPercent = Math.abs(somaEtapas - distanciaAtual) / distanciaAtual;
@@ -488,13 +461,7 @@ public class TreinoNormalizador {
             log.warn("RECONCILIAÇÃO [{}]: distanciaKm={} km, soma_etapas={} km → desvio {}% > 10%, reconciliando",
                     treino.tipoTreino(), distanciaAtual, String.format("%.2f", somaEtapas),
                     Math.round(desvioPercent * 100));
-            return new TreinoPlanejadoLlmDto(
-                    treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
-                    treino.tssPlanejado(), treino.intensidadePlanejada(),
-                    treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                    treino.duracaoMin(), somaEtapas, treino.ritmoAlvo(), treino.etapas(),
-                    treino.descricao(), treino.zonaAlvo(), treino.provaId()
-            );
+            return treino.comDistancia(somaEtapas);
         }
 
         return treino;
@@ -529,11 +496,8 @@ public class TreinoNormalizador {
             if (d >= min && d <= max) return e;
 
             double novaDistancia = Math.max(min, Math.min(max, d));
-            return new EtapaTreinoLlmDto(
-                    e.ordem(), e.tipoEtapa(), e.descricaoEtapa(),
-                    recalcularDuracaoDePace(e.ritmoAlvo(), novaDistancia, e.duracaoMin()), novaDistancia,
-                    e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo()
-            );
+            return e.comDistancia(novaDistancia)
+                    .comDuracao(recalcularDuracaoDePace(e.ritmoAlvo(), novaDistancia, e.duracaoMin()));
         }).collect(Collectors.toList());
     }
 
@@ -588,11 +552,8 @@ public class TreinoNormalizador {
                 double aplicado = novo - atual;
                 if ((restante > 0 && aplicado > 0) || (restante < 0 && aplicado < 0)) {
                     double novaDistancia = atual + aplicado;
-                    resultado.set(i, new EtapaTreinoLlmDto(
-                            e.ordem(), e.tipoEtapa(), e.descricaoEtapa(),
-                            recalcularDuracaoDePace(e.ritmoAlvo(), novaDistancia, e.duracaoMin()), novaDistancia,
-                            e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo()
-                    ));
+                    resultado.set(i, e.comDistancia(novaDistancia)
+                            .comDuracao(recalcularDuracaoDePace(e.ritmoAlvo(), novaDistancia, e.duracaoMin())));
                     restante -= aplicado;
                 }
             }
@@ -639,6 +600,7 @@ public class TreinoNormalizador {
         }
         int insertIndex = (idxDesaq >= 0) ? idxDesaq : resultado.size();
 
+        // criação: sem record de origem (par tiro+recuperação sintetizado pra fechar a distância)
         resultado.add(insertIndex, new EtapaTreinoLlmDto(
                 0, "INTERVALADO", "Tiro extra em Z5",
                 duracaoTiroMin, distTiro, fcTiro, 1, null
@@ -656,12 +618,7 @@ public class TreinoNormalizador {
     private List<EtapaTreinoLlmDto> reordenarEtapas(List<EtapaTreinoLlmDto> etapas) {
         List<EtapaTreinoLlmDto> resultado = new ArrayList<>(etapas.size());
         for (int i = 0; i < etapas.size(); i++) {
-            EtapaTreinoLlmDto e = etapas.get(i);
-            resultado.add(new EtapaTreinoLlmDto(
-                    i + 1, e.tipoEtapa(), e.descricaoEtapa(),
-                    e.duracaoMin(), e.distanciaKm(),
-                    e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo()
-            ));
+            resultado.add(etapas.get(i).comOrdem(i + 1));
         }
         return resultado;
     }

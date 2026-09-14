@@ -125,14 +125,8 @@ public class PlanoLlmValidator {
         // Validar treinos INTERVALADO ou TIRO
         if ("INTERVALADO".equals(tipoTreino) || "TIRO".equals(tipoTreino)) {
             // (Passo 0) corrige distâncias de etapas temporais antes de expandir e normalizar
-            List<EtapaTreinoLlmDto> etapasCorrigidas =
-                    treinoNormalizador.corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar());
-            treino = new TreinoPlanejadoLlmDto(
-                    treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
-                    treino.tssPlanejado(), treino.intensidadePlanejada(),
-                    treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                    treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(),
-                    etapasCorrigidas, treino.descricao(), treino.zonaAlvo(), treino.provaId());
+            treino = treino.comEtapas(
+                    treinoNormalizador.corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar()));
             // Expansão ANTES da validação: corrige alucinação de compressão "NxDist"
             treino = treinoNormalizador.expandirEtapasAgregadas(treino, zonasParaValidacao);
             // Gate estrutural sobre o que a LLM gerou, ANTES da normalização: normalizarTreinoIntervalado
@@ -150,14 +144,8 @@ public class PlanoLlmValidator {
 
         // Fartlek: expande alucinações "Nx (AccelMin + RecovMin)" e reconcilia distância
         if ("FARTLEK".equals(tipoTreino)) {
-            List<EtapaTreinoLlmDto> etapasCorrigidas =
-                    treinoNormalizador.corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar());
-            treino = new TreinoPlanejadoLlmDto(
-                    treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
-                    treino.tssPlanejado(), treino.intensidadePlanejada(),
-                    treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                    treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(),
-                    etapasCorrigidas, treino.descricao(), treino.zonaAlvo(), treino.provaId());
+            treino = treino.comEtapas(
+                    treinoNormalizador.corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar()));
             treino = treinoNormalizador.expandirEtapasAgregadas(treino, zonasParaValidacao);
             treino = treinoNormalizador.reconciliarDistanciaComEtapas(treino);
         }
@@ -189,16 +177,9 @@ public class PlanoLlmValidator {
         // Validar FC das etapas contra zonas fisiológicas LTHR
         if (zonasParaValidacao != null && treino.etapas() != null) {
             final String tipoTreinoFinal = treino.tipoTreino();
-            List<EtapaTreinoLlmDto> etapasValidadas = treino.etapas().stream()
+            treino = treino.comEtapas(treino.etapas().stream()
                     .map(etapa -> etapaFcValidator.validarFcEtapa(etapa, tipoTreinoFinal, zonasParaValidacao))
-                    .collect(Collectors.toList());
-            treino = new TreinoPlanejadoLlmDto(
-                    treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
-                    treino.tssPlanejado(), treino.intensidadePlanejada(),
-                    treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                    treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(), etapasValidadas,
-                    treino.descricao(), treino.zonaAlvo(), treino.provaId()
-            );
+                    .collect(Collectors.toList()));
         }
 
         // Validar ritmoAlvo contra teto e piso de pace
@@ -211,13 +192,7 @@ public class PlanoLlmValidator {
         } catch (IllegalArgumentException ignored) {}
         String ritmoValidado = paceValidator.validar(treino.ritmoAlvo(), teto, piso);
         if (!Objects.equals(ritmoValidado, treino.ritmoAlvo())) {
-            treino = new TreinoPlanejadoLlmDto(
-                    treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
-                    treino.tssPlanejado(), treino.intensidadePlanejada(),
-                    treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                    treino.duracaoMin(), treino.distanciaKm(), ritmoValidado, treino.etapas(),
-                    treino.descricao(), treino.zonaAlvo(), treino.provaId()
-            );
+            treino = treino.comRitmo(ritmoValidado);
         }
 
         // Recalcular duração total com base na soma das etapas (override do valor gerado pelo LLM)
