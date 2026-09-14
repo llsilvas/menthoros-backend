@@ -212,7 +212,7 @@ public class IaServiceImpl implements IaService {
                 : chatClient.prompt().messages(List.of(
                         new SystemMessage(system),
                         new UserMessage(tentativa.promptOriginal()),
-                        new AssistantMessage(tentativa.jsonAnterior()),
+                        new AssistantMessage(jsonAnteriorOuFallback(tentativa.jsonAnterior())),
                         new UserMessage(repairTurnMessageBuilder.construirCorrecao(tentativa.violacoesAnteriores()))));
 
         ChatResponse resposta = pedido.options(llmJsonSchemaBuilder.defaultJsonSchemaOptions())
@@ -224,6 +224,23 @@ public class IaServiceImpl implements IaService {
 
         PlanoSemanalLlmDto entidade = (json == null || json.isBlank()) ? null : parsearPlano(json);
         return new PlanoResilienceService.ChamadaLlm(entidade, json);
+    }
+
+    /**
+     * {@code jsonAnterior} é {@code null} quando a 1ª tentativa devolveu resposta vazia/sem
+     * conteúdo (achado do `/qa`: dois revisores independentes — {@code content()} nulo/vazio não
+     * lança dentro de {@code gerarChamadaLlm}, então a validação estrutural a jusante rejeita com
+     * {@code LLMException} genérica, sem {@code PlanoNaoConformeException}, e {@code jsonAnterior}
+     * segue nulo para a 2ª tentativa). Sem esta guarda, {@code new AssistantMessage(null)} não
+     * lança (Spring AI só valida não-nulo em SYSTEM/USER), mas envia um turno de assistente vazio
+     * ao modelo, contrariando o design ("o JSON completo da tentativa anterior viaja como
+     * AssistantMessage").
+     */
+    private static String jsonAnteriorOuFallback(@org.jspecify.annotations.Nullable String jsonAnterior) {
+        // isBlank(), não só != null: content() pode vir "" ou só espaços (não-nulo, mas igualmente
+        // sem conteúdo) — achado do /qa, 2ª verificação: o guard original só cobria null.
+        return jsonAnterior != null && !jsonAnterior.isBlank() ? jsonAnterior
+                : "(a tentativa anterior não devolveu conteúdo — resposta vazia do modelo)";
     }
 
     private PlanoSemanalLlmDto parsearPlano(String json) {

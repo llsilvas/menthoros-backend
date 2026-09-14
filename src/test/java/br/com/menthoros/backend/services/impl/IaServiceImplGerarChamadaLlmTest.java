@@ -186,5 +186,40 @@ class IaServiceImplGerarChamadaLlmTest {
             assertThat(m2.get(3)).isInstanceOf(UserMessage.class);
             assertThat(m2.get(3).getText()).contains("NORMALIZACAO_SEGUNDA").contains("Treino SEGUNDA inválido");
         }
+
+        @Test
+        @DisplayName("achado do /qa: jsonAnterior nulo (1ª resposta vazia) não envia AssistantMessage(null) — usa fallback")
+        void jsonAnteriorNuloUsaFallback() throws Exception {
+            chatModelResponde("{\"volumePlanejadoKm\":30.0,\"volumeAlvoKm\":30.0,\"status\":\"ATIVO\","
+                    + "\"objetivoSemanal\":\"base\",\"treinosPlanejados\":[]}");
+
+            var violacoes = List.of(new Violacao("LLM_ERRO_ESTRUTURAL", "Plano gerado está nulo ou sem treinos"));
+            invoke("system fixo", new PlanoResilienceService.Tentativa(2, "gere o plano", null, violacoes));
+
+            ArgumentCaptor<Prompt> captor = ArgumentCaptor.forClass(Prompt.class);
+            verify(chatModel, times(1)).call(captor.capture());
+            List<Message> mensagens = captor.getValue().getInstructions();
+
+            assertThat(mensagens.get(2)).isInstanceOf(AssistantMessage.class);
+            assertThat(mensagens.get(2).getText()).isNotNull().isNotBlank();
+        }
+
+        @Test
+        @DisplayName("achado do /qa (2ª verificação): jsonAnterior em branco (não-nulo, só espaços) também usa fallback")
+        void jsonAnteriorEmBrancoUsaFallback() throws Exception {
+            chatModelResponde("{\"volumePlanejadoKm\":30.0,\"volumeAlvoKm\":30.0,\"status\":\"ATIVO\","
+                    + "\"objetivoSemanal\":\"base\",\"treinosPlanejados\":[]}");
+
+            var violacoes = List.of(new Violacao("LLM_ERRO_ESTRUTURAL", "Plano gerado está nulo ou sem treinos"));
+            invoke("system fixo", new PlanoResilienceService.Tentativa(2, "gere o plano", "   ", violacoes));
+
+            ArgumentCaptor<Prompt> captor = ArgumentCaptor.forClass(Prompt.class);
+            verify(chatModel, times(1)).call(captor.capture());
+            List<Message> mensagens = captor.getValue().getInstructions();
+
+            assertThat(mensagens.get(2)).isInstanceOf(AssistantMessage.class);
+            assertThat(mensagens.get(2).getText()).isNotBlank().isNotEqualTo("   ")
+                    .contains("resposta vazia");
+        }
     }
 }
