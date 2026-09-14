@@ -39,4 +39,31 @@ public record TreinoPlanejadoLlmDto(
                 percepcaoEsforcoEsperada, justificativaIa, duracaoMin, distanciaKm, ritmoAlvo,
                 etapas, null, null, null);
     }
+
+    // Withers (pipeline-normalizacao-treino, seção 1): copiam SEMPRE pelo construtor canônico de 14
+    // campos — o overload de 11 acima zeraria descricao/zonaAlvo/provaId em silêncio.
+
+    public TreinoPlanejadoLlmDto comEtapas(List<EtapaTreinoLlmDto> novasEtapas) {
+        return new TreinoPlanejadoLlmDto(diaSemana, tipoTreino, fcAlvo, tssPlanejado, intensidadePlanejada,
+                percepcaoEsforcoEsperada, justificativaIa, duracaoMin, distanciaKm, ritmoAlvo,
+                novasEtapas, descricao, zonaAlvo, provaId);
+    }
+
+    public TreinoPlanejadoLlmDto comRitmo(String novoRitmoAlvo) {
+        return new TreinoPlanejadoLlmDto(diaSemana, tipoTreino, fcAlvo, tssPlanejado, intensidadePlanejada,
+                percepcaoEsforcoEsperada, justificativaIa, duracaoMin, distanciaKm, novoRitmoAlvo,
+                etapas, descricao, zonaAlvo, provaId);
+    }
+
+    public TreinoPlanejadoLlmDto comDistancia(Double novaDistanciaKm) {
+        return new TreinoPlanejadoLlmDto(diaSemana, tipoTreino, fcAlvo, tssPlanejado, intensidadePlanejada,
+                percepcaoEsforcoEsperada, justificativaIa, duracaoMin, novaDistanciaKm, ritmoAlvo,
+                etapas, descricao, zonaAlvo, provaId);
+    }
+
+    public TreinoPlanejadoLlmDto comDuracao(String novaDuracaoMin) {
+        return new TreinoPlanejadoLlmDto(diaSemana, tipoTreino, fcAlvo, tssPlanejado, intensidadePlanejada,
+                percepcaoEsforcoEsperada, justificativaIa, novaDuracaoMin, distanciaKm, ritmoAlvo,
+                etapas, descricao, zonaAlvo, provaId);
+    }
 }
