@@ -135,14 +135,17 @@ public class PlanoLlmValidator {
                     etapasCorrigidas, treino.descricao(), treino.zonaAlvo(), treino.provaId());
             // Expansão ANTES da validação: corrige alucinação de compressão "NxDist"
             treino = treinoNormalizador.expandirEtapasAgregadas(treino, zonasParaValidacao);
-            // Validação DEPOIS da normalização (achado do Codex, adversarial review 2026-09-14):
-            // normalizarTreinoIntervalado ajusta distanciaKm dos tiros/recuperações e, desde o
-            // fix IA-05, recalcula duracaoMin a partir do ritmoAlvo — validar antes checaria a
-            // duração antiga e deixaria passar um tiro que só viola o teto de 10min depois do
-            // crescimento de distância.
+            // Gate estrutural sobre o que a LLM gerou, ANTES da normalização: normalizarTreinoIntervalado
+            // sintetiza pares tiro+recuperação (adicionarTiroERecuperacao) quando falta distância —
+            // validar depois deixaria um treino de 4 etapas passar completado pelo normalizador em
+            // vez de cair no retry com feedback (achado do code-reviewer, /qa 2ª rodada).
+            validarTreinoIntervalado(treino, atletaId);
             treino = treinoNormalizador.normalizarTreinoIntervalado(treino, atleta.getNivelExperiencia(), zonasParaValidacao);
             treino = treinoNormalizador.reconciliarDistanciaComEtapas(treino);
-            validarTreinoIntervalado(treino, atletaId);
+            // Só a duração dos tiros é rechecada DEPOIS (achado do Codex, adversarial review
+            // 2026-09-14): desde o fix IA-05 a normalização recalcula duracaoMin a partir do
+            // ritmoAlvo ao ajustar distanciaKm — um tiro válido antes pode passar do teto de 10min.
+            validarDuracaoTiros(treino, atletaId);
         }
 
         // Fartlek: expande alucinações "Nx (AccelMin + RecovMin)" e reconcilia distância
@@ -415,24 +418,7 @@ public class PlanoLlmValidator {
         }
 
         // 7) Duração dos tiros (coerência fisiológica geral)
-        long tirosInvalidos = etapas.stream()
-                .filter(e -> "INTERVALADO".equals(e.tipoEtapa()))
-                .filter(e -> {
-                    if (e.duracaoMin() == null) return true;
-                    double duracao = e.duracaoMin();
-                    // mínimo ~18s (0.3 min) e máximo 10 min
-                    return duracao < 0.3 || duracao > 10.0;
-                })
-                .count();
-
-        if (tirosInvalidos > 0) {
-            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} possui {} tiros com duração incoerente",
-                    atletaId, treino.tipoTreino(), tirosInvalidos);
-            throw new LLMException(String.format(
-                    "Treino %s inválido: existem tiros com duração incoerente (muito curtos ou muito longos)",
-                    treino.tipoTreino()
-            ));
-        }
+        validarDuracaoTiros(treino, atletaId);
 
         // 8) Log final de sucesso
         log.info("VALIDAÇÃO OK [Atleta {}]: Treino {} - {} etapas ({} tiros, {} recuperações, {} km - tiros: {} km, rec: {} km)",
@@ -445,6 +431,36 @@ public class PlanoLlmValidator {
                 distanciaTiros,
                 distanciaRecuperacoes
         );
+    }
+
+    /**
+     * Coerência fisiológica da duração dos tiros: entre ~18s (0.3 min) e 10 min. Chamada duas vezes
+     * no fluxo INTERVALADO/TIRO — dentro de {@link #validarTreinoIntervalado} (sobre o que a LLM
+     * gerou) e de novo depois de {@code normalizarTreinoIntervalado}, porque desde o fix IA-05 a
+     * normalização recalcula {@code duracaoMin} a partir do {@code ritmoAlvo} quando ajusta
+     * {@code distanciaKm} — um tiro válido na primeira checagem pode passar do teto na segunda.
+     */
+    public void validarDuracaoTiros(TreinoPlanejadoLlmDto treino, UUID atletaId) {
+        var etapas = treino.etapas();
+        if (etapas == null) return;
+
+        long tirosInvalidos = etapas.stream()
+                .filter(e -> "INTERVALADO".equals(e.tipoEtapa()))
+                .filter(e -> {
+                    if (e.duracaoMin() == null) return true;
+                    double duracao = e.duracaoMin();
+                    return duracao < 0.3 || duracao > 10.0;
+                })
+                .count();
+
+        if (tirosInvalidos > 0) {
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} possui {} tiros com duração incoerente",
+                    atletaId, treino.tipoTreino(), tirosInvalidos);
+            throw new LLMException(String.format(
+                    "Treino %s inválido: existem tiros com duração incoerente (muito curtos ou muito longos)",
+                    treino.tipoTreino()
+            ));
+        }
     }
 
     /**
