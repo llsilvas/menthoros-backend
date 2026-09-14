@@ -93,6 +93,7 @@ class IaServiceImplCaracterizacaoTest {
         service = new IaServiceImpl(
                 mock(br.com.menthoros.backend.routing.ModelRouter.class),
                 mock(PlanoTreinoPromptBuilder.class),
+                new br.com.menthoros.backend.services.prompt.LlmJsonSchemaBuilder(),
                 atletaRepository,
                 mock(RegraGeracaoTreino.class),
                 treinoHistoricoProvider,

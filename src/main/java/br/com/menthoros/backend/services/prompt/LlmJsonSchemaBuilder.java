@@ -1,0 +1,204 @@
+package br.com.menthoros.backend.services.prompt;
+
+import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
+import org.springframework.ai.converter.BeanOutputConverter;
+import org.springframework.ai.model.ModelOptionsUtils;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.openai.api.ResponseFormat;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Constrói o JSON Schema `strict:true` de {@link PlanoSemanalLlmDto} enviado à OpenAI na geração
+ * de plano — extraído de {@code IaServiceImpl} (refactor-iaservice-decomposition, seção 2).
+ *
+ * <p>Idempotent: YES — pura reflexão sobre {@code PlanoSemanalLlmDto.class}, sem I/O.
+ * Side Effects: NONE. Tenant-aware: NO.</p>
+ */
+@Component
+public class LlmJsonSchemaBuilder {
+
+    /** Monta as {@code OpenAiChatOptions} com o schema apertado, pronto para `.options(...)`. */
+    public OpenAiChatOptions defaultJsonSchemaOptions() {
+        Map<String, Object> schemaMap = buildSchemaTightInlineOrDefs();
+
+        var rf = ResponseFormat.builder()
+                .type(ResponseFormat.Type.JSON_SCHEMA)
+                .jsonSchema(ResponseFormat.JsonSchema.builder()
+                        .name("PlanoSemanalLlmDto")
+                        .schema(schemaMap)
+                        .strict(true)
+                        .build())
+                .build();
+
+        return OpenAiChatOptions.builder()
+                .responseFormat(rf)
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void enforceAllRequired(Map<String, Object> objNode) {
+        if (objNode == null) return;
+        Map<String, Object> props = (Map<String, Object>) objNode.get("properties");
+        if (props == null) return;
+        objNode.put("required", new java.util.ArrayList<>(props.keySet())); // strict:true exige TODAS as chaves
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void putMin(Map<String, Object> props, String name, Number min) {
+        Map<String, Object> p = (Map<String, Object>) props.get(name);
+        if (p != null) p.put("minimum", min);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void putMax(Map<String, Object> props, String name, Number max) {
+        Map<String, Object> p = (Map<String, Object>) props.get(name);
+        if (p != null) p.put("maximum", max);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void putEnum(Map<String, Object> props, String name, List<String> values) {
+        Map<String, Object> p = (Map<String, Object>) props.get(name);
+        if (p != null) p.put("enum", values);
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> buildSchemaTightInlineOrDefs() {
+        var converter = new BeanOutputConverter<>(PlanoSemanalLlmDto.class);
+        var schema = (Map<String, Object>) ModelOptionsUtils.jsonToMap(converter.getJsonSchema());
+
+        // ROOT properties
+        Map<String, Object> planoProps = (Map<String, Object>) schema.get("properties");
+        if (planoProps == null) return schema;
+
+        // Volumes >= 0
+        for (String k : List.of("volumePlanejadoKm", "volumeRealizadoKm", "volumeAlvoKm")) {
+            putMin(planoProps, k, 0);
+        }
+
+        // Status enum
+        putEnum(planoProps, "status", List.of("PLANEJADO", "INICIADO", "EM_ANDAMENTO", "ATIVO", "CONCLUIDO"));
+
+        // treinosPlanejados array 3..5
+        Map<String, Object> treinos = (Map<String, Object>) planoProps.get("treinosPlanejados");
+        if (treinos != null) {
+            treinos.put("minItems", 3);
+            treinos.put("maxItems", 5);
+
+            // TREINO items
+            Map<String, Object> treinoItems = (Map<String, Object>) treinos.get("items");
+            Map<String, Object> treinoProps = treinoItems != null
+                    ? (Map<String, Object>) treinoItems.get("properties")
+                    : null;
+
+            if (treinoProps != null) {
+                // provaId/descricao/zonaAlvo nunca vêm do LLM (prova-no-plano-semanal,
+                // TreinoPlanejadoLlmDto.java) — ProvaNoPlanoService os preenche depois, no
+                // servidor. Removidos ANTES de enforceAllRequired: sem isso, strict:true da
+                // OpenAI força os três a "required" com um schema de UUID sem opção de nulo, e o
+                // modelo não tem como expressar "sem prova" — cai no sentinel
+                // 00000000-0000-0000-0000-000000000000, que é um UUID sintaticamente válido e
+                // quebra a FK de tb_treino_planejado.prova_id ao persistir.
+                treinoProps.remove("provaId");
+                treinoProps.remove("descricao");
+                treinoProps.remove("zonaAlvo");
+
+                // Enums
+                putEnum(treinoProps, "diaSemana",
+                        List.of("DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"));
+                putEnum(treinoProps, "tipoTreino",
+                        List.of("REGENERATIVO", "INTERVALADO", "CONTINUO", "LONGO", "TIRO", "FARTLEK", "TEMPO_RUN"));
+                putEnum(treinoProps, "statusTreino",
+                        List.of("PENDENTE", "REALIZADO", "CANCELADO"));
+
+                // Limites numéricos
+                putMin(treinoProps, "intensidadePlanejada", 0.5);
+                putMax(treinoProps, "intensidadePlanejada", 1.5);
+                putMin(treinoProps, "percepcaoEsforcoEsperada", 1);
+                putMax(treinoProps, "percepcaoEsforcoEsperada", 10);
+                putMin(treinoProps, "duracaoMin", 1);
+                putMin(treinoProps, "distanciaKm", 0);
+                putMin(treinoProps, "tssPlanejado", 0);
+
+                // Pattern ritmo: "5:30-6:00/km"
+                Map<String, Object> ritmo = (Map<String, Object>) treinoProps.get("ritmoAlvo");
+                if (ritmo != null) {
+                    ritmo.put("pattern", "^[0-9]{1,2}:[0-5][0-9]-[0-9]{1,2}:[0-5][0-9]/km$");
+                }
+
+                // MaxLength justificativa
+                Map<String, Object> just = (Map<String, Object>) treinoProps.get("justificativaIa");
+                if (just != null) {
+                    just.put("maxLength", 200);
+                }
+
+                // ETAPAS
+                Map<String, Object> etapas = (Map<String, Object>) treinoProps.get("etapas");
+                if (etapas != null) {
+                    etapas.put("minItems", 2); // Mínimo 2 etapas (qualquer treino)
+                    // Sem maxItems - permitir expansão completa de intervalados
+
+                    Map<String, Object> etapaItems = (Map<String, Object>) etapas.get("items");
+                    Map<String, Object> etapaProps = etapaItems != null
+                            ? (Map<String, Object>) etapaItems.get("properties")
+                            : null;
+
+                    if (etapaProps != null) {
+                        // Enum tipoEtapa
+                        putEnum(etapaProps, "tipoEtapa",
+                                List.of("AQUECIMENTO", "PRINCIPAL", "INTERVALADO", "RECUPERACAO", "DESAQUECIMENTO"));
+
+                        // Limites
+                        putMin(etapaProps, "ordem", 1);
+                        putMin(etapaProps, "duracaoMin", 1);
+                        putMin(etapaProps, "distanciaKm", 0);
+
+                        // 🎯 CRÍTICO: repeticoes SEMPRE = 1
+                        Map<String, Object> reps = (Map<String, Object>) etapaProps.get("repeticoes");
+                        if (reps != null) {
+                            reps.put("const", 1); // Força valor constante = 1
+                            reps.put("default", 1);
+                        }
+
+                        // MaxLength descrição
+                        Map<String, Object> desc = (Map<String, Object>) etapaProps.get("descricaoEtapa");
+                        if (desc != null) {
+                            desc.put("maxLength", 120);
+                        }
+
+                        // Pattern FC: "140-160 bpm" (range absoluto em bpm, alinhado com LTHR)
+                        Map<String, Object> fc = (Map<String, Object>) etapaProps.get("fcAlvoEtapa");
+                        if (fc != null) {
+                            fc.put("pattern", "^[0-9]{2,3}-[0-9]{2,3} bpm$");
+                        }
+
+                        // ritmoAlvo por etapa: nullable (null para AQUECIMENTO/DESAQUECIMENTO/RECUPERACAO)
+                        // anyOf com pattern válido ou null — compatível com strict:true do OpenAI
+                        etapaProps.put("ritmoAlvo", new java.util.LinkedHashMap<>(Map.of(
+                                "anyOf", List.of(
+                                        Map.of("type", "string",
+                                                "pattern", "^[0-9]{1,2}:[0-5][0-9]-[0-9]{1,2}:[0-5][0-9]/km$"),
+                                        Map.of("type", "null")
+                                )
+                        )));
+                    }
+
+                    // Tornar todos os campos da etapa obrigatórios (ritmoAlvo nullable via anyOf)
+                    if (etapaItems != null) {
+                        enforceAllRequired(etapaItems);
+                    }
+                }
+
+                // Tornar todos os campos do treino obrigatórios
+                enforceAllRequired(treinoItems);
+            }
+        }
+
+        // Tornar todos os campos do ROOT obrigatórios
+        enforceAllRequired(schema);
+
+        return schema;
+    }
+}

@@ -50,6 +50,7 @@ class IaServiceImplComplianceEstagio1Test {
         service = new IaServiceImpl(
                 mock(br.com.menthoros.backend.routing.ModelRouter.class),
                 mock(br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder.class),
+                new br.com.menthoros.backend.services.prompt.LlmJsonSchemaBuilder(),
                 mock(br.com.menthoros.backend.repository.AtletaRepository.class),
                 mock(br.com.menthoros.backend.services.helper.RegraGeracaoTreino.class),
                 mock(br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.class),
