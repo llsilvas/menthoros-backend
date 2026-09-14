@@ -266,14 +266,15 @@ class PlanoLlmValidatorCaracterizacaoTest {
         when(zonaTreinoService.calcularZonasFC(any(), any())).thenReturn(ZONAS_FC_160);
 
         return new PlanoLlmValidator(
-                new SimpleMeterRegistry(),
-                new PaceValidator(),
                 treinoHistoricoProvider,
                 paceHistoricoFormatter,
                 zonaTreinoService,
-                new TreinoNormalizador(new PaceValidator()),
-                new EtapaFcValidator(),
-                new PlanoEstruturaReparador(new SimpleMeterRegistry()));
+                new NormalizacaoDeTreino(
+                        new TreinoNormalizador(new PaceValidator()),
+                        new EtapaFcValidator(),
+                        new PlanoEstruturaReparador(new SimpleMeterRegistry()),
+                        new PaceValidator(),
+                        new SimpleMeterRegistry()));
     }
 
     private static Atleta atleta(boolean comFc) {

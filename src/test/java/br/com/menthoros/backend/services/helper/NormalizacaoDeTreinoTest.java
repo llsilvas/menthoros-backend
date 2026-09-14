@@ -1,0 +1,194 @@
+package br.com.menthoros.backend.services.helper;
+
+import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
+import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
+import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.exception.LLMException;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * {@link NormalizacaoDeTreino#normalizar} chamado direto, sem {@code PlanoLlmValidator} nem mocks
+ * de fontes de dados (pipeline-normalizacao-treino, task 2.7). Os cenários de rejeição vieram de
+ * {@code PlanoLlmValidatorTest#ValidacaoPosNormalizacaoIA05} (F2) — a ordem certa produz o
+ * resultado certo; o golden da ordem em si é {@code FamiliaTreinoTest}.
+ */
+@DisplayName("NormalizacaoDeTreino — normalizar")
+class NormalizacaoDeTreinoTest {
+
+    private NormalizacaoDeTreino normalizacao;
+    private ContextoNormalizacao ctx;
+
+    @BeforeEach
+    void setUp() {
+        normalizacao = new NormalizacaoDeTreino(
+                new TreinoNormalizador(new PaceValidator()),
+                new EtapaFcValidator(),
+                new PlanoEstruturaReparador(new SimpleMeterRegistry()),
+                new PaceValidator(),
+                new SimpleMeterRegistry());
+        Atleta atleta = Atleta.builder()
+                .id(UUID.randomUUID())
+                .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
+                .paceLimiar(BigDecimal.valueOf(5.0))
+                .build();
+        ctx = new ContextoNormalizacao(atleta, atleta.getId(), null, Map.of(), Map.of());
+    }
+
+    @Nested
+    @DisplayName("rejeições — a ordem da receita é o que as produz")
+    class Rejeicoes {
+
+        @Test
+        @DisplayName("4 etapas não é mascarado pelo padding: gate-contagem vem ANTES de normalizar-intervalado")
+        void paddingDe4Etapas() {
+            var treino = intervalado(8.0, aquec(), tiro(4, null), rec(), desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("mínimo 6");
+        }
+
+        @Test
+        @DisplayName("tiro que passa de 10min após crescer de distância: a 2ª gate-duracao-tiros (IA-05) pega")
+        void tiroPassaDe10minAposCrescimento() {
+            // soma 7.27km (desaq clampado pra 1.5) contra alvo 7.84 → gap +0.57 distribuído em 4 tiros
+            // (0.8→~0.94km); pace 12 min/km → duracaoMin recalculado 11 > 10
+            var tiro = tiro(4, "12:00-12:00/km");
+            var treino = intervalado(7.84, aquec(), tiro, rec(), tiro, rec(), tiro, rec(), tiro, desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("duração incoerente");
+        }
+
+        @Test
+        @DisplayName("tiro com duracaoMin == null é rejeitado pela 1ª gate-duracao-tiros, antes de qualquer normalização")
+        void tiroComDuracaoNull() {
+            var tiro = tiro(null, null);
+            var treino = intervalado(7.44, aquec(), tiro, rec(), tiro, rec(), tiro, rec(), tiro, desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("duração incoerente");
+        }
+
+        @Test
+        @DisplayName("RECUPERACAO antes do 1º tiro: gate-sequencia rejeita mesmo com contagem, extremos e balanceamento ok")
+        void recuperacaoAntesDoPrimeiroTiro() {
+            var treino = intervalado(6.0, aquec(), rec(), tiro(4, null), tiro(4, null), rec(), desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("recuperações sem tiro");
+        }
+    }
+
+    @Nested
+    @DisplayName("runner")
+    class Runner {
+
+        private ListAppender<ILoggingEvent> appender;
+        private Logger logger;
+        private Level nivelAnterior;
+
+        @BeforeEach
+        void capturarDebug() {
+            logger = (Logger) LoggerFactory.getLogger(NormalizacaoDeTreino.class);
+            nivelAnterior = logger.getLevel();
+            logger.setLevel(Level.DEBUG);
+            appender = new ListAppender<>();
+            appender.start();
+            logger.addAppender(appender);
+        }
+
+        @AfterEach
+        void restaurar() {
+            logger.detachAppender(appender);
+            logger.setLevel(nivelAnterior);
+        }
+
+        @Test
+        @DisplayName("alterou é por equals, não identidade: recalcular-duracao devolve record novo com valores iguais → alterou=false")
+        void alterouPorEqualsNaoIdentidade() {
+            // FACIL (PADRAO): só a cauda. A duração "40:00" já é a soma das etapas (5+30+5), então
+            // recalcular-duracao constrói um record novo idêntico — por identidade diria "alterou".
+            var treino = new TreinoPlanejadoLlmDto("TERCA", "FACIL", "130-145 bpm", 40, 0.7, 4,
+                    "Rodagem fácil", "40:00", 6.5, "6:00-6:30/km",
+                    List.of(new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 5, 0.8, "120-136 bpm", 1, null),
+                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Rodagem confortável", 30, 5.0, "130-145 bpm", 1, "6:00-6:30/km"),
+                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Caminhada", 5, 0.7, "120-136 bpm", 1, null)));
+
+            normalizacao.normalizar(treino, ctx);
+
+            List<String> debug = appender.list.stream()
+                    .filter(e -> e.getLevel() == Level.DEBUG)
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .toList();
+            assertThat(debug).hasSize(6); // um por passo da cauda comum
+            assertThat(debug).allSatisfy(m -> assertThat(m).contains("familia=PADRAO").contains("alterou=false"));
+            assertThat(debug.get(3)).contains("passo=recalcular-duracao");
+        }
+
+        @Test
+        @DisplayName("um passo que muda o treino loga alterou=true, e só ele")
+        void alterouTrueSoNoPassoQueMudou() {
+            // duração "99:00" ≠ soma das etapas (40) → só recalcular-duracao altera
+            var treino = new TreinoPlanejadoLlmDto("TERCA", "FACIL", "130-145 bpm", 40, 0.7, 4,
+                    "Rodagem fácil", "99:00", 6.5, "6:00-6:30/km",
+                    List.of(new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 5, 0.8, "120-136 bpm", 1, null),
+                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Rodagem confortável", 30, 5.0, "130-145 bpm", 1, "6:00-6:30/km"),
+                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Caminhada", 5, 0.7, "120-136 bpm", 1, null)));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(resultado.duracaoMin()).isEqualTo("40:00");
+            List<String> alterados = appender.list.stream()
+                    .map(ILoggingEvent::getFormattedMessage)
+                    .filter(m -> m.contains("alterou=true"))
+                    .toList();
+            assertThat(alterados).singleElement().asString().contains("passo=recalcular-duracao");
+        }
+    }
+
+    // ---------- fixtures (aquec/desaq com 1.67km = 10min × paceZ2 6.0, estável sob corrigir-temporais) ----------
+
+    private static EtapaTreinoLlmDto aquec() {
+        return new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 10, 1.67, "120-136 bpm", 1, null);
+    }
+
+    private static EtapaTreinoLlmDto desaq() {
+        return new EtapaTreinoLlmDto(1, "DESAQUECIMENTO", "Caminhada", 10, 1.67, "120-136 bpm", 1, null);
+    }
+
+    private static EtapaTreinoLlmDto tiro(Integer duracaoMin, String ritmoAlvo) {
+        return new EtapaTreinoLlmDto(1, "INTERVALADO", "Intervalo Z5", duracaoMin, 0.8, "90-95% FCmax", 1, ritmoAlvo);
+    }
+
+    private static EtapaTreinoLlmDto rec() {
+        return new EtapaTreinoLlmDto(1, "RECUPERACAO", "Recuperação trote", 2, 0.3, "60-70% FCmax", 1, null);
+    }
+
+    private static TreinoPlanejadoLlmDto intervalado(double distanciaKm, EtapaTreinoLlmDto... etapas) {
+        return new TreinoPlanejadoLlmDto("TERCA", "INTERVALADO", "150-160 bpm", 60, 8.0, 6, "VO2max",
+                "50:00", distanciaKm, "5:00-5:15/km", List.of(etapas));
+    }
+}
