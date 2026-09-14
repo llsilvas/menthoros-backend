@@ -102,6 +102,7 @@ class IaServiceImplCaracterizacaoTest {
                 mock(ZonaTreinoService.class),
                 mock(PlanQualityChecker.class),
                 estruturaReparador,
+                new br.com.menthoros.backend.services.helper.TreinoNormalizador(),
                 mock(PlanoResilienceService.class),
                 new SimpleMeterRegistry(),
                 new LlmUsageLogger(),

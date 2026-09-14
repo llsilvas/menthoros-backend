@@ -59,6 +59,7 @@ class IaServiceImplComplianceEstagio1Test {
                 mock(br.com.menthoros.backend.services.helper.ZonaTreinoService.class),
                 mock(br.com.menthoros.backend.services.quality.PlanQualityChecker.class),
                 mock(br.com.menthoros.backend.services.helper.PlanoEstruturaReparador.class),
+                new br.com.menthoros.backend.services.helper.TreinoNormalizador(),
                 mock(br.com.menthoros.backend.services.helper.PlanoResilienceService.class),
                 meterRegistry,
                 new LlmUsageLogger(),

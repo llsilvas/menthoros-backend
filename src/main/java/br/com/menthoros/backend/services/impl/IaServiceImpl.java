@@ -31,6 +31,7 @@ import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
 import br.com.menthoros.backend.services.helper.PlanoEstruturaReparador;
 import br.com.menthoros.backend.services.helper.PlanoResilienceService;
 import br.com.menthoros.backend.services.helper.PlannerShadowService;
+import br.com.menthoros.backend.services.helper.TreinoNormalizador;
 import br.com.menthoros.backend.domain.compliance.PlannerViolation;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import io.micrometer.core.instrument.Counter;
@@ -73,6 +74,7 @@ public class IaServiceImpl implements IaService {
     private final ZonaTreinoService zonaTreinoService;
     private final PlanQualityChecker planQualityChecker;
     private final PlanoEstruturaReparador estruturaReparador;
+    private final TreinoNormalizador treinoNormalizador;
     private final PlanoResilienceService planoResilienceService;
     private final MeterRegistry meterRegistry;
     private final LlmUsageLogger llmUsageLogger;
@@ -88,6 +90,7 @@ public class IaServiceImpl implements IaService {
                          ZonaTreinoService zonaTreinoService,
                          PlanQualityChecker planQualityChecker,
                          PlanoEstruturaReparador estruturaReparador,
+                         TreinoNormalizador treinoNormalizador,
                          PlanoResilienceService planoResilienceService,
                          MeterRegistry meterRegistry,
                          LlmUsageLogger llmUsageLogger,
@@ -104,6 +107,7 @@ public class IaServiceImpl implements IaService {
         this.zonaTreinoService = zonaTreinoService;
         this.planQualityChecker = planQualityChecker;
         this.estruturaReparador = estruturaReparador;
+        this.treinoNormalizador = treinoNormalizador;
         this.planoResilienceService = planoResilienceService;
         this.meterRegistry = meterRegistry;
         this.llmUsageLogger = llmUsageLogger;
@@ -265,7 +269,7 @@ public class IaServiceImpl implements IaService {
             if ("INTERVALADO".equals(tipoTreino) || "TIRO".equals(tipoTreino)) {
                 // (Passo 0) corrige distâncias de etapas temporais antes de expandir e normalizar
                 List<EtapaTreinoLlmDto> etapasCorrigidas =
-                        corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar());
+                        treinoNormalizador.corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar());
                 treino = new TreinoPlanejadoLlmDto(
                         treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
                         treino.tssPlanejado(), treino.intensidadePlanejada(),
@@ -273,24 +277,24 @@ public class IaServiceImpl implements IaService {
                         treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(),
                         etapasCorrigidas, treino.descricao(), treino.zonaAlvo(), treino.provaId());
                 // Expansão ANTES da validação: corrige alucinação de compressão "NxDist"
-                treino = expandirEtapasAgregadas(treino, zonasParaValidacao);
+                treino = treinoNormalizador.expandirEtapasAgregadas(treino, zonasParaValidacao);
                 validarTreinoIntervalado(treino, atletaId);
-                treino = normalizarTreinoIntervalado(treino, atleta.getNivelExperiencia(), zonasParaValidacao);
-                treino = reconciliarDistanciaComEtapas(treino);
+                treino = treinoNormalizador.normalizarTreinoIntervalado(treino, atleta.getNivelExperiencia(), zonasParaValidacao);
+                treino = treinoNormalizador.reconciliarDistanciaComEtapas(treino);
             }
 
             // Fartlek: expande alucinações "Nx (AccelMin + RecovMin)" e reconcilia distância
             if ("FARTLEK".equals(tipoTreino)) {
                 List<EtapaTreinoLlmDto> etapasCorrigidas =
-                        corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar());
+                        treinoNormalizador.corrigirDistanciasEtapasTemporais(treino.etapas(), atleta.getPaceLimiar());
                 treino = new TreinoPlanejadoLlmDto(
                         treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
                         treino.tssPlanejado(), treino.intensidadePlanejada(),
                         treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
                         treino.duracaoMin(), treino.distanciaKm(), treino.ritmoAlvo(),
                         etapasCorrigidas, treino.descricao(), treino.zonaAlvo(), treino.provaId());
-                treino = expandirEtapasAgregadas(treino, zonasParaValidacao);
-                treino = reconciliarDistanciaComEtapas(treino);
+                treino = treinoNormalizador.expandirEtapasAgregadas(treino, zonasParaValidacao);
+                treino = treinoNormalizador.reconciliarDistanciaComEtapas(treino);
             }
 
             // Reparo determinístico de estrutura "3 etapas" ANTES da validação (não-op p/ outros tipos):
@@ -353,10 +357,10 @@ public class IaServiceImpl implements IaService {
 
             // Recalcular duração total com base na soma das etapas (override do valor gerado pelo LLM)
             if (treino.etapas() != null && !treino.etapas().isEmpty()) {
-                int totalMinEtapas = somarDuracoesMin(treino.etapas());
+                int totalMinEtapas = treinoNormalizador.somarDuracoesMin(treino.etapas());
                 if (totalMinEtapas > 0) {
                     String duracaoAtual = treino.duracaoMin();
-                    treino = recalcularDuracaoTreino(treino, treino.etapas());
+                    treino = treinoNormalizador.recalcularDuracaoTreino(treino, treino.etapas());
                     if (!Objects.equals(duracaoAtual, treino.duracaoMin())) {
                         log.info("DURAÇÃO RECALCULADA [{}]: '{}' → '{}' (baseado nas {} etapas)",
                                 tipoTreino, duracaoAtual, treino.duracaoMin(), treino.etapas().size());
@@ -368,7 +372,7 @@ public class IaServiceImpl implements IaService {
             // substituição por lesão): as etapas nascem só com duração, e corrigirDistanciasEtapasTemporais
             // não deriva a etapa PRINCIPAL. Aqui derivamos de duração×pace e reconciliamos o total — sem
             // sobrescrever distância válida já existente.
-            treino = garantirDistanciaContinuo(treino, atleta.getPaceLimiar());
+            treino = treinoNormalizador.garantirDistanciaContinuo(treino, atleta.getPaceLimiar());
 
             // Validar triângulo pace × distância × duração (após recálculo)
             validarTrianguloPaceDuracaoDistancia(treino);
@@ -485,623 +489,6 @@ public class IaServiceImpl implements IaService {
         }
         return etapa;
     }
-
-    /**
-     * Normaliza treino intervalado/tiro ajustando distâncias das etapas.
-     * Abordagem puramente funcional: cria novas listas e records em cada passo.
-     */
-    private TreinoPlanejadoLlmDto normalizarTreinoIntervalado(TreinoPlanejadoLlmDto treino, NivelExperiencia nivel, List<ZonaFC> zonas) {
-        if (!"INTERVALADO".equalsIgnoreCase(treino.tipoTreino()) && !"TIRO".equalsIgnoreCase(treino.tipoTreino())) {
-            return treino;
-        }
-
-        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
-
-        double alvo = treino.distanciaKm() != null ? treino.distanciaKm() : 0.0;
-        if (alvo <= 0.0) return treino;
-
-        // Cópia mutável para trabalhar sem alterar o record original
-        List<EtapaTreinoLlmDto> etapas = new java.util.ArrayList<>(treino.etapas());
-
-        // 1) Ajustar aquecimento / desaquecimento para faixas fisiológicas
-        etapas = clampDistanciaPorTipo(etapas, "AQUECIMENTO", 1.0, 2.0);
-        etapas = clampDistanciaPorTipo(etapas, "DESAQUECIMENTO", 0.8, 1.5);
-
-        // 2) Recalcular gap de distância
-        double soma = somarDistancias(etapas);
-        double gap = alvo - soma; // >0: faltando, <0: sobrando
-
-        if (Math.abs(gap) > 0.05) {
-            // 2.1) Se sobrar bastante distância e ainda dá pra ter mais tiros → adiciona tiro/rec
-            int maxTiros = maxTirosPorNivel(nivel);
-            int tirosAtuais = contarPorTipo(etapas, "INTERVALADO");
-
-            while (gap > 0.6 && tirosAtuais < maxTiros) {
-                etapas = adicionarTiroERecuperacao(etapas, 0.8, 0.3, 4, 2, zonas);
-                tirosAtuais++;
-                gap -= 1.1; // aproximado
-            }
-
-            // 2.2) Recalcular depois de adicionar tiros
-            soma = somarDistancias(etapas);
-            gap = alvo - soma;
-
-            // 2.3) Distribuir delta restante nos tiros e recuperações
-            //
-            // Tiro nunca encolhe (gap<0): 800m/400m/1000m etc. são distâncias redondas, escolhidas
-            // pela cinética de O2 — encolher o tiro para bater com o total declarado pelo LLM
-            // descaracteriza o estímulo prescrito (ver proposal fix-intervalado-tiro-shrink-
-            // normalizacao). A folga (RECUPERACAO) absorve a sobra; se não for suficiente,
-            // reconciliarDistanciaComEtapas corrige a distanciaKm do treino pela soma real depois.
-            // Crescer o tiro (gap>0, faltando volume) continua permitido — não quebra o estímulo.
-            if (Math.abs(gap) > 0.05) {
-                if (gap > 0) {
-                    var resultadoTiros = distribuirDeltaPorTipo(etapas, "INTERVALADO", gap, 0.4, 1.2);
-                    etapas = resultadoTiros.etapas();
-                    gap = resultadoTiros.restante();
-                }
-
-                var resultadoRecs = distribuirDeltaPorTipo(etapas, "RECUPERACAO", gap, 0.2, 0.5);
-                etapas = resultadoRecs.etapas();
-
-                double somaFinal = somarDistancias(etapas);
-                double deltaFinal = alvo - somaFinal;
-
-                if (Math.abs(deltaFinal) > 0.2) {
-                    log.warn("NORMALIZADOR: ainda há desvio de distância (alvo={} km, final={} km, delta={})",
-                            alvo, somaFinal, deltaFinal);
-                }
-            }
-        }
-
-        // 3) Retornar novo record com etapas ajustadas e duração recalculada
-        return recalcularDuracaoTreino(treino, etapas);
-    }
-
-    /**
-     * Reconcilia distanciaKm do treino com a soma real das etapas geradas.
-     *
-     * <p>Após expansão de etapas (Fartlek, Intervalado), a distância declarada no nível
-     * do treino pode divergir da soma das etapas individuais. Se o desvio for superior
-     * a 10%, substitui distanciaKm pela soma das etapas (que representa a realidade).</p>
-     */
-    private TreinoPlanejadoLlmDto reconciliarDistanciaComEtapas(TreinoPlanejadoLlmDto treino) {
-        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
-
-        double somaEtapas = somarDistancias(treino.etapas());
-        double distanciaAtual = treino.distanciaKm() != null ? treino.distanciaKm() : 0.0;
-
-        if (distanciaAtual <= 0) {
-            log.info("RECONCILIAÇÃO [{}]: distanciaKm não definida → usando soma das etapas: {} km",
-                    treino.tipoTreino(), somaEtapas);
-            return new TreinoPlanejadoLlmDto(
-                    treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
-                    treino.tssPlanejado(), treino.intensidadePlanejada(),
-                    treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                    treino.duracaoMin(), somaEtapas, treino.ritmoAlvo(), treino.etapas(),
-                    treino.descricao(), treino.zonaAlvo(), treino.provaId()
-            );
-        }
-
-        double desvioPercent = Math.abs(somaEtapas - distanciaAtual) / distanciaAtual;
-        if (desvioPercent > 0.10) {
-            log.warn("RECONCILIAÇÃO [{}]: distanciaKm={} km, soma_etapas={} km → desvio {}% > 10%, reconciliando",
-                    treino.tipoTreino(), distanciaAtual, String.format("%.2f", somaEtapas),
-                    Math.round(desvioPercent * 100));
-            return new TreinoPlanejadoLlmDto(
-                    treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
-                    treino.tssPlanejado(), treino.intensidadePlanejada(),
-                    treino.percepcaoEsforcoEsperada(), treino.justificativaIa(),
-                    treino.duracaoMin(), somaEtapas, treino.ritmoAlvo(), treino.etapas(),
-                    treino.descricao(), treino.zonaAlvo(), treino.provaId()
-            );
-        }
-
-        return treino;
-    }
-
-    /**
-     * Resultado da distribuição de delta: nova lista de etapas + delta restante.
-     */
-    private record DistribuicaoResult(List<EtapaTreinoLlmDto> etapas, double restante) {}
-
-    private double somarDistancias(List<EtapaTreinoLlmDto> etapas) {
-        return etapas.stream()
-                .mapToDouble(e -> e.distanciaKm() != null ? e.distanciaKm() : 0.0)
-                .sum();
-    }
-
-    private int somarDuracoesMin(List<EtapaTreinoLlmDto> etapas) {
-        return etapas.stream()
-                .mapToInt(e -> e.duracaoMin() != null ? e.duracaoMin() : 0)
-                .sum();
-    }
-
-    private int contarPorTipo(List<EtapaTreinoLlmDto> etapas, String tipo) {
-        return (int) etapas.stream()
-                .filter(e -> tipo.equalsIgnoreCase(e.tipoEtapa()))
-                .count();
-    }
-
-    /**
-     * Retorna nova lista com distâncias clamped para etapas do tipo especificado.
-     */
-    private List<EtapaTreinoLlmDto> clampDistanciaPorTipo(List<EtapaTreinoLlmDto> etapas,
-                                                           String tipo,
-                                                           double min, double max) {
-        return etapas.stream().map(e -> {
-            if (!tipo.equalsIgnoreCase(e.tipoEtapa())) return e;
-            Double d = e.distanciaKm();
-            if (d == null || d <= 0) return e;
-            if (d >= min && d <= max) return e;
-
-            return new EtapaTreinoLlmDto(
-                    e.ordem(), e.tipoEtapa(), e.descricaoEtapa(),
-                    e.duracaoMin(), Math.max(min, Math.min(max, d)),
-                    e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo()
-            );
-        }).collect(Collectors.toList());
-    }
-
-    /**
-     * Distribui delta de distância entre etapas do tipo especificado.
-     * Retorna nova lista completa + delta restante.
-     */
-    private DistribuicaoResult distribuirDeltaPorTipo(List<EtapaTreinoLlmDto> etapas,
-                                                      String tipo,
-                                                      double delta,
-                                                      double min, double max) {
-        List<EtapaTreinoLlmDto> resultado = new java.util.ArrayList<>(etapas);
-        long count = resultado.stream().filter(e -> tipo.equalsIgnoreCase(e.tipoEtapa())).count();
-        if (count == 0) return new DistribuicaoResult(resultado, delta);
-
-        double restante = delta;
-
-        for (int round = 0; round < 3 && Math.abs(restante) > 0.01; round++) {
-            double passo = restante / count;
-
-            for (int i = 0; i < resultado.size(); i++) {
-                if (Math.abs(restante) < 0.01) break;
-
-                EtapaTreinoLlmDto e = resultado.get(i);
-                if (!tipo.equalsIgnoreCase(e.tipoEtapa())) continue;
-
-                double atual = e.distanciaKm() != null ? e.distanciaKm() : 0.0;
-                double proposto = atual + passo;
-
-                double novo;
-                if (restante > 0) {
-                    novo = Math.min(proposto, max);
-                } else {
-                    novo = Math.max(proposto, min);
-                }
-
-                double aplicado = novo - atual;
-                if ((restante > 0 && aplicado > 0) || (restante < 0 && aplicado < 0)) {
-                    resultado.set(i, new EtapaTreinoLlmDto(
-                            e.ordem(), e.tipoEtapa(), e.descricaoEtapa(),
-                            e.duracaoMin(), atual + aplicado,
-                            e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo()
-                    ));
-                    restante -= aplicado;
-                }
-            }
-        }
-
-        return new DistribuicaoResult(resultado, restante);
-    }
-
-    private int maxTirosPorNivel(NivelExperiencia nivel) {
-        if (nivel == null) return 5; // default
-
-        return switch (nivel) {
-            case INICIANTE      -> 4;
-            case INTERMEDIARIO  -> 5;
-            case AVANCADO       -> 7;
-            case ELITE          -> 10;
-        };
-    }
-
-    /**
-     * Retorna nova lista com tiro e recuperação inseridos antes do desaquecimento.
-     */
-    private List<EtapaTreinoLlmDto> adicionarTiroERecuperacao(List<EtapaTreinoLlmDto> etapas,
-                                                               double distTiro,
-                                                               double distRec,
-                                                               int duracaoTiroMin,
-                                                               int duracaoRecMin,
-                                                               List<ZonaFC> zonas) {
-        if (etapas.isEmpty()) return etapas;
-
-        String fcTiro = bpmDaZona(zonas, 4); // Z5
-        if (fcTiro == null) fcTiro = "90-95% FCmax";
-        String fcRec = bpmDaZona(zonas, 0); // Z1
-        if (fcRec == null) fcRec = "70-80% FCmax";
-
-        List<EtapaTreinoLlmDto> resultado = new java.util.ArrayList<>(etapas);
-
-        // Inserir antes do desaquecimento (ou no fim)
-        int idxDesaq = -1;
-        for (int i = 0; i < resultado.size(); i++) {
-            if ("DESAQUECIMENTO".equalsIgnoreCase(resultado.get(i).tipoEtapa())) {
-                idxDesaq = i;
-                break;
-            }
-        }
-        int insertIndex = (idxDesaq >= 0) ? idxDesaq : resultado.size();
-
-        resultado.add(insertIndex, new EtapaTreinoLlmDto(
-                0, "INTERVALADO", "Tiro extra em Z5",
-                duracaoTiroMin, distTiro, fcTiro, 1, null
-        ));
-        resultado.add(insertIndex + 1, new EtapaTreinoLlmDto(
-                0, "RECUPERACAO", "Recuperação extra em Z2",
-                duracaoRecMin, distRec, fcRec, 1, null
-        ));
-
-        // Reordenar ordens 1..N
-        return reordenarEtapas(resultado);
-    }
-
-    /**
-     * Retorna nova lista com ordens sequenciais 1..N.
-     */
-    private List<EtapaTreinoLlmDto> reordenarEtapas(List<EtapaTreinoLlmDto> etapas) {
-        List<EtapaTreinoLlmDto> resultado = new java.util.ArrayList<>(etapas.size());
-        for (int i = 0; i < etapas.size(); i++) {
-            EtapaTreinoLlmDto e = etapas.get(i);
-            resultado.add(new EtapaTreinoLlmDto(
-                    i + 1, e.tipoEtapa(), e.descricaoEtapa(),
-                    e.duracaoMin(), e.distanciaKm(),
-                    e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo()
-            ));
-        }
-        return resultado;
-    }
-
-    private static final double PACE_Z2_DEFAULT_MIN_KM = 7.0;  // 7:00/km — Z2 genérico sem limiar cadastrado
-    private static final double PACE_Z1_DEFAULT_MIN_KM = 8.0;  // 8:00/km — Z1 genérico sem limiar cadastrado
-    private static final double FATOR_PACE_Z2 = 1.20;          // Z2 ≈ limiar × 1.20
-    private static final double FATOR_PACE_Z1 = 1.35;          // Z1 ≈ limiar × 1.35
-
-    // Detecta "NxDist" como "6x400m", "8 x 200", "5×1000m"
-    // O lookahead (?!\s*min) impede que "5x 2min" seja lido como 5 tiros de 2 metros: sem ele o
-    // grupo (m|km)? casa o "m" de "min" e o treino por tempo cai no caminho de distância.
-    private static final Pattern REPETICOES_PATTERN =
-            Pattern.compile("(\\d{1,2})\\s*[xX×]\\s*(\\d+)(?!\\s*min)\\s*(m|km)?", Pattern.CASE_INSENSITIVE);
-
-    // Detecta "Nx (AccelMin + RecovMin)" como "4x (1min Z2 + 2min Z1)", "6 x (2min Z4 + 1min Z2)"
-    private static final Pattern FARTLEK_TEMPO_PATTERN =
-            Pattern.compile("(\\d{1,2})\\s*[xX×]\\s*\\(?\\s*(\\d+)\\s*min[^+]*\\+\\s*(\\d+)\\s*min",
-                    Pattern.CASE_INSENSITIVE);
-
-    /** Tipos de etapa que podem carregar uma série comprimida na descrição. */
-    private static final java.util.Set<String> ETAPAS_EXPANSIVEIS =
-            java.util.Set.of("INTERVALADO", "PRINCIPAL");
-
-    private static String normalizarTipoEtapa(String tipoEtapa) {
-        return tipoEtapa == null ? "" : tipoEtapa.trim().toUpperCase();
-    }
-
-    private record FartlekParams(int n, int duracaoAceleracao, int duracaoRecuperacao,
-                                  String zonaAceleracao, String zonaRecuperacao) {}
-
-    /**
-     * Detecta etapas INTERVALADO comprimidas pelo LLM e as expande em etapas individuais.
-     *
-     * <p>Suporta dois padrões de compressão:</p>
-     * <ul>
-     *   <li><b>NxDist</b> (intervalados): "6x400m Z5" → 6× (INTERVALADO 0.4km + RECUPERACAO)</li>
-     *   <li><b>Nx(Accel+Recov)</b> (fartlek): "4x (1min Z2 + 2min Z1)" → 4× (INTERVALADO 1min + RECUPERACAO 2min)</li>
-     * </ul>
-     */
-    private TreinoPlanejadoLlmDto expandirEtapasAgregadas(TreinoPlanejadoLlmDto treino, List<ZonaFC> zonas) {
-        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
-
-        List<EtapaTreinoLlmDto> etapas = treino.etapas();
-        List<EtapaTreinoLlmDto> resultado = new java.util.ArrayList<>();
-        boolean expandiu = false;
-
-        int i = 0;
-        while (i < etapas.size()) {
-            EtapaTreinoLlmDto etapa = etapas.get(i);
-
-            // O LLM tipa a série ora como INTERVALADO, ora como PRINCIPAL — ambos são válidos no
-            // schema, e restringir a INTERVALADO fazia o fartlek escapar da expansão em silêncio.
-            // Quem decide não é o tipo, é o padrão na descrição: PRINCIPAL sem padrão cai no
-            // "nenhum padrão detectado" ao final do laço e é preservada intacta.
-            if (!ETAPAS_EXPANSIVEIS.contains(normalizarTipoEtapa(etapa.tipoEtapa()))) {
-                resultado.add(etapa);
-                i++;
-                continue;
-            }
-
-            // --- Caminho 1: padrão distância "6x400m" ---
-            int n = detectarRepeticoesNaDescricao(etapa.descricaoEtapa());
-            if (n > 1) {
-                EtapaTreinoLlmDto recTemplate = recuperacaoAdjacenteOu(etapas, i + 1);
-                if (recTemplate != null) i++;
-
-                double distTiro = extrairDistanciaUnitariaDaDescricao(etapa.descricaoEtapa(), etapa.distanciaKm(), n);
-                int durTiro   = Math.max(1, etapa.duracaoMin() != null ? etapa.duracaoMin() / n : 4);
-                int durRec    = recTemplate != null && recTemplate.duracaoMin() != null
-                        ? Math.max(1, recTemplate.duracaoMin() / n) : Math.max(1, durTiro / 2);
-                double distRec = recTemplate != null && recTemplate.distanciaKm() != null
-                        ? arredondar2(recTemplate.distanciaKm() / n) : arredondar2(distTiro * 0.4);
-                String fcTiro = etapa.fcAlvoEtapa() != null ? etapa.fcAlvoEtapa() : "90-95% FCmax";
-                String fcRec  = recTemplate != null && recTemplate.fcAlvoEtapa() != null
-                        ? recTemplate.fcAlvoEtapa() : "60-70% FCmax";
-
-                String ritmoTiro = etapa.ritmoAlvo();
-                String ritmoRec  = recTemplate != null ? recTemplate.ritmoAlvo() : null;
-                for (int rep = 1; rep <= n; rep++) {
-                    resultado.add(new EtapaTreinoLlmDto(0, "INTERVALADO",
-                            "Intervalo " + rep + "/" + n + " - Z5", durTiro, distTiro, fcTiro, 1, ritmoTiro));
-                    resultado.add(new EtapaTreinoLlmDto(0, "RECUPERACAO",
-                            "Recuperação " + rep + " - trote Z2", durRec, distRec, fcRec, 1, ritmoRec));
-                }
-                expandiu = true;
-                log.info("EXPANSÃO NxDist [{}]: '{}' → {} tiros ({} etapas)",
-                        treino.tipoTreino(), etapa.descricaoEtapa(), n, n * 2);
-                i++;
-                continue;
-            }
-
-            // --- Caminho 2: padrão tempo "4x (1min Z2 + 2min Z1)" ---
-            FartlekParams fp = detectarFartlekNaDescricao(etapa.descricaoEtapa());
-            if (fp != null) {
-                EtapaTreinoLlmDto recTemplate = recuperacaoAdjacenteOu(etapas, i + 1);
-                if (recTemplate != null) i++;
-
-                int totalMinPorRep = fp.duracaoAceleracao() + fp.duracaoRecuperacao();
-                Double distTotal   = etapa.distanciaKm();
-                double distPorRep  = (distTotal != null && distTotal > 0 && totalMinPorRep > 0)
-                        ? arredondar2(distTotal / fp.n()) : 0.0;
-                double distAccel   = distPorRep > 0
-                        ? arredondar2(distPorRep * fp.duracaoAceleracao() / totalMinPorRep) : 0.0;
-                double distRecov   = distPorRep > 0 ? arredondar2(distPorRep - distAccel) : 0.0;
-
-                String fcAccel = fp.zonaAceleracao() != null ? zonaParaFc(fp.zonaAceleracao(), zonas)
-                        : (etapa.fcAlvoEtapa() != null ? etapa.fcAlvoEtapa() : "75-85% FCmax");
-                String fcRecov = fp.zonaRecuperacao() != null ? zonaParaFc(fp.zonaRecuperacao(), zonas)
-                        : (recTemplate != null && recTemplate.fcAlvoEtapa() != null
-                                ? recTemplate.fcAlvoEtapa() : "60-70% FCmax");
-
-                String ritmoAccel = etapa.ritmoAlvo();
-                String ritmoRecov = recTemplate != null ? recTemplate.ritmoAlvo() : null;
-                for (int rep = 1; rep <= fp.n(); rep++) {
-                    resultado.add(new EtapaTreinoLlmDto(0, "INTERVALADO",
-                            "Aceleração " + rep + "/" + fp.n() + " - " + fp.duracaoAceleracao() + "min",
-                            fp.duracaoAceleracao(), distAccel, fcAccel, 1, ritmoAccel));
-                    resultado.add(new EtapaTreinoLlmDto(0, "RECUPERACAO",
-                            "Recuperação " + rep + " - " + fp.duracaoRecuperacao() + "min trote",
-                            fp.duracaoRecuperacao(), distRecov, fcRecov, 1, ritmoRecov));
-                }
-                expandiu = true;
-                log.info("EXPANSÃO Fartlek [{}]: '{}' → {} acelerações ({} etapas)",
-                        treino.tipoTreino(), etapa.descricaoEtapa(), fp.n(), fp.n() * 2);
-                i++;
-                continue;
-            }
-
-            // Nenhum padrão de compressão detectado
-            resultado.add(etapa);
-            i++;
-        }
-
-        if (!expandiu) return treino;
-        return recalcularDuracaoTreino(treino, reordenarEtapas(resultado));
-    }
-
-    /** Retorna o próximo estágio se for RECUPERACAO, ou null caso contrário. */
-    private EtapaTreinoLlmDto recuperacaoAdjacenteOu(List<EtapaTreinoLlmDto> etapas, int proximoIdx) {
-        if (proximoIdx < etapas.size()
-                && "RECUPERACAO".equalsIgnoreCase(etapas.get(proximoIdx).tipoEtapa())) {
-            return etapas.get(proximoIdx);
-        }
-        return null;
-    }
-
-    /**
-     * Extrai o número de repetições de padrões como "6x400m", "8 x 200", "5×1000m".
-     * Retorna 1 se nenhum padrão for encontrado.
-     */
-    private int detectarRepeticoesNaDescricao(String descricao) {
-        if (descricao == null || descricao.isBlank()) return 1;
-        var matcher = REPETICOES_PATTERN.matcher(descricao);
-        if (!matcher.find()) return 1;
-        try {
-            int n = Integer.parseInt(matcher.group(1));
-            return (n >= 2 && n <= 20) ? n : 1; // sanity bounds
-        } catch (NumberFormatException e) {
-            return 1;
-        }
-    }
-
-    /**
-     * Extrai a distância individual a partir da descrição (ex: "6x400m" → 0.4km).
-     * Se não encontrar, divide o total por N.
-     */
-    private double extrairDistanciaUnitariaDaDescricao(String descricao, Double totalKm, int n) {
-        if (descricao != null) {
-            var matcher = REPETICOES_PATTERN.matcher(descricao);
-            if (matcher.find()) {
-                try {
-                    double dist = Double.parseDouble(matcher.group(2));
-                    String unidade = matcher.group(3);
-                    if (unidade == null || "m".equalsIgnoreCase(unidade)) {
-                        dist = dist / 1000.0; // metros → km
-                    }
-                    if (dist > 0 && dist <= 5.0) {
-                        return arredondar2(dist);
-                    }
-                } catch (NumberFormatException ignored) { /* fallback abaixo */ }
-            }
-        }
-        return (totalKm != null && totalKm > 0) ? arredondar2(totalKm / n) : 0.0;
-    }
-
-    private double arredondar2(double valor) {
-        return Math.round(valor * 100.0) / 100.0;
-    }
-
-    /**
-     * Deriva distanciaKm para etapas time-based (AQUECIMENTO, DESAQUECIMENTO, RECUPERACAO)
-     * via duracaoMin ÷ paceZona, substituindo o valor incorreto gerado pelo LLM
-     * (que usa o pace de tiro em vez do pace fácil).
-     *
-     * Idempotent: YES · Side Effects: NONE · Tenant-aware: NO
-     */
-    private List<EtapaTreinoLlmDto> corrigirDistanciasEtapasTemporais(
-            List<EtapaTreinoLlmDto> etapas, BigDecimal paceLimiar) {
-        if (etapas == null || etapas.isEmpty()) return etapas;
-        double paceZ2 = paceLimiar != null
-                ? paceLimiar.doubleValue() * FATOR_PACE_Z2
-                : PACE_Z2_DEFAULT_MIN_KM;
-        double paceZ1 = paceLimiar != null
-                ? paceLimiar.doubleValue() * FATOR_PACE_Z1
-                : PACE_Z1_DEFAULT_MIN_KM;
-        return etapas.stream()
-                .map(e -> corrigirEtapaTemporal(e, paceZ1, paceZ2))
-                .toList();
-    }
-
-    private EtapaTreinoLlmDto corrigirEtapaTemporal(EtapaTreinoLlmDto e, double paceZ1, double paceZ2) {
-        if (e.tipoEtapa() == null) return e;
-        if (e.duracaoMin() == null || e.duracaoMin() <= 0) return e;
-        double pace = switch (e.tipoEtapa().toUpperCase()) {
-            case "AQUECIMENTO", "DESAQUECIMENTO" -> paceZ2;
-            case "RECUPERACAO" -> paceZ1;
-            default -> -1.0;
-        };
-        if (pace <= 0) return e;
-        double distancia = arredondar2(e.duracaoMin() / pace);
-        return new EtapaTreinoLlmDto(
-                e.ordem(), e.tipoEtapa(), e.descricaoEtapa(),
-                e.duracaoMin(), distancia, e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo());
-    }
-
-    /** Tipos contínuos cuja etapa PRINCIPAL é tempo-baseada (distância = duração/pace). */
-    private static final java.util.Set<String> TIPOS_CONTINUOS =
-            java.util.Set.of("REGENERATIVO", "FACIL", "CONTINUO", "LONGO", "TEMPO_RUN");
-
-    /**
-     * Deriva a distância de um treino CONTÍNUO cujas etapas nasceram sem distância (ex.: REGENERATIVO
-     * sintetizado pelo reparo estrutural / substituição por lesão). Para cada etapa tempo-baseada sem
-     * distância, calcula {@code duração / paceZ2} — inclusive a PRINCIPAL, que
-     * {@code corrigirEtapaTemporal} deliberadamente ignora (nos estruturados a PRINCIPAL é distância
-     * fixa). Não age em INTERVALADO/TIRO/FARTLEK nem sobrescreve distância já válida.
-     */
-    private TreinoPlanejadoLlmDto garantirDistanciaContinuo(TreinoPlanejadoLlmDto treino, BigDecimal paceLimiar) {
-        if (treino.tipoTreino() == null || !TIPOS_CONTINUOS.contains(treino.tipoTreino())) return treino;
-        if (treino.distanciaKm() != null && treino.distanciaKm() > 0) return treino;
-        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
-        double pace = paceLimiar != null ? paceLimiar.doubleValue() * FATOR_PACE_Z2 : PACE_Z2_DEFAULT_MIN_KM;
-        List<EtapaTreinoLlmDto> etapas = treino.etapas().stream().map(e -> {
-            if (e.duracaoMin() == null || e.duracaoMin() <= 0) return e;
-            if (e.distanciaKm() != null && e.distanciaKm() > 0) return e;
-            return new EtapaTreinoLlmDto(e.ordem(), e.tipoEtapa(), e.descricaoEtapa(),
-                    e.duracaoMin(), arredondar2(e.duracaoMin() / pace), e.fcAlvoEtapa(), e.repeticoes(), e.ritmoAlvo());
-        }).toList();
-        double total = somarDistancias(etapas);
-        if (total <= 0) return treino;
-        return new TreinoPlanejadoLlmDto(
-                treino.diaSemana(), treino.tipoTreino(), treino.fcAlvo(),
-                treino.tssPlanejado(), treino.intensidadePlanejada(), treino.percepcaoEsforcoEsperada(),
-                treino.justificativaIa(), treino.duracaoMin(), total, treino.ritmoAlvo(), etapas,
-                treino.descricao(), treino.zonaAlvo(), treino.provaId());
-    }
-
-    /**
-     * Detecta padrão "Nx (AccelMin ZoneA + RecovMin ZoneB)" em descrições de fartlek.
-     * Exemplos: "4x (1min Z2 + 2min Z1)", "6 x (2min Z4 + 1min Z2)", "8x(3min+2min)".
-     * Retorna null se o padrão não for encontrado.
-     */
-    private FartlekParams detectarFartlekNaDescricao(String descricao) {
-        if (descricao == null || descricao.isBlank()) return null;
-        var matcher = FARTLEK_TEMPO_PATTERN.matcher(descricao);
-        if (!matcher.find()) return null;
-        try {
-            int n      = Integer.parseInt(matcher.group(1));
-            int accel  = Integer.parseInt(matcher.group(2));
-            int recov  = Integer.parseInt(matcher.group(3));
-            if (n < 2 || n > 20 || accel < 1 || recov < 1) return null;
-
-            // Tenta extrair zona da aceleração e recuperação do texto completo
-            String zonaAccel = extrairZonaDaDescricao(descricao, matcher.start(2));
-            String zonaRecov = extrairZonaDaDescricao(descricao, matcher.start(3));
-            return new FartlekParams(n, accel, recov, zonaAccel, zonaRecov);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    /** Procura a primeira ocorrência de "Z<N>" após a posição informada. */
-    private String extrairZonaDaDescricao(String descricao, int aPartirDe) {
-        var m = Pattern.compile("Z(\\d)(?:-Z(\\d))?", Pattern.CASE_INSENSITIVE)
-                .matcher(descricao.substring(aPartirDe));
-        return m.find() ? m.group(0).toUpperCase() : null;
-    }
-
-    /**
-     * Converte índice de zona (0-based: 0=Z1 … 4=Z5) em string "fcMin-fcMax bpm".
-     * Retorna null quando zonas é null ou o índice está fora do range.
-     */
-    private String bpmDaZona(List<ZonaFC> zonas, int index) {
-        if (zonas == null || index < 0 || index >= zonas.size()) return null;
-        ZonaFC z = zonas.get(index);
-        return z.fcMin() + "-" + z.fcMax() + " bpm";
-    }
-
-    /**
-     * Converte "Z1"–"Z5" em range de FC.
-     * Quando {@code zonas} não é null, retorna o range absoluto em bpm (formato que
-     * {@code parseFcRange} consegue validar). Sem zonas, cai no fallback de percentual FCmax.
-     */
-    private String zonaParaFc(String zona, List<ZonaFC> zonas) {
-        if (zona == null) return null;
-        String z = zona.trim().toUpperCase();
-        if (zonas != null) {
-            if (z.startsWith("Z5")) return bpmDaZona(zonas, 4);
-            if (z.startsWith("Z4")) return bpmDaZona(zonas, 3);
-            if (z.startsWith("Z3")) return bpmDaZona(zonas, 2);
-            if (z.startsWith("Z2")) return bpmDaZona(zonas, 1);
-            if (z.startsWith("Z1")) return bpmDaZona(zonas, 0);
-        }
-        if (z.startsWith("Z5")) return "90-95% FCmax";
-        if (z.startsWith("Z4")) return "80-90% FCmax";
-        if (z.startsWith("Z3")) return "70-80% FCmax";
-        if (z.startsWith("Z2")) return "65-75% FCmax";
-        if (z.startsWith("Z1")) return "60-70% FCmax";
-        return null;
-    }
-
-    /**
-     * Retorna novo record com duração recalculada e etapas atualizadas.
-     */
-    private TreinoPlanejadoLlmDto recalcularDuracaoTreino(TreinoPlanejadoLlmDto treino,
-                                                           List<EtapaTreinoLlmDto> etapas) {
-        int totalMin = somarDuracoesMin(etapas);
-        String novaDuracao = String.format("%02d:00", totalMin);
-
-        return new TreinoPlanejadoLlmDto(
-                treino.diaSemana(),
-                treino.tipoTreino(),
-                treino.fcAlvo(),
-                treino.tssPlanejado(),
-                treino.intensidadePlanejada(),
-                treino.percepcaoEsforcoEsperada(),
-                treino.justificativaIa(),
-                novaDuracao,
-                treino.distanciaKm(),
-                treino.ritmoAlvo(),
-                etapas,
-                treino.descricao(),
-                treino.zonaAlvo(),
-                treino.provaId()
-        );
-    }
-
 
     /**
      * Valida treino intervalado: mínimo 8 etapas, tiros e recuperações balanceados
