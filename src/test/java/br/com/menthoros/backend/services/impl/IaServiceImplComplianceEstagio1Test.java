@@ -59,7 +59,9 @@ class IaServiceImplComplianceEstagio1Test {
                 meterRegistry,
                 new LlmUsageLogger(),
                 plannerShadowService,
-                mock(br.com.menthoros.backend.services.helper.PlanoLlmLedgerHook.class)
+                mock(br.com.menthoros.backend.services.helper.PlanoLlmLedgerHook.class),
+                new br.com.menthoros.backend.services.helper.RepairTurnMessageBuilder(),
+                new com.fasterxml.jackson.databind.ObjectMapper()
         );
     }
 
