@@ -1,6 +1,8 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.ai.ledger.Violacao;
+import br.com.menthoros.backend.domain.planner.SessionSlot;
+import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.entity.Atleta;
@@ -10,7 +12,9 @@ import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.exception.PlanoNaoConformeException;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
 import br.com.menthoros.backend.services.prompt.PaceHistoricoFormatter;
+import br.com.menthoros.backend.util.Utils;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -93,6 +97,56 @@ public class PlanoLlmValidator {
                 plano.objetivoSemanal(),
                 treinosNormalizados
         );
+    }
+
+    /**
+     * Equivalente v2 (semantic-session-schema) de {@link #validarENormalizarPlano} — substitui,
+     * não complementa: o plano já chega aqui **resolvido** pelo {@code SessionResolver} (dentro de
+     * `gerar`, fora do escopo de retry), então não há passos de correção aritmética a rodar, só
+     * validação estrutural + TSS do slot, dentro de `validar` (protegido pelo retry F3).
+     *
+     * <p>Percorre TODOS os treinos antes de decidir — mesma garantia de
+     * {@link #validarENormalizarPlano} (F3, plan-generation-repair-turn).</p>
+     */
+    public PlanoSemanalLlmDto validarPlanoV2(PlanoSemanalLlmDto plano, Atleta atleta, UUID atletaId,
+                                              @Nullable WeekPlanSkeleton skeleton) {
+        if (plano == null || plano.treinosPlanejados() == null) {
+            throw new LLMException("Plano gerado está nulo ou sem treinos");
+        }
+
+        ContextoNormalizacao ctx = contexto(atleta, atletaId);
+        List<Violacao> violacoesEstruturais = new ArrayList<>();
+        for (TreinoPlanejadoLlmDto treino : plano.treinosPlanejados()) {
+            try {
+                normalizacaoDeTreino.validarEstruturaV2(treino, ctx);
+                SessionSlot slot = encontrarSlot(skeleton, treino.diaSemana());
+                if (slot != null) {
+                    normalizacaoDeTreino.validarTssSlotV2(treino, slot, ctx);
+                }
+            } catch (LLMException e) {
+                String dia = treino.diaSemana() != null ? treino.diaSemana() : "DIA_DESCONHECIDO";
+                violacoesEstruturais.add(new Violacao("NORMALIZACAO_V2_" + dia, e.getMessage()));
+            }
+        }
+        if (!violacoesEstruturais.isEmpty()) {
+            throw new PlanoNaoConformeException(
+                    "Plano v2 gerado com " + violacoesEstruturais.size() + " treino(s) inválido(s): "
+                            + violacoesEstruturais.stream().map(Violacao::mensagem).collect(Collectors.joining("; ")),
+                    violacoesEstruturais);
+        }
+        return plano;
+    }
+
+    /** {@code null} quando não há skeleton (flag `planner-engine.enabled` off) ou o dia não está no skeleton. */
+    private @Nullable SessionSlot encontrarSlot(@Nullable WeekPlanSkeleton skeleton, @Nullable String diaSemana) {
+        if (skeleton == null || diaSemana == null) {
+            return null;
+        }
+        var dayOfWeek = Utils.converterParaDayOfWeek(DiaSemana.valueOf(diaSemana));
+        return skeleton.sessions().stream()
+                .filter(slot -> slot.day() == dayOfWeek)
+                .findFirst()
+                .orElse(null);
     }
 
     private ContextoNormalizacao contexto(Atleta atleta, UUID atletaId) {

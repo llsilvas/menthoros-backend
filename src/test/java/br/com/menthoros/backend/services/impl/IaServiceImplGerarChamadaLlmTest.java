@@ -77,7 +77,9 @@ class IaServiceImplGerarChamadaLlmTest {
                 mock(br.com.menthoros.backend.services.helper.PlannerShadowService.class),
                 mock(br.com.menthoros.backend.services.helper.PlanoLlmLedgerHook.class),
                 new RepairTurnMessageBuilder(),
-                new ObjectMapper());
+                new ObjectMapper(),
+                mock(br.com.menthoros.backend.services.helper.SchemaVersionResolver.class),
+                mock(br.com.menthoros.backend.services.helper.SessionResolver.class));
     }
 
     private void chatModelResponde(String texto) {

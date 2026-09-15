@@ -198,6 +198,22 @@ public class PlanoTreinoPromptBuilder {
                                              @Nullable DecisaoProgressao decisaoProgressao,
                                              @Nullable RevisaoSemanal revisaoConsumida,
                                              @Nullable WeekPlanSkeleton skeleton) {
+        return buildOptimizedPrompt(atleta, metaDados, provaAlvo, inicioSemana, diasEfetivos,
+                decisaoProgressao, revisaoConsumida, skeleton, false);
+    }
+
+    /**
+     * {@code usaV2}: schema semântico de sessão (semantic-session-schema) — carrega
+     * {@code plano-treino-system-v2.txt} em vez de {@code plano-treino-system.txt}. Todo o resto do
+     * prompt (bloco de skeleton do dia, histórico, regras) é idêntico entre v1 e v2 — só o
+     * {@code system} muda.
+     */
+    public PromptGerado buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo,
+                                             LocalDate inicioSemana, List<DiaSemana> diasEfetivos,
+                                             @Nullable DecisaoProgressao decisaoProgressao,
+                                             @Nullable RevisaoSemanal revisaoConsumida,
+                                             @Nullable WeekPlanSkeleton skeleton,
+                                             boolean usaV2) {
         var ctx = treinoHistoricoProvider.prepararContexto(atleta);
 
         // DECISÃO INTERVALADO — avaliação determinística pré-LLM (5 portões fisiológicos + readiness)
@@ -376,7 +392,7 @@ public class PlanoTreinoPromptBuilder {
 
         // 10. system: template estático cru (persona + regras) — byte-idêntico entre atletas e
         // tentativas, liga o cache de prefixo da OpenAI (system-user-prompt-split, F1).
-        String system = templateLoader.loadTemplate("plano-treino-system.txt");
+        String system = templateLoader.loadTemplate(usaV2 ? "plano-treino-system-v2.txt" : "plano-treino-system.txt");
 
         // 11. user: perfil do atleta + histórico dinâmico (com alertas no topo)
         String user = templateLoader.loadAndFormat(
