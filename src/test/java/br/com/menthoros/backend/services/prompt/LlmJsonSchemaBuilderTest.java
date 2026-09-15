@@ -83,4 +83,80 @@ class LlmJsonSchemaBuilderTest {
         Map<String, Object> treinoItems = (Map<String, Object>) treinos(schema).get("items");
         return (Map<String, Object>) treinoItems.get("properties");
     }
+
+    @org.junit.jupiter.api.Nested
+    @DisplayName("buildSchemaV2 (semantic-session-schema)")
+    class BuildSchemaV2 {
+
+        @Test
+        @DisplayName("blocos é array com minItems 1, sem pace/FC/distância/duração no treino")
+        void schemaV2TemBlocosSemCamposAbsolutos() {
+            Map<String, Object> schema = builder.buildSchemaV2();
+            Map<String, Object> treinoProps = treinoItemProperties(schema);
+
+            assertThat(treinoProps).containsKeys("diaSemana", "tipoTreino", "justificativaIa", "blocos");
+            assertThat(treinoProps).doesNotContainKeys("fcAlvo", "duracaoMin", "distanciaKm", "ritmoAlvo", "etapas");
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> blocos = (Map<String, Object>) treinoProps.get("blocos");
+            assertThat(blocos.get("minItems")).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("zona/papel/unidade viram enum no JSON Schema por reflexão do tipo Java")
+        void zonaPapelUnidadeViramEnum() {
+            Map<String, Object> schema = builder.buildSchemaV2();
+            Map<String, Object> blocoProps = blocoItemProperties(schema);
+
+            assertThat(blocoProps).containsKeys("papel", "zona", "unidade", "repeticoes",
+                    "quantidadePorRepeticao", "recuperacao");
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> zona = (Map<String, Object>) blocoProps.get("zona");
+            @SuppressWarnings("unchecked")
+            Collection<Object> zonaEnum = (Collection<Object>) zona.get("enum");
+            assertThat(zonaEnum).containsExactlyInAnyOrder("Z1", "Z2", "Z3", "Z4", "Z5", "LIMIAR");
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> papel = (Map<String, Object>) blocoProps.get("papel");
+            @SuppressWarnings("unchecked")
+            Collection<Object> papelEnum = (Collection<Object>) papel.get("enum");
+            assertThat(papelEnum).containsExactlyInAnyOrder("AQUEC", "PRINCIPAL", "RECUP", "DESAQ");
+        }
+
+        @Test
+        @DisplayName("required cobre os campos obrigatórios do treino e do bloco")
+        void requiredCobreCamposObrigatorios() {
+            Map<String, Object> schema = builder.buildSchemaV2();
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> treinoItems = (Map<String, Object>) treinos(schema).get("items");
+            @SuppressWarnings("unchecked")
+            Collection<String> treinoRequired = (Collection<String>) treinoItems.get("required");
+            assertThat(treinoRequired).contains("diaSemana", "tipoTreino", "blocos");
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> blocos = (Map<String, Object>) treinoItemProperties(schema).get("blocos");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> blocoItems = (Map<String, Object>) blocos.get("items");
+            @SuppressWarnings("unchecked")
+            Collection<String> blocoRequired = (Collection<String>) blocoItems.get("required");
+            assertThat(blocoRequired).contains("papel", "repeticoes", "quantidadePorRepeticao", "unidade", "zona");
+        }
+
+        @Test
+        @DisplayName("v2JsonSchemaOptions() envolve o schema v2 em ResponseFormat strict:true")
+        void v2JsonSchemaOptionsEnvolveOSchema() {
+            var options = builder.v2JsonSchemaOptions();
+            assertThat(options.getResponseFormat()).isNotNull();
+        }
+
+        @SuppressWarnings("unchecked")
+        private Map<String, Object> blocoItemProperties(Map<String, Object> schema) {
+            Map<String, Object> treinoProps = treinoItemProperties(schema);
+            Map<String, Object> blocos = (Map<String, Object>) treinoProps.get("blocos");
+            Map<String, Object> blocoItems = (Map<String, Object>) blocos.get("items");
+            return (Map<String, Object>) blocoItems.get("properties");
+        }
+    }
 }
