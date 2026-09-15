@@ -5,6 +5,7 @@ import br.com.menthoros.backend.ai.cost.LlmPricingRegistry;
 import br.com.menthoros.backend.ai.ledger.LlmCallResult;
 import br.com.menthoros.backend.ai.ledger.LlmCallScope;
 import br.com.menthoros.backend.ai.ledger.PromptHashCalculator;
+import br.com.menthoros.backend.ai.ledger.PromptHashCalculatorV2;
 import br.com.menthoros.backend.config.external.LlmRoutingProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
@@ -45,6 +46,8 @@ class PlanoLlmLedgerHookAdvisorIntegrationTest {
     @Mock
     private PromptHashCalculator promptHash;
     @Mock
+    private PromptHashCalculatorV2 promptHashV2;
+    @Mock
     private ChatClientRequest request;
     @Mock
     private CallAdvisorChain chain;
@@ -68,7 +71,7 @@ class PlanoLlmLedgerHookAdvisorIntegrationTest {
         // abrir a tentativa — sem isso LlmCallScope.current() fica vazio (sem request) e o
         // advisor nunca decide PENDING, mesmo com a tentativa aberta.
         LlmCallScope.openRequest(UUID.randomUUID(), null, null);
-        return new PlanoLlmLedgerHook(ledger, promptHash).novaSessao();
+        return new PlanoLlmLedgerHook(ledger, promptHash, promptHashV2).novaSessao();
     }
 
     private CostTrackingAdvisor advisorReal() {

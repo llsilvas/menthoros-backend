@@ -61,7 +61,9 @@ class IaServiceImplComplianceEstagio1Test {
                 plannerShadowService,
                 mock(br.com.menthoros.backend.services.helper.PlanoLlmLedgerHook.class),
                 new br.com.menthoros.backend.services.helper.RepairTurnMessageBuilder(),
-                new com.fasterxml.jackson.databind.ObjectMapper()
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                mock(br.com.menthoros.backend.services.helper.SchemaVersionResolver.class),
+                mock(br.com.menthoros.backend.services.helper.SessionResolver.class)
         );
     }
 

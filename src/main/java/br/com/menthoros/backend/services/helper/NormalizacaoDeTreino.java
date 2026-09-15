@@ -86,6 +86,58 @@ public class NormalizacaoDeTreino {
         return receitas.get(familia);
     }
 
+    /**
+     * Valida a estrutura pós-resolução do schema v2 (semantic-session-schema) — dispatch por
+     * família, reusando os mesmos gates estruturais que a receita v1 já usa, sem os passos de
+     * correção aritmética (dado já sai correto de {@code SessionResolver}, corrigir dado certo
+     * mascararia um bug em vez de expor). Lança {@link LLMException} — mesmo contrato dos gates
+     * reusados, capturado pelo turno de reparo (F3) quando chamado dentro de {@code validar}.
+     */
+    void validarEstruturaV2(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
+        switch (FamiliaTreino.de(treino.tipoTreino())) {
+            case INTERVALADO_TIRO -> {
+                gateExistencia(treino, ctx);
+                gateContagem(treino, ctx);
+                gatePresencaAquecDesaq(treino, ctx);
+                gateOrdemAquecDesaq(treino, ctx);
+                gateBalanceamento(treino, ctx);
+                gateSequencia(treino, ctx);
+                validarDuracaoTiros(treino, ctx);
+            }
+            case TRES_ETAPAS -> {
+                boolean validarOrdem = !"LONGO".equals(treino.tipoTreino());
+                validarEstrutura3Etapas(treino, treino.tipoTreino(), ctx.atletaId(), validarOrdem);
+            }
+            case FARTLEK, PADRAO -> {
+                // sem estrutura obrigatória em v1 (FARTLEK só corrige aritmética; PADRAO não valida
+                // nada) — mantido igual em v2.
+            }
+        }
+    }
+
+    /**
+     * Checagem de TSS do slot (schema v2) — só roda depois de {@link #validarEstruturaV2} passar
+     * (design.md, semantic-session-schema, Decisão 3, passo 3): {@code treino.tssPlanejado()} já
+     * foi calculado pelo {@code SessionResolver}, não recalculado aqui. Rejeita se o desvio contra
+     * {@link br.com.menthoros.backend.domain.planner.SessionSlot#targetTss()} passar de ±20%.
+     */
+    void validarTssSlotV2(TreinoPlanejadoLlmDto treino,
+                           br.com.menthoros.backend.domain.planner.SessionSlot slot,
+                           ContextoNormalizacao ctx) {
+        double alvo = slot.targetTss();
+        int resolvido = treino.tssPlanejado() != null ? treino.tssPlanejado() : 0;
+        if (alvo <= 0) return; // sem alvo do skeleton para este slot — nada a comparar
+        double desvio = Math.abs(resolvido - alvo) / alvo;
+        if (desvio > 0.20) {
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: TSS do treino {} ({}) desvia {}% do alvo do slot ({})",
+                    ctx.atletaId(), treino.tipoTreino(), resolvido, String.format("%.0f", desvio * 100), alvo);
+            contarViolacaoEstrutural(treino.tipoTreino());
+            throw new LLMException(String.format(
+                    "Treino %s inválido: TSS resolvido (%d) desvia %.0f%% do alvo do slot (%.0f) — máximo permitido 20%%",
+                    treino.tipoTreino(), resolvido, desvio * 100, alvo));
+        }
+    }
+
     // ======================================================================================
     // Receitas — a ordem aqui é a regra (design.md, "Forma do module")
     // ======================================================================================

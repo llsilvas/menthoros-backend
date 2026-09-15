@@ -24,7 +24,12 @@ import br.com.menthoros.backend.services.helper.RegraGeracaoTreino;
 import br.com.menthoros.backend.services.helper.PlanoResilienceService;
 import br.com.menthoros.backend.services.helper.PlannerShadowService;
 import br.com.menthoros.backend.services.helper.PlanoLlmValidator;
+import br.com.menthoros.backend.services.helper.AthleteZones;
+import br.com.menthoros.backend.services.helper.SchemaVersionResolver;
+import br.com.menthoros.backend.services.helper.SessionResolver;
 import br.com.menthoros.backend.services.helper.RepairTurnMessageBuilder;
+import br.com.menthoros.backend.dto.llm.v2.PlanoSemanalLlmDtoV2;
+import br.com.menthoros.backend.domain.compliance.SchemaVersion;
 import br.com.menthoros.backend.domain.compliance.PlannerViolation;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +44,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
 import org.springframework.context.annotation.Primary;
@@ -67,6 +73,8 @@ public class IaServiceImpl implements IaService {
     private final PlanoLlmLedgerHook ledgerHook;
     private final RepairTurnMessageBuilder repairTurnMessageBuilder;
     private final ObjectMapper objectMapper;
+    private final SchemaVersionResolver schemaVersionResolver;
+    private final SessionResolver sessionResolver;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          LlmJsonSchemaBuilder llmJsonSchemaBuilder,
@@ -79,7 +87,9 @@ public class IaServiceImpl implements IaService {
                          PlannerShadowService plannerShadowService,
                          PlanoLlmLedgerHook ledgerHook,
                          RepairTurnMessageBuilder repairTurnMessageBuilder,
-                         ObjectMapper objectMapper) {
+                         ObjectMapper objectMapper,
+                         SchemaVersionResolver schemaVersionResolver,
+                         SessionResolver sessionResolver) {
         this.modelRouter = modelRouter;
         this.promptBuilder = promptBuilder;
         this.atletaRepository = atletaRepository;
@@ -94,6 +104,8 @@ public class IaServiceImpl implements IaService {
         this.ledgerHook = ledgerHook;
         this.repairTurnMessageBuilder = repairTurnMessageBuilder;
         this.objectMapper = objectMapper;
+        this.schemaVersionResolver = schemaVersionResolver;
+        this.sessionResolver = sessionResolver;
     }
 
     /**
@@ -148,7 +160,12 @@ public class IaServiceImpl implements IaService {
                 ? regraGeracaoTreino.filtrarDiasDisponiveis(atleta.getDiasDisponiveis(), LocalDate.now(), modoGeracaoPlano)
                 : null;
 
-        var promptGerado = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos, decisaoProgressao, revisaoConsumida, skeleton);
+        // semantic-session-schema: resolvido uma vez por geração (allowlist de tenant), não a cada
+        // tentativa de retry — o schema (v1/v2) não muda entre a 1ª e a 2ª tentativa.
+        boolean usaV2 = schemaVersionResolver.usaV2(TenantContext.getRequiredTenantId());
+        String schemaVersion = usaV2 ? SchemaVersion.V2 : SchemaVersion.CURRENT;
+
+        var promptGerado = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos, decisaoProgressao, revisaoConsumida, skeleton, usaV2);
         // system é byte-idêntico entre tentativas — capturado aqui e aplicado direto no
         // ChatClient; nunca passa pelo PlanoResilienceService, então o retry (que só reescreve o
         // `user` com o feedback de correção) não pode divergir o cache de prefixo (CA4).
@@ -166,9 +183,13 @@ public class IaServiceImpl implements IaService {
             // fecha o resultado após a validação; a IaServiceImpl não conhece escopo nem versões.
             PlanoLlmLedgerHook.Sessao sessao = ledgerHook.novaSessao();
             plano = planoResilienceService.gerarComResiliencia(
-                    t -> sessao.chamar(t.numero(), () -> gerarChamadaLlm(chatClient, system, t)),
+                    t -> sessao.chamar(t.numero(), schemaVersion,
+                            () -> usaV2 ? gerarChamadaLlmV2(chatClient, system, t, atleta)
+                                        : gerarChamadaLlm(chatClient, system, t)),
                     p -> sessao.validar(() -> aplicarComplianceEstagio1(
-                            validarENormalizarPlanoGerado(p, atleta.getId()), atleta, skeleton, inicioSemana)),
+                            usaV2 ? planoLlmValidator.validarPlanoV2(p, atleta, atleta.getId(), skeleton)
+                                  : validarENormalizarPlanoGerado(p, atleta.getId()),
+                            atleta, skeleton, inicioSemana)),
                     promptGerado.user());
         } catch (DomainRuleViolationException e) {
             throw e; // falha estrutural final → mensagem ao treinador (não re-empacotar como 503)
@@ -207,6 +228,22 @@ public class IaServiceImpl implements IaService {
      */
     private PlanoResilienceService.ChamadaLlm gerarChamadaLlm(ChatClient chatClient, String system,
                                                               PlanoResilienceService.Tentativa tentativa) {
+        String json = chamarLlm(chatClient, system, tentativa, llmJsonSchemaBuilder.defaultJsonSchemaOptions());
+        PlanoSemanalLlmDto entidade = (json == null || json.isBlank()) ? null : parsearPlano(json);
+        return new PlanoResilienceService.ChamadaLlm(entidade, json);
+    }
+
+    /**
+     * Monta a conversa (system + user na 1ª tentativa; system + user + assistant(json anterior) +
+     * user(correção) nas seguintes) e faz a chamada, devolvendo o texto bruto da resposta (ou
+     * {@code null} se vazia) — reusado por {@link #gerarChamadaLlm} (v1) e
+     * {@link #gerarChamadaLlmV2}, que só variam o {@code options} (schema) e o parse do retorno
+     * (achado do /qa: as ~15 linhas de montagem de conversa e extração de texto eram idênticas nos
+     * dois, risco de um fix futuro — como o de {@code jsonAnteriorOuFallback} — divergir entre eles
+     * se aplicado só num).
+     */
+    private String chamarLlm(ChatClient chatClient, String system, PlanoResilienceService.Tentativa tentativa,
+                              ChatOptions options) {
         ChatClient.ChatClientRequestSpec pedido = tentativa.numero() == 1
                 ? chatClient.prompt().system(system).user(tentativa.promptOriginal())
                 : chatClient.prompt().messages(List.of(
@@ -215,15 +252,11 @@ public class IaServiceImpl implements IaService {
                         new AssistantMessage(jsonAnteriorOuFallback(tentativa.jsonAnterior())),
                         new UserMessage(repairTurnMessageBuilder.construirCorrecao(tentativa.violacoesAnteriores()))));
 
-        ChatResponse resposta = pedido.options(llmJsonSchemaBuilder.defaultJsonSchemaOptions())
-                .call().chatResponse();
+        ChatResponse resposta = pedido.options(options).call().chatResponse();
         llmUsageLogger.registrar(resposta); // best-effort, nunca lança
 
-        String json = resposta != null && resposta.getResult() != null && resposta.getResult().getOutput() != null
+        return resposta != null && resposta.getResult() != null && resposta.getResult().getOutput() != null
                 ? resposta.getResult().getOutput().getText() : null;
-
-        PlanoSemanalLlmDto entidade = (json == null || json.isBlank()) ? null : parsearPlano(json);
-        return new PlanoResilienceService.ChamadaLlm(entidade, json);
     }
 
     /**
@@ -250,6 +283,50 @@ public class IaServiceImpl implements IaService {
             // JSON não-vazio malformado: lança dentro de gerar → propaga sem retry (mesmo
             // comportamento de hoje, quando o converter do Spring AI lançava no mesmo ponto).
             throw new LLMException("Resposta da LLM não é um JSON válido: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Branch v2 (semantic-session-schema) de {@link #gerarChamadaLlm} — mesma estrutura de
+     * conversa (system + user na 1ª tentativa; system + user + assistant(json anterior) +
+     * user(correção) nas seguintes), só o schema pedido e o parse mudam. Logo após o parse,
+     * {@link SessionResolver#resolverPlano} converte {@link PlanoSemanalLlmDtoV2} (blocos) para o
+     * shape v1 (etapas absolutas) — **sem validar nada** (design.md, Decisão 3): o resto do
+     * pipeline (turno de reparo, validação, persistência) recebe um {@code PlanoSemanalLlmDto}
+     * normal, sem saber que veio de v2.
+     */
+    private PlanoResilienceService.ChamadaLlm gerarChamadaLlmV2(ChatClient chatClient, String system,
+                                                                 PlanoResilienceService.Tentativa tentativa,
+                                                                 Atleta atleta) {
+        String json = chamarLlm(chatClient, system, tentativa, llmJsonSchemaBuilder.v2JsonSchemaOptions());
+
+        if (json == null || json.isBlank()) {
+            return new PlanoResilienceService.ChamadaLlm(null, json);
+        }
+        PlanoSemanalLlmDtoV2 planoV2 = parsearPlanoV2(json);
+        AthleteZones zonas = new AthleteZones(
+                atleta.getFcMaximaCalculada(), atleta.getFcLimiarCalculada(), atleta.getPaceLimiar());
+        // Defesa em profundidade (achado do /qa, pré-mortem codex): o schema v2 já limita
+        // repeticoes/quantidadePorRepeticao (LlmJsonSchemaBuilder.buildSchemaV2) para que a
+        // resolução nunca estoure Integer — mas resolverPlano roda dentro de `gerar`, fora do
+        // escopo de retry, então uma exceção de aritmética aqui (ex. um provedor que não honra
+        // strict:true) mataria a geração sem chance de reparo. Tratada como resposta malformada
+        // (mesma categoria de JSON inválido, task 2.4 — não retry-elegível, comportamento já
+        // existente para infra/parse).
+        PlanoSemanalLlmDto resolvido;
+        try {
+            resolvido = sessionResolver.resolverPlano(planoV2, zonas);
+        } catch (ArithmeticException e) {
+            throw new LLMException("Resposta da LLM (schema v2) tem valores numéricos inválidos: " + e.getMessage(), e);
+        }
+        return new PlanoResilienceService.ChamadaLlm(resolvido, json);
+    }
+
+    private PlanoSemanalLlmDtoV2 parsearPlanoV2(String json) {
+        try {
+            return objectMapper.readValue(json, PlanoSemanalLlmDtoV2.class);
+        } catch (JsonProcessingException e) {
+            throw new LLMException("Resposta da LLM (schema v2) não é um JSON válido: " + e.getMessage(), e);
         }
     }
 

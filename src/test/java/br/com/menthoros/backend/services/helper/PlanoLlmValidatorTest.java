@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.ai.ledger.Violacao;
+import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
@@ -106,7 +107,106 @@ class PlanoLlmValidatorTest {
         }
     }
 
+    @Nested
+    @DisplayName("validarPlanoV2 (semantic-session-schema)")
+    class ValidarPlanoV2 {
+
+        @Test
+        @DisplayName("plano v2 resolvido, estruturalmente válido, sem skeleton — passa")
+        void planoValidoSemSkeletonPassa() {
+            var plano = plano(treinoTresEtapasValido("SEGUNDA"));
+
+            var resultado = validador().validarPlanoV2(plano, atleta, ATLETA_ID, null);
+
+            assertThat(resultado.treinosPlanejados()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("2 treinos com estrutura inválida → PlanoNaoConformeException com 2 Violacao")
+        void doisTreinosEstruturalmenteInvalidos() {
+            var plano = plano(treinoTresEtapasInvalido("SEGUNDA"), treinoTresEtapasInvalido("QUARTA"));
+
+            assertThatThrownBy(() -> validador().validarPlanoV2(plano, atleta, ATLETA_ID, null))
+                    .isInstanceOf(PlanoNaoConformeException.class)
+                    .satisfies(e -> {
+                        var violacoes = ((PlanoNaoConformeException) e).violacoes();
+                        assertThat(violacoes).hasSize(2);
+                        assertThat(violacoes).extracting(Violacao::key)
+                                .anyMatch(k -> k.contains("SEGUNDA"))
+                                .anyMatch(k -> k.contains("QUARTA"));
+                    });
+        }
+
+        @Test
+        @DisplayName("TSS resolvido fora de ±20% do slot — rejeita")
+        void tssForaDaFaixaDoSlotRejeitado() {
+            var plano = plano(treinoTresEtapasComTss("SEGUNDA", 80));
+            var skeleton = skeletonComSlot(java.time.DayOfWeek.MONDAY, 50.0);
+
+            assertThatThrownBy(() -> validador().validarPlanoV2(plano, atleta, ATLETA_ID, skeleton))
+                    .isInstanceOf(PlanoNaoConformeException.class)
+                    .satisfies(e -> assertThat(((PlanoNaoConformeException) e).violacoes())
+                            .anySatisfy(v -> assertThat(v.mensagem()).contains("TSS resolvido")));
+        }
+
+        @Test
+        @DisplayName("TSS resolvido dentro de ±20% do slot — passa")
+        void tssDentroDaFaixaDoSlotPassa() {
+            var plano = plano(treinoTresEtapasComTss("SEGUNDA", 55));
+            var skeleton = skeletonComSlot(java.time.DayOfWeek.MONDAY, 50.0);
+
+            var resultado = validador().validarPlanoV2(plano, atleta, ATLETA_ID, skeleton);
+
+            assertThat(resultado.treinosPlanejados()).hasSize(1);
+        }
+
+        @Test
+        @DisplayName("achado do /qa (code-reviewer + codex): diaSemana malformado não lança IllegalArgumentException — pula a checagem de TSS")
+        void diaSemanaMalformadoNaoLancaIllegalArgumentException() {
+            var treinoComDiaInvalido = new TreinoPlanejadoLlmDto("SEGUNDA-FEIRA", "REGENERATIVO",
+                    "120-136 bpm", 55, 0.6, 3, "Recuperação ativa", "30:00", 4.0, "6:30-7:00/km",
+                    treinoTresEtapasValido("x").etapas());
+            var plano = plano(treinoComDiaInvalido);
+            var skeleton = skeletonComSlot(java.time.DayOfWeek.MONDAY, 50.0);
+
+            // Não lança IllegalArgumentException (DiaSemana.valueOf) — encontrarSlot devolve null,
+            // a checagem de TSS é pulada, e o resto do plano é validado normalmente.
+            var resultado = validador().validarPlanoV2(plano, atleta, ATLETA_ID, skeleton);
+
+            assertThat(resultado.treinosPlanejados()).hasSize(1);
+        }
+    }
+
     // ---------- arranjo ----------
+
+    private static WeekPlanSkeleton skeletonComSlot(java.time.DayOfWeek dia, double targetTss) {
+        var slot = new br.com.menthoros.backend.domain.planner.SessionSlot(dia, "REGENERATIVO", targetTss, "Z2", false, 30);
+        return new WeekPlanSkeleton(null, null, List.of(slot), null, null, false, null,
+                LocalDate.of(2026, 9, 14), null, java.util.Optional.empty());
+    }
+
+    private static TreinoPlanejadoLlmDto treinoTresEtapasValido(String dia) {
+        return new TreinoPlanejadoLlmDto(dia, "REGENERATIVO", "120-136 bpm", 40, 0.6, 3,
+                "Recuperação ativa", "30:00", 4.0, "6:30-7:00/km",
+                List.of(new EtapaTreinoLlmDto(1, "AQUECIMENTO", null, 5, 0.7, "120-136 bpm", 1, null),
+                        new EtapaTreinoLlmDto(2, "PRINCIPAL", null, 20, 2.6, "120-136 bpm", 1, "6:30-7:00/km"),
+                        new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", null, 5, 0.7, "120-136 bpm", 1, null)));
+    }
+
+    private static TreinoPlanejadoLlmDto treinoTresEtapasComTss(String dia, int tssPlanejado) {
+        var base = treinoTresEtapasValido(dia);
+        return new TreinoPlanejadoLlmDto(base.diaSemana(), base.tipoTreino(), base.fcAlvo(), tssPlanejado,
+                base.intensidadePlanejada(), base.percepcaoEsforcoEsperada(), base.justificativaIa(),
+                base.duracaoMin(), base.distanciaKm(), base.ritmoAlvo(), base.etapas());
+    }
+
+    /** Só 2 etapas (esperado 3) — validarEstrutura3Etapas rejeita. */
+    private static TreinoPlanejadoLlmDto treinoTresEtapasInvalido(String dia) {
+        return new TreinoPlanejadoLlmDto(dia, "REGENERATIVO", "120-136 bpm", 40, 0.6, 3,
+                "Recuperação ativa", "30:00", 4.0, "6:30-7:00/km",
+                List.of(new EtapaTreinoLlmDto(1, "AQUECIMENTO", null, 5, 0.7, "120-136 bpm", 1, null),
+                        new EtapaTreinoLlmDto(2, "PRINCIPAL", null, 20, 2.6, "120-136 bpm", 1, "6:30-7:00/km")));
+    }
 
     private PlanoLlmValidator validador() {
         TreinoHistoricoProvider treinoHistoricoProvider = mock(TreinoHistoricoProvider.class);
