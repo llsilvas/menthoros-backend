@@ -145,6 +145,22 @@ class LlmJsonSchemaBuilderTest {
         }
 
         @Test
+        @DisplayName("achado do /qa: repeticoes/quantidadePorRepeticao têm maximum — evita overflow em SessionResolver")
+        void repeticoesEQuantidadeTemMaximum() {
+            Map<String, Object> schema = builder.buildSchemaV2();
+            Map<String, Object> blocoProps = blocoItemProperties(schema);
+
+            assertThat(blocoProps.get("repeticoes")).isInstanceOf(Map.class);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> repeticoes = (Map<String, Object>) blocoProps.get("repeticoes");
+            assertThat(repeticoes.get("maximum")).isNotNull();
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> quantidade = (Map<String, Object>) blocoProps.get("quantidadePorRepeticao");
+            assertThat(quantidade.get("maximum")).isNotNull();
+        }
+
+        @Test
         @DisplayName("v2JsonSchemaOptions() envolve o schema v2 em ResponseFormat strict:true")
         void v2JsonSchemaOptionsEnvolveOSchema() {
             var options = builder.v2JsonSchemaOptions();

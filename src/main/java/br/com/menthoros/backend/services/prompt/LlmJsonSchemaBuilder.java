@@ -140,8 +140,16 @@ public class LlmJsonSchemaBuilder {
                         : null;
 
                 if (blocoProps != null) {
+                    // Limites superiores (achado do /qa, pré-mortem codex): sem maximum, um
+                    // quantidadePorRepeticao astronômico faz SessionResolver.intValueExact()
+                    // estourar ArithmeticException dentro de `gerar` (fora do escopo de retry) —
+                    // os valores abaixo são generosos o bastante para qualquer treino real (100km/
+                    // ~28h por repetição, 50 repetições) e pequenos o bastante para nunca chegar
+                    // perto de Integer.MAX_VALUE mesmo somados.
                     putMin(blocoProps, "repeticoes", 1);
+                    putMax(blocoProps, "repeticoes", 50);
                     putMin(blocoProps, "quantidadePorRepeticao", 0);
+                    putMax(blocoProps, "quantidadePorRepeticao", 100000);
 
                     // recuperacao é opcional (bloco sem repetição, ou repetição sem descanso) —
                     // anyOf com o objeto ou null, compatível com strict:true da OpenAI (mesmo
@@ -149,6 +157,13 @@ public class LlmJsonSchemaBuilder {
                     Map<String, Object> recuperacao = (Map<String, Object>) blocoProps.get("recuperacao");
                     if (recuperacao != null) {
                         Map<String, Object> recuperacaoObjeto = new java.util.LinkedHashMap<>(recuperacao);
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> recuperacaoProps =
+                                (Map<String, Object>) recuperacaoObjeto.get("properties");
+                        if (recuperacaoProps != null) {
+                            putMin(recuperacaoProps, "quantidade", 0);
+                            putMax(recuperacaoProps, "quantidade", 100000);
+                        }
                         enforceAllRequired(recuperacaoObjeto);
                         blocoProps.put("recuperacao", new java.util.LinkedHashMap<>(Map.of(
                                 "anyOf", List.of(recuperacaoObjeto, Map.of("type", "null"))

@@ -135,10 +135,23 @@ public class SessionResolver {
         };
     }
 
+    /**
+     * Piso de segurança para {@code paceMedio} usado como divisor em {@link #paraKm} — achado do
+     * /qa (pré-mortem codex): um `paceLimiar` cadastrado positivo mas ínfimo pode fazer a faixa de
+     * pace da zona arredondar para {@code 0.00} (scale 2 em {@code ZonaTreinoService}), causando
+     * divisão por zero. `ZoneResolver.pace` já filtra `paceLimiar<=0`; este piso cobre o caso
+     * residual de arredondamento. Nunca alcançado por um cadastro fisiológico real (0,01 min/km é
+     * absurdamente rápido).
+     */
+    private static final BigDecimal PACE_MEDIO_PISO_MIN_KM = BigDecimal.valueOf(0.01);
+
     private EtapaTreinoLlmDto construirEtapa(int ordem, String tipoEtapa, BigDecimal quantidade,
                                               UnidadeQuantidade unidade, FaixaFc faixaFc, FaixaPace faixaPace) {
         BigDecimal paceMedio = faixaPace.min().add(faixaPace.max())
                 .divide(BigDecimal.valueOf(2), 4, RoundingMode.HALF_UP);
+        if (paceMedio.signum() <= 0) {
+            paceMedio = PACE_MEDIO_PISO_MIN_KM;
+        }
 
         // Math.max(1, ...) — mesma convenção de v1 (TreinoNormalizador.expandirEtapasAgregadas:115):
         // etapa com duração sub-minuto (ex. tiro curto em SEG) nunca arredonda para 0 min.

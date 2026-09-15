@@ -92,5 +92,16 @@ class ZoneResolverTest {
             // Pace menor = mais rápido; Z5 é mais intenso, então o pace de Z5 é menor (mais rápido) que Z1.
             assertThat(z5.max()).isLessThan(z1.min());
         }
+
+        @Test
+        @DisplayName("paceLimiar zero ou negativo cai no fallback sintético (achado do /qa: evita divisão por zero a jusante)")
+        void paceLimiarNaoPositivoUsaFallback() {
+            FaixaPace comZero = resolver.pace(Zona.Z3, BigDecimal.ZERO);
+            FaixaPace comNegativo = resolver.pace(Zona.Z3, BigDecimal.valueOf(-1));
+            FaixaPace semPaceLimiar = resolver.pace(Zona.Z3, null);
+
+            assertThat(comZero).isEqualTo(semPaceLimiar);
+            assertThat(comNegativo).isEqualTo(semPaceLimiar);
+        }
     }
 }

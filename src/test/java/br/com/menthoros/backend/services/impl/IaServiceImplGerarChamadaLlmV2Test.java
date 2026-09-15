@@ -177,6 +177,24 @@ class IaServiceImplGerarChamadaLlmV2Test {
                     .isInstanceOf(LLMException.class)
                     .hasMessageContaining("JSON válido");
         }
+
+        @Test
+        @DisplayName("achado do /qa (pré-mortem codex): quantidadePorRepeticao astronômico não escapa como ArithmeticException crua")
+        void quantidadeAstronomicaNaoEscapaComoArithmeticException() {
+            // O schema v2 real limita esse campo (LlmJsonSchemaBuilder.buildSchemaV2) — este teste
+            // simula um provedor que não honra strict:true, ou uma resposta adversarial.
+            String jsonComOverflow = "{\"volumePlanejadoKm\":10.0,\"volumeAlvoKm\":10.0,\"status\":\"ATIVO\","
+                    + "\"objetivoSemanal\":\"base\",\"treinosPlanejados\":[{\"diaSemana\":\"SEGUNDA\","
+                    + "\"tipoTreino\":\"REGENERATIVO\",\"justificativaIa\":\"x\",\"blocos\":["
+                    + "{\"papel\":\"PRINCIPAL\",\"repeticoes\":1,\"quantidadePorRepeticao\":2147483648,"
+                    + "\"unidade\":\"MIN\",\"zona\":\"Z1\"}]}]}";
+            chatModelResponde(jsonComOverflow);
+
+            assertThatThrownBy(() -> invoke("system v2",
+                    new PlanoResilienceService.Tentativa(1, "gere o plano", null, List.of())))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("valores numéricos inválidos");
+        }
     }
 
     @Nested

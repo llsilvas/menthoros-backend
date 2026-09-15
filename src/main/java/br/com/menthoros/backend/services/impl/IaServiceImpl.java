@@ -44,6 +44,7 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.prompt.ChatOptions;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
 import org.springframework.context.annotation.Primary;
@@ -227,6 +228,22 @@ public class IaServiceImpl implements IaService {
      */
     private PlanoResilienceService.ChamadaLlm gerarChamadaLlm(ChatClient chatClient, String system,
                                                               PlanoResilienceService.Tentativa tentativa) {
+        String json = chamarLlm(chatClient, system, tentativa, llmJsonSchemaBuilder.defaultJsonSchemaOptions());
+        PlanoSemanalLlmDto entidade = (json == null || json.isBlank()) ? null : parsearPlano(json);
+        return new PlanoResilienceService.ChamadaLlm(entidade, json);
+    }
+
+    /**
+     * Monta a conversa (system + user na 1ª tentativa; system + user + assistant(json anterior) +
+     * user(correção) nas seguintes) e faz a chamada, devolvendo o texto bruto da resposta (ou
+     * {@code null} se vazia) — reusado por {@link #gerarChamadaLlm} (v1) e
+     * {@link #gerarChamadaLlmV2}, que só variam o {@code options} (schema) e o parse do retorno
+     * (achado do /qa: as ~15 linhas de montagem de conversa e extração de texto eram idênticas nos
+     * dois, risco de um fix futuro — como o de {@code jsonAnteriorOuFallback} — divergir entre eles
+     * se aplicado só num).
+     */
+    private String chamarLlm(ChatClient chatClient, String system, PlanoResilienceService.Tentativa tentativa,
+                              ChatOptions options) {
         ChatClient.ChatClientRequestSpec pedido = tentativa.numero() == 1
                 ? chatClient.prompt().system(system).user(tentativa.promptOriginal())
                 : chatClient.prompt().messages(List.of(
@@ -235,15 +252,11 @@ public class IaServiceImpl implements IaService {
                         new AssistantMessage(jsonAnteriorOuFallback(tentativa.jsonAnterior())),
                         new UserMessage(repairTurnMessageBuilder.construirCorrecao(tentativa.violacoesAnteriores()))));
 
-        ChatResponse resposta = pedido.options(llmJsonSchemaBuilder.defaultJsonSchemaOptions())
-                .call().chatResponse();
+        ChatResponse resposta = pedido.options(options).call().chatResponse();
         llmUsageLogger.registrar(resposta); // best-effort, nunca lança
 
-        String json = resposta != null && resposta.getResult() != null && resposta.getResult().getOutput() != null
+        return resposta != null && resposta.getResult() != null && resposta.getResult().getOutput() != null
                 ? resposta.getResult().getOutput().getText() : null;
-
-        PlanoSemanalLlmDto entidade = (json == null || json.isBlank()) ? null : parsearPlano(json);
-        return new PlanoResilienceService.ChamadaLlm(entidade, json);
     }
 
     /**
@@ -285,20 +298,7 @@ public class IaServiceImpl implements IaService {
     private PlanoResilienceService.ChamadaLlm gerarChamadaLlmV2(ChatClient chatClient, String system,
                                                                  PlanoResilienceService.Tentativa tentativa,
                                                                  Atleta atleta) {
-        ChatClient.ChatClientRequestSpec pedido = tentativa.numero() == 1
-                ? chatClient.prompt().system(system).user(tentativa.promptOriginal())
-                : chatClient.prompt().messages(List.of(
-                        new SystemMessage(system),
-                        new UserMessage(tentativa.promptOriginal()),
-                        new AssistantMessage(jsonAnteriorOuFallback(tentativa.jsonAnterior())),
-                        new UserMessage(repairTurnMessageBuilder.construirCorrecao(tentativa.violacoesAnteriores()))));
-
-        ChatResponse resposta = pedido.options(llmJsonSchemaBuilder.v2JsonSchemaOptions())
-                .call().chatResponse();
-        llmUsageLogger.registrar(resposta); // best-effort, nunca lança
-
-        String json = resposta != null && resposta.getResult() != null && resposta.getResult().getOutput() != null
-                ? resposta.getResult().getOutput().getText() : null;
+        String json = chamarLlm(chatClient, system, tentativa, llmJsonSchemaBuilder.v2JsonSchemaOptions());
 
         if (json == null || json.isBlank()) {
             return new PlanoResilienceService.ChamadaLlm(null, json);
@@ -306,7 +306,19 @@ public class IaServiceImpl implements IaService {
         PlanoSemanalLlmDtoV2 planoV2 = parsearPlanoV2(json);
         AthleteZones zonas = new AthleteZones(
                 atleta.getFcMaximaCalculada(), atleta.getFcLimiarCalculada(), atleta.getPaceLimiar());
-        PlanoSemanalLlmDto resolvido = sessionResolver.resolverPlano(planoV2, zonas);
+        // Defesa em profundidade (achado do /qa, pré-mortem codex): o schema v2 já limita
+        // repeticoes/quantidadePorRepeticao (LlmJsonSchemaBuilder.buildSchemaV2) para que a
+        // resolução nunca estoure Integer — mas resolverPlano roda dentro de `gerar`, fora do
+        // escopo de retry, então uma exceção de aritmética aqui (ex. um provedor que não honra
+        // strict:true) mataria a geração sem chance de reparo. Tratada como resposta malformada
+        // (mesma categoria de JSON inválido, task 2.4 — não retry-elegível, comportamento já
+        // existente para infra/parse).
+        PlanoSemanalLlmDto resolvido;
+        try {
+            resolvido = sessionResolver.resolverPlano(planoV2, zonas);
+        } catch (ArithmeticException e) {
+            throw new LLMException("Resposta da LLM (schema v2) tem valores numéricos inválidos: " + e.getMessage(), e);
+        }
         return new PlanoResilienceService.ChamadaLlm(resolvido, json);
     }
 

@@ -137,12 +137,25 @@ public class PlanoLlmValidator {
         return plano;
     }
 
-    /** {@code null} quando não há skeleton (flag `planner-engine.enabled` off) ou o dia não está no skeleton. */
+    /**
+     * {@code null} quando não há skeleton (flag `planner-engine.enabled` off), o dia não está no
+     * skeleton, ou {@code diaSemana} não é um valor válido de {@link DiaSemana} — achado do /qa:
+     * {@code DiaSemana.valueOf} lança {@code IllegalArgumentException`, não capturada pelo `catch
+     * (LLMException)` de {@link #validarPlanoV2}, quebraria o turno de reparo (F3) para um dia
+     * malformado em vez de virar uma violação reparável. Mesmo padrão defensivo de
+     * {@link #validarDistribuicaoCargaSemanal}, mais abaixo.
+     */
     private @Nullable SessionSlot encontrarSlot(@Nullable WeekPlanSkeleton skeleton, @Nullable String diaSemana) {
         if (skeleton == null || diaSemana == null) {
             return null;
         }
-        var dayOfWeek = Utils.converterParaDayOfWeek(DiaSemana.valueOf(diaSemana));
+        DiaSemana dia;
+        try {
+            dia = DiaSemana.valueOf(diaSemana);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        var dayOfWeek = Utils.converterParaDayOfWeek(dia);
         return skeleton.sessions().stream()
                 .filter(slot -> slot.day() == dayOfWeek)
                 .findFirst()

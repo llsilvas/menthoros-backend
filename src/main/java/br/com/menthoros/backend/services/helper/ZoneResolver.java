@@ -53,9 +53,14 @@ public class ZoneResolver {
         return new FaixaFc(z.fcMin(), z.fcMax());
     }
 
-    /** Resolve a faixa de pace (min/km) de uma zona. Cai no fallback sintético se {@code paceLimiar} for {@code null}. */
+    /**
+     * Resolve a faixa de pace (min/km) de uma zona. Cai no fallback sintético se {@code paceLimiar}
+     * for {@code null} <b>ou não-positivo</b> (achado do /qa: um `paceLimiar` cadastrado como 0 ou
+     * negativo causaria divisão por zero/pace negativo em {@code SessionResolver} — o cadastro
+     * inválido não é algo que um retry ao LLM corrige, então cai no mesmo fallback do dado ausente).
+     */
     public FaixaPace pace(Zona zona, @Nullable BigDecimal paceLimiar) {
-        BigDecimal limiar = paceLimiar != null ? paceLimiar : PACE_LIMIAR_FALLBACK_MIN_KM;
+        BigDecimal limiar = (paceLimiar != null && paceLimiar.signum() > 0) ? paceLimiar : PACE_LIMIAR_FALLBACK_MIN_KM;
         List<ZonaPace> zonas = zonaTreinoService.calcularZonasPace(limiar);
         ZonaPace z = zonas.get(zona.indice() - 1);
         return new FaixaPace(z.paceMin(), z.paceMax());

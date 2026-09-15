@@ -159,6 +159,22 @@ class PlanoLlmValidatorTest {
 
             assertThat(resultado.treinosPlanejados()).hasSize(1);
         }
+
+        @Test
+        @DisplayName("achado do /qa (code-reviewer + codex): diaSemana malformado não lança IllegalArgumentException — pula a checagem de TSS")
+        void diaSemanaMalformadoNaoLancaIllegalArgumentException() {
+            var treinoComDiaInvalido = new TreinoPlanejadoLlmDto("SEGUNDA-FEIRA", "REGENERATIVO",
+                    "120-136 bpm", 55, 0.6, 3, "Recuperação ativa", "30:00", 4.0, "6:30-7:00/km",
+                    treinoTresEtapasValido("x").etapas());
+            var plano = plano(treinoComDiaInvalido);
+            var skeleton = skeletonComSlot(java.time.DayOfWeek.MONDAY, 50.0);
+
+            // Não lança IllegalArgumentException (DiaSemana.valueOf) — encontrarSlot devolve null,
+            // a checagem de TSS é pulada, e o resto do plano é validado normalmente.
+            var resultado = validador().validarPlanoV2(plano, atleta, ATLETA_ID, skeleton);
+
+            assertThat(resultado.treinosPlanejados()).hasSize(1);
+        }
     }
 
     // ---------- arranjo ----------

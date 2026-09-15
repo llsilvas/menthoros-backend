@@ -7,7 +7,7 @@ import java.math.BigDecimal;
 
 /**
  * Bloco qualitativo de um treino no schema v2 — a LLM decide estrutura (papel, repetições, zona),
- * o Java resolve os números absolutos ({@link br.com.menthoros.backend.domain.planner.SessionResolver}).
+ * o Java resolve os números absolutos ({@link br.com.menthoros.backend.services.helper.SessionResolver}).
  * Sem pace, FC, distância ou duração — isso é {@code quantidadePorRepeticao}/{@code unidade},
  * neutros até a resolução.
  */

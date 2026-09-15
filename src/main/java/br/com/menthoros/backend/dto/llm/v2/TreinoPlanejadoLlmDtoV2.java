@@ -9,7 +9,7 @@ import java.util.List;
  * Contrato de saída da LLM por treino, schema v2 (semantic-session-schema) — substitui
  * {@code etapas: [...]} de {@code TreinoPlanejadoLlmDto} (v1) por {@code blocos}. Sem
  * {@code fcAlvo}/{@code duracaoMin}/{@code distanciaKm}/{@code ritmoAlvo}: o
- * {@link br.com.menthoros.backend.domain.planner.SessionResolver} calcula esses campos a partir
+ * {@link br.com.menthoros.backend.services.helper.SessionResolver} calcula esses campos a partir
  * dos blocos resolvidos.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
