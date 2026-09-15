@@ -4,6 +4,7 @@ import br.com.menthoros.backend.ai.ledger.LlmCallContext;
 import br.com.menthoros.backend.ai.ledger.LlmCallResult;
 import br.com.menthoros.backend.ai.ledger.LlmCallScope;
 import br.com.menthoros.backend.ai.ledger.PromptHashCalculator;
+import br.com.menthoros.backend.ai.ledger.PromptHashCalculatorV2;
 import br.com.menthoros.backend.ai.ledger.Violacao;
 import br.com.menthoros.backend.domain.compliance.PromptVersion;
 import br.com.menthoros.backend.domain.compliance.SchemaVersion;
@@ -41,13 +42,15 @@ class PlanoLlmLedgerHookTest {
     private LlmCallLedger ledger;
     @Mock
     private PromptHashCalculator promptHash;
+    @Mock
+    private PromptHashCalculatorV2 promptHashV2;
 
     private PlanoLlmLedgerHook hook;
     private final UUID req = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        hook = new PlanoLlmLedgerHook(ledger, promptHash);
+        hook = new PlanoLlmLedgerHook(ledger, promptHash, promptHashV2);
         LlmCallScope.openRequest(req, UUID.randomUUID(), "Maria");
     }
 
@@ -92,6 +95,25 @@ class PlanoLlmLedgerHookTest {
             assertThat(LlmCallScope.current()).as("tentativa fechada ao sair").isEmpty();
             assertThat(LlmCallScope.currentGenerationRequestId()).as("requisição continua").contains(req);
             verifyNoInteractions(ledger);
+        }
+
+        @Test
+        @DisplayName("chamar(tentativa, SchemaVersion.V2, ...) abre a tentativa com schema-v2 e o hash de v2")
+        void chamarComSchemaVersionV2UsaHashDeV2() {
+            when(promptHashV2.valor()).thenReturn("hash-v2");
+            AtomicReference<Optional<LlmCallContext>> visto = new AtomicReference<>();
+            var sessao = hook.novaSessao();
+
+            sessao.chamar(1, SchemaVersion.V2, () -> {
+                visto.set(LlmCallScope.current());
+                advisorGravou();
+                return "dto";
+            });
+
+            LlmCallContext ctx = visto.get().orElseThrow();
+            assertThat(ctx.schemaVersion()).isEqualTo(SchemaVersion.V2);
+            assertThat(ctx.promptHash()).isEqualTo("hash-v2");
+            verifyNoInteractions(promptHash); // caminho v2 não toca o PromptHashCalculator de v1
         }
 
         @Test

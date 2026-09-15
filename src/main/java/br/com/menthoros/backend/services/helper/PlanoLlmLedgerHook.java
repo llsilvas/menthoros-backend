@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.helper;
 import br.com.menthoros.backend.ai.ledger.LlmCallResult;
 import br.com.menthoros.backend.ai.ledger.LlmCallScope;
 import br.com.menthoros.backend.ai.ledger.PromptHashCalculator;
+import br.com.menthoros.backend.ai.ledger.PromptHashCalculatorV2;
 import br.com.menthoros.backend.ai.ledger.Violacao;
 import br.com.menthoros.backend.domain.compliance.PromptVersion;
 import br.com.menthoros.backend.domain.compliance.SchemaVersion;
@@ -40,6 +41,7 @@ public class PlanoLlmLedgerHook {
 
     private final LlmCallLedger ledger;
     private final PromptHashCalculator promptHash;
+    private final PromptHashCalculatorV2 promptHashV2;
 
     /**
      * Idempotent: SIM — só cria estado em memória.
@@ -64,7 +66,17 @@ public class PlanoLlmLedgerHook {
          * update para PARSE_ERROR (best-effort). Tenant-aware: NÃO.
          */
         public <T> T chamar(int tentativa, Supplier<T> chamada) {
-            LlmCallScope.openAttempt(tentativa, PromptVersion.CURRENT, promptHash.valor(), SchemaVersion.CURRENT);
+            return chamar(tentativa, SchemaVersion.CURRENT, chamada);
+        }
+
+        /**
+         * Mesma coisa que {@link #chamar(int, Supplier)}, mas com {@code schemaVersion} explícito
+         * (semantic-session-schema) — resolve o {@code prompt_hash} certo para o template
+         * correspondente ({@link #chamar(int, Supplier)} sempre usa v1/{@link PromptHashCalculator}).
+         */
+        public <T> T chamar(int tentativa, String schemaVersion, Supplier<T> chamada) {
+            String hash = SchemaVersion.V2.equals(schemaVersion) ? promptHashV2.valor() : promptHash.valor();
+            LlmCallScope.openAttempt(tentativa, PromptVersion.CURRENT, hash, schemaVersion);
             try {
                 T resultado = chamada.get();
                 callId = LlmCallScope.lastCallId().orElse(null);
