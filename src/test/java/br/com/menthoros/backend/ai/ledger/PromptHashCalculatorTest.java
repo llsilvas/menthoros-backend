@@ -77,4 +77,37 @@ class PromptHashCalculatorTest {
                     .isEqualTo(registrado);
         }
     }
+
+    @Nested
+    @DisplayName("schema v2 (semantic-session-schema)")
+    class SchemaV2 {
+
+        private static final String TEMPLATE_PLANO_V2 = "plano-treino-system-v2.txt";
+
+        @Test
+        @DisplayName("template v2 existe no classpath e carrega — sem afetar o hash de v1")
+        void templateV2CarregaSemAfetarV1() throws IOException {
+            var calculatorV1 = new PromptHashCalculator(new DefaultResourceLoader(), TEMPLATE_PLANO);
+            var calculatorV2 = new PromptHashCalculator(new DefaultResourceLoader(), TEMPLATE_PLANO_V2);
+
+            String conteudoV2 = new ClassPathResource("prompts/" + TEMPLATE_PLANO_V2)
+                    .getContentAsString(StandardCharsets.UTF_8);
+            assertThat(calculatorV2.valor()).isEqualTo(PromptHashCalculator.sha256(conteudoV2));
+            assertThat(calculatorV2.valor()).hasSize(64);
+            // Templates diferentes → hashes diferentes; carregar v2 não recalcula nem muda v1.
+            assertThat(calculatorV2.valor()).isNotEqualTo(calculatorV1.valor());
+        }
+
+        @Test
+        @DisplayName("template v2 descreve o schema de blocos e não pede etapas expandidas")
+        void templateV2DescreveSchemaDeBlocos() throws IOException {
+            String conteudoV2 = new ClassPathResource("prompts/" + TEMPLATE_PLANO_V2)
+                    .getContentAsString(StandardCharsets.UTF_8);
+
+            assertThat(conteudoV2)
+                    .contains("`blocos`", "`papel`", "`repeticoes`", "`quantidadePorRepeticao`", "`zona`")
+                    // v1 pedia a LLM expandir etapa por etapa com fórmula "3 + 2×tiros" — não existe em v2
+                    .doesNotContain("2 × número_de_tiros", "2 × número_de_variações", "ESTRUTURA OBRIGATÓRIA DO TREINO INTERVALADO");
+        }
+    }
 }
