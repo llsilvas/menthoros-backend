@@ -358,6 +358,9 @@
                         <include>**/*Tests.java</include>
                         <include>**/*TestCase.java</include>
                     </includes>
+                    <!-- Testes de eval (@Tag("eval"), plan-generation-eval-set) rodam só sob -Peval,
+                         nunca no inner loop (./mvnw test) nem no gate de PR (./mvnw verify). -->
+                    <excludedGroups>eval</excludedGroups>
                 </configuration>
             </plugin>
 
@@ -586,6 +589,25 @@
             <properties>
                 <openapi.docs.port>${server.port}</openapi.docs.port>
             </properties>
+        </profile>
+
+        <!-- Runner do eval set (plan-generation-eval-set) — roda só sob demanda, nunca no inner
+             loop nem no gate de PR. Default de app.eval.modo é "auditoria" (ver
+             application.yml); passe -Dmodo=candidato para o modo candidato. -->
+        <profile>
+            <id>eval</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <groups>eval</groups>
+                            <excludedGroups combine.self="override"></excludedGroups>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 
