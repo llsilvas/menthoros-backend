@@ -4,7 +4,6 @@ import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
-import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.onboarding.impl.BaselineCalculatorImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,14 +20,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class BaselineCalculatorTest {
-
-    @Mock
-    private TsbService tsbService;
 
     @Mock
     private MetricasDiariasRepository metricasDiariasRepository;
@@ -40,7 +35,7 @@ class BaselineCalculatorTest {
     @BeforeEach
     void setUp() {
         atletaId = UUID.randomUUID();
-        calculator = new BaselineCalculatorImpl(tsbService, metricasDiariasRepository);
+        calculator = new BaselineCalculatorImpl(metricasDiariasRepository);
     }
 
     @Nested
@@ -61,7 +56,6 @@ class BaselineCalculatorTest {
             assertThat(resultado.tsb()).isEqualTo(5.0);
             assertThat(resultado.ctlOrigem()).isEqualTo(OrigemDado.MEASURED);
             assertThat(resultado.atlOrigem()).isEqualTo(OrigemDado.MEASURED);
-            verify(tsbService).recalcularHistoricoCompleto(atletaId);
         }
 
         @Test
