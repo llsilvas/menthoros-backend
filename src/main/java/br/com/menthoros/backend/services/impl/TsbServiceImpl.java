@@ -341,6 +341,11 @@ public class TsbServiceImpl implements TsbService {
         athleteThresholdUpdater.atualizarLimiares(metricas.getAtleta(), metaDados, LocalDate.now());
 
         planoMetaDadosRepository.save(metaDados);
+
+        // fix-progressao-continua-incremental: mantém semanasProgressaoContinua em dia a cada
+        // treino real registrado, não só quando recalcularHistoricoCompleto roda — este método já
+        // é chamado tanto pelo caminho incremental (recalcularDesde) quanto pelo completo.
+        recalcularSemanasProgressao(atletaId);
     }
 
     /**
@@ -464,8 +469,9 @@ public class TsbServiceImpl implements TsbService {
                         .findByAtletaIdAndData(atletaId, intervalo.fim())
                         .orElseThrow(() -> new IllegalStateException(
                                 "Última métrica não encontrada após recálculo para atleta " + atletaId));
+                // fix-progressao-continua-incremental: recalcularSemanasProgressao já roda dentro
+                // de atualizarMetaDados — não chamar de novo aqui (duplicaria o trabalho).
                 atualizarMetaDados(atletaId, ultimaMetrica);
-                recalcularSemanasProgressao(atletaId);
             });
         } catch (Exception e) {
             tsbRecalculoExecutor.registrarAborto("metadados");
