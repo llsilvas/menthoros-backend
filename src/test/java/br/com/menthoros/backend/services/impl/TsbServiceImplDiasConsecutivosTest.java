@@ -157,7 +157,7 @@ class TsbServiceImplDiasConsecutivosTest {
                 }
         );
 
-        return new TsbServiceImpl(repo, null, null, null, null, null, null,
+        return new TsbServiceImpl(repo, null, null, null, null, null,
                 new TsbRecalculoExecutorInline(), null);
     }
 

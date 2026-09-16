@@ -15,7 +15,6 @@ import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
-import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import br.com.menthoros.backend.testsupport.ProvaRepositoryTestStub;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -184,9 +183,8 @@ class TsbServiceImplRecalculoSemanticaTest {
         PlanoMetadadosRepository planoRepo = planoRepoStub(planoMetaDados, salvo);
 
         MetricasAlertaService alertaService = alertaServiceStub();
-        TssCalculatorService tssCalc = new TssCalculatorService();
 
-        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, tssCalc, alertaService,
+        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
                 new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
                 new TsbRecalculoExecutorInline(), planoMetadadosServiceStub(planoMetaDados));
     }
@@ -297,9 +295,8 @@ class TsbServiceImplRecalculoSemanticaTest {
         );
 
         MetricasAlertaService alertaService = alertaServiceStub();
-        TssCalculatorService tssCalc = new TssCalculatorService();
 
-        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, tssCalc, alertaService,
+        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, alertaService,
                 new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
                 new TsbRecalculoExecutorInline(), planoMetadadosServiceStub(planoMetaDados));
     }

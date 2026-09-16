@@ -15,7 +15,6 @@ import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
-import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import br.com.menthoros.backend.testsupport.ProvaRepositoryTestStub;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -280,7 +279,7 @@ class TsbServiceImplSemanticaTest {
                 (proxy, method, args) -> {
                     if ("findQueContamByAtletaIdAndDataTreino".equals(method.getName())) {
                         // Um treino com tssCalculado já persistido — D3: TsbServiceImpl soma o
-                        // campo, não recalcula via TssCalculatorService.
+                        // campo diretamente, sem recalcular.
                         TreinoRealizado treino = new TreinoRealizado();
                         treino.setTssCalculado(tssHoje);
                         return List.of(treino);
@@ -297,9 +296,8 @@ class TsbServiceImplSemanticaTest {
         );
 
         // D3: TsbServiceImpl não chama mais calcularTssDia — soma tssCalculado diretamente
-        // (stub acima). TssCalculatorService só entraria no fallback de treino sem TSS
-        // persistido, que este teste não exercita.
-        TssCalculatorService tssCalc = new TssCalculatorService();
+        // (stub acima). Treino sem TSS persistido conta 0 na soma (backfill-tss-legado-producao),
+        // não é mais calculado on-the-fly — este teste não exercita esse caso.
 
         // Stub: MetricasDiariasRepository
         MetricasDiariasRepository metricasRepo = (MetricasDiariasRepository) Proxy.newProxyInstance(
@@ -377,7 +375,7 @@ class TsbServiceImplSemanticaTest {
             }
         };
 
-        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, tssCalc, alertaService,
+        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
                 new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
                 new TsbRecalculoExecutorInline(), planoMetadadosService);
     }

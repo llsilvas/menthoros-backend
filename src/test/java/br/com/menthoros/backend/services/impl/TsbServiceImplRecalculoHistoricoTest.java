@@ -49,7 +49,6 @@ class TsbServiceImplRecalculoHistoricoTest {
                 null,
                 null,
                 null,
-                null,
                 new TsbRecalculoExecutorInline(),
                 null
         );
@@ -92,7 +91,6 @@ class TsbServiceImplRecalculoHistoricoTest {
                 planoRepo(metaDados, saves, salvo),
                 metricasRepoSemHistorico(atletaId),
                 atletaRepo(atleta),
-                null,
                 metricasAlertaServiceStub(),
                 new AthleteThresholdUpdater(null, null, new ThresholdInferenceService()),
                 new TsbRecalculoExecutorInline(),

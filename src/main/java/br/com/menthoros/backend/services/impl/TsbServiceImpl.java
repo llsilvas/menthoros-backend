@@ -12,7 +12,6 @@ import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.services.helper.TsbRecalculoExecutor;
-import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,7 +35,6 @@ public class TsbServiceImpl implements TsbService {
     private final PlanoMetadadosRepository planoMetaDadosRepository;
     private final MetricasDiariasRepository metricasDiariasRepository;
     private final AtletaRepository atletaRepository;
-    private final TssCalculatorService tssCalculatorService;
     private final MetricasAlertaService metricasAlertaService;
     private final AthleteThresholdUpdater athleteThresholdUpdater;
     private final TsbRecalculoExecutor tsbRecalculoExecutor;
@@ -141,25 +139,16 @@ public class TsbServiceImpl implements TsbService {
 
     /**
      * Soma {@code tssCalculado} dos treinos do dia — D3: o campo persistido é a única verdade,
-     * não um recálculo ao vivo.
-     *
-     * <p>Fallback temporário (task 8.2 remove após o backfill de {@link #recalcularHistoricoCompleto}
-     * rodar em produção): treino sem {@code tssCalculado} ainda (histórico pré-migração) tem o
-     * valor calculado e <b>persistido agora</b>, para que a próxima chamada não recalcule e o
-     * backfill deste atleta feche a lacuna de vez.</p>
+     * não um recálculo ao vivo. `tssCalculado` nulo conta como 0 (task 8.2,
+     * `backfill-tss-legado-producao`: o fallback "nulo → calcula e persiste agora" foi removido
+     * depois de confirmar, via {@code IngestaoTreinoRealizadoServiceImpl.aplicarTssSeNecessario},
+     * que todo treino que conta na carga já sai da ingestão com o campo preenchido).
      */
     private int somarTssContabilizado(List<TreinoRealizado> treinos) {
         int total = 0;
         for (TreinoRealizado treino : treinos) {
             Integer tss = treino.getTssCalculado();
-            if (tss == null) {
-                log.warn("tssCalculado ausente para treino {} — calculado e persistido agora "
-                        + "(fallback D3, remover na task 8.2 após o backfill)", treino.getId());
-                tss = tssCalculatorService.calcularTss(treino);
-                treino.setTssCalculado(tss);
-                treinoRealizadoRepository.save(treino);
-            }
-            total += tss;
+            total += tss != null ? tss : 0;
         }
         return total;
     }
