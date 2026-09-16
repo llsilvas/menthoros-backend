@@ -3,7 +3,6 @@ package br.com.menthoros.backend.services.onboarding.impl;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
-import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.onboarding.BaselineCalculator;
 import br.com.menthoros.backend.services.onboarding.BaselineResult;
 import br.com.menthoros.backend.services.onboarding.HistoricoUtils;
@@ -47,7 +46,6 @@ public class BaselineCalculatorImpl implements BaselineCalculator {
         CTL_HEURISTICO.put(NivelExperiencia.ELITE, 70.0);
     }
 
-    private final TsbService tsbService;
     private final MetricasDiariasRepository metricasDiariasRepository;
 
     @Override
@@ -59,7 +57,10 @@ public class BaselineCalculatorImpl implements BaselineCalculator {
             throw new IllegalArgumentException("nivelExperiencia nao pode ser nulo");
         }
 
-        tsbService.recalcularHistoricoCompleto(atletaId);
+        // remove-redundant-tsb-baseline-recalc: recalcularHistoricoCompleto era redundante aqui —
+        // todo caminho real de persistência de treino já mantém MetricasDiarias em dia via
+        // TsbService.recalcularDesde (incremental). Sem motivo de integridade real encontrado na
+        // origem da chamada (design.md Decisão 11, athlete-onboarding-baseline).
         MetricasDiarias metricas = metricasDiariasRepository.findLatestByAtletaId(atletaId).orElse(null);
         double ctlReal = metricas != null ? metricas.getCtl() : 0.0;
         double atlReal = metricas != null ? metricas.getAtl() : 0.0;
