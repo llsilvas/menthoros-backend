@@ -248,7 +248,7 @@ class TsbServiceImplRecalculoSemanticaTest {
             PlanoMetaDados planoMetaDados,
             LocalDate primeiroTreino,
             java.util.Set<LocalDate> diasAtualizados,
-            AtomicInteger chamadasFindByAtletaIdOrderByDataAsc) {
+            AtomicInteger chamadasStreak) {
 
         AtletaRepository atletaRepo = atletaRepoStub(atleta);
 
@@ -339,7 +339,7 @@ class TsbServiceImplRecalculoSemanticaTest {
                         return m;
                     }
                     if ("findByAtletaIdOrderByDataAsc".equals(name)) {
-                        chamadasFindByAtletaIdOrderByDataAsc.incrementAndGet();
+                        chamadasStreak.incrementAndGet();
                         return Collections.emptyList();
                     }
                     // Sem metricas pre-existentes: os limites do intervalo sao nulos.
