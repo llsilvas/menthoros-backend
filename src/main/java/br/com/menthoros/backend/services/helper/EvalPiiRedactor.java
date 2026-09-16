@@ -1,7 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
 import org.jspecify.annotations.Nullable;
-import org.springframework.stereotype.Component;
 
 import java.util.regex.Pattern;
 
@@ -13,8 +12,9 @@ import java.util.regex.Pattern;
  *
  * <p>Idempotent: YES — leitura pura, sem mutação de estado. Side Effects: NONE. Tenant-aware: NÃO —
  * opera sobre texto solto, não sobre entidade tenant-scoped.
+ *
+ * <p>Deliberadamente sem {@code @Component} — nunca instanciada pelo Spring (achado do /qa).
  */
-@Component
 public class EvalPiiRedactor {
 
     static final String MARCADOR = "[REDIGIDO]";

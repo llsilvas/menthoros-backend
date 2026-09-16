@@ -6,7 +6,6 @@ import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.model.ModelOptionsUtils;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.ResponseFormat;
-import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
@@ -16,8 +15,9 @@ import java.util.Map;
  * usado para parse — só para gerar o schema enviado à OpenAI).
  *
  * <p>Idempotent: YES — pura reflexão, sem I/O. Side Effects: NONE. Tenant-aware: NÃO.
+ *
+ * <p>Deliberadamente sem {@code @Component} — nunca instanciada pelo Spring (achado do /qa).
  */
-@Component
 public class EvalJudgeSchemaBuilder {
 
     /** Rubrica completa (modo candidato) — {@link NotaJuizCompleta}, 6 eixos. */

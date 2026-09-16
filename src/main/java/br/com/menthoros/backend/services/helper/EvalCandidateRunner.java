@@ -22,6 +22,12 @@ import java.time.LocalDate;
  * o {@link ChatClient} — o mesmo `ModelRouter.route(TaskComplexity.PLANO)` que produção usa, para
  * exercitar o modelo real de plano, não um substituto.
  *
+ * <p>Suporta v1 e v2 via o parâmetro {@code usaV2} de {@link #rodar(PromptGerado, WeekPlanSkeleton,
+ * AthleteZones, Atleta, LocalDate, boolean)} — achado do /qa (Codex): a versão anterior só pedia
+ * v1, então uma mudança de schema v2 nunca seria exercitada pelo gate. Nenhum arquétipo de
+ * candidato usa v2 hoje (ver proposal.md Open Questions) — a capacidade existe, falta um
+ * arquétipo que a exercite.
+ *
  * <p>Idempotent: NÃO — cada chamada é uma nova geração real. Side Effects: chamada de rede à LLM
  * (custo real). Tenant-aware: NÃO — opera sobre fixtures sintéticas, sem tenant real.
  */
@@ -42,18 +48,27 @@ public class EvalCandidateRunner {
                                       @Nullable BigDecimal custoUsd) {
     }
 
+    /** Overload v1 (compatibilidade) — equivalente a {@code rodar(..., false)}. */
+    public ResultadoCandidato rodar(PromptGerado prompt, @Nullable WeekPlanSkeleton skeleton,
+                                     AthleteZones zonasAtleta, Atleta atleta, LocalDate semanaInicio) {
+        return rodar(prompt, skeleton, zonasAtleta, atleta, semanaInicio, false);
+    }
+
     /**
-     * Chama a LLM com o prompt já montado (v1, por ora — ver Open Questions do proposal sobre v2
-     * em modo candidato) e grada a resposta. Custo calculado em memória a partir do {@code Usage}
+     * Chama a LLM com o prompt já montado e grada a resposta. {@code usaV2} escolhe o schema v1
+     * ou v2 (achado do /qa, Codex: a versão anterior sempre pedia v1, então uma mudança de schema
+     * v2 nunca era exercitada pelo gate). Custo calculado em memória a partir do {@code Usage}
      * desta chamada (design.md §2) — {@code null} se o modelo não tiver preço em
      * {@code llm-pricing.yml}. Idempotent: NÃO. Side Effects: chamada real à LLM.
      */
     public ResultadoCandidato rodar(PromptGerado prompt, @Nullable WeekPlanSkeleton skeleton,
-                                     AthleteZones zonasAtleta, Atleta atleta, LocalDate semanaInicio) {
+                                     AthleteZones zonasAtleta, Atleta atleta, LocalDate semanaInicio,
+                                     boolean usaV2) {
+        var options = usaV2 ? llmJsonSchemaBuilder.v2JsonSchemaOptions() : llmJsonSchemaBuilder.defaultJsonSchemaOptions();
         ChatResponse chatResponse = chatClient.prompt()
                 .system(prompt.system())
                 .user(prompt.user())
-                .options(llmJsonSchemaBuilder.defaultJsonSchemaOptions())
+                .options(options)
                 .call()
                 .chatResponse();
         String responseJson = chatResponse != null && chatResponse.getResult() != null
@@ -62,7 +77,8 @@ public class EvalCandidateRunner {
         if (responseJson == null || responseJson.isBlank()) {
             throw new IllegalStateException("LLM não retornou conteúdo para o modo candidato do eval set");
         }
-        var avaliacao = grader.avaliar(responseJson, SchemaVersion.CURRENT, prompt.regras(), skeleton,
+        String schemaVersion = usaV2 ? SchemaVersion.V2 : SchemaVersion.CURRENT;
+        var avaliacao = grader.avaliar(responseJson, schemaVersion, prompt.regras(), skeleton,
                 zonasAtleta, atleta, semanaInicio);
         BigDecimal custo = custoDaChamada(chatResponse);
         return new ResultadoCandidato(responseJson, avaliacao, custo);

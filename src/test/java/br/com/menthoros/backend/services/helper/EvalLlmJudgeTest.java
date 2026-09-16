@@ -47,10 +47,10 @@ class EvalLlmJudgeTest {
                      "notaGeral": 4, "justificativaGeral": "bom plano"}""";
             EvalLlmJudge judge = judgeComRespostaFixa(json);
 
-            var nota = judge.avaliarReduzida("{\"treinosPlanejados\":[]}");
+            var resultado = judge.avaliarReduzida("{\"treinosPlanejados\":[]}");
 
-            assertThat(nota.polarizacao().nota()).isEqualTo(4);
-            assertThat(nota.notaGeral()).isEqualTo(4);
+            assertThat(resultado.nota().polarizacao().nota()).isEqualTo(4);
+            assertThat(resultado.nota().notaGeral()).isEqualTo(4);
         }
 
         @Test
@@ -89,10 +89,10 @@ class EvalLlmJudgeTest {
                      "notaGeral": 4, "justificativaGeral": "bom plano"}""";
             EvalLlmJudge judge = judgeComRespostaFixa(json);
 
-            var nota = judge.avaliarCompleta("{\"treinosPlanejados\":[]}", "atleta com lesão ativa");
+            var resultado = judge.avaliarCompleta("{\"treinosPlanejados\":[]}", "atleta com lesão ativa");
 
-            assertThat(nota.progressao().nota()).isEqualTo(3);
-            assertThat(nota.segurancaLesao().nota()).isEqualTo(5);
+            assertThat(resultado.nota().progressao().nota()).isEqualTo(3);
+            assertThat(resultado.nota().segurancaLesao().nota()).isEqualTo(5);
         }
     }
 

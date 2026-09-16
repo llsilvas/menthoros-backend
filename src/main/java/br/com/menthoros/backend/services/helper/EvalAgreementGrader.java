@@ -1,14 +1,11 @@
 package br.com.menthoros.backend.services.helper;
 
-import br.com.menthoros.backend.domain.compliance.SchemaVersion;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
-import br.com.menthoros.backend.dto.llm.v2.PlanoSemanalLlmDtoV2;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jspecify.annotations.Nullable;
-import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,8 +24,9 @@ import java.util.Objects;
  * resolve via {@link SessionResolver} antes de comparar.
  *
  * <p>Idempotent: YES. Side Effects: NONE. Tenant-aware: NÃO.
+ *
+ * <p>Deliberadamente sem {@code @Component} — nunca instanciada pelo Spring (achado do /qa).
  */
-@Component
 public class EvalAgreementGrader {
 
     private final ObjectMapper objectMapper;
@@ -57,7 +55,8 @@ public class EvalAgreementGrader {
 
     public Resultado avaliar(String respostaHistoricaJson, @Nullable String schemaVersion,
                               AthleteZones zonasAtleta, String planoFinalPersistidoJson) {
-        PlanoSemanalLlmDto plano = parsearResposta(respostaHistoricaJson, schemaVersion, zonasAtleta);
+        PlanoSemanalLlmDto plano = EvalPlanoJsonParser.parsear(objectMapper, sessionResolver,
+                respostaHistoricaJson, schemaVersion, zonasAtleta);
         List<Map<String, Object>> finais = parsearPlanoFinal(planoFinalPersistidoJson);
         List<TreinoPlanejadoLlmDto> daResposta = plano.treinosPlanejados() != null
                 ? plano.treinosPlanejados() : List.of();
@@ -80,20 +79,6 @@ public class EvalAgreementGrader {
                                 @Nullable Object valorFinal, List<Divergencia> destino) {
         if (!Objects.equals(String.valueOf(valorResposta), String.valueOf(valorFinal))) {
             destino.add(new Divergencia(posicao, campo, valorResposta, valorFinal));
-        }
-    }
-
-    private PlanoSemanalLlmDto parsearResposta(String json, @Nullable String schemaVersion, AthleteZones zonas) {
-        try {
-            if (SchemaVersion.V2.equals(schemaVersion)) {
-                PlanoSemanalLlmDtoV2 planoV2 = objectMapper.readValue(json, PlanoSemanalLlmDtoV2.class);
-                return sessionResolver.resolverPlano(planoV2, zonas);
-            }
-            return objectMapper.readValue(json, PlanoSemanalLlmDto.class);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException(
-                    "respostaHistoricaJson (schemaVersion=" + schemaVersion + ") não é um JSON válido: "
-                            + e.getMessage(), e);
         }
     }
 

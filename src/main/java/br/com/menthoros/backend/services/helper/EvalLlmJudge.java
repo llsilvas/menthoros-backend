@@ -21,6 +21,11 @@ import java.math.BigDecimal;
  * o ledger (auditoria/retenção; não é a fonte do custo agregado do eval, que é calculado em
  * memória a partir do {@code Usage} da própria chamada — ver design.md §2).
  *
+ * <p>Nota e custo viajam juntos no retorno (achado do /qa: um campo mutável separado para o custo
+ * criava acoplamento temporal — o chamador precisava ler o getter logo após cada chamada, na
+ * ordem certa, sem nenhuma outra chamada entre as duas. Mesmo padrão de
+ * {@link EvalCandidateRunner.ResultadoCandidato}, sem estado.).
+ *
  * <p>Idempotent: NÃO — cada chamada é uma nova avaliação real. Side Effects: chamada de rede à
  * LLM (custo real). Tenant-aware: NÃO.
  */
@@ -52,30 +57,32 @@ public class EvalLlmJudge {
         this.objectMapper = objectMapper;
     }
 
-    private @Nullable BigDecimal ultimoCustoUsd;
+    public record ResultadoReduzido(NotaJuizReduzida nota, @Nullable BigDecimal custoUsd) {
+    }
 
-    /** Custo em USD da última chamada real feita por este juiz (candidato ou auditoria). */
-    public @Nullable BigDecimal ultimoCustoUsd() {
-        return ultimoCustoUsd;
+    public record ResultadoCompleto(NotaJuizCompleta nota, @Nullable BigDecimal custoUsd) {
     }
 
     /** Modo auditoria — rubrica reduzida, só a resposta congelada, sem contexto de atleta. */
-    public NotaJuizReduzida avaliarReduzida(String respostaLlmJson) {
+    public ResultadoReduzido avaliarReduzida(String respostaLlmJson) {
         String user = "Plano gerado pela IA (JSON):\n" + respostaLlmJson;
-        String json = chamarJuiz(SYSTEM_REDUZIDA, user, schemaBuilder.optionsReduzida());
-        return parsear(json, NotaJuizReduzida.class);
+        var chamada = chamarJuiz(SYSTEM_REDUZIDA, user, schemaBuilder.optionsReduzida());
+        return new ResultadoReduzido(parsear(chamada.texto(), NotaJuizReduzida.class), chamada.custoUsd());
     }
 
     /** Modo candidato — rubrica completa, com contexto do atleta (histórico/perfil/prova). */
-    public NotaJuizCompleta avaliarCompleta(String respostaLlmJson, @Nullable String contextoAtleta) {
+    public ResultadoCompleto avaliarCompleta(String respostaLlmJson, @Nullable String contextoAtleta) {
         String contexto = contextoAtleta != null && !contextoAtleta.isBlank()
                 ? contextoAtleta : "(sem contexto adicional)";
         String user = "Contexto do atleta:\n" + contexto + "\n\nPlano gerado pela IA (JSON):\n" + respostaLlmJson;
-        String json = chamarJuiz(SYSTEM_COMPLETA, user, schemaBuilder.optionsCompleta());
-        return parsear(json, NotaJuizCompleta.class);
+        var chamada = chamarJuiz(SYSTEM_COMPLETA, user, schemaBuilder.optionsCompleta());
+        return new ResultadoCompleto(parsear(chamada.texto(), NotaJuizCompleta.class), chamada.custoUsd());
     }
 
-    private String chamarJuiz(String system, String user, org.springframework.ai.chat.prompt.ChatOptions options) {
+    private record ChamadaLlm(String texto, @Nullable BigDecimal custoUsd) {
+    }
+
+    private ChamadaLlm chamarJuiz(String system, String user, org.springframework.ai.chat.prompt.ChatOptions options) {
         ChatResponse chatResponse = chatClient.prompt().system(system).user(user).options(options).call().chatResponse();
         String resposta = chatResponse != null && chatResponse.getResult() != null
                 && chatResponse.getResult().getOutput() != null
@@ -83,11 +90,11 @@ public class EvalLlmJudge {
         if (resposta == null || resposta.isBlank()) {
             throw new IllegalStateException("Juiz-LLM não retornou conteúdo");
         }
-        ultimoCustoUsd = chatResponse.getMetadata() != null
+        BigDecimal custoUsd = chatResponse.getMetadata() != null
                 ? EvalCostCalculator.custoUsd(chatResponse.getMetadata().getModel(),
                         chatResponse.getMetadata().getUsage()).orElse(null)
                 : null;
-        return resposta;
+        return new ChamadaLlm(resposta, custoUsd);
     }
 
     private <T> T parsear(String json, Class<T> tipo) {

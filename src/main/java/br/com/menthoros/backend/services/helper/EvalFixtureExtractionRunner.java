@@ -83,14 +83,18 @@ public final class EvalFixtureExtractionRunner {
     }
 
     private static List<EvalFixtureExtractor.CandidatoAmostra> buscarCandidatos(Connection conn) throws SQLException {
+        // LEFT JOIN tb_prova (prova_alvo=true) para redigir o nome da prova-alvo, quando existir —
+        // achado do /qa (security-reviewer + Codex): PiiAlvo era montado sempre com nomeProva=null,
+        // então o texto livre da resposta nunca tinha o nome da prova redigido.
         String sql = """
                 SELECT lc.generation_request_id, lc.response_json, lc.schema_version, lc.prompt_version,
-                       ps.id AS plano_semanal_id, ps.review_status, ps.tsb_inicio,
+                       lc.created_at, ps.id AS plano_semanal_id, ps.review_status, ps.tsb_inicio,
                        a.nivel_experiencia, a.tem_lesao, a.fc_maxima, a.fc_limiar, a.pace_limiar,
-                       a.nome, a.data_nascimento
+                       a.nome, a.data_nascimento, p.nome_prova
                 FROM tb_llm_call lc
                 JOIN tb_plano_semanal ps ON ps.generation_request_id = lc.generation_request_id
                 JOIN tb_atleta a ON a.id = ps.atleta_id
+                LEFT JOIN tb_prova p ON p.atleta_id = a.id AND p.prova_alvo = true
                 WHERE lc.result = 'SUCCESS' AND lc.response_json IS NOT NULL
                 ORDER BY lc.created_at DESC
                 LIMIT 500
@@ -108,11 +112,16 @@ public final class EvalFixtureExtractionRunner {
                 Integer fcLimiar = (Integer) rs.getObject("fc_limiar");
                 BigDecimal paceLimiar = rs.getBigDecimal("pace_limiar");
                 String nomeAtleta = rs.getString("nome");
+                String nomeProva = rs.getString("nome_prova");
                 LocalDate nascimento = rs.getObject("data_nascimento", LocalDate.class);
-                Integer idade = nascimento != null ? Period.between(nascimento, LocalDate.now()).getYears() : null;
+                // Idade na DATA DA GERAÇÃO (created_at), não "hoje" — achado do /qa (Codex): se o
+                // aniversário do atleta caiu entre a geração e a extração, "hoje" redigiria a idade
+                // errada e deixaria a idade real (mencionada no texto congelado) sem redação.
+                LocalDate dataGeracao = rs.getTimestamp("created_at").toLocalDateTime().toLocalDate();
+                Integer idade = nascimento != null ? Period.between(nascimento, dataGeracao).getYears() : null;
 
                 String planoFinalJson = buscarPlanoFinalJson(conn, planoSemanalId);
-                var piiAlvo = new EvalPiiRedactor.PiiAlvo(nomeAtleta, idade, null, null, null);
+                var piiAlvo = new EvalPiiRedactor.PiiAlvo(nomeAtleta, idade, nomeProva, null, null);
 
                 resultado.add(new EvalFixtureExtractor.CandidatoAmostra(
                         generationRequestId, rs.getString("response_json"), rs.getString("schema_version"),

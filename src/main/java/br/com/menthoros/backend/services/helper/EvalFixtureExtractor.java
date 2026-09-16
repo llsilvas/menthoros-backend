@@ -1,7 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
 import org.jspecify.annotations.Nullable;
-import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -24,8 +23,11 @@ import java.util.UUID;
  * <p>Idempotent: YES — leitura pura sobre a amostra recebida, sem mutação de estado.
  * Side Effects: NONE (a gravação em disco das fixtures é responsabilidade do chamador da task 1.3).
  * Tenant-aware: NÃO — opera sobre uma amostra já resolvida pelo chamador.
+ *
+ * <p>Deliberadamente sem {@code @Component} — nunca instanciada pelo Spring; quem usa faz
+ * {@code new} manual (achado do /qa: marcá-la bean subia em todo boot do contexto, produção
+ * incluída, para zero chamador via injeção).
  */
-@Component
 public class EvalFixtureExtractor {
 
     private final EvalPiiRedactor piiRedactor;
