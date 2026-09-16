@@ -123,3 +123,14 @@ tirar a chamada, para não reintroduzir o bug que ela talvez estivesse evitando.
 Ainda não decidido: se vira change agora ou fica registrada aguardando priorização (decisão do
 founder, 2026-09-13: aguardar — achado ainda não validado por completo quando a decisão foi
 tomada; agora está validado, mas a prioridade segue em aberto).
+
+## Resolvido (2026-09-16)
+
+Virou a change `remove-redundant-tsb-baseline-recalc` (XS · Fast) — entregue e arquivada.
+`menthoros-backend` PR [#128](https://github.com/llsilvas/menthoros-backend/pull/128), mergeado em
+`develop`. A chamada foi removida sem motivo de integridade real encontrado (`design.md` Decisão
+11 de `athlete-onboarding-baseline` não documentava nenhum motivo de staleness) — os 3
+pré-requisitos apontados pelo pre-mortem original do Codex (gap do
+`IntervalsIcuActivityPersister`, `semanasProgressaoContinua` incremental, backfill de TSS legado)
+foram fechados antes por três changes separadas. Detalhes em
+`changes/archive/2026-09/2026-09-16-remove-redundant-tsb-baseline-recalc/`.
