@@ -137,7 +137,6 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
                 planoRepo,
                 metricasRepo,
                 atletaRepo,
-                null,
                 alertaServiceStub,
                 new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
                 new TsbRecalculoExecutorInline(),

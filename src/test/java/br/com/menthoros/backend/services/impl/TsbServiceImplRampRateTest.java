@@ -44,7 +44,6 @@ class TsbServiceImplRampRateTest {
                 null,
                 null,
                 null,
-                null,
                 new TsbRecalculoExecutorInline(),
                 null
         );
@@ -78,7 +77,6 @@ class TsbServiceImplRampRateTest {
                 null,
                 null,
                 metricasDiariasRepository,
-                null,
                 null,
                 null,
                 null,
