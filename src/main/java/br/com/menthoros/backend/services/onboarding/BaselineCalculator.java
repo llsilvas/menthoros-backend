@@ -9,7 +9,8 @@ import java.util.UUID;
  * Calcula o baseline (CTL/ATL/TSB) do atleta no onboarding (design.md
  * Decisao 3/6, athlete-onboarding-baseline).
  *
- * <p>Reusa {@code TsbService} para o calculo real de CTL/ATL/TSB. Tres
+ * <p>Le {@code MetricasDiarias} (mantido em dia pelo caminho incremental de
+ * {@code TsbService}) para o CTL/ATL real. Tres
  * cenarios, modelados como uma unica formula continua (nao 3 branches
  * separados): a proporcao de peso da heuristica varia linearmente de 0
  * (>= 8 semanas observadas, Cenario A — baseline direto) a 1 (0 semanas,
@@ -22,10 +23,10 @@ public interface BaselineCalculator {
 
     /**
      * Idempotente: SIM — mesmo historico e nivelExperiencia sempre produzem
-     * o mesmo resultado (nao persiste nada, so calcula).
-     * Efeitos colaterais: chama {@code TsbService.recalcularHistoricoCompleto},
-     * que persiste {@code MetricasDiarias} (efeito colateral do colaborador,
-     * nao deste metodo).
+     * o mesmo resultado (nao persiste nada, so calcula e le).
+     * Efeitos colaterais: NENHUM — leitura pura de {@code MetricasDiarias}
+     * (remove-redundant-tsb-baseline-recalc: nao aciona mais
+     * {@code TsbService.recalcularHistoricoCompleto}).
      * Tenant-aware: NAO diretamente — o {@code atletaId} ja resolve o
      * escopo via os repositorios/servicos chamados internamente.
      */
