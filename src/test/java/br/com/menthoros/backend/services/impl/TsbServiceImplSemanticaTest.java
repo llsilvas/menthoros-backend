@@ -324,6 +324,10 @@ class TsbServiceImplSemanticaTest {
                         metricasSalvas.set(entity);
                         return entity;
                     }
+                    // fix-progressao-continua-incremental: atualizarMetaDados agora chama
+                    // recalcularSemanasProgressao, que consulta o histórico completo — vazio é
+                    // seguro para estes testes, que não exercitam o streak de progressão.
+                    if ("findByAtletaIdOrderByDataAsc".equals(method.getName())) return List.of();
                     if ("toString".equals(method.getName())) return "MetricasDiariasRepositoryStub";
                     throw new UnsupportedOperationException("Método não suportado: " + method.getName());
                 }
