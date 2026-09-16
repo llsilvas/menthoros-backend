@@ -66,5 +66,28 @@ Mudança de tier (`PlanoAssessoria` — GRATUITO/BASIC/PRO/ENTERPRISE, que conti
 Substitui os campos `dataAssinatura`/`dataExpiracao`/`trial`/`dataFimTrial`, que hoje vivem em `Assessoria`: os dois primeiros migram para `Assinatura`; `trial`/`dataFimTrial` são **removidos sem substituto** (trial deixa de ser conceito rastreado no Menthoros — é só um `nextDueDate` futuro na assinatura do Asaas, com cartão já capturado, ver ADR-0005). `Assessoria.ativo` passa a ser escrito só por sincronização a partir do status de `Assinatura`, não mais editado manualmente.
 _Avoid_: confundir com `PlanoAssessoria` (tier/entitlement) ou com `TipoPlanoAtleta` (plano do atleta com a assessoria — cobrança B2C, não B2B)
 
+**Chamada LLM** (`LlmCall`, tabela `tb_llm_call`, decisão 2026-09-13, `add-plan-generation-ledger`):
+Uma chamada **lógica** ao modelo — não a tentativa HTTP: um retry de transporte (500→500→200)
+dentro da mesma chamada conta em `transportRetries`, não vira uma segunda linha. Gravada pelo
+`CostTrackingAdvisor` em **toda rota** (genérica: tokens, custo, latência, resultado), enriquecida
+(atleta, tentativa, versões, violações, resposta bruta redigida) só quando a rota `plano` abre o
+`LlmCallScope`. É observabilidade técnica, **não é evento de domínio** — nunca dispara nada, e uma
+falha ao gravar nunca derruba a geração (best-effort, `LlmCallLedger`).
+_Avoid_: "tentativa de geração" para nomear a linha — tentativa é conceito só da rota `plano`
+(campo `attempt`); nas demais rotas cada Chamada LLM é sempre a única da sua Requisição.
+
+**Requisição de geração** (`generationRequestId`, campo em `PlanoSemanal` e em `tb_llm_call`,
+decisão 2026-09-13, `add-plan-generation-ledger`):
+O grupo de Chamadas LLM de uma única geração de plano — nasce no `PlanGenerationContextLoader`
+(fase 1 das três, antes de qualquer chamada), viaja no `PlanGenerationContext` e é gravado no
+`PlanoSemanal` no mesmo `save`. A ligação chamada ↔ plano é por **join** nessa coluna; nenhum
+estado do plano é copiado para `tb_llm_call`. Quando o LLM chega a produzir um plano aceito, a
+**última** chamada do grupo recebe um desfecho (`GenerationOutcome`: `PERSISTED`/`CONFLICT`/
+`REJECTED_POST_LLM`/`PERSIST_ERROR`) — falhas anteriores a essa aceitação não têm desfecho, a
+própria linha da chamada já diz o suficiente.
+_Avoid_: confundir com "tentativa" (uma Requisição de geração tem 1 ou 2 tentativas, pelo teto do
+`PlanoResilienceService`); ler `request_outcome` como veredito do coach — isso continua sendo join
+com `review_status`/`consumedReviewOutcome`, nunca copiado para o ledger.
+
 **Técnico Responsável** (conceito ainda NÃO modelado — gap conhecido, ver ADR-0001):
 Um vínculo individual "este técnico cuida deste atleta", distinto de "este atleta pertence a esta Assessoria". Hoje não existe: uma `Assessoria` tem vários `TECNICO`/`ADMIN`, e qualquer um deles acessa qualquer atleta do tenant — não há isolamento por técnico. Vira relevante quando uma `Assessoria` tem múltiplos técnicos e precisa de isolamento de dado sensível entre eles.

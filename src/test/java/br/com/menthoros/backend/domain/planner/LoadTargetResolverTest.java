@@ -151,6 +151,119 @@ class LoadTargetResolverTest {
         }
     }
 
+    @Nested
+    @DisplayName("resolve — regime cold-start (calibrationStage presente, ADR-0012)")
+    class ColdStart {
+
+        private DecisaoProgressao manter() {
+            return new DecisaoProgressao(EstadoProgressao.MANTER, 0.0, 0, false, "cold-start");
+        }
+
+        @Test
+        @DisplayName("OBSERVATION: min(ctlBaseline,40) x 7 x 0,60")
+        void observation() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.BASE, manter(), historicoComCtl(0.0, 0), CalibrationStage.OBSERVATION, 30.0);
+            assertThat(alvo.targetTss()).isCloseTo(30 * 7 * 0.60, offset(0.01)); // 126
+        }
+
+        @Test
+        @DisplayName("CALIBRATION: 30 x 7 x 0,75 = 157,5")
+        void calibration() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.BASE, manter(), historicoComCtl(0.0, 0), CalibrationStage.CALIBRATION, 30.0);
+            assertThat(alvo.targetTss()).isCloseTo(157.5, offset(0.01));
+        }
+
+        @Test
+        @DisplayName("STABILIZATION: 30 x 7 x 0,90 = 189")
+        void stabilization() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.BASE, manter(), historicoComCtl(0.0, 0), CalibrationStage.STABILIZATION, 30.0);
+            assertThat(alvo.targetTss()).isCloseTo(189.0, offset(0.01));
+        }
+
+        @Test
+        @DisplayName("cap do CTL: AVANCADO baseline 55 usa 40, nao 55")
+        void capCtl() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.BASE, manter(), historicoComCtl(0.0, 0), CalibrationStage.CALIBRATION, 55.0);
+            assertThat(alvo.targetTss()).isCloseTo(40 * 7 * 0.75, offset(0.01)); // 210, nao 288,75
+        }
+
+        @Test
+        @DisplayName("graduado (stage nulo): CTL de PMC, banda +-10%, sem rampa/cap")
+        void graduadoCaminhoNormal() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.BASE, manter(), historicoComCtl(45.0, 0), null, null);
+            assertThat(alvo.targetTss()).isCloseTo(315.0, offset(0.01)); // 45 x 7
+            assertThat(alvo.minTss()).isCloseTo(315.0 * 0.90, offset(0.01));
+            assertThat(alvo.maxTss()).isCloseTo(315.0 * 1.10, offset(0.01));
+        }
+
+        @Test
+        @DisplayName("piso 120 em fase progressiva quando o alvo rampado fica abaixo")
+        void pisoEmFaseProgressiva() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.BASE, manter(), historicoComCtl(0.0, 0), CalibrationStage.OBSERVATION, 10.0);
+            assertThat(alvo.targetTss()).isCloseTo(120.0, offset(0.01)); // 42 -> piso 120
+        }
+
+        @Test
+        @DisplayName("piso NAO se aplica em contencao (TAPER)")
+        void pisoNaoSeAplicaEmContencao() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.TAPER, manter(), historicoComCtl(0.0, 0), CalibrationStage.OBSERVATION, 10.0);
+            assertThat(alvo.targetTss()).isCloseTo(42.0, offset(0.01)); // sem piso
+        }
+
+        @Test
+        @DisplayName("banda +-25% no cold-start")
+        void bandaColdStart() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.BASE, manter(), historicoComCtl(0.0, 0), CalibrationStage.CALIBRATION, 30.0);
+            assertThat(alvo.minTss()).isCloseTo(157.5 * 0.75, offset(0.01));
+            assertThat(alvo.maxTss()).isCloseTo(157.5 * 1.25, offset(0.01));
+        }
+
+        @Test
+        @DisplayName("cold-start lesionado empilha rampa e reducao: 40 x 7 x 0,90 x 0,5")
+        void lesionadoEmpilha() {
+            WeeklyLoadTarget alvo = resolver.resolve(
+                    TrainingPhase.RECOVERY, manter(), historicoComCtl(0.0, 0), CalibrationStage.STABILIZATION, 40.0);
+            assertThat(alvo.targetTss()).isCloseTo(40 * 7 * 0.90 * 0.5, offset(0.01)); // 126
+        }
+    }
+
+    @Nested
+    @DisplayName("resolve — RECOVERY/POST_RACE reduzem de verdade (caminho normal, ADR-0012)")
+    class ReducaoContencao {
+
+        @Test
+        @DisplayName("RECOVERY: 0,5 x baseline")
+        void recoveryReduz() {
+            DecisaoProgressao decisao = new DecisaoProgressao(EstadoProgressao.MANTER, 0.0, 0, false, "recovery");
+            WeeklyLoadTarget alvo = resolver.resolve(TrainingPhase.RECOVERY, decisao, historicoComCtl(40.0, 0));
+            assertThat(alvo.targetTss()).isCloseTo(140.0, offset(0.01)); // 0,5 x 280
+        }
+
+        @Test
+        @DisplayName("POST_RACE: 0,5 x baseline")
+        void postRaceReduz() {
+            DecisaoProgressao decisao = new DecisaoProgressao(EstadoProgressao.MANTER, 0.0, 0, false, "pos-prova");
+            WeeklyLoadTarget alvo = resolver.resolve(TrainingPhase.POST_RACE, decisao, historicoComCtl(40.0, 0));
+            assertThat(alvo.targetTss()).isCloseTo(140.0, offset(0.01));
+        }
+
+        @Test
+        @DisplayName("TAPER nao sofre o fator 0,5 (segue min-cap do baseline)")
+        void taperNaoReduz() {
+            DecisaoProgressao decisao = new DecisaoProgressao(EstadoProgressao.MANTER, 0.0, 0, false, "taper");
+            WeeklyLoadTarget alvo = resolver.resolve(TrainingPhase.TAPER, decisao, historicoComCtl(40.0, 0));
+            assertThat(alvo.targetTss()).isCloseTo(280.0, offset(0.01)); // min(280,280)
+        }
+    }
+
     private ProgressaoHistoricoResumo historicoComCtl(double ctlAtual, int semanasProgressaoContinua) {
         return new ProgressaoHistoricoResumo(
                 0, 0, 0.0, 0.0, 0.0, 0, 0,

@@ -9,7 +9,9 @@ import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
+import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.mapper.TreinoMapperImpl;
@@ -35,12 +37,14 @@ import org.springframework.context.ApplicationEventPublisher;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
@@ -69,17 +73,20 @@ class PlanGenerationPersisterProvaTest {
     private final TreinoMapper treinoMapper = new TreinoMapperImpl(null, null);
 
     private PlanGenerationPersister persister;
+    private io.micrometer.core.instrument.simple.SimpleMeterRegistry meterRegistry;
     private UUID tenantId;
 
     @BeforeEach
     void setUp() {
         tenantId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
+        meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
         persister = new PlanGenerationPersister(
                 planoSemanalRepository, planoMetadadosRepository, treinoMapper, planoSemanalMapper,
                 redistribuicaoHelper, metricasAlertaService, metricasAgregadasService,
                 plannerShadowService, onboardingService, planoReviewService, eventPublisher,
-                provaNoPlanoService);
+                provaNoPlanoService,
+                meterRegistry);
 
         lenient().when(planoSemanalRepository.existePlanoAtivoNaSemana(any(), any(), any())).thenReturn(false);
         lenient().when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(any())).thenReturn(Optional.empty());
@@ -94,6 +101,299 @@ class PlanGenerationPersisterProvaTest {
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+    }
+
+    @Nested
+    @DisplayName("estagio 2 — compliance pos-redistribuicao (planner-engine-enforcement §5)")
+    class EnforcementEstagio2 {
+
+        private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeleton() {
+            return new br.com.menthoros.backend.domain.planner.WeekPlanSkeleton(
+                    null, null, List.of(), null, null, false, null,
+                    LocalDate.of(2026, 9, 7), null, Optional.empty());
+        }
+
+        private void invoke(PlanoSemanal plano) throws Exception {
+            var m = PlanGenerationPersister.class.getDeclaredMethod("aplicarEnforcementEstagio2",
+                    PlanoSemanal.class,
+                    br.com.menthoros.backend.domain.planner.WeekPlanSkeleton.class,
+                    Atleta.class, LocalDate.class);
+            m.setAccessible(true);
+            try {
+                m.invoke(persister, plano, skeleton(), new Atleta(), LocalDate.of(2026, 9, 7));
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                if (e.getCause() instanceof RuntimeException re) throw re;
+                throw e;
+            }
+        }
+
+        private double postFailureCount() {
+            var c = meterRegistry.find("planner.compliance.failure.count").tag("stage", "POST").counter();
+            return c == null ? 0.0 : c.count();
+        }
+
+        @Test
+        @DisplayName("sem violacao: status PASSED, sem requiresCoachReview, sem metrica")
+        void semViolacao() throws Exception {
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+                    .thenReturn(List.of());
+            PlanoSemanal plano = new PlanoSemanal();
+
+            invoke(plano);
+
+            assertThat(plano.getPlannerComplianceStatus())
+                    .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.PASSED.name());
+            assertThat(plano.getPlannerRequiresCoachReview()).isNotEqualTo(Boolean.TRUE);
+            assertThat(postFailureCount()).isZero();
+        }
+
+        @Test
+        @DisplayName("violacao soft + fail-open=true: FAILED + requiresCoachReview + metrica {stage=POST}")
+        void violacaoFailOpen() throws Exception {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", true);
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+                    .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
+                            br.com.menthoros.backend.domain.compliance.PlannerViolationKey.DIA_INDISPONIVEL,
+                            "treino em dia nao disponivel do atleta")));
+            PlanoSemanal plano = new PlanoSemanal();
+
+            invoke(plano);
+
+            assertThat(plano.getPlannerComplianceStatus())
+                    .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FAILED.name());
+            assertThat(plano.getPlannerRequiresCoachReview()).isTrue();
+            assertThat(postFailureCount()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("carga fora da faixa (cold-start) + fail-open=true: FAILED + review, persiste (CA6)")
+        void cargaColdStartFailOpen() throws Exception {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", true);
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+                    .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
+                            br.com.menthoros.backend.domain.compliance.PlannerViolationKey.TSS_FORA_DA_FAIXA,
+                            "carga semanal fora da banda +-25% do cold-start")));
+            PlanoSemanal plano = new PlanoSemanal();
+
+            invoke(plano);
+
+            assertThat(plano.getPlannerComplianceStatus())
+                    .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FAILED.name());
+            assertThat(plano.getPlannerRequiresCoachReview()).isTrue();
+            assertThat(postFailureCount()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("carga fora da faixa (cold-start) + fail-open=false: 422, nada persistido (CA6)")
+        void cargaColdStartFailClosed() {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", false);
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+                    .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
+                            br.com.menthoros.backend.domain.compliance.PlannerViolationKey.TSS_FORA_DA_FAIXA,
+                            "carga semanal fora da banda +-25% do cold-start")));
+            PlanoSemanal plano = new PlanoSemanal();
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> invoke(plano))
+                    .isInstanceOf(br.com.menthoros.backend.exception.DomainRuleViolationException.class)
+                    .hasMessageContaining("TSS_FORA_DA_FAIXA");
+            assertThat(plano.getPlannerComplianceStatus()).isNull();
+            assertThat(postFailureCount()).isZero();
+        }
+
+        @Test
+        @DisplayName("violacao + fail-open=false: erro de dominio, nada mutado, sem metrica")
+        void violacaoFailClosed() {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", false);
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+                    .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
+                            br.com.menthoros.backend.domain.compliance.PlannerViolationKey.TAPER_VIOLADO,
+                            "carga alta na semana de taper")));
+            PlanoSemanal plano = new PlanoSemanal();
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> invoke(plano))
+                    .isInstanceOf(br.com.menthoros.backend.exception.DomainRuleViolationException.class)
+                    .hasMessageContaining("TAPER_VIOLADO");
+            assertThat(plano.getPlannerComplianceStatus()).isNull();
+            assertThat(postFailureCount()).isZero();
+        }
+    }
+
+    @Nested
+    @DisplayName("skeleton pre-prompt threadado ate a persistencia (planner-engine-enforcement 8.5.h)")
+    class SkeletonPrePromptThreadeado {
+
+        private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeletonValido() {
+            return skeletonComSessoes(List.of());
+        }
+
+        private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeletonComSessoes(
+                List<br.com.menthoros.backend.domain.planner.SessionSlot> sessoes) {
+            return new br.com.menthoros.backend.domain.planner.WeekPlanSkeleton(
+                    br.com.menthoros.backend.domain.planner.TrainingPhase.BASE,
+                    new br.com.menthoros.backend.domain.planner.WeeklyLoadTarget(200.0, 180.0, 220.0, "teste"),
+                    sessoes,
+                    new br.com.menthoros.backend.domain.planner.InjuryRiskAssessment(
+                            br.com.menthoros.backend.domain.planner.InjuryRiskLevel.SAFE, false, null),
+                    new br.com.menthoros.backend.domain.planner.ConstraintValidationResult(true, List.of()),
+                    false, null, LocalDate.of(2026, 9, 7), null, Optional.empty());
+        }
+
+        @Test
+        @DisplayName("fallback da fase 2 (planner falhou antes do LLM): FALLBACK, sem enforcar o estagio 2")
+        void fallbackMarcaStatusSemEnforcarEstagio2() {
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
+            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.viaFallback());
+
+            // add-plan-generation-ledger D4: a ligação plano ↔ chamadas viaja no mesmo save
+            assertThat(salvo.getGenerationRequestId()).isEqualTo(ctx.generationRequestId());
+            assertThat(salvo.getPlannerComplianceStatus())
+                    .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FALLBACK.name());
+            org.mockito.Mockito.verify(plannerShadowService, org.mockito.Mockito.never())
+                    .checkPostRedistribution(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("sucesso da fase 2 (enabled=true, slots reais): estagio 2 enforca contra o MESMO "
+                + "objeto de skeleton (identidade, nao so igualdade), a redistribuicao recebe os dias "
+                + "derivados dele, e o persister nunca recomputa")
+        void sucessoReusaOMesmoSkeletonSemRecomputar() {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerEnabled", true);
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+            var slotLongoDomingo = new br.com.menthoros.backend.domain.planner.SessionSlot(
+                    java.time.DayOfWeek.SUNDAY, "LONGO", 150.0, "Z2", true, 90);
+            br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeletonDaFase2 =
+                    skeletonComSessoes(List.of(slotLongoDomingo));
+
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+            // same(): prova IDENTIDADE, nao so igualdade por valor — o objeto que chega ao estagio 2
+            // e literalmente o mesmo que a fase 2 (pre-prompt) computou, nao um recomputado no persister
+            // que por acaso teria os mesmos campos.
+            when(plannerShadowService.checkPostRedistribution(any(), org.mockito.ArgumentMatchers.same(skeletonDaFase2), any(), any()))
+                    .thenReturn(List.of());
+            org.mockito.ArgumentCaptor<Map<TipoTreino, DiaSemana>> diasAlvoCaptor =
+                    org.mockito.ArgumentCaptor.forClass(Map.class);
+            when(redistribuicaoHelper.redistribuirTreinos(anyList(), any(), any(), any(), any(),
+                    eq(ModoGeracaoPlano.PROXIMA_SEMANA), any(), diasAlvoCaptor.capture()))
+                    .thenReturn(List.of(longo));
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
+            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA,
+                    SkeletonPrePrompt.sucesso(skeletonDaFase2));
+
+            assertThat(salvo.getPlannerComplianceStatus())
+                    .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.PASSED.name());
+            org.mockito.Mockito.verify(plannerShadowService)
+                    .checkPostRedistribution(any(), org.mockito.ArgumentMatchers.same(skeletonDaFase2), any(), any());
+            // a persistencia nunca recomputa o skeleton — nem para o estagio 2, nem para guiar a
+            // redistribuicao (diasAlvoDaRedistribuicao usa skeletonDaFase2 diretamente).
+            org.mockito.Mockito.verify(plannerShadowService, org.mockito.Mockito.never())
+                    .computarSkeleton(any(), any(), any(), any());
+            // os dias-alvo repassados a redistribuicao vieram do slot do skeletonDaFase2 (LONGO -> DOMINGO).
+            assertThat(diasAlvoCaptor.getValue()).containsEntry(TipoTreino.LONGO, DiaSemana.DOMINGO);
+        }
+
+        @Test
+        @DisplayName("flag desligado: sem status de compliance, sem enforcar o estagio 2 (CA9)")
+        void desligadoSemStatusSemEnforcamento() {
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
+            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
+
+            assertThat(salvo.getPlannerComplianceStatus()).isNull();
+            org.mockito.Mockito.verify(plannerShadowService, org.mockito.Mockito.never())
+                    .checkPostRedistribution(any(), any(), any(), any());
+        }
+    }
+
+    @Nested
+    @DisplayName("veto do enforcement na auto-aprovacao (Codex blocker 3)")
+    class VetoAutoAprovacao {
+
+        private final br.com.menthoros.backend.domain.planner.OnboardingContext contextoExceptionOnly =
+                new br.com.menthoros.backend.domain.planner.OnboardingContext(
+                        new br.com.menthoros.backend.domain.planner.AthleteBaseline(null, null),
+                        1.0,
+                        new br.com.menthoros.backend.domain.planner.PlanningPolicy(
+                                br.com.menthoros.backend.domain.planner.ReviewMode.EXCEPTION_ONLY, 0.0, false),
+                        new br.com.menthoros.backend.domain.planner.AthleteConstraints(List.of(), null, null, List.of()), null);
+
+        private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeletonSemReview() {
+            return new br.com.menthoros.backend.domain.planner.WeekPlanSkeleton(
+                    null, null, List.of(), null, null, false, null,
+                    LocalDate.of(2026, 9, 7), null, Optional.empty());
+        }
+
+        private void invoke(PlanoSemanal plano) throws Exception {
+            var m = PlanGenerationPersister.class.getDeclaredMethod("aplicarAutoApproveSeElegivel",
+                    PlanoSemanal.class,
+                    br.com.menthoros.backend.domain.planner.OnboardingContext.class,
+                    Optional.class, UUID.class);
+            m.setAccessible(true);
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "autoApproveEnabled", true);
+            m.invoke(persister, plano, contextoExceptionOnly, Optional.of(skeletonSemReview()), tenantId);
+        }
+
+        @Test
+        @DisplayName("plano FAILED nao e auto-aprovado: aprovarTransicao nunca chamado")
+        void planoFailedNaoAprovado() throws Exception {
+            PlanoSemanal plano = new PlanoSemanal();
+            plano.setPlannerComplianceStatus(
+                    br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FAILED.name());
+
+            invoke(plano);
+
+            verify(planoReviewService, org.mockito.Mockito.never())
+                    .aprovarTransicao(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("plano com requiresCoachReview=true nao e auto-aprovado")
+        void planoRequiresReviewNaoAprovado() throws Exception {
+            PlanoSemanal plano = new PlanoSemanal();
+            plano.setPlannerRequiresCoachReview(true);
+
+            invoke(plano);
+
+            verify(planoReviewService, org.mockito.Mockito.never())
+                    .aprovarTransicao(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("plano FALLBACK nao e auto-aprovado (8.5.h, achado do security-reviewer): o estagio 2 "
+                + "nunca rodou sobre este plano, mesmo que o shadow (recomputado dentro da transacao) tenha "
+                + "tido sucesso onde a fase 2 pre-prompt falhou")
+        void planoFallbackNaoAprovado() throws Exception {
+            PlanoSemanal plano = new PlanoSemanal();
+            plano.setPlannerComplianceStatus(
+                    br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FALLBACK.name());
+
+            invoke(plano);
+
+            verify(planoReviewService, org.mockito.Mockito.never())
+                    .aprovarTransicao(any(), any(), any());
+        }
     }
 
     @Nested
@@ -116,9 +416,9 @@ class PlanGenerationPersisterProvaTest {
             DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, metaDadosSemId);
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
 
-            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
             verify(provaNoPlanoService).garantirProvasNaSemana(eq(List.of(longoNoDomingo)), eq(atleta),
                     eq(semanaInicio), eq(semanaInicio.plusDays(6)));
@@ -142,9 +442,9 @@ class PlanGenerationPersisterProvaTest {
             DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
             when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
 
-            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+            PlanoSemanal salvo = persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
             assertThat(salvo.getVolumePlanejadoKm()).isEqualByComparingTo(BigDecimal.valueOf(8.0 + 21.1));
         }
@@ -179,9 +479,9 @@ class PlanGenerationPersisterProvaTest {
                             "OK", "Manter", null, false, false, false, false, List.of()));
             when(planoMetadadosRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null);
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
 
-            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA);
+            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
 
             ArgumentCaptor<PlanoMetaDados> captor = ArgumentCaptor.forClass(PlanoMetaDados.class);
             verify(planoMetadadosRepository).save(captor.capture());
@@ -190,6 +490,54 @@ class PlanGenerationPersisterProvaTest {
     }
 
     // ---- helpers ----
+
+    @Nested
+    @DisplayName("redistribuicao no PROXIMA_SEMANA (fix-cold-start-load-model §4.1)")
+    class RedistribuicaoProximaSemana {
+
+        @Test
+        @DisplayName("enabled=true: roda a redistribuicao tambem no PROXIMA_SEMANA")
+        void enabledRedistribuiProximaSemana() {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerEnabled", true);
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+
+            when(redistribuicaoHelper.redistribuirTreinos(anyList(), any(), any(), any(), any(),
+                    eq(ModoGeracaoPlano.PROXIMA_SEMANA), any(), anyMap())).thenReturn(List.of(longo));
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
+            // Fase 2 (pre-prompt) caiu no fallback (planner-engine-enforcement 8.5.h) -> diasAlvo
+            // vazio, mas isso NAO impede a redistribuicao de rodar no PROXIMA_SEMANA com enabled=true.
+            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.viaFallback());
+
+            verify(redistribuicaoHelper).redistribuirTreinos(anyList(), any(), any(), any(), any(),
+                    eq(ModoGeracaoPlano.PROXIMA_SEMANA), any(), anyMap());
+        }
+
+        @Test
+        @DisplayName("enabled=false: PROXIMA_SEMANA byte-a-byte, sem redistribuir (CA9)")
+        void disabledPreservaLlmProximaSemana() {
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto longo = treinoDto("DOMINGO", "LONGO", 15.0);
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(longo), 15.0);
+            DadosPlanoDto dadosPlano = dadosPlanoDto(atleta, new PlanoMetaDados());
+
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any())).thenReturn(List.of(longo));
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlano, null, semanaInicio, null, null, Optional.empty(), java.util.UUID.randomUUID());
+            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
+
+            verify(redistribuicaoHelper, org.mockito.Mockito.never())
+                    .redistribuirTreinos(anyList(), any(), any(), any(), any(), any(), any(), anyMap());
+        }
+    }
 
     private Atleta atletaComAssessoria() {
         Assessoria assessoria = new Assessoria();

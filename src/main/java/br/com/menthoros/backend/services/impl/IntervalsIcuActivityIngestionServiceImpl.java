@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.config.external.IntervalsIcuProperties;
 import br.com.menthoros.backend.dto.intervalsicu.IcuActivityDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
@@ -25,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -58,6 +60,7 @@ public class IntervalsIcuActivityIngestionServiceImpl implements IntervalsIcuAct
     private final IntervalsIcuActivityMapper intervalsIcuActivityMapper;
     private final TreinoMapper treinoMapper;
     private final IntervalsIcuActivityPersister persister;
+    private final IntervalsIcuProperties intervalsIcuProperties;
 
     @Override
     public TreinoRealizadoOutputDto importarAtividade(UUID atletaId, String activityId, UUID tenantId) {
@@ -109,6 +112,22 @@ public class IntervalsIcuActivityIngestionServiceImpl implements IntervalsIcuAct
         // Passo 5: filtro de modalidade (CA6).
         if (!intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())) {
             throw new DomainRuleViolationException("Modalidade não suportada para import intervals.icu: " + dto.type());
+        }
+
+        // Passo 5b: limite de retroatividade (achado do security-reviewer,
+        // fix-intervals-icu-retroactive-tsb-recalc). Diferente do scheduler (limitado por
+        // syncDaysBack), este endpoint é síncrono na thread do request — sem teto, uma atividade
+        // muito antiga faria persister.persistir (TsbService#recalcularDesde, D13) reprocessar
+        // centenas/milhares de dias segurando conexão e thread do coach que chamou o import.
+        LocalDate dataAtividade = intervalsIcuActivityMapper.parseDataTreino(dto.startDateLocal());
+        if (dataAtividade != null) {
+            int syncDaysBack = intervalsIcuProperties.getSyncDaysBack();
+            LocalDate limite = LocalDate.now().minusDays(syncDaysBack);
+            if (dataAtividade.isBefore(limite)) {
+                throw new DomainRuleViolationException(
+                        "Atividade de " + dataAtividade + " é anterior ao limite de " + syncDaysBack
+                                + " dias para import manual — use o backfill de histórico para atividades mais antigas");
+            }
         }
 
         // Passos 6-9: persistência + reconciliação, em transação própria do colaborador.

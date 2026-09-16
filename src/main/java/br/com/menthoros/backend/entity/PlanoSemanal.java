@@ -124,6 +124,14 @@ public class PlanoSemanal {
     @Column(name = "versao")
     private Long versao;
 
+    /**
+     * Requisição de geração que produziu este plano (add-plan-generation-ledger, D4): join com
+     * {@code tb_llm_call.generation_request_id}. Nulo em planos anteriores à V95 e nos criados
+     * fora do fluxo de geração por IA.
+     */
+    @Column(name = "generation_request_id")
+    private UUID generationRequestId;
+
     // --- Auditoria PlannerEngine (shadow mode, deterministic-planner-engine) ---
     // Populado apenas quando planner-engine.shadow=true; null em modo legado puro.
     // Nao exposto ao atleta por default (design.md Decisao 9).

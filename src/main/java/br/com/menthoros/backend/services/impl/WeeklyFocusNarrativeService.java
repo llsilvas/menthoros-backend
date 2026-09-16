@@ -5,6 +5,7 @@ import br.com.menthoros.backend.enums.FocusSource;
 import br.com.menthoros.backend.repository.RevisaoSemanalRepository;
 import br.com.menthoros.backend.services.quality.WeeklyFocusConsistencyChecker;
 import io.micrometer.core.instrument.MeterRegistry;
+import br.com.menthoros.backend.multitenancy.TenantContext;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -73,37 +74,44 @@ public class WeeklyFocusNarrativeService {
     @Async("weeklyFocusExecutor")
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void gerarNarrativa(UUID revisaoId, UUID tenantId) {
-        if (!llmHabilitado) {
-            return; // kill-switch: fica no template, sem custo de LLM
-        }
-        RevisaoSemanal revisao = revisaoSemanalRepository.findByIdAndTenant(revisaoId, tenantId).orElse(null);
-        if (revisao == null) {
-            log.warn("[weekly-focus] revisão {} não encontrada no tenant {}", revisaoId, tenantId);
-            return;
-        }
-
-        String narrativa;
+        // Publica o tenant recebido (add-plan-generation-ledger, CA12): o custo desta chamada LLM
+        // precisa de assessoria no ledger. Limpa sempre — thread do executor dedicado.
+        TenantContext.setTenantId(tenantId);
         try {
-            narrativa = modelClient.redigirFoco(revisao);
-        } catch (Exception e) {
-            // Chega aqui só depois de o retry do WeeklyFocusModelClient esgotar. Engolido de
-            // propósito: a revisão já tem o template coerente e propagar só encheria o log do
-            // executor. Mesma filosofia do try/catch do RevisaoSemanalListener.
-            log.warn("[weekly-focus] falha ao gerar narrativa da revisão {} — mantém template", revisaoId, e);
-            return;
-        }
+            if (!llmHabilitado) {
+                return; // kill-switch: fica no template, sem custo de LLM
+            }
+            RevisaoSemanal revisao = revisaoSemanalRepository.findByIdAndTenant(revisaoId, tenantId).orElse(null);
+            if (revisao == null) {
+                log.warn("[weekly-focus] revisão {} não encontrada no tenant {}", revisaoId, tenantId);
+                return;
+            }
 
-        if (!checker.isConsistent(narrativa, revisao.getRecommendationType())) {
-            meterRegistry.counter(METRICA_REPROVADA).increment();
-            log.warn("[weekly-focus] narrativa reprovada pelo checker (tipo {}) — mantém template",
-                    revisao.getRecommendationType());
-            return;
-        }
+            String narrativa;
+            try {
+                narrativa = modelClient.redigirFoco(revisao);
+            } catch (Exception e) {
+                // Chega aqui só depois de o retry do WeeklyFocusModelClient esgotar. Engolido de
+                // propósito: a revisão já tem o template coerente e propagar só encheria o log do
+                // executor. Mesma filosofia do try/catch do RevisaoSemanalListener.
+                log.warn("[weekly-focus] falha ao gerar narrativa da revisão {} — mantém template", revisaoId, e);
+                return;
+            }
 
-        revisao.setNextWeekFocus(truncar(narrativa.trim()));
-        revisao.setFocusSource(FocusSource.LLM);
-        revisaoSemanalRepository.save(revisao);
-        log.info("[weekly-focus] narrativa gravada na revisão {} (tenant {})", revisaoId, tenantId);
+            if (!checker.isConsistent(narrativa, revisao.getRecommendationType())) {
+                meterRegistry.counter(METRICA_REPROVADA).increment();
+                log.warn("[weekly-focus] narrativa reprovada pelo checker (tipo {}) — mantém template",
+                        revisao.getRecommendationType());
+                return;
+            }
+
+            revisao.setNextWeekFocus(truncar(narrativa.trim()));
+            revisao.setFocusSource(FocusSource.LLM);
+            revisaoSemanalRepository.save(revisao);
+            log.info("[weekly-focus] narrativa gravada na revisão {} (tenant {})", revisaoId, tenantId);
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     /**

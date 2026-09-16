@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.prompt;
 
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
 import br.com.menthoros.backend.services.prompt.PlanoPromptArquetipos.Arquetipo;
+import br.com.menthoros.backend.ai.ledger.PromptHashCalculator;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -15,7 +16,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,13 +70,16 @@ class PlanoTreinoPromptBuilderGoldenTest {
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("arquetipos")
-    @DisplayName("prompt do arquétipo bate com o golden-master")
+    @DisplayName("user do arquétipo bate com o golden-master; system é byte-idêntico entre arquétipos (CA1)")
     void promptCongeladoBateComGolden(Arquetipo arq) throws IOException {
-        String prompt = montarPrompt(arq);
-        assertGolden(arq.nome(), prompt);
+        PlanoTreinoPromptBuilder.PromptGerado gerado = montarPrompt(arq);
+        // As duas partes são checadas juntas (achado do Codex no QA): comparar/gravar uma de cada
+        // vez com fail-rápido deixava -Dgolden.update=true regenerar só "system" e nunca alcançar
+        // o ".user" da mesma invocação — cada rodada da flag reescrevia e falhava na 1ª chamada.
+        assertGoldenTodos(Map.of("system", gerado.system(), arq.nome() + ".user", gerado.user()));
     }
 
-    private String montarPrompt(Arquetipo arq) {
+    private PlanoTreinoPromptBuilder.PromptGerado montarPrompt(Arquetipo arq) {
         TreinoHistoricoProvider provider = mock(TreinoHistoricoProvider.class);
         when(provider.prepararContexto(any())).thenReturn(arq.contexto());
 
@@ -81,41 +88,68 @@ class PlanoTreinoPromptBuilderGoldenTest {
         try (MockedStatic<LocalDate> now = mockStatic(LocalDate.class, CALLS_REAL_METHODS)) {
             now.when(LocalDate::now).thenReturn(PlanoPromptArquetipos.HOJE);
             return builder.buildOptimizedPrompt(
-                    arq.atleta(), arq.meta(), arq.prova(), arq.inicioSemana(), arq.diasEfetivos()).prompt();
+                    arq.atleta(), arq.meta(), arq.prova(), arq.inicioSemana(), arq.diasEfetivos());
         }
     }
 
     /**
-     * Compara o prompt com o golden-master versionado (lido do classpath).
+     * Compara (ou regenera) TODAS as partes de um arquétipo numa só passada, para que
+     * {@code -Dgolden.update=true} regenere {@code system} e {@code <arquetipo>.user} juntos —
+     * comparar/falhar uma parte por vez faria a JVM abortar o método no primeiro {@code fail()},
+     * nunca alcançando a segunda parte (achado do Codex no QA, 2026-09-13).
      *
-     * <p>Modo de regressão (padrão): assert estrito; se o golden estiver ausente, o teste
-     * <b>falha</b> (a baseline é gravada em {@link #SRC_GOLDEN_DIR} para facilitar o commit, mas o
-     * teste nunca passa em silêncio sem comparar). Regeneração explícita: {@code -Dgolden.update=true}
-     * reescreve a baseline e <b>falha</b> propositalmente, forçando rodar de novo sem a flag.</p>
+     * <p>Modo de regressão (padrão): assert estrito por parte; se alguma baseline estiver ausente,
+     * o teste grava as ausentes e <b>falha</b> (nunca passa em silêncio sem comparar tudo).
+     * Regeneração explícita: {@code -Dgolden.update=true} reescreve todas as partes do mapa e
+     * <b>falha</b> propositalmente, forçando rodar de novo sem a flag.</p>
      */
-    private static void assertGolden(String nome, String actual) throws IOException {
+    private static void assertGoldenTodos(Map<String, String> partes) throws IOException {
         if (Boolean.getBoolean("golden.update")) {
-            gravarBaseline(nome, actual);
-            fail("[golden] baseline de '%s' regenerada. Remova -Dgolden.update=true e rode novamente.".formatted(nome));
+            for (var entry : partes.entrySet()) {
+                gravarBaseline(entry.getKey(), entry.getValue());
+            }
+            fail("[golden] baselines regeneradas: %s. Remova -Dgolden.update=true e rode novamente."
+                    .formatted(partes.keySet()));
         }
 
-        ClassPathResource golden = new ClassPathResource(CP_GOLDEN_PREFIX + nome + ".txt");
-        if (!golden.exists()) {
-            gravarBaseline(nome, actual);
-            fail("[golden] baseline ausente para '%s'. Gerada em %s — inspecione, commite e rode novamente."
-                    .formatted(nome, SRC_GOLDEN_DIR.resolve(nome + ".txt")));
+        List<String> ausentes = new ArrayList<>();
+        for (var entry : partes.entrySet()) {
+            if (!new ClassPathResource(CP_GOLDEN_PREFIX + entry.getKey() + ".txt").exists()) {
+                gravarBaseline(entry.getKey(), entry.getValue());
+                ausentes.add(entry.getKey());
+            }
+        }
+        if (!ausentes.isEmpty()) {
+            fail("[golden] baseline ausente para %s. Gerada(s) em %s — inspecione, commite e rode novamente."
+                    .formatted(ausentes, SRC_GOLDEN_DIR));
         }
 
-        String expected = new String(golden.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertThat(actual)
-                .as("Prompt do arquétipo '%s' divergiu do golden-master. "
-                        + "Se a mudança é intencional, regenere com -Dgolden.update=true.", nome)
-                .isEqualTo(expected);
+        for (var entry : partes.entrySet()) {
+            String expected = new ClassPathResource(CP_GOLDEN_PREFIX + entry.getKey() + ".txt")
+                    .getContentAsString(StandardCharsets.UTF_8);
+            assertThat(entry.getValue())
+                    .as("Prompt da parte '%s' divergiu do golden-master. "
+                            + "Se a mudança é intencional, regenere com -Dgolden.update=true.", entry.getKey())
+                    .isEqualTo(expected);
+        }
     }
 
     private static void gravarBaseline(String nome, String conteudo) throws IOException {
         Files.createDirectories(SRC_GOLDEN_DIR);
         Files.writeString(SRC_GOLDEN_DIR.resolve(nome + ".txt"), conteudo, StandardCharsets.UTF_8);
         System.out.printf("[golden] baseline gravada: %s%n", SRC_GOLDEN_DIR.resolve(nome + ".txt"));
+        gravarHashDoTemplate();
+    }
+
+    /**
+     * Regenera {@code prompt.sha256} junto da baseline (add-plan-generation-ledger, D9): o hash do
+     * template estático viaja em cada Chamada LLM, e {@code PromptHashCalculatorTest} falha se o
+     * template mudar sem este arquivo acompanhar — o sinal de que falta subir {@code PromptVersion}.
+     */
+    private static void gravarHashDoTemplate() throws IOException {
+        String template = new ClassPathResource("prompts/plano-treino-system.txt")
+                .getContentAsString(StandardCharsets.UTF_8);
+        Files.writeString(SRC_GOLDEN_DIR.resolve("prompt.sha256"),
+                PromptHashCalculator.sha256(template) + System.lineSeparator(), StandardCharsets.UTF_8);
     }
 }

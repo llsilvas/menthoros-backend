@@ -367,7 +367,9 @@ public class TssCalculatorService {
         return calcularTssEstimado(treino, duracaoHoras);
     }
 
-    private double converterRpeParaIf(double rpe) {
+    // Package-private (era private): semantic-session-schema reusa o pipeline RPE→IF para
+    // intensidadePlanejada em vez de duplicar a tabela — SessionResolver vive no mesmo pacote.
+    double converterRpeParaIf(double rpe) {
         if (rpe <= 1) return 0.45;
         if (rpe <= 3) return 0.45 + (rpe - 1) * 0.075; // 1→0.45, 3→0.60
         if (rpe <= 6) return 0.60 + (rpe - 3) * 0.067; // 3→0.60, 6→0.80

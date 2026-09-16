@@ -17,6 +17,7 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import org.assertj.core.api.SoftAssertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -173,6 +174,8 @@ class TsbRecalculoEquivalenciaIT extends AbstractIntegrationTest {
     private TreinoRealizadoRepository treinoRealizadoRepository;
     @Autowired
     private MetricasDiariasRepository metricasDiariasRepository;
+    @Autowired
+    private TssCalculatorService tssCalculatorService;
 
     @Nested
     @DisplayName("recalcularHistoricoCompleto")
@@ -381,6 +384,10 @@ class TsbRecalculoEquivalenciaIT extends AbstractIntegrationTest {
         treino.setDuracaoMin(Duration.ofMinutes(tssAlvo * 3L / 5L));
         treino.setPercepcaoEsforco(8);
         treino.setDistanciaKm(BigDecimal.ZERO);
+        // backfill-tss-legado-producao: TsbServiceImpl não calcula mais tssCalculado on-the-fly
+        // (fallback removido) — o teste simula o treino já migrado/ingerido, calculando o TSS do
+        // mesmo jeito que IngestaoTreinoRealizadoServiceImpl.aplicarTssSeNecessario faria.
+        treino.setTssCalculado(tssCalculatorService.calcularTss(treino));
         treinoRealizadoRepository.save(treino);
     }
 

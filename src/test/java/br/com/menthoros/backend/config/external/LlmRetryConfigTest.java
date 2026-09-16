@@ -1,16 +1,24 @@
 package br.com.menthoros.backend.config.external;
 
+import br.com.menthoros.backend.ai.ledger.LlmCallScope;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.retry.TransientAiException;
 import org.springframework.ai.retry.autoconfigure.SpringAiRetryProperties;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.PropertySource;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.retry.support.RetryTemplate;
 import org.springframework.web.client.ResourceAccessException;
 
+import java.io.IOException;
 import java.net.SocketTimeoutException;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -74,6 +82,45 @@ class LlmRetryConfigTest {
         }
 
         @Test
+        @DisplayName("cada retry de transporte incrementa o contador do escopo da tentativa (ledger, D13)")
+        void contaRetriesNoEscopo() {
+            LlmCallScope.openRequest(java.util.UUID.randomUUID(), null, null);
+            LlmCallScope.openAttempt(1, "v", "h", "s");
+            try {
+                AtomicInteger chamadas = new AtomicInteger();
+                String resultado = retryTemplate.execute(ctx -> {
+                    if (chamadas.incrementAndGet() < 3) {
+                        throw new TransientAiException("500");
+                    }
+                    return "200";
+                });
+
+                assertThat(resultado).isEqualTo("200");
+                assertThat(LlmCallScope.transportRetries()).as("500 -> 500 -> 200 = 2 retries").contains(2);
+            } finally {
+                LlmCallScope.closeRequest();
+            }
+        }
+
+        @Test
+        @DisplayName("sem escopo aberto, o retry não deixa rastro na próxima tentativa")
+        void semEscopoNaoVaza() {
+            AtomicInteger chamadas = new AtomicInteger();
+            assertThatThrownBy(() -> retryTemplate.execute(ctx -> {
+                chamadas.incrementAndGet();
+                throw new TransientAiException("503");
+            })).isInstanceOf(TransientAiException.class);
+
+            LlmCallScope.openRequest(java.util.UUID.randomUUID(), null, null);
+            LlmCallScope.openAttempt(1, "v", "h", "s");
+            try {
+                assertThat(LlmCallScope.transportRetries()).contains(0);
+            } finally {
+                LlmCallScope.closeRequest();
+            }
+        }
+
+        @Test
         @DisplayName("sucesso na primeira tentativa não retenta")
         void sucessoNaoRetenta() {
             AtomicInteger tentativas = new AtomicInteger();
@@ -105,6 +152,30 @@ class LlmRetryConfigTest {
             })).isInstanceOf(TransientAiException.class);
 
             assertThat(tentativas).hasValue(2);
+        }
+    }
+
+    @Nested
+    @DisplayName("application.yml")
+    class Propriedades {
+
+        @Test
+        @DisplayName("declara spring.ai.retry explicitamente: 3 tentativas, backoff 1s x2 ate 10s, sem retry em 4xx")
+        void naoHerdaDefaultDoSpringAi() throws IOException {
+            List<PropertySource<?>> fontes = new YamlPropertySourceLoader()
+                    .load("application", new ClassPathResource("application.yml"));
+
+            SpringAiRetryProperties props = new Binder(ConfigurationPropertySources.from(fontes))
+                    .bind("spring.ai.retry", SpringAiRetryProperties.class)
+                    .orElseThrow(() -> new AssertionError("spring.ai.retry ausente do application.yml"));
+
+            // Sem o bloco, o default do Spring AI e 10 tentativas com backoff 2s x5 ate 3min:
+            // pior caso acima do orcamento de 100s do PlanoResilienceService.
+            assertThat(props.getMaxAttempts()).isEqualTo(3);
+            assertThat(props.getBackoff().getInitialInterval()).isEqualTo(Duration.ofSeconds(1));
+            assertThat(props.getBackoff().getMultiplier()).isEqualTo(2);
+            assertThat(props.getBackoff().getMaxInterval()).isEqualTo(Duration.ofSeconds(10));
+            assertThat(props.isOnClientErrors()).isFalse();
         }
     }
 }

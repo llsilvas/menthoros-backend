@@ -1,0 +1,342 @@
+### PERFIL DO ATLETA
+- Nome: Bruno Avancado
+- Idade: 36 anos
+- Objetivo Principal: Sub-3h na maratona
+- Nível: AVANCADO
+- Dias disponíveis: Segunda-feira, Quarta-feira, Sexta-feira, Sábado
+- Dia preferido do longo: SABADO
+- Provas planejadas: null
+
+### HISTÓRICO RECENTE (últimas 3-4 semanas)
+
+**Formato esperado por treino:**
+- Data, Dia da Semana, Tipo de Treino
+- Volume: duração (min) + distância (km)
+- Intensidade: TSS, IF, zonas de FC predominantes
+- Status: realizado/cancelado + percepção de esforço real
+
+**Dados:**
+## ⛔ REGRAS QUE VOCÊ NÃO PODE VIOLAR
+
+- INTENSIDADE só na versão segura — categoria D (Tempo Run / Fartlek suave). Fundamento: Apenas 24h desde ultimo intensivo (minimo: 48h para Avançado). INTERVALADO DEGRADADO para Categoria D — recuperacao insuficiente: 24h desde ultimo treino intensivo (minimo 48h para Avançado). Prescreva fartlek livre de 20-30 min em Z2-Z3 com acelerações espontâneas curtas.
+- O `ritmoAlvo` (paceMin) de cada treino NÃO pode ser mais rápido que o teto do seu tipo:
+- CONTINUO: não mais rápido que 5:23/km
+- LONGO: não mais rápido que 5:38/km
+- INTERVALADO: não mais rápido que 4:44/km
+- TIRO: não mais rápido que 4:34/km
+- Gere treinos EXCLUSIVAMENTE nos dias permitidos: Segunda-feira, Terça-feira, Quarta-feira, Quinta-feira, Sexta-feira, Sábado. NÃO inclua treinos em nenhum outro dia da semana.
+- No máximo 3 dias de treino consecutivos; intercale descanso completo ou regenerativo.
+
+(Estas regras são determinísticas, baseadas em dados reais do atleta, e SUBSTITUEM qualquer raciocínio independente. Não as viole.)
+
+## ⛔ ALERTAS OBRIGATÓRIOS (PROCESSE PRIMEIRO)
+
+1. 🔴 Progressão rápida (10,3%/sem (7,0 pts)). → Manter volume atual sem aumentar. Monitorar sinais de fadiga.
+2. 🔴 5 dias consecutivos treinando. → Incluir dia de descanso ou treino regenerativo nos próximos 1-2 dias.
+3. 🟡 FARTLEK: NUNCA realizado → CONSIDERAR INCLUSÃO
+4. 🟡 TEMPO_RUN: NUNCA realizado → CONSIDERAR INCLUSÃO
+
+**HIERARQUIA:** Alertas 🔴 têm prioridade sobre 🟡. Segurança primeiro!
+
+## 🎯 HIERARQUIA DE DECISÃO (resolver conflitos nesta ordem)
+
+**NÍVEL 1 - SEGURANÇA (sempre vence):**
+- Se RPE médio > 7.5 → FORÇAR semana leve
+- Se TSB < -25 → APENAS Z1-Z2, máximo 3 treinos
+- Se lesão ativa → máximo Z2, sem intervalados
+- Se dias consecutivos >= limite → DESCANSO OBRIGATÓRIO
+
+**NÍVEL 2 - RECUPERAÇÃO:**
+- TSB -20,0 → REDUZIR volume 30-50%
+- Se recomendação = regenerativa → REDUZIR volume 40-50%
+
+**NÍVEL 3 - VARIABILIDADE:**
+- Incluir estímulos ausentes há >14 dias
+- Alternar categorias de intervalado (não repetir 2 semanas seguidas)
+- Se conflitar com N1/N2 → usar versão LEVE do estímulo
+
+**NÍVEL 4 - OBJETIVO:**
+- Alinhar treino-chave com meta do atleta
+- Respeitar fase de periodização (BASE/BUILD/ESPECÍFICO/TAPER)
+
+## EVENTO COMPETITIVO NA SEMANA - INSTRUCAO OBRIGATORIA
+
+[NAO]
+- Semana planejada: 19/01/2026 a 25/01/2026.
+- Nenhuma prova cadastrada dentro desta semana.
+- Aplicar periodizacao normal da fase atual.
+
+## 🚨 RESTRIÇÕES E HISTÓRICO DE SAÚDE
+
+✅ Nenhuma lesão ativa ou histórico de lesões reportado
+
+## 📊 DADOS FISIOLÓGICOS E ZONAS DE TREINO
+
+**Frequência Cardíaca:**
+- FC Máxima: 186 bpm 
+- FC Repouso: 48 bpm
+- FC Limiar: 172 bpm (92%% FCmáx)
+- Última atualização: Nunca testado
+
+**Pace/Velocidade:**
+- Pace Limiar: 3,50 min/km
+- Velocidade Limiar: 15,65 km/h
+- Última atualização: Nunca testado
+
+**Zonas de Treino Calculadas:**
+- Z1 (Recuperação): 4.03-4.38 min/km | 129-146 bpm
+- Z2 (Aeróbico): 3.68-4.03 min/km | 146-153 bpm
+- Z3 (Tempo): 3.43-3.68 min/km | 153-162 bpm
+- Z4 (Limiar): 3.33-3.50 min/km | 162-172 bpm
+- Z5 (VO2max): 3.15-3.40 min/km | 172-182 bpm
+- Z6 (Sprint): 2.87-3.15 min/km | 172-182 bpm
+
+
+⚠️ **Ajuste por fadiga:** TSB atual = -20,0 → paces com penalidade de **+7 seg/km** nas zonas acima. Prescrever dentro das faixas indicadas.
+
+## 🌡️ READINESS (PRONTIDÃO SUBJETIVA DIÁRIA)
+
+- **Últimos 7 dias:** [SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO, SEM_DADO]
+- **Hoje:** sem checkin registrado — decisão de intervalado não considera readiness.
+
+
+## MÉTRICAS DE CARGA E FADIGA
+
+**Status Geral:** COLETANDO DADOS
+**Recomendação:** Continuar treinamento normalmente, respeitando os princípios de progressão.
+
+### Métricas Principais
+- **CTL (Fitness):** 75,0 pontos - Forma física acumulada (6 semanas)
+- **ATL (Fadiga):** 95,0 pontos - Fadiga recente (última semana)
+- **TSB (Prontidão hoje):** -18,0 pontos - Acumulando fadiga
+- **Ramp Rate:** 10,3%/sem (7,0 pts) - ALTO - Progressão rápida, monitorar sinais de fadiga
+
+### Médias Semanais
+- Volume: 0,0 km | TSS: 0 pts | Treinos: 0,0 sessões
+
+### Padrões de Treino
+- Dias consecutivos: 5 | Desde último descanso: 0 | Progressão: 2 semanas
+- Dia preferido longo: SABADO
+
+---
+
+
+**Últimos 14 dias:**
+
+- **Total de treinos:** 5
+- **Volume total:** 66,0 km
+- **TSS total:** 500 pontos
+- **Média por treino:** 13,2 km | 100 TSS
+
+**Últimos 5 treinos:**
+- 2026-01-14: INTERVALADO - 12,0 km, PT1H min, TSS 95 | RPE 8/10
+- 2026-01-13: CONTINUO - 10,0 km, PT55M min, TSS 70 | RPE 6/10
+- 2026-01-12: LONGO - 24,0 km, PT2H10M min, TSS 180 | RPE 7/10
+- 2026-01-11: TIRO - 8,0 km, PT45M min, TSS 75 | RPE 8/10
+- 2026-01-10: CONTINUO - 12,0 km, PT1H5M min, TSS 80 | RPE 6/10
+
+
+## 🏃 PACE DEMONSTRADO NOS ÚLTIMOS TREINOS
+
+> **REGRA OBRIGATÓRIA:** o `ritmoAlvo` de cada treino NÃO pode ser mais rápido
+> do que o pace abaixo para o tipo equivalente. Estes são valores reais, não teóricos.
+
+| Tipo        | Pace mínimo | Pace médio | Pace máximo | Treinos |
+|-------------|-------------|------------|-------------|--------|
+| CONTINUO    | 5:30/km     | 5:32/km    | 5:35/km     | 2       |
+| LONGO       | 5:45/km     | 5:45/km    | 5:45/km     | 1       |
+| INTERVALADO | 4:50/km     | 4:50/km    | 4:50/km     | 1       |
+| TIRO        | 4:40/km     | 4:40/km    | 4:40/km     | 1       |
+
+⚠️ Tipos sem histórico recente: usar a zona calculada (Z correspondente) como referência.
+
+
+⚠️ **Pace limiar nunca testado formalmente.**
+   Paces calculados com base no perfil. Margem ampliada em ±15 seg/km.
+   Recomendado: realizar teste de Cooper ou corrida de 20 min para validar o limiar.
+
+
+## 📅 PADRÕES DE TREINO E DISPONIBILIDADE
+
+**Semana referência:** 19/01/2026 a 25/01/2026
+
+### ⚠️ SEMANA EM ANDAMENTO
+**Dias já passados não podem receber treinos.**
+**Dias restantes disponíveis para treino nesta semana:** Segunda-feira, Terça-feira, Quarta-feira, Quinta-feira, Sexta-feira, Sábado
+**Total de dias restantes:** 6
+
+### Disponibilidade Semanal
+**Dias disponíveis para treinar (configuração do atleta):** Segunda-feira, Quarta-feira, Sexta-feira, Sábado
+**Total:** 4 dias/semana
+
+**Dia preferido para treino longo:** Sábado
+
+### Padrão Atual de Treino
+- **Dias consecutivos treinando:** 5 dias
+- **Dias desde último descanso:** 0 dias
+- **Semanas de progressão contínua:** 2 semanas
+
+### Recomendações para Esta Semana
+- **Máximo de dias consecutivos recomendado:** 3 dias
+- ⚠️ **ALERTA:** Atleta já atingiu ou ultrapassou o limite recomendado
+- **AÇÃO:** Incluir dia de descanso completo ou regenerativo OBRIGATÓRIO
+- **Dia de descanso sugerido:** Quarta-feira (meio da semana)
+
+
+---
+
+
+**ANÁLISE PRÉ-PLANEJAMENTO (últimas 4 semanas):**
+
+### 1. Padrão de Estímulos
+**Tipos de treino realizados:**
+- ⚠️ REGENERATIVO: NUNCA realizado
+- ✅ CONTINUO: realizado há 2 dias
+- ✅ INTERVALADO: realizado há 1 dias
+- ✅ LONGO: realizado há 3 dias
+- ⚠️ TEMPO_RUN: NUNCA realizado
+- ⚠️ FARTLEK: NUNCA realizado
+
+### 2. Volume Semanal Realizado
+- **Semana 📊 Atual (0–6 dias atrás):** 66,0 km | 500 TSS | 5 treinos
+- **Semana 📈 Anterior (7–13 dias atrás):** 0,0 km | 0 TSS | 0 treinos
+- **Semana 📊 Base (14–20 dias atrás):** 0,0 km | 0 TSS | 0 treinos
+
+### 3. Padrão de Intensidade (Distribuição de Zonas)
+- **Z1 (Recuperação):** 0 TSS (0%)
+- **Z2 (Base Aeróbica):** 0 TSS (0%) ⚠️
+- **Z3 (Contínuo Moderado):** 0 TSS (0%)
+- **Z4 (Threshold):** 0 TSS (0%)
+- **Z5 (VO2max):** 0 TSS (0%)
+
+### 4. Sinais de Fadiga/Sobrecarga
+- **Treinos nos últimos 14 dias:** 5
+- **RPE médio:** 7,0/10 ⚠️ (atleta relatando esforço elevado)
+- 🟡 Entre 30-50% com alta intensidade (monitorar sinais de fadiga)
+
+---
+
+
+## 📈 VOLUME MÉDIO DAS ÚLTIMAS 3 SEMANAS
+- **Volume Médio:** 22,0 km
+- **Tendência:** VARIÁVEL
+- **Semana Mais Recente:** 66,0 km
+- **Semana Anterior:** 0,0 km
+- **2 Semanas Atrás:** 0,0 km
+
+**MATRIZ DE VARIABILIDADE (últimas 4 semanas):**
+
+**Semana 0:** Semana atual (hoje -0 dias)
+  └─ Categoria: Indeterminada | Intervalado
+
+**Semana 1:** Semana passada (hoje -7 dias)
+  └─ Categoria: NENHUM | Sem intervalado
+
+**Semana 2:** 2 semanas atrás (hoje -14 dias)
+  └─ Categoria: NENHUM | Sem intervalado
+
+**Semana 3:** 3 semanas atrás (hoje -21 dias)
+  └─ Categoria: NENHUM | Sem intervalado
+
+✅ **RECOMENDAÇÃO PARA ESTA SEMANA:**
+→ Use **Categoria A** (VO2max curto - 200m/400m)
+  Razão: Começar com base sólida
+---
+
+### Estímulos Ausentes Há Mais de 14 Dias
+🔴 **REGENERATIVO:** NUNCA realizado - REINTRODUZIR URGENTEMENTE
+🔴 **TEMPO_RUN:** NUNCA realizado - REINTRODUZIR URGENTEMENTE
+🔴 **FARTLEK:** NUNCA realizado - REINTRODUZIR URGENTEMENTE
+
+### Repetição de Categorias de Intervalado
+✅ Boa rotação entre categorias de intervalado
+
+### Frequência de Treinos Intensivos
+✅ Frequência adequada de intensivos (20% dos treinos)
+
+### Variabilidade Geral de Treinos
+🟡 Variabilidade moderada - considerar incluir mais tipos de treino
+
+**INSTRUÇÕES DE RECUPERAÇÃO/REGENERAÇÃO:**
+
+### 1. Estado de Recuperação
+- **TSB:** -20 (Status: CRITICAMENTE FATIGADO (Descanso completo recomendado))
+- **Fadiga (ATL):** 95,0 (Nível: MODERADA 🟡 (Preparado))
+- **Forma (CTL):** 75,0
+- **Ramp Rate:** 7,0% (Progressão: MODERADA)
+
+### 2. Treinos Regenerativos Recomendados
+**RECOMENDAÇÃO: Treinos Z1 com duração moderada**
+
+- **Corrida Fácil Curta (30-40 min)**: FC = 93-112 bpm
+  - Conversa fácil mantida, ritmo muito relaxado
+
+- **Corrida Fácil com Estímulos (40 min total)**:
+  - 10 min aquecimento em Z1
+  - 4-6 x [1 min em Z2 + 2-3 min em Z1]
+  - 5 min arremate em Z1
+
+
+### 3. Parâmetros Técnicos para Zona Z1
+**Zona Z1 (Regenerativa)**:
+- FC Alvo: 93-112 bpm (50-60% da FCMax)
+- Pace Estimado: ~7:00-7:30 /km
+- RPE (Escala 1-10): 2-3 (Muito Fácil)
+- Respiração: Nasal, leve, ritmo natural
+- Conversa: Conversa fácil, sem ofegância
+- Sensação: Leve, movimento fluido, sem tensão
+
+**Zona Z2 (Base Aeróbica)**:
+- FC Alvo: 112-130 bpm (60-70% da FCMax)
+- Pace Estimado: ~6:30-7:00 /km
+- RPE: 3-4 (Fácil com esforço moderado)
+- Respiração: Nasal predominante, ritmo controlado
+- Conversa: Conversa possível com pequenos ajustes respiratórios
+
+### 4. Recuperação Ativa
+- **Alongamento estático** (15 min): Pós-treino, mantendo 20-30s cada
+- **Espuma de rolagem** (10 min): Quadríceps, glúteos, panturrilhas, TFL
+- **Banho frio/morno** (5-10 min): Promove vasodilatação e circulação
+- **Mobilidade dinâmica** (10 min): Squats, lunges, rotações
+
+### 5. Recomendações de Sono e Nutrição
+**Sono**:
+- Prioridade máxima: 8-9h por noite
+- Cochilos: Sim, 20-30 min entre 14:00-16:00
+- Higiene do sono: Escuro, silencioso, fresco (18-19°C)
+
+**Nutrição**:
+- Manutenção calórica normal
+- Equilíbrio: 50% CHO, 20% Proteína, 30% Gordura
+- Hidratação: 2.5-3L/dia
+
+
+## 📅 PERIODIZAÇÃO E FASE ATUAL
+
+N/A - sem prova alvo
+
+## 🎯 METAS PARA ESTA SEMANA
+
+**Tipo de Semana:** DESENVOLVIMENTO
+
+- **TSS Alvo Semanal:** 528 pontos
+  - Baseado em CTL atual: 75,0
+  - Ajustado por TSB: -20,0 (FADIGA MODERADA - Monitorar, considerar dia mais leve)
+  - Ramp Rate atual: 7,0 pts/sem (IDEAL - Progressão segura e efetiva)
+
+  - Recomendação Ramp Rate:  ()- **Máximo de Dias Consecutivos Recomendado:** 3 dias
+  - Atual: 5 dias consecutivos
+  - Baseado em TSB, experiência e histórico
+
+- **Distribuição Semanal Sugerida:** Sugestão: 2-1-1 (2 dias, descanso, 1 dia, descanso, 1 dia)
+
+** STATUS GERAL ** 
+  - ** Status geral: (REQUER ATENÇÃO: 5 DIAS CONSECUTIVOS | TSB: ACUMULANDO FADIGA
+Fadiga em acumulação. Evitar sessões intensas consecutivas e reforçar recuperação.)
+
+**ANÁLISE OBRIGATÓRIA:**
+Antes de gerar o plano, identifique:
+1. Tipos de treino NÃO realizados há mais de 14 dias
+2. Volume médio semanal das últimas 3 semanas
+3. Padrão de intensidade (predominância de zonas)
+4. Treinos cancelados ou subexecutados (possível fadiga)

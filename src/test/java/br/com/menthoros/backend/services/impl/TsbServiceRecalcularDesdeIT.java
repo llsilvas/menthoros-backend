@@ -17,6 +17,7 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.TsbService;
+import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,6 +52,8 @@ class TsbServiceRecalcularDesdeIT extends AbstractIntegrationTest {
     private TreinoRealizadoRepository treinoRealizadoRepository;
     @Autowired
     private MetricasDiariasRepository metricasDiariasRepository;
+    @Autowired
+    private TssCalculatorService tssCalculatorService;
 
     @Test
     @DisplayName("recalcularDesde propaga o TSS de D-3 até hoje — CA6b")
@@ -135,6 +138,9 @@ class TsbServiceRecalcularDesdeIT extends AbstractIntegrationTest {
         treino.setDuracaoMin(Duration.ofMinutes(40));
         treino.setPercepcaoEsforco(8);
         treino.setDistanciaKm(new BigDecimal("8.00"));
+        // backfill-tss-legado-producao: TsbServiceImpl não calcula mais tssCalculado on-the-fly
+        // (fallback removido) — simula o treino já migrado/ingerido.
+        treino.setTssCalculado(tssCalculatorService.calcularTss(treino));
         treinoRealizadoRepository.save(treino);
     }
 

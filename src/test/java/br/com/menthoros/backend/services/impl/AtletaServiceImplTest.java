@@ -15,6 +15,7 @@ import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.services.KeycloakOrganizationGateway;
+import br.com.menthoros.backend.services.helper.LlmCallLedger;
 import br.com.menthoros.backend.services.TsbService;
 import org.springframework.data.jpa.domain.Specification;
 import org.junit.jupiter.api.AfterEach;
@@ -59,6 +60,9 @@ class AtletaServiceImplTest {
 
     @Mock
     private KeycloakOrganizationGateway keycloakOrganizationGateway;
+
+    @Mock
+    private LlmCallLedger llmCallLedger;
 
     @InjectMocks
     private AtletaServiceImpl atletaService;
@@ -215,6 +219,17 @@ class AtletaServiceImplTest {
     }
 
     @Test
+    @DisplayName("deleteAtleta anonimiza as respostas do atleta no ledger (add-plan-generation-ledger, D7)")
+    void testDeleteAtletaAnonimizaLedger() {
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atletaEntity));
+        when(atletaRepository.save(any(Atleta.class))).thenReturn(atletaEntity);
+
+        atletaService.deleteAtleta(atletaId);
+
+        verify(llmCallLedger).anonimizarRespostasDoAtleta(atletaId);
+    }
+
+    @Test
     @DisplayName("deleteAtleta deve lançar exceção quando atleta não existe")
     void testDeleteAtletaNotFound() {
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
@@ -224,6 +239,7 @@ class AtletaServiceImplTest {
                 .hasMessageContaining("Atleta não encontrado");
 
         verify(atletaRepository, never()).save(any());
+        verify(llmCallLedger, never()).anonimizarRespostasDoAtleta(any());
     }
 
     @Test

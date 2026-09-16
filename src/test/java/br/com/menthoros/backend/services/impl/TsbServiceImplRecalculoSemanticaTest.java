@@ -15,7 +15,6 @@ import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
-import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import br.com.menthoros.backend.testsupport.ProvaRepositoryTestStub;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +25,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -117,7 +117,7 @@ class TsbServiceImplRecalculoSemanticaTest {
         java.util.Set<LocalDate> diasAtualizados = new java.util.TreeSet<>();
 
         TsbServiceImpl service = construirServiceComPrimeiroTreino(
-                atletaId, atleta, planoMetaDados, primeiroTreino, diasAtualizados);
+                atletaId, atleta, planoMetaDados, primeiroTreino, diasAtualizados, new AtomicInteger());
 
         service.recalcularHistoricoCompleto(atletaId);
 
@@ -140,6 +140,56 @@ class TsbServiceImplRecalculoSemanticaTest {
                 "Intervalo deve começar antes dos últimos 3 meses, já que o treino é mais antigo. " +
                 "Primeiro processado: " + primeiroProcessado + ", Janela 3 meses: " + janelaFixa3Meses
         );
+    }
+
+    // =========================================================================
+    // Teste 3: recalcularSemanasProgressao roda exatamente uma vez [CA2,
+    // fix-progressao-continua-incremental]
+    // =========================================================================
+
+    @Test
+    @DisplayName("recalcularHistoricoCompleto com histórico recalcula o streak de progressão "
+            + "exatamente uma vez (não duas)")
+    void recalcularHistorico_comHistorico_recalculaStreakUmaUnicaVez() {
+        UUID atletaId = UUID.randomUUID();
+        LocalDate primeiroTreino = LocalDate.now().minusMonths(1);
+
+        Assessoria assessoria = new Assessoria();
+        assessoria.setId(UUID.randomUUID());
+
+        Atleta atleta = Atleta.builder()
+                .id(atletaId)
+                .nome("Atleta Com Historico")
+                .objetivo("Teste")
+                .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
+                .assessoria(assessoria)
+                .build();
+
+        PlanoMetaDados planoMetaDados = PlanoMetaDados.builder()
+                .atleta(atleta)
+                .ctlAtual(0.0)
+                .atlAtual(0.0)
+                .tsbAtual(0.0)
+                .tsbProntidaoAtual(0.0)
+                .tsbPosCargaAtual(0.0)
+                .rampRateAtual(0.0)
+                .diasConsecutivosTreino(0)
+                .semanasProgressaoContinua(0)
+                .build();
+
+        AtomicInteger chamadasStreak = new AtomicInteger();
+
+        TsbServiceImpl service = construirServiceComPrimeiroTreino(
+                atletaId, atleta, planoMetaDados, primeiroTreino,
+                new java.util.TreeSet<>(), chamadasStreak);
+
+        service.recalcularHistoricoCompleto(atletaId);
+
+        assertEquals(1, chamadasStreak.get(),
+                "recalcularSemanasProgressao deve rodar exatamente uma vez por execução de "
+                        + "recalcularHistoricoCompleto (achado do pre-mortem Codex, CA2) — não "
+                        + "duas, o que aconteceria se a chamada explícita antiga e a nova dentro "
+                        + "de atualizarMetaDados coexistissem");
     }
 
     // =========================================================================
@@ -184,9 +234,8 @@ class TsbServiceImplRecalculoSemanticaTest {
         PlanoMetadadosRepository planoRepo = planoRepoStub(planoMetaDados, salvo);
 
         MetricasAlertaService alertaService = alertaServiceStub();
-        TssCalculatorService tssCalc = new TssCalculatorService();
 
-        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, tssCalc, alertaService,
+        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
                 new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
                 new TsbRecalculoExecutorInline(), planoMetadadosServiceStub(planoMetaDados));
     }
@@ -196,7 +245,8 @@ class TsbServiceImplRecalculoSemanticaTest {
             Atleta atleta,
             PlanoMetaDados planoMetaDados,
             LocalDate primeiroTreino,
-            java.util.Set<LocalDate> diasAtualizados) {
+            java.util.Set<LocalDate> diasAtualizados,
+            AtomicInteger chamadasStreak) {
 
         AtletaRepository atletaRepo = atletaRepoStub(atleta);
 
@@ -270,7 +320,6 @@ class TsbServiceImplRecalculoSemanticaTest {
                 (proxy, method, args) -> {
                     String name = method.getName();
                     LocalDate dataOntem = LocalDate.now().minusDays(1);
-                    if ("findByAtletaIdOrderByDataAsc".equals(name)) return Collections.emptyList();
                     if ("deleteByAtletaId".equals(name)) return null;
                     if ("flush".equals(name)) return null;
                     if ("findByAtletaIdAndData".equals(name)) {
@@ -287,7 +336,10 @@ class TsbServiceImplRecalculoSemanticaTest {
                         if (m.getData() != null) diasAtualizados.add(m.getData());
                         return m;
                     }
-                    if ("findByAtletaIdOrderByDataAsc".equals(name)) return Collections.emptyList();
+                    if ("findByAtletaIdOrderByDataAsc".equals(name)) {
+                        chamadasStreak.incrementAndGet();
+                        return Collections.emptyList();
+                    }
                     // Sem metricas pre-existentes: os limites do intervalo sao nulos.
                     if ("findDataPrimeiraMetrica".equals(name)) return null;
                     if ("findDataUltimaMetrica".equals(name)) return null;
@@ -297,9 +349,8 @@ class TsbServiceImplRecalculoSemanticaTest {
         );
 
         MetricasAlertaService alertaService = alertaServiceStub();
-        TssCalculatorService tssCalc = new TssCalculatorService();
 
-        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, tssCalc, alertaService,
+        return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, alertaService,
                 new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
                 new TsbRecalculoExecutorInline(), planoMetadadosServiceStub(planoMetaDados));
     }

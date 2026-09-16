@@ -365,8 +365,12 @@ public class IntervalsIcuActivityMapper {
      * escrita — nenhum dos dois caminhos passa por {@code ZoneId.systemDefault()} (diferente do
      * parsing do Strava, que faz esse round-trip; aqui é evitado de propósito para não arriscar
      * uma virada de dia por DST do servidor).
+     *
+     * <p>Público (fix-intervals-icu-retroactive-tsb-recalc): também usado por
+     * {@code IntervalsIcuActivityIngestionServiceImpl} para o guard de retroatividade do import
+     * manual, antes de {@code map} construir o {@link TreinoRealizado} completo.
      */
-    private LocalDate parseDataTreino(String startDateLocal) {
+    public LocalDate parseDataTreino(String startDateLocal) {
         if (startDateLocal == null || startDateLocal.isBlank()) {
             return null;
         }

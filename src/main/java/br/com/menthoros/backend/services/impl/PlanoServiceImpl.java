@@ -4,6 +4,7 @@ import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto;
 import br.com.menthoros.backend.entity.AnaliseWorkout;
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AnaliseStatus;
@@ -13,7 +14,11 @@ import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.events.PlanoDeletadoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import io.micrometer.core.instrument.MeterRegistry;
+import br.com.menthoros.backend.ai.ledger.GenerationOutcome;
+import br.com.menthoros.backend.ai.ledger.LlmCallScope;
 import br.com.menthoros.backend.exception.LLMException;
+import br.com.menthoros.backend.services.helper.LlmCallLedger;
 import br.com.menthoros.backend.exception.PlanoJaExistenteException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
@@ -25,6 +30,11 @@ import br.com.menthoros.backend.services.PlanoService;
 import br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter;
 import br.com.menthoros.backend.services.helper.PlanGenerationContext;
 import br.com.menthoros.backend.services.helper.PlanGenerationContextLoader;
+import br.com.menthoros.backend.services.helper.PlannerShadowService;
+import br.com.menthoros.backend.services.helper.SkeletonPrePrompt;
+import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
+import org.jspecify.annotations.Nullable;
+import org.springframework.beans.factory.annotation.Value;
 import br.com.menthoros.backend.services.helper.PlanGenerationPersister;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.config.core.WorkoutAnalysisProperties;
@@ -60,6 +70,19 @@ public class PlanoServiceImpl implements PlanoService {
     private final ApplicationEventPublisher eventPublisher;
     private final AiWorkoutAnalysisRepository aiWorkoutAnalysisRepository;
     private final WorkoutAnalysisProperties workoutAnalysisProperties;
+    private final PlannerShadowService plannerShadowService;
+    private final MeterRegistry meterRegistry;
+    private final LlmCallLedger llmCallLedger;
+
+    // planner-engine-enforcement §3: com enabled=true, o WeekPlanSkeleton é computado ANTES do prompt
+    // e injetado como bloco mandatório. Default false — rollout gated (tasks 8.4).
+    @Value("${planner-engine.enabled:false}")
+    private boolean plannerEnabled;
+
+    // planner-engine-enforcement §4 (Decisao 3): fail-open=true (default) => falha do planner ANTES do
+    // LLM cai no pipeline legado; false => erro de dominio antes de gerar. Rollout gated (tasks 8.4).
+    @Value("${planner-engine.fail-open:true}")
+    private boolean plannerFailOpen;
 
     /**
      * Idempotent: YES — leitura pura.
@@ -107,39 +130,128 @@ public class PlanoServiceImpl implements PlanoService {
     public PlanoSemanal gerarPlanoTreino(UUID atletaId, ModoGeracaoPlano modoGeracao) {
         validarParametrosEntrada(atletaId, modoGeracao);
 
+        // Fora do try de propósito (add-plan-generation-ledger, D6): os catch precisam saber em que
+        // fase a exceção nasceu — antes de uma chamada aceita (sem desfecho) ou depois (CONFLICT,
+        // REJECTED_POST_LLM, PERSIST_ERROR) — sem subtipo de exceção novo.
+        PlanGenerationContext ctx = null;
+        boolean llmAceito = false;
         try {
-            PlanGenerationContext ctx = contextLoader.load(atletaId, modoGeracao);
+            ctx = contextLoader.load(atletaId, modoGeracao);
 
-            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(ctx, modoGeracao);
+            // planner-engine-enforcement 8.5.h: computado aqui (fora de qualquer transação) e
+            // threadado ATÉ o persister — nunca recomputado lá, ver SkeletonPrePrompt.
+            SkeletonPrePrompt skeletonPrePrompt = computarSkeletonSeHabilitado(ctx);
+            PlanoSemanalLlmDto planoDto = gerarPlanoSemanal(ctx, modoGeracao, skeletonPrePrompt.skeleton());
 
             if (planoDto == null) {
                 throw new LLMException("Falha ao gerar plano: IA retornou resposta nula. Tente novamente.");
             }
+            llmAceito = true;
 
-            return persister.persist(planoDto, ctx, modoGeracao);
-        } catch (LLMException | DomainRuleViolationException | DomainNotFoundException | IllegalStateException e) {
-            log.error("Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
+            PlanoSemanal salvo = persister.persist(planoDto, ctx, modoGeracao, skeletonPrePrompt);
+            registrarDesfecho(ctx, llmAceito, GenerationOutcome.PERSISTED);
+            return salvo;
+        } catch (PlanoJaExistenteException e) {
+            falhar(ctx, llmAceito, GenerationOutcome.CONFLICT,
+                    "Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
+            throw e;
+        } catch (DomainRuleViolationException e) {
+            falhar(ctx, llmAceito, GenerationOutcome.REJECTED_POST_LLM,
+                    "Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
+            throw e;
+        } catch (LLMException | DomainNotFoundException | IllegalStateException e) {
+            falhar(ctx, llmAceito, GenerationOutcome.PERSIST_ERROR,
+                    "Erro de domínio ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
             throw e;
         } catch (DataIntegrityViolationException e) {
             // Duas geracoes passaram pelas checagens e commitaram juntas: o indice da V52 decidiu.
             // Qualquer outra constraint segue como conflito generico (design.md D3).
+            // Nível de log e presença de mensagem divergem do padrão comum (warn vs. error; a
+            // segunda branch não loga nada, de propósito), por isso ficam fora de `falhar`.
             if (PlanoJaExistenteException.causadaPeloIndiceDePlanoAtivo(e)) {
+                registrarDesfecho(ctx, llmAceito, GenerationOutcome.CONFLICT);
                 log.warn("Geração concorrente para atleta {} perdeu a corrida no índice {}",
                         atletaId, PlanoJaExistenteException.INDICE_PLANO_ATIVO);
                 throw PlanoJaExistenteException.paraCorridaNoIndice(atletaId);
             }
+            registrarDesfecho(ctx, llmAceito, GenerationOutcome.PERSIST_ERROR);
             throw e;
         } catch (IllegalArgumentException e) {
-            log.error("Erro de validação ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
+            falhar(ctx, llmAceito, GenerationOutcome.PERSIST_ERROR,
+                    "Erro de validação ao gerar plano para atleta {}: {}", atletaId, e.getMessage());
             throw new LLMException("Erro ao gerar plano semanal: " + e.getMessage(), e);
         } catch (Exception e) {
+            // Loga o objeto da exceção (não só a mensagem) de propósito: é a única branch para
+            // erro genuinamente inesperado, e é aqui que o stack trace completo importa.
+            registrarDesfecho(ctx, llmAceito, GenerationOutcome.PERSIST_ERROR);
             log.error("Erro inesperado ao gerar plano para atleta {}", atletaId, e);
             throw new LLMException("Erro inesperado ao gerar plano. Por favor, tente novamente.", e);
         }
     }
 
-    private PlanoSemanalLlmDto gerarPlanoSemanal(PlanGenerationContext ctx, ModoGeracaoPlano modoGeracao) {
+    /**
+     * Desfecho da Requisição de geração na última Chamada LLM (add-plan-generation-ledger, D6).
+     * Só existe quando o LLM produziu um plano aceito; antes disso a linha da chamada já diz tudo.
+     * Best-effort: o ledger nunca lança.
+     */
+    private void registrarDesfecho(@Nullable PlanGenerationContext ctx, boolean llmAceito, GenerationOutcome outcome) {
+        if (ctx == null || !llmAceito) {
+            return;
+        }
+        llmCallLedger.registrarDesfecho(ctx.generationRequestId(), outcome);
+    }
+
+    /**
+     * Registra o desfecho e loga em ERROR — o par que os catches "comuns" de {@code gerarPlanoTreino}
+     * sempre precisam dos dois juntos. Extraído no `/qa` (clean-code-reviewer): 6 catches repetiam
+     * essa dupla chamada, risco real de um catch novo esquecer uma das duas.
+     */
+    private void falhar(@Nullable PlanGenerationContext ctx, boolean llmAceito, GenerationOutcome outcome,
+                        String mensagemLog, Object... args) {
+        registrarDesfecho(ctx, llmAceito, outcome);
+        log.error(mensagemLog, args);
+    }
+
+    /**
+     * Computa o {@link WeekPlanSkeleton} pré-prompt quando {@code planner-engine.enabled=true}.
+     * Fail-open (design Decisão 3): qualquer falha aqui NÃO derruba a geração — {@link SkeletonPrePrompt#fallback()}
+     * fica {@code true} e o prompt cai no caminho legado. Onboarding vazio: o planner usa os dias
+     * disponíveis do atleta.
+     *
+     * <p>planner-engine-enforcement 8.5.h: o resultado (sucesso, desligado ou fallback) é threadado
+     * até {@code PlanGenerationPersister} — nunca recomputado lá. Ver {@link SkeletonPrePrompt}.
+     */
+    private SkeletonPrePrompt computarSkeletonSeHabilitado(PlanGenerationContext ctx) {
+        if (!plannerEnabled) {
+            return SkeletonPrePrompt.desligado();
+        }
+        try {
+            // fix-cold-start-load-model: reusa o OnboardingContext resolvido pelo loader — antes ia
+            // Optional.empty() aqui, então o skeleton que guia o prompt nunca via calibrationStage/CTL
+            // de calibração (o regime cold-start só auditava depois de gerado, no estágio 2).
+            WeekPlanSkeleton skeleton = plannerShadowService.computarSkeleton(
+                    ctx.dados(), ctx.decisaoProgressao(), ctx.semanaInicio(), ctx.onboardingContext());
+            return SkeletonPrePrompt.sucesso(skeleton);
+        } catch (Exception e) {
+            // Planner falha ANTES do LLM (design Decisao 3, matriz fail-open):
+            //   fail-open=true  -> fallback => pipeline legado (1ª e unica geracao) + planner.fallback_legacy.count
+            //   fail-open=false -> erro de dominio, nada gerado
+            if (!plannerFailOpen) {
+                throw new DomainRuleViolationException(
+                        "Não foi possível preparar a estrutura do plano (planner indisponível).");
+            }
+            meterRegistry.counter("planner.fallback_legacy.count").increment();
+            log.warn("Falha ao computar skeleton do planner (fail-open, seguindo com pipeline legado): {}", e.getMessage());
+            return SkeletonPrePrompt.viaFallback();
+        }
+    }
+
+    private PlanoSemanalLlmDto gerarPlanoSemanal(PlanGenerationContext ctx, ModoGeracaoPlano modoGeracao,
+                                                 @Nullable WeekPlanSkeleton skeleton) {
         UUID atletaId = ctx.atleta().getId();
+        // Escopo da requisição do ledger (D3): aberto na thread que chama o IaService — no lote é a
+        // virtual thread do atleta — e fechado sempre; a tentativa é aberta por dentro, por chamada.
+        LlmCallScope.openRequest(ctx.generationRequestId(), atletaId, nomeCompleto(ctx.atleta()));
         try {
             log.info("Iniciando geração de plano para atleta: {}", atletaId);
 
@@ -148,7 +260,7 @@ public class PlanoServiceImpl implements PlanoService {
             PlanoSemanalLlmDto planoDto = llmConcurrencyLimiter.executarInterativo(() ->
                     iaService.geraPlanoSemanalAvancado(
                             ctx.atleta(), ctx.metaDados(), ctx.proximaProva(), modoGeracao,
-                            ctx.decisaoProgressao(), ctx.revisaoConsumida(), ctx.semanaInicio()));
+                            ctx.decisaoProgressao(), ctx.revisaoConsumida(), ctx.semanaInicio(), skeleton));
 
             validaPlanoGerado(planoDto);
             return planoDto;
@@ -158,10 +270,29 @@ public class PlanoServiceImpl implements PlanoService {
         } catch (LLMException e) {
             log.error("Falha na IA ao gerar o plano para o atleta: {}", atletaId);
             throw e;
+        } catch (DomainRuleViolationException e) {
+            // Fix IA-06 (review.md 2026-09-05): sem este catch, o orçamento de retries esgotado em
+            // PlanoResilienceService.gerarComResiliencia (DomainRuleViolationException) caía no
+            // catch (Exception) genérico abaixo e virava LLMException — o treinador recebia 503
+            // (indisponibilidade) para um erro de domínio (estrutura do plano rejeitada), que deveria
+            // chegar como 422. Espelha o catch já existente em gerarPlanoTreino.
+            log.error("Erro de domínio ao gerar o plano para o atleta: {}", atletaId);
+            throw e;
         } catch (Exception e) {
             log.error("Erro inesperado ao gerar o plano para o atleta: {}", atletaId, e);
             throw new LLMException("Erro inesperado ao gerar plano", e);
+        } finally {
+            LlmCallScope.closeRequest();
         }
+    }
+
+    /** Nome usado só para redigir a resposta bruta antes de gravar no ledger (D7); nunca persistido lá. */
+    private static @Nullable String nomeCompleto(Atleta atleta) {
+        if (atleta == null || atleta.getNome() == null) {
+            return null;
+        }
+        return atleta.getSobrenome() == null || atleta.getSobrenome().isBlank()
+                ? atleta.getNome() : atleta.getNome() + " " + atleta.getSobrenome();
     }
 
     private void validaPlanoGerado(PlanoSemanalLlmDto planoDto) {

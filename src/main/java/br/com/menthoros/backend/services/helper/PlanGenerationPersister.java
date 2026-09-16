@@ -4,6 +4,7 @@ import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.domain.planner.ReviewMode;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
+import br.com.menthoros.backend.domain.planner.SessionSlot;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.input.DadosPlanoDto;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
@@ -25,6 +26,9 @@ import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.events.RevisaoConsumidaEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus;
+import br.com.menthoros.backend.domain.compliance.PlannerViolation;
+import io.micrometer.core.instrument.MeterRegistry;
 import br.com.menthoros.backend.exception.PlanoJaExistenteException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
@@ -85,12 +89,20 @@ public class PlanGenerationPersister {
     private final PlanoReviewService planoReviewService;
     private final ApplicationEventPublisher eventPublisher;
     private final ProvaNoPlanoService provaNoPlanoService;
+    private final MeterRegistry meterRegistry;
 
     @Value("${onboarding.auto-approve.enabled:true}")
     private boolean autoApproveEnabled;
 
-    @Value("${onboarding.migrate-existing.enabled:true}")
-    private boolean migrateExistingEnabled;
+    // planner-engine-enforcement §5: com enabled=true, o estagio 2 (compliance pos-redistribuicao)
+    // roda como ultimo passo antes de aprovar/salvar. Default false — rollout gated (tasks 8.4).
+    @Value("${planner-engine.enabled:false}")
+    private boolean plannerEnabled;
+
+    // fail-open=true (default): violacao soft do estagio 2 => FAILED + requiresCoachReview (persiste,
+    // exige revisao); false => erro de dominio, nada persistido (Decisao 3).
+    @Value("${planner-engine.fail-open:true}")
+    private boolean plannerFailOpen;
 
     /**
      * Persiste um plano completo gerado pela LLM: período, redistribuição de treinos conforme o
@@ -107,7 +119,7 @@ public class PlanGenerationPersister {
      */
     @Transactional
     public PlanoSemanal persist(PlanoSemanalLlmDto planoDto, PlanGenerationContext ctx,
-                                ModoGeracaoPlano modoGeracao) {
+                                ModoGeracaoPlano modoGeracao, SkeletonPrePrompt skeletonPrePrompt) {
         DadosPlanoDto dadosPlano = ctx.dados();
         Atleta atleta = ctx.atleta();
         LocalDate semanaInicio = ctx.semanaInicio();
@@ -127,9 +139,19 @@ public class PlanGenerationPersister {
         log.info("Período calculado: {} a {} (Modo: {}, {} treinos no plano LLM)",
                 periodo.inicio(), periodo.fim(), modoGeracao, planoDto.treinosPlanejados().size());
 
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        // Resolvido UMA vez em PlanGenerationContextLoader.load e repassado — o mesmo Optional que
+        // guiou (ou não) o skeleton pré-prompt, sem re-derivar aqui (evita divergência entre os dois).
+        Optional<OnboardingContext> onboardingContext = ctx.onboardingContext();
+
+        // §5.3 + 8.5.h: dias prescritos pelos SessionSlot do skeleton da FASE 2 (pre-prompt) — nao
+        // recomputado aqui. enabled=false ou fallback (fase 2 falhou) => mapa vazio => comportamento
+        // legado byte-a-byte (CA9).
+        java.util.Map<TipoTreino, DiaSemana> diasAlvoPorTipo = diasAlvoDaRedistribuicao(skeletonPrePrompt);
+
         DiaSemana diaPrioritarioLongo = inferirDiaPrioritarioLongo(dadosPlano);
         List<TreinoPlanejadoLlmDto> treinos = obterTreinosParaPlano(
-                planoDto.treinosPlanejados(), atleta, periodo, modoGeracao, diaPrioritarioLongo);
+                planoDto.treinosPlanejados(), atleta, periodo, modoGeracao, diaPrioritarioLongo, diasAlvoPorTipo);
 
         // Volume recalculado da lista final (pós-garantia da prova), não o que o LLM declarou em
         // planoDto.volumePlanejadoKm() — sem isso PlanoMetaDados e o alerta de progressão ficam
@@ -138,14 +160,28 @@ public class PlanGenerationPersister {
         PlanoMetaDados metaDados = prepararMetadados(dadosPlano, volumePlanejadoRecalculado);
 
         PlanoSemanal plano = criarPlanoComTreinos(planoDto, atleta, periodo, metaDados, treinos);
+        // Ligação plano ↔ chamadas LLM por join (add-plan-generation-ledger, D4): mesmo save, sem UPDATE.
+        plano.setGenerationRequestId(ctx.generationRequestId());
 
         // Shadow do PlannerEngine (deterministic-planner-engine, Decisao 10): roda apos a geracao
         // legada, nunca altera plano/prompt/persistencia (CA12); falha isolada internamente (CA11).
         // batch=false: este call site nao distingue interativo de lote — tag de metrica aproximada.
-        UUID tenantId = TenantContext.getRequiredTenantId();
-        Optional<OnboardingContext> onboardingContext = resolverOnboardingContext(atleta.getId(), tenantId);
         Optional<WeekPlanSkeleton> weekPlanSkeleton = plannerShadowService.aplicarShadow(
                 plano, planoDto, dadosPlano, decisaoProgressao, periodo.inicio(), false, onboardingContext);
+
+        // planner-engine-enforcement §5 (Decisao 2) + 8.5.h: estagio 2 terminal — roda sobre os treinos
+        // ja redistribuidos E com prova garantida (plano.getTreinosPlanejados()), como ULTIMO passo
+        // antes de aprovar/salvar/emitir eventos. Enforca contra o MESMO skeleton que guiou o prompt na
+        // fase 2 (skeletonPrePrompt), nao um recomputado aqui pelo shadow (weekPlanSkeleton acima e so
+        // para auditoria/metricas — CA12) — evita enforcar um plano contra estrutura que o LLM nunca
+        // viu. Fallback da fase 2 (planner falhou antes do LLM) marca FALLBACK em vez de tentar
+        // enforcar; flag desligado permanece no-op (CA9). Usa periodo.inicio() como referenceDate
+        // (nunca now()).
+        if (skeletonPrePrompt.fallback()) {
+            plano.setPlannerComplianceStatus(PlannerComplianceStatus.FALLBACK.name());
+        } else if (skeletonPrePrompt.skeleton() != null) {
+            aplicarEnforcementEstagio2(plano, skeletonPrePrompt.skeleton(), atleta, periodo.inicio());
+        }
 
         // Auto-approve Cenario A (athlete-onboarding-baseline CA5, Decisao 7).
         onboardingContext.ifPresent(context -> aplicarAutoApproveSeElegivel(plano, context, weekPlanSkeleton, tenantId));
@@ -202,19 +238,6 @@ public class PlanGenerationPersister {
     }
 
     /**
-     * Resolve o {@code OnboardingContext} respeitando o kill-switch
-     * {@code onboarding.migrate-existing.enabled}: atleta com baseline sempre tem o contexto
-     * recalculado; atleta legado sem snapshot so e migrado com a flag ligada.
-     */
-    private Optional<OnboardingContext> resolverOnboardingContext(UUID atletaId, UUID tenantId) {
-        boolean atletaLegado = !onboardingService.possuiBaseline(atletaId, tenantId);
-        if (atletaLegado && !migrateExistingEnabled) {
-            return Optional.empty();
-        }
-        return Optional.of(onboardingService.montarContexto(atletaId, tenantId));
-    }
-
-    /**
      * Auto-aprova quando o atleta esta em Cenario A (EXCEPTION_ONLY) e o ciclo nao apresenta
      * risco; a dupla checagem com HIGH_RISK e defesa em profundidade, redundante por design.
      */
@@ -229,11 +252,56 @@ public class PlanGenerationPersister {
         if (weekPlanSkeleton.isEmpty()) {
             return;
         }
+        // Veto do enforcement (planner-engine-enforcement §5, Codex blocker 3): plano que o estagio 2
+        // marcou FAILED / requiresCoachReview NUNCA e auto-aprovado — entra em AGUARDANDO_REVISAO.
+        // FALLBACK (8.5.h, achado do security-reviewer): o planner falhou antes do LLM e o estagio 2
+        // NUNCA rodou sobre este plano — nao tem base para confianca alta automatica, mesmo que o
+        // shadow (recomputado dentro da transacao) tenha tido sucesso onde a fase 2 falhou.
+        if (PlannerComplianceStatus.FAILED.name().equals(plano.getPlannerComplianceStatus())
+                || PlannerComplianceStatus.FALLBACK.name().equals(plano.getPlannerComplianceStatus())
+                || Boolean.TRUE.equals(plano.getPlannerRequiresCoachReview())) {
+            return;
+        }
         WeekPlanSkeleton skeleton = weekPlanSkeleton.get();
         if (skeleton.requiresCoachReview() || skeleton.injuryRisk().level() == InjuryRiskLevel.HIGH_RISK) {
             return;
         }
         planoReviewService.aprovarTransicao(plano, tenantId, OrigemAprovacao.AUTO_CONFIANCA_ALTA);
+    }
+
+    /**
+     * Estagio 2 do enforcement (planner-engine-enforcement §5, Decisao 2): compliance
+     * POS-redistribuicao, terminal (sem retry), sobre os treinos finais do {@code plano} — ja
+     * redistribuidos e com prova garantida. Roda somente com {@code planner-engine.enabled=true}.
+     *
+     * <p>Todas as {@code PlannerViolation} do estagio 2 sao revisaveis (soft) nesta change — as
+     * invariantes obrigatorias (hard) sao os checks estruturais do estagio 1, ja fail-closed em
+     * {@code IaServiceImpl}. Matriz fail-open (Decisao 3): {@code fail-open=true} persiste
+     * {@code FAILED} + {@code requiresCoachReview} (veta auto-aprovacao); {@code fail-open=false}
+     * lanca erro de dominio antes de persistir. Sem violacao -> {@code PASSED}.
+     *
+     * <p>Idempotent: YES (leitura + mutacao in-memory deterministica). Side Effects: mutacao dos
+     * campos {@code planner_*} de {@code plano}; metrica Micrometer. Tenant-aware: opera sobre objetos
+     * ja resolvidos.
+     */
+    private void aplicarEnforcementEstagio2(PlanoSemanal plano, WeekPlanSkeleton skeleton,
+                                            Atleta atleta, LocalDate referenceDate) {
+        List<PlannerViolation> violacoes = plannerShadowService.checkPostRedistribution(
+                plano.getTreinosPlanejados(), skeleton, atleta, referenceDate);
+        if (violacoes.isEmpty()) {
+            plano.setPlannerComplianceStatus(PlannerComplianceStatus.PASSED.name());
+            return;
+        }
+        if (!plannerFailOpen) {
+            String motivos = violacoes.stream()
+                    .map(v -> v.key() + ": " + v.mensagem())
+                    .collect(java.util.stream.Collectors.joining("; "));
+            throw new DomainRuleViolationException(
+                    "Plano viola a estrutura prescrita apos redistribuicao: " + motivos);
+        }
+        meterRegistry.counter("planner.compliance.failure.count", "stage", "POST").increment();
+        plano.setPlannerComplianceStatus(PlannerComplianceStatus.FAILED.name());
+        plano.setPlannerRequiresCoachReview(true);
     }
 
     private record PeriodoPlano(LocalDate inicio, LocalDate fim) {
@@ -243,15 +311,20 @@ public class PlanGenerationPersister {
     }
 
     /**
-     * Para SEMANA_ATUAL, redistribui considerando dias ja passados; nos demais modos usa os
-     * treinos da LLM diretamente.
+     * SEMANA_ATUAL sempre redistribui (considera dias ja passados). PROXIMA_SEMANA redistribui
+     * apenas com {@code planner-engine.enabled=true} — aplicando a alocacao de dias do skeleton
+     * (longao ancorado, duras nao-adjacentes, leve pos-dura via {@code diasAlvoPorTipo}); com
+     * {@code enabled=false} preserva os dias do LLM byte-a-byte (CA9). Demais modos usam a LLM direto.
      */
     private List<TreinoPlanejadoLlmDto> obterTreinosParaPlano(List<TreinoPlanejadoLlmDto> treinosLlm,
                                                               Atleta atleta,
                                                               PeriodoPlano periodo,
                                                               ModoGeracaoPlano modoGeracao,
-                                                              DiaSemana diaPrioritarioLongo) {
-        List<TreinoPlanejadoLlmDto> treinos = ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracao)
+                                                              DiaSemana diaPrioritarioLongo,
+                                                              java.util.Map<TipoTreino, DiaSemana> diasAlvoPorTipo) {
+        boolean redistribui = ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracao)
+                || (plannerEnabled && ModoGeracaoPlano.PROXIMA_SEMANA.equals(modoGeracao));
+        List<TreinoPlanejadoLlmDto> treinos = redistribui
                 ? redistribuicaoHelper.redistribuirTreinos(
                         treinosLlm,
                         atleta.getDiasDisponiveis(),
@@ -259,7 +332,8 @@ public class PlanGenerationPersister {
                         periodo.inicio(),
                         periodo.fim(),
                         modoGeracao,
-                        diaPrioritarioLongo)
+                        diaPrioritarioLongo,
+                        diasAlvoPorTipo)
                 : treinosLlm;
 
         // Garantia determinística (design.md D2): roda depois da redistribuição — senão o
@@ -269,6 +343,35 @@ public class PlanGenerationPersister {
 
         validarTreinosGerados(treinos);
         return treinos;
+    }
+
+    /**
+     * §5.3 + 8.5.h: mapa tipo->dia-alvo para guiar a redistribuicao, derivado dos {@code SessionSlot}
+     * do skeleton da FASE 2 (pre-prompt, {@code skeletonPrePrompt}) — nao recomputado aqui. Vazio
+     * quando o planner esta desligado ou quando a fase 2 caiu no fallback (skeleton nulo).
+     */
+    private Map<TipoTreino, DiaSemana> diasAlvoDaRedistribuicao(SkeletonPrePrompt skeletonPrePrompt) {
+        if (skeletonPrePrompt.skeleton() == null) {
+            return Map.of();
+        }
+        return diasAlvoDosSlots(skeletonPrePrompt.skeleton());
+    }
+
+    private Map<TipoTreino, DiaSemana> diasAlvoDosSlots(WeekPlanSkeleton skeleton) {
+        Map<TipoTreino, DiaSemana> mapa = new java.util.EnumMap<>(TipoTreino.class);
+        for (SessionSlot slot : skeleton.sessions()) {
+            if (slot.day() == null) {
+                continue;
+            }
+            TipoTreino tipo;
+            try {
+                tipo = TipoTreino.valueOf(slot.sessionType());
+            } catch (IllegalArgumentException | NullPointerException e) {
+                continue; // tipo do slot fora do enum de TipoTreino — ignora, greedy resolve
+            }
+            mapa.putIfAbsent(tipo, Utils.converterDayOfWeekParaDiaSemana(slot.day()));
+        }
+        return mapa;
     }
 
     private double calcularVolumeTotalPlanejadoDto(List<TreinoPlanejadoLlmDto> treinos) {

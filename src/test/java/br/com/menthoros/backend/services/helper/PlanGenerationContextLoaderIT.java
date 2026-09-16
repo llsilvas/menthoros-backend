@@ -116,6 +116,16 @@ class PlanGenerationContextLoaderIT extends AbstractIntegrationTest {
         assertThat(ctx.proximaProva().getNomeProva()).isEqualTo("Meia da Fronteira");
         assertThat(ctx.metaDados().getId()).as("metadados criados na fase 1 e commitados").isNotNull();
         assertThat(ctx.semanaInicio()).isAfter(LocalDate.now());
+        assertThat(ctx.generationRequestId()).as("requisição de geração nasce no loader (ledger D4)").isNotNull();
+    }
+
+    @Test
+    @DisplayName("cada carga é uma requisição de geração nova — ids distintos (ledger D4, CA9)")
+    void cadaCargaTemRequisicaoPropria() {
+        PlanGenerationContext a = loader.load(atleta.getId(), ModoGeracaoPlano.PROXIMA_SEMANA);
+        PlanGenerationContext b = loader.load(atleta.getId(), ModoGeracaoPlano.PROXIMA_SEMANA);
+
+        assertThat(a.generationRequestId()).isNotEqualTo(b.generationRequestId());
     }
 
     /**

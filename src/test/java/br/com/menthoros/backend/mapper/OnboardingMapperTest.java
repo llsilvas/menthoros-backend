@@ -17,7 +17,7 @@ import br.com.menthoros.backend.enums.CanalIntegracao;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.DispositivoMarca;
 import br.com.menthoros.backend.enums.NivelExperiencia;
-import br.com.menthoros.backend.services.onboarding.CalibrationStage;
+import br.com.menthoros.backend.domain.planner.CalibrationStage;
 import br.com.menthoros.backend.services.onboarding.CalibrationStatusResult;
 import br.com.menthoros.backend.services.onboarding.ConfidenceTier;
 import br.com.menthoros.backend.services.onboarding.OnboardingConclusionResult;
@@ -128,7 +128,7 @@ class OnboardingMapperTest {
             OnboardingContext context = new OnboardingContext(
                     new AthleteBaseline(50.0, LocalDate.now()), 0.8,
                     new PlanningPolicy(ReviewMode.EXCEPTION_ONLY, 1.0, true),
-                    new AthleteConstraints(List.of(), null, null, List.of()));
+                    new AthleteConstraints(List.of(), null, null, List.of()), null);
             OnboardingConclusionResult result = new OnboardingConclusionResult(perfil, prova, context, ConfidenceTier.A);
 
             OnboardingConclusaoOutputDto resultado = mapper.toConclusaoOutputDto(result);
