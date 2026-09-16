@@ -4,6 +4,7 @@ import br.com.menthoros.backend.services.helper.AthleteZones;
 import br.com.menthoros.backend.services.helper.EvalAgreementGrader;
 import br.com.menthoros.backend.services.helper.EvalCandidateRunner;
 import br.com.menthoros.backend.services.helper.EvalDeterministicGrader;
+import br.com.menthoros.backend.services.helper.EvalLlmJudge;
 import br.com.menthoros.backend.services.helper.PlannerShadowService;
 import br.com.menthoros.backend.services.helper.SessionResolver;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
@@ -61,27 +62,45 @@ class EvalRunnerTest {
         }
     }
 
-    private void rodarModoAuditoria() throws IOException {
+    private void rodarModoAuditoria() throws Exception {
         var sessionResolver = new SessionResolver(new ZoneResolver(new ZonaTreinoService()),
                 new TssCalculatorService());
         var grader = new EvalAgreementGrader(OBJECT_MAPPER, sessionResolver);
+        String apiKey = System.getenv("OPENAI_API_KEY");
+        EvalLlmJudge judge = apiKey != null && !apiKey.isBlank()
+                ? new EvalLlmJudge(construirChatClientReal(apiKey), new br.com.menthoros.backend.services.prompt.EvalJudgeSchemaBuilder(), OBJECT_MAPPER)
+                : null;
 
         List<Path> arquivos;
         try (Stream<Path> lista = Files.list(FIXTURES_AUDITORIA)) {
             arquivos = lista.filter(p -> p.toString().endsWith(".json")).sorted().toList();
         }
 
+        double custoTotal = 0.0;
         System.out.println("=== eval set — modo auditoria ===");
-        System.out.printf("%-30s %10s %10s%n", "fixture", "comparados", "divergências");
+        System.out.printf("%-25s %10s %10s %8s %14s%n", "fixture", "comparados", "divergên.",
+                "juiz", "status juiz");
         for (Path arquivo : arquivos) {
             var fixture = OBJECT_MAPPER.readValue(arquivo.toFile(), EvalFixtureAuditoriaView.class);
             var zonas = new AthleteZones(fixture.zonasAtleta().fcMaxima(), fixture.zonasAtleta().fcLimiar(),
                     fixture.zonasAtleta().paceLimiar());
             var resultado = grader.avaliar(fixture.respostaHistoricaJson(), fixture.schemaVersion(), zonas,
                     fixture.planoFinalPersistidoJson());
-            System.out.printf("%-30s %10d %10d%n", arquivo.getFileName(),
-                    resultado.totalTreinosComparados(), resultado.divergencias().size());
+
+            String notaJuiz = "-";
+            if (judge != null) {
+                var nota = judge.avaliarReduzida(fixture.respostaHistoricaJson());
+                notaJuiz = String.valueOf(nota.notaGeral());
+                if (judge.ultimoCustoUsd() != null) {
+                    custoTotal += judge.ultimoCustoUsd().doubleValue();
+                }
+            }
+            // Calibração: sempre "NÃO CALIBRADO" nesta versão — task 2.3, sem 20 casos humanos.
+            System.out.printf("%-25s %10d %10d %8s %14s%n", arquivo.getFileName(),
+                    resultado.totalTreinosComparados(), resultado.divergencias().size(), notaJuiz,
+                    "NÃO CALIBRADO");
         }
+        System.out.printf("custo total (juiz): USD %.6f%n", custoTotal);
         assertThat(arquivos).isNotEmpty();
     }
 
@@ -98,19 +117,36 @@ class EvalRunnerTest {
         var plannerShadowService = mock(PlannerShadowService.class);
         var grader = new EvalDeterministicGrader(OBJECT_MAPPER, sessionResolver, plannerShadowService);
         var runner = new EvalCandidateRunner(chatClient, llmJsonSchemaBuilder, grader);
+        var judge = new EvalLlmJudge(chatClient, new br.com.menthoros.backend.services.prompt.EvalJudgeSchemaBuilder(),
+                OBJECT_MAPPER);
 
+        double custoTotal = 0.0;
         System.out.println("=== eval set — modo candidato (LLM real) ===");
-        System.out.printf("%-25s %12s %12s%n", "arquétipo", "qualidade", "compliance");
+        System.out.printf("%-20s %10s %11s %6s %14s%n", "arquétipo", "qualidade", "compliance",
+                "juiz", "status juiz");
         for (EvalCandidateFixtures.Candidato candidato : EvalCandidateFixtures.todos()) {
             var arq = candidato.arquetipo();
             var prompt = montarPrompt(arq);
             var zonas = new AthleteZones(arq.atleta().getFcMaximaCalculada(), arq.atleta().getFcLimiarCalculada(),
                     arq.atleta().getPaceLimiar());
             var resultado = runner.rodar(prompt, candidato.skeleton(), zonas, arq.atleta(), arq.inicioSemana());
-            System.out.printf("%-25s %12d %12d%n", arq.nome(),
+            if (resultado.custoUsd() != null) {
+                custoTotal += resultado.custoUsd().doubleValue();
+            }
+
+            String contexto = "arquétipo=" + arq.nome();
+            var notaJuiz = judge.avaliarCompleta(resultado.responseJson(), contexto);
+            if (judge.ultimoCustoUsd() != null) {
+                custoTotal += judge.ultimoCustoUsd().doubleValue();
+            }
+            // Calibração: sempre "NÃO CALIBRADO" nesta versão — os 20 casos de auditoria (quando
+            // existirem) não validam a rubrica completa, achado da rodada 4 de DoR (Codex).
+            System.out.printf("%-20s %10d %11d %6d %14s%n", arq.nome(),
                     resultado.avaliacao().violacoesQualidade().size(),
-                    resultado.avaliacao().violacoesCompliance().size());
+                    resultado.avaliacao().violacoesCompliance().size(), notaJuiz.notaGeral(),
+                    "NÃO CALIBRADO");
         }
+        System.out.printf("custo total (candidato + juiz): USD %.6f%n", custoTotal);
     }
 
     private PlanoTreinoPromptBuilder.PromptGerado montarPrompt(PlanoPromptArquetipos.Arquetipo arq) {

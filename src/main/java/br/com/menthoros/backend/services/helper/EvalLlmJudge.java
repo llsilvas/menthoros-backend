@@ -7,6 +7,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jspecify.annotations.Nullable;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
+
+import java.math.BigDecimal;
 
 /**
  * Juiz-LLM do eval set (plan-generation-eval-set, fatia 2) — roda nos dois modos, mudando só a
@@ -49,6 +52,13 @@ public class EvalLlmJudge {
         this.objectMapper = objectMapper;
     }
 
+    private @Nullable BigDecimal ultimoCustoUsd;
+
+    /** Custo em USD da última chamada real feita por este juiz (candidato ou auditoria). */
+    public @Nullable BigDecimal ultimoCustoUsd() {
+        return ultimoCustoUsd;
+    }
+
     /** Modo auditoria — rubrica reduzida, só a resposta congelada, sem contexto de atleta. */
     public NotaJuizReduzida avaliarReduzida(String respostaLlmJson) {
         String user = "Plano gerado pela IA (JSON):\n" + respostaLlmJson;
@@ -66,10 +76,17 @@ public class EvalLlmJudge {
     }
 
     private String chamarJuiz(String system, String user, org.springframework.ai.chat.prompt.ChatOptions options) {
-        String resposta = chatClient.prompt().system(system).user(user).options(options).call().content();
+        ChatResponse chatResponse = chatClient.prompt().system(system).user(user).options(options).call().chatResponse();
+        String resposta = chatResponse != null && chatResponse.getResult() != null
+                && chatResponse.getResult().getOutput() != null
+                ? chatResponse.getResult().getOutput().getText() : null;
         if (resposta == null || resposta.isBlank()) {
             throw new IllegalStateException("Juiz-LLM não retornou conteúdo");
         }
+        ultimoCustoUsd = chatResponse.getMetadata() != null
+                ? EvalCostCalculator.custoUsd(chatResponse.getMetadata().getModel(),
+                        chatResponse.getMetadata().getUsage()).orElse(null)
+                : null;
         return resposta;
     }
 

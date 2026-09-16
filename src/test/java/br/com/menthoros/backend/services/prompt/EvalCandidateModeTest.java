@@ -18,10 +18,16 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.ChatClient.CallResponseSpec;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.metadata.ChatResponseMetadata;
+import org.springframework.ai.chat.metadata.DefaultUsage;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.ChatOptions;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -103,7 +109,10 @@ class EvalCandidateModeTest {
         when(chatClient.prompt().system(anyString()).user(anyString())
                 .options(org.mockito.ArgumentMatchers.<ChatOptions>any()).call())
                 .thenReturn(callResponse);
-        when(callResponse.content()).thenReturn(resposta.isEmpty() ? null : resposta);
+        ChatResponse chatResponse = resposta.isEmpty() ? null : new ChatResponse(
+                List.of(new Generation(new AssistantMessage(resposta))),
+                ChatResponseMetadata.builder().usage(new DefaultUsage(10, 5)).model("gpt-4o").build());
+        when(callResponse.chatResponse()).thenReturn(chatResponse);
 
         var llmJsonSchemaBuilder = new LlmJsonSchemaBuilder();
         var sessionResolver = new SessionResolver(new ZoneResolver(new ZonaTreinoService()),

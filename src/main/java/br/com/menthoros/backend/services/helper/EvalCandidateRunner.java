@@ -7,7 +7,9 @@ import br.com.menthoros.backend.services.prompt.LlmJsonSchemaBuilder;
 import br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder.PromptGerado;
 import org.jspecify.annotations.Nullable;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 /**
@@ -36,26 +38,41 @@ public class EvalCandidateRunner {
         this.grader = grader;
     }
 
-    public record ResultadoCandidato(String responseJson, EvalDeterministicGrader.Resultado avaliacao) {
+    public record ResultadoCandidato(String responseJson, EvalDeterministicGrader.Resultado avaliacao,
+                                      @Nullable BigDecimal custoUsd) {
     }
 
     /**
      * Chama a LLM com o prompt já montado (v1, por ora — ver Open Questions do proposal sobre v2
-     * em modo candidato) e grada a resposta. Idempotent: NÃO. Side Effects: chamada real à LLM.
+     * em modo candidato) e grada a resposta. Custo calculado em memória a partir do {@code Usage}
+     * desta chamada (design.md §2) — {@code null} se o modelo não tiver preço em
+     * {@code llm-pricing.yml}. Idempotent: NÃO. Side Effects: chamada real à LLM.
      */
     public ResultadoCandidato rodar(PromptGerado prompt, @Nullable WeekPlanSkeleton skeleton,
                                      AthleteZones zonasAtleta, Atleta atleta, LocalDate semanaInicio) {
-        String responseJson = chatClient.prompt()
+        ChatResponse chatResponse = chatClient.prompt()
                 .system(prompt.system())
                 .user(prompt.user())
                 .options(llmJsonSchemaBuilder.defaultJsonSchemaOptions())
                 .call()
-                .content();
+                .chatResponse();
+        String responseJson = chatResponse != null && chatResponse.getResult() != null
+                && chatResponse.getResult().getOutput() != null
+                ? chatResponse.getResult().getOutput().getText() : null;
         if (responseJson == null || responseJson.isBlank()) {
             throw new IllegalStateException("LLM não retornou conteúdo para o modo candidato do eval set");
         }
         var avaliacao = grader.avaliar(responseJson, SchemaVersion.CURRENT, prompt.regras(), skeleton,
                 zonasAtleta, atleta, semanaInicio);
-        return new ResultadoCandidato(responseJson, avaliacao);
+        BigDecimal custo = custoDaChamada(chatResponse);
+        return new ResultadoCandidato(responseJson, avaliacao, custo);
+    }
+
+    private @Nullable BigDecimal custoDaChamada(ChatResponse chatResponse) {
+        if (chatResponse == null || chatResponse.getMetadata() == null) {
+            return null;
+        }
+        String modelo = chatResponse.getMetadata().getModel();
+        return EvalCostCalculator.custoUsd(modelo, chatResponse.getMetadata().getUsage()).orElse(null);
     }
 }
