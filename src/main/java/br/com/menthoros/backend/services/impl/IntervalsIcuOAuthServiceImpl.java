@@ -13,6 +13,8 @@ import br.com.menthoros.backend.services.IntervalsIcuClient;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
 import br.com.menthoros.backend.services.IntervalsIcuOAuthService;
 import br.com.menthoros.backend.services.helper.IntervalsIcuStateSigner;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -175,7 +177,43 @@ public class IntervalsIcuOAuthServiceImpl implements IntervalsIcuOAuthService {
         // 7. Hook D5.2 — preservado, não reimplementado (D9).
         connectionService.pausarStravaAutomaticamente(atletaId, tenantId);
 
+        // 8. Sincroniza fcLimiar/fcMaxima pro intervals.icu (best-effort) — origem: investigação
+        // do bug de FC alvo elevada no relógio, causada por divergência entre o FC do Menthoros e
+        // o lthr/max_hr configurado na conta do atleta lá.
+        sincronizarFcBestEffort(atleta, token.accessToken(), externalAthleteId);
+
         return Resultado.SUCESSO;
+    }
+
+    /**
+     * Idempotent: YES — PUT substitui o mesmo sport-settings a cada chamada.
+     * Side Effects: External API call (PUT sport-settings), best-effort — nunca lança.
+     * Tenant-aware: NO — opera sobre o atleta já resolvido pelo chamador.
+     *
+     * <p>Sem fcLimiar nem fcMaxima cadastrados no Menthoros, não manda nada — não sobrescreve o
+     * que o atleta já tem no intervals.icu com null. Falha na chamada é logada, sem o token, e
+     * nunca propaga: a conexão OAuth já foi persistida com sucesso nos passos 1-6, e travar o
+     * SUCESSO por causa deste hook secundário seria pior que não sincronizar agora.
+     */
+    private void sincronizarFcBestEffort(Atleta atleta, String token, String externalAthleteId) {
+        Integer fcLimiar = atleta.getFcLimiar();
+        Integer fcMaxima = atleta.getFcMaxima();
+        if (fcLimiar == null && fcMaxima == null) {
+            return;
+        }
+        ObjectNode payload = new ObjectMapper().createObjectNode();
+        if (fcLimiar != null) {
+            payload.put("lthr", fcLimiar);
+        }
+        if (fcMaxima != null) {
+            payload.put("max_hr", fcMaxima);
+        }
+        try {
+            intervalsIcuClient.atualizarSportSettings(token, externalAthleteId, "Run", payload);
+        } catch (RuntimeException e) {
+            log.warn("Sincronizacao de FC no intervals.icu falhou (best-effort, conexao segue): {}",
+                    e.getClass().getSimpleName());
+        }
     }
 
     /**
