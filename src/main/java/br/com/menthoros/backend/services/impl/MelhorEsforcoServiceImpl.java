@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.intervalsicu.IcuPaceCurveDto;
 import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
+import br.com.menthoros.backend.dto.output.MelhoresEsforcosOutputDto;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.services.IntervalsIcuClient;
@@ -73,6 +74,26 @@ public class MelhorEsforcoServiceImpl implements MelhorEsforcoService {
         IcuPaceCurveDto curva = intervalsIcuClient.buscarPaceCurves(
                 integracao.getAccessToken(), integracao.getExternalAthleteId(), janela);
         return extrairMarcas(curva);
+    }
+
+    /**
+     * Cache próprio (mesma família `CacheConfig`, TTL 30min) — chave inclui `me` pra não colidir
+     * com a entrada de {@link #buscar}, que tem outro formato de retorno.
+     */
+    @Override
+    @Cacheable(value = "melhores-esforcos-atleta",
+            key = "#atletaId + '_' + #janela + '_' + " + TENANT_KEY, condition = HAS_TENANT)
+    public MelhoresEsforcosOutputDto buscarParaAtleta(UUID atletaId, String janela) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Optional<IntegracaoExterna> conexao = connectionService.conexaoAtiva(atletaId, tenantId);
+        if (conexao.isEmpty()) {
+            return new MelhoresEsforcosOutputDto(List.of(), false);
+        }
+
+        IntegracaoExterna integracao = conexao.get();
+        IcuPaceCurveDto curva = intervalsIcuClient.buscarPaceCurves(
+                integracao.getAccessToken(), integracao.getExternalAthleteId(), janela);
+        return new MelhoresEsforcosOutputDto(extrairMarcas(curva), true);
     }
 
     private List<MelhorEsforcoDto> extrairMarcas(IcuPaceCurveDto curva) {

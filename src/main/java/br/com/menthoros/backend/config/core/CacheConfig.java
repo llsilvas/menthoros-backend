@@ -37,7 +37,8 @@ public class CacheConfig {
                 "metadados-atleta",
                 "embeddings",
                 "ia-responses",
-                "melhores-esforcos"
+                "melhores-esforcos",
+                "melhores-esforcos-atleta"
         ));
 
         return cacheManager;

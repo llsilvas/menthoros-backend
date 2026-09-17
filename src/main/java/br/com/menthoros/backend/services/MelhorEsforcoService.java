@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
+import br.com.menthoros.backend.dto.output.MelhoresEsforcosOutputDto;
 
 import java.util.List;
 import java.util.UUID;
@@ -21,4 +22,15 @@ public interface MelhorEsforcoService {
      *         integração intervals.icu ativa, ou se nenhuma distância-alvo teve dado suficiente
      */
     List<MelhorEsforcoDto> buscar(UUID atletaId, String janela);
+
+    /**
+     * Como {@link #buscar}, mas também informa se o atleta tem integração intervals.icu ativa —
+     * usado pela tela do atleta pra distinguir "sem integração" (CTA de conexão) de "conectado mas
+     * sem dado suficiente" (marcas vazias, sem CTA).
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: External API call (intervals.icu pace-curves), quando conectado.
+     * Tenant-aware: YES.
+     */
+    MelhoresEsforcosOutputDto buscarParaAtleta(UUID atletaId, String janela);
 }

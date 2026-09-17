@@ -60,6 +60,7 @@ class AtletaTreinoControllerTest {
     @MockitoBean private AtletaTreinoHojeService treinoHojeService;
     @MockitoBean private AtletaTreinoFeedbackService treinoFeedbackService;
     @MockitoBean private AtletaWorkoutAnalysisService atletaWorkoutAnalysisService;
+    @MockitoBean private br.com.menthoros.backend.services.MelhorEsforcoService melhorEsforcoService;
 
     private final UUID atletaId = UUID.randomUUID();
     private ObjectMapper mapper;
@@ -379,6 +380,74 @@ class AtletaTreinoControllerTest {
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(mapper.writeValueAsString(Map.of("percepcaoEsforco", 5))))
                     .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/v1/atletas/me/melhores-esforcos")
+    class GetMelhoresEsforcos {
+
+        @Test
+        @DisplayName("200 com janela default 42d quando não informada")
+        void retorna200ComJanelaDefault() throws Exception {
+            when(melhorEsforcoService.buscarParaAtleta(atletaId, "42d"))
+                    .thenReturn(new br.com.menthoros.backend.dto.output.MelhoresEsforcosOutputDto(
+                            List.of(new br.com.menthoros.backend.dto.output.MelhorEsforcoDto(
+                                    "5k", 5000.0, 1796, "5:59/km")),
+                            true));
+
+            mockMvc.perform(get("/api/v1/atletas/me/melhores-esforcos"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.integracaoConectada").value(true))
+                    .andExpect(jsonPath("$.marcas[0].distanciaLabel").value("5k"));
+        }
+
+        @Test
+        @DisplayName("200 com janela custom repassada ao serviço")
+        void repassaJanelaCustomAoServico() throws Exception {
+            when(melhorEsforcoService.buscarParaAtleta(atletaId, "1y"))
+                    .thenReturn(new br.com.menthoros.backend.dto.output.MelhoresEsforcosOutputDto(List.of(), true));
+
+            mockMvc.perform(get("/api/v1/atletas/me/melhores-esforcos").param("janela", "1y"))
+                    .andExpect(status().isOk());
+
+            verify(melhorEsforcoService).buscarParaAtleta(atletaId, "1y");
+        }
+
+        @Test
+        @DisplayName("200 com integracaoConectada=false quando o atleta não tem integração (CA2)")
+        void retorna200SemIntegracao() throws Exception {
+            when(melhorEsforcoService.buscarParaAtleta(atletaId, "42d"))
+                    .thenReturn(new br.com.menthoros.backend.dto.output.MelhoresEsforcosOutputDto(List.of(), false));
+
+            mockMvc.perform(get("/api/v1/atletas/me/melhores-esforcos"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.integracaoConectada").value(false))
+                    .andExpect(jsonPath("$.marcas").isEmpty());
+        }
+
+        @Test
+        @DisplayName("200 com marcas parciais quando o atleta está conectado mas sem dado suficiente (CA3)")
+        void retorna200ComMarcasParciais() throws Exception {
+            when(melhorEsforcoService.buscarParaAtleta(atletaId, "42d"))
+                    .thenReturn(new br.com.menthoros.backend.dto.output.MelhoresEsforcosOutputDto(List.of(), true));
+
+            mockMvc.perform(get("/api/v1/atletas/me/melhores-esforcos"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.integracaoConectada").value(true))
+                    .andExpect(jsonPath("$.marcas").isEmpty());
+        }
+
+        @Test
+        @DisplayName("502 quando o intervals.icu falha")
+        void retorna502QuandoIntervalsIcuFalha() throws Exception {
+            when(melhorEsforcoService.buscarParaAtleta(atletaId, "42d"))
+                    .thenThrow(new br.com.menthoros.backend.exception.IntervalsIcuApiException(
+                            org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR, "falhou"));
+
+            mockMvc.perform(get("/api/v1/atletas/me/melhores-esforcos"))
+                    .andExpect(status().isBadGateway())
+                    .andExpect(jsonPath("$.status").value(502));
         }
     }
 

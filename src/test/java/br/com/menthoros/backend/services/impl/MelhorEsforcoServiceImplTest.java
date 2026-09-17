@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.intervalsicu.IcuPaceCurveDto;
 import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
+import br.com.menthoros.backend.dto.output.MelhoresEsforcosOutputDto;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.services.IntervalsIcuClient;
@@ -116,6 +117,50 @@ class MelhorEsforcoServiceImplTest {
                     .thenReturn(new IcuPaceCurveDto(List.of()));
 
             assertThat(service.buscar(atletaId, "42d")).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("buscarParaAtleta")
+    class BuscarParaAtleta {
+
+        @Test
+        @DisplayName("atleta conectado com dados — integracaoConectada=true e marcas preenchidas (CA1/CA4)")
+        void atletaConectadoComDados() {
+            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.of(conexao()));
+            IcuPaceCurveDto curva = new IcuPaceCurveDto(List.of(new IcuPaceCurveDto.Curva(
+                    List.of(5000.0), List.of(1796))));
+            when(intervalsIcuClient.buscarPaceCurves("tok-abc", "i641775", "42d")).thenReturn(curva);
+
+            MelhoresEsforcosOutputDto resultado = service.buscarParaAtleta(atletaId, "42d");
+
+            assertThat(resultado.integracaoConectada()).isTrue();
+            assertThat(resultado.marcas()).containsExactly(new MelhorEsforcoDto("5k", 5000.0, 1796, "5:59/km"));
+        }
+
+        @Test
+        @DisplayName("atleta sem integração — integracaoConectada=false, marcas vazias, sem chamar o client (CA2)")
+        void atletaSemIntegracao() {
+            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            MelhoresEsforcosOutputDto resultado = service.buscarParaAtleta(atletaId, "42d");
+
+            assertThat(resultado.integracaoConectada()).isFalse();
+            assertThat(resultado.marcas()).isEmpty();
+            verify(intervalsIcuClient, never()).buscarPaceCurves(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("atleta conectado sem dados suficientes na janela — integracaoConectada=true, marcas vazias (CA3)")
+        void atletaConectadoSemDadosSuficientes() {
+            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.of(conexao()));
+            when(intervalsIcuClient.buscarPaceCurves("tok-abc", "i641775", "1y"))
+                    .thenReturn(new IcuPaceCurveDto(List.of()));
+
+            MelhoresEsforcosOutputDto resultado = service.buscarParaAtleta(atletaId, "1y");
+
+            assertThat(resultado.integracaoConectada()).isTrue();
+            assertThat(resultado.marcas()).isEmpty();
         }
     }
 }

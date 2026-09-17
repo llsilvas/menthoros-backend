@@ -9,6 +9,7 @@ import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.AtletaTreinoFeedbackService;
 import br.com.menthoros.backend.services.AtletaTreinoHojeService;
 import br.com.menthoros.backend.services.AtletaWorkoutAnalysisService;
+import br.com.menthoros.backend.services.MelhorEsforcoService;
 import br.com.menthoros.backend.services.TreinoService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -44,6 +45,7 @@ class AtletaWorkoutAnalysisControllerTest {
     @MockitoBean private AtletaTreinoHojeService treinoHojeService;
     @MockitoBean private AtletaTreinoFeedbackService treinoFeedbackService;
     @MockitoBean private AtletaWorkoutAnalysisService atletaWorkoutAnalysisService;
+    @MockitoBean private MelhorEsforcoService melhorEsforcoService;
 
     private final UUID atletaId = UUID.randomUUID();
     private final UUID treinoId = UUID.randomUUID();
