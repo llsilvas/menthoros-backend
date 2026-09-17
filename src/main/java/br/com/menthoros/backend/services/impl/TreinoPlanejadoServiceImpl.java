@@ -95,7 +95,9 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
      * Aplica patch semântico: apenas os campos não-nulos do DTO são alterados.
      *
      * Idempotent: NO — altera o estado do treino a cada chamada.
-     * Side Effects: Database update (TreinoPlanejado)
+     * Side Effects: Database update (TreinoPlanejado); quando a distância muda, também ajusta e
+     * persiste volumePlanejadoKm/volumeAlvoKm do PlanoSemanal (mesmo agregado que
+     * adicionarTreino/excluirTreino mantêm).
      * Tenant-aware: YES
      */
     @Override
@@ -133,6 +135,16 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
         treino.setEditadoPeloCoach(true);
 
         TreinoPlanejado salvo = treinoPlanejadoRepository.save(treino);
+
+        BigDecimal distanciaNova = treino.getDistanciaKm();
+        boolean distanciaMudou = distanciaAnterior == null
+                ? distanciaNova != null
+                : distanciaNova == null || distanciaAnterior.compareTo(distanciaNova) != 0;
+        if (distanciaMudou) {
+            ajustarVolumePlano(plano, distanciaAnterior, false);
+            ajustarVolumePlano(plano, distanciaNova, true);
+            planoSemanalRepository.save(plano);
+        }
 
         log.info("Treino editado com sucesso: treinoId={}, tenantId={}", treinoId, tenantId);
 

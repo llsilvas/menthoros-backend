@@ -716,6 +716,103 @@ class TreinoPlanejadoServiceTest {
         }
 
         @Test
+        @DisplayName("aumentar a distância do treino soma o delta no volume do plano (CA1)")
+        void aumentarDistanciaSomaDeltaNoVolumeDoPlano() {
+            // Antes desta change, editarTreino nunca ajustava o volume do plano — só
+            // adicionarTreino/excluirTreino faziam isso. O campo persistido do plano ficava
+            // congelado no valor de quando o plano foi gerado.
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            plano.setVolumePlanejadoKm(BigDecimal.valueOf(20.0));
+            plano.setVolumeAlvoKm(BigDecimal.valueOf(20.0));
+            TreinoPlanejado treino = criarTreino(plano); // distanciaKm = 10.0
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, BigDecimal.valueOf(18.0), null, null, null, null, null, null);
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            assertThat(plano.getVolumePlanejadoKm()).isEqualByComparingTo(BigDecimal.valueOf(28.0));
+            assertThat(plano.getVolumeAlvoKm()).isEqualByComparingTo(BigDecimal.valueOf(28.0));
+            verify(planoSemanalRepository).save(plano);
+        }
+
+        @Test
+        @DisplayName("reduzir a distância do treino subtrai o delta no volume do plano (CA2)")
+        void reduzirDistanciaSubtraiDeltaNoVolumeDoPlano() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            plano.setVolumePlanejadoKm(BigDecimal.valueOf(20.0));
+            plano.setVolumeAlvoKm(BigDecimal.valueOf(20.0));
+            TreinoPlanejado treino = criarTreino(plano); // distanciaKm = 10.0
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, BigDecimal.valueOf(3.0), null, null, null, null, null, null);
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            assertThat(plano.getVolumePlanejadoKm()).isEqualByComparingTo(BigDecimal.valueOf(13.0));
+            verify(planoSemanalRepository).save(plano);
+        }
+
+        @Test
+        @DisplayName("patch sem distanciaKm não mexe no volume do plano nem salva o plano (CA3)")
+        void patchSemDistanciaNaoMexeNoVolumeDoPlano() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            plano.setVolumePlanejadoKm(BigDecimal.valueOf(20.0));
+            plano.setVolumeAlvoKm(BigDecimal.valueOf(20.0));
+            TreinoPlanejado treino = criarTreino(plano); // distanciaKm = 10.0
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, "Ajuste de texto só", null, null, null, null, null, null, null);
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            assertThat(plano.getVolumePlanejadoKm()).isEqualByComparingTo(BigDecimal.valueOf(20.0));
+            verify(planoSemanalRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("distância anterior nula não lança NPE e soma o volume normalmente (CA4)")
+        void distanciaAnteriorNulaNaoLancaNpe() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            plano.setVolumePlanejadoKm(BigDecimal.ZERO);
+            plano.setVolumeAlvoKm(BigDecimal.ZERO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setDistanciaKm(null);
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, BigDecimal.valueOf(4.0), null, null, null, null, null, null);
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            assertThat(plano.getVolumePlanejadoKm()).isEqualByComparingTo(BigDecimal.valueOf(4.0));
+            verify(planoSemanalRepository).save(plano);
+        }
+
+        @Test
         @DisplayName("ignora campos null — patch semântico preserva valores existentes")
         void ignoraCamposNullPatchSemantico() {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
