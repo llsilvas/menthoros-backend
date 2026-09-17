@@ -158,6 +158,52 @@ class IntervalsIcuClientImplTest {
     }
 
     @Nested
+    @DisplayName("atualizarSportSettings")
+    class AtualizarSportSettings {
+
+        @Test
+        @DisplayName("PUT com Bearer, recalcHrZones=true e o corpo enviado")
+        void putComBearerERecalcHrZones() {
+            wireMock.stubFor(put(urlPathEqualTo("/api/v1/athlete/i641775/sport-settings/Run"))
+                    .withHeader("Authorization", equalTo("Bearer " + TOKEN))
+                    .withQueryParam("recalcHrZones", equalTo("true"))
+                    .withRequestBody(equalToJson("{\"lthr\":142,\"max_hr\":172}"))
+                    .willReturn(aResponse().withStatus(200)));
+
+            client.atualizarSportSettings(TOKEN, "i641775", "Run",
+                    new ObjectMapper().createObjectNode().put("lthr", 142).put("max_hr", 172));
+
+            wireMock.verify(putRequestedFor(urlPathEqualTo("/api/v1/athlete/i641775/sport-settings/Run"))
+                    .withHeader("Authorization", equalTo("Bearer " + TOKEN)));
+        }
+
+        @Test
+        @DisplayName("erro HTTP lança IntervalsIcuApiException com o status certo")
+        void erroHttpLancaExcecaoTipada() {
+            wireMock.stubFor(put(urlPathEqualTo("/api/v1/athlete/i641775/sport-settings/Run"))
+                    .willReturn(aResponse().withStatus(404)));
+
+            assertThatThrownBy(() -> client.atualizarSportSettings(TOKEN, "i641775", "Run",
+                    new ObjectMapper().createObjectNode().put("lthr", 142)))
+                    .isInstanceOf(IntervalsIcuApiException.class)
+                    .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus().value()).isEqualTo(404));
+        }
+
+        @Test
+        @DisplayName("token não vaza em log de erro")
+        void tokenNaoVazaEmLog() {
+            wireMock.stubFor(put(urlPathEqualTo("/api/v1/athlete/i641775/sport-settings/Run"))
+                    .willReturn(aResponse().withStatus(500)));
+
+            assertThatThrownBy(() -> client.atualizarSportSettings(TOKEN, "i641775", "Run",
+                    new ObjectMapper().createObjectNode().put("lthr", 142)))
+                    .isInstanceOf(IntervalsIcuApiException.class);
+
+            assertThat(logCapture.list).noneMatch(e -> e.getFormattedMessage().contains(TOKEN));
+        }
+    }
+
+    @Nested
     @DisplayName("buscarAtividade")
     class BuscarAtividade {
 

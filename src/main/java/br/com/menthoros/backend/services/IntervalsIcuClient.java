@@ -53,6 +53,13 @@ public interface IntervalsIcuClient {
     void deletarEvento(String token, String externalAthleteId, long eventId);
 
     /**
+     * PUT /api/v1/athlete/{id}/sport-settings/{sportSettingsId}?recalcHrZones=true — erro HTTP vira
+     * IntervalsIcuApiException(status, mensagem); quem chama decide se é best-effort.
+     */
+    void atualizarSportSettings(String token, String externalAthleteId, String sportSettingsId,
+                                JsonNode payload);
+
+    /**
      * DELETE /api/v1/disconnect-app — revoga o acesso deste app no provedor, com o Bearer do
      * próprio atleta.
      *

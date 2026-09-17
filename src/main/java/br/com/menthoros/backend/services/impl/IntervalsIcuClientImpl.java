@@ -170,6 +170,25 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
     }
 
     /**
+     * Idempotent: YES — PUT substitui o mesmo sport-settings.
+     * Side Effects: External API call (PUT sport-settings/{id})
+     * Tenant-aware: NO
+     */
+    @Override
+    public void atualizarSportSettings(String token, String externalAthleteId, String sportSettingsId,
+                                       JsonNode payload) {
+        executa("atualizar sport-settings", () -> webClient.put()
+                .uri(uri -> uri.path("/api/v1/athlete/{id}/sport-settings/{sportSettingsId}")
+                        .queryParam("recalcHrZones", "true")
+                        .build(externalAthleteId, sportSettingsId))
+                .headers(h -> bearer(h, token))
+                .bodyValue(payload)
+                .retrieve()
+                .toBodilessEntity()
+                .block());
+    }
+
+    /**
      * Ponto único de autenticação do client (D1). A doc do provedor é explícita: apps usados por
      * mais de uma pessoa devem usar OAuth e Bearer token. O Basic com o literal {@code API_KEY}
      * que vivia aqui saiu junto com o fluxo de API key — não há convivência entre os dois.
