@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services;
 import br.com.menthoros.backend.dto.intervalsicu.IcuActivityDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuAthleteDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuEventDto;
+import br.com.menthoros.backend.dto.intervalsicu.IcuPaceCurveDto;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.time.LocalDate;
@@ -58,6 +59,12 @@ public interface IntervalsIcuClient {
      */
     void atualizarSportSettings(String token, String externalAthleteId, String sportSettingsId,
                                 JsonNode payload);
+
+    /**
+     * GET /api/v1/athlete/{id}/pace-curves.json?type=Run&curves={janela} — erro HTTP vira
+     * IntervalsIcuApiException(status, mensagem).
+     */
+    IcuPaceCurveDto buscarPaceCurves(String token, String externalAthleteId, String janela);
 
     /**
      * DELETE /api/v1/disconnect-app — revoga o acesso deste app no provedor, com o Bearer do

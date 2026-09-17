@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.dto.intervalsicu.IcuActivityDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuAthleteDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuEventDto;
+import br.com.menthoros.backend.dto.intervalsicu.IcuPaceCurveDto;
 import br.com.menthoros.backend.exception.IntervalsIcuApiException;
 import br.com.menthoros.backend.services.IntervalsIcuClient;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -185,6 +186,24 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
                 .bodyValue(payload)
                 .retrieve()
                 .toBodilessEntity()
+                .block());
+    }
+
+    /**
+     * Idempotent: YES — leitura pura.
+     * Side Effects: External API call (GET pace-curves.json)
+     * Tenant-aware: NO
+     */
+    @Override
+    public IcuPaceCurveDto buscarPaceCurves(String token, String externalAthleteId, String janela) {
+        return executa("buscar pace-curves", () -> webClient.get()
+                .uri(uri -> uri.path("/api/v1/athlete/{id}/pace-curves.json")
+                        .queryParam("type", "Run")
+                        .queryParam("curves", janela)
+                        .build(externalAthleteId))
+                .headers(h -> bearer(h, token))
+                .retrieve()
+                .bodyToMono(IcuPaceCurveDto.class)
                 .block());
     }
 
