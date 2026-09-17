@@ -34,19 +34,21 @@ import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
+import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.MelhorEsforcoService;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.services.PlanoService;
 import br.com.menthoros.backend.services.SugestaoCoachService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -82,8 +84,9 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private IntervalsIcuConnectionService intervalsIcuConnectionService;
     @Mock private ThresholdInferenceService thresholdInferenceService;
     @Mock private br.com.menthoros.backend.repository.TreinoRealizadoRepository treinoRealizadoRepository;
+    @Mock private MelhorEsforcoService melhorEsforcoService;
 
-    @InjectMocks
+    private SimpleMeterRegistry meterRegistry;
     private CoachAthleteProfileServiceImpl service;
 
     private UUID tenantId;
@@ -107,6 +110,13 @@ class CoachAthleteProfileServiceImplTest {
         lenient().when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
                         eq(atletaId), eq(tenantId), any(LocalDate.class), any(LocalDate.class)))
                 .thenReturn(List.of());
+        lenient().when(melhorEsforcoService.buscar(eq(atletaId), eq("42d"))).thenReturn(List.of());
+
+        meterRegistry = new SimpleMeterRegistry();
+        service = new CoachAthleteProfileServiceImpl(
+                atletaRepository, atletaProgressService, coachAttentionQueueService, sugestaoCoachService,
+                planoService, planoMetadadosRepository, provaRepository, provaMapper, treinoRealizadoRepository,
+                intervalsIcuConnectionService, thresholdInferenceService, melhorEsforcoService, meterRegistry);
     }
 
     @AfterEach
@@ -159,6 +169,49 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(perfil.sugestoesRecentes()).isEmpty();
             assertThat(perfil.avisos()).isNull();
             assertThat(perfil.geradoEm()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("melhoresEsforcos — atleta conectado com dados preenche o campo (CA1)")
+        void melhoresEsforcosPreenchidoQuandoAtletaConectado() {
+            stubAtleta();
+            stubPmc();
+            stubAderencia();
+            stubRecordes();
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+            when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+            List<MelhorEsforcoDto> esforcos = List.of(new MelhorEsforcoDto("5k", 5000.0, 1796, "5:59/km"));
+            when(melhorEsforcoService.buscar(atletaId, "42d")).thenReturn(esforcos);
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.melhoresEsforcos()).isEqualTo(esforcos);
+            assertThat(meterRegistry.get("melhores_esforcos.perfil.exibido")
+                    .tag("preenchido", "true").counter().count()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("melhoresEsforcos — sub-serviço falha, avisos inclui 'melhoresEsforcos', resto carrega (CA5)")
+        void melhoresEsforcosFalhaNaoQuebraPerfil() {
+            stubAtleta();
+            stubPmc();
+            stubAderencia();
+            stubRecordes();
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+            when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+            when(melhorEsforcoService.buscar(atletaId, "42d"))
+                    .thenThrow(new br.com.menthoros.backend.exception.IntervalsIcuApiException(
+                            org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR, "falhou"));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.melhoresEsforcos()).isEmpty();
+            assertThat(perfil.avisos()).containsExactly("melhoresEsforcos");
+            assertThat(perfil.pmc()).hasSize(1);
+            assertThat(meterRegistry.get("melhores_esforcos.perfil.exibido")
+                    .tag("preenchido", "false").counter().count()).isEqualTo(1.0);
         }
 
         @Test

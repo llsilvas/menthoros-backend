@@ -1,6 +1,9 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.output.*;
+import br.com.menthoros.backend.services.MelhorEsforcoService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
@@ -51,6 +54,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final IntervalsIcuConnectionService intervalsIcuConnectionService;
     private final ThresholdInferenceService thresholdInferenceService;
+    private final MelhorEsforcoService melhorEsforcoService;
+    private final MeterRegistry meterRegistry;
 
     /**
      * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
@@ -82,6 +87,16 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         List<RecordeDto> recordes = buscarLista("recordes", avisos,
                 () -> atletaProgressService.getRecordes(atletaId));
         log.debug("[perfil] recordes: {}ms", ms(t3));
+
+        long t3b = System.nanoTime();
+        List<MelhorEsforcoDto> melhoresEsforcos = buscarLista("melhoresEsforcos", avisos,
+                () -> melhorEsforcoService.buscar(atletaId, "42d"));
+        log.debug("[perfil] melhoresEsforcos: {}ms", ms(t3b));
+        Counter.builder("melhores_esforcos.perfil.exibido")
+                .description("Perfis de atleta abertos pelo coach, por presença de melhoresEsforcos")
+                .tag("preenchido", String.valueOf(!melhoresEsforcos.isEmpty()))
+                .register(meterRegistry)
+                .increment();
 
         long t4 = System.nanoTime();
         AtletaPerfilCoachOutputDto.PlanoVigenteDto planoVigente = buscarNullable("planoVigente", avisos,
@@ -138,7 +153,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 atleta.getTipoPlanoAtleta(),
                 atleta.getDataVencimentoPlano(),
                 StatusVencimentoPlano.resolver(atleta.getDataVencimentoPlano(), LocalDate.now()),
-                realizadosRecentes
+                realizadosRecentes,
+                melhoresEsforcos
         );
     }
 
