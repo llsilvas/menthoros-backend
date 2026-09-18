@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.dto.intervalsicu.IcuActivityDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuAthleteDto;
 import br.com.menthoros.backend.dto.intervalsicu.IcuEventDto;
+import br.com.menthoros.backend.dto.intervalsicu.IcuPaceCurveDto;
 import br.com.menthoros.backend.exception.IntervalsIcuApiException;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -200,6 +201,40 @@ class IntervalsIcuClientImplTest {
                     .isInstanceOf(IntervalsIcuApiException.class);
 
             assertThat(logCapture.list).noneMatch(e -> e.getFormattedMessage().contains(TOKEN));
+        }
+    }
+
+    @Nested
+    @DisplayName("buscarPaceCurves")
+    class BuscarPaceCurves {
+
+        @Test
+        @DisplayName("GET com Bearer e query type=Run&curves=42d desserializa a curva")
+        void getComBearerDesserializaCurva() {
+            wireMock.stubFor(get(urlPathEqualTo("/api/v1/athlete/i641775/pace-curves.json"))
+                    .withHeader("Authorization", equalTo("Bearer " + TOKEN))
+                    .withQueryParam("type", equalTo("Run"))
+                    .withQueryParam("curves", equalTo("42d"))
+                    .willReturn(okJson("""
+                            {"list":[{"distance":[400.0,800.0,5000.0],"values":[117,272,1796]}]}
+                            """)));
+
+            IcuPaceCurveDto curva = client.buscarPaceCurves(TOKEN, "i641775", "42d");
+
+            assertThat(curva.list()).hasSize(1);
+            assertThat(curva.list().getFirst().distance()).containsExactly(400.0, 800.0, 5000.0);
+            assertThat(curva.list().getFirst().values()).containsExactly(117, 272, 1796);
+        }
+
+        @Test
+        @DisplayName("erro HTTP lança IntervalsIcuApiException com o status certo")
+        void erroHttpLancaExcecaoTipada() {
+            wireMock.stubFor(get(urlPathEqualTo("/api/v1/athlete/i641775/pace-curves.json"))
+                    .willReturn(aResponse().withStatus(404)));
+
+            assertThatThrownBy(() -> client.buscarPaceCurves(TOKEN, "i641775", "42d"))
+                    .isInstanceOf(IntervalsIcuApiException.class)
+                    .satisfies(e -> assertThat(((IntervalsIcuApiException) e).getStatus().value()).isEqualTo(404));
         }
     }
 

@@ -79,7 +79,13 @@ public record AtletaPerfilCoachOutputDto(
         StatusVencimentoPlano statusVencimentoPlano,
 
         @Schema(description = "Treinos realizados dos últimos 7 dias, mais recente primeiro — inclui feedback pós-treino (RPE/sensações/comentário) quando registrado")
-        List<RealizadoRecenteDto> realizadosRecentes
+        List<RealizadoRecenteDto> realizadosRecentes,
+
+        @Schema(description = "Melhor tempo contínuo por distância de referência (400m-10k), janela rolante de 42 dias — diferente de 'recordes' (PR de treino inteiro); pode faltar distância ou vir vazio se o atleta não tem integração intervals.icu ativa")
+        List<MelhorEsforcoDto> melhoresEsforcos,
+
+        @Schema(description = "Se o atleta tem integração intervals.icu ativa — distingue 'sem PRs ainda' (true, marcas vazias) de 'nunca conectou' (false)")
+        boolean melhoresEsforcosIntegracaoConectada
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

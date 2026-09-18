@@ -11,6 +11,8 @@ import br.com.menthoros.backend.services.AtletaTreinoFeedbackService;
 import br.com.menthoros.backend.services.AtletaTreinoHojeService;
 import br.com.menthoros.backend.services.AtletaWorkoutAnalysisService;
 import br.com.menthoros.backend.dto.output.AthleteWorkoutAnalysisOutputDto;
+import br.com.menthoros.backend.dto.output.MelhoresEsforcosOutputDto;
+import br.com.menthoros.backend.services.MelhorEsforcoService;
 import br.com.menthoros.backend.services.TreinoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -23,6 +25,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -51,6 +54,7 @@ public class AtletaTreinoController {
     private final AtletaTreinoHojeService treinoHojeService;
     private final AtletaTreinoFeedbackService treinoFeedbackService;
     private final AtletaWorkoutAnalysisService atletaWorkoutAnalysisService;
+    private final MelhorEsforcoService melhorEsforcoService;
 
     // @RequireTenant não se aplica: endpoints /me/ resolvem o atletaId do JWT via resolverAtletaIdAtual(),
     // sem receber um resource-ID como parâmetro. Isolamento garantido por TenantContext + queries tenant-scoped.
@@ -169,5 +173,25 @@ public class AtletaTreinoController {
             @RequestParam(defaultValue = "7") @Min(1) @Max(TreinoService.MAX_JANELA_DIAS) Integer dias) {
         UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
         return ResponseEntity.ok(treinoService.listarTreinosRecentes(atletaId, dias));
+    }
+
+    @GetMapping("/me/melhores-esforcos")
+    @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
+    @Operation(summary = "Melhores esforços do atleta autenticado, por distância (400m-10k)",
+            description = "Lido do intervals.icu (pace-curves). 'integracaoConectada=false' não é erro — "
+                    + "é o estado 'sem intervals.icu conectado ainda'.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Melhores esforços (ou vazio, se sem integração/dado)",
+                    content = @Content(schema = @Schema(implementation = MelhoresEsforcosOutputDto.class))),
+            @ApiResponse(responseCode = "401", description = "Token ausente ou inválido"),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — apenas atletas podem usar este endpoint"),
+            @ApiResponse(responseCode = "502", description = "Falha ao consultar o intervals.icu")
+    })
+    public ResponseEntity<MelhoresEsforcosOutputDto> getMelhoresEsforcos(
+            @Parameter(description = "Janela: 42d, 1y ou all")
+            @RequestParam(defaultValue = "42d")
+            @Pattern(regexp = "42d|1y|all", message = "janela deve ser 42d, 1y ou all") String janela) {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return ResponseEntity.ok(melhorEsforcoService.buscarParaAtleta(atletaId, janela));
     }
 }
