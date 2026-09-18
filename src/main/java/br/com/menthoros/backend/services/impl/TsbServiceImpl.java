@@ -8,9 +8,12 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.repository.projection.LimiarPaceStatusProjection;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
+import br.com.menthoros.backend.services.helper.PaceLimiarResolvido;
+import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.services.helper.TsbRecalculoExecutor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,13 +21,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.TreeMap;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -37,11 +37,10 @@ public class TsbServiceImpl implements TsbService {
     private final AtletaRepository atletaRepository;
     private final MetricasAlertaService metricasAlertaService;
     private final AthleteThresholdUpdater athleteThresholdUpdater;
+    private final ThresholdInferenceService thresholdInferenceService;
     private final TsbRecalculoExecutor tsbRecalculoExecutor;
     private final PlanoMetadadosService planoMetadadosService;
-
-    private static final int CTL_TIME_CONSTANT = 42;
-    private static final int ATL_TIME_CONSTANT = 7;
+    private final TsbDiaPersister tsbDiaPersister;
 
     /** Tamanho do bloco transacional do recálculo histórico. */
     static final int DIAS_POR_BLOCO = 30;
@@ -52,32 +51,56 @@ public class TsbServiceImpl implements TsbService {
     private record ProgressoRecalculo(int blocos, LocalDate ultimoDiaReconstruido) {}
 
     /**
-     * Atualiza o TSB de um único dia, em transação própria.
+     * Atualiza o TSB de um único dia.
      *
-     * <p><b>Este {@code @Transactional} não vale no fluxo de recálculo histórico.</b> Lá o laço chama
-     * a sobrecarga privada de 3 argumentos diretamente — auto-invocação não passa pelo proxy do
-     * Spring, então a anotação é ignorada. Isso é intencional: no recálculo, a fronteira transacional
-     * é o bloco de {@value #DIAS_POR_BLOCO} dias em {@link TsbRecalculoExecutor}, não o dia. A
-     * anotação existe para os chamadores externos deste método público, que precisam de transação
-     * própria.</p>
+     * <p><b>Sem {@code @Transactional} neste método</b> (refactor-threshold-call-outside-
+     * transaction, design.md D2) — a resolução de fonte de pace
+     * ({@link AthleteThresholdUpdater#resolverFontePace}) roda aqui, fora de qualquer transação;
+     * a persistência do dia (métrica + metadados) roda em {@link TsbDiaPersister}, bean à parte,
+     * cuja `@Transactional` só é respeitada porque a chamada passa pelo proxy Spring de um bean
+     * diferente — tirar a anotação deste método sem trocar de bean não encolheria nada (chamar um
+     * método anotado via {@code this.} dentro da mesma classe não passa pelo proxy).
+     *
+     * <p><b>Janela de concorrência aceita (achado de QA, security-reviewer):</b> a decisão de
+     * pace é tomada numa leitura pontual fora da transação e só aplicada depois, dentro de
+     * {@link TsbDiaPersister#atualizarDiaTransacional}, que grava o valor decidido sem reavaliar
+     * staleness nem comparar com o estado atual de {@code PlanoMetaDados} (sem coluna
+     * {@code @Version}, sem detecção de escrita concorrente). Dois disparos quase simultâneos do
+     * mesmo atleta podem decidir fontes de pace diferentes; quem persistir por último vence,
+     * mesmo com dado mais antigo. Pré-existente ao espírito da change (a janela já existia dentro
+     * de uma única transação) — esta change a alarga por construção, já que decisão e aplicação
+     * não compartilham mais o mesmo snapshot. Aceito como o mesmo tipo de trade-off já documentado
+     * pra leitores concorrentes durante {@code recalcularHistoricoCompleto}
+     * ({@link #recalcularHistoricoCompleto}); mitigação (`@Version` em `PlanoMetaDados`) fica fora
+     * do escopo desta change mecânica.
+     *
+     * <p><b>Acoplamento a "hoje" (achado de QA, code-reviewer):</b> a resolução de pace usa a
+     * `data` recebida como referência de staleness/janela, enquanto FC
+     * ({@link TsbDiaPersister#atualizarMetaDados}) sempre usa {@code LocalDate.now()}. Hoje isso
+     * nunca diverge porque o único caller com `data` histórica ({@link #processarDiasDescanso}) é
+     * código morto (sem caller de produção, fora de {@link br.com.menthoros.backend.services.TsbService}).
+     * Se esse método for reativado, FC e pace passam a decidir staleness com "hoje" diferentes.
      *
      * Idempotent: YES — recalcular o mesmo dia produz o mesmo resultado.
      * Side Effects: Database insert/update da métrica do dia e do PlanoMetaDados.
      * Tenant-aware: NO
      */
-    @Transactional
     public void atualizarTsbDia(UUID atletaId, LocalDate data) {
-        atualizarTsbDia(atletaId, data, true);
+        PaceLimiarResolvido paceResolvido = resolverPaceSeNecessario(atletaId, data);
+        tsbDiaPersister.atualizarDiaTransacional(atletaId, data, true, paceResolvido);
     }
 
     /**
+     * Sem {@code @Transactional} neste método pelo mesmo motivo de {@link #atualizarTsbDia}
+     * (design.md D2) — a resolução de fonte de pace roda **uma vez, com `hoje=fim`** (não a cada
+     * dia do laço: só o último dia persiste metadados, `dia.equals(fim)`).
+     *
      * Idempotent: YES — recalcular o mesmo intervalo produz o mesmo resultado.
      * Side Effects: Database insert/update das métricas de cada dia do intervalo e do
      * PlanoMetaDados, no último dia.
      * Tenant-aware: NO
      */
     @Override
-    @Transactional
     public void recalcularDesde(UUID atletaId, LocalDate data) {
         validarEntrada(atletaId, data);
 
@@ -88,32 +111,46 @@ public class TsbServiceImpl implements TsbService {
 
         log.info("Recalculando TSB de {} para atleta {} até {}", data, atletaId, fim);
 
+        PaceLimiarResolvido paceResolvido = resolverPaceSeNecessario(atletaId, fim);
         for (LocalDate dia = data; !dia.isAfter(fim); dia = dia.plusDays(1)) {
-            atualizarTsbDia(atletaId, dia, dia.equals(fim));
+            boolean ultimoDiaDoLaco = dia.equals(fim);
+            tsbDiaPersister.atualizarDiaTransacional(
+                    atletaId, dia, ultimoDiaDoLaco, ultimoDiaDoLaco ? paceResolvido : null);
         }
     }
 
-    private void atualizarTsbDia(UUID atletaId, LocalDate data, boolean atualizarMetaDadosHoje) {
-        validarEntrada(atletaId, data);
-
-        log.info("Atualizando TSB para atleta {} no dia {}", atletaId, data);
-
-        Atleta atleta = buscarAtleta(atletaId);
-        List<TreinoRealizado> treinosDoDia = buscarTreinosDia(atletaId, data);
-        Integer tssHoje = somarTssContabilizado(treinosDoDia);
-
-        MetricasDiarias metricasHoje = obterOuCriarMetricasDia(atleta, data);
-        atualizarVolumeDiario(metricasHoje, treinosDoDia);
-
-        MetricasDiarias metricasOntem = buscarMetricasDiaAnterior(atletaId, data);
-        calcularEAtualizarMetricas(metricasHoje, metricasOntem, tssHoje, atletaId, data);
-
-        metricasDiariasRepository.save(metricasHoje);
-        if (atualizarMetaDadosHoje) {
-            atualizarMetaDados(atletaId, metricasHoje);
+    /**
+     * Decide se `paceLimiarEstimado` precisa ser recalculado e, se sim, resolve a fonte — fora de
+     * qualquer transação (refactor-threshold-call-outside-transaction, design.md D2/4.1). Usa
+     * {@link AtletaRepository#findLimiarPaceStatusById} em vez de carregar o agregado `Atleta`
+     * inteiro (design.md D1): a entidade só existiria dentro da transação de escrita, que ainda
+     * não abriu neste ponto.
+     *
+     * @return {@code null} quando pace não está desatualizado, o atleta não tem assessoria, ou
+     *         nenhuma fonte foi encontrada — equivalente a "nenhuma mudança" em
+     *         {@link AthleteThresholdUpdater#aplicarPaceLimiar}.
+     */
+    private PaceLimiarResolvido resolverPaceSeNecessario(UUID atletaId, LocalDate hoje) {
+        Optional<LimiarPaceStatusProjection> status = atletaRepository.findLimiarPaceStatusById(atletaId);
+        if (status.isEmpty()) {
+            log.warn("resolverPaceSeNecessario: atleta {} sem assessoria/inexistente — inferência ignorada", atletaId);
+            return null;
+        }
+        LimiarPaceStatusProjection statusValor = status.get();
+        if (!thresholdInferenceService.isPaceLimiarDesatualizado(
+                statusValor.getPaceLimiar(), statusValor.getDataUltimoTestePace(), hoje)) {
+            return null;
         }
 
-        logResultado(data, metricasHoje);
+        UUID tenantId = statusValor.getAssessoriaId();
+        // Reaproveita a mesma query de AthleteThresholdUpdater.buscarTreinos30d (achado de QA,
+        // clean-code-reviewer) — evita duplicar a query + o filtro contaNaCarga (D8).
+        List<TreinoRealizado> treinos30d = athleteThresholdUpdater.buscarTreinos30d(atletaId, tenantId, hoje);
+        BigDecimal paceLimiarAnterior = planoMetaDadosRepository.findPaceLimiarEstimadoByAtletaId(atletaId).orElse(null);
+
+        return athleteThresholdUpdater
+                .resolverFontePace(atletaId, tenantId, hoje, treinos30d, paceLimiarAnterior)
+                .orElse(null);
     }
 
     private void validarEntrada(UUID atletaId, LocalDate data) {
@@ -128,175 +165,16 @@ public class TsbServiceImpl implements TsbService {
         }
     }
 
-    private Atleta buscarAtleta(UUID atletaId) {
-        return atletaRepository.findById(atletaId)
-                .orElseThrow(() -> new IllegalArgumentException("Atleta não encontrado: " + atletaId));
-    }
-
-    private List<TreinoRealizado> buscarTreinosDia(UUID atletaId, LocalDate data) {
-        return treinoRealizadoRepository.findQueContamByAtletaIdAndDataTreino(atletaId, data);
-    }
-
     /**
-     * Soma {@code tssCalculado} dos treinos do dia — D3: o campo persistido é a única verdade,
-     * não um recálculo ao vivo. `tssCalculado` nulo conta como 0 (task 8.2,
-     * `backfill-tss-legado-producao`: o fallback "nulo → calcula e persiste agora" foi removido
-     * depois de confirmar, via {@code IngestaoTreinoRealizadoServiceImpl.aplicarTssSeNecessario},
-     * que todo treino que conta na carga já sai da ingestão com o campo preenchido).
-     */
-    private int somarTssContabilizado(List<TreinoRealizado> treinos) {
-        int total = 0;
-        for (TreinoRealizado treino : treinos) {
-            Integer tss = treino.getTssCalculado();
-            total += tss != null ? tss : 0;
-        }
-        return total;
-    }
-
-    private MetricasDiarias obterOuCriarMetricasDia(Atleta atleta, LocalDate data) {
-        return metricasDiariasRepository
-                .findByAtletaIdAndData(atleta.getId(), data)
-                .orElseGet(() -> MetricasDiarias.builder()
-                        .atleta(atleta)
-                        .tenantId(atleta.getAssessoria().getId())
-                        .data(data)
-                        .volumeKm(BigDecimal.ZERO)
-                        .treinosRealizados(0)
-                        .build());
-    }
-
-    private MetricasDiarias buscarMetricasDiaAnterior(UUID atletaId, LocalDate data) {
-        return metricasDiariasRepository
-                .findByAtletaIdAndData(atletaId, data.minusDays(1))
-                .orElse(null);
-    }
-
-    private void calcularEAtualizarMetricas(MetricasDiarias metricasHoje, MetricasDiarias metricasOntem,
-                                            Integer tssHoje, UUID atletaId, LocalDate data) {
-        Atleta atleta = metricasHoje.getAtleta();
-        double ctlAnterior = obterCtlAnterior(metricasOntem);
-        double atlAnterior = obterAtlAnterior(metricasOntem);
-
-        // === SEMÂNTICA CORRETA: início do dia = estado de ontem (pré-treino) ===
-        double ctlInicio = ctlAnterior;
-        double atlInicio = atlAnterior;
-        double tsbInicio = ctlInicio - atlInicio;
-
-        // === Fim do dia = estado após absorver carga de hoje ===
-        double ctlFim = calcularCtlCorreto(ctlAnterior, tssHoje, atleta);
-        double atlFim = calcularAtlCorreto(atlAnterior, tssHoje, atleta);
-        double tsbFim = ctlFim - atlFim;
-
-        double rampRate = calcularRampRate(atletaId, data, ctlFim);
-
-        // Campos de início de dia (prontidão pré-treino)
-        metricasHoje.setCtlInicioDia(round(ctlInicio, 2));
-        metricasHoje.setAtlInicioDia(round(atlInicio, 2));
-        metricasHoje.setTsbInicioDia(round(tsbInicio, 2));
-
-        // Campos de fim de dia (estado pós-carga)
-        metricasHoje.setCtlFimDia(round(ctlFim, 2));
-        metricasHoje.setAtlFimDia(round(atlFim, 2));
-        metricasHoje.setTsbFimDia(round(tsbFim, 2));
-
-        // Campos legados — mantidos para compatibilidade, mapeados para fim de dia
-        metricasHoje.setTss(tssHoje);
-        metricasHoje.setCtl(round(ctlFim, 2));
-        metricasHoje.setAtl(round(atlFim, 2));
-        metricasHoje.setTsb(round(tsbFim, 2));
-        metricasHoje.setRampRate(round(rampRate, 2));
-    }
-
-    private double obterCtlAnterior(MetricasDiarias metricasOntem) {
-        return metricasOntem != null && metricasOntem.getCtl() != null
-                ? metricasOntem.getCtl()
-                : 0.0;
-    }
-
-    private double obterAtlAnterior(MetricasDiarias metricasOntem) {
-        return metricasOntem != null && metricasOntem.getAtl() != null
-                ? metricasOntem.getAtl()
-                : 0.0;
-    }
-
-    private void logResultado(LocalDate data, MetricasDiarias metricas) {
-        log.info("TSB atualizado para {} - CTL: {}, ATL: {}, TSB: {}, Volume: {}km",
-                data, metricas.getCtl(), metricas.getAtl(), metricas.getTsb(), metricas.getVolumeKm());
-    }
-
-    private void atualizarVolumeDiario(MetricasDiarias metricas, List<TreinoRealizado> treinosDoDia) {
-        if (treinosDoDia.isEmpty()) {
-            metricas.setVolumeKm(BigDecimal.ZERO);
-            metricas.setTreinosRealizados(0);
-            return;
-        }
-
-        // SOMA o volume de TODOS os treinos do dia
-        BigDecimal volumeTotal = treinosDoDia.stream()
-                .map(treino -> treino.getDistanciaKm() != null
-                        ? treino.getDistanciaKm()
-                        : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-        metricas.setVolumeKm(volumeTotal);
-        metricas.setTreinosRealizados(treinosDoDia.size());
-    }
-
-    /**
-     * FÓRMULA CORRETA de CTL usando média móvel exponencial
-     * CTL = (TSS × (1 - e^(-1/τ))) + (CTL_anterior × e^(-1/τ))
+     * Atualiza valores atuais no PlanoMetaDados — usada só pela consolidação de
+     * {@link #recalcularHistoricoCompleto} (design.md D2b: fora do escopo do split de fronteira
+     * transacional, resolve fonte de pace **dentro** da transação, como sempre fez — operação
+     * rara/admin-only, não o caminho de alta frequência que motivou
+     * refactor-threshold-call-outside-transaction). O caminho normal (sync de treino) usa
+     * {@link TsbDiaPersister#atualizarDiaTransacional} em vez deste método.
      *
-     * @param ctlAnterior CTL do dia anterior
-     * @param tss TSS do dia atual
-     * @param atleta Atleta com constante de tempo personalizada (ou null para padrão)
-     */
-    private double calcularCtlCorreto(Double ctlAnterior, Integer tss, Atleta atleta) {
-        if (ctlAnterior == null) ctlAnterior = 0.0;
-        if (tss == null) tss = 0;
-
-        double tau = obterCtlTimeConstant(atleta);
-        double exp = Math.exp(-1.0 / tau);
-
-        // Fórmula correta
-        return (tss * (1 - exp)) + (ctlAnterior * exp);
-    }
-
-    /**
-     * FÓRMULA CORRETA de ATL usando média móvel exponencial
-     * ATL = (TSS × (1 - e^(-1/τ))) + (ATL_anterior × e^(-1/τ))
-     *
-     * @param atlAnterior ATL do dia anterior
-     * @param tss TSS do dia atual
-     * @param atleta Atleta com constante de tempo personalizada (ou null para padrão)
-     */
-    private double calcularAtlCorreto(Double atlAnterior, Integer tss, Atleta atleta) {
-        if (atlAnterior == null) atlAnterior = 0.0;
-        if (tss == null) tss = 0;
-
-        double tau = obterAtlTimeConstant(atleta);
-        double exp = Math.exp(-1.0 / tau);
-
-        // Fórmula correta
-        return (tss * (1 - exp)) + (atlAnterior * exp);
-    }
-
-    /**
-     * Calcula Ramp Rate (mudança semanal de CTL)
-     */
-    private double calcularRampRate(UUID atletaId, LocalDate data, double ctlAtual) {
-        MetricasDiarias metricasSemanaPassada = metricasDiariasRepository
-                .findByAtletaIdAndData(atletaId, data.minusDays(7))
-                .orElse(null);
-
-        if (metricasSemanaPassada == null) {
-            return 0.0;
-        }
-
-        return ctlAtual - metricasSemanaPassada.getCtl();
-    }
-
-    /**
-     * Atualiza valores atuais no PlanoMetaDados
+     * <p>{@code contarDiasConsecutivosTreino}/{@code recalcularSemanasProgressao} reaproveitados
+     * de {@link TsbDiaPersister} (package-private lá) em vez de duplicados aqui.
      */
     private void atualizarMetaDados(UUID atletaId, MetricasDiarias metricas) {
         // Achado do /qa do Bloco 2 (Codex plain review, 2026-08-24): antes desta change,
@@ -322,7 +200,7 @@ public class TsbServiceImpl implements TsbService {
         // Atualizar dias consecutivos ANTES da análise (ISSUE-06)
         boolean hojeTemTreino = metricas.getTreinosRealizados() != null && metricas.getTreinosRealizados() > 0;
         metaDados.setDiasConsecutivosTreino(
-                contarDiasConsecutivosTreino(atletaId, metricas.getData(), hojeTemTreino));
+                tsbDiaPersister.contarDiasConsecutivosTreino(atletaId, metricas.getData(), hojeTemTreino));
 
         // Analisar métricas e aplicar alertas/status/recomendação (com nível de experiência para thresholds adaptativos)
         metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados, metricas.getAtleta().getNivelExperiencia()));
@@ -334,43 +212,7 @@ public class TsbServiceImpl implements TsbService {
         // fix-progressao-continua-incremental: mantém semanasProgressaoContinua em dia a cada
         // treino real registrado, não só quando recalcularHistoricoCompleto roda — este método já
         // é chamado tanto pelo caminho incremental (recalcularDesde) quanto pelo completo.
-        recalcularSemanasProgressao(atletaId);
-    }
-
-    /**
-     * Conta dias consecutivos de treino até a data informada (inclusive).
-     *
-     * <p>Percorre os dias para trás a partir de {@code data}, verificando se
-     * há treinos registrados. Para no primeiro dia sem treino ou após 14 dias
-     * (limite de segurança).
-     *
-     * @param atletaId  ID do atleta
-     * @param data      data do dia sendo processado
-     * @param hojeTemTreino se o dia atual possui treinos
-     * @return número de dias consecutivos com treino (0 se hoje é descanso)
-     */
-    private int contarDiasConsecutivosTreino(UUID atletaId, LocalDate data, boolean hojeTemTreino) {
-        if (!hojeTemTreino) {
-            return 0;
-        }
-
-        LocalDate janela = data.minusDays(14);
-        List<TreinoRealizado> historico = treinoRealizadoRepository
-                .findByAtletaIdAndDataTreinoBetween(atletaId, janela, data.minusDays(1));
-
-        java.util.Set<LocalDate> diasComTreino = historico.stream()
-                .map(TreinoRealizado::getDataTreino)
-                .collect(java.util.stream.Collectors.toSet());
-
-        int consecutivos = 1; // hoje conta
-        LocalDate dia = data.minusDays(1);
-        for (int i = 0; i < 14; i++) {
-            if (!diasComTreino.contains(dia)) break;
-            consecutivos++;
-            dia = dia.minusDays(1);
-        }
-
-        return consecutivos;
+        tsbDiaPersister.recalcularSemanasProgressao(atletaId);
     }
 
     /**
@@ -567,7 +409,7 @@ public class TsbServiceImpl implements TsbService {
 
             try {
                 tsbRecalculoExecutor.recalcularBloco(atletaId, blocoInicio, blocoFim,
-                        (id, data) -> atualizarTsbDia(id, data, false));
+                        (id, data) -> tsbDiaPersister.atualizarDiaTransacional(id, data, false, null));
             } catch (Exception e) {
                 tsbRecalculoExecutor.registrarAborto("blocos");
                 String reconstruido = ultimoDiaReconstruido == null
@@ -641,152 +483,6 @@ public class TsbServiceImpl implements TsbService {
         if (a == null) return b;
         if (b == null) return a;
         return a.isAfter(b) ? a : b;
-    }
-
-    /**
-     * Obtém constante de tempo CTL adaptativa baseada no nível de experiência
-     *
-     * <p><b>Fundamento Fisiológico:</b>
-     * <ul>
-     *   <li>Iniciantes adaptam mais rápido (30 dias) mas também perdem forma mais rápido</li>
-     *   <li>Avançados adaptam mais lento (42 dias) mas mantêm forma por mais tempo</li>
-     *   <li>Elite tem adaptação muito gradual (50 dias) e forma muito estável</li>
-     * </ul>
-     *
-     * <p>Se o atleta tiver valor personalizado definido, usa esse valor.
-     * Caso contrário, usa valor padrão baseado no {@code NivelExperiencia}.
-     *
-     * @param atleta Atleta com nível de experiência e/ou constante personalizada
-     * @return Constante de tempo para CTL (em dias)
-     */
-    private int obterCtlTimeConstant(Atleta atleta) {
-        if (atleta == null) {
-            return CTL_TIME_CONSTANT; // 42 dias (padrão)
-        }
-
-        // Se tem valor personalizado, usar ele
-        if (atleta.getCtlTimeConstant() != null) {
-            return atleta.getCtlTimeConstant();
-        }
-
-        // Caso contrário, usar valor baseado na experiência
-        return switch (atleta.getNivelExperiencia()) {
-            case INICIANTE -> 30;      // Adapta rápido
-            case INTERMEDIARIO -> 35;  // Moderado
-            case AVANCADO -> 42;       // Padrão clássico
-            case ELITE -> 50;          // Adapta lento, mais estável
-        };
-    }
-
-    /**
-     * Obtém constante de tempo ATL adaptativa baseada no nível de experiência
-     *
-     * <p><b>Fundamento Fisiológico:</b>
-     * <ul>
-     *   <li>Iniciantes recuperam mais rápido (5 dias) mas sobrecarregam fácil</li>
-     *   <li>Avançados recuperam mais lento (7 dias) mas têm maior resiliência</li>
-     *   <li>Elite tem recuperação mais lenta (8 dias) mas suporta maior carga</li>
-     * </ul>
-     *
-     * <p>Se o atleta tiver valor personalizado definido, usa esse valor.
-     * Caso contrário, usa valor padrão baseado no {@code NivelExperiencia}.
-     *
-     * @param atleta Atleta com nível de experiência e/ou constante personalizada
-     * @return Constante de tempo para ATL (em dias)
-     */
-    private int obterAtlTimeConstant(Atleta atleta) {
-        if (atleta == null) {
-            return ATL_TIME_CONSTANT; // 7 dias (padrão)
-        }
-
-        // Se tem valor personalizado, usar ele
-        if (atleta.getAtlTimeConstant() != null) {
-            return atleta.getAtlTimeConstant();
-        }
-
-        // Caso contrário, usar valor baseado na experiência
-        return switch (atleta.getNivelExperiencia()) {
-            case INICIANTE -> 5;       // Recupera rápido
-            case INTERMEDIARIO -> 6;   // Moderado
-            case AVANCADO -> 7;        // Padrão clássico
-            case ELITE -> 8;           // Recupera lento, maior resiliência
-        };
-    }
-
-    /**
-     * Recalcula {@code semanasProgressaoContinua} no {@link PlanoMetaDados} com base nos
-     * {@link MetricasDiarias} realizados, sem depender do volume planejado.
-     *
-     * <p>Agrupa os registros diários por semana (início = segunda-feira), soma o volume
-     * de cada semana e percorre cronologicamente: se a semana atual teve volume maior que
-     * a anterior, incrementa o streak; caso contrário, reseta para zero. O valor final
-     * representa as semanas consecutivas de progressão de volume até hoje.
-     *
-     * @param atletaId ID do atleta a recalcular
-     */
-    private void recalcularSemanasProgressao(UUID atletaId) {
-        PlanoMetaDados metaDados = planoMetaDadosRepository
-                .findByAtletaId(atletaId)
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "MetaDados não encontrado para atleta: " + atletaId));
-
-
-
-        List<MetricasDiarias> todasMetricas = metricasDiariasRepository
-                .findByAtletaIdOrderByDataAsc(atletaId);
-
-        if (todasMetricas.isEmpty()) {
-            metaDados.setSemanasProgressaoContinua(0);
-            planoMetaDadosRepository.save(metaDados);
-            log.info("Nenhuma métrica encontrada — semanasProgressaoContinua zerada para atleta {}", atletaId);
-            return;
-        }
-
-        // Agrupar por início da semana (segunda-feira) somando volumeKm.
-        // TreeMap garante ordem cronológica das chaves.
-        TreeMap<LocalDate, BigDecimal> volumePorSemana = todasMetricas.stream()
-                .collect(Collectors.groupingBy(
-                        m -> m.getData().with(DayOfWeek.MONDAY),
-                        TreeMap::new,
-                        Collectors.reducing(
-                                BigDecimal.ZERO,
-                                m -> m.getVolumeKm() != null ? m.getVolumeKm() : BigDecimal.ZERO,
-                                BigDecimal::add
-                        )
-                ));
-
-        // Percorrer semanas cronologicamente e contar streak de aumento de volume
-        List<BigDecimal> volumes = new ArrayList<>(volumePorSemana.values());
-        int semanasConsecutivas = 0;
-
-        for (int i = 1; i < volumes.size(); i++) {
-            if (volumes.get(i).compareTo(volumes.get(i - 1)) > 0) {
-                semanasConsecutivas++;
-            } else {
-                semanasConsecutivas = 0;
-            }
-        }
-
-
-
-        metaDados.setSemanasProgressaoContinua(semanasConsecutivas);
-        metaDados.setDataUltimaAtualizacao(LocalDate.now());
-
-        // Reaplicar análise de alertas e recomendação considerando o nível de experiência do atleta
-        Atleta atleta = buscarAtleta(atletaId);
-        metaDados.aplicarAnalise(metricasAlertaService.analisarMetricas(metaDados, atleta.getNivelExperiencia()));
-
-        planoMetaDadosRepository.save(metaDados);
-        log.info("semanasProgressaoContinua recalculadas: {} para atleta {} (nível: {})",
-                semanasConsecutivas, atletaId, atleta.getNivelExperiencia());
-    }
-
-    /**
-     * Arredonda valor para N casas decimais
-     */
-    private double round(double value, int places) {
-        double scale = Math.pow(10, places);
-        return Math.round(value * scale) / scale;
     }
 
 }

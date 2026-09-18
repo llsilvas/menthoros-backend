@@ -2,10 +2,8 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
-import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.time.LocalDate;
 import java.util.Collections;
@@ -19,44 +17,46 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * Testes para ISSUE-06: diasConsecutivosTreino deve ser calculado
  * em tempo real antes da análise de alertas.
  *
- * <p>Valida o método {@code contarDiasConsecutivosTreino(UUID, LocalDate, boolean)}
- * que foi adicionado em {@link TsbServiceImpl}.
+ * <p>Valida o método {@code contarDiasConsecutivosTreino(UUID, LocalDate, boolean)}. Migrado de
+ * {@code TsbServiceImplDiasConsecutivosTest} (refactor-threshold-call-outside-transaction, seção
+ * 3) — o método saiu de {@code TsbServiceImpl} pra {@code TsbDiaPersister}. Package-private
+ * direto, sem reflection.
  */
-class TsbServiceImplDiasConsecutivosTest {
+class TsbDiaPersisterDiasConsecutivosTest {
 
     private static final LocalDate HOJE = LocalDate.of(2026, 2, 16);
 
     @Test
-    void deveRetornarZeroQuandoHojeNaoTemTreino() throws Exception {
-        var service = criarService(Set.of());
+    void deveRetornarZeroQuandoHojeNaoTemTreino() {
+        var persister = criarPersister(Set.of());
 
-        int result = invocarContar(service, HOJE, false);
+        int result = persister.contarDiasConsecutivosTreino(UUID.randomUUID(), HOJE, false);
 
         assertEquals(0, result);
     }
 
     @Test
-    void deveRetornarUmQuandoSomenteHojeTemTreino() throws Exception {
+    void deveRetornarUmQuandoSomenteHojeTemTreino() {
         // Hoje tem treino, ontem não
-        var service = criarService(Set.of());
+        var persister = criarPersister(Set.of());
 
-        int result = invocarContar(service, HOJE, true);
+        int result = persister.contarDiasConsecutivosTreino(UUID.randomUUID(), HOJE, true);
 
         assertEquals(1, result);
     }
 
     @Test
-    void deveRetornarDoisQuandoHojeEOntemTemTreino() throws Exception {
+    void deveRetornarDoisQuandoHojeEOntemTemTreino() {
         // Ontem (dia 15) tem treino, dia 14 não
-        var service = criarService(Set.of(HOJE.minusDays(1)));
+        var persister = criarPersister(Set.of(HOJE.minusDays(1)));
 
-        int result = invocarContar(service, HOJE, true);
+        int result = persister.contarDiasConsecutivosTreino(UUID.randomUUID(), HOJE, true);
 
         assertEquals(2, result);
     }
 
     @Test
-    void deveRetornarCincoParaCincoDiasConsecutivos() throws Exception {
+    void deveRetornarCincoParaCincoDiasConsecutivos() {
         // Hoje + 4 dias anteriores = 5 consecutivos
         var diasComTreino = Set.of(
                 HOJE.minusDays(1),
@@ -64,15 +64,15 @@ class TsbServiceImplDiasConsecutivosTest {
                 HOJE.minusDays(3),
                 HOJE.minusDays(4)
         );
-        var service = criarService(diasComTreino);
+        var persister = criarPersister(diasComTreino);
 
-        int result = invocarContar(service, HOJE, true);
+        int result = persister.contarDiasConsecutivosTreino(UUID.randomUUID(), HOJE, true);
 
         assertEquals(5, result);
     }
 
     @Test
-    void deveRetornarSeisParaAlertaCritico() throws Exception {
+    void deveRetornarSeisParaAlertaCritico() {
         // 6 dias consecutivos = threshold DIAS_CONSECUTIVOS_CRITICO
         var diasComTreino = Set.of(
                 HOJE.minusDays(1),
@@ -81,15 +81,15 @@ class TsbServiceImplDiasConsecutivosTest {
                 HOJE.minusDays(4),
                 HOJE.minusDays(5)
         );
-        var service = criarService(diasComTreino);
+        var persister = criarPersister(diasComTreino);
 
-        int result = invocarContar(service, HOJE, true);
+        int result = persister.contarDiasConsecutivosTreino(UUID.randomUUID(), HOJE, true);
 
         assertEquals(6, result);
     }
 
     @Test
-    void deveInterromperContagemNoDiaDeDescanso() throws Exception {
+    void deveInterromperContagemNoDiaDeDescanso() {
         // Hoje, ontem, anteontem = treino. 3 dias atrás = descanso. 4 dias atrás = treino.
         // Esperado: 3 (não 4, porque o gap interrompe)
         var diasComTreino = Set.of(
@@ -98,30 +98,30 @@ class TsbServiceImplDiasConsecutivosTest {
                 // dia -3 sem treino (gap)
                 HOJE.minusDays(4)
         );
-        var service = criarService(diasComTreino);
+        var persister = criarPersister(diasComTreino);
 
-        int result = invocarContar(service, HOJE, true);
+        int result = persister.contarDiasConsecutivosTreino(UUID.randomUUID(), HOJE, true);
 
         assertEquals(3, result);
     }
 
     @Test
-    void deveRespeitarLimiteDeQuatorzeDias() throws Exception {
+    void deveRespeitarLimiteDeQuatorzeDias() {
         // 20 dias consecutivos: o método deve parar em 15 (hoje + 14 lookback)
         var diasComTreino = new java.util.HashSet<LocalDate>();
         for (int i = 1; i <= 20; i++) {
             diasComTreino.add(HOJE.minusDays(i));
         }
-        var service = criarService(diasComTreino);
+        var persister = criarPersister(diasComTreino);
 
-        int result = invocarContar(service, HOJE, true);
+        int result = persister.contarDiasConsecutivosTreino(UUID.randomUUID(), HOJE, true);
 
         assertEquals(15, result); // 1 (hoje) + 14 (max lookback)
     }
 
     // ===== Helpers =====
 
-    private TsbServiceImpl criarService(Set<LocalDate> diasComTreino) {
+    private TsbDiaPersister criarPersister(Set<LocalDate> diasComTreino) {
         TreinoRealizadoRepository repo = (TreinoRealizadoRepository) Proxy.newProxyInstance(
                 TreinoRealizadoRepository.class.getClassLoader(),
                 new Class<?>[]{TreinoRealizadoRepository.class},
@@ -157,14 +157,6 @@ class TsbServiceImplDiasConsecutivosTest {
                 }
         );
 
-        return new TsbServiceImpl(repo, null, null, null, null, null,
-                new TsbRecalculoExecutorInline(), null);
-    }
-
-    private int invocarContar(TsbServiceImpl service, LocalDate data, boolean hojeTemTreino) throws Exception {
-        Method m = TsbServiceImpl.class.getDeclaredMethod(
-                "contarDiasConsecutivosTreino", UUID.class, LocalDate.class, boolean.class);
-        m.setAccessible(true);
-        return (int) m.invoke(service, UUID.randomUUID(), data, hojeTemTreino);
+        return new TsbDiaPersister(repo, null, null, null, null, null, null);
     }
 }

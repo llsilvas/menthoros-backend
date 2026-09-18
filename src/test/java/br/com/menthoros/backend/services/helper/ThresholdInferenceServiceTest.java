@@ -431,6 +431,53 @@ class ThresholdInferenceServiceTest {
         }
     }
 
+    /**
+     * refactor-threshold-call-outside-transaction, design.md D1b: overload de primitivos —
+     * mesma lógica do overload `(Atleta, LocalDate)`, sem exigir a entidade carregada.
+     */
+    @Nested
+    @DisplayName("isPaceLimiarDesatualizado (overload de primitivos)")
+    class IsPaceLimiarDesatualizadoPrimitivos {
+
+        @Test
+        @DisplayName("paceLimiar null retorna true")
+        void paceLimiarNullRetornaTrue() {
+            assertThat(service.isPaceLimiarDesatualizado(null, hoje.minusDays(10), hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("dataUltimoTestePace null retorna true")
+        void dataUltimoTestePaceNullRetornaTrue() {
+            assertThat(service.isPaceLimiarDesatualizado(new BigDecimal("4.50"), null, hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("teste com mais de 90 dias retorna true")
+        void testeComMaisDe90DiasRetornaTrue() {
+            assertThat(service.isPaceLimiarDesatualizado(
+                    new BigDecimal("4.50"), hoje.minusDays(91), hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("teste recente (< 90 dias) não é desatualizado")
+        void testeRecenteNaoEDesatualizado() {
+            assertThat(service.isPaceLimiarDesatualizado(
+                    new BigDecimal("4.50"), hoje.minusDays(30), hoje)).isFalse();
+        }
+
+        @Test
+        @DisplayName("overload (Atleta, LocalDate) delega pro overload de primitivos, não duplica a lógica")
+        void overloadAtletaDelegaProPrimitivos() {
+            Atleta atleta = atletaComPace(new BigDecimal("4.50"), hoje.minusDays(91));
+
+            boolean viaAtleta = service.isPaceLimiarDesatualizado(atleta, hoje);
+            boolean viaPrimitivos = service.isPaceLimiarDesatualizado(
+                    atleta.getPaceLimiar(), atleta.getDataUltimoTestePace(), hoje);
+
+            assertThat(viaAtleta).isEqualTo(viaPrimitivos).isTrue();
+        }
+    }
+
     // ======================== HELPERS ========================
 
     private Atleta atletaComFc(Integer fcLimiar, LocalDate dataUltimoTesteFc) {

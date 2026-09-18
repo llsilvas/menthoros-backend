@@ -180,8 +180,20 @@ public class ThresholdInferenceService {
      */
     public boolean isPaceLimiarDesatualizado(Atleta atleta, LocalDate hoje) {
         if (atleta == null) return false;
-        if (atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null) return true;
-        return ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje) > DIAS_LIMIAR_DESATUALIZACAO;
+        return isPaceLimiarDesatualizado(atleta.getPaceLimiar(), atleta.getDataUltimoTestePace(), hoje);
+    }
+
+    /**
+     * Overload de primitivos — mesma lógica de {@link #isPaceLimiarDesatualizado(Atleta,
+     * LocalDate)}, sem exigir a entidade `Atleta` carregada (refactor-threshold-call-outside-
+     * transaction, design.md D1b: permite checar staleness fora da transação de escrita, onde o
+     * agregado ainda não existe carregado).
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    public boolean isPaceLimiarDesatualizado(BigDecimal paceLimiar, LocalDate dataUltimoTestePace, LocalDate hoje) {
+        if (paceLimiar == null || dataUltimoTestePace == null) return true;
+        return ChronoUnit.DAYS.between(dataUltimoTestePace, hoje) > DIAS_LIMIAR_DESATUALIZACAO;
     }
 
     /** Converte pace decimal (minutos) para formato "mm:ss/km". Ex: 4.7500 → "4:45/km". */

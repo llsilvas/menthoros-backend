@@ -6,12 +6,22 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface PlanoMetadadosRepository extends JpaRepository<PlanoMetaDados, UUID> {
     Optional<PlanoMetaDados> findByAtletaId(UUID atletaId);
+
+    /**
+     * Valor anterior de {@code paceLimiarEstimado}, sem carregar o registro inteiro — usado só
+     * pelo log de outlier (refactor-threshold-call-outside-transaction, design.md D1). Prefira
+     * este método a {@code PlanoMetadadosService.buscarOuCriarMetadados} pra essa leitura: aquele
+     * método CRIA o registro se não existir — mutação indevida quando o objetivo é só ler.
+     */
+    @Query("SELECT pm.paceLimiarEstimado FROM PlanoMetaDados pm WHERE pm.atleta.id = :atletaId")
+    Optional<BigDecimal> findPaceLimiarEstimadoByAtletaId(@Param("atletaId") UUID atletaId);
 
     @Query("""
     SELECT pm FROM PlanoMetaDados pm

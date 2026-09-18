@@ -4,6 +4,7 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.repository.custom.AtletaRepositoryCustom;
 import br.com.menthoros.backend.repository.projection.AtletaListProjection;
 import br.com.menthoros.backend.repository.projection.AtletaProjection;
+import br.com.menthoros.backend.repository.projection.LimiarPaceStatusProjection;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -119,6 +120,20 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     where atl.id = :id
     """)
     Optional<Atleta> findByIdBasic(@Param("id") UUID id);
+
+    /**
+     * Status de limiar de pace sem carregar o agregado {@code Atleta} inteiro —
+     * refactor-threshold-call-outside-transaction, design.md D1: permite checar staleness e
+     * resolver o tenant fora da transação de escrita, onde o agregado ainda não existe carregado.
+     */
+    @Transactional(readOnly = true)
+    @Query("""
+    select atl.assessoria.id as assessoriaId, atl.paceLimiar as paceLimiar,
+           atl.dataUltimoTestePace as dataUltimoTestePace
+    from Atleta atl
+    where atl.id = :id
+    """)
+    Optional<LimiarPaceStatusProjection> findLimiarPaceStatusById(@Param("id") UUID id);
 
     @Transactional(readOnly = true)
     @Query("""
