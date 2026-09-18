@@ -82,7 +82,10 @@ public record AtletaPerfilCoachOutputDto(
         List<RealizadoRecenteDto> realizadosRecentes,
 
         @Schema(description = "Melhor tempo contínuo por distância de referência (400m-10k), janela rolante de 42 dias — diferente de 'recordes' (PR de treino inteiro); pode faltar distância ou vir vazio se o atleta não tem integração intervals.icu ativa")
-        List<MelhorEsforcoDto> melhoresEsforcos
+        List<MelhorEsforcoDto> melhoresEsforcos,
+
+        @Schema(description = "Se o atleta tem integração intervals.icu ativa — distingue 'sem PRs ainda' (true, marcas vazias) de 'nunca conectou' (false)")
+        boolean melhoresEsforcosIntegracaoConectada
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

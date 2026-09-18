@@ -187,7 +187,7 @@ class CoachAthleteProfileServiceImplTest {
             AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
 
             assertThat(perfil.melhoresEsforcos()).isEqualTo(esforcos);
-            assertThat(meterRegistry.get("melhores_esforcos.perfil.exibido")
+            assertThat(meterRegistry.get("melhores_esforcos_perfil_exibido_total")
                     .tag("preenchido", "true").counter().count()).isEqualTo(1.0);
         }
 
@@ -210,7 +210,7 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(perfil.melhoresEsforcos()).isEmpty();
             assertThat(perfil.avisos()).containsExactly("melhoresEsforcos");
             assertThat(perfil.pmc()).hasSize(1);
-            assertThat(meterRegistry.get("melhores_esforcos.perfil.exibido")
+            assertThat(meterRegistry.get("melhores_esforcos_perfil_exibido_total")
                     .tag("preenchido", "false").counter().count()).isEqualTo(1.0);
         }
 

@@ -92,15 +92,21 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         List<MelhorEsforcoDto> melhoresEsforcos = buscarLista("melhoresEsforcos", avisos,
                 () -> melhorEsforcoService.buscar(atletaId, "42d"));
         log.debug("[perfil] melhoresEsforcos: {}ms", ms(t3b));
-        Counter.builder("melhores_esforcos.perfil.exibido")
+        Counter.builder("melhores_esforcos_perfil_exibido_total")
                 .description("Perfis de atleta abertos pelo coach, por presença de melhoresEsforcos")
                 .tag("preenchido", String.valueOf(!melhoresEsforcos.isEmpty()))
                 .register(meterRegistry)
                 .increment();
+        // Achado de review (2026-09-18): sem isso o coach não distinguia "atleta sem PRs ainda" de
+        // "atleta nunca conectou o intervals.icu" — o front usava a mesma mensagem pros dois casos.
+        // Resolvida UMA vez aqui e reaproveitada em resolverPlanoVigente (evita 2ª consulta — mesmo
+        // cuidado anti-N+1 que já valia só para os treinos do plano).
+        boolean melhoresEsforcosIntegracaoConectada = intervalsIcuConnectionService
+                .conexaoAtiva(atletaId, tenantId).isPresent();
 
         long t4 = System.nanoTime();
         AtletaPerfilCoachOutputDto.PlanoVigenteDto planoVigente = buscarNullable("planoVigente", avisos,
-                () -> resolverPlanoVigente(atletaId, tenantId));
+                () -> resolverPlanoVigente(atletaId, tenantId, melhoresEsforcosIntegracaoConectada));
         log.debug("[perfil] plano: {}ms", ms(t4));
 
         long t5 = System.nanoTime();
@@ -154,7 +160,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 atleta.getDataVencimentoPlano(),
                 StatusVencimentoPlano.resolver(atleta.getDataVencimentoPlano(), LocalDate.now()),
                 realizadosRecentes,
-                melhoresEsforcos
+                melhoresEsforcos,
+                melhoresEsforcosIntegracaoConectada
         );
     }
 
@@ -215,7 +222,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         );
     }
 
-    private AtletaPerfilCoachOutputDto.PlanoVigenteDto resolverPlanoVigente(UUID atletaId, UUID tenantId) {
+    private AtletaPerfilCoachOutputDto.PlanoVigenteDto resolverPlanoVigente(
+            UUID atletaId, UUID tenantId, boolean atletaConectadoIntervalsIcu) {
         Optional<PlanoSemanal> planoOpt = planoService.findPlanoVigenteRelevante(atletaId, tenantId);
         if (planoOpt.isEmpty()) return null;
 
@@ -224,10 +232,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
         if (plano.getReviewStatus() == PlanoReviewStatus.APROVADO
                 || plano.getReviewStatus() == PlanoReviewStatus.AGUARDANDO_REVISAO) {
-            // conexão intervals.icu resolvida UMA vez por perfil (anti-N+1) e replicada em cada treino
-            boolean atletaConectadoIntervalsIcu = intervalsIcuConnectionService
-                    .conexaoAtiva(atletaId, tenantId).isPresent();
-
+            // conexão intervals.icu já resolvida pelo chamador (anti-N+1) e replicada em cada treino
             treinos = plano.getTreinosPlanejados().stream()
                     .sorted(Comparator.comparing(TreinoPlanejado::getDataTreino))
                     .map(tp -> new AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto(
