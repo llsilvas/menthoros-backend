@@ -61,6 +61,26 @@ public class TsbServiceImpl implements TsbService {
      * diferente — tirar a anotação deste método sem trocar de bean não encolheria nada (chamar um
      * método anotado via {@code this.} dentro da mesma classe não passa pelo proxy).
      *
+     * <p><b>Janela de concorrência aceita (achado de QA, security-reviewer):</b> a decisão de
+     * pace é tomada numa leitura pontual fora da transação e só aplicada depois, dentro de
+     * {@link TsbDiaPersister#atualizarDiaTransacional}, que grava o valor decidido sem reavaliar
+     * staleness nem comparar com o estado atual de {@code PlanoMetaDados} (sem coluna
+     * {@code @Version}, sem detecção de escrita concorrente). Dois disparos quase simultâneos do
+     * mesmo atleta podem decidir fontes de pace diferentes; quem persistir por último vence,
+     * mesmo com dado mais antigo. Pré-existente ao espírito da change (a janela já existia dentro
+     * de uma única transação) — esta change a alarga por construção, já que decisão e aplicação
+     * não compartilham mais o mesmo snapshot. Aceito como o mesmo tipo de trade-off já documentado
+     * pra leitores concorrentes durante {@code recalcularHistoricoCompleto}
+     * ({@link #recalcularHistoricoCompleto}); mitigação (`@Version` em `PlanoMetaDados`) fica fora
+     * do escopo desta change mecânica.
+     *
+     * <p><b>Acoplamento a "hoje" (achado de QA, code-reviewer):</b> a resolução de pace usa a
+     * `data` recebida como referência de staleness/janela, enquanto FC
+     * ({@link TsbDiaPersister#atualizarMetaDados}) sempre usa {@code LocalDate.now()}. Hoje isso
+     * nunca diverge porque o único caller com `data` histórica ({@link #processarDiasDescanso}) é
+     * código morto (sem caller de produção, fora de {@link br.com.menthoros.backend.services.TsbService}).
+     * Se esse método for reativado, FC e pace passam a decidir staleness com "hoje" diferentes.
+     *
      * Idempotent: YES — recalcular o mesmo dia produz o mesmo resultado.
      * Side Effects: Database insert/update da métrica do dia e do PlanoMetaDados.
      * Tenant-aware: NO
@@ -123,13 +143,9 @@ public class TsbServiceImpl implements TsbService {
         }
 
         UUID tenantId = statusValor.getAssessoriaId();
-        // D8 (ingestao-treino-realizado): cancelado não conta na carga — mesmo predicado usado por
-        // TsbDiaPersister/produtores.
-        List<TreinoRealizado> treinos30d = treinoRealizadoRepository
-                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, hoje.minusDays(30), hoje)
-                .stream()
-                .filter(TreinoRealizado::contaNaCarga)
-                .toList();
+        // Reaproveita a mesma query de AthleteThresholdUpdater.buscarTreinos30d (achado de QA,
+        // clean-code-reviewer) — evita duplicar a query + o filtro contaNaCarga (D8).
+        List<TreinoRealizado> treinos30d = athleteThresholdUpdater.buscarTreinos30d(atletaId, tenantId, hoje);
         BigDecimal paceLimiarAnterior = planoMetaDadosRepository.findPaceLimiarEstimadoByAtletaId(atletaId).orElse(null);
 
         return athleteThresholdUpdater

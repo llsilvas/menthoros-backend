@@ -109,7 +109,17 @@ public class AthleteThresholdUpdater {
     // TsbService/produtores; achado do /qa do Bloco 2 (Codex adversarial-review, 2026-08-24) —
     // esta query alimenta a inferência de limiares de FC/pace e ficara de fora do inventário
     // original da task 7.7.
-    private List<TreinoRealizado> buscarTreinos30d(UUID atletaId, UUID tenantId, LocalDate hoje) {
+    //
+    /**
+     * Treinos dos últimos 30 dias que contam na carga (D8) — exposto `public` (achado de QA,
+     * clean-code-reviewer, refactor-threshold-call-outside-transaction) porque
+     * {@code TsbServiceImpl.resolverPaceSeNecessario} (pacote {@code services.impl}, diferente
+     * deste) precisa da mesma query fora da transação; reaproveitar evita duplicar a query + o
+     * filtro `contaNaCarga`.
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    public List<TreinoRealizado> buscarTreinos30d(UUID atletaId, UUID tenantId, LocalDate hoje) {
         return treinoRealizadoRepository
                 .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, hoje.minusDays(30), hoje)
                 .stream()

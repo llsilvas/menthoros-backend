@@ -119,8 +119,8 @@ class TsbServiceImplOrquestracaoTest {
             when(atletaRepository.findLimiarPaceStatusById(ATLETA_ID)).thenReturn(Optional.of(status));
             when(thresholdInferenceService.isPaceLimiarDesatualizado(
                     eq(new BigDecimal("5.0000")), eq(HOJE.minusDays(91)), eq(HOJE))).thenReturn(true);
-            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
-                    eq(ATLETA_ID), eq(TENANT_ID), any(), eq(HOJE))).thenReturn(List.of());
+            when(athleteThresholdUpdater.buscarTreinos30d(eq(ATLETA_ID), eq(TENANT_ID), eq(HOJE)))
+                    .thenReturn(List.of());
             when(planoMetaDadosRepository.findPaceLimiarEstimadoByAtletaId(ATLETA_ID))
                     .thenReturn(Optional.of(new BigDecimal("5.0000")));
             PaceLimiarResolvido resolvido = new PaceLimiarResolvido(
@@ -146,8 +146,7 @@ class TsbServiceImplOrquestracaoTest {
                 .projection(TENANT_ID, new BigDecimal("5.0000"), HOJE.minusDays(91));
         when(atletaRepository.findLimiarPaceStatusById(ATLETA_ID)).thenReturn(Optional.of(status));
         when(thresholdInferenceService.isPaceLimiarDesatualizado(any(), any(), eq(HOJE))).thenReturn(true);
-        when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
-                .thenReturn(List.of());
+        when(athleteThresholdUpdater.buscarTreinos30d(any(), any(), any())).thenReturn(List.of());
         when(athleteThresholdUpdater.resolverFontePace(any(), any(), any(), any(), any()))
                 .thenReturn(Optional.empty());
 
@@ -175,8 +174,7 @@ class TsbServiceImplOrquestracaoTest {
                 .projection(TENANT_ID, new BigDecimal("5.0000"), LocalDate.now().minusDays(91));
         when(atletaRepository.findLimiarPaceStatusById(ATLETA_ID)).thenReturn(Optional.of(status));
         when(thresholdInferenceService.isPaceLimiarDesatualizado(any(), any(), any())).thenReturn(true);
-        when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
-                .thenReturn(List.of());
+        when(athleteThresholdUpdater.buscarTreinos30d(any(), any(), any())).thenReturn(List.of());
         when(athleteThresholdUpdater.resolverFontePace(any(), any(), any(), any(), any()))
                 .thenReturn(Optional.empty());
 
