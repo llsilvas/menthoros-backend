@@ -37,6 +37,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -395,6 +396,139 @@ class AthleteThresholdUpdaterTest {
             verify(thresholdInferenceService).inferirFcLimiar(treinosBrutos, HOJE);
             verify(thresholdInferenceService).inferirPaceLimiar(treinosBrutos, HOJE);
             assertThat(metaDados.getFcLimiarEstimado()).isEqualTo(163);
+        }
+    }
+
+    /**
+     * refactor-threshold-call-outside-transaction, design.md D1: {@code resolverFontePace} extrai
+     * a lógica de {@code atualizarPaceLimiarInferido} sem receber {@code PlanoMetaDados} — mesmos
+     * 3 cenários (prova válida, só quintil, nenhuma fonte), função pura.
+     */
+    @Nested
+    @DisplayName("resolverFontePace (design.md D1)")
+    class ResolverFontePace {
+
+        private final UUID atletaId = UUID.randomUUID();
+        private final UUID tenantId = UUID.randomUUID();
+
+        @Test
+        @DisplayName("prova válida tem precedência sobre o quintil, retorna PROVA_REGISTRADA com confiança ALTA")
+        void provaValidaTemPrecedencia() {
+            Prova provaValida = provaBase();
+            BigDecimal paceDaProva = new BigDecimal("4.6333");
+            when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of(provaValida));
+            when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of(provaValida)))
+                    .thenReturn(Optional.of(provaValida));
+            when(thresholdInferenceService.inferirPaceLimiarDeProva(provaValida)).thenReturn(paceDaProva);
+
+            Optional<PaceLimiarResolvido> resultado = updater.resolverFontePace(
+                    atletaId, tenantId, HOJE, List.of(), null);
+
+            assertThat(resultado).isPresent();
+            assertThat(resultado.get().valor()).isEqualByComparingTo(paceDaProva);
+            assertThat(resultado.get().confianca()).isEqualTo(ConfiancaInferencia.ALTA);
+            assertThat(resultado.get().fonte()).isEqualTo(FonteLimiarInferencia.PROVA_REGISTRADA);
+            verify(thresholdInferenceService, never()).inferirPaceLimiar(any(), any());
+        }
+
+        @Test
+        @DisplayName("sem prova válida, fallback por quintil, retorna MEDIA_TREINOS")
+        void semProvaValidaFallbackPorQuintil() {
+            List<TreinoRealizado> treinos = treinos10ComFcMedia(150);
+            BigDecimal paceEstimado = new BigDecimal("4.7500");
+            when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of());
+            when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of()))
+                    .thenReturn(Optional.empty());
+            when(thresholdInferenceService.inferirPaceLimiar(treinos, HOJE))
+                    .thenReturn(Optional.of(new ThresholdEstimate<>(paceEstimado, 6, ConfiancaInferencia.MEDIA)));
+
+            Optional<PaceLimiarResolvido> resultado = updater.resolverFontePace(
+                    atletaId, tenantId, HOJE, treinos, null);
+
+            assertThat(resultado).isPresent();
+            assertThat(resultado.get().valor()).isEqualByComparingTo(paceEstimado);
+            assertThat(resultado.get().confianca()).isEqualTo(ConfiancaInferencia.MEDIA);
+            assertThat(resultado.get().fonte()).isEqualTo(FonteLimiarInferencia.MEDIA_TREINOS);
+        }
+
+        @Test
+        @DisplayName("nenhuma fonte disponível retorna vazio")
+        void nenhumaFonteDisponivelRetornaVazio() {
+            when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of());
+            when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of()))
+                    .thenReturn(Optional.empty());
+            when(thresholdInferenceService.inferirPaceLimiar(List.of(), HOJE))
+                    .thenReturn(Optional.empty());
+
+            Optional<PaceLimiarResolvido> resultado = updater.resolverFontePace(
+                    atletaId, tenantId, HOJE, List.of(), null);
+
+            assertThat(resultado).isEmpty();
+        }
+
+        @Test
+        @DisplayName("delta de outlier (D5) usa paceLimiarAnterior, não uma entidade")
+        void deltaDeOutlierUsaValorPrimitivo() {
+            logCapture = new ListAppender<>();
+            logCapture.start();
+            ((Logger) LoggerFactory.getLogger(AthleteThresholdUpdater.class)).addAppender(logCapture);
+            try {
+                Prova provaValida = provaBase();
+                when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                        .thenReturn(List.of(provaValida));
+                when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of(provaValida)))
+                        .thenReturn(Optional.of(provaValida));
+                when(thresholdInferenceService.inferirPaceLimiarDeProva(provaValida))
+                        .thenReturn(new BigDecimal("4.5000")); // delta = -30s/km vs. 5.0000
+
+                updater.resolverFontePace(atletaId, tenantId, HOJE, List.of(), new BigDecimal("5.0000"));
+
+                assertThat(logCapture.list)
+                        .anyMatch(evento -> evento.getLevel() == Level.WARN
+                                && evento.getFormattedMessage().contains("outlier"));
+            } finally {
+                ((Logger) LoggerFactory.getLogger(AthleteThresholdUpdater.class)).detachAppender(logCapture);
+            }
+        }
+
+        private ListAppender<ILoggingEvent> logCapture;
+    }
+
+    /**
+     * refactor-threshold-call-outside-transaction, design.md D1: {@code aplicarPaceLimiar} só faz
+     * a mutação — sem lógica de decisão.
+     */
+    @Nested
+    @DisplayName("aplicarPaceLimiar (design.md D1)")
+    class AplicarPaceLimiarTest {
+
+        @Test
+        @DisplayName("seta os 4 campos de metaDados a partir do resolvido")
+        void setaOsCamposDeMetaDados() {
+            PlanoMetaDados metaDados = metaDadosBase(atletaBase());
+            PaceLimiarResolvido resolvido = new PaceLimiarResolvido(
+                    FonteLimiarInferencia.PROVA_REGISTRADA, new BigDecimal("4.5000"), ConfiancaInferencia.ALTA);
+
+            updater.aplicarPaceLimiar(metaDados, resolvido, HOJE);
+
+            assertThat(metaDados.getPaceLimiarEstimado()).isEqualByComparingTo("4.5000");
+            assertThat(metaDados.getConfiancaInferenciaPace()).isEqualTo(ConfiancaInferencia.ALTA);
+            assertThat(metaDados.getFonteLimiarPace()).isEqualTo(FonteLimiarInferencia.PROVA_REGISTRADA);
+            assertThat(metaDados.getDataInferenciaLimiar()).isEqualTo(HOJE);
+        }
+
+        @Test
+        @DisplayName("resolvido vazio não altera metaDados")
+        void resolvidoVazioNaoAltera() {
+            PlanoMetaDados metaDados = metaDadosBase(atletaBase());
+
+            updater.aplicarPaceLimiar(metaDados, null, HOJE);
+
+            assertThat(metaDados.getPaceLimiarEstimado()).isNull();
+            assertThat(metaDados.getDataInferenciaLimiar()).isNull();
         }
     }
 
