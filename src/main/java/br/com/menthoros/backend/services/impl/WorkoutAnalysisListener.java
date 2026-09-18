@@ -209,6 +209,7 @@ public class WorkoutAnalysisListener {
         analise.setExecutionScore(dto.executionScore());
         analise.setRationalePt(dto.rationale());
         analise.setTranslationFailed(translationFailed);
+        analise.setErrorMessage(null);
         aplicarBlocoAtleta(analise, bloco);
         analise.setAnalyzedAt(Instant.now());
         analiseRepository.save(analise);

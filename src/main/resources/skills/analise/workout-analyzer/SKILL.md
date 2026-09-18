@@ -206,10 +206,12 @@ def calculate_execution_score(rpe_delta, tsb, distance_completion_percent):
   "primary_cause": "ACCUMULATED_FATIGUE | ENVIRONMENTAL_FACTORS | PACING_ERROR | CNS_FATIGUE | NORMAL | UNDERTRAINING",
   "recommendation": "string (actionable advice, specific)",
   "tags": ["array", "of", "tags"],
-  "execution_score": 1-10,
+  "execution_score": 7,
   "rationale": "string (explain score calculation and key findings)"
 }
 ```
+
+`execution_score` must be a single JSON integer from 1 to 10 — never a range (e.g. `7-8`) or a string.
 
 ## Available Tags
 
