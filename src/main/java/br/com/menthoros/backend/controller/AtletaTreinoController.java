@@ -25,6 +25,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Pattern;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -187,7 +188,9 @@ public class AtletaTreinoController {
             @ApiResponse(responseCode = "502", description = "Falha ao consultar o intervals.icu")
     })
     public ResponseEntity<MelhoresEsforcosOutputDto> getMelhoresEsforcos(
-            @Parameter(description = "Janela: 42d, 1y ou all") @RequestParam(defaultValue = "42d") String janela) {
+            @Parameter(description = "Janela: 42d, 1y ou all")
+            @RequestParam(defaultValue = "42d")
+            @Pattern(regexp = "42d|1y|all", message = "janela deve ser 42d, 1y ou all") String janela) {
         UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
         return ResponseEntity.ok(melhorEsforcoService.buscarParaAtleta(atletaId, janela));
     }

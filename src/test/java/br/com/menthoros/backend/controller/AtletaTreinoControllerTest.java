@@ -439,6 +439,13 @@ class AtletaTreinoControllerTest {
         }
 
         @Test
+        @DisplayName("400 quando janela não é 42d/1y/all")
+        void retorna400JanelaInvalida() throws Exception {
+            mockMvc.perform(get("/api/v1/atletas/me/melhores-esforcos").param("janela", "90d"))
+                    .andExpect(status().isBadRequest());
+        }
+
+        @Test
         @DisplayName("502 quando o intervals.icu falha")
         void retorna502QuandoIntervalsIcuFalha() throws Exception {
             when(melhorEsforcoService.buscarParaAtleta(atletaId, "42d"))
