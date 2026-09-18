@@ -532,6 +532,81 @@ class AthleteThresholdUpdaterTest {
         }
     }
 
+    /**
+     * refactor-threshold-call-outside-transaction, seção 4: extraída de {@code atualizarLimiares}
+     * pra dar ao {@code TsbDiaPersister} um jeito de tratar só FC dentro da transação, já que pace
+     * agora chega pré-resolvido (fora dela). FC continua sem a separação decisão/aplicação (D3,
+     * YAGNI) — só precisava de um método próprio pra ser chamável isoladamente.
+     */
+    @Nested
+    @DisplayName("atualizarFcLimiar (seção 4, extraído de atualizarLimiares)")
+    class AtualizarFcLimiarTest {
+
+        @Test
+        @DisplayName("seta fcLimiarEstimado quando desatualizado e inferência retorna valor")
+        void setaFcEstimadoQuandoDesatualizado() {
+            Atleta atleta = atletaBase();
+            atleta.setFcLimiar(null);
+            atleta.setDataUltimoTesteFc(null);
+            PlanoMetaDados metaDados = metaDadosBase(atleta);
+
+            List<TreinoRealizado> treinos = treinos10ComFcMedia(163);
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
+                    .thenReturn(treinos);
+            when(thresholdInferenceService.inferirFcLimiar(treinos, HOJE))
+                    .thenReturn(Optional.of(new ThresholdEstimate<>(163, 10, ConfiancaInferencia.ALTA)));
+
+            updater.atualizarFcLimiar(atleta, metaDados, HOJE);
+
+            assertThat(metaDados.getFcLimiarEstimado()).isEqualTo(163);
+            assertThat(metaDados.getConfiancaInferenciaFc()).isEqualTo(ConfiancaInferencia.ALTA);
+            assertThat(metaDados.getDataInferenciaLimiar()).isEqualTo(HOJE);
+        }
+
+        @Test
+        @DisplayName("FC recente (< 90 dias) não busca treinos nem altera metaDados")
+        void fcRecenteNaoAltera() {
+            Atleta atleta = atletaBase();
+            atleta.setFcLimiar(165);
+            atleta.setDataUltimoTesteFc(HOJE.minusDays(30));
+            PlanoMetaDados metaDados = metaDadosBase(atleta);
+
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+
+            updater.atualizarFcLimiar(atleta, metaDados, HOJE);
+
+            assertThat(metaDados.getFcLimiarEstimado()).isNull();
+            verifyNoInteractions(treinoRealizadoRepository);
+        }
+
+        @Test
+        @DisplayName("atleta sem assessoria retorna sem erro e sem atualizar")
+        void semAssessoriaNaoAltera() {
+            Atleta atleta = atletaBase();
+            atleta.setAssessoria(null);
+            atleta.setFcLimiar(null);
+            atleta.setDataUltimoTesteFc(null);
+            PlanoMetaDados metaDados = metaDadosBase(atleta);
+
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
+
+            updater.atualizarFcLimiar(atleta, metaDados, HOJE);
+
+            assertThat(metaDados.getFcLimiarEstimado()).isNull();
+            verifyNoInteractions(treinoRealizadoRepository);
+        }
+
+        @Test
+        @DisplayName("atleta nulo lança IllegalArgumentException")
+        void atletaNuloLancaExcecao() {
+            PlanoMetaDados metaDados = metaDadosBase(atletaBase());
+
+            assertThatThrownBy(() -> updater.atualizarFcLimiar(null, metaDados, HOJE))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
     @Nested
     @DisplayName("casos de borda")
     class CasosDeBorda {

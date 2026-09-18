@@ -58,23 +58,10 @@ public class AthleteThresholdUpdater {
             return;
         }
         UUID tenantId = atleta.getAssessoria().getId();
-        // D8 (ingestao-treino-realizado): cancelado não conta na carga — mesmo predicado usado por
-        // TsbService/produtores; achado do /qa do Bloco 2 (Codex adversarial-review, 2026-08-24) —
-        // esta query alimenta a inferência de limiares de FC/pace e ficara de fora do inventário
-        // original da task 7.7.
-        List<TreinoRealizado> treinos30d = treinoRealizadoRepository
-                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, hoje.minusDays(30), hoje)
-                .stream()
-                .filter(TreinoRealizado::contaNaCarga)
-                .toList();
+        List<TreinoRealizado> treinos30d = buscarTreinos30d(atletaId, tenantId, hoje);
 
         if (fcStale) {
-            thresholdInferenceService.inferirFcLimiar(treinos30d, hoje)
-                    .ifPresent(est -> {
-                        metaDados.setFcLimiarEstimado(est.valor());
-                        metaDados.setConfiancaInferenciaFc(est.confianca());
-                        metaDados.setDataInferenciaLimiar(hoje);
-                    });
+            aplicarFcSeDesatualizado(metaDados, treinos30d, hoje);
         }
         if (paceStale) {
             BigDecimal paceLimiarAnterior = metaDados.getPaceLimiarEstimado();
@@ -82,6 +69,52 @@ public class AthleteThresholdUpdater {
                     atletaId, tenantId, hoje, treinos30d, paceLimiarAnterior).orElse(null);
             aplicarPaceLimiar(metaDados, resolvido, hoje);
         }
+    }
+
+    /**
+     * Equivalente a {@code atualizarLimiares}, só pra FC — extraído pra dar ao {@code
+     * TsbDiaPersister} (refactor-threshold-call-outside-transaction, seção 4) um jeito de tratar
+     * FC dentro da transação sem repetir a resolução de pace, que já chega pré-resolvida de fora
+     * dela. FC não ganha a separação decisão/aplicação de {@link #resolverFontePace} (design.md
+     * D3 — sem 3ª fonte de FC no roadmap, YAGNI); só precisava ser chamável isoladamente.
+     *
+     * Idempotent: NO — grava `fcLimiarEstimado`/`confiancaInferenciaFc` em `metaDados` quando
+     * desatualizado.
+     * Side Effects: NONE (mutação em memória; persistência é responsabilidade do caller).
+     * Tenant-aware: YES — busca de treinos restrita ao `tenantId` do `atleta.getAssessoria()`.
+     */
+    public void atualizarFcLimiar(Atleta atleta, PlanoMetaDados metaDados, LocalDate hoje) {
+        if (atleta == null) {
+            throw new IllegalArgumentException("Atleta não pode ser nulo");
+        }
+        if (!thresholdInferenceService.isFcLimiarDesatualizado(atleta, hoje)) return;
+        if (atleta.getAssessoria() == null) {
+            log.warn("atualizarFcLimiar: atleta {} sem assessoria — inferência ignorada", atleta.getId());
+            return;
+        }
+        List<TreinoRealizado> treinos30d = buscarTreinos30d(atleta.getId(), atleta.getAssessoria().getId(), hoje);
+        aplicarFcSeDesatualizado(metaDados, treinos30d, hoje);
+    }
+
+    private void aplicarFcSeDesatualizado(PlanoMetaDados metaDados, List<TreinoRealizado> treinos30d, LocalDate hoje) {
+        thresholdInferenceService.inferirFcLimiar(treinos30d, hoje)
+                .ifPresent(est -> {
+                    metaDados.setFcLimiarEstimado(est.valor());
+                    metaDados.setConfiancaInferenciaFc(est.confianca());
+                    metaDados.setDataInferenciaLimiar(hoje);
+                });
+    }
+
+    // D8 (ingestao-treino-realizado): cancelado não conta na carga — mesmo predicado usado por
+    // TsbService/produtores; achado do /qa do Bloco 2 (Codex adversarial-review, 2026-08-24) —
+    // esta query alimenta a inferência de limiares de FC/pace e ficara de fora do inventário
+    // original da task 7.7.
+    private List<TreinoRealizado> buscarTreinos30d(UUID atletaId, UUID tenantId, LocalDate hoje) {
+        return treinoRealizadoRepository
+                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, hoje.minusDays(30), hoje)
+                .stream()
+                .filter(TreinoRealizado::contaNaCarga)
+                .toList();
     }
 
     /**

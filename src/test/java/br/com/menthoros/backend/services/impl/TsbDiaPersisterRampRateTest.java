@@ -2,10 +2,8 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
-import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.time.LocalDate;
 import java.util.Optional;
@@ -13,12 +11,17 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-class TsbServiceImplRampRateTest {
+/**
+ * Migrado de {@code TsbServiceImplRampRateTest}
+ * (refactor-threshold-call-outside-transaction, seção 3) — {@code calcularRampRate} saiu de
+ * {@code TsbServiceImpl} pra {@code TsbDiaPersister}. Package-private direto, sem reflection.
+ */
+class TsbDiaPersisterRampRateTest {
 
     @Test
     /**
      * Documenta o ISSUE-05:
-     * o cálculo atual de ramp rate em TsbServiceImpl é absoluto (pontos de CTL/semana).
+     * o cálculo atual de ramp rate em TsbDiaPersister é absoluto (pontos de CTL/semana).
      *
      * <p>A correção do ISSUE-05 é aplicada na camada de alertas (MetricasAlertaService),
      * que interpreta o ramp rate de forma relativa usando CTL e o delta em pontos.
@@ -28,7 +31,7 @@ class TsbServiceImplRampRateTest {
      *
      * Esperado aqui (ramp absoluto): 6.0
      */
-    void deveRetornarRampRateAbsolutoQuandoHaHistoricoDeSeteDias() throws Exception {
+    void deveRetornarRampRateAbsolutoQuandoHaHistoricoDeSeteDias() {
         UUID atletaId = UUID.randomUUID();
         LocalDate data = LocalDate.of(2026, 2, 16);
 
@@ -37,21 +40,10 @@ class TsbServiceImplRampRateTest {
 
         MetricasDiariasRepository metricasDiariasRepository = repoComMetricasSemanaPassada(atletaId, data, semanaPassada);
 
-        TsbServiceImpl service = new TsbServiceImpl(
-                null,
-                null,
-                metricasDiariasRepository,
-                null,
-                null,
-                null,
-                new TsbRecalculoExecutorInline(),
-                null
-        );
+        TsbDiaPersister persister = new TsbDiaPersister(
+                null, null, metricasDiariasRepository, null, null, null, null);
 
-        Method m = TsbServiceImpl.class.getDeclaredMethod("calcularRampRate", UUID.class, LocalDate.class, double.class);
-        m.setAccessible(true);
-
-        double ramp = (double) m.invoke(service, atletaId, data, 26.0);
+        double ramp = persister.calcularRampRate(atletaId, data, 26.0);
         assertEquals(6.0, ramp, 0.0001);
     }
 
@@ -64,7 +56,7 @@ class TsbServiceImplRampRateTest {
      * Exemplo: CTL 5 -> 11 = +6 pts.
      * Esperado: 6.0 (absoluto)
      */
-    void deveManterRampRateAbsolutoQuandoCtlAnteriorEhMuitoBaixo() throws Exception {
+    void deveManterRampRateAbsolutoQuandoCtlAnteriorEhMuitoBaixo() {
         UUID atletaId = UUID.randomUUID();
         LocalDate data = LocalDate.of(2026, 2, 16);
 
@@ -73,21 +65,10 @@ class TsbServiceImplRampRateTest {
 
         MetricasDiariasRepository metricasDiariasRepository = repoComMetricasSemanaPassada(atletaId, data, semanaPassada);
 
-        TsbServiceImpl service = new TsbServiceImpl(
-                null,
-                null,
-                metricasDiariasRepository,
-                null,
-                null,
-                null,
-                new TsbRecalculoExecutorInline(),
-                null
-        );
+        TsbDiaPersister persister = new TsbDiaPersister(
+                null, null, metricasDiariasRepository, null, null, null, null);
 
-        Method m = TsbServiceImpl.class.getDeclaredMethod("calcularRampRate", UUID.class, LocalDate.class, double.class);
-        m.setAccessible(true);
-
-        double ramp = (double) m.invoke(service, atletaId, data, 11.0);
+        double ramp = persister.calcularRampRate(atletaId, data, 11.0);
         assertEquals(6.0, ramp, 0.0001);
     }
 
