@@ -55,31 +55,22 @@ public class MelhorEsforcoServiceImpl implements MelhorEsforcoService {
     private final IntervalsIcuClient intervalsIcuClient;
 
     /**
-     * Cache Caffeine compartilhado (`CacheConfig`, TTL padrão 30min) — evita bater o intervals.icu
-     * a cada abertura de tela (perfil do coach + tela do atleta podem pedir a mesma janela em
-     * sequência). Leitura pura, sem escrita — seguro cachear (ao contrário do incidente registrado
-     * em `PlanoMetadadosServiceImpl.buscarOuCriarMetadados`, que cacheava um get-or-create).
+     * Cache Caffeine próprio (`CacheConfig`, TTL padrão 30min). <b>Independente</b> do cache de
+     * {@link #buscarParaAtleta} — nomes de cache diferentes, um por formato de retorno. Coach e
+     * atleta abrindo a mesma janela dentro do TTL disparam 2 chamadas ao intervals.icu, não 1; não
+     * é dedupe cross-caller, só evita repetir a chamada nas re-aberturas do mesmo caminho (achado
+     * de review, 2026-09-18 — documentado, não corrigido: dedupe cross-caller exigiria um cache
+     * compartilhado por chave `atletaId+janela` sozinho, sem o formato de retorno na chave, o que
+     * complica a invalidação entre os dois shapes).
      */
     @Override
     @Cacheable(value = "melhores-esforcos",
             key = "#atletaId + '_' + #janela + '_' + " + TENANT_KEY, condition = HAS_TENANT)
     public List<MelhorEsforcoDto> buscar(UUID atletaId, String janela) {
-        UUID tenantId = TenantContext.getRequiredTenantId();
-        Optional<IntegracaoExterna> conexao = connectionService.conexaoAtiva(atletaId, tenantId);
-        if (conexao.isEmpty()) {
-            return List.of();
-        }
-
-        IntegracaoExterna integracao = conexao.get();
-        IcuPaceCurveDto curva = intervalsIcuClient.buscarPaceCurves(
-                integracao.getAccessToken(), integracao.getExternalAthleteId(), janela);
-        return extrairMarcas(curva);
+        return buscarMarcas(atletaId, janela);
     }
 
-    /**
-     * Cache próprio (mesma família `CacheConfig`, TTL 30min) — chave inclui `me` pra não colidir
-     * com a entrada de {@link #buscar}, que tem outro formato de retorno.
-     */
+    /** Cache próprio — ver nota de {@link #buscar} sobre os dois caches não serem compartilhados. */
     @Override
     @Cacheable(value = "melhores-esforcos-atleta",
             key = "#atletaId + '_' + #janela + '_' + " + TENANT_KEY, condition = HAS_TENANT)
@@ -89,11 +80,23 @@ public class MelhorEsforcoServiceImpl implements MelhorEsforcoService {
         if (conexao.isEmpty()) {
             return new MelhoresEsforcosOutputDto(List.of(), false);
         }
+        return new MelhoresEsforcosOutputDto(buscarMarcasComConexao(conexao.get(), janela), true);
+    }
 
-        IntegracaoExterna integracao = conexao.get();
+    /** Lógica comum a {@link #buscar} e {@link #buscarParaAtleta}: resolve conexão, busca e extrai. */
+    private List<MelhorEsforcoDto> buscarMarcas(UUID atletaId, String janela) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Optional<IntegracaoExterna> conexao = connectionService.conexaoAtiva(atletaId, tenantId);
+        if (conexao.isEmpty()) {
+            return List.of();
+        }
+        return buscarMarcasComConexao(conexao.get(), janela);
+    }
+
+    private List<MelhorEsforcoDto> buscarMarcasComConexao(IntegracaoExterna integracao, String janela) {
         IcuPaceCurveDto curva = intervalsIcuClient.buscarPaceCurves(
                 integracao.getAccessToken(), integracao.getExternalAthleteId(), janela);
-        return new MelhoresEsforcosOutputDto(extrairMarcas(curva), true);
+        return extrairMarcas(curva);
     }
 
     private List<MelhorEsforcoDto> extrairMarcas(IcuPaceCurveDto curva) {
@@ -103,7 +106,8 @@ public class MelhorEsforcoServiceImpl implements MelhorEsforcoService {
         IcuPaceCurveDto.Curva primeira = curva.list().getFirst();
         List<Double> distancias = primeira.distance();
         List<Integer> valores = primeira.values();
-        if (distancias == null || valores == null || distancias.isEmpty()) {
+        if (distancias == null || valores == null || distancias.isEmpty()
+                || distancias.size() != valores.size()) {
             return List.of();
         }
 

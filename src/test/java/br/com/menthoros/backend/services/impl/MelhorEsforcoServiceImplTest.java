@@ -118,6 +118,17 @@ class MelhorEsforcoServiceImplTest {
 
             assertThat(service.buscar(atletaId, "42d")).isEmpty();
         }
+
+        @Test
+        @DisplayName("distance[] e values[] de tamanhos diferentes retorna vazio, sem lançar (achado de review)")
+        void arraysDeTamanhosDiferentesRetornaVazio() {
+            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.of(conexao()));
+            IcuPaceCurveDto curva = new IcuPaceCurveDto(List.of(new IcuPaceCurveDto.Curva(
+                    List.of(400.0, 800.0), List.of(117))));
+            when(intervalsIcuClient.buscarPaceCurves("tok-abc", "i641775", "42d")).thenReturn(curva);
+
+            assertThat(service.buscar(atletaId, "42d")).isEmpty();
+        }
     }
 
     @Nested
