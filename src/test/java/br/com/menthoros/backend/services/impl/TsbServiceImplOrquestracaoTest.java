@@ -125,7 +125,7 @@ class TsbServiceImplOrquestracaoTest {
                     .thenReturn(Optional.of(new BigDecimal("5.0000")));
             PaceLimiarResolvido resolvido = new PaceLimiarResolvido(
                     FonteLimiarInferencia.MEDIA_TREINOS, new BigDecimal("4.8000"), null);
-            when(athleteThresholdUpdater.resolverFontePace(eq(ATLETA_ID), eq(TENANT_ID), eq(HOJE), any(), eq(new BigDecimal("5.0000"))))
+            when(athleteThresholdUpdater.resolverFontePace(eq(ATLETA_ID), eq(TENANT_ID), eq(HOJE), any(), eq(new BigDecimal("5.0000")), any()))
                     .thenReturn(Optional.of(resolvido));
 
             service.atualizarTsbDia(ATLETA_ID, HOJE);
@@ -147,13 +147,13 @@ class TsbServiceImplOrquestracaoTest {
         when(atletaRepository.findLimiarPaceStatusById(ATLETA_ID)).thenReturn(Optional.of(status));
         when(thresholdInferenceService.isPaceLimiarDesatualizado(any(), any(), eq(HOJE))).thenReturn(true);
         when(athleteThresholdUpdater.buscarTreinos30d(any(), any(), any())).thenReturn(List.of());
-        when(athleteThresholdUpdater.resolverFontePace(any(), any(), any(), any(), any()))
+        when(athleteThresholdUpdater.resolverFontePace(any(), any(), any(), any(), any(), any()))
                 .thenReturn(Optional.empty());
 
         service.atualizarTsbDia(ATLETA_ID, HOJE);
 
         InOrder ordem = inOrder(athleteThresholdUpdater, tsbDiaPersister);
-        ordem.verify(athleteThresholdUpdater).resolverFontePace(any(), any(), any(), any(), any());
+        ordem.verify(athleteThresholdUpdater).resolverFontePace(any(), any(), any(), any(), any(), any());
         ordem.verify(tsbDiaPersister).atualizarDiaTransacional(any(), any(), anyBoolean(), any());
     }
 
@@ -175,7 +175,7 @@ class TsbServiceImplOrquestracaoTest {
         when(atletaRepository.findLimiarPaceStatusById(ATLETA_ID)).thenReturn(Optional.of(status));
         when(thresholdInferenceService.isPaceLimiarDesatualizado(any(), any(), any())).thenReturn(true);
         when(athleteThresholdUpdater.buscarTreinos30d(any(), any(), any())).thenReturn(List.of());
-        when(athleteThresholdUpdater.resolverFontePace(any(), any(), any(), any(), any()))
+        when(athleteThresholdUpdater.resolverFontePace(any(), any(), any(), any(), any(), any()))
                 .thenReturn(Optional.empty());
 
         service.recalcularDesde(ATLETA_ID, inicio);
@@ -183,7 +183,7 @@ class TsbServiceImplOrquestracaoTest {
         // paceStale=true, mas resolverFontePace/findLimiarPaceStatusById só rodam 1 vez pro
         // intervalo inteiro (com hoje=fim), não uma vez por dia — mesmo com 5 dias no laço.
         verify(atletaRepository, times(1)).findLimiarPaceStatusById(ATLETA_ID);
-        verify(athleteThresholdUpdater, times(1)).resolverFontePace(any(), any(), any(), any(), any());
+        verify(athleteThresholdUpdater, times(1)).resolverFontePace(any(), any(), any(), any(), any(), any());
         verify(tsbDiaPersister, times(5)).atualizarDiaTransacional(eq(ATLETA_ID), any(), anyBoolean(), any());
     }
 

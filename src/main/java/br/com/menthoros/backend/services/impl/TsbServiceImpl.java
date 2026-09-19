@@ -148,8 +148,10 @@ public class TsbServiceImpl implements TsbService {
         List<TreinoRealizado> treinos30d = athleteThresholdUpdater.buscarTreinos30d(atletaId, tenantId, hoje);
         BigDecimal paceLimiarAnterior = planoMetaDadosRepository.findPaceLimiarEstimadoByAtletaId(atletaId).orElse(null);
 
+        // TODO(use-best-effort-for-threshold-inference, seção 3): substitui List.of() pela busca
+        // real via MelhorEsforcoService (buscarMelhorEsforcoSeguro), fora desta transação.
         return athleteThresholdUpdater
-                .resolverFontePace(atletaId, tenantId, hoje, treinos30d, paceLimiarAnterior)
+                .resolverFontePace(atletaId, tenantId, hoje, treinos30d, paceLimiarAnterior, List.of())
                 .orElse(null);
     }
 
