@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
@@ -136,6 +137,23 @@ public class ThresholdInferenceService {
 
         double tempo10kEquivalenteSegundos =
                 tempoProvaSegundos * Math.pow(10000.0 / distanciaM, EXPONENTE_RIEGEL);
+        double paceLimiarSegundosPorKm = (tempo10kEquivalenteSegundos / 10.0) + OFFSET_LIMIAR_SEC_KM;
+
+        return BigDecimal.valueOf(paceLimiarSegundosPorKm / 60.0).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Deriva `paceLimiarEstimado` a partir do melhor esforço recente do atleta (5k/10k) — réplica
+     * isolada da mesma fórmula de Riegel de {@link #inferirPaceLimiarDeProva}, ancorada no
+     * tempo/distância da marca em vez do resultado de uma prova (design.md D3,
+     * use-best-effort-for-threshold-inference). Mesmas constantes `EXPONENTE_RIEGEL`/
+     * `OFFSET_LIMIAR_SEC_KM`, mesma justificativa de não reaproveitar `RiegelCalculator` (D2 acima).
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    public BigDecimal inferirPaceLimiarDeMelhorEsforco(MelhorEsforcoDto melhorEsforco) {
+        double tempo10kEquivalenteSegundos =
+                melhorEsforco.tempoSegundos() * Math.pow(10000.0 / melhorEsforco.distanciaMetros(), EXPONENTE_RIEGEL);
         double paceLimiarSegundosPorKm = (tempo10kEquivalenteSegundos / 10.0) + OFFSET_LIMIAR_SEC_KM;
 
         return BigDecimal.valueOf(paceLimiarSegundosPorKm / 60.0).setScale(4, RoundingMode.HALF_UP);
