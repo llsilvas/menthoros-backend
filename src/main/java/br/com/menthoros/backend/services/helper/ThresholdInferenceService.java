@@ -134,28 +134,34 @@ public class ThresholdInferenceService {
     public BigDecimal inferirPaceLimiarDeProva(Prova provaValida) {
         int distanciaM = resolverDistanciaMetros(provaValida);
         long tempoProvaSegundos = provaValida.getTempoRealizado().getSeconds();
-
-        double tempo10kEquivalenteSegundos =
-                tempoProvaSegundos * Math.pow(10000.0 / distanciaM, EXPONENTE_RIEGEL);
-        double paceLimiarSegundosPorKm = (tempo10kEquivalenteSegundos / 10.0) + OFFSET_LIMIAR_SEC_KM;
-
-        return BigDecimal.valueOf(paceLimiarSegundosPorKm / 60.0).setScale(4, RoundingMode.HALF_UP);
+        return calcularPaceLimiarPorRiegel(tempoProvaSegundos, distanciaM);
     }
 
     /**
-     * Deriva `paceLimiarEstimado` a partir do melhor esforço recente do atleta (5k/10k) — réplica
-     * isolada da mesma fórmula de Riegel de {@link #inferirPaceLimiarDeProva}, ancorada no
-     * tempo/distância da marca em vez do resultado de uma prova (design.md D3,
-     * use-best-effort-for-threshold-inference). Mesmas constantes `EXPONENTE_RIEGEL`/
-     * `OFFSET_LIMIAR_SEC_KM`, mesma justificativa de não reaproveitar `RiegelCalculator` (D2 acima).
+     * Deriva `paceLimiarEstimado` a partir do melhor esforço recente do atleta (5k/10k) — mesma
+     * fórmula de Riegel de {@link #inferirPaceLimiarDeProva}, ancorada no tempo/distância da marca
+     * em vez do resultado de uma prova (design.md D3, use-best-effort-for-threshold-inference).
      *
      * Idempotent: YES · Side Effects: NONE
      */
     public BigDecimal inferirPaceLimiarDeMelhorEsforco(MelhorEsforcoDto melhorEsforco) {
-        double tempo10kEquivalenteSegundos =
-                melhorEsforco.tempoSegundos() * Math.pow(10000.0 / melhorEsforco.distanciaMetros(), EXPONENTE_RIEGEL);
-        double paceLimiarSegundosPorKm = (tempo10kEquivalenteSegundos / 10.0) + OFFSET_LIMIAR_SEC_KM;
+        return calcularPaceLimiarPorRiegel(melhorEsforco.tempoSegundos(), melhorEsforco.distanciaMetros());
+    }
 
+    /**
+     * Normaliza um tempo/distância pra pace-equivalente de 10K (`t_10k = t * (10000/distanciaM) ^
+     * EXPONENTE_RIEGEL`), converte pra pace por km e soma o offset de limiar — fórmula de Riegel
+     * isolada, sem chamar `RiegelCalculator.calculate()` (exige `RegressionResult` do pipeline de
+     * projeção, não é função pura reaproveitável aqui, ver design.md D2). Extraído do corpo comum
+     * de {@link #inferirPaceLimiarDeProva}/{@link #inferirPaceLimiarDeMelhorEsforco} (achado do QA
+     * clean-code-reviewer: fórmula duplicada linha a linha nos dois métodos, risco de divergência
+     * silenciosa se um ajuste de constante/arredondamento for feito só num deles).
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    private BigDecimal calcularPaceLimiarPorRiegel(long tempoSegundos, double distanciaMetros) {
+        double tempo10kEquivalenteSegundos = tempoSegundos * Math.pow(10000.0 / distanciaMetros, EXPONENTE_RIEGEL);
+        double paceLimiarSegundosPorKm = (tempo10kEquivalenteSegundos / 10.0) + OFFSET_LIMIAR_SEC_KM;
         return BigDecimal.valueOf(paceLimiarSegundosPorKm / 60.0).setScale(4, RoundingMode.HALF_UP);
     }
 

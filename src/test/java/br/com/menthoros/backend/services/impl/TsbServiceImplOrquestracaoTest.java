@@ -195,6 +195,11 @@ class TsbServiceImplOrquestracaoTest {
     @DisplayName("buscarMelhorEsforcoSeguro (design.md D5)")
     class BuscarMelhorEsforcoSeguro {
 
+        @org.junit.jupiter.api.AfterEach
+        void limparTenantContext() {
+            br.com.menthoros.backend.multitenancy.TenantContext.clear();
+        }
+
         @Test
         @DisplayName("sucesso devolve a lista")
         void sucesso_devolveLista() {
@@ -202,7 +207,7 @@ class TsbServiceImplOrquestracaoTest {
             MelhorEsforcoDto dez = new MelhorEsforcoDto("10k", 10000.0, 2500, "pace");
             when(melhorEsforcoService.buscar(ATLETA_ID, "42d")).thenReturn(List.of(dez));
 
-            List<MelhorEsforcoDto> resultado = service.buscarMelhorEsforcoSeguro(ATLETA_ID);
+            List<MelhorEsforcoDto> resultado = service.buscarMelhorEsforcoSeguro(ATLETA_ID, TENANT_ID);
 
             assertThat(resultado).containsExactly(dez);
         }
@@ -214,7 +219,7 @@ class TsbServiceImplOrquestracaoTest {
             when(melhorEsforcoService.buscar(ATLETA_ID, "42d"))
                     .thenThrow(new IntervalsIcuApiException(null, "timeout simulado"));
 
-            List<MelhorEsforcoDto> resultado = service.buscarMelhorEsforcoSeguro(ATLETA_ID);
+            List<MelhorEsforcoDto> resultado = service.buscarMelhorEsforcoSeguro(ATLETA_ID, TENANT_ID);
 
             assertThat(resultado).isEmpty();
         }
@@ -226,7 +231,35 @@ class TsbServiceImplOrquestracaoTest {
             when(melhorEsforcoService.buscar(ATLETA_ID, "42d"))
                     .thenThrow(new RuntimeException("erro inesperado"));
 
-            List<MelhorEsforcoDto> resultado = service.buscarMelhorEsforcoSeguro(ATLETA_ID);
+            List<MelhorEsforcoDto> resultado = service.buscarMelhorEsforcoSeguro(ATLETA_ID, TENANT_ID);
+
+            assertThat(resultado).isEmpty();
+        }
+
+        @Test
+        @DisplayName("TenantContext setado mas divergente do tenant resolvido: pula a busca sem "
+                + "chamar o serviço (achado convergente code-reviewer + security-reviewer, QA) — "
+                + "defesa em profundidade além da convenção de set/clear por caller")
+        void tenantContextDivergente_pulaABuscaSemChamarOServico() {
+            construirService();
+            UUID tenantDivergente = UUID.randomUUID();
+            br.com.menthoros.backend.multitenancy.TenantContext.setTenantId(tenantDivergente);
+
+            List<MelhorEsforcoDto> resultado = service.buscarMelhorEsforcoSeguro(ATLETA_ID, TENANT_ID);
+
+            assertThat(resultado).isEmpty();
+            verify(melhorEsforcoService, never()).buscar(any(), any());
+        }
+
+        @Test
+        @DisplayName("TenantContext ausente (não setado): segue a chamada normalmente — "
+                + "MelhorEsforcoServiceImpl lança IllegalStateException, capturada pelo catch amplo")
+        void tenantContextAusente_seguirChamadaQueFalhaComIllegalState() {
+            construirService();
+            when(melhorEsforcoService.buscar(ATLETA_ID, "42d"))
+                    .thenThrow(new IllegalStateException("TenantContext não setado"));
+
+            List<MelhorEsforcoDto> resultado = service.buscarMelhorEsforcoSeguro(ATLETA_ID, TENANT_ID);
 
             assertThat(resultado).isEmpty();
         }

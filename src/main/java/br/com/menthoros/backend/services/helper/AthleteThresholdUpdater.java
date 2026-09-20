@@ -169,29 +169,34 @@ public class AthleteThresholdUpdater {
         if (provaValida.isPresent()) {
             Prova prova = provaValida.get();
             BigDecimal paceNovo = thresholdInferenceService.inferirPaceLimiarDeProva(prova);
-            logSinalizacaoOutlierPace(atletaId, paceLimiarAnterior, paceNovo, "provaId=" + prova.getId());
-
-            // ALTA fixo (não amostral como no quintil): esforço deliberado e máximo de uma prova
-            // real é sempre mais confiável que a mediana de treinos incidentais (design.md D3).
-            return Optional.of(new PaceLimiarResolvido(
-                    FonteLimiarInferencia.PROVA_REGISTRADA, paceNovo, ConfiancaInferencia.ALTA));
+            return construirResolvidoAlta(FonteLimiarInferencia.PROVA_REGISTRADA, paceNovo,
+                    atletaId, paceLimiarAnterior, "provaId=" + prova.getId());
         }
 
         Optional<MelhorEsforcoDto> melhorEsforcoValido = encontrarMelhorEsforcoValido(melhoresEsforcos);
         if (melhorEsforcoValido.isPresent()) {
             MelhorEsforcoDto marca = melhorEsforcoValido.get();
             BigDecimal paceNovo = thresholdInferenceService.inferirPaceLimiarDeMelhorEsforco(marca);
-            logSinalizacaoOutlierPace(atletaId, paceLimiarAnterior, paceNovo,
+            return construirResolvidoAlta(FonteLimiarInferencia.MELHOR_ESFORCO, paceNovo, atletaId, paceLimiarAnterior,
                     "distanciaLabel=" + marca.distanciaLabel() + ", tempoSegundos=" + marca.tempoSegundos());
-
-            // ALTA fixo, mesmo raciocínio da prova: marca controlada de 42d é mais confiável que
-            // a mediana de treinos incidentais (design.md D3).
-            return Optional.of(new PaceLimiarResolvido(
-                    FonteLimiarInferencia.MELHOR_ESFORCO, paceNovo, ConfiancaInferencia.ALTA));
         }
 
         return thresholdInferenceService.inferirPaceLimiar(treinos30d, hoje)
                 .map(est -> new PaceLimiarResolvido(FonteLimiarInferencia.MEDIA_TREINOS, est.valor(), est.confianca()));
+    }
+
+    /**
+     * Monta o resultado comum às duas fontes de confiança fixa ALTA (prova/melhor esforço,
+     * design.md D3, achado do QA clean-code-reviewer: mesmo esqueleto duplicado nos dois ramos de
+     * {@link #resolverFontePace}) — loga a sinalização de outlier e embrulha em
+     * {@link PaceLimiarResolvido}. O quintil (`MEDIA_TREINOS`) fica fora: tem confiança amostral
+     * variável, não ALTA fixa, então não segue o mesmo formato.
+     */
+    private Optional<PaceLimiarResolvido> construirResolvidoAlta(FonteLimiarInferencia fonte, BigDecimal paceNovo,
+                                                                   UUID atletaId, BigDecimal paceLimiarAnterior,
+                                                                   String origemDescricao) {
+        logSinalizacaoOutlierPace(atletaId, paceLimiarAnterior, paceNovo, origemDescricao);
+        return Optional.of(new PaceLimiarResolvido(fonte, paceNovo, ConfiancaInferencia.ALTA));
     }
 
     /**
