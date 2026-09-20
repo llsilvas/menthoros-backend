@@ -1,11 +1,14 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
 import br.com.menthoros.backend.enums.FonteLimiarInferencia;
+import br.com.menthoros.backend.exception.IntervalsIcuApiException;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.projection.LimiarPaceStatusProjection;
+import br.com.menthoros.backend.services.MelhorEsforcoService;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.services.helper.PaceLimiarResolvido;
@@ -61,6 +64,7 @@ class TsbServiceImplOrquestracaoTest {
     @Mock private TsbRecalculoExecutor tsbRecalculoExecutor;
     @Mock private PlanoMetadadosService planoMetadadosService;
     @Mock private TsbDiaPersister tsbDiaPersister;
+    @Mock private MelhorEsforcoService melhorEsforcoService;
 
     private TsbServiceImpl service;
 
@@ -72,7 +76,7 @@ class TsbServiceImplOrquestracaoTest {
         service = new TsbServiceImpl(treinoRealizadoRepository, planoMetaDadosRepository,
                 metricasDiariasRepository, atletaRepository, metricasAlertaService,
                 athleteThresholdUpdater, thresholdInferenceService, tsbRecalculoExecutor,
-                planoMetadadosService, tsbDiaPersister);
+                planoMetadadosService, tsbDiaPersister, melhorEsforcoService);
     }
 
     // =========================================================================
@@ -106,7 +110,8 @@ class TsbServiceImplOrquestracaoTest {
 
             service.atualizarTsbDia(ATLETA_ID, HOJE);
 
-            verifyNoInteractions(treinoRealizadoRepository, thresholdInferenceService, athleteThresholdUpdater);
+            verifyNoInteractions(treinoRealizadoRepository, thresholdInferenceService, athleteThresholdUpdater,
+                    melhorEsforcoService);
             verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, HOJE, true, null);
         }
 
@@ -132,6 +137,99 @@ class TsbServiceImplOrquestracaoTest {
 
             verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, HOJE, true, resolvido);
         }
+
+        @Test
+        @DisplayName("use-best-effort: melhor esforço buscado é repassado pra resolverFontePace")
+        void paceDesatualizado_repassaMelhorEsforcoParaResolverFontePace() {
+            construirService();
+            LimiarPaceStatusProjection status = LimiarPaceStatusProjectionTestStub
+                    .projection(TENANT_ID, new BigDecimal("5.0000"), HOJE.minusDays(91));
+            MelhorEsforcoDto dez = new MelhorEsforcoDto("10k", 10000.0, 2500, "pace");
+            when(atletaRepository.findLimiarPaceStatusById(ATLETA_ID)).thenReturn(Optional.of(status));
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(
+                    eq(new BigDecimal("5.0000")), eq(HOJE.minusDays(91)), eq(HOJE))).thenReturn(true);
+            when(athleteThresholdUpdater.buscarTreinos30d(eq(ATLETA_ID), eq(TENANT_ID), eq(HOJE)))
+                    .thenReturn(List.of());
+            when(planoMetaDadosRepository.findPaceLimiarEstimadoByAtletaId(ATLETA_ID))
+                    .thenReturn(Optional.of(new BigDecimal("5.0000")));
+            when(melhorEsforcoService.buscar(ATLETA_ID, "42d")).thenReturn(List.of(dez));
+            when(athleteThresholdUpdater.resolverFontePace(any(), any(), any(), any(), any(), eq(List.of(dez))))
+                    .thenReturn(Optional.empty());
+
+            service.atualizarTsbDia(ATLETA_ID, HOJE);
+
+            verify(athleteThresholdUpdater).resolverFontePace(
+                    eq(ATLETA_ID), eq(TENANT_ID), eq(HOJE), any(), eq(new BigDecimal("5.0000")), eq(List.of(dez)));
+        }
+
+        @Test
+        @DisplayName("AC4: falha na busca de melhor esforço não impede a persistência do TSB do dia "
+                + "(efeito observável, não só ausência de exceção — achado da 3ª rodada de pre-mortem)")
+        void falhaNaBuscaDeMelhorEsforco_naoImpedePersistenciaDoTsb() {
+            construirService();
+            LimiarPaceStatusProjection status = LimiarPaceStatusProjectionTestStub
+                    .projection(TENANT_ID, new BigDecimal("5.0000"), HOJE.minusDays(91));
+            when(atletaRepository.findLimiarPaceStatusById(ATLETA_ID)).thenReturn(Optional.of(status));
+            when(thresholdInferenceService.isPaceLimiarDesatualizado(
+                    eq(new BigDecimal("5.0000")), eq(HOJE.minusDays(91)), eq(HOJE))).thenReturn(true);
+            when(athleteThresholdUpdater.buscarTreinos30d(eq(ATLETA_ID), eq(TENANT_ID), eq(HOJE)))
+                    .thenReturn(List.of());
+            when(planoMetaDadosRepository.findPaceLimiarEstimadoByAtletaId(ATLETA_ID))
+                    .thenReturn(Optional.of(new BigDecimal("5.0000")));
+            when(melhorEsforcoService.buscar(ATLETA_ID, "42d"))
+                    .thenThrow(new IntervalsIcuApiException(null, "timeout simulado"));
+            when(athleteThresholdUpdater.resolverFontePace(any(), any(), any(), any(), any(), eq(List.of())))
+                    .thenReturn(Optional.empty());
+
+            service.atualizarTsbDia(ATLETA_ID, HOJE);
+
+            verify(tsbDiaPersister).atualizarDiaTransacional(eq(ATLETA_ID), eq(HOJE), eq(true), any());
+        }
+    }
+
+    // =========================================================================
+    // 3.2 — buscarMelhorEsforcoSeguro: best-effort, nunca propaga
+    // =========================================================================
+
+    @Nested
+    @DisplayName("buscarMelhorEsforcoSeguro (design.md D5)")
+    class BuscarMelhorEsforcoSeguro {
+
+        @Test
+        @DisplayName("sucesso devolve a lista")
+        void sucesso_devolveLista() {
+            construirService();
+            MelhorEsforcoDto dez = new MelhorEsforcoDto("10k", 10000.0, 2500, "pace");
+            when(melhorEsforcoService.buscar(ATLETA_ID, "42d")).thenReturn(List.of(dez));
+
+            List<MelhorEsforcoDto> resultado = service.buscarMelhorEsforcoSeguro(ATLETA_ID);
+
+            assertThat(resultado).containsExactly(dez);
+        }
+
+        @Test
+        @DisplayName("IntervalsIcuApiException devolve lista vazia sem propagar")
+        void excecaoDeApi_devolveListaVaziaSemPropagar() {
+            construirService();
+            when(melhorEsforcoService.buscar(ATLETA_ID, "42d"))
+                    .thenThrow(new IntervalsIcuApiException(null, "timeout simulado"));
+
+            List<MelhorEsforcoDto> resultado = service.buscarMelhorEsforcoSeguro(ATLETA_ID);
+
+            assertThat(resultado).isEmpty();
+        }
+
+        @Test
+        @DisplayName("RuntimeException genérica devolve lista vazia sem propagar")
+        void runtimeExceptionGenerica_devolveListaVaziaSemPropagar() {
+            construirService();
+            when(melhorEsforcoService.buscar(ATLETA_ID, "42d"))
+                    .thenThrow(new RuntimeException("erro inesperado"));
+
+            List<MelhorEsforcoDto> resultado = service.buscarMelhorEsforcoSeguro(ATLETA_ID);
+
+            assertThat(resultado).isEmpty();
+        }
     }
 
     // =========================================================================
@@ -139,7 +237,8 @@ class TsbServiceImplOrquestracaoTest {
     // =========================================================================
 
     @Test
-    @DisplayName("4.2: resolverFontePace roda antes de qualquer interação com o persister (InOrder)")
+    @DisplayName("4.2: melhor esforço + resolverFontePace rodam antes de qualquer interação com o "
+            + "persister (InOrder) — agora incluindo a chamada ao MelhorEsforcoService")
     void resolucaoDeFonteRodaAntesDaPersistencia() {
         construirService();
         LimiarPaceStatusProjection status = LimiarPaceStatusProjectionTestStub
@@ -147,12 +246,14 @@ class TsbServiceImplOrquestracaoTest {
         when(atletaRepository.findLimiarPaceStatusById(ATLETA_ID)).thenReturn(Optional.of(status));
         when(thresholdInferenceService.isPaceLimiarDesatualizado(any(), any(), eq(HOJE))).thenReturn(true);
         when(athleteThresholdUpdater.buscarTreinos30d(any(), any(), any())).thenReturn(List.of());
+        when(melhorEsforcoService.buscar(any(), any())).thenReturn(List.of());
         when(athleteThresholdUpdater.resolverFontePace(any(), any(), any(), any(), any(), any()))
                 .thenReturn(Optional.empty());
 
         service.atualizarTsbDia(ATLETA_ID, HOJE);
 
-        InOrder ordem = inOrder(athleteThresholdUpdater, tsbDiaPersister);
+        InOrder ordem = inOrder(melhorEsforcoService, athleteThresholdUpdater, tsbDiaPersister);
+        ordem.verify(melhorEsforcoService).buscar(any(), any());
         ordem.verify(athleteThresholdUpdater).resolverFontePace(any(), any(), any(), any(), any(), any());
         ordem.verify(tsbDiaPersister).atualizarDiaTransacional(any(), any(), anyBoolean(), any());
     }

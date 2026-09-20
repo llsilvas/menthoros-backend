@@ -242,9 +242,11 @@ class TsbServiceImplRecalculoSemanticaTest {
                 treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
                 athleteThresholdUpdater, planoMetadadosService);
 
+        // Só exercitado via recalcularHistoricoCompleto (caminho legado, sem
+        // buscarMelhorEsforcoSeguro) — melhorEsforcoService nunca é chamado neste teste.
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
                 athleteThresholdUpdater, thresholdInferenceService,
-                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister);
+                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null);
     }
 
     private TsbServiceImpl construirServiceComPrimeiroTreino(
@@ -364,9 +366,11 @@ class TsbServiceImplRecalculoSemanticaTest {
                 treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, alertaService,
                 athleteThresholdUpdater, planoMetadadosService);
 
+        // Só exercitado via recalcularHistoricoCompleto (caminho legado, sem
+        // buscarMelhorEsforcoSeguro) — melhorEsforcoService nunca é chamado neste teste.
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, alertaService,
                 athleteThresholdUpdater, thresholdInferenceService,
-                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister);
+                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null);
     }
 
     private static AtletaRepository atletaRepoStub(Atleta atleta) {

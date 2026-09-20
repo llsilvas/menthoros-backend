@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
@@ -9,6 +10,7 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.projection.LimiarPaceStatusProjection;
+import br.com.menthoros.backend.services.MelhorEsforcoService;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
@@ -41,9 +43,13 @@ public class TsbServiceImpl implements TsbService {
     private final TsbRecalculoExecutor tsbRecalculoExecutor;
     private final PlanoMetadadosService planoMetadadosService;
     private final TsbDiaPersister tsbDiaPersister;
+    private final MelhorEsforcoService melhorEsforcoService;
 
     /** Tamanho do bloco transacional do recálculo histórico. */
     static final int DIAS_POR_BLOCO = 30;
+
+    /** Janela de busca do melhor esforço recente (design.md D8, use-best-effort-for-threshold-inference). */
+    static final String JANELA_MELHOR_ESFORCO = "42d";
 
     private record IntervaloRecalculo(LocalDate inicio, LocalDate fim) {}
 
@@ -147,12 +153,32 @@ public class TsbServiceImpl implements TsbService {
         // clean-code-reviewer) — evita duplicar a query + o filtro contaNaCarga (D8).
         List<TreinoRealizado> treinos30d = athleteThresholdUpdater.buscarTreinos30d(atletaId, tenantId, hoje);
         BigDecimal paceLimiarAnterior = planoMetaDadosRepository.findPaceLimiarEstimadoByAtletaId(atletaId).orElse(null);
+        List<MelhorEsforcoDto> melhoresEsforcos = buscarMelhorEsforcoSeguro(atletaId);
 
-        // TODO(use-best-effort-for-threshold-inference, seção 3): substitui List.of() pela busca
-        // real via MelhorEsforcoService (buscarMelhorEsforcoSeguro), fora desta transação.
         return athleteThresholdUpdater
-                .resolverFontePace(atletaId, tenantId, hoje, treinos30d, paceLimiarAnterior, List.of())
+                .resolverFontePace(atletaId, tenantId, hoje, treinos30d, paceLimiarAnterior, melhoresEsforcos)
                 .orElse(null);
+    }
+
+    /**
+     * Busca o melhor esforço recente (5k/10k, janela de 42 dias) via chamada externa ao
+     * intervals.icu — best-effort: nunca propaga, cai pra lista vazia em qualquer falha
+     * (design.md D5, use-best-effort-for-threshold-inference). Mesmo padrão de
+     * {@code IntervalsIcuOAuthServiceImpl.sincronizarFcBestEffort}: a inferência de pace tem duas
+     * outras fontes (prova, quintil) — uma falha externa aqui nunca pode quebrar a atualização de
+     * TSB do dia.
+     *
+     * Idempotent: YES · Side Effects: External API call (intervals.icu, via MelhorEsforcoService).
+     * Tenant-aware: YES — resolvido internamente pelo MelhorEsforcoService via TenantContext.
+     */
+    List<MelhorEsforcoDto> buscarMelhorEsforcoSeguro(UUID atletaId) {
+        try {
+            return melhorEsforcoService.buscar(atletaId, JANELA_MELHOR_ESFORCO);
+        } catch (RuntimeException e) {
+            log.warn("buscarMelhorEsforcoSeguro: falha ao buscar melhor esforço do atleta {} — "
+                    + "seguindo sem essa fonte (best-effort, D5). {}", atletaId, e.getMessage());
+            return List.of();
+        }
     }
 
     private void validarEntrada(UUID atletaId, LocalDate data) {

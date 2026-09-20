@@ -155,7 +155,11 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
                 thresholdInferenceService,
                 new TsbRecalculoExecutorInline(),
                 planoMetadadosService,
-                tsbDiaPersister
+                tsbDiaPersister,
+                // findLimiarPaceStatusById estuba "não desatualizado" acima — resolverPaceSeNecessario
+                // curto-circuita antes de buscarMelhorEsforcoSeguro, então melhorEsforcoService nunca
+                // é chamado neste teste.
+                null
         );
 
         RuntimeException propagada = assertThrows(RuntimeException.class,
