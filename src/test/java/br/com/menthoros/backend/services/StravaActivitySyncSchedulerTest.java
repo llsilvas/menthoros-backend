@@ -110,4 +110,59 @@ class StravaActivitySyncSchedulerTest {
 
         verify(stravaActivityService, never()).syncActivities(any(UUID.class));
     }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("use-best-effort-for-threshold-inference, tasks.md 3.4: TenantContext "
+            + "binding correto tenant->atleta no laço (não só ordenação/não-nulidade) — achado da 2ª "
+            + "rodada de pre-mortem: um teste que só verifica \"setado antes da chamada\" passaria mesmo "
+            + "se o scheduler vazasse o tenant do atleta anterior numa iteração seguinte")
+    void tenantContextBindingCorretoPorAtletaNoLaco() {
+        UUID tenantA = UUID.randomUUID();
+        UUID atletaA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        UUID atletaB = UUID.randomUUID();
+
+        IntegracaoExterna integracaoA = integracaoAtiva(tenantA, atletaA);
+        IntegracaoExterna integracaoB = integracaoAtiva(tenantB, atletaB);
+
+        when(integracaoExternaRepository.findAllActiveByPlataforma(FonteDados.STRAVA))
+                .thenReturn(List.of(integracaoA, integracaoB));
+        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(atletaA, FonteDados.STRAVA, tenantA))
+                .thenReturn(Optional.of(integracaoA));
+        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(atletaB, FonteDados.STRAVA, tenantB))
+                .thenReturn(Optional.of(integracaoB));
+
+        // Captura o tenant EFETIVAMENTE lido de TenantContext no momento em que a chamada externa
+        // acontece pra cada atleta — não o valor esperado, o valor real visto pelo colaborador.
+        java.util.Map<UUID, UUID> tenantVistoPorAtleta = new java.util.HashMap<>();
+        when(stravaActivityService.syncActivities(any(UUID.class))).thenAnswer(invocation -> {
+            UUID atletaIdChamado = invocation.getArgument(0);
+            tenantVistoPorAtleta.put(atletaIdChamado, TenantContext.getRequiredTenantId());
+            return 1;
+        });
+
+        scheduler.runDailyIncrementalSync();
+
+        assertEquals(tenantA, tenantVistoPorAtleta.get(atletaA),
+                "tenant visto durante o processamento do atleta A deve ser o tenant A, não vazado de outra iteração");
+        assertEquals(tenantB, tenantVistoPorAtleta.get(atletaB),
+                "tenant visto durante o processamento do atleta B deve ser o tenant B, não o tenant A residual");
+        assertFalse(TenantContext.hasTenant(), "TenantContext deve estar limpo após o ciclo inteiro");
+    }
+
+    private static IntegracaoExterna integracaoAtiva(UUID tenantId, UUID atletaId) {
+        IntegracaoExterna integracao = new IntegracaoExterna();
+        integracao.setPlataforma(FonteDados.STRAVA);
+        integracao.setAtivo(true);
+        integracao.setTenantId(tenantId);
+        integracao.setAutoSyncPausado(false);
+
+        Atleta atleta = new Atleta();
+        atleta.setId(atletaId);
+        Assessoria assessoria = new Assessoria();
+        assessoria.setId(tenantId);
+        atleta.setAssessoria(assessoria);
+        integracao.setAtleta(atleta);
+        return integracao;
+    }
 }
