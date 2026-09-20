@@ -1,14 +1,17 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.projection.LimiarPaceStatusProjection;
+import br.com.menthoros.backend.services.MelhorEsforcoService;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
@@ -41,9 +44,13 @@ public class TsbServiceImpl implements TsbService {
     private final TsbRecalculoExecutor tsbRecalculoExecutor;
     private final PlanoMetadadosService planoMetadadosService;
     private final TsbDiaPersister tsbDiaPersister;
+    private final MelhorEsforcoService melhorEsforcoService;
 
     /** Tamanho do bloco transacional do recálculo histórico. */
     static final int DIAS_POR_BLOCO = 30;
+
+    /** Janela de busca do melhor esforço recente (design.md D8, use-best-effort-for-threshold-inference). */
+    static final String JANELA_MELHOR_ESFORCO = "42d";
 
     private record IntervaloRecalculo(LocalDate inicio, LocalDate fim) {}
 
@@ -147,10 +154,50 @@ public class TsbServiceImpl implements TsbService {
         // clean-code-reviewer) — evita duplicar a query + o filtro contaNaCarga (D8).
         List<TreinoRealizado> treinos30d = athleteThresholdUpdater.buscarTreinos30d(atletaId, tenantId, hoje);
         BigDecimal paceLimiarAnterior = planoMetaDadosRepository.findPaceLimiarEstimadoByAtletaId(atletaId).orElse(null);
+        List<MelhorEsforcoDto> melhoresEsforcos = buscarMelhorEsforcoSeguro(atletaId, tenantId);
 
         return athleteThresholdUpdater
-                .resolverFontePace(atletaId, tenantId, hoje, treinos30d, paceLimiarAnterior)
+                .resolverFontePace(atletaId, tenantId, hoje, treinos30d, paceLimiarAnterior, melhoresEsforcos)
                 .orElse(null);
+    }
+
+    /**
+     * Busca o melhor esforço recente (5k/10k, janela de 42 dias) via chamada externa ao
+     * intervals.icu — best-effort: nunca propaga, cai pra lista vazia em qualquer falha
+     * (design.md D5, use-best-effort-for-threshold-inference). Mesmo padrão de
+     * {@code IntervalsIcuOAuthServiceImpl.sincronizarFcBestEffort}: a inferência de pace tem duas
+     * outras fontes (prova, quintil) — uma falha externa aqui nunca pode quebrar a atualização de
+     * TSB do dia.
+     *
+     * <p><b>Defesa em profundidade (achado convergente do QA, code-reviewer + security-reviewer):
+     * </b> {@code MelhorEsforcoService.buscar} resolve o tenant internamente via
+     * {@code TenantContext}, não pelo {@code tenantId} já resolvido aqui — hoje seguro só por
+     * convenção (os 2 schedulers setam/limpam por atleta, design.md Riscos), não por mecanismo. Se
+     * `TenantContext` estiver setado com um tenant DIFERENTE do `tenantId` já resolvido pra este
+     * atleta (ex.: vazamento de iteração anterior num caller futuro), pula a chamada em vez de
+     * arriscar consultar com o contexto errado — mesmo efeito do catch abaixo (lista vazia), mas
+     * sem depender do filtro interno do `MelhorEsforcoServiceImpl` pra evitar o cross-tenant.
+     * `TenantContext` ausente (não setado) não é o mesmo caso: segue a chamada normalmente, que
+     * falha com `IllegalStateException` e cai no catch — comportamento já coberto pelo best-effort.
+     *
+     * Idempotent: YES · Side Effects: External API call (intervals.icu, via MelhorEsforcoService).
+     * Tenant-aware: YES — resolvido internamente pelo MelhorEsforcoService via TenantContext,
+     * conferido contra `tenantId` antes de chamar.
+     */
+    List<MelhorEsforcoDto> buscarMelhorEsforcoSeguro(UUID atletaId, UUID tenantId) {
+        if (TenantContext.hasTenant() && !tenantId.equals(TenantContext.getTenantId())) {
+            log.warn("buscarMelhorEsforcoSeguro: TenantContext ({}) divergente do tenant resolvido "
+                    + "({}) para o atleta {} — pulando a busca de melhor esforço (defesa em profundidade)",
+                    TenantContext.getTenantId(), tenantId, atletaId);
+            return List.of();
+        }
+        try {
+            return melhorEsforcoService.buscar(atletaId, JANELA_MELHOR_ESFORCO);
+        } catch (RuntimeException e) {
+            log.warn("buscarMelhorEsforcoSeguro: falha ao buscar melhor esforço do atleta {} — "
+                    + "seguindo sem essa fonte (best-effort, D5). {}", atletaId, e.getMessage());
+            return List.of();
+        }
     }
 
     private void validarEntrada(UUID atletaId, LocalDate data) {
@@ -262,6 +309,15 @@ public class TsbServiceImpl implements TsbService {
      * reconstruído e visível. Os consumidores (PMC, home do atleta, dashboard do coach, fila de
      * atenção, agregados semanais) servem o dado disponível, sem bloqueio — contrato explícito, não
      * omissão.
+     *
+     * <p><b>Pode rebaixar `fonteLimiarPace` (achado do QA, code-reviewer,
+     * use-best-effort-for-threshold-inference):</b> a consolidação de metadados deste método usa
+     * {@link AthleteThresholdUpdater#atualizarLimiares}, que só considera prova/quintil — sem a 3ª
+     * fonte (melhor esforço), fora de escopo por decisão (design.md D4). Se o atleta tem hoje
+     * `fonteLimiarPace=MELHOR_ESFORCO` (produzido pelo caminho incremental normal) e este método
+     * roda, o resultado pode regredir pra `MEDIA_TREINOS`/quintil, mesmo sem nenhuma mudança de
+     * dado subjacente que justifique a piora — "idempotente" aqui vale pro TSB/CTL/ATL, não pra
+     * fonte do limiar de pace. É "usar apenas em caso de migração", não uma operação de rotina.
      *
      * Idempotent: YES — recalcular duas vezes produz exatamente o mesmo resultado.
      * Side Effects: Database delete + insert/update das métricas diárias e do PlanoMetaDados.

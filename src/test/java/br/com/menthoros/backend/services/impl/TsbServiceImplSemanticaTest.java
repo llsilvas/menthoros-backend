@@ -393,8 +393,11 @@ class TsbServiceImplSemanticaTest {
                 treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
                 athleteThresholdUpdater, planoMetadadosService);
 
+        // findLimiarPaceStatusById estuba "não desatualizado" acima — resolverPaceSeNecessario
+        // curto-circuita antes de buscarMelhorEsforcoSeguro, então melhorEsforcoService nunca é
+        // chamado nestes testes de semântica de CTL/ATL/TSB.
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
                 athleteThresholdUpdater, thresholdInferenceService,
-                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister);
+                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null);
     }
 }
