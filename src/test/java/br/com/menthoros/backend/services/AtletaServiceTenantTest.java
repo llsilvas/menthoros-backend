@@ -51,6 +51,7 @@ class AtletaServiceTenantTest {
     @Mock private TsbService tsbService;
     @Mock private AthleteInviteService athleteInviteService;
     @Mock private LlmCallLedger llmCallLedger;
+    @Mock private AthleteContractService athleteContractService;
 
     private AtletaServiceImpl atletaService;
 
@@ -63,7 +64,8 @@ class AtletaServiceTenantTest {
                 planoMetaDadosRepository,
                 tsbService,
                 athleteInviteService,
-                llmCallLedger
+                llmCallLedger,
+                athleteContractService
         );
         // CRÍTICO: TenantContext vazio — simula chamada sem JWT
         TenantContext.clear();
@@ -85,8 +87,6 @@ class AtletaServiceTenantTest {
                 Set.of(DiaSemana.SEGUNDA, DiaSemana.QUARTA),
                 DiaSemana.SABADO,
                 false,
-                null,
-                null,
                 null,
                 "teste@teste.com",
                 Sexo.FEMININO

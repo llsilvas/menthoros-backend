@@ -64,6 +64,9 @@ class AtletaServiceImplTest {
     @Mock
     private LlmCallLedger llmCallLedger;
 
+    @Mock
+    private br.com.menthoros.backend.services.AthleteContractService athleteContractService;
+
     @InjectMocks
     private AtletaServiceImpl atletaService;
 
@@ -111,8 +114,6 @@ class AtletaServiceImplTest {
                 DiaSemana.SABADO,
                 false,
                 null,
-                null,
-                null,
                 "teste@teste.com",
                 Sexo.MASCULINO
         );
@@ -130,7 +131,6 @@ class AtletaServiceImplTest {
                 false,
                 null,
                 List.of(),
-                null,
                 null,
                 null,
                 "teste@teste.com",

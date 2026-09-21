@@ -3,10 +3,7 @@ package br.com.menthoros.backend.mapper;
 import br.com.menthoros.backend.dto.input.AtletaInputDto;
 import br.com.menthoros.backend.dto.output.AtletaOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
-import br.com.menthoros.backend.enums.StatusVencimentoPlano;
 import org.mapstruct.*;
-
-import java.time.LocalDate;
 
 @Mapper(
         componentModel = "spring",
@@ -19,12 +16,10 @@ public interface AtletaMapper {
     @Mapping(source = "alturaCm", target = "alturaCm")
     Atleta toEntity(AtletaInputDto atletaInputDto);
 
-    @Mapping(target = "statusVencimentoPlano", expression = "java(resolveStatusVencimentoPlano(atleta))")
+    /** Cobrança não vem da entidade: o serviço resolve via {@code AthleteContractService} e usa {@code withBilling}. */
+    @Mapping(target = "billingStatus", ignore = true)
+    @Mapping(target = "nextDueDate", ignore = true)
     AtletaOutputDto toOutputDto(Atleta atleta);
-
-    default StatusVencimentoPlano resolveStatusVencimentoPlano(Atleta atleta) {
-        return StatusVencimentoPlano.resolver(atleta.getDataVencimentoPlano(), LocalDate.now());
-    }
 
     @BeanMapping(ignoreByDefault = false)
     void updateEntity(AtletaInputDto atletaInputDto, @MappingTarget Atleta atleta);

@@ -13,8 +13,9 @@ import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.FaixaTsb;
-import br.com.menthoros.backend.enums.StatusVencimentoPlano;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.domain.billing.AthleteBilling;
+import br.com.menthoros.backend.services.AthleteContractService;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
@@ -75,6 +76,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final CoachAttentionQueueService coachAttentionQueueService;
+    private final AthleteContractService athleteContractService;
     private final Clock clock;
 
     @Override
@@ -85,8 +87,12 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         LocalDate inicioSemana = hoje.with(DayOfWeek.MONDAY);
         LocalDate fimSemana = inicioSemana.plusDays(6);
 
-        return atletaRepository.findAtivosByTenantIdOrderByNome(tenantId).stream()
-                .map(atleta -> montarResumo(atleta, hoje, inicioSemana, fimSemana))
+        List<Atleta> atletas = atletaRepository.findAtivosByTenantIdOrderByNome(tenantId);
+        // cobrança resolvida uma vez para o roster inteiro — sem N+1 (design D4)
+        Map<UUID, AthleteBilling> cobranca = athleteContractService.resolveBilling(
+                atletas.stream().map(Atleta::getId).toList(), hoje);
+        return atletas.stream()
+                .map(atleta -> montarResumo(atleta, hoje, inicioSemana, fimSemana, cobranca.get(atleta.getId())))
                 .toList();
     }
 
@@ -236,7 +242,8 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         return treinoPlanejadoRepository.findByTenantAndDataBetween(tenantId, inicio, fim).size();
     }
 
-    private CoachAtletaResumoDto montarResumo(Atleta atleta, LocalDate hoje, LocalDate inicioSemana, LocalDate fimSemana) {
+    private CoachAtletaResumoDto montarResumo(Atleta atleta, LocalDate hoje, LocalDate inicioSemana, LocalDate fimSemana,
+                                              AthleteBilling cobranca) {
         UUID atletaId = atleta.getId();
         UUID tenantId = TenantContext.getRequiredTenantId();
         MetricasDiarias metrica = metricasDiariasRepository.findLatestByAtletaId(atletaId).orElse(null);
@@ -272,8 +279,9 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
 
         return new CoachAtletaResumoDto(atletaId, nomeCompleto(atleta), ctl, atl, tsb, fase,
                 deriveStatus(atleta, tsb, lastActivity, hoje), lastActivity, weeklyVolume, aderenciaPercentual,
-                FaixaTsb.classificarNome(tsb), atleta.getTipoPlanoAtleta(), atleta.getDataVencimentoPlano(),
-                StatusVencimentoPlano.resolver(atleta.getDataVencimentoPlano(), hoje));
+                FaixaTsb.classificarNome(tsb),
+                cobranca != null ? cobranca.status() : null,
+                cobranca != null ? cobranca.nextDueDate() : null);
     }
 
     private CoachCalendarioDto.TreinoAgendado montarTreinoAgendado(TreinoPlanejado tp, Set<UUID> atletasEmAtencao) {

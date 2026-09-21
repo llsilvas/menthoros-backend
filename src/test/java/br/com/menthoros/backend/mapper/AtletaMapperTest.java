@@ -1,13 +1,13 @@
 package br.com.menthoros.backend.mapper;
 
+import br.com.menthoros.backend.domain.billing.AthleteBilling;
 import br.com.menthoros.backend.dto.input.AtletaInputDto;
 import br.com.menthoros.backend.dto.output.AtletaOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.enums.AthleteBillingStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.Sexo;
-import br.com.menthoros.backend.enums.StatusVencimentoPlano;
-import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -24,119 +24,40 @@ class AtletaMapperTest {
     private final AtletaMapper mapper = new AtletaMapperImpl(null);
 
     @Nested
-    @DisplayName("toOutputDto — dados de cobrança")
+    @DisplayName("toOutputDto — cobrança")
     class ToOutputDtoCobranca {
 
         @Test
-        @DisplayName("dataVencimentoPlano nulo → tipoPlanoAtleta e statusVencimentoPlano ausentes")
-        void semDadosDeCobranca() {
-            Atleta atleta = atletaBase().build();
+        @DisplayName("o mapper não resolve cobrança: billingStatus e nextDueDate saem nulos")
+        void mapperNaoResolveCobranca() {
+            AtletaOutputDto dto = mapper.toOutputDto(atletaBase().build());
 
-            AtletaOutputDto dto = mapper.toOutputDto(atleta);
-
-            assertThat(dto.dataVencimentoPlano()).isNull();
-            assertThat(dto.tipoPlanoAtleta()).isNull();
-            assertThat(dto.statusVencimentoPlano()).isNull();
+            assertThat(dto.billingStatus()).isNull();
+            assertThat(dto.nextDueDate()).isNull();
         }
 
         @Test
-        @DisplayName("dataVencimentoPlano no passado → VENCIDO")
-        void dataNoPassadoRetornaVencido() {
-            Atleta atleta = atletaBase()
-                    .tipoPlanoAtleta(TipoPlanoAtleta.MENSAL)
-                    .dataVencimentoPlano(LocalDate.now().minusDays(5))
-                    .build();
+        @DisplayName("withBilling preenche os dois campos e preserva o resto")
+        void withBillingPreenche() {
+            AtletaOutputDto dto = mapper.toOutputDto(atletaBase().email("a@b.com").build());
 
-            AtletaOutputDto dto = mapper.toOutputDto(atleta);
+            AtletaOutputDto comCobranca = dto.withBilling(
+                    new AthleteBilling(AthleteBillingStatus.DUE_SOON, LocalDate.of(2026, 10, 10)));
 
-            assertThat(dto.tipoPlanoAtleta()).isEqualTo(TipoPlanoAtleta.MENSAL);
-            assertThat(dto.statusVencimentoPlano()).isEqualTo(StatusVencimentoPlano.VENCIDO);
+            assertThat(comCobranca.billingStatus()).isEqualTo(AthleteBillingStatus.DUE_SOON);
+            assertThat(comCobranca.nextDueDate()).isEqualTo(LocalDate.of(2026, 10, 10));
+            assertThat(comCobranca.nome()).isEqualTo("Atleta Teste");
+            assertThat(comCobranca.email()).isEqualTo("a@b.com");
         }
 
         @Test
-        @DisplayName("dataVencimentoPlano dentro de 7 dias → PROXIMO_VENCIMENTO")
-        void dataProximaRetornaProximoVencimento() {
-            Atleta atleta = atletaBase()
-                    .dataVencimentoPlano(LocalDate.now().plusDays(3))
-                    .build();
+        @DisplayName("withBilling(null) mantém os campos ausentes (atleta sem contrato)")
+        void withBillingNulo() {
+            AtletaOutputDto dto = mapper.toOutputDto(atletaBase().build()).withBilling(null);
 
-            AtletaOutputDto dto = mapper.toOutputDto(atleta);
-
-            assertThat(dto.statusVencimentoPlano()).isEqualTo(StatusVencimentoPlano.PROXIMO_VENCIMENTO);
+            assertThat(dto.billingStatus()).isNull();
+            assertThat(dto.nextDueDate()).isNull();
         }
-
-        @Test
-        @DisplayName("dataVencimentoPlano fora da janela de alerta → EM_DIA")
-        void dataDistanteRetornaEmDia() {
-            Atleta atleta = atletaBase()
-                    .dataVencimentoPlano(LocalDate.now().plusDays(30))
-                    .build();
-
-            AtletaOutputDto dto = mapper.toOutputDto(atleta);
-
-            assertThat(dto.statusVencimentoPlano()).isEqualTo(StatusVencimentoPlano.EM_DIA);
-        }
-    }
-
-    @Nested
-    @DisplayName("updateEntity — dados de cobrança (PUT é full update — CLAUDE.md HTTP Semantics)")
-    class UpdateEntityCobranca {
-
-        @Test
-        @DisplayName("informa só dataVencimentoPlano → tipoPlanoAtleta vira null, demais campos preservados")
-        void atualizaSoData() {
-            Atleta atleta = atletaBase()
-                    .tipoPlanoAtleta(TipoPlanoAtleta.ANUAL)
-                    .dataVencimentoPlano(LocalDate.now())
-                    .build();
-            LocalDate novaData = LocalDate.now().plusMonths(1);
-
-            mapper.updateEntity(inputCom(null, novaData), atleta);
-
-            assertThat(atleta.getDataVencimentoPlano()).isEqualTo(novaData);
-            assertThat(atleta.getTipoPlanoAtleta()).isNull();
-            assertThat(atleta.getNome()).isEqualTo("Atleta Teste");
-            assertThat(atleta.getObjetivo()).isEqualTo("Correr 10K");
-        }
-
-        @Test
-        @DisplayName("informa só tipoPlanoAtleta → dataVencimentoPlano vira null")
-        void atualizaSoTipo() {
-            Atleta atleta = atletaBase().build();
-
-            mapper.updateEntity(inputCom(TipoPlanoAtleta.MENSAL, null), atleta);
-
-            assertThat(atleta.getTipoPlanoAtleta()).isEqualTo(TipoPlanoAtleta.MENSAL);
-            assertThat(atleta.getDataVencimentoPlano()).isNull();
-        }
-
-        @Test
-        @DisplayName("informa os dois → ambos persistidos")
-        void atualizaOsDois() {
-            Atleta atleta = atletaBase().build();
-            LocalDate data = LocalDate.now().plusDays(10);
-
-            mapper.updateEntity(inputCom(TipoPlanoAtleta.TRIMESTRAL, data), atleta);
-
-            assertThat(atleta.getTipoPlanoAtleta()).isEqualTo(TipoPlanoAtleta.TRIMESTRAL);
-            assertThat(atleta.getDataVencimentoPlano()).isEqualTo(data);
-        }
-
-        @Test
-        @DisplayName("não informa nenhum dos dois → ambos ficam null, sem regressão nos demais campos")
-        void naoInformaNenhum() {
-            Atleta atleta = atletaBase()
-                    .tipoPlanoAtleta(TipoPlanoAtleta.SEMESTRAL)
-                    .dataVencimentoPlano(LocalDate.now())
-                    .build();
-
-            mapper.updateEntity(inputCom(null, null), atleta);
-
-            assertThat(atleta.getTipoPlanoAtleta()).isNull();
-            assertThat(atleta.getDataVencimentoPlano()).isNull();
-            assertThat(atleta.getNome()).isEqualTo("Atleta Teste");
-        }
-
     }
 
     @Nested
@@ -148,7 +69,7 @@ class AtletaMapperTest {
         void updateEntityCopiaSexoEEmail() {
             Atleta atleta = atletaBase().sexo(Sexo.MASCULINO).email("antigo@teste.com").build();
 
-            mapper.updateEntity(inputCom(null, null), atleta);
+            mapper.updateEntity(inputCom("teste@teste.com", Sexo.FEMININO), atleta);
 
             assertThat(atleta.getSexo()).isEqualTo(Sexo.FEMININO);
             assertThat(atleta.getEmail()).isEqualTo("teste@teste.com");
@@ -170,19 +91,25 @@ class AtletaMapperTest {
         void aceitaNulos() {
             Atleta atleta = atletaBase().sexo(Sexo.MASCULINO).email("antigo@teste.com").build();
 
-            mapper.updateEntity(inputCom(null, null, null, null), atleta);
+            mapper.updateEntity(inputCom(null, null), atleta);
 
             assertThat(atleta.getSexo()).isNull();
             assertThat(atleta.getEmail()).isNull();
         }
+
+        @Test
+        @DisplayName("updateEntity preserva nome e objetivo (PUT é full update dos campos do input)")
+        void preservaDemaisCampos() {
+            Atleta atleta = atletaBase().build();
+
+            mapper.updateEntity(inputCom("teste@teste.com", Sexo.FEMININO), atleta);
+
+            assertThat(atleta.getNome()).isEqualTo("Atleta Teste");
+            assertThat(atleta.getObjetivo()).isEqualTo("Correr 10K");
+        }
     }
 
-    private AtletaInputDto inputCom(TipoPlanoAtleta tipoPlanoAtleta, LocalDate dataVencimentoPlano) {
-        return inputCom(tipoPlanoAtleta, dataVencimentoPlano, "teste@teste.com", Sexo.FEMININO);
-    }
-
-    private AtletaInputDto inputCom(TipoPlanoAtleta tipoPlanoAtleta, LocalDate dataVencimentoPlano,
-                                    String email, Sexo sexo) {
+    private AtletaInputDto inputCom(String email, Sexo sexo) {
         return new AtletaInputDto(
                 "Atleta Teste",
                 null,
@@ -194,8 +121,6 @@ class AtletaMapperTest {
                 null,
                 false,
                 null,
-                tipoPlanoAtleta,
-                dataVencimentoPlano,
                 email,
                 sexo
         );

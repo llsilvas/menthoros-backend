@@ -20,8 +20,9 @@ import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.Severidade;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.StatusSugestao;
-import br.com.menthoros.backend.enums.StatusVencimentoPlano;
-import br.com.menthoros.backend.enums.TipoPlanoAtleta;
+import br.com.menthoros.backend.domain.billing.AthleteBilling;
+import br.com.menthoros.backend.enums.AthleteBillingStatus;
+import br.com.menthoros.backend.services.AthleteContractService;
 import br.com.menthoros.backend.enums.TipoSugestao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
@@ -85,6 +86,7 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private ThresholdInferenceService thresholdInferenceService;
     @Mock private br.com.menthoros.backend.repository.TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private MelhorEsforcoService melhorEsforcoService;
+    @Mock private AthleteContractService athleteContractService;
 
     private SimpleMeterRegistry meterRegistry;
     private CoachAthleteProfileServiceImpl service;
@@ -116,7 +118,11 @@ class CoachAthleteProfileServiceImplTest {
         service = new CoachAthleteProfileServiceImpl(
                 atletaRepository, atletaProgressService, coachAttentionQueueService, sugestaoCoachService,
                 planoService, planoMetadadosRepository, provaRepository, provaMapper, treinoRealizadoRepository,
-                intervalsIcuConnectionService, thresholdInferenceService, melhorEsforcoService, meterRegistry);
+                intervalsIcuConnectionService, thresholdInferenceService, melhorEsforcoService, meterRegistry,
+                athleteContractService);
+        // Default: sem cobrança (os testes de cobrança sobrescrevem)
+        lenient().when(athleteContractService.resolveBilling(eq(atletaId), any(LocalDate.class)))
+                .thenReturn(java.util.Optional.empty());
     }
 
     @AfterEach
@@ -477,50 +483,42 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         @Test
-        @DisplayName("dataVencimentoPlano nulo → tipoPlanoAtleta e statusVencimentoPlano ausentes")
-        void semDadosDeCobranca() {
+        @DisplayName("atleta sem cobrança → billingStatus e nextDueDate ausentes (CA1)")
+        void semCobranca() {
             stubPerfilMinimo();
 
             AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
 
-            assertThat(perfil.tipoPlanoAtleta()).isNull();
-            assertThat(perfil.dataVencimentoPlano()).isNull();
-            assertThat(perfil.statusVencimentoPlano()).isNull();
+            assertThat(perfil.billingStatus()).isNull();
+            assertThat(perfil.nextDueDate()).isNull();
         }
 
         @Test
-        @DisplayName("dataVencimentoPlano no passado → VENCIDO")
-        void dataNoPassadoRetornaVencido() {
-            atleta = atleta.toBuilder()
-                    .tipoPlanoAtleta(TipoPlanoAtleta.ANUAL)
-                    .dataVencimentoPlano(LocalDate.now().minusDays(3))
-                    .build();
+        @DisplayName("cobrança vem do serviço de contrato: status e próximo vencimento, sem valor")
+        void cobrancaDoServico() {
             stubPerfilMinimo();
+            when(athleteContractService.resolveBilling(eq(atletaId), any(LocalDate.class)))
+                    .thenReturn(java.util.Optional.of(
+                            new AthleteBilling(AthleteBillingStatus.OVERDUE, LocalDate.now().minusDays(3))));
 
             AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
 
-            assertThat(perfil.tipoPlanoAtleta()).isEqualTo(TipoPlanoAtleta.ANUAL);
-            assertThat(perfil.statusVencimentoPlano()).isEqualTo(StatusVencimentoPlano.VENCIDO);
+            assertThat(perfil.billingStatus()).isEqualTo(AthleteBillingStatus.OVERDUE);
+            assertThat(perfil.nextDueDate()).isEqualTo(LocalDate.now().minusDays(3));
+            assertThat(perfil.avisos()).isNull();
         }
 
         @Test
-        @DisplayName("dataVencimentoPlano dentro de 7 dias → PROXIMO_VENCIMENTO")
-        void dataProximaRetornaProximoVencimento() {
-            atleta = atleta.toBuilder().dataVencimentoPlano(LocalDate.now().plusDays(2)).build();
+        @DisplayName("falha ao resolver cobrança degrada com aviso, sem derrubar o perfil (falha parcial)")
+        void cobrancaFalhaParcial() {
             stubPerfilMinimo();
+            when(athleteContractService.resolveBilling(eq(atletaId), any(LocalDate.class)))
+                    .thenThrow(new RuntimeException("timeout"));
 
-            assertThat(service.buscarPerfil(atletaId).statusVencimentoPlano())
-                    .isEqualTo(StatusVencimentoPlano.PROXIMO_VENCIMENTO);
-        }
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
 
-        @Test
-        @DisplayName("dataVencimentoPlano fora da janela de alerta → EM_DIA")
-        void dataDistanteRetornaEmDia() {
-            atleta = atleta.toBuilder().dataVencimentoPlano(LocalDate.now().plusDays(45)).build();
-            stubPerfilMinimo();
-
-            assertThat(service.buscarPerfil(atletaId).statusVencimentoPlano())
-                    .isEqualTo(StatusVencimentoPlano.EM_DIA);
+            assertThat(perfil.billingStatus()).isNull();
+            assertThat(perfil.avisos()).contains("cobranca");
         }
 
         private void stubPerfilMinimo() {

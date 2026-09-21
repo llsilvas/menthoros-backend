@@ -7,7 +7,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import br.com.menthoros.backend.entity.*;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
-import br.com.menthoros.backend.enums.StatusVencimentoPlano;
+import br.com.menthoros.backend.domain.billing.AthleteBilling;
+import br.com.menthoros.backend.services.AthleteContractService;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -56,6 +57,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final ThresholdInferenceService thresholdInferenceService;
     private final MelhorEsforcoService melhorEsforcoService;
     private final MeterRegistry meterRegistry;
+    private final AthleteContractService athleteContractService;
 
     /**
      * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
@@ -129,6 +131,10 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         AtletaPerfilCoachOutputDto.LimiareisInferidosDto limiareisInferidos =
                 resolverLimiareisInferidos(atletaId, atleta);
 
+        // falha parcial: cobrança indisponível não derruba o perfil (padrão buscarNullable)
+        AthleteBilling cobranca = buscarNullable("cobranca", avisos,
+                () -> athleteContractService.resolveBilling(atletaId, LocalDate.now()).orElse(null));
+
         String nome = atleta.getSobrenome() != null
                 ? atleta.getNome() + " " + atleta.getSobrenome()
                 : atleta.getNome();
@@ -156,9 +162,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 Instant.now(),
                 avisos.isEmpty() ? null : avisos,
                 limiareisInferidos,
-                atleta.getTipoPlanoAtleta(),
-                atleta.getDataVencimentoPlano(),
-                StatusVencimentoPlano.resolver(atleta.getDataVencimentoPlano(), LocalDate.now()),
+                cobranca != null ? cobranca.status() : null,
+                cobranca != null ? cobranca.nextDueDate() : null,
                 realizadosRecentes,
                 melhoresEsforcos,
                 melhoresEsforcosIntegracaoConectada
