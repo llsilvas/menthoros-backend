@@ -31,6 +31,7 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +51,7 @@ public class AtletaServiceImpl implements AtletaService {
     private final AthleteInviteService athleteInviteService;
     private final LlmCallLedger llmCallLedger;
     private final AthleteContractService athleteContractService;
+    private final Clock clock;
 
     private static final String HAS_TENANT =
             "T(br.com.menthoros.backend.multitenancy.TenantContext).hasTenant()";
@@ -165,6 +167,8 @@ public class AtletaServiceImpl implements AtletaService {
         atleta.setAtivo(AtletaStatus.INATIVO);
         atletaRepository.save(atleta);
         llmCallLedger.anonimizarRespostasDoAtleta(id);
+        // sem atleta não há a quem cobrar: o contrato ativo encerra junto, senão o scheduler gera mensalidade para ninguém
+        athleteContractService.findActiveContract(id).ifPresent(c -> athleteContractService.end(id));
     }
 
     /**
@@ -237,12 +241,12 @@ public class AtletaServiceImpl implements AtletaService {
         }).toList();
         // uma resolução em lote para a lista inteira — sem N+1 (design D4)
         Map<UUID, AthleteBilling> cobranca = athleteContractService.resolveBilling(
-                atletas.stream().map(AtletaOutputDto::id).toList(), LocalDate.now());
+                atletas.stream().map(AtletaOutputDto::id).toList(), LocalDate.now(clock));
         return atletas.stream().map(dto -> dto.withBilling(cobranca.get(dto.id()))).toList();
     }
 
     private AtletaOutputDto comCobranca(AtletaOutputDto dto) {
-        return dto.withBilling(athleteContractService.resolveBilling(dto.id(), LocalDate.now()).orElse(null));
+        return dto.withBilling(athleteContractService.resolveBilling(dto.id(), LocalDate.now(clock)).orElse(null));
     }
 
     /**

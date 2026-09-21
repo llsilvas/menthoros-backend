@@ -35,6 +35,7 @@ public interface AthleteInvoiceRepository extends JpaRepository<AthleteInvoice, 
             FROM AthleteInvoice i, AthleteContract c
             WHERE i.contractId = c.id
               AND i.tenantId = :tenantId
+              AND c.tenantId = :tenantId
               AND c.athleteId IN :athleteIds
               AND i.status = br.com.menthoros.backend.enums.InvoiceStatus.OPEN
             """)

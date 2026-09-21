@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS tb_athlete_invoice (
     status        VARCHAR(20) NOT NULL,
     paid_at       DATE,
     paid_amount   NUMERIC(10,2),
+    version       BIGINT NOT NULL DEFAULT 0,                                    -- baixa x cancelar concorrentes: o segundo recebe 409
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_by    VARCHAR(255),
@@ -62,9 +63,10 @@ COMMENT ON TABLE tb_athlete_contract IS
 COMMENT ON TABLE tb_athlete_invoice IS
     'Mensalidade gerada pelo contrato. "Vencida" e derivada (OPEN com due_date no passado), nunca persistida.';
 
--- Backfill: todo atleta com data legada vira contrato ativo, sem mensalidade. O CASE (nao
--- COALESCE) defende contra valor fora do enum: V57 criou tipo_plano_atleta sem CHECK. O NOT
--- EXISTS torna o bloco reexecutavel (e o que permite testa-lo).
+-- Backfill: todo atleta ATIVO com data legada vira contrato ativo, sem mensalidade. Atleta
+-- inativo (soft delete) fica de fora: um contrato ativo para ele geraria mensalidade todo mes
+-- para ninguem. O CASE (nao COALESCE) defende contra valor fora do enum: V57 criou
+-- tipo_plano_atleta sem CHECK. O NOT EXISTS torna o bloco reexecutavel (e o que permite testa-lo).
 INSERT INTO tb_athlete_contract (tenant_id, athlete_id, periodicity, due_day, start_date)
 SELECT a.tenant_id,
        a.id,
@@ -78,6 +80,7 @@ SELECT a.tenant_id,
        a.data_vencimento_plano
 FROM tb_atleta a
 WHERE a.data_vencimento_plano IS NOT NULL
+  AND a.ativo = 'ATIVO'
   AND NOT EXISTS (
       SELECT 1 FROM tb_athlete_contract c
       WHERE c.athlete_id = a.id AND c.ended_at IS NULL

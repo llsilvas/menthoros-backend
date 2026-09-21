@@ -65,7 +65,8 @@ class AtletaServiceTenantTest {
                 tsbService,
                 athleteInviteService,
                 llmCallLedger,
-                athleteContractService
+                athleteContractService,
+                java.time.Clock.systemUTC()
         );
         // CRÍTICO: TenantContext vazio — simula chamada sem JWT
         TenantContext.clear();

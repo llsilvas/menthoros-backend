@@ -49,7 +49,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -66,6 +69,9 @@ class AthleteContractServiceImplTest {
     @Mock private AthleteContractRepository contractRepository;
     @Mock private AthleteInvoiceRepository invoiceRepository;
     @Mock private AtletaRepository atletaRepository;
+    @Mock private CacheManager cacheManager;
+    @Mock private Cache cacheAtletas;
+    @Mock private Cache cacheAtletasList;
 
     private AthleteContractServiceImpl service;
 
@@ -77,7 +83,10 @@ class AthleteContractServiceImplTest {
         tenantId = UUID.randomUUID();
         athleteId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
-        service = new AthleteContractServiceImpl(contractRepository, invoiceRepository, atletaRepository, CLOCK);
+        service = new AthleteContractServiceImpl(contractRepository, invoiceRepository, atletaRepository, cacheManager, CLOCK);
+        // caches presentes por padrão; os testes de mutação verificam a invalidação
+        lenient().when(cacheManager.getCache("atletas")).thenReturn(cacheAtletas);
+        lenient().when(cacheManager.getCache("atletas-list")).thenReturn(cacheAtletasList);
     }
 
     @AfterEach
@@ -134,6 +143,31 @@ class AthleteContractServiceImplTest {
             assertThat(result.getDueDay()).isEqualTo(15);
             verify(contractRepository, never()).saveAndFlush(any());
             verifyNoInteractions(invoiceRepository);
+            // o badge do GET de atleta vive em cache: toda mutação invalida as duas chaves
+            verify(cacheAtletas).evict(athleteId + "_" + tenantId);
+            verify(cacheAtletasList).evict(tenantId);
+        }
+
+        @Test
+        @DisplayName("encerramento venceu a corrida entre a leitura e o lock → não edita o morto, cria um novo")
+        void encerradoEntreLeituraELock() {
+            when(atletaRepository.findByIdAndTenantId(athleteId, tenantId)).thenReturn(Optional.of(new Atleta()));
+            AthleteContract lido = contrato(UUID.randomUUID(), HOJE);
+            AthleteContract travado = contrato(lido.getId(), HOJE);
+            travado.setEndedAt(OffsetDateTime.now());
+            when(contractRepository.findActiveByAthleteIdAndTenantId(athleteId, tenantId)).thenReturn(Optional.of(lido));
+            when(contractRepository.findByIdAndTenantIdForUpdate(lido.getId(), tenantId)).thenReturn(Optional.of(travado));
+            AthleteContract novo = contrato(UUID.randomUUID(), HOJE);
+            when(contractRepository.saveAndFlush(any())).thenReturn(novo);
+            when(contractRepository.findByIdAndTenantIdForUpdate(novo.getId(), tenantId)).thenReturn(Optional.of(novo));
+            when(invoiceRepository.findTopByContractIdAndTenantIdOrderByDueDateDesc(novo.getId(), tenantId))
+                    .thenReturn(Optional.empty());
+
+            AthleteContract result = service.createOrUpdate(athleteId, input(BigDecimal.TEN, 10, HOJE));
+
+            assertThat(result).isSameAs(novo);
+            verify(contractRepository, never()).save(travado);
+            assertThat(travado.getAmount()).isEqualByComparingTo("200.00"); // intocado
         }
 
         @Test
@@ -386,6 +420,34 @@ class AthleteContractServiceImplTest {
         }
 
         @Test
+        @DisplayName("baixa invalida o cache do atleta dono do contrato (badge não fica 30 min desatualizado)")
+        void baixaInvalidaCache() {
+            AthleteInvoice invoice = mensalidade(InvoiceStatus.OPEN);
+            AthleteContract contract = contrato(invoice.getContractId(), HOJE);
+            when(invoiceRepository.findByIdAndTenantId(invoice.getId(), tenantId)).thenReturn(Optional.of(invoice));
+            when(invoiceRepository.save(invoice)).thenReturn(invoice);
+            when(contractRepository.findById(invoice.getContractId())).thenReturn(Optional.of(contract));
+
+            service.markPaid(invoice.getId(), null, null);
+
+            verify(cacheAtletas).evict(athleteId + "_" + tenantId);
+            verify(cacheAtletasList).evict(tenantId);
+        }
+
+        @Test
+        @DisplayName("cache ausente (nome não configurado) não quebra a baixa")
+        void cacheAusente() {
+            AthleteInvoice invoice = mensalidade(InvoiceStatus.OPEN);
+            when(invoiceRepository.findByIdAndTenantId(invoice.getId(), tenantId)).thenReturn(Optional.of(invoice));
+            when(invoiceRepository.save(invoice)).thenReturn(invoice);
+            when(contractRepository.findById(invoice.getContractId())).thenReturn(Optional.of(contrato(invoice.getContractId(), HOJE)));
+            when(cacheManager.getCache("atletas")).thenReturn(null);
+            when(cacheManager.getCache("atletas-list")).thenReturn(null);
+
+            assertThat(service.markPaid(invoice.getId(), null, null).getStatus()).isEqualTo(InvoiceStatus.PAID);
+        }
+
+        @Test
         @DisplayName("valor e data informados prevalecem")
         void informados() {
             AthleteInvoice invoice = mensalidade(InvoiceStatus.OPEN);
@@ -396,6 +458,14 @@ class AthleteContractServiceImplTest {
 
             assertThat(result.getPaidAt()).isEqualTo(HOJE.minusDays(3));
             assertThat(result.getPaidAmount()).isEqualByComparingTo("180.00");
+        }
+
+        @Test
+        @DisplayName("data de pagamento futura → IllegalArgumentException antes de buscar")
+        void dataFutura() {
+            assertThatThrownBy(() -> service.markPaid(UUID.randomUUID(), HOJE.plusDays(1), null))
+                    .isInstanceOf(IllegalArgumentException.class);
+            verifyNoInteractions(invoiceRepository);
         }
 
         @Test

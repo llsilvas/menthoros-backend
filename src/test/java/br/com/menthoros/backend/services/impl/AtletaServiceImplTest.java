@@ -67,6 +67,9 @@ class AtletaServiceImplTest {
     @Mock
     private br.com.menthoros.backend.services.AthleteContractService athleteContractService;
 
+    @org.mockito.Spy
+    private java.time.Clock clock = java.time.Clock.systemUTC();
+
     @InjectMocks
     private AtletaServiceImpl atletaService;
 

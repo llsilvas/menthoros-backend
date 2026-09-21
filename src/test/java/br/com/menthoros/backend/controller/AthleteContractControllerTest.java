@@ -222,13 +222,25 @@ class AthleteContractControllerTest {
         @Test
         @DisplayName("baixa com corpo repassa data e valor")
         void baixaComCorpo() throws Exception {
-            when(contractService.markPaid(invoiceId, LocalDate.of(2026, 10, 8), new BigDecimal("180.00")))
+            when(contractService.markPaid(invoiceId, LocalDate.of(2026, 9, 8), new BigDecimal("180.00")))
                     .thenReturn(mensalidade(LocalDate.now(), InvoiceStatus.PAID));
 
             mockMvc.perform(post("/api/v1/mensalidades/{id}/baixa", invoiceId).with(proprietarioJwt()).with(csrf())
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content("{\"paidAt\":\"2026-10-08\",\"paidAmount\":180.00}"))
+                            .content("{\"paidAt\":\"2026-09-08\",\"paidAmount\":180.00}"))
                     .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("baixa com data futura → 400 sem chamar o serviço")
+        void baixaDataFutura() throws Exception {
+            String amanha = LocalDate.now().plusDays(1).toString();
+
+            mockMvc.perform(post("/api/v1/mensalidades/{id}/baixa", invoiceId).with(proprietarioJwt()).with(csrf())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"paidAt\":\"" + amanha + "\"}"))
+                    .andExpect(status().isBadRequest());
+            verify(contractService, never()).markPaid(any(), any(), any());
         }
 
         @Test

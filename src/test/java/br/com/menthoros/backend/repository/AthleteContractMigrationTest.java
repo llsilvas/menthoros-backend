@@ -48,12 +48,16 @@ class AthleteContractMigrationTest extends AbstractIntegrationTest {
     }
 
     private UUID inserirAtleta(UUID tenantId, String tipoPlanoLegado, LocalDate vencimentoLegado) {
+        return inserirAtleta(tenantId, tipoPlanoLegado, vencimentoLegado, "ATIVO");
+    }
+
+    private UUID inserirAtleta(UUID tenantId, String tipoPlanoLegado, LocalDate vencimentoLegado, String ativo) {
         var id = UUID.randomUUID();
         jdbc.update("""
-                INSERT INTO tb_atleta (id, tenant_id, nome, email, nivel_experiencia, tipo_plano_atleta, data_vencimento_plano)
-                VALUES (?, ?, 'Maria', ?, 'INICIANTE', ?, ?)
+                INSERT INTO tb_atleta (id, tenant_id, nome, email, nivel_experiencia, tipo_plano_atleta, data_vencimento_plano, ativo)
+                VALUES (?, ?, 'Maria', ?, 'INICIANTE', ?, ?, ?)
                 """, id, tenantId, "maria-" + id + "@exemplo.com", tipoPlanoLegado,
-                vencimentoLegado == null ? null : Date.valueOf(vencimentoLegado));
+                vencimentoLegado == null ? null : Date.valueOf(vencimentoLegado), ativo);
         return id;
     }
 
@@ -239,6 +243,17 @@ class AthleteContractMigrationTest extends AbstractIntegrationTest {
             assertThat(jdbc.queryForObject(
                     "SELECT COUNT(*) FROM tb_athlete_invoice WHERE contract_id = ?", Integer.class, contrato))
                     .isZero();
+        }
+
+        @Test
+        @DisplayName("atleta inativo (soft delete) com data legada não ganha contrato")
+        void atletaInativoNaoGanhaContrato() throws IOException {
+            var tenant = inserirAssessoria();
+            var inativo = inserirAtleta(tenant, "MENSAL", LocalDate.of(2026, 10, 5), "INATIVO");
+
+            reexecutarV96();
+
+            assertThat(contratosDoAtleta(inativo)).isEmpty();
         }
 
         @Test

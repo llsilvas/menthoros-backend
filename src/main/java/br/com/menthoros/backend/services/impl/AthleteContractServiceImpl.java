@@ -18,6 +18,8 @@ import br.com.menthoros.backend.services.AthleteContractService;
 import br.com.menthoros.backend.services.helper.DueDateCalendar;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +27,7 @@ import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -53,9 +56,13 @@ public class AthleteContractServiceImpl implements AthleteContractService {
     /** Teto de gerações por contrato por chamada; a próxima execução continua de onde parou (D3). */
     static final int MAX_INVOICES_PER_RUN = 24;
 
+    /** Fuso da cobrança, compartilhado com o scheduler de renovação. */
+    public static final ZoneId BILLING_ZONE = ZoneId.of("America/Sao_Paulo");
+
     private final AthleteContractRepository contractRepository;
     private final AthleteInvoiceRepository invoiceRepository;
     private final AtletaRepository atletaRepository;
+    private final CacheManager cacheManager;
     private final Clock clock;
 
     /**
@@ -100,10 +107,15 @@ public class AthleteContractServiceImpl implements AthleteContractService {
         Optional<AthleteContract> existing = contractRepository.findActiveByAthleteIdAndTenantId(athleteId, tenantId);
         if (existing.isPresent()) {
             AthleteContract locked = lockContract(existing.get().getId(), tenantId);
-            apply(locked, input);
-            AthleteContract saved = contractRepository.save(locked);
-            log.info("Contrato do atleta editado: contractId={}, athleteId={}, tenantId={}", saved.getId(), athleteId, tenantId);
-            return saved;
+            // releitura sob lock: se um encerramento venceu a corrida, não editar o contrato morto — criar outro
+            if (locked.isActive()) {
+                apply(locked, input);
+                AthleteContract saved = contractRepository.save(locked);
+                evictAthleteCaches(athleteId, tenantId);
+                log.info("Contrato do atleta editado: contractId={}, athleteId={}, tenantId={}", saved.getId(), athleteId, tenantId);
+                return saved;
+            }
+            log.info("Contrato {} encerrado durante a edição; criando um novo para athleteId={}", locked.getId(), athleteId);
         }
 
         AthleteContract contract = AthleteContract.builder()
@@ -114,6 +126,7 @@ public class AthleteContractServiceImpl implements AthleteContractService {
         // flush aqui para o índice parcial disparar nesta linha (409) e o lock abaixo encontrar a linha
         AthleteContract created = contractRepository.saveAndFlush(contract);
         int generated = ensureNextInvoice(created.getId(), tenantId, today());
+        evictAthleteCaches(athleteId, tenantId);
         log.info("Contrato do atleta criado: contractId={}, athleteId={}, tenantId={}, mensalidades={}",
                 created.getId(), athleteId, tenantId, generated);
         return created;
@@ -133,6 +146,7 @@ public class AthleteContractServiceImpl implements AthleteContractService {
         AthleteContract locked = lockContract(active.getId(), tenantId);
         locked.setEndedAt(OffsetDateTime.now(clock));
         AthleteContract saved = contractRepository.save(locked);
+        evictAthleteCaches(athleteId, tenantId);
         log.info("Contrato do atleta encerrado: contractId={}, athleteId={}, tenantId={}", saved.getId(), athleteId, tenantId);
         return saved;
     }
@@ -144,6 +158,10 @@ public class AthleteContractServiceImpl implements AthleteContractService {
      *
      * <p>Sem mensalidade nenhuma, a primeira nasce em {@code firstDueDate(max(startDate, today))}:
      * nunca no passado, o sistema não inventa dívida que não viu nascer (D3/D7).</p>
+     *
+     * <p>Chamado de {@link #createOrUpdate} por {@code this} (self-invocation): ali o proxy não
+     * intercepta e o método roda na transação da criação — o que é o desejado, contrato e
+     * primeira mensalidade nascem ou falham juntos. O {@code @Transactional} vale para o scheduler.</p>
      */
     @Override
     @Transactional
@@ -196,12 +214,16 @@ public class AthleteContractServiceImpl implements AthleteContractService {
         if (paidAmount != null && paidAmount.signum() < 0) {
             throw new IllegalArgumentException("Valor pago não pode ser negativo");
         }
+        if (paidAt != null && paidAt.isAfter(today())) {
+            throw new IllegalArgumentException("Data do pagamento não pode ser futura");
+        }
         AthleteInvoice invoice = requireInvoice(invoiceId);
         requireStatus(invoice, InvoiceStatus.OPEN, "dar baixa");
         invoice.setStatus(InvoiceStatus.PAID);
         invoice.setPaidAt(paidAt != null ? paidAt : today());
         invoice.setPaidAmount(paidAmount != null ? paidAmount : invoice.getAmount());
         AthleteInvoice saved = invoiceRepository.save(invoice);
+        evictAthleteCaches(saved);
         log.info("Baixa de mensalidade: invoiceId={}, tenantId={}, paidAt={}", invoiceId, invoice.getTenantId(), saved.getPaidAt());
         return saved;
     }
@@ -220,6 +242,7 @@ public class AthleteContractServiceImpl implements AthleteContractService {
         invoice.setPaidAt(null);
         invoice.setPaidAmount(null);
         AthleteInvoice saved = invoiceRepository.save(invoice);
+        evictAthleteCaches(saved);
         log.info("Baixa desfeita: invoiceId={}, tenantId={}", invoiceId, invoice.getTenantId());
         return saved;
     }
@@ -236,6 +259,7 @@ public class AthleteContractServiceImpl implements AthleteContractService {
         requireStatus(invoice, InvoiceStatus.OPEN, "cancelar");
         invoice.setStatus(InvoiceStatus.CANCELLED);
         AthleteInvoice saved = invoiceRepository.save(invoice);
+        evictAthleteCaches(saved);
         log.info("Mensalidade cancelada: invoiceId={}, tenantId={}", invoiceId, invoice.getTenantId());
         return saved;
     }
@@ -312,6 +336,29 @@ public class AthleteContractServiceImpl implements AthleteContractService {
 
     // ---- helpers ----
 
+    /**
+     * {@code AtletaOutputDto} carrega {@code billingStatus}/{@code nextDueDate} e vive nos caches
+     * {@code atletas} (por atleta) e {@code atletas-list} (por tenant) do {@code AtletaServiceImpl},
+     * com TTL de 30 min. Sem esta invalidação, uma baixa levaria até meia hora para sumir do
+     * badge no GET de atleta. Mesmas chaves das anotações lá; precedente: {@code TsbRecalculoExecutor}.
+     */
+    private void evictAthleteCaches(UUID athleteId, UUID tenantId) {
+        Cache porAtleta = cacheManager.getCache("atletas");
+        if (porAtleta != null) {
+            porAtleta.evict(athleteId + "_" + tenantId);
+        }
+        Cache lista = cacheManager.getCache("atletas-list");
+        if (lista != null) {
+            lista.evict(tenantId);
+        }
+    }
+
+    private void evictAthleteCaches(AthleteInvoice invoice) {
+        contractRepository.findById(invoice.getContractId())
+                .filter(c -> invoice.getTenantId().equals(c.getTenantId()))
+                .ifPresent(c -> evictAthleteCaches(c.getAthleteId(), c.getTenantId()));
+    }
+
     private AthleteContract lockContract(UUID contractId, UUID tenantId) {
         return contractRepository.findByIdAndTenantIdForUpdate(contractId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Contrato não encontrado"));
@@ -366,7 +413,12 @@ public class AthleteContractServiceImpl implements AthleteContractService {
         }
     }
 
+    /**
+     * "Hoje" da cobrança é o de São Paulo, o mesmo do scheduler — em host UTC, entre 21h e 0h,
+     * o fuso padrão já diria "amanhã" e a primeira mensalidade ou a data de baixa divergiriam
+     * do que o job considera.
+     */
     private LocalDate today() {
-        return LocalDate.now(clock);
+        return LocalDate.now(clock.withZone(BILLING_ZONE));
     }
 }

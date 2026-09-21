@@ -141,6 +141,49 @@ class AthleteContractConcurrencyIT extends AbstractIntegrationTest {
         }
     }
 
+    @Test
+    @DisplayName("baixa e cancelamento simultâneos da mesma mensalidade: exatamente um vence, o outro recebe conflito (D6)")
+    void baixaECancelarConcorrentes() throws Exception {
+        UUID tenant = seedTenant();
+        AthleteContract contract = contractRepository.save(AthleteContract.builder()
+                .tenantId(tenant).athleteId(seedAtleta(tenant)).periodicity(ContractPeriodicity.MONTHLY)
+                .amount(new BigDecimal("200.00")).dueDay(10).startDate(LocalDate.of(2026, 1, 10)).build());
+        AthleteInvoice invoice = invoiceRepository.save(AthleteInvoice.builder()
+                .tenantId(tenant).contractId(contract.getId()).dueDate(LocalDate.of(2026, 10, 10))
+                .amount(contract.getAmount()).status(InvoiceStatus.OPEN).build());
+
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Boolean> baixa = pool.submit(() -> executar(start, tenant, () -> service.markPaid(invoice.getId(), null, null)));
+            Future<Boolean> cancelar = pool.submit(() -> executar(start, tenant, () -> service.cancel(invoice.getId())));
+            start.countDown();
+            boolean baixaOk = baixa.get(30, TimeUnit.SECONDS);
+            boolean cancelarOk = cancelar.get(30, TimeUnit.SECONDS);
+
+            assertThat(baixaOk ^ cancelarOk).as("exatamente uma transição vence").isTrue();
+            AthleteInvoice fim = invoiceRepository.findByIdAndTenantId(invoice.getId(), tenant).orElseThrow();
+            assertThat(fim.getStatus()).isEqualTo(baixaOk ? InvoiceStatus.PAID : InvoiceStatus.CANCELLED);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /** true se a transição foi gravada; false se perdeu a corrida (409 por conflito de domínio ou de versão). */
+    private static boolean executar(CountDownLatch start, UUID tenant, Runnable acao) throws InterruptedException {
+        start.await(5, TimeUnit.SECONDS);
+        try {
+            TenantContext.setTenantId(tenant);
+            acao.run();
+            return true;
+        } catch (br.com.menthoros.backend.exception.DomainConflictException
+                 | org.springframework.dao.OptimisticLockingFailureException e) {
+            return false;
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
     private UUID seedTenant() {
         Assessoria assessoria = new Assessoria();
         assessoria.setNome("Assessoria Concorrencia");

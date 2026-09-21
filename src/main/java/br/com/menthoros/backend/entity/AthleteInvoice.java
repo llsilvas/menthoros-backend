@@ -10,6 +10,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -60,6 +61,15 @@ public class AthleteInvoice extends AuditableEntity {
 
     @Column(name = "paid_amount", precision = 10, scale = 2)
     private BigDecimal paidAmount;
+
+    /**
+     * Duas transições simultâneas (baixa × cancelar) leem OPEN ao mesmo tempo; sem isto a
+     * última gravação apagaria a primeira em silêncio. Com {@code @Version} a segunda falha em
+     * {@code OptimisticLockingFailureException}, que o handler já mapeia para 409 (design D6).
+     */
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
 
     /** Derivado, nunca persistido: em aberto com vencimento antes de {@code today}. */
     public boolean isOverdue(LocalDate today) {

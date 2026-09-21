@@ -4,6 +4,7 @@ import br.com.menthoros.backend.entity.AthleteContract;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AthleteContractRepository;
 import br.com.menthoros.backend.services.AthleteContractService;
+import br.com.menthoros.backend.services.impl.AthleteContractServiceImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,7 +31,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AthleteInvoiceRenewalScheduler {
 
-    private static final ZoneId ZONE = ZoneId.of("America/Sao_Paulo");
+    private static final ZoneId ZONE = AthleteContractServiceImpl.BILLING_ZONE;
 
     private final AthleteContractRepository contractRepository;
     private final AthleteContractService contractService;
@@ -56,7 +57,7 @@ public class AthleteInvoiceRenewalScheduler {
                 TenantContext.setTenantId(tenantId);
                 total += renewTenant(tenantId, today);
             } catch (Exception e) {
-                log.warn("Falha na renovação de mensalidades do tenant {}: {}", tenantId, e.getMessage());
+                log.warn("Falha na renovação de mensalidades do tenant {}: {}", tenantId, e.getMessage(), e);
             } finally {
                 TenantContext.clear();
             }
@@ -73,7 +74,7 @@ public class AthleteInvoiceRenewalScheduler {
             try {
                 generated += contractService.ensureNextInvoice(contract.getId(), tenantId, today);
             } catch (Exception e) {
-                log.warn("Falha na renovação do contrato {} (tenant {}): {}", contract.getId(), tenantId, e.getMessage());
+                log.warn("Falha na renovação do contrato {} (tenant {}): {}", contract.getId(), tenantId, e.getMessage(), e);
             }
         }
         return generated;
