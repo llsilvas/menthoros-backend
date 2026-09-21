@@ -35,6 +35,13 @@ public final class JwtTestSupport {
         return comPapel("ATLETA", "atleta-keycloak-id");
     }
 
+    /** Dono da assessoria: no Keycloak PROPRIETARIO é composite de TECNICO, então o token traz os dois. */
+    public static RequestPostProcessor proprietarioJwt() {
+        return jwt()
+                .authorities(new SimpleGrantedAuthority("ROLE_PROPRIETARIO"), new SimpleGrantedAuthority("ROLE_TECNICO"))
+                .jwt(j -> j.claim("tenant_id", TENANT_ID.toString()).subject("proprietario-keycloak-id"));
+    }
+
     private static RequestPostProcessor comPapel(String papel, String subject) {
         return jwt()
                 .authorities(new SimpleGrantedAuthority("ROLE_" + papel))

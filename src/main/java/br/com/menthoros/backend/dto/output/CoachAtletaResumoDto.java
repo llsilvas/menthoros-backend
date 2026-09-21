@@ -1,7 +1,6 @@
 package br.com.menthoros.backend.dto.output;
 
-import br.com.menthoros.backend.enums.StatusVencimentoPlano;
-import br.com.menthoros.backend.enums.TipoPlanoAtleta;
+import br.com.menthoros.backend.enums.AthleteBillingStatus;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -49,12 +48,9 @@ public record CoachAtletaResumoDto(
         @Schema(description = "Faixa de forma (FaixaTsb) resolvida pelo backend a partir do TSB; null quando tsb ausente. Distinto de `status` (atenção do coach)", example = "FORMA_IDEAL")
         String statusForma,
 
-        @Schema(description = "Tipo de plano do atleta com a assessoria; ausente quando não cadastrado", example = "MENSAL")
-        TipoPlanoAtleta tipoPlanoAtleta,
+        @Schema(description = "Status de cobrança derivado das mensalidades em aberto (UP_TO_DATE/DUE_SOON/OVERDUE); ausente sem contrato ativo nem mensalidade em aberto. Nunca carrega valor.", example = "OVERDUE")
+        AthleteBillingStatus billingStatus,
 
-        @Schema(description = "Data de vencimento do plano do atleta com a assessoria; ausente quando não cadastrado", example = "2026-08-15")
-        LocalDate dataVencimentoPlano,
-
-        @Schema(description = "Status de vencimento derivado (EM_DIA/PROXIMO_VENCIMENTO/VENCIDO); ausente quando dataVencimentoPlano não cadastrada", example = "PROXIMO_VENCIMENTO")
-        StatusVencimentoPlano statusVencimentoPlano
+        @Schema(description = "Próximo vencimento (menor em aberto, ou o próximo calculado); ausente junto com billingStatus", example = "2026-10-10")
+        LocalDate nextDueDate
 ) {}
