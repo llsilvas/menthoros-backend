@@ -67,7 +67,7 @@ class EvalDeterministicGraderTest {
             TreinoPlanejadoLlmDto treino = new TreinoPlanejadoLlmDto("TERCA", "CONTINUO", "121-133 bpm",
                     40, 0.8, 5, "justificativa", "44:00", 7.0, "5:30/km", List.of(etapa));
             PlanoSemanalLlmDto plano = new PlanoSemanalLlmDto(20.0, 20.0, 5.0, 5.0, "PLANEJADO",
-                    "objetivo", List.of(treino));
+                    "objetivo", List.of(treino), List.of());
             String json = objectMapper.writeValueAsString(plano);
 
             var resultado = grader.avaliar(json, SchemaVersion.CURRENT, List.of(constraintDias), null,
@@ -107,7 +107,7 @@ class EvalDeterministicGraderTest {
         @DisplayName("sem skeleton — não chama PlannerShadowService (compliance vazio)")
         void semSkeletonNaoChamaPlannerShadowService() throws Exception {
             PlanoSemanalLlmDto plano = new PlanoSemanalLlmDto(20.0, 20.0, 5.0, 5.0, "PLANEJADO",
-                    "objetivo", List.of());
+                    "objetivo", List.of(), List.of());
             String json = objectMapper.writeValueAsString(plano);
 
             var resultado = grader.avaliar(json, SchemaVersion.CURRENT, List.of(), null,

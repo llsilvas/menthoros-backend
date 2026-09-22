@@ -1095,7 +1095,7 @@ class PlanoServiceImplTest {
         PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
         PlanoSemanalLlmDto planoDto = new PlanoSemanalLlmDto(
                 22, 22, 50.0, 60.0, PlanoStatus.PLANEJADO.getValue(), "Teste Plano", Collections.emptyList()
-        );
+        , List.of());
 
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
@@ -1582,7 +1582,7 @@ class PlanoServiceImplTest {
 
         return new PlanoSemanalLlmDto(
                 22, 22, 50.0, 60.0, PlanoStatus.PLANEJADO.getValue(), "Teste Plano", treinos
-        );
+        , List.of());
     }
 
     private List<TreinoPlanejadoLlmDto> criarTreinosCompletos() {

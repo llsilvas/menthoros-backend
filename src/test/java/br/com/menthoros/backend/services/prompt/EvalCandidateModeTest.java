@@ -99,7 +99,7 @@ class EvalCandidateModeTest {
         var treino = new br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto(diaSemana, "CONTINUO",
                 "121-133 bpm", 40, 0.8, 5, "justificativa", "44:00", 7.0, "8:30/km", java.util.List.of(etapa));
         var plano = new br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto(20.0, 20.0, 5.0, 5.0,
-                "PLANEJADO", "objetivo", java.util.List.of(treino));
+                "PLANEJADO", "objetivo", java.util.List.of(treino), java.util.List.of());
         return OBJECT_MAPPER.writeValueAsString(plano);
     }
 

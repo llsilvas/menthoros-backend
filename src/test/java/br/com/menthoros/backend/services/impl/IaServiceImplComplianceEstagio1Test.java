@@ -74,7 +74,7 @@ class IaServiceImplComplianceEstagio1Test {
     }
 
     private static PlanoSemanalLlmDto plano() {
-        return new PlanoSemanalLlmDto(30.0, 30.0, null, null, "ATIVO", "base aerobica", List.of());
+        return new PlanoSemanalLlmDto(30.0, 30.0, null, null, "ATIVO", "base aerobica", List.of(), List.of());
     }
 
     private PlanoSemanalLlmDto invoke(PlanoSemanalLlmDto validado, WeekPlanSkeleton skeleton) throws Exception {

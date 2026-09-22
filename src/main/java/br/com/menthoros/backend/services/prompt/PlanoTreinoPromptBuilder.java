@@ -419,7 +419,7 @@ public class PlanoTreinoPromptBuilder {
         );
         // Retorna system + user + as Constraint já computadas (evita recomputar contexto pós-geração)
         // + os sinais de fadiga, calculados uma vez por geração e consumidos pela regra de cobertura.
-        return new PromptGerado(system, user, regras, sinaisFadiga);
+        return new PromptGerado(system, user, regras, sinaisFadiga, maxDiasConsecutivos);
     }
 
     /**
@@ -431,7 +431,7 @@ public class PlanoTreinoPromptBuilder {
      * semana decide com eles se um dia de descanso é legítimo.
      */
     public record PromptGerado(String system, String user, List<Constraint> regras,
-                               List<FatigueSignal> sinaisFadiga) {}
+                               List<FatigueSignal> sinaisFadiga, int maxDiasConsecutivos) {}
 
     // ======================== MÉTODOS AUXILIARES (mantidos) ========================
 

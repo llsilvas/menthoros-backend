@@ -32,7 +32,7 @@ class PlanoResilienceServiceTest {
     }
 
     private static PlanoSemanalLlmDto plano() {
-        return new PlanoSemanalLlmDto(0.0, 0.0, null, null, null, null, List.of());
+        return new PlanoSemanalLlmDto(0.0, 0.0, null, null, null, null, List.of(), List.of());
     }
 
     private static PlanoResilienceService.ChamadaLlm chamada() {

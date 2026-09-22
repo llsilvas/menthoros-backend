@@ -26,6 +26,7 @@ import br.com.menthoros.backend.services.helper.PlannerShadowService;
 import br.com.menthoros.backend.services.helper.PlanoLlmValidator;
 import br.com.menthoros.backend.services.helper.AthleteZones;
 import br.com.menthoros.backend.services.helper.SchemaVersionResolver;
+import br.com.menthoros.backend.services.helper.WeeklyCoverageContext;
 import br.com.menthoros.backend.services.helper.SessionResolver;
 import br.com.menthoros.backend.services.helper.RepairTurnMessageBuilder;
 import br.com.menthoros.backend.dto.llm.v2.PlanoSemanalLlmDtoV2;
@@ -48,6 +49,7 @@ import org.springframework.ai.chat.prompt.ChatOptions;
 import br.com.menthoros.backend.routing.ModelRouter;
 import br.com.menthoros.backend.routing.TaskComplexity;
 import org.springframework.context.annotation.Primary;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -75,6 +77,13 @@ public class IaServiceImpl implements IaService {
     private final ObjectMapper objectMapper;
     private final SchemaVersionResolver schemaVersionResolver;
     private final SessionResolver sessionResolver;
+
+    /**
+     * Kill-switch da regra de cobertura da semana (add-descanso-explicito-por-fadiga): com
+     * {@code false}, dia omitido volta a passar como antes da change — sem deploy de código.
+     */
+    @Value("${app.plano.weekly-coverage.enabled:true}")
+    private boolean coberturaSemanalHabilitada;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          LlmJsonSchemaBuilder llmJsonSchemaBuilder,
@@ -166,6 +175,18 @@ public class IaServiceImpl implements IaService {
         String schemaVersion = usaV2 ? SchemaVersion.V2 : SchemaVersion.CURRENT;
 
         var promptGerado = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos, decisaoProgressao, revisaoConsumida, skeleton, usaV2);
+
+        // Cobertura da semana: em PROXIMA_SEMANA os dias efetivos chegam nulos (o prompt usa todos os
+        // dias do atleta), então a lista é materializada aqui — a regra precisa saber o que cobrir.
+        // Não roda com skeleton: ali o planner é dono da frequência ("gere exatamente estas sessões").
+        List<DiaSemana> diasCobertura = diasEfetivos != null ? diasEfetivos : atleta.getDiasDisponiveis();
+        WeeklyCoverageContext cobertura = coberturaSemanalHabilitada && skeleton == null
+                && diasCobertura != null && !diasCobertura.isEmpty()
+                ? new WeeklyCoverageContext(diasCobertura, promptGerado.sinaisFadiga(),
+                        ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracaoPlano),
+                        metaDados != null ? metaDados.getDiaPreferidoLongo() : null,
+                        promptGerado.maxDiasConsecutivos())
+                : null;
         // system é byte-idêntico entre tentativas — capturado aqui e aplicado direto no
         // ChatClient; nunca passa pelo PlanoResilienceService, então o retry (que só reescreve o
         // `user` com o feedback de correção) não pode divergir o cache de prefixo (CA4).
@@ -187,8 +208,8 @@ public class IaServiceImpl implements IaService {
                             () -> usaV2 ? gerarChamadaLlmV2(chatClient, system, t, atleta)
                                         : gerarChamadaLlm(chatClient, system, t)),
                     p -> sessao.validar(() -> aplicarComplianceEstagio1(
-                            usaV2 ? planoLlmValidator.validarPlanoV2(p, atleta, atleta.getId(), skeleton)
-                                  : validarENormalizarPlanoGerado(p, atleta.getId()),
+                            usaV2 ? planoLlmValidator.validarPlanoV2(p, atleta, atleta.getId(), skeleton, cobertura)
+                                  : validarENormalizarPlanoGerado(p, atleta.getId(), cobertura),
                             atleta, skeleton, inicioSemana)),
                     promptGerado.user());
         } catch (DomainRuleViolationException e) {
@@ -365,10 +386,15 @@ public class IaServiceImpl implements IaService {
      * seções 5-6).
      */
     private PlanoSemanalLlmDto validarENormalizarPlanoGerado(PlanoSemanalLlmDto plano, UUID atletaId) {
+        return validarENormalizarPlanoGerado(plano, atletaId, null);
+    }
+
+    private PlanoSemanalLlmDto validarENormalizarPlanoGerado(PlanoSemanalLlmDto plano, UUID atletaId,
+                                                             @org.jspecify.annotations.Nullable WeeklyCoverageContext cobertura) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new LLMException("Atleta não encontrado"));
-        return planoLlmValidator.validarENormalizarPlano(plano, atleta, atletaId);
+        return planoLlmValidator.validarENormalizarPlano(plano, atleta, atletaId, cobertura);
     }
 
 }

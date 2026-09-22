@@ -6,6 +6,7 @@ import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.exception.PlanoNaoConformeException;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.ContextoTreino;
@@ -226,11 +227,82 @@ class PlanoLlmValidatorTest {
                         new EtapaFcValidator(),
                         new PlanoEstruturaReparador(new SimpleMeterRegistry()),
                         new PaceValidator(),
-                        new SimpleMeterRegistry()));
+                        new SimpleMeterRegistry()),
+                new WeeklyCoverageValidator(), new LongRunAnchor());
+    }
+
+    /**
+     * add-descanso-explicito-por-fadiga (task 2.2): a regra de cobertura entra no mesmo caminho das
+     * violações estruturais — volta como PlanoNaoConformeException e vira turno de reparo.
+     */
+    @Nested
+    @DisplayName("cobertura da semana")
+    class Cobertura {
+
+        private final List<DiaSemana> dias =
+                List.of(DiaSemana.SEGUNDA, DiaSemana.TERCA, DiaSemana.QUINTA);
+
+        @Test
+        @DisplayName("dia disponível sem treino → PlanoNaoConformeException com COBERTURA_DIAS")
+        void diaOmitidoReprova() {
+            var plano = plano(treinoValido("SEGUNDA"), treinoValido("TERCA"));
+
+            assertThatThrownBy(() -> validador().validarENormalizarPlano(
+                    plano, atleta, ATLETA_ID, contexto(List.of())))
+                    .isInstanceOf(PlanoNaoConformeException.class)
+                    .satisfies(e -> assertThat(((PlanoNaoConformeException) e).violacoes())
+                            .extracting(v -> v.key()).contains("COBERTURA_DIAS"));
+        }
+
+        @Test
+        @DisplayName("todos os dias cobertos → passa")
+        void coberturaCompletaPassa() {
+            var plano = plano(treinoValido("SEGUNDA"), treinoValido("TERCA"), treinoValido("QUINTA"));
+
+            var resultado = validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, contexto(List.of()));
+
+            assertThat(resultado.treinosPlanejados()).hasSize(3);
+        }
+
+        @Test
+        @DisplayName("kill-switch: sem contexto de cobertura, dia omitido passa como antes da change")
+        void semContextoPassa() {
+            var plano = plano(treinoValido("SEGUNDA"), treinoValido("TERCA"));
+
+            var resultado = validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, null);
+
+            assertThat(resultado.treinosPlanejados()).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("a âncora do longo roda antes da validação: o plano validado já sai com o longo no dia preferido")
+        void ancoraRodaAntesDaValidacao() {
+            var plano = plano(longo("SEGUNDA"), treinoValido("TERCA"), treinoValido("QUINTA"));
+            var ctx = new WeeklyCoverageContext(dias, List.of(), true, DiaSemana.QUINTA, 7);
+
+            var resultado = validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, ctx);
+
+            assertThat(resultado.treinosPlanejados())
+                    .filteredOn(t -> "LONGO".equals(t.tipoTreino()))
+                    .singleElement()
+                    .satisfies(t -> assertThat(t.diaSemana()).isEqualTo("QUINTA"));
+        }
+
+        private WeeklyCoverageContext contexto(List<FatigueSignal> sinais) {
+            return new WeeklyCoverageContext(dias, sinais, true, null, 7);
+        }
+    }
+
+    private static TreinoPlanejadoLlmDto longo(String dia) {
+        return new TreinoPlanejadoLlmDto(dia, "LONGO", "130-145 bpm", 60, 0.7, 5,
+                "Longo", "60:00", 10.0, "6:00-6:30/km",
+                List.of(new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 10, 1.6, "120-136 bpm", 1, null),
+                        new EtapaTreinoLlmDto(2, "PRINCIPAL", "Longo contínuo", 45, 7.0, "130-145 bpm", 1, "6:00-6:30/km"),
+                        new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Caminhada", 5, 0.8, "120-136 bpm", 1, null)));
     }
 
     private static PlanoSemanalLlmDto plano(TreinoPlanejadoLlmDto... treinos) {
-        return new PlanoSemanalLlmDto(30.0, 30.0, null, null, "ATIVO", "base aeróbica", List.of(treinos));
+        return new PlanoSemanalLlmDto(30.0, 30.0, null, null, "ATIVO", "base aeróbica", List.of(treinos), List.of());
     }
 
     private static TreinoPlanejadoLlmDto treinoValido(String dia) {
