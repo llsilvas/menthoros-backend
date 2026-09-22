@@ -17,6 +17,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -43,6 +44,8 @@ import java.util.stream.Collectors;
 public class NormalizacaoDeTreino {
 
     private static final Pattern DURACAO_MM_SS = Pattern.compile("^(\\d{1,3}):(\\d{2})$");
+    /** Tolerância da identidade pace × distância = duração, compartilhada pelo gate e pelo desempate de recalcular-duracao. */
+    private static final double TOLERANCIA_TRIANGULO = 0.20;
 
     private final TreinoNormalizador treinoNormalizador;
     private final EtapaFcValidator etapaFcValidator;
@@ -574,13 +577,36 @@ public class NormalizacaoDeTreino {
         return Objects.equals(ritmoValidado, treino.ritmoAlvo()) ? treino : treino.comRitmo(ritmoValidado);
     }
 
-    /** Duração total = soma das etapas (override do valor da LLM) — só com etapas e soma > 0. */
+    /**
+     * Duração total = soma das etapas (override do valor da LLM) — só com etapas e soma > 0.
+     *
+     * <p>Exceção (fix-normalizador-etapas-incompletas): fora de INTERVALADO/TIRO, quando a duração da
+     * LLM está mais perto de {@code ritmoAlvo × distanciaKm} do que a soma das etapas, as etapas é que
+     * estão erradas (a LLM devolve etapas que não cobrem o treino, ou o reparo estrutural acrescenta
+     * aquec/desaq por cima de etapas que já fechavam o total) — mantém a duração da LLM. Em
+     * INTERVALADO/TIRO o {@code ritmoAlvo} é o pace do tiro, não do treino, e a soma segue
+     * autoritativa. Sem triângulo (ritmo ou distância ausentes) não há desempate e a soma prevalece,
+     * como antes; em empate, também.</p>
+     */
     private TreinoPlanejadoLlmDto recalcularDuracao(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
         if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
         int totalMinEtapas = treinoNormalizador.somarDuracoesMin(treino.etapas());
         if (totalMinEtapas <= 0) return treino;
 
         String duracaoAtual = treino.duracaoMin();
+        if (FamiliaTreino.de(treino.tipoTreino()) != FamiliaTreino.INTERVALADO_TIRO) {
+            var esperada = duracaoEsperadaMin(treino);
+            var atual = parseDuracaoMin(duracaoAtual);
+            if (esperada.isPresent() && atual.isPresent()
+                    && desvio(atual.getAsDouble(), esperada.getAsDouble())
+                       < desvio(totalMinEtapas, esperada.getAsDouble())) {
+                log.warn("DURAÇÃO MANTIDA [{}]: etapas somam {} min mas ritmoAlvo='{}' × {} km esperam {} min → mantendo '{}' da LLM",
+                        treino.tipoTreino(), totalMinEtapas, treino.ritmoAlvo(), treino.distanciaKm(),
+                        String.format("%.1f", esperada.getAsDouble()), duracaoAtual);
+                return treino;
+            }
+        }
+
         TreinoPlanejadoLlmDto recalculado = treinoNormalizador.recalcularDuracaoTreino(treino, treino.etapas());
         if (!Objects.equals(duracaoAtual, recalculado.duracaoMin())) {
             log.info("DURAÇÃO RECALCULADA [{}]: '{}' → '{}' (baseado nas {} etapas)",
@@ -594,32 +620,45 @@ public class NormalizacaoDeTreino {
      * Não corrige: os três são prescrições da LLM e nenhum tem precedência clara.
      */
     private void validarTrianguloPaceDuracaoDistancia(TreinoPlanejadoLlmDto treino) {
-        if (treino.ritmoAlvo() == null || treino.distanciaKm() == null || treino.duracaoMin() == null) return;
+        var esperada = duracaoEsperadaMin(treino);
+        var duracao = parseDuracaoMin(treino.duracaoMin());
+        if (esperada.isEmpty() || duracao.isEmpty()) return;
 
-        var paceMediaOpt = paceValidator.calcularPaceMedia(treino.ritmoAlvo());
-        if (paceMediaOpt.isEmpty()) return;
+        double duracaoEsperada = esperada.getAsDouble();
+        double duracaoMin = duracao.getAsDouble();
+        double desvio = desvio(duracaoMin, duracaoEsperada);
 
-        double distanciaKm = treino.distanciaKm();
-        if (distanciaKm <= 0) return;
-
-        var mDuracao = DURACAO_MM_SS.matcher(treino.duracaoMin().trim());
-        if (!mDuracao.matches()) return;
-        double duracaoMin;
-        try {
-            duracaoMin = Integer.parseInt(mDuracao.group(1)) + Integer.parseInt(mDuracao.group(2)) / 60.0;
-        } catch (NumberFormatException e) {
-            return;
-        }
-        if (duracaoMin <= 0) return;
-
-        double paceMedia = paceMediaOpt.getAsDouble();
-        double duracaoEsperada = paceMedia * distanciaKm;
-        double desvio = Math.abs(duracaoEsperada - duracaoMin) / duracaoEsperada;
-
-        if (desvio > 0.20) {
+        if (desvio > TOLERANCIA_TRIANGULO) {
             log.warn("TRIÂNGULO pace×dist×dur [{}]: ritmoAlvo='{}', dist={} km, duracao={} min → esperado {} min (desvio {}%)",
-                    treino.tipoTreino(), treino.ritmoAlvo(), distanciaKm, duracaoMin,
+                    treino.tipoTreino(), treino.ritmoAlvo(), treino.distanciaKm(), duracaoMin,
                     String.format("%.1f", duracaoEsperada), String.format("%.0f", desvio * 100));
         }
+    }
+
+    /** Duração implícita por ritmoAlvo × distanciaKm; vazio quando qualquer um dos dois não é utilizável. */
+    private OptionalDouble duracaoEsperadaMin(TreinoPlanejadoLlmDto treino) {
+        if (treino.ritmoAlvo() == null || treino.distanciaKm() == null || treino.distanciaKm() <= 0) {
+            return OptionalDouble.empty();
+        }
+        var paceMediaOpt = paceValidator.calcularPaceMedia(treino.ritmoAlvo());
+        if (paceMediaOpt.isEmpty()) return OptionalDouble.empty();
+        return OptionalDouble.of(paceMediaOpt.getAsDouble() * treino.distanciaKm());
+    }
+
+    /** "MM:SS" → minutos decimais; vazio se ausente, malformado ou não positivo. */
+    private static OptionalDouble parseDuracaoMin(String duracao) {
+        if (duracao == null) return OptionalDouble.empty();
+        var m = DURACAO_MM_SS.matcher(duracao.trim());
+        if (!m.matches()) return OptionalDouble.empty();
+        try {
+            double minutos = Integer.parseInt(m.group(1)) + Integer.parseInt(m.group(2)) / 60.0;
+            return minutos > 0 ? OptionalDouble.of(minutos) : OptionalDouble.empty();
+        } catch (NumberFormatException e) {
+            return OptionalDouble.empty();
+        }
+    }
+
+    private static double desvio(double valor, double esperado) {
+        return Math.abs(esperado - valor) / esperado;
     }
 }

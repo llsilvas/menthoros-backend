@@ -255,6 +255,97 @@ class NormalizacaoDeTreinoTest {
         }
     }
 
+    /**
+     * fix-normalizador-etapas-incompletas: recalcular-duracao só sobrescreve a duração da LLM quando a
+     * soma das etapas é consistente com ritmoAlvo × distanciaKm — ou quando não há triângulo para
+     * desempatar. Caso real: REGENERATIVO 7km/45:00 a 7:28-7:55 cujas etapas somavam 25min.
+     */
+    @Nested
+    @DisplayName("recalcular-duracao — desempate pelo triângulo pace×dist×dur")
+    class RecalcularDuracaoComEtapasIncompletas {
+
+        @Test
+        @DisplayName("CA4: REGENERATIVO 45:00 / 7km / 7:28-7:55 com etapas 10+5min → mantém 45:00")
+        void mantemDuracaoDaLlmQuandoEtapasNaoCobremOTreino() {
+            var treino = continuo("REGENERATIVO", "45:00", 7.0, "7:28-7:55/km",
+                    etapaMin("PRINCIPAL", 10), etapaMin("DESAQUECIMENTO", 5));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(resultado.duracaoMin()).isEqualTo("45:00");
+            assertThat(resultado.distanciaKm()).isEqualTo(7.0);
+        }
+
+        @Test
+        @DisplayName("CA5: LONGO 60:00 / 10km / 6:45-7:00 com etapas 10+45+5 → 60:00 (soma consistente)")
+        void somaConsistenteContinuaValendo() {
+            var treino = continuo("LONGO", "60:00", 10.0, "6:45-7:00/km",
+                    etapaMin("AQUECIMENTO", 10), etapaMin("PRINCIPAL", 45), etapaMin("DESAQUECIMENTO", 5));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(resultado.duracaoMin()).isEqualTo("60:00");
+        }
+
+        @Test
+        @DisplayName("CA5: LLM diz 90:00 fora da tolerância e etapas somam 60 dentro dela → 60:00")
+        void somaConsistentePrevaleceSobreDuracaoDaLlmForaDaTolerancia() {
+            var treino = continuo("LONGO", "90:00", 10.0, "6:45-7:00/km",
+                    etapaMin("AQUECIMENTO", 10), etapaMin("PRINCIPAL", 45), etapaMin("DESAQUECIMENTO", 5));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(resultado.duracaoMin()).isEqualTo("60:00");
+        }
+
+        @Test
+        @DisplayName("CA4b: etapas já fechavam 45 e o reparo acrescenta 10 de aquec → 55 (19,5%) perde para 45 (2%)")
+        void reparoQueEsticaEtapasNaoVenceDuracaoDaLlm() {
+            // caso real de 21/09 22:41: 6km a 7:28-7:55 esperam ~46min; a soma 55 ficava dentro dos
+            // 20% e vencia com o desempate por tolerância — por isso o desempate é "mais perto vence"
+            var treino = continuo("REGENERATIVO", "45:00", 6.0, "7:28-7:55/km",
+                    etapaMin("PRINCIPAL", 40), etapaMin("DESAQUECIMENTO", 5));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(resultado.duracaoMin()).isEqualTo("45:00");
+        }
+
+        @Test
+        @DisplayName("CA6: sem ritmoAlvo não há desempate → soma das etapas (regra vigente)")
+        void semRitmoAlvoMantemRegraAtual() {
+            var treino = continuo("REGENERATIVO", "45:00", 7.0, null,
+                    etapaMin("PRINCIPAL", 10), etapaMin("DESAQUECIMENTO", 5));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            // reparo acrescenta AQUECIMENTO de 10min → 10 + 10 + 5
+            assertThat(resultado.duracaoMin()).isEqualTo("25:00");
+        }
+
+        @Test
+        @DisplayName("LLM mais longe do triângulo que a soma → soma das etapas")
+        void ambosInconsistentesMantemSoma() {
+            // esperado ≈ 53.8min; 120 desvia 123%, soma 25 desvia 54% → a soma está mais perto e vence
+            var treino = continuo("REGENERATIVO", "120:00", 7.0, "7:28-7:55/km",
+                    etapaMin("PRINCIPAL", 10), etapaMin("DESAQUECIMENTO", 5));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(resultado.duracaoMin()).isEqualTo("25:00");
+        }
+
+        private EtapaTreinoLlmDto etapaMin(String tipoEtapa, int duracaoMin) {
+            return new EtapaTreinoLlmDto(1, tipoEtapa, tipoEtapa.toLowerCase(), duracaoMin, 0.0, null, 1, null);
+        }
+
+        private TreinoPlanejadoLlmDto continuo(String tipo, String duracaoMin, Double distanciaKm,
+                                               String ritmoAlvo, EtapaTreinoLlmDto... etapas) {
+            return new TreinoPlanejadoLlmDto("TERCA", tipo, null, null, null, null, null,
+                    duracaoMin, distanciaKm, ritmoAlvo, List.of(etapas));
+        }
+    }
+
     // ---------- fixtures (aquec/desaq com 1.67km = 10min × paceZ2 6.0, estável sob corrigir-temporais) ----------
 
     private static EtapaTreinoLlmDto aquec() {

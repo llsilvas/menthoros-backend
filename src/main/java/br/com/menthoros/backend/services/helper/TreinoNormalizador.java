@@ -443,6 +443,12 @@ public class TreinoNormalizador {
      * <p>Após expansão de etapas (Fartlek, Intervalado), a distância declarada no nível
      * do treino pode divergir da soma das etapas individuais. Se o desvio for superior
      * a 10%, substitui distanciaKm pela soma das etapas (que representa a realidade).</p>
+     *
+     * <p>Só reconcilia quando <b>todas</b> as etapas têm distância: uma etapa em 0/null (a LLM pode
+     * devolver {@code 0.0} quando não sabe calcular; "Fartlek livre" não é expandido) torna a soma
+     * um piso, não um total — substituir a distância da LLM por ela gerou um FARTLEK de 2,64 km em
+     * 50 min (fix-normalizador-etapas-incompletas). Sem distância da LLM, a soma continua sendo o
+     * melhor valor disponível.</p>
      */
     public TreinoPlanejadoLlmDto reconciliarDistanciaComEtapas(TreinoPlanejadoLlmDto treino) {
         if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
@@ -454,6 +460,15 @@ public class TreinoNormalizador {
             log.info("RECONCILIAÇÃO [{}]: distanciaKm não definida → usando soma das etapas: {} km",
                     treino.tipoTreino(), somaEtapas);
             return treino.comDistancia(somaEtapas);
+        }
+
+        long etapasSemDistancia = treino.etapas().stream()
+                .filter(e -> e.distanciaKm() == null || e.distanciaKm() <= 0)
+                .count();
+        if (etapasSemDistancia > 0) {
+            log.warn("RECONCILIAÇÃO [{}]: {} etapa(s) sem distância (soma parcial {} km) → mantendo distanciaKm={} km da LLM",
+                    treino.tipoTreino(), etapasSemDistancia, String.format("%.2f", somaEtapas), distanciaAtual);
+            return treino;
         }
 
         double desvioPercent = Math.abs(somaEtapas - distanciaAtual) / distanciaAtual;

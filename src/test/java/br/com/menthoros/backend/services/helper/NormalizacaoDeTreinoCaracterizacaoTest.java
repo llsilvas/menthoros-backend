@@ -172,10 +172,14 @@ class NormalizacaoDeTreinoCaracterizacaoTest {
         }
 
         @Test
-        @DisplayName("REGENERATIVO só com PRINCIPAL: só passa em validar-por-tipo porque reparar-3-etapas sintetiza aquec/desaq antes (distanciaKm=null, como hoje)")
+        @DisplayName("REGENERATIVO só com PRINCIPAL: só passa em validar-por-tipo porque reparar-3-etapas sintetiza aquec/desaq antes (distanciaKm=null, como hoje); duração da LLM mantida")
         void regenerativoSoPrincipal() {
+            // Decisão (fix-normalizador-etapas-incompletas): o baseline original era "45:00" — a soma das
+            // etapas (10 sintetizado + 30 + 5 sintetizado) sobrescrevia o "30:00" da LLM e produzia 4 km
+            // em 45 min a 6:30-7:00/km. Agora recalcular-duracao vê que 30:00 fecha com pace × distância
+            // (27 min) e a soma não (67% de desvio), e mantém a duração da LLM.
             var esperado = new TreinoPlanejadoLlmDto("QUARTA", "REGENERATIVO", "115-130 bpm", 25, 0.6, 3,
-                    "Recuperação ativa", "45:00", 4.0, "6:30-7:00/km",
+                    "Recuperação ativa", "30:00", 4.0, "6:30-7:00/km",
                     List.of(
                             new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve em Z1-Z2 (gerado pelo sistema)", 10, null, null, 1, null),
                             new EtapaTreinoLlmDto(2, "PRINCIPAL", "Trote regenerativo Z1", 30, 4.0, "115-130 bpm", 1, "6:30-7:00/km"),

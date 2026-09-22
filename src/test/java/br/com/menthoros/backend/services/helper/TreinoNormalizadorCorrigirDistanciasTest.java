@@ -168,4 +168,74 @@ class TreinoNormalizadorCorrigirDistanciasTest {
                     .isLessThanOrEqualTo(8.0);
         }
     }
+
+    /**
+     * fix-normalizador-etapas-incompletas: uma etapa com distanciaKm 0/null é "desconhecido", não
+     * "zero" — a soma vira um piso e não pode substituir a distância declarada pela LLM.
+     */
+    @Nested
+    @DisplayName("reconciliarDistanciaComEtapas — etapas sem distância")
+    class ReconciliarComEtapasIncompletas {
+
+        @Test
+        @DisplayName("CA1: FARTLEK 8km com PRINCIPAL em 0km → mantém 8km (soma 2.64 é um piso)")
+        void mantemDistanciaDaLlmQuandoAlgumaEtapaNaoTemDistancia() {
+            var treino = fartlek(8.0,
+                    etapa("AQUECIMENTO", 10, 1.32),
+                    etapa("PRINCIPAL", 30, 0.0),
+                    etapa("DESAQUECIMENTO", 10, 1.32));
+
+            var resultado = normalizador.reconciliarDistanciaComEtapas(treino);
+
+            assertThat(resultado.distanciaKm()).isEqualTo(8.0);
+        }
+
+        @Test
+        @DisplayName("etapa com distanciaKm null conta como desconhecida, mesmo efeito de 0")
+        void etapaNulaTambemBloqueiaReconciliacao() {
+            var treino = fartlek(8.0,
+                    etapa("AQUECIMENTO", 10, 1.32),
+                    etapa("PRINCIPAL", 30, null),
+                    etapa("DESAQUECIMENTO", 10, 1.32));
+
+            var resultado = normalizador.reconciliarDistanciaComEtapas(treino);
+
+            assertThat(resultado.distanciaKm()).isEqualTo(8.0);
+        }
+
+        @Test
+        @DisplayName("CA2: todas as etapas com distância e desvio 11% → reconcilia para a soma (6.64)")
+        void reconciliaQuandoTodasAsEtapasTemDistancia() {
+            var treino = fartlek(6.0,
+                    etapa("AQUECIMENTO", 10, 1.32),
+                    etapa("PRINCIPAL", 30, 4.0),
+                    etapa("DESAQUECIMENTO", 10, 1.32));
+
+            var resultado = normalizador.reconciliarDistanciaComEtapas(treino);
+
+            assertThat(resultado.distanciaKm()).isCloseTo(6.64, within(0.001));
+        }
+
+        @Test
+        @DisplayName("CA3: treino sem distância usa a soma das etapas mesmo com etapa em 0")
+        void treinoSemDistanciaUsaSomaMesmoIncompleta() {
+            var treino = fartlek(null,
+                    etapa("AQUECIMENTO", 10, 1.32),
+                    etapa("PRINCIPAL", 30, 0.0),
+                    etapa("DESAQUECIMENTO", 10, 1.32));
+
+            var resultado = normalizador.reconciliarDistanciaComEtapas(treino);
+
+            assertThat(resultado.distanciaKm()).isCloseTo(2.64, within(0.001));
+        }
+
+        private EtapaTreinoLlmDto etapa(String tipo, int duracaoMin, Double distanciaKm) {
+            return new EtapaTreinoLlmDto(1, tipo, tipo.toLowerCase(), duracaoMin, distanciaKm, null, 1, null);
+        }
+
+        private TreinoPlanejadoLlmDto fartlek(Double distanciaKm, EtapaTreinoLlmDto... etapas) {
+            return new TreinoPlanejadoLlmDto("QUINTA", "FARTLEK", null, null, null, null, null,
+                    "50:00", distanciaKm, "6:20-6:45/km", List.of(etapas));
+        }
+    }
 }
