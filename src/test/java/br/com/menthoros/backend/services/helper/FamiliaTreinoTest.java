@@ -54,6 +54,7 @@ class FamiliaTreinoTest {
             assertThat(normalizacao.receita(FamiliaTreino.INTERVALADO_TIRO).nomes()).containsExactly(
                     "corrigir-temporais",
                     "expandir",
+                    "corrigir-temporais", // 2ª vez: recuperações criadas por série por tempo nascem com 0.0
                     "gate-existencia",
                     "gate-contagem",
                     "gate-presenca-aquec-desaq",

@@ -92,6 +92,24 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
+        @DisplayName("INTERVALADO com série por tempo '4x (3min Z4 + 2min Z1)': recuperações expandidas recebem pace de trote, não 0 km")
+        void intervaladoComSeriePorTempoNaoDeixaRecuperacaoSemDistancia() {
+            // o expansor é compartilhado com FARTLEK e cria a recuperação com 0.0; nesta receita
+            // corrigir-temporais rodava só antes de expandir e a etapa ficava sem distância
+            var treino = intervalado(8.0, aquec(),
+                    new EtapaTreinoLlmDto(2, "INTERVALADO", "4x (3min Z4 + 2min Z1)", 20, 0.0, null, 1, "5:00-5:15/km"),
+                    desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            // Z1 = limiar 5,0 × 1,35 = 6,75 min/km → 2min / 6,75 = 0,3 km
+            assertThat(resultado.etapas())
+                    .filteredOn(e -> "RECUPERACAO".equals(e.tipoEtapa()))
+                    .isNotEmpty()
+                    .allSatisfy(e -> assertThat(e.distanciaKm()).isGreaterThan(0.0));
+        }
+
+        @Test
         @DisplayName("RECUPERACAO antes do 1º tiro: gate-sequencia rejeita mesmo com contagem, extremos e balanceamento ok")
         void recuperacaoAntesDoPrimeiroTiro() {
             var treino = intervalado(6.0, aquec(), rec(), tiro(4, null), tiro(4, null), rec(), desaq());

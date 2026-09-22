@@ -168,6 +168,9 @@ public class NormalizacaoDeTreino {
         mapa.put(FamiliaTreino.INTERVALADO_TIRO, receita(List.of(
                 corrigirTemporais,
                 expandir,
+                // 2ª vez: uma série por tempo ("4x (3min + 2min)") cria recuperações com 0.0 — só este
+                // passo lhes dá o pace de trote. Idempotente para aquec/desaq e para o caminho NxDist
+                corrigirTemporais,
                 // ── validarTreinoIntervalado, item a item, ANTES de normalizar: normalizar-intervalado
                 //    sintetiza pares tiro+recuperação — validar depois mascararia um treino de 4 etapas
                 gate("gate-existencia", this::gateExistencia),
