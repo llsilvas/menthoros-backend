@@ -92,6 +92,24 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
+        @DisplayName("INTERVALADO com série por tempo '4x (3min Z4 + 2min Z1)': recuperações expandidas recebem pace de trote, não 0 km")
+        void intervaladoComSeriePorTempoNaoDeixaRecuperacaoSemDistancia() {
+            // o expansor é compartilhado com FARTLEK e cria a recuperação com 0.0; nesta receita
+            // corrigir-temporais rodava só antes de expandir e a etapa ficava sem distância
+            var treino = intervalado(8.0, aquec(),
+                    new EtapaTreinoLlmDto(2, "INTERVALADO", "4x (3min Z4 + 2min Z1)", 20, 0.0, null, 1, "5:00-5:15/km"),
+                    desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            // Z1 = limiar 5,0 × 1,35 = 6,75 min/km → 2min / 6,75 = 0,3 km
+            assertThat(resultado.etapas())
+                    .filteredOn(e -> "RECUPERACAO".equals(e.tipoEtapa()))
+                    .isNotEmpty()
+                    .allSatisfy(e -> assertThat(e.distanciaKm()).isGreaterThan(0.0));
+        }
+
+        @Test
         @DisplayName("RECUPERACAO antes do 1º tiro: gate-sequencia rejeita mesmo com contagem, extremos e balanceamento ok")
         void recuperacaoAntesDoPrimeiroTiro() {
             var treino = intervalado(6.0, aquec(), rec(), tiro(4, null), tiro(4, null), rec(), desaq());
@@ -343,6 +361,193 @@ class NormalizacaoDeTreinoTest {
                                                String ritmoAlvo, EtapaTreinoLlmDto... etapas) {
             return new TreinoPlanejadoLlmDto("TERCA", tipo, null, null, null, null, null,
                     duracaoMin, distanciaKm, ritmoAlvo, List.of(etapas));
+        }
+    }
+
+    /**
+     * fix-fartlek-etapas-estruturadas: a receita FARTLEK ganhou gates estruturais depois de
+     * {@code expandir}. Caso real: FARTLEK do Leandro de 24/09 persistido com PRINCIPAL "Fartlek
+     * livre" única — sem gate, passava sem turno de reparo.
+     */
+    @Nested
+    @DisplayName("família FARTLEK — gates estruturais depois de expandir")
+    class Fartlek {
+
+        @Test
+        @DisplayName("CA2: 'Fartlek livre' numa PRINCIPAL única → LLMException pedindo acelerações individuais")
+        void fartlekLivreEmEtapaUnicaReprova() {
+            var treino = fartlek(aquec(),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "Fartlek livre 20-30 min com acelerações curtas Z2-Z3.",
+                            30, 0.0, null, 1, "6:20-7:28/km"),
+                    desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("acelerações individuais");
+        }
+
+        @Test
+        @DisplayName("CA3: série comprimida '4x (1min forte + 2min leve)' é expandida e passa")
+        void serieComprimidaReconhecivelEhExpandidaEPassa() {
+            var treino = fartlek(aquec(),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "Fartlek leve Z2-Z3, 4x (1min forte + 2min leve)",
+                            12, 0.0, null, 1, "6:20-7:28/km"),
+                    desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(tipos(resultado)).containsExactly("AQUECIMENTO",
+                    "INTERVALADO", "RECUPERACAO", "INTERVALADO", "RECUPERACAO",
+                    "INTERVALADO", "RECUPERACAO", "INTERVALADO", "RECUPERACAO",
+                    "DESAQUECIMENTO");
+        }
+
+        @Test
+        @DisplayName("CA4: já expandido pela LLM (aquec, 3 pares alternados, desaq) → passa")
+        void jaExpandidoPassa() {
+            var treino = fartlek(aquec(), acel(), rec(), acel(), rec(), acel(), rec(), desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(tipos(resultado)).hasSize(8).startsWith("AQUECIMENTO").endsWith("DESAQUECIMENTO");
+        }
+
+        @Test
+        @DisplayName("CA5: 2 acelerações é o piso → passa")
+        void duasAceleracoesPassa() {
+            var treino = fartlek(aquec(), acel(), rec(), acel(), rec(), desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(tipos(resultado)).filteredOn("INTERVALADO"::equals).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("CA5: 1 aceleração só → LLMException")
+        void umaAceleracaoReprova() {
+            var treino = fartlek(aquec(), acel(), rec(), desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("acelerações individuais");
+        }
+
+        @Test
+        @DisplayName("CA6: sem aquecimento → LLMException")
+        void semAquecimentoReprova() {
+            var treino = fartlek(acel(), rec(), acel(), rec(), desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("aquecimento");
+        }
+
+        @Test
+        @DisplayName("CA6: desaquecimento fora da última posição → LLMException")
+        void desaquecimentoForaDoFimReprova() {
+            var treino = fartlek(aquec(), acel(), rec(), desaq(), acel(), rec());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("desaquecimento");
+        }
+
+        @Test
+        @DisplayName("CA7: acelerações sem nenhuma recuperação → LLMException")
+        void semRecuperacaoReprova() {
+            var treino = fartlek(aquec(), acel(), acel(), acel(), desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("recuperação");
+        }
+
+        @Test
+        @DisplayName("CA7: recuperação antes da 1ª aceleração → LLMException")
+        void recuperacaoSemAceleracaoAnteriorReprova() {
+            var treino = fartlek(aquec(), rec(), acel(), rec(), acel(), desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("recuperações sem tiro");
+        }
+
+        @Test
+        @DisplayName("CA7b: fartlek 'Misto' (2 acelerações seguidas + 1 recuperação por bloco) → passa")
+        void fartlekMistoComAceleracoesConsecutivasPassa() {
+            // o system prompt prescreve "Misto: 6× (3min Z4 + 1min Z5 + 2min Z2)" na Categoria D —
+            // alternância estrita ou balanceamento 1:1 o reprovariam
+            var treino = fartlek(aquec(), acel(), acel(), rec(), acel(), acel(), rec(), desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(tipos(resultado)).filteredOn("INTERVALADO"::equals).hasSize(4);
+        }
+
+        @Test
+        @DisplayName("CA9: caso real 22/09 — série 5× (1min + 2min) com a distância do treino na PRINCIPAL não gera pace impossível")
+        void serieExpandidaNaoHerdaDistanciaDoTreinoInteiro() {
+            // Arrange — resposta bruta da LLM: treino 40:00 / 5,0 km, PRINCIPAL 25min / 5,0km. Antes da
+            // correção o expansor repartia os 5 km pela série (1 km a cada 3min) e o treino saía com
+            // 6,98 km em 30min — 4:18/km para um ritmo de 6:20-6:45
+            var ctxLeandro = contextoComLimiar(6.33);
+            var treino = new TreinoPlanejadoLlmDto("QUARTA", "FARTLEK", null, 45, 1.0, 6, "Fartlek",
+                    "40:00", 5.0, "6:20-6:45/km", List.of(
+                    new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento progressivo Z1-Z2", 10, 0.0, null, 1, null),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "Fartlek 5× (1min Z3 + 2min Z2)", 25, 5.0, null, 1, "6:20-6:45/km"),
+                    new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve Z1-Z2", 5, 0.0, null, 1, null)));
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            // Assert — nenhuma etapa (nem o treino) mais rápida que o limite rápido do ritmo, 6:20/km
+            double limiteRapido = 6.0 + 20.0 / 60;
+            assertThat(resultado.etapas())
+                    .filteredOn(e -> e.distanciaKm() != null && e.distanciaKm() > 0)
+                    .allSatisfy(e -> assertThat(e.duracaoMin() / e.distanciaKm())
+                            .as("pace de %s", e.descricaoEtapa())
+                            .isGreaterThanOrEqualTo(limiteRapido));
+            assertThat(resultado.duracaoMin()).isEqualTo("30:00");
+            assertThat(resultado.distanciaKm()).isCloseTo(3.91, org.assertj.core.data.Offset.offset(0.05));
+            assertThat(30.0 / resultado.distanciaKm()).isGreaterThanOrEqualTo(limiteRapido);
+        }
+
+        @Test
+        @DisplayName("CA12: recuperação criada pela expansão recebe duração ÷ pace Z1 (corrigir-temporais depois de expandir)")
+        void recuperacaoExpandidaRecebePaceDeTrote() {
+            var ctxLeandro = contextoComLimiar(6.33);
+            var treino = fartlek(aquec(),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "Fartlek 5× (1min Z3 + 2min Z2)", 15, 5.0, null, 1, "6:20-6:45/km"),
+                    desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            // Z1 = limiar 6,33 × 1,35 = 8,55 min/km → 2min / 8,55 = 0,23 km
+            assertThat(resultado.etapas())
+                    .filteredOn(e -> "RECUPERACAO".equals(e.tipoEtapa()))
+                    .hasSize(5)
+                    .allSatisfy(e -> assertThat(e.distanciaKm()).isEqualTo(0.23));
+        }
+
+        private ContextoNormalizacao contextoComLimiar(double paceLimiar) {
+            Atleta atleta = Atleta.builder()
+                    .id(UUID.randomUUID())
+                    .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
+                    .paceLimiar(BigDecimal.valueOf(paceLimiar))
+                    .build();
+            return new ContextoNormalizacao(atleta, atleta.getId(), null, Map.of(), Map.of());
+        }
+
+        private EtapaTreinoLlmDto acel() {
+            return new EtapaTreinoLlmDto(1, "INTERVALADO", "Aceleração Z3", 2, 0.35, null, 1, "5:40-6:00/km");
+        }
+
+        private TreinoPlanejadoLlmDto fartlek(EtapaTreinoLlmDto... etapas) {
+            return new TreinoPlanejadoLlmDto("QUINTA", "FARTLEK", null, 50, 1.0, 6, "Fartlek",
+                    "50:00", 8.0, "6:20-7:28/km", List.of(etapas));
+        }
+
+        private List<String> tipos(TreinoPlanejadoLlmDto treino) {
+            return treino.etapas().stream().map(EtapaTreinoLlmDto::tipoEtapa).toList();
         }
     }
 

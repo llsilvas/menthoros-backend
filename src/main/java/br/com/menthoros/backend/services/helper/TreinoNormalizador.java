@@ -143,13 +143,13 @@ public class TreinoNormalizador {
                 EtapaTreinoLlmDto recTemplate = recuperacaoAdjacenteOu(etapas, i + 1);
                 if (recTemplate != null) i++;
 
-                int totalMinPorRep = fp.duracaoAceleracao() + fp.duracaoRecuperacao();
-                Double distTotal   = etapa.distanciaKm();
-                double distPorRep  = (distTotal != null && distTotal > 0 && totalMinPorRep > 0)
-                        ? arredondar2(distTotal / fp.n()) : 0.0;
-                double distAccel   = distPorRep > 0
-                        ? arredondar2(distPorRep * fp.duracaoAceleracao() / totalMinPorRep) : 0.0;
-                double distRecov   = distPorRep > 0 ? arredondar2(distPorRep - distAccel) : 0.0;
+                // Distância vem do pace, não da distanciaKm da etapa de origem: a LLM costuma pôr ali a
+                // distância do treino inteiro, e repartir 5 km por 5×(1min+2min) deu 1 km a cada 3min
+                // (caso real 22/09). A recuperação nasce 0.0 e corrigir-temporais aplica o pace de trote.
+                var paceAccel    = paceValidator.calcularPaceMedia(etapa.ritmoAlvo());
+                double distAccel = paceAccel.isPresent() && paceAccel.getAsDouble() > 0
+                        ? arredondar2(fp.duracaoAceleracao() / paceAccel.getAsDouble()) : 0.0;
+                double distRecov = 0.0;
 
                 String fcAccel = fp.zonaAceleracao() != null ? zonaParaFc(fp.zonaAceleracao(), zonas)
                         : (etapa.fcAlvoEtapa() != null ? etapa.fcAlvoEtapa() : "75-85% FCmax");
@@ -181,7 +181,9 @@ public class TreinoNormalizador {
         }
 
         if (!expandiu) return treino;
-        return recalcularDuracaoTreino(treino, reordenarEtapas(resultado));
+        // Só as etapas: a duração do treino fica com recalcular-duracao, que desempata pelo triângulo
+        // pace×dist×dur — sobrescrever aqui escondia dele a duração que a LLM prescreveu.
+        return treino.comEtapas(reordenarEtapas(resultado));
     }
 
     /** Retorna o próximo estágio se for RECUPERACAO, ou null caso contrário. */
