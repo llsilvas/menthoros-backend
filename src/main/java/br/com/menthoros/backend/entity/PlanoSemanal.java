@@ -121,6 +121,16 @@ public class PlanoSemanal {
     @OneToMany(mappedBy = "planoSemanal", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TreinoPlanejado> treinosPlanejados;
 
+    /**
+     * Normaliza para lista mutável: o {@code merge} do Hibernate chama {@code clear()} na coleção
+     * gerenciada, e uma lista imutável ({@code List.of}, {@code Stream.toList}) estoura
+     * {@link UnsupportedOperationException} no save — foi o que derrubou a geração de 22/09 17:46,
+     * onde o plano já estava gerenciado quando {@code salvarPlanoCompleto} rodou.
+     */
+    public void setTreinosPlanejados(List<TreinoPlanejado> treinosPlanejados) {
+        this.treinosPlanejados = treinosPlanejados == null ? null : new java.util.ArrayList<>(treinosPlanejados);
+    }
+
     @Version
     @Column(name = "versao")
     private Long versao;
