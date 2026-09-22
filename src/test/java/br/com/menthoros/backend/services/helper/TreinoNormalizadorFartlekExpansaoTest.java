@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
+import br.com.menthoros.backend.enums.CategoriaIntervalado;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -100,6 +101,38 @@ class TreinoNormalizadorFartlekExpansaoTest {
             assertThat(resultado.etapas()).hasSize(12);
             assertThat(resultado.etapas().getFirst().tipoEtapa()).isEqualTo("INTERVALADO");
             assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(0.4);
+        }
+    }
+
+    /**
+     * fix-fartlek-etapas-estruturadas (CA1): a instrução da Categoria D chega ao user prompt quando o
+     * intervalado é degradado. Ela pedia "fartlek livre ... acelerações espontâneas" e a LLM obedecia,
+     * gerando uma PRINCIPAL única que nenhum padrão do expansor reconhece.
+     */
+    @Nested
+    @DisplayName("instrução da Categoria D")
+    class InstrucaoCategoriaD {
+
+        @Test
+        @DisplayName("não pede fartlek livre nem acelerações espontâneas")
+        void naoPedeFartlekSemEstrutura() {
+            assertThat(CategoriaIntervalado.D.getInstrucaoPadrao())
+                    .doesNotContainIgnoringCase("livre")
+                    .doesNotContainIgnoringCase("espontânea");
+        }
+
+        @Test
+        @DisplayName("o exemplo da instrução, copiado numa PRINCIPAL, é expandido em pares aceleração/recuperação")
+        void exemploDaInstrucaoEhReconhecidoPeloExpansor() {
+            TreinoPlanejadoLlmDto treino = fartlek(etapa(
+                    "PRINCIPAL", CategoriaIntervalado.D.getInstrucaoPadrao(), 15, 0.0));
+
+            TreinoPlanejadoLlmDto resultado = normalizador.expandirEtapasAgregadas(treino, zonasFC160);
+
+            assertThat(resultado.etapas()).hasSizeGreaterThanOrEqualTo(4);
+            assertThat(resultado.etapas())
+                    .extracting(EtapaTreinoLlmDto::tipoEtapa)
+                    .containsOnly("INTERVALADO", "RECUPERACAO");
         }
     }
 

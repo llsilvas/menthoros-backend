@@ -35,7 +35,11 @@ public enum CategoriaIntervalado {
 
     D("Tempo Run / Fartlek suave",
       "Corrida contínua em Z3 ou fartlek leve.",
-      "Prescreva fartlek livre de 20-30 min em Z2-Z3 com acelerações espontâneas curtas."),
+      // O exemplo concreto não é enfeite: é o formato que TreinoNormalizador sabe expandir. Faixas
+      // como "4-6× (1-2min ...)" não casam o regex — e texto solto vira uma PRINCIPAL única.
+      "Prescreva fartlek leve estruturado, ex.: 5× (1min Z3 + 2min Z2). Cada aceleração e cada "
+      + "recuperação é uma etapa individual (INTERVALADO e RECUPERACAO), entre aquecimento e "
+      + "desaquecimento — nunca a série inteira numa etapa só."),
 
     E("Fartlek específico de prova",
       "Variações no pace-alvo de competição.",
