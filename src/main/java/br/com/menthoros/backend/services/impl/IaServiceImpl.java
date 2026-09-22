@@ -179,7 +179,8 @@ public class IaServiceImpl implements IaService {
         // O contexto de cobertura vem do prompt builder — é o mesmo objeto que escreveu o bloco de
         // cobertura, então prompt e validação não podem divergir. Não roda com skeleton: ali o
         // planner é dono da frequência ("gere exatamente estas sessões").
-        WeeklyCoverageContext cobertura = coberturaSemanalHabilitada && skeleton == null
+        WeeklyCoverageContext cobertura = coberturaSemanalHabilitada
+                && promptGerado.cobertura() != null
                 && !promptGerado.cobertura().effectiveDays().isEmpty()
                 ? promptGerado.cobertura()
                 : null;

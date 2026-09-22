@@ -48,7 +48,32 @@ class PlanoTreinoPromptBuilderSinaisFadigaTest {
         assertThat(gerado.cobertura().fatigueSignals()).isNotNull().isEmpty();
     }
 
+    @Test
+    @DisplayName("CA13: com skeleton do planner o contexto é nulo e o bloco de cobertura não é escrito")
+    void comSkeletonNaoHaCobertura() {
+        var skeleton = org.mockito.Mockito.mock(br.com.menthoros.backend.domain.planner.WeekPlanSkeleton.class);
+
+        var gerado = montar(atleta(NivelExperiencia.INTERMEDIARIO), meta(-18.0), skeleton);
+
+        assertThat(gerado.cobertura()).isNull();
+        assertThat(gerado.user()).doesNotContain("COBERTURA DA SEMANA");
+    }
+
+    @Test
+    @DisplayName("sem skeleton, o bloco de cobertura é escrito no prompt")
+    void semSkeletonEscreveBloco() {
+        var gerado = montar(atleta(NivelExperiencia.INTERMEDIARIO), meta(-18.0));
+
+        assertThat(gerado.cobertura()).isNotNull();
+        assertThat(gerado.user()).contains("COBERTURA DA SEMANA");
+    }
+
     private PlanoTreinoPromptBuilder.PromptGerado montar(Atleta atleta, PlanoMetaDados meta) {
+        return montar(atleta, meta, null);
+    }
+
+    private PlanoTreinoPromptBuilder.PromptGerado montar(Atleta atleta, PlanoMetaDados meta,
+                                                         br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeleton) {
         var arquetipo = PlanoPromptArquetipos.todos().getFirst();
         TreinoHistoricoProvider provider = mock(TreinoHistoricoProvider.class);
         when(provider.prepararContexto(any())).thenReturn(arquetipo.contexto());
@@ -57,7 +82,7 @@ class PlanoTreinoPromptBuilderSinaisFadigaTest {
         try (MockedStatic<LocalDate> now = mockStatic(LocalDate.class, CALLS_REAL_METHODS)) {
             now.when(LocalDate::now).thenReturn(PlanoPromptArquetipos.HOJE);
             return builder.buildOptimizedPrompt(atleta, meta, null,
-                    PlanoPromptArquetipos.INICIO_SEMANA, arquetipo.diasEfetivos());
+                    PlanoPromptArquetipos.INICIO_SEMANA, arquetipo.diasEfetivos(), null, null, skeleton, false);
         }
     }
 

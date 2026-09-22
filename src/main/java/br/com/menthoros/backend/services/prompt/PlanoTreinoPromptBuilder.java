@@ -246,7 +246,12 @@ public class PlanoTreinoPromptBuilder {
 
         // diasEfetivos != null só em SEMANA_ATUAL (o chamador filtra os dias que já passaram); em
         // PROXIMA_SEMANA a lista é materializada aqui, com os dias configurados do atleta.
-        WeeklyCoverageContext cobertura = new WeeklyCoverageContext(
+        //
+        // Com skeleton, o planner é dono da frequência ("gere exatamente estas sessões") e a regra de
+        // cobertura não roda — então o bloco também não é escrito. Pedir cobertura no prompt e não
+        // cobrar na validação foi o que levou a LLM a inventar um descanso não autorizado na geração
+        // real de 22/09 16:39 (o ambiente local roda com PLANNER_ENGINE_ENABLED=true).
+        WeeklyCoverageContext cobertura = skeleton != null ? null : new WeeklyCoverageContext(
                 diasEfetivos != null ? diasEfetivos : atleta.getDiasDisponiveis(),
                 sinaisFadiga,
                 diasEfetivos != null,
@@ -445,7 +450,7 @@ public class PlanoTreinoPromptBuilder {
      * bloco de cobertura no prompt e que o validador usa depois, para os dois não divergirem.
      */
     public record PromptGerado(String system, String user, List<Constraint> regras,
-                               WeeklyCoverageContext cobertura) {}
+                               @Nullable WeeklyCoverageContext cobertura) {}
 
     // ======================== MÉTODOS AUXILIARES (mantidos) ========================
 

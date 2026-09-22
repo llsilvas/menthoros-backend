@@ -191,8 +191,7 @@ public class WeeklyCoverageValidator {
         }
     }
 
-    /** SEGUNDA = 0 … DOMINGO = 6 (a semana do plano começa na segunda). */
     private static int ordem(DiaSemana dia) {
-        return (dia.getOrder() + 6) % 7;
+        return WeeklyCoverageContext.ordemNaSemana(dia);
     }
 }

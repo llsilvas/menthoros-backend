@@ -113,8 +113,12 @@ public record WeeklyCoverageContext(List<DiaSemana> effectiveDays,
         return maior.size() > maxDiasConsecutivos ? maior : Set.of();
     }
 
-    /** SEGUNDA = 0 … DOMINGO = 6 (a semana do plano começa na segunda). */
-    private static int ordemNaSemana(DiaSemana dia) {
+    /**
+     * SEGUNDA = 0 … DOMINGO = 6 — a semana do plano começa na segunda, e o enum numera o domingo
+     * como 0. Público porque o validador ordena os dias pela mesma régua: duas cópias dessa conta
+     * divergiriam em silêncio se a convenção do enum mudasse.
+     */
+    public static int ordemNaSemana(DiaSemana dia) {
         return (dia.getOrder() + 6) % 7;
     }
 }
