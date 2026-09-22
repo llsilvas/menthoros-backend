@@ -270,6 +270,24 @@ public class TreinoNormalizador {
     }
 
     /**
+     * Deriva a distância de cada etapa PRINCIPAL pelo pace: {@code duracaoMin ÷ pace médio do
+     * ritmoAlvo} da própria etapa. A LLM concentra ali a distância do treino inteiro — caso real
+     * 22/09: REGENERATIVO com PRINCIPAL de 5,5 km em 30min a 7:28-7:55/km (fix-etapas-continuos-pace).
+     * Sem duração ou sem {@code ritmoAlvo} interpretável, a etapa fica como a LLM mandou.
+     */
+    public TreinoPlanejadoLlmDto distanciaPrincipalPorPace(TreinoPlanejadoLlmDto treino) {
+        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
+        List<EtapaTreinoLlmDto> etapas = treino.etapas().stream().map(e -> {
+            if (!"PRINCIPAL".equals(normalizarTipoEtapa(e.tipoEtapa()))) return e;
+            if (e.duracaoMin() == null || e.duracaoMin() <= 0) return e;
+            var pace = paceValidator.calcularPaceMedia(e.ritmoAlvo());
+            if (pace.isEmpty() || pace.getAsDouble() <= 0) return e;
+            return e.comDistancia(arredondar2(e.duracaoMin() / pace.getAsDouble()));
+        }).toList();
+        return treino.comEtapas(etapas);
+    }
+
+    /**
      * Deriva a distância de um treino CONTÍNUO cujas etapas nasceram sem distância (ex.: REGENERATIVO
      * sintetizado pelo reparo estrutural / substituição por lesão). Para cada etapa tempo-baseada sem
      * distância, calcula {@code duração / paceZ2} — inclusive a PRINCIPAL, que

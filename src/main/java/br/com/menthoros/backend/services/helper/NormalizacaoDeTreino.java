@@ -211,7 +211,20 @@ public class NormalizacaoDeTreino {
                 // reparar é identidade fora de TIPOS_3_ETAPAS (PlanoEstruturaReparador:43-46) — por isso
                 // mora só aqui, uma vez, e não na cauda
                 new Passo("reparar-3-etapas", (t, c) -> estruturaReparador.reparar(t, t.tipoTreino())),
-                gate("validar-por-tipo", this::validarPorTipo)
+                gate("validar-por-tipo", this::validarPorTipo),
+                // distância das etapas pelo pace (fix-etapas-continuos-pace): a LLM põe o total do
+                // treino na PRINCIPAL e deixa aquec/desaq com 0 — o total fica certo, as etapas não
+                corrigirTemporais,
+                new Passo("distancia-principal-por-pace",
+                        (t, c) -> treinoNormalizador.distanciaPrincipalPorPace(t)),
+                // Só com distância da LLM: sem ela, reconciliar adotaria a soma parcial e
+                // garantir-distancia-continuo (cauda) não preencheria mais a PRINCIPAL sem ritmo.
+                // E nunca com etapa sintetizada pelo reparo: ela se soma à prescrição — um regenerativo
+                // de 30min/4km viraria 45min/6,94km sem ninguém ter prescrito (mesma regra do CA4b)
+                new Passo("reconciliar-distancia",
+                        (t, c) -> t.distanciaKm() != null && t.distanciaKm() > 0
+                                && t.etapas().stream().noneMatch(PlanoEstruturaReparador::foiSintetizada)
+                                ? treinoNormalizador.reconciliarDistanciaComEtapas(t) : t)
         ), caudaComum));
 
         mapa.put(FamiliaTreino.PADRAO, receita(List.of(), caudaComum));

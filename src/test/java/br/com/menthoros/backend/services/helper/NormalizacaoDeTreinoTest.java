@@ -206,6 +206,101 @@ class NormalizacaoDeTreinoTest {
         }
     }
 
+    /**
+     * fix-etapas-continuos-pace: a receita TRES_ETAPAS não tocava a distância das etapas. Caso real
+     * 22/09 07:24 (limiar 6:20 → Z2 = 7,60 min/km): REGENERATIVO 6,0 km / 45:00 com PRINCIPAL de
+     * 5,5 km em 30min (5:27/km para um ritmo de 7:28-7:55) e aquecimento de 10min com 0 km.
+     */
+    @Nested
+    @DisplayName("família TRES_ETAPAS — distância das etapas pelo pace")
+    class TresEtapasDistanciaPorPace {
+
+        private ContextoNormalizacao ctxLeandro;
+
+        @BeforeEach
+        void limiarDoLeandro() {
+            Atleta atleta = Atleta.builder()
+                    .id(UUID.randomUUID())
+                    .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
+                    .paceLimiar(BigDecimal.valueOf(6.33))
+                    .build();
+            ctxLeandro = new ContextoNormalizacao(atleta, atleta.getId(), null, Map.of(), Map.of());
+        }
+
+        @Test
+        @DisplayName("CA1: caso real — PRINCIPAL 3,90 km, aquec 1,32, desaq 0,66; treino mantém 6,0 km e 45:00")
+        void casoRealRegenerativo() {
+            var treino = continuo("6.0", "45:00", "7:28-7:55/km",
+                    etapa("AQUECIMENTO", 10, 0.0, null),
+                    etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km"),
+                    etapa("DESAQUECIMENTO", 5, 0.5, null));
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm)
+                    .containsExactly(1.32, 3.9, 0.66);
+            assertThat(resultado.distanciaKm()).isEqualTo(6.0);
+            assertThat(resultado.duracaoMin()).isEqualTo("45:00");
+        }
+
+        @Test
+        @DisplayName("CA4: aquecimento sintetizado pelo reparo (distância null) recebe duração ÷ pace Z2")
+        void aquecimentoSintetizadoRecebeDistancia() {
+            var treino = continuo("6.0", "45:00", "7:28-7:55/km",
+                    etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km"),
+                    etapa("DESAQUECIMENTO", 5, 0.5, null));
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            // reparo acrescenta AQUECIMENTO de 10min → 10 / 7,60 = 1,32
+            assertThat(resultado.etapas().getFirst().tipoEtapa()).isEqualTo("AQUECIMENTO");
+            assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(1.32);
+        }
+
+        @Test
+        @DisplayName("CA5: soma desvia > 10% do total → total vira a soma, e a duração é a soma das etapas (mais perto do triângulo)")
+        void somaForaDaToleranciaSubstituiOTotal() {
+            // LLM diz 10 km / 60:00; etapas pelo pace somam 1,32 + 3,90 + 0,66 = 5,88 km → desvio 41%.
+            // Triângulo: 5,88 × 7,69 ≈ 45,2min — a soma 45 fica mais perto que os 60 da LLM
+            var treino = continuo("10.0", "60:00", "7:28-7:55/km",
+                    etapa("AQUECIMENTO", 10, 0.0, null),
+                    etapa("PRINCIPAL", 30, 8.0, "7:28-7:55/km"),
+                    etapa("DESAQUECIMENTO", 5, 0.5, null));
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            assertThat(resultado.distanciaKm()).isCloseTo(5.88, org.assertj.core.data.Offset.offset(0.001));
+            assertThat(resultado.duracaoMin()).isEqualTo("45:00");
+        }
+
+        @Test
+        @DisplayName("CA8: treino sem distância e PRINCIPAL sem ritmo → fallback Z2 de garantir-distancia-continuo continua")
+        void semDistanciaNemRitmoUsaFallbackZ2() {
+            // sem a guarda, reconciliar adotaria a soma parcial (só aquec + desaq) e a PRINCIPAL
+            // ficaria sem distância para sempre (garantir só age com o treino sem distância)
+            var treino = continuo(null, "45:00", null,
+                    etapa("AQUECIMENTO", 10, 0.0, null),
+                    etapa("PRINCIPAL", 30, null, null),
+                    etapa("DESAQUECIMENTO", 5, 0.0, null));
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            // PRINCIPAL: 30 / 7,60 = 3,95
+            assertThat(resultado.etapas().get(1).distanciaKm()).isEqualTo(3.95);
+            assertThat(resultado.distanciaKm()).isCloseTo(5.93, org.assertj.core.data.Offset.offset(0.001));
+        }
+
+        private EtapaTreinoLlmDto etapa(String tipo, Integer duracaoMin, Double distanciaKm, String ritmoAlvo) {
+            return new EtapaTreinoLlmDto(1, tipo, tipo.toLowerCase(), duracaoMin, distanciaKm, null, 1, ritmoAlvo);
+        }
+
+        private TreinoPlanejadoLlmDto continuo(String distanciaKm, String duracaoMin, String ritmoAlvo,
+                                               EtapaTreinoLlmDto... etapas) {
+            return new TreinoPlanejadoLlmDto("SEGUNDA", "REGENERATIVO", null, null, null, null, null,
+                    duracaoMin, distanciaKm != null ? Double.valueOf(distanciaKm) : null, ritmoAlvo, List.of(etapas));
+        }
+    }
+
     @Nested
     @DisplayName("runner")
     class Runner {

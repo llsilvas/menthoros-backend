@@ -89,7 +89,8 @@ class FamiliaTreinoTest {
         @DisplayName("TRES_ETAPAS: reparar ANTES de validar por tipo (só passa REGENERATIVO só com PRINCIPAL por isso)")
         void tresEtapas() {
             assertThat(normalizacao.receita(FamiliaTreino.TRES_ETAPAS).nomes())
-                    .containsExactlyElementsOf(concat(List.of("reparar-3-etapas", "validar-por-tipo")));
+                    .containsExactlyElementsOf(concat(List.of("reparar-3-etapas", "validar-por-tipo",
+                            "corrigir-temporais", "distancia-principal-por-pace", "reconciliar-distancia")));
         }
 
         @Test
