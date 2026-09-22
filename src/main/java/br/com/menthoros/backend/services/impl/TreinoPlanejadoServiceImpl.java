@@ -84,6 +84,7 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
 
         TreinoPlanejado salvo = treinoPlanejadoRepository.save(treino);
         ajustarVolumePlano(plano, salvo.getDistanciaKm(), true);
+        removerDescansoDoDia(plano, diaSemana);
         planoSemanalRepository.save(plano);
         TreinoPlanejadoOutputDto output = treinoMapper.toOutputDto(salvo);
         log.info("Treino adicionado: treinoId={}, planoId={}, tenantId={}", salvo.getId(), planoId, tenantId);
@@ -190,6 +191,24 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
                 : volumeAtual.subtract(distanciaKm).max(BigDecimal.ZERO);
         plano.setVolumePlanejadoKm(novoVolume);
         plano.setVolumeAlvoKm(novoVolume);
+    }
+
+    /**
+     * O treinador prescreveu treino num dia que a IA marcou como descanso — é ele discordando, e o
+     * descanso sai (add-descanso-explicito-por-fadiga, CA14). O sinal da discordância já existe no
+     * treino: {@code adicionadoPeloCoach}.
+     */
+    private void removerDescansoDoDia(PlanoSemanal plano, DiaSemana diaSemana) {
+        var descansos = plano.getRestDaysOuVazio();
+        if (descansos.isEmpty() || diaSemana == null) return;
+
+        var mantidos = descansos.stream()
+                .filter(d -> d.dayOfWeek() == null || !diaSemana.name().equalsIgnoreCase(d.dayOfWeek().trim()))
+                .toList();
+        if (mantidos.size() != descansos.size()) {
+            log.info("coach-substituiu-descanso-por-treino: planoId={}, dia={}", plano.getId(), diaSemana.name());
+            plano.setRestDays(mantidos);
+        }
     }
 
     private void validarEstadoDoPlanoParaAdicao(PlanoSemanal plano, TreinoPlanejadoAddDto dto, UUID tenantId) {

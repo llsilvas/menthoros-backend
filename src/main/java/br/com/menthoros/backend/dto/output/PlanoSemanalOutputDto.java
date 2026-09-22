@@ -84,5 +84,24 @@ public record PlanoSemanalOutputDto(
 
         @Schema(description = "Resumo legivel dos motivos de divergencia do planner (uma frase por " +
                 "violacao), para o badge de revisao; null/vazio quando nao ha violacao ou em plano legado")
-        List<String> plannerReviewReasons
-) {}
+        List<String> plannerReviewReasons,
+
+        @Schema(description = "Dias prescritos como descanso, com o motivo; vazio quando a semana é "
+                + "toda de treino ou o plano é anterior à feature")
+        List<RestDayOutputDto> restDays
+) {
+
+    /**
+     * Um dia de descanso prescrito (add-descanso-explicito-por-fadiga). Fora de
+     * {@code treinosPlanejados}: descanso não é treino a cumprir.
+     */
+    @Schema(description = "Dia de descanso prescrito pela IA, com o motivo")
+    public record RestDayOutputDto(
+            @Schema(description = "Dia da semana", example = "QUINTA")
+            String dayOfWeek,
+
+            @Schema(description = "Motivo, citando o sinal com valor e limiar",
+                    example = "check-in de hoje: DESCANSAR")
+            String reason) {
+    }
+}

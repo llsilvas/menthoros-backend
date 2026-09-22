@@ -7,6 +7,7 @@ import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import br.com.menthoros.backend.domain.planner.SessionSlot;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.input.DadosPlanoDto;
+import br.com.menthoros.backend.domain.plano.RestDay;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.dto.output.MetricasSemanaisMedias;
@@ -55,6 +56,7 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -160,6 +162,9 @@ public class PlanGenerationPersister {
         PlanoMetaDados metaDados = prepararMetadados(dadosPlano, volumePlanejadoRecalculado);
 
         PlanoSemanal plano = criarPlanoComTreinos(planoDto, atleta, periodo, metaDados, treinos);
+        // Prova vence descanso (add-descanso-explicito-por-fadiga, CA12b): garantirProvasNaSemana pode
+        // ter posto uma prova num dia prescrito como descanso — o dia não pode ter os dois.
+        removerDescansosDeDiasComTreino(plano, treinos);
         // Ligação plano ↔ chamadas LLM por join (add-plan-generation-ledger, D4): mesmo save, sem UPDATE.
         plano.setGenerationRequestId(ctx.generationRequestId());
 
@@ -471,6 +476,35 @@ public class PlanGenerationPersister {
                 plano.getVolumePlanejadoKm());
 
         return planoSalvo;
+    }
+
+    /**
+     * Tira do plano o descanso de todo dia que acabou com treino — na prática, o dia que ganhou uma
+     * prova depois da validação (add-descanso-explicito-por-fadiga). Aqui não há turno de reparo, e um
+     * dia com treino <b>e</b> descanso é incoerente nas duas telas.
+     */
+    // package-private (não private): testado direto por PlanGenerationPersisterDescansoTest
+    void removerDescansosDeDiasComTreino(PlanoSemanal plano, List<TreinoPlanejadoLlmDto> treinos) {
+        List<RestDay> descansos = plano.getRestDaysOuVazio();
+        if (descansos.isEmpty()) return;
+
+        Set<String> diasComTreino = treinos.stream()
+                .map(TreinoPlanejadoLlmDto::diaSemana)
+                .filter(Objects::nonNull)
+                .map(d -> d.trim().toUpperCase())
+                .collect(Collectors.toSet());
+
+        List<RestDay> mantidos = descansos.stream()
+                .filter(d -> d.dayOfWeek() == null || !diasComTreino.contains(d.dayOfWeek().trim().toUpperCase()))
+                .toList();
+
+        if (mantidos.size() != descansos.size()) {
+            descansos.stream()
+                    .filter(d -> !mantidos.contains(d))
+                    .forEach(d -> log.info("DESCANSO REMOVIDO [{}]: o dia recebeu treino (prova garantida na semana)",
+                            d.dayOfWeek()));
+            plano.setRestDays(mantidos);
+        }
     }
 
     private PlanoSemanal criarPlanoEntity(PlanoSemanalLlmDto planoDto, Atleta atleta, LocalDate semanaInicio,

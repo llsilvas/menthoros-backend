@@ -108,6 +108,41 @@ class TreinoPlanejadoServiceTest {
         }
 
         @Test
+        @DisplayName("CA14: treino criado num dia de descanso remove aquele descanso do plano")
+        void treinoEmDiaDeDescansoRemoveODescanso() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            plano.setRestDays(new ArrayList<>(List.of(
+                    new br.com.menthoros.backend.domain.plano.RestDay("SEXTA", "check-in de hoje: DESCANSAR"),
+                    new br.com.menthoros.backend.domain.plano.RestDay("QUINTA", "36h desde o último intensivo"))));
+            stubPlanoFound(plano);
+            TreinoPlanejado saved = new TreinoPlanejado();
+            when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
+            when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+
+            service.adicionarTreino(planoId, dtoSimples(DATA_SEXTA));
+
+            assertThat(plano.getRestDaysOuVazio())
+                    .extracting(br.com.menthoros.backend.domain.plano.RestDay::dayOfWeek)
+                    .containsExactly("QUINTA");
+        }
+
+        @Test
+        @DisplayName("treino em dia sem descanso não mexe na lista de descansos")
+        void treinoEmDiaSemDescansoNaoMexe() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            var descansos = List.of(new br.com.menthoros.backend.domain.plano.RestDay("QUINTA", "motivo"));
+            plano.setRestDays(new ArrayList<>(descansos));
+            stubPlanoFound(plano);
+            TreinoPlanejado saved = new TreinoPlanejado();
+            when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
+            when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+
+            service.adicionarTreino(planoId, dtoSimples(DATA_SEXTA));
+
+            assertThat(plano.getRestDaysOuVazio()).isEqualTo(descansos);
+        }
+
+        @Test
         @DisplayName("etapas adicionadas com ordem=1 e ordem=2")
         void treinoComDuasEtapasPersistidoNaOrdemCorreta() {
             PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());

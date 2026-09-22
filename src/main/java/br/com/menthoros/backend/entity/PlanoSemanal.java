@@ -8,6 +8,7 @@ import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import br.com.menthoros.backend.domain.plano.RestDay;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -158,4 +159,18 @@ public class PlanoSemanal {
     @Column(name = "planner_metadata_json", columnDefinition = "jsonb")
     private String plannerMetadataJson;
 
+    /**
+     * Dias prescritos como descanso (add-descanso-explicito-por-fadiga). Fora de
+     * {@code treinosPlanejados}: descanso não é treino a cumprir — ali viraria PERDIDO no
+     * encerramento da semana e entraria no denominador de aderência. {@code null} em plano anterior
+     * à feature; {@link #getRestDaysOuVazio()} normaliza para quem só quer iterar.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "rest_days", columnDefinition = "jsonb")
+    private List<RestDay> restDays;
+
+    /** Nunca nulo — plano anterior à feature tem a coluna nula. */
+    public List<RestDay> getRestDaysOuVazio() {
+        return restDays == null ? List.of() : restDays;
+    }
 }
