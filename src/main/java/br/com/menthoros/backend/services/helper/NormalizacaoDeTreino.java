@@ -220,10 +220,12 @@ public class NormalizacaoDeTreino {
                 // Só com distância da LLM: sem ela, reconciliar adotaria a soma parcial e
                 // garantir-distancia-continuo (cauda) não preencheria mais a PRINCIPAL sem ritmo.
                 // E nunca com etapa sintetizada pelo reparo: ela se soma à prescrição — um regenerativo
-                // de 30min/4km viraria 45min/6,94km sem ninguém ter prescrito (mesma regra do CA4b)
+                // de 30min/4km viraria 45min/6,94km sem ninguém ter prescrito (mesma regra do CA4b).
+                // E só com toda PRINCIPAL pelo pace: sem ritmo, ela carrega o total que a LLM concentrou ali
                 new Passo("reconciliar-distancia",
                         (t, c) -> t.distanciaKm() != null && t.distanciaKm() > 0
                                 && t.etapas().stream().noneMatch(PlanoEstruturaReparador::foiSintetizada)
+                                && treinoNormalizador.principaisComDistanciaPorPace(t)
                                 ? treinoNormalizador.reconciliarDistanciaComEtapas(t) : t)
         ), caudaComum));
 

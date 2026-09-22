@@ -278,13 +278,34 @@ public class TreinoNormalizador {
     public TreinoPlanejadoLlmDto distanciaPrincipalPorPace(TreinoPlanejadoLlmDto treino) {
         if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
         List<EtapaTreinoLlmDto> etapas = treino.etapas().stream().map(e -> {
-            if (!"PRINCIPAL".equals(normalizarTipoEtapa(e.tipoEtapa()))) return e;
-            if (e.duracaoMin() == null || e.duracaoMin() <= 0) return e;
-            var pace = paceValidator.calcularPaceMedia(e.ritmoAlvo());
-            if (pace.isEmpty() || pace.getAsDouble() <= 0) return e;
+            if (!ehPrincipal(e)) return e;
+            var pace = paceDerivavel(e);
+            if (pace.isEmpty()) return e;
             return e.comDistancia(arredondar2(e.duracaoMin() / pace.getAsDouble()));
         }).toList();
         return treino.comEtapas(etapas);
+    }
+
+    /**
+     * Se toda PRINCIPAL teve (ou teria) a distância derivada do pace por {@link #distanciaPrincipalPorPace}.
+     * Sem isso a soma das etapas carrega a distância que a LLM concentrou na PRINCIPAL e não serve para
+     * reconciliar o total. Treino sem PRINCIPAL devolve {@code false}: não há o que derivar.
+     */
+    public boolean principaisComDistanciaPorPace(TreinoPlanejadoLlmDto treino) {
+        if (treino.etapas() == null) return false;
+        List<EtapaTreinoLlmDto> principais = treino.etapas().stream().filter(this::ehPrincipal).toList();
+        return !principais.isEmpty() && principais.stream().allMatch(e -> paceDerivavel(e).isPresent());
+    }
+
+    private boolean ehPrincipal(EtapaTreinoLlmDto e) {
+        return "PRINCIPAL".equals(normalizarTipoEtapa(e.tipoEtapa()));
+    }
+
+    /** Pace médio do ritmoAlvo da etapa, quando a etapa tem duração e ritmo interpretável. */
+    private java.util.OptionalDouble paceDerivavel(EtapaTreinoLlmDto e) {
+        if (e.duracaoMin() == null || e.duracaoMin() <= 0) return java.util.OptionalDouble.empty();
+        var pace = paceValidator.calcularPaceMedia(e.ritmoAlvo());
+        return pace.isPresent() && pace.getAsDouble() > 0 ? pace : java.util.OptionalDouble.empty();
     }
 
     /**
