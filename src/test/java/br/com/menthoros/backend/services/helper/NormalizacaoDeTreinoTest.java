@@ -346,6 +346,140 @@ class NormalizacaoDeTreinoTest {
         }
     }
 
+    /**
+     * fix-fartlek-etapas-estruturadas: a receita FARTLEK ganhou gates estruturais depois de
+     * {@code expandir}. Caso real: FARTLEK do Leandro de 24/09 persistido com PRINCIPAL "Fartlek
+     * livre" única — sem gate, passava sem turno de reparo.
+     */
+    @Nested
+    @DisplayName("família FARTLEK — gates estruturais depois de expandir")
+    class Fartlek {
+
+        @Test
+        @DisplayName("CA2: 'Fartlek livre' numa PRINCIPAL única → LLMException pedindo acelerações individuais")
+        void fartlekLivreEmEtapaUnicaReprova() {
+            var treino = fartlek(aquec(),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "Fartlek livre 20-30 min com acelerações curtas Z2-Z3.",
+                            30, 0.0, null, 1, "6:20-7:28/km"),
+                    desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("acelerações individuais");
+        }
+
+        @Test
+        @DisplayName("CA3: série comprimida '4x (1min forte + 2min leve)' é expandida e passa")
+        void serieComprimidaReconhecivelEhExpandidaEPassa() {
+            var treino = fartlek(aquec(),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "Fartlek leve Z2-Z3, 4x (1min forte + 2min leve)",
+                            12, 0.0, null, 1, "6:20-7:28/km"),
+                    desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(tipos(resultado)).containsExactly("AQUECIMENTO",
+                    "INTERVALADO", "RECUPERACAO", "INTERVALADO", "RECUPERACAO",
+                    "INTERVALADO", "RECUPERACAO", "INTERVALADO", "RECUPERACAO",
+                    "DESAQUECIMENTO");
+        }
+
+        @Test
+        @DisplayName("CA4: já expandido pela LLM (aquec, 3 pares alternados, desaq) → passa")
+        void jaExpandidoPassa() {
+            var treino = fartlek(aquec(), acel(), rec(), acel(), rec(), acel(), rec(), desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(tipos(resultado)).hasSize(8).startsWith("AQUECIMENTO").endsWith("DESAQUECIMENTO");
+        }
+
+        @Test
+        @DisplayName("CA5: 2 acelerações é o piso → passa")
+        void duasAceleracoesPassa() {
+            var treino = fartlek(aquec(), acel(), rec(), acel(), rec(), desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(tipos(resultado)).filteredOn("INTERVALADO"::equals).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("CA5: 1 aceleração só → LLMException")
+        void umaAceleracaoReprova() {
+            var treino = fartlek(aquec(), acel(), rec(), desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("acelerações individuais");
+        }
+
+        @Test
+        @DisplayName("CA6: sem aquecimento → LLMException")
+        void semAquecimentoReprova() {
+            var treino = fartlek(acel(), rec(), acel(), rec(), desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("aquecimento");
+        }
+
+        @Test
+        @DisplayName("CA6: desaquecimento fora da última posição → LLMException")
+        void desaquecimentoForaDoFimReprova() {
+            var treino = fartlek(aquec(), acel(), rec(), desaq(), acel(), rec());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("desaquecimento");
+        }
+
+        @Test
+        @DisplayName("CA7: acelerações sem nenhuma recuperação → LLMException")
+        void semRecuperacaoReprova() {
+            var treino = fartlek(aquec(), acel(), acel(), acel(), desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("recuperação");
+        }
+
+        @Test
+        @DisplayName("CA7: recuperação antes da 1ª aceleração → LLMException")
+        void recuperacaoSemAceleracaoAnteriorReprova() {
+            var treino = fartlek(aquec(), rec(), acel(), rec(), acel(), desaq());
+
+            assertThatThrownBy(() -> normalizacao.normalizar(treino, ctx))
+                    .isInstanceOf(LLMException.class)
+                    .hasMessageContaining("recuperações sem tiro");
+        }
+
+        @Test
+        @DisplayName("CA7b: fartlek 'Misto' (2 acelerações seguidas + 1 recuperação por bloco) → passa")
+        void fartlekMistoComAceleracoesConsecutivasPassa() {
+            // o system prompt prescreve "Misto: 6× (3min Z4 + 1min Z5 + 2min Z2)" na Categoria D —
+            // alternância estrita ou balanceamento 1:1 o reprovariam
+            var treino = fartlek(aquec(), acel(), acel(), rec(), acel(), acel(), rec(), desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(tipos(resultado)).filteredOn("INTERVALADO"::equals).hasSize(4);
+        }
+
+        private EtapaTreinoLlmDto acel() {
+            return new EtapaTreinoLlmDto(1, "INTERVALADO", "Aceleração Z3", 2, 0.35, null, 1, "5:40-6:00/km");
+        }
+
+        private TreinoPlanejadoLlmDto fartlek(EtapaTreinoLlmDto... etapas) {
+            return new TreinoPlanejadoLlmDto("QUINTA", "FARTLEK", null, 50, 1.0, 6, "Fartlek",
+                    "50:00", 8.0, "6:20-7:28/km", List.of(etapas));
+        }
+
+        private List<String> tipos(TreinoPlanejadoLlmDto treino) {
+            return treino.etapas().stream().map(EtapaTreinoLlmDto::tipoEtapa).toList();
+        }
+    }
+
     // ---------- fixtures (aquec/desaq com 1.67km = 10min × paceZ2 6.0, estável sob corrigir-temporais) ----------
 
     private static EtapaTreinoLlmDto aquec() {

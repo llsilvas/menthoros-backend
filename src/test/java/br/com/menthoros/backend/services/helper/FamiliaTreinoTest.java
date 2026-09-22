@@ -76,10 +76,12 @@ class FamiliaTreinoTest {
         }
 
         @Test
-        @DisplayName("FARTLEK: corrige, expande e reconcilia; sem gate estrutural próprio")
+        @DisplayName("FARTLEK: gates estruturais DEPOIS de expandir (série comprimida vira pares antes de ser julgada)")
         void fartlek() {
             assertThat(normalizacao.receita(FamiliaTreino.FARTLEK).nomes())
-                    .containsExactlyElementsOf(concat(List.of("corrigir-temporais", "expandir", "reconciliar-distancia")));
+                    .containsExactlyElementsOf(concat(List.of("corrigir-temporais", "expandir",
+                            "gate-existencia", "gate-presenca-aquec-desaq", "gate-ordem-aquec-desaq",
+                            "gate-aceleracoes-fartlek", "gate-sequencia", "reconciliar-distancia")));
         }
 
         @Test

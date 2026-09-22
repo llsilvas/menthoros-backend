@@ -191,6 +191,14 @@ public class NormalizacaoDeTreino {
         mapa.put(FamiliaTreino.FARTLEK, receita(List.of(
                 corrigirTemporais,
                 expandir,
+                // ── depois de expandir: uma série comprimida reconhecível já virou pares; o que sobra
+                //    sem acelerações é "fartlek livre" numa etapa só — reprovar leva ao turno de reparo.
+                //    Sem gate-balanceamento: o "Misto" do system prompt tem 2 acelerações por recuperação
+                gate("gate-existencia", this::gateExistencia),
+                gate("gate-presenca-aquec-desaq", this::gatePresencaAquecDesaq),
+                gate("gate-ordem-aquec-desaq", this::gateOrdemAquecDesaq),
+                gate("gate-aceleracoes-fartlek", this::gateAceleracoesFartlek),
+                gate("gate-sequencia", this::gateSequencia),
                 reconciliarDistancia
         ), caudaComum));
 
@@ -275,6 +283,28 @@ public class NormalizacaoDeTreino {
             log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} não termina com desaquecimento (termina com {})",
                     ctx.atletaId(), treino.tipoTreino(), ultima.tipoEtapa());
             throw new LLMException(String.format("Treino %s inválido: deve terminar com desaquecimento", treino.tipoTreino()));
+        }
+    }
+
+    private void gateAceleracoesFartlek(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
+        long numAceleracoes = contar(treino.etapas(), "INTERVALADO");
+        if (numAceleracoes < 2) {
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} tem {} aceleração(ões) individual(is) (mínimo 2)",
+                    ctx.atletaId(), treino.tipoTreino(), numAceleracoes);
+            contarViolacaoEstrutural(treino.tipoTreino());
+            throw new LLMException(String.format(
+                    "Treino %s inválido: tem %d aceleração(ões) — o fartlek precisa de no mínimo 2 acelerações "
+                            + "individuais (etapas INTERVALADO), cada uma seguida da sua RECUPERACAO, entre "
+                            + "aquecimento e desaquecimento. Não descreva a série inteira numa etapa única.",
+                    treino.tipoTreino(), numAceleracoes));
+        }
+        if (contar(treino.etapas(), "RECUPERACAO") == 0) {
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} sem etapa de recuperação entre as acelerações",
+                    ctx.atletaId(), treino.tipoTreino());
+            contarViolacaoEstrutural(treino.tipoTreino());
+            throw new LLMException(String.format(
+                    "Treino %s inválido: sem etapa de recuperação (RECUPERACAO) entre as acelerações",
+                    treino.tipoTreino()));
         }
     }
 
