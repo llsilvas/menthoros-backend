@@ -34,6 +34,9 @@ public class PlanoEstruturaReparador {
     private static final Set<String> TIPOS_3_ETAPAS =
             Set.of("REGENERATIVO", "CONTINUO", "TEMPO_RUN", "LONGO");
 
+    /** Sufixo da descrição das etapas inventadas pelo reparo — lido por {@link #foiSintetizada}. */
+    static final String MARCA_SINTETIZADA = "(gerado pelo sistema)";
+
     private final MeterRegistry meterRegistry;
 
     /**
@@ -64,11 +67,11 @@ public class PlanoEstruturaReparador {
         }
 
         if (faltaAquec) {
-            aquecimento = sintetizar("AQUECIMENTO", "Aquecimento leve em Z1-Z2 (gerado pelo sistema)", 10);
+            aquecimento = sintetizar("AQUECIMENTO", "Aquecimento leve em Z1-Z2 " + MARCA_SINTETIZADA, 10);
             contar(tipo, "aquecimento_sintetizado");
         }
         if (faltaDesaq) {
-            desaquecimento = sintetizar("DESAQUECIMENTO", "Desaquecimento leve em Z1 (gerado pelo sistema)", 5);
+            desaquecimento = sintetizar("DESAQUECIMENTO", "Desaquecimento leve em Z1 " + MARCA_SINTETIZADA, 5);
             contar(tipo, "desaquecimento_sintetizado");
         }
         if (!faltaAquec && !faltaDesaq && foraDeOrdem) {
@@ -80,6 +83,20 @@ public class PlanoEstruturaReparador {
         log.info("REPARO ESTRUTURAL [{}]: etapas normalizadas para AQUECIMENTO→PRINCIPAL→DESAQUECIMENTO "
                 + "(faltaAquec={}, faltaDesaq={}, foraDeOrdem={})", tipo, faltaAquec, faltaDesaq, foraDeOrdem);
         return comEtapas(treino, reparadas);
+    }
+
+    /**
+     * Se a etapa foi inventada por {@link #reparar} (aquec/desaq faltante), e não prescrita pela LLM.
+     * Quem soma etapas precisa saber: elas se acrescentam à prescrição, não a descrevem.
+     *
+     * <p>Contrato implícito: a marca vive no fim de {@code descricaoEtapa}, então só vale dentro da mesma
+     * passada de normalização, antes de qualquer edição da descrição (coach, SessionResolver v2). Quem
+     * passar a reescrever a descrição antes da receita TRES_ETAPAS desliga a guarda em silêncio — aí a
+     * troca certa é um campo explícito na etapa.</p>
+     */
+    public static boolean foiSintetizada(EtapaTreinoLlmDto etapa) {
+        return etapa != null && etapa.descricaoEtapa() != null
+                && etapa.descricaoEtapa().endsWith(MARCA_SINTETIZADA);
     }
 
     private static EtapaTreinoLlmDto primeiroDoTipo(List<EtapaTreinoLlmDto> etapas, String tipoEtapa) {

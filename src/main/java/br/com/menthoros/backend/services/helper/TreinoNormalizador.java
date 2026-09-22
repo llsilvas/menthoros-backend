@@ -270,6 +270,60 @@ public class TreinoNormalizador {
     }
 
     /**
+     * Deriva a distância de cada etapa PRINCIPAL pelo pace: {@code duracaoMin ÷ pace médio do
+     * ritmoAlvo} da própria etapa. A LLM concentra ali a distância do treino inteiro — caso real
+     * 22/09: REGENERATIVO com PRINCIPAL de 5,5 km em 30min a 7:28-7:55/km (fix-etapas-continuos-pace).
+     * Sem duração ou sem {@code ritmoAlvo} interpretável, a etapa fica como a LLM mandou.
+     */
+    public TreinoPlanejadoLlmDto distanciaPrincipalPorPace(TreinoPlanejadoLlmDto treino) {
+        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
+        List<EtapaTreinoLlmDto> etapas = treino.etapas().stream().map(e -> {
+            if (!ehPrincipal(e)) return e;
+            var pace = paceDerivavel(e);
+            if (pace.isEmpty()) return e;
+            return e.comDistancia(arredondar2(e.duracaoMin() / pace.getAsDouble()));
+        }).toList();
+        return treino.comEtapas(etapas);
+    }
+
+    /**
+     * Se toda PRINCIPAL teve (ou teria) a distância derivada do pace por {@link #distanciaPrincipalPorPace}.
+     * Sem isso a soma das etapas carrega a distância que a LLM concentrou na PRINCIPAL e não serve para
+     * reconciliar o total. Treino sem PRINCIPAL devolve {@code false}: não há o que derivar.
+     */
+    public boolean principaisComDistanciaPorPace(TreinoPlanejadoLlmDto treino) {
+        if (treino.etapas() == null) return false;
+        List<EtapaTreinoLlmDto> principais = treino.etapas().stream().filter(this::ehPrincipal).toList();
+        return !principais.isEmpty() && principais.stream().allMatch(e -> paceDerivavel(e).isPresent());
+    }
+
+    /**
+     * Total do treino = soma das etapas, com tolerância zero e arredondado a 2 casas. Só para quem já
+     * sabe que toda etapa é confiável (distância derivada do pace, nada sintetizado) — ver a receita
+     * TRES_ETAPAS. Etapa sem distância torna a soma um piso, e o treino fica como está.
+     */
+    public TreinoPlanejadoLlmDto adotarSomaDasEtapas(TreinoPlanejadoLlmDto treino) {
+        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
+        if (treino.etapas().stream().anyMatch(e -> e.distanciaKm() == null || e.distanciaKm() <= 0)) return treino;
+        double soma = arredondar2(somarDistancias(treino.etapas()));
+        if (treino.distanciaKm() != null && treino.distanciaKm() == soma) return treino;
+        log.info("RECONCILIAÇÃO [{}]: distanciaKm={} km → soma das etapas pelo pace {} km (tolerância zero)",
+                treino.tipoTreino(), treino.distanciaKm(), soma);
+        return treino.comDistancia(soma);
+    }
+
+    private boolean ehPrincipal(EtapaTreinoLlmDto e) {
+        return "PRINCIPAL".equals(normalizarTipoEtapa(e.tipoEtapa()));
+    }
+
+    /** Pace médio do ritmoAlvo da etapa, quando a etapa tem duração e ritmo interpretável. */
+    private java.util.OptionalDouble paceDerivavel(EtapaTreinoLlmDto e) {
+        if (e.duracaoMin() == null || e.duracaoMin() <= 0) return java.util.OptionalDouble.empty();
+        var pace = paceValidator.calcularPaceMedia(e.ritmoAlvo());
+        return pace.isPresent() && pace.getAsDouble() > 0 ? pace : java.util.OptionalDouble.empty();
+    }
+
+    /**
      * Deriva a distância de um treino CONTÍNUO cujas etapas nasceram sem distância (ex.: REGENERATIVO
      * sintetizado pelo reparo estrutural / substituição por lesão). Para cada etapa tempo-baseada sem
      * distância, calcula {@code duração / paceZ2} — inclusive a PRINCIPAL, que
