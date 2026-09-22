@@ -299,6 +299,19 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
+        @DisplayName("CA4b: etapas já fechavam 45 e o reparo acrescenta 10 de aquec → 55 (19,5%) perde para 45 (2%)")
+        void reparoQueEsticaEtapasNaoVenceDuracaoDaLlm() {
+            // caso real de 21/09 22:41: 6km a 7:28-7:55 esperam ~46min; a soma 55 ficava dentro dos
+            // 20% e vencia com o desempate por tolerância — por isso o desempate é "mais perto vence"
+            var treino = continuo("REGENERATIVO", "45:00", 6.0, "7:28-7:55/km",
+                    etapaMin("PRINCIPAL", 40), etapaMin("DESAQUECIMENTO", 5));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            assertThat(resultado.duracaoMin()).isEqualTo("45:00");
+        }
+
+        @Test
         @DisplayName("CA6: sem ritmoAlvo não há desempate → soma das etapas (regra vigente)")
         void semRitmoAlvoMantemRegraAtual() {
             var treino = continuo("REGENERATIVO", "45:00", 7.0, null,
@@ -311,9 +324,9 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
-        @DisplayName("ambos fora da tolerância → soma das etapas (não piora o comportamento atual)")
+        @DisplayName("LLM mais longe do triângulo que a soma → soma das etapas")
         void ambosInconsistentesMantemSoma() {
-            // esperado ≈ 53.8min; 120 desvia 123%, soma 25 desvia 54% → sem vencedor, soma prevalece
+            // esperado ≈ 53.8min; 120 desvia 123%, soma 25 desvia 54% → a soma está mais perto e vence
             var treino = continuo("REGENERATIVO", "120:00", 7.0, "7:28-7:55/km",
                     etapaMin("PRINCIPAL", 10), etapaMin("DESAQUECIMENTO", 5));
 

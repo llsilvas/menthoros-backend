@@ -580,12 +580,13 @@ public class NormalizacaoDeTreino {
     /**
      * Duração total = soma das etapas (override do valor da LLM) — só com etapas e soma > 0.
      *
-     * <p>Exceção (fix-normalizador-etapas-incompletas): fora de INTERVALADO/TIRO, quando a soma das
-     * etapas desvia mais de {@link #TOLERANCIA_TRIANGULO} de {@code ritmoAlvo × distanciaKm} e a
-     * duração da LLM não, as etapas é que estão incompletas (a LLM devolve etapas que não cobrem o
-     * treino; o reparo estrutural acrescenta só 10 min) — mantém a duração da LLM. Em INTERVALADO/TIRO
-     * o {@code ritmoAlvo} é o pace do tiro, não do treino, e a soma segue autoritativa. Sem triângulo
-     * (ritmo ou distância ausentes) não há desempate e a soma prevalece, como antes.</p>
+     * <p>Exceção (fix-normalizador-etapas-incompletas): fora de INTERVALADO/TIRO, quando a duração da
+     * LLM está mais perto de {@code ritmoAlvo × distanciaKm} do que a soma das etapas, as etapas é que
+     * estão erradas (a LLM devolve etapas que não cobrem o treino, ou o reparo estrutural acrescenta
+     * aquec/desaq por cima de etapas que já fechavam o total) — mantém a duração da LLM. Em
+     * INTERVALADO/TIRO o {@code ritmoAlvo} é o pace do tiro, não do treino, e a soma segue
+     * autoritativa. Sem triângulo (ritmo ou distância ausentes) não há desempate e a soma prevalece,
+     * como antes; em empate, também.</p>
      */
     private TreinoPlanejadoLlmDto recalcularDuracao(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
         if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
@@ -597,8 +598,8 @@ public class NormalizacaoDeTreino {
             var esperada = duracaoEsperadaMin(treino);
             var atual = parseDuracaoMin(duracaoAtual);
             if (esperada.isPresent() && atual.isPresent()
-                    && desvio(atual.getAsDouble(), esperada.getAsDouble()) <= TOLERANCIA_TRIANGULO
-                    && desvio(totalMinEtapas, esperada.getAsDouble()) > TOLERANCIA_TRIANGULO) {
+                    && desvio(atual.getAsDouble(), esperada.getAsDouble())
+                       < desvio(totalMinEtapas, esperada.getAsDouble())) {
                 log.warn("DURAÇÃO MANTIDA [{}]: etapas somam {} min mas ritmoAlvo='{}' × {} km esperam {} min → mantendo '{}' da LLM",
                         treino.tipoTreino(), totalMinEtapas, treino.ritmoAlvo(), treino.distanciaKm(),
                         String.format("%.1f", esperada.getAsDouble()), duracaoAtual);
