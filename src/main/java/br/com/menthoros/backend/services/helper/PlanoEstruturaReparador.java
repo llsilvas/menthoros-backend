@@ -88,6 +88,11 @@ public class PlanoEstruturaReparador {
     /**
      * Se a etapa foi inventada por {@link #reparar} (aquec/desaq faltante), e não prescrita pela LLM.
      * Quem soma etapas precisa saber: elas se acrescentam à prescrição, não a descrevem.
+     *
+     * <p>Contrato implícito: a marca vive no fim de {@code descricaoEtapa}, então só vale dentro da mesma
+     * passada de normalização, antes de qualquer edição da descrição (coach, SessionResolver v2). Quem
+     * passar a reescrever a descrição antes da receita TRES_ETAPAS desliga a guarda em silêncio — aí a
+     * troca certa é um campo explícito na etapa.</p>
      */
     public static boolean foiSintetizada(EtapaTreinoLlmDto etapa) {
         return etapa != null && etapa.descricaoEtapa() != null

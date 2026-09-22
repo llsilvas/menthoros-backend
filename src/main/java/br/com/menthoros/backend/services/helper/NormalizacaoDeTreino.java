@@ -36,7 +36,7 @@ import java.util.stream.Collectors;
  * {@code PlanoEstruturaReparador} e {@code PaceValidator} são internal seams: nada mais os chama.</p>
  *
  * <p>Idempotent: YES — mesma entrada, mesma saída; sem estado entre chamadas. Side Effects: NONE
- * além de log e do contador {@code plano_violacao_estrutural}. Tenant-aware: NO — recebe o
+ * além de log e dos contadores {@code plano_violacao_estrutural} e {@code plano_etapas_total_divergente}. Tenant-aware: NO — recebe o
  * {@code Atleta} já resolvido pelo tenant no {@link ContextoNormalizacao}.</p>
  */
 @Slf4j
@@ -217,16 +217,7 @@ public class NormalizacaoDeTreino {
                 corrigirTemporais,
                 new Passo("distancia-principal-por-pace",
                         (t, c) -> treinoNormalizador.distanciaPrincipalPorPace(t)),
-                // Só com distância da LLM: sem ela, reconciliar adotaria a soma parcial e
-                // garantir-distancia-continuo (cauda) não preencheria mais a PRINCIPAL sem ritmo.
-                // E nunca com etapa sintetizada pelo reparo: ela se soma à prescrição — um regenerativo
-                // de 30min/4km viraria 45min/6,94km sem ninguém ter prescrito (mesma regra do CA4b).
-                // E só com toda PRINCIPAL pelo pace: sem ritmo, ela carrega o total que a LLM concentrou ali
-                new Passo("reconciliar-distancia",
-                        (t, c) -> t.distanciaKm() != null && t.distanciaKm() > 0
-                                && t.etapas().stream().noneMatch(PlanoEstruturaReparador::foiSintetizada)
-                                && treinoNormalizador.principaisComDistanciaPorPace(t)
-                                ? treinoNormalizador.reconciliarDistanciaComEtapas(t) : t)
+                new Passo("reconciliar-distancia", this::reconciliarContinuo)
         ), caudaComum));
 
         mapa.put(FamiliaTreino.PADRAO, receita(List.of(), caudaComum));
@@ -304,6 +295,42 @@ public class NormalizacaoDeTreino {
                     ctx.atletaId(), treino.tipoTreino(), ultima.tipoEtapa());
             throw new LLMException(String.format("Treino %s inválido: deve terminar com desaquecimento", treino.tipoTreino()));
         }
+    }
+
+    /**
+     * Total do contínuo = soma das etapas, com tolerância zero, quando toda etapa é confiável: as
+     * distâncias vieram do pace e o reparo não inventou nenhuma. Nos outros casos o total da LLM fica:
+     * <ul>
+     *   <li>sem distância da LLM — {@code garantir-distancia-continuo} (cauda) assume; reconciliar aqui
+     *       adotaria a soma parcial e a PRINCIPAL sem ritmo nunca seria preenchida;</li>
+     *   <li>etapa sintetizada — ela se soma à prescrição: um regenerativo de 30min/4km viraria
+     *       45min/6,94km sem ninguém ter prescrito (decisão de produto de 22/09, mesma regra do CA4b);</li>
+     *   <li>PRINCIPAL sem ritmo — carrega o total que a LLM concentrou ali; somada a aquec/desaq, infla.</li>
+     * </ul>
+     * Nos dois últimos, a divergência entre etapas e total fica e é contada.
+     */
+    private TreinoPlanejadoLlmDto reconciliarContinuo(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
+        if (treino.distanciaKm() == null || treino.distanciaKm() <= 0) return treino;
+        String motivo = treino.etapas().stream().anyMatch(PlanoEstruturaReparador::foiSintetizada)
+                ? "etapa-sintetizada"
+                : !treinoNormalizador.principaisComDistanciaPorPace(treino) ? "principal-sem-ritmo" : null;
+        if (motivo == null) return treinoNormalizador.adotarSomaDasEtapas(treino);
+        registrarDivergenciaMantida(treino, motivo, ctx);
+        return treino;
+    }
+
+    /** Acima de 10% a tela do atleta (etapas) e a do treinador (total) contam histórias diferentes. */
+    private void registrarDivergenciaMantida(TreinoPlanejadoLlmDto treino, String motivo, ContextoNormalizacao ctx) {
+        double soma = treino.etapas().stream()
+                .mapToDouble(e -> e.distanciaKm() != null ? e.distanciaKm() : 0.0).sum();
+        double desvio = Math.abs(soma - treino.distanciaKm()) / treino.distanciaKm();
+        if (desvio <= 0.10) return;
+        log.warn("ETAPAS × TOTAL [Atleta {}] [{}]: etapas somam {} km, total {} km mantido ({}% de desvio, motivo={})",
+                ctx.atletaId(), treino.tipoTreino(), String.format("%.2f", soma), treino.distanciaKm(),
+                Math.round(desvio * 100), motivo);
+        Counter.builder("plano_etapas_total_divergente")
+                .tag("tipo", treino.tipoTreino()).tag("motivo", motivo)
+                .register(meterRegistry).increment();
     }
 
     private void gateAceleracoesFartlek(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {

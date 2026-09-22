@@ -38,16 +38,18 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class NormalizacaoDeTreinoTest {
 
     private NormalizacaoDeTreino normalizacao;
+    private SimpleMeterRegistry registry;
     private ContextoNormalizacao ctx;
 
     @BeforeEach
     void setUp() {
+        registry = new SimpleMeterRegistry();
         normalizacao = new NormalizacaoDeTreino(
                 new TreinoNormalizador(new PaceValidator()),
                 new EtapaFcValidator(),
                 new PlanoEstruturaReparador(new SimpleMeterRegistry()),
                 new PaceValidator(),
-                new SimpleMeterRegistry());
+                registry);
         Atleta atleta = Atleta.builder()
                 .id(UUID.randomUUID())
                 .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
@@ -231,7 +233,7 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
-        @DisplayName("CA1: caso real — PRINCIPAL 3,90 km, aquec 1,32, desaq 0,66; treino mantém 6,0 km e 45:00")
+        @DisplayName("CA1: caso real — PRINCIPAL 3,90 km, aquec 1,32, desaq 0,66; total = soma 5,88 km, 45:00")
         void casoRealRegenerativo() {
             var treino = continuo("6.0", "45:00", "7:28-7:55/km",
                     etapa("AQUECIMENTO", 10, 0.0, null),
@@ -242,7 +244,7 @@ class NormalizacaoDeTreinoTest {
 
             assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm)
                     .containsExactly(1.32, 3.9, 0.66);
-            assertThat(resultado.distanciaKm()).isEqualTo(6.0);
+            assertThat(resultado.distanciaKm()).isEqualTo(5.88);
             assertThat(resultado.duracaoMin()).isEqualTo("45:00");
         }
 
@@ -261,7 +263,7 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
-        @DisplayName("CA5: soma desvia > 10% do total → total vira a soma, e a duração é a soma das etapas (mais perto do triângulo)")
+        @DisplayName("CA5: total vira a soma, e a duração é a soma das etapas (mais perto do triângulo que os 60 da LLM)")
         void somaForaDaToleranciaSubstituiOTotal() {
             // LLM diz 10 km / 60:00; etapas pelo pace somam 1,32 + 3,90 + 0,66 = 5,88 km → desvio 41%.
             // Triângulo: 5,88 × 7,69 ≈ 45,2min — a soma 45 fica mais perto que os 60 da LLM
@@ -313,11 +315,15 @@ class NormalizacaoDeTreinoTest {
         @ParameterizedTest(name = "{0}: {1} km / {2} (ritmo {3}) → PRINCIPAL {4} km, total {5} km")
         @CsvSource({
                 // os três contínuos persistidos em 22/09 07:24 (limiar 6:20), LLM → esperado
-                "REGENERATIVO, 6.0, 45:00, 7:28-7:55/km, 30, 5.5, 5, 0.5, 3.9,  6.0",
-                "REGENERATIVO, 7.0, 48:00, 6:45-7:06/km, 35, 6.5, 3, 0.5, 5.05, 7.0",
-                "LONGO,        9.0, 60:00, 6:45-7:06/km, 45, 8.5, 5, 0.5, 6.5,  9.0"
+                "REGENERATIVO, 6.0, 45:00, 7:28-7:55/km, 30, 5.5, 5, 0.5, 3.9,  5.88",
+                "REGENERATIVO, 7.0, 48:00, 6:45-7:06/km, 35, 6.5, 3, 0.5, 5.05, 6.76",
+                "LONGO,        9.0, 60:00, 6:45-7:06/km, 45, 8.5, 5, 0.5, 6.5,  8.48",
+                // os três de 22/09 08:00 — já com a correção, os totais da LLM ficavam 7 e 8% acima da soma
+                "REGENERATIVO, 6.0, 45:00, 7:28-7:55/km, 30, 4.0, 5, 1.0, 3.9,  5.88",
+                "REGENERATIVO, 7.0, 48:00, 6:55-7:28/km, 30, 5.0, 8, 1.0, 4.17, 6.54",
+                "LONGO,        9.0, 60:00, 6:55-7:28/km, 45, 6.5, 5, 1.0, 6.26, 8.24"
         })
-        @DisplayName("casos reais de 22/09: PRINCIPAL volta ao ritmo, totais coerentes da LLM mantidos (desvio ≤ 10%)")
+        @DisplayName("casos reais de 22/09: PRINCIPAL volta ao ritmo e o total é a soma das etapas (tolerância zero)")
         void casosReaisDe2209(String tipo, double km, String duracao, String ritmo, int durPrincipal,
                               double kmPrincipal, int durDesaq, double kmDesaq,
                               double principalEsperada, double totalEsperado) {
@@ -356,15 +362,16 @@ class NormalizacaoDeTreinoTest {
 
         @ParameterizedTest(name = "LLM {0} km contra soma 10,0 → {1} km")
         @CsvSource({
-                "10.0, 10.0",   // igual
-                "11.0, 11.0",   // 9,1% — dentro
-                "9.1,  9.1",    // 9,9% — dentro, por baixo
-                "11.2, 10.0",   // 10,7% — fora
-                "9.0,  10.0",   // 11,1% — fora, por baixo
-                "20.0, 10.0",   // muito fora
-                "5.0,  10.0"    // muito fora, por baixo
+                "10.0,  10.0",  // igual
+                "10.01, 10.0",  // 0,1% — antes ficava (tolerância de 10%), agora a soma vale
+                "9.99,  10.0",  // 0,1% por baixo
+                "11.0,  10.0",  // 9,1% — antes ficava
+                "9.1,   10.0",  // 9,9% por baixo — antes ficava
+                "11.2,  10.0",  // 10,7%
+                "20.0,  10.0",  // muito acima
+                "5.0,   10.0"   // muito abaixo
         })
-        @DisplayName("CA5 BVA: reconciliação só troca o total quando o desvio passa de 10%")
+        @DisplayName("CA5 BVA (tolerância zero): com toda etapa pelo pace, o total é sempre a soma — qualquer desvio")
         void limiteDaReconciliacao(double totalLlm, double totalEsperado) {
             // limiar 5:00 → Z2 6:00; ritmo fixo 6:00 → aquec 12min = 2,0 · PRINCIPAL 42min = 7,0 · desaq 6min = 1,0
             var treino = new TreinoPlanejadoLlmDto("SEGUNDA", "CONTINUO", null, null, null, null, null,
@@ -482,9 +489,9 @@ class NormalizacaoDeTreinoTest {
 
             var resultado = normalizacao.normalizar(treino, ctx);
 
-            // aquec 10 ÷ 6,0 = 1,67 · 40 ÷ 6,925 = 5,78 · 10 ÷ 6,083 = 1,64 → soma 9,09 (1% de 9,0)
+            // aquec 10 ÷ 6,0 = 1,67 · 40 ÷ 6,925 = 5,78 · 10 ÷ 6,083 = 1,64 → total = soma 9,09
             assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsExactly(1.67, 5.78, 1.64);
-            assertThat(resultado.distanciaKm()).isEqualTo(9.0);
+            assertThat(resultado.distanciaKm()).isEqualTo(9.09);
         }
 
         @Test
@@ -526,6 +533,96 @@ class NormalizacaoDeTreinoTest {
             var duas = normalizacao.normalizar(uma, ctxLeandro);
 
             assertThat(duas).isEqualTo(uma);
+        }
+
+        @Test
+        @DisplayName("tolerância zero: o total adotado é a soma arredondada a 2 casas, sem resíduo de ponto flutuante")
+        void totalArredondado() {
+            // 1,32 + 3,90 + 0,66 em double dá 5,880000000000001
+            var treino = continuo("6.0", "45:00", "7:28-7:55/km",
+                    etapa("AQUECIMENTO", 10, 0.0, null),
+                    etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km"),
+                    etapa("DESAQUECIMENTO", 5, 0.5, null));
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            assertThat(resultado.distanciaKm()).isEqualTo(5.88);
+        }
+
+        @ParameterizedTest(name = "{0} min a {1} com LLM {2} km")
+        @CsvSource({
+                "20, 5:00-5:15/km, 3.0",
+                "30, 7:28-7:55/km, 6.0",
+                "45, 6:45-7:06/km, 12.0",
+                "60, 5:30-6:00/km, 15.0",
+                "90, 6:00-6:30/km, 14.0",
+                "120, 6:55-7:28/km, 25.0"
+        })
+        @DisplayName("propriedade: com toda etapa pelo pace e nada sintetizado, total == soma das etapas")
+        void totalIgualASomaDasEtapas(int durPrincipal, String ritmo, double kmLlm) {
+            var treino = new TreinoPlanejadoLlmDto("SABADO", "LONGO", null, null, null, null, null,
+                    String.format("%02d:00", durPrincipal + 15), kmLlm, ritmo, List.of(
+                    etapa("AQUECIMENTO", 10, 0.0, null),
+                    etapa("PRINCIPAL", durPrincipal, kmLlm, ritmo),
+                    etapa("DESAQUECIMENTO", 5, 0.0, null)));
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            double soma = resultado.etapas().stream().mapToDouble(EtapaTreinoLlmDto::distanciaKm).sum();
+            assertThat(resultado.distanciaKm()).isCloseTo(soma, org.assertj.core.data.Offset.offset(0.001));
+        }
+
+        @Test
+        @DisplayName("telemetria: PRINCIPAL sem ritmo com soma > 10% do total mantido → WARN + contador motivo=principal-sem-ritmo")
+        void telemetriaPrincipalSemRitmo() {
+            var treino = continuo("6.0", "45:00", "7:28-7:55/km",
+                    etapa("AQUECIMENTO", 10, 0.0, null),
+                    etapa("PRINCIPAL", 30, 5.5, null),
+                    etapa("DESAQUECIMENTO", 5, 0.5, null));
+
+            normalizacao.normalizar(treino, ctxLeandro);
+
+            assertThat(contadorDivergencia("REGENERATIVO", "principal-sem-ritmo")).isEqualTo(1.0);
+            assertThat(contadorDivergencia("REGENERATIVO", "etapa-sintetizada")).isZero();
+        }
+
+        @Test
+        @DisplayName("telemetria: etapa sintetizada com soma > 10% do total mantido → contador motivo=etapa-sintetizada")
+        void telemetriaEtapaSintetizada() {
+            // 30min/4km só com PRINCIPAL: aquec/desaq sintetizados levam a soma a 6,94 (73%)
+            var treino = continuo("4.0", "30:00", "6:30-7:00/km", etapa("PRINCIPAL", 30, 4.0, "6:30-7:00/km"));
+
+            normalizacao.normalizar(treino, ctx);
+
+            assertThat(contadorDivergencia("REGENERATIVO", "etapa-sintetizada")).isEqualTo(1.0);
+            assertThat(contadorDivergencia("REGENERATIVO", "principal-sem-ritmo")).isZero();
+        }
+
+        @Test
+        @DisplayName("telemetria: divergência mantida de até 10% não conta (ruído de arredondamento/aquec curto)")
+        void telemetriaAbaixoDoLimiarNaoConta() {
+            // PRINCIPAL sem ritmo com os 3,9 km "certos": soma 5,88 contra 6,0 → 2%
+            var treino = continuo("6.0", "45:00", "7:28-7:55/km",
+                    etapa("AQUECIMENTO", 10, 0.0, null),
+                    etapa("PRINCIPAL", 30, 3.9, null),
+                    etapa("DESAQUECIMENTO", 5, 0.5, null));
+
+            normalizacao.normalizar(treino, ctxLeandro);
+
+            assertThat(contadorDivergencia("REGENERATIVO", "principal-sem-ritmo")).isZero();
+        }
+
+        @Test
+        @DisplayName("telemetria: quando o total é reconciliado não há divergência a contar")
+        void telemetriaNaoContaQuandoReconcilia() {
+            var treino = continuo("9.0", "45:00", "7:28-7:55/km",
+                    etapa("AQUECIMENTO", 10, 0.0, null),
+                    etapa("PRINCIPAL", 30, 9.0, "7:28-7:55/km"),
+                    etapa("DESAQUECIMENTO", 5, 0.5, null));
+
+            normalizacao.normalizar(treino, ctxLeandro);
+
+            assertThat(registry.find("plano_etapas_total_divergente").counters()).isEmpty();
         }
 
         @Test
@@ -897,6 +994,11 @@ class NormalizacaoDeTreinoTest {
         private List<String> tipos(TreinoPlanejadoLlmDto treino) {
             return treino.etapas().stream().map(EtapaTreinoLlmDto::tipoEtapa).toList();
         }
+    }
+
+    private double contadorDivergencia(String tipo, String motivo) {
+        var c = registry.find("plano_etapas_total_divergente").tag("tipo", tipo).tag("motivo", motivo).counter();
+        return c == null ? 0.0 : c.count();
     }
 
     // ---------- fixtures (aquec/desaq com 1.67km = 10min × paceZ2 6.0, estável sob corrigir-temporais) ----------

@@ -327,6 +327,75 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         }
     }
 
+    @Nested
+    @DisplayName("adotarSomaDasEtapas")
+    class AdotarSomaDasEtapas {
+
+        @ParameterizedTest(name = "total {0} → {1}")
+        @CsvSource(value = {"6.0, 5.88", "5.0, 5.88", "5.87, 5.88", "5.89, 5.88", "NULL, 5.88", "0.0, 5.88"},
+                nullValues = "NULL")
+        @DisplayName("qualquer desvio (inclusive 0,01 e total ausente) → total = soma, tolerância zero")
+        void toleranciaZero(Double total, double esperado) {
+            var treino = new TreinoPlanejadoLlmDto("SEGUNDA", "REGENERATIVO", null, null, null, null, null,
+                    "45:00", total, null, List.of(
+                    etapa("AQUECIMENTO", 10, 1.32, null), etapa("PRINCIPAL", 30, 3.9, null),
+                    etapa("DESAQUECIMENTO", 5, 0.66, null)));
+
+            assertThat(normalizador.adotarSomaDasEtapas(treino).distanciaKm()).isEqualTo(esperado);
+        }
+
+        @Test
+        @DisplayName("soma arredondada a 2 casas: 1,32 + 3,90 + 0,66 não vira 5,880000000000001")
+        void arredondaASoma() {
+            var treino = continuo(etapa("AQUECIMENTO", 10, 1.32, null), etapa("PRINCIPAL", 30, 3.9, null),
+                    etapa("DESAQUECIMENTO", 5, 0.66, null));
+
+            assertThat(normalizador.adotarSomaDasEtapas(treino).distanciaKm()).isEqualTo(5.88);
+        }
+
+        @Test
+        @DisplayName("total já igual à soma → devolve o mesmo treino")
+        void jaIgual() {
+            var treino = new TreinoPlanejadoLlmDto("SEGUNDA", "REGENERATIVO", null, null, null, null, null,
+                    "45:00", 5.88, null, List.of(
+                    etapa("AQUECIMENTO", 10, 1.32, null), etapa("PRINCIPAL", 30, 3.9, null),
+                    etapa("DESAQUECIMENTO", 5, 0.66, null)));
+
+            assertThat(normalizador.adotarSomaDasEtapas(treino)).isSameAs(treino);
+        }
+
+        @ParameterizedTest(name = "distância da etapa = {0}")
+        @CsvSource(value = {"NULL", "0.0", "-1.0"}, nullValues = "NULL")
+        @DisplayName("alguma etapa sem distância positiva → soma é piso, treino intacto")
+        void etapaSemDistancia(Double distancia) {
+            var treino = continuo(etapa("AQUECIMENTO", 10, distancia, null), etapa("PRINCIPAL", 30, 3.9, null));
+
+            assertThat(normalizador.adotarSomaDasEtapas(treino)).isSameAs(treino);
+        }
+
+        @Test
+        @DisplayName("etapas null ou vazias → treino intacto")
+        void semEtapas() {
+            var semLista = new TreinoPlanejadoLlmDto("SEGUNDA", "REGENERATIVO", null, null, null, null, null,
+                    "45:00", 6.0, null, null);
+
+            assertThat(normalizador.adotarSomaDasEtapas(semLista)).isSameAs(semLista);
+            var vazio = continuo();
+            assertThat(normalizador.adotarSomaDasEtapas(vazio)).isSameAs(vazio);
+        }
+
+        @Test
+        @DisplayName("só o total muda: etapas, duração e ritmo preservados")
+        void soOTotalMuda() {
+            var treino = continuo(etapa("AQUECIMENTO", 10, 1.32, null), etapa("PRINCIPAL", 30, 3.9, "7:28-7:55/km"));
+
+            var resultado = normalizador.adotarSomaDasEtapas(treino);
+
+            assertThat(resultado).usingRecursiveComparison().ignoringFields("distanciaKm").isEqualTo(treino);
+            assertThat(resultado.distanciaKm()).isEqualTo(5.22);
+        }
+    }
+
     /** "m:ss-m:ss/km" → {min, max} em min/km decimais. */
     private static double[] limites(String ritmo) {
         String[] partes = ritmo.replace("/km", "").split("-");

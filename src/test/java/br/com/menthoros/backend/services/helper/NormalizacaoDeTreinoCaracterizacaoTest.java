@@ -102,12 +102,12 @@ class NormalizacaoDeTreinoCaracterizacaoTest {
         }
 
         @Test
-        @DisplayName("REGENERATIVO: etapas pelo pace, total dentro da tolerância mantido")
+        @DisplayName("REGENERATIVO: etapas pelo pace e total = soma das etapas (tolerância zero)")
         void regenerativo() {
-            // fix-etapas-continuos-pace: PRINCIPAL 25 ÷ 6,75 = 3,70; aquec/desaq 5 ÷ 6,0 = 0,83; soma 5,36
-            // fica a 7% dos 5 km → total mantido
+            // fix-etapas-continuos-pace: PRINCIPAL 25 ÷ 6,75 = 3,70; aquec/desaq 5 ÷ 6,0 = 0,83; com toda
+            // etapa pelo pace o total é a soma (tolerância zero): 5,0 → 5,36
             var esperado = new TreinoPlanejadoLlmDto("QUARTA", "REGENERATIVO", "115-130 bpm", 25, 0.6, 3,
-                    "Recuperação ativa", "35:00", 5.0, "6:30-7:00/km",
+                    "Recuperação ativa", "35:00", 5.36, "6:30-7:00/km",
                     List.of(
                             new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento muito leve", 5, 0.83, "115-130 bpm", 1, null),
                             new EtapaTreinoLlmDto(2, "PRINCIPAL", "Trote regenerativo Z1", 25, 3.7, "115-130 bpm", 1, "6:30-7:00/km"),

@@ -297,6 +297,21 @@ public class TreinoNormalizador {
         return !principais.isEmpty() && principais.stream().allMatch(e -> paceDerivavel(e).isPresent());
     }
 
+    /**
+     * Total do treino = soma das etapas, com tolerância zero e arredondado a 2 casas. Só para quem já
+     * sabe que toda etapa é confiável (distância derivada do pace, nada sintetizado) — ver a receita
+     * TRES_ETAPAS. Etapa sem distância torna a soma um piso, e o treino fica como está.
+     */
+    public TreinoPlanejadoLlmDto adotarSomaDasEtapas(TreinoPlanejadoLlmDto treino) {
+        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
+        if (treino.etapas().stream().anyMatch(e -> e.distanciaKm() == null || e.distanciaKm() <= 0)) return treino;
+        double soma = arredondar2(somarDistancias(treino.etapas()));
+        if (treino.distanciaKm() != null && treino.distanciaKm() == soma) return treino;
+        log.info("RECONCILIAÇÃO [{}]: distanciaKm={} km → soma das etapas pelo pace {} km (tolerância zero)",
+                treino.tipoTreino(), treino.distanciaKm(), soma);
+        return treino.comDistancia(soma);
+    }
+
     private boolean ehPrincipal(EtapaTreinoLlmDto e) {
         return "PRINCIPAL".equals(normalizarTipoEtapa(e.tipoEtapa()));
     }
