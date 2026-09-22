@@ -46,6 +46,7 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
     private final TssCalculatorService tssCalculatorService;
     private final TreinoMapper treinoMapper;
     private final EtapaMapper etapaMapper;
+    private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
 
     /**
      * Adiciona um treino manualmente ao plano durante a revisão do coach.
@@ -175,6 +176,7 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
 
         treinoPlanejadoRepository.delete(treinoPlanejado);
         ajustarVolumePlano(plano, treinoPlanejado.getDistanciaKm(), false);
+        avisarSeDiaFicouSemPrescricao(plano, treinoPlanejado, tenantId);
         planoSemanalRepository.save(plano);
 
         log.info("Treino excluido com sucesso: planoId={}, treinoId={}", planoId, treinoId);
@@ -191,6 +193,28 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
                 : volumeAtual.subtract(distanciaKm).max(BigDecimal.ZERO);
         plano.setVolumePlanejadoKm(novoVolume);
         plano.setVolumeAlvoKm(novoVolume);
+    }
+
+    /**
+     * Excluir o último treino de um dia deixa o dia sem treino <b>e</b> sem descanso — o mesmo
+     * "dia em branco" que a regra de cobertura existe para evitar (add-descanso-explicito-por-fadiga,
+     * achado do /qa). Aqui é decisão explícita do treinador, não omissão da IA, então o plano não é
+     * rejeitado: fica registrado no log e no contador, para a frequência real não cair sem ninguém ver.
+     */
+    private void avisarSeDiaFicouSemPrescricao(PlanoSemanal plano, TreinoPlanejado excluido, UUID tenantId) {
+        DiaSemana dia = excluido.getDiaSemana();
+        if (dia == null) return;
+
+        boolean sobrouTreinoNoDia = plano.getTreinosPlanejados() != null && plano.getTreinosPlanejados().stream()
+                .anyMatch(t -> !t.getId().equals(excluido.getId()) && dia.equals(t.getDiaSemana()));
+        boolean temDescansoNoDia = plano.getRestDaysOuVazio().stream()
+                .anyMatch(d -> dia.name().equalsIgnoreCase(d.dayOfWeek()));
+
+        if (!sobrouTreinoNoDia && !temDescansoNoDia) {
+            log.warn("coach-deixou-dia-sem-prescricao: planoId={}, dia={}, tenantId={}",
+                    plano.getId(), dia.name(), tenantId);
+            meterRegistry.counter("plano_dia_sem_prescricao", "origem", "coach").increment();
+        }
     }
 
     /**
