@@ -61,6 +61,46 @@ class TreinoNormalizadorFartlekExpansaoTest {
         }
 
         @Test
+        @DisplayName("CA10: aceleração expandida tem distância = duração ÷ pace médio do ritmoAlvo; recuperação nasce 0.0")
+        void distanciaDaAceleracaoVemDoRitmoNaoDaDistanciaDeclarada() {
+            // a PRINCIPAL declara 5,0 km (a distância do treino inteiro) — não pode ser repartida pela série
+            EtapaTreinoLlmDto principal = new EtapaTreinoLlmDto(1, "PRINCIPAL", "Fartlek 5× (1min Z3 + 2min Z2)",
+                    25, 5.0, "136-150 bpm", 1, "6:20-6:45/km");
+
+            TreinoPlanejadoLlmDto resultado = normalizador.expandirEtapasAgregadas(fartlek(principal), zonasFC160);
+
+            // pace médio de 6:20-6:45 = 6,54 min/km → 1min / 6,54 = 0,15 km
+            assertThat(resultado.etapas())
+                    .filteredOn(e -> "INTERVALADO".equals(e.tipoEtapa()))
+                    .extracting(EtapaTreinoLlmDto::distanciaKm)
+                    .containsOnly(0.15);
+            assertThat(resultado.etapas())
+                    .filteredOn(e -> "RECUPERACAO".equals(e.tipoEtapa()))
+                    .extracting(EtapaTreinoLlmDto::distanciaKm)
+                    .containsOnly(0.0);
+        }
+
+        @Test
+        @DisplayName("CA10: sem ritmoAlvo interpretável a aceleração fica com distância 0.0 (desconhecida)")
+        void semRitmoAlvoDistanciaDaAceleracaoEhDesconhecida() {
+            TreinoPlanejadoLlmDto treino = fartlek(etapa("PRINCIPAL", "Fartlek 5× (1min Z3 + 2min Z2)", 25, 5.0));
+
+            TreinoPlanejadoLlmDto resultado = normalizador.expandirEtapasAgregadas(treino, zonasFC160);
+
+            assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsOnly(0.0);
+        }
+
+        @Test
+        @DisplayName("CA11: a expansão troca só as etapas — a duração do treino fica para recalcular-duracao")
+        void expansaoPreservaDuracaoDoTreino() {
+            TreinoPlanejadoLlmDto treino = fartlek(etapa("PRINCIPAL", "Fartlek 5× (1min Z3 + 2min Z2)", 25, 5.0));
+
+            TreinoPlanejadoLlmDto resultado = normalizador.expandirEtapasAgregadas(treino, zonasFC160);
+
+            assertThat(resultado.duracaoMin()).isEqualTo(treino.duracaoMin());
+        }
+
+        @Test
         @DisplayName("preserva etapa PRINCIPAL sem padrão de compressão na descrição")
         void preservaPrincipalContinua() {
             EtapaTreinoLlmDto original = etapa("PRINCIPAL", "Corrida contínua em Z2", 30, 5.0);

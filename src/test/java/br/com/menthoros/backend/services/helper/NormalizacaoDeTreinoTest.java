@@ -466,6 +466,59 @@ class NormalizacaoDeTreinoTest {
             assertThat(tipos(resultado)).filteredOn("INTERVALADO"::equals).hasSize(4);
         }
 
+        @Test
+        @DisplayName("CA9: caso real 22/09 — série 5× (1min + 2min) com a distância do treino na PRINCIPAL não gera pace impossível")
+        void serieExpandidaNaoHerdaDistanciaDoTreinoInteiro() {
+            // Arrange — resposta bruta da LLM: treino 40:00 / 5,0 km, PRINCIPAL 25min / 5,0km. Antes da
+            // correção o expansor repartia os 5 km pela série (1 km a cada 3min) e o treino saía com
+            // 6,98 km em 30min — 4:18/km para um ritmo de 6:20-6:45
+            var ctxLeandro = contextoComLimiar(6.33);
+            var treino = new TreinoPlanejadoLlmDto("QUARTA", "FARTLEK", null, 45, 1.0, 6, "Fartlek",
+                    "40:00", 5.0, "6:20-6:45/km", List.of(
+                    new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento progressivo Z1-Z2", 10, 0.0, null, 1, null),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "Fartlek 5× (1min Z3 + 2min Z2)", 25, 5.0, null, 1, "6:20-6:45/km"),
+                    new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve Z1-Z2", 5, 0.0, null, 1, null)));
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            // Assert — nenhuma etapa (nem o treino) mais rápida que o limite rápido do ritmo, 6:20/km
+            double limiteRapido = 6.0 + 20.0 / 60;
+            assertThat(resultado.etapas())
+                    .filteredOn(e -> e.distanciaKm() != null && e.distanciaKm() > 0)
+                    .allSatisfy(e -> assertThat(e.duracaoMin() / e.distanciaKm())
+                            .as("pace de %s", e.descricaoEtapa())
+                            .isGreaterThanOrEqualTo(limiteRapido));
+            assertThat(resultado.duracaoMin()).isEqualTo("30:00");
+            assertThat(resultado.distanciaKm()).isCloseTo(3.91, org.assertj.core.data.Offset.offset(0.05));
+            assertThat(30.0 / resultado.distanciaKm()).isGreaterThanOrEqualTo(limiteRapido);
+        }
+
+        @Test
+        @DisplayName("CA12: recuperação criada pela expansão recebe duração ÷ pace Z1 (corrigir-temporais depois de expandir)")
+        void recuperacaoExpandidaRecebePaceDeTrote() {
+            var ctxLeandro = contextoComLimiar(6.33);
+            var treino = fartlek(aquec(),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "Fartlek 5× (1min Z3 + 2min Z2)", 15, 5.0, null, 1, "6:20-6:45/km"),
+                    desaq());
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            // Z1 = limiar 6,33 × 1,35 = 8,55 min/km → 2min / 8,55 = 0,23 km
+            assertThat(resultado.etapas())
+                    .filteredOn(e -> "RECUPERACAO".equals(e.tipoEtapa()))
+                    .hasSize(5)
+                    .allSatisfy(e -> assertThat(e.distanciaKm()).isEqualTo(0.23));
+        }
+
+        private ContextoNormalizacao contextoComLimiar(double paceLimiar) {
+            Atleta atleta = Atleta.builder()
+                    .id(UUID.randomUUID())
+                    .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
+                    .paceLimiar(BigDecimal.valueOf(paceLimiar))
+                    .build();
+            return new ContextoNormalizacao(atleta, atleta.getId(), null, Map.of(), Map.of());
+        }
+
         private EtapaTreinoLlmDto acel() {
             return new EtapaTreinoLlmDto(1, "INTERVALADO", "Aceleração Z3", 2, 0.35, null, 1, "5:40-6:00/km");
         }

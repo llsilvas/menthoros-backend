@@ -116,18 +116,21 @@ class NormalizacaoDeTreinoCaracterizacaoTest {
         @Test
         @DisplayName("FARTLEK com zonas FC: '4x (1min Z2 + 2min Z1)' expande em 4 acelerações Z2 + 4 recuperações Z1 (IA-02)")
         void fartlekComZonas() {
+            // fix-fartlek-etapas-estruturadas: sem ritmoAlvo na série a distância das acelerações é
+            // desconhecida (0.0) — a reconciliação mantém os 7 km e o triângulo os 40:00 da LLM. A
+            // baseline anterior (5,34 km / 32:00) vinha de repartir os 2 km da PRINCIPAL pela série
             var esperado = new TreinoPlanejadoLlmDto("QUINTA", "FARTLEK", "136-160 bpm", 55, 1.0, 7,
-                    "Variação de ritmo", "32:00", 5.34, "5:00-5:45/km",
+                    "Variação de ritmo", "40:00", 7.0, "5:00-5:45/km",
                     List.of(
                             new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 10, 1.67, "120-136 bpm", 1, null),
-                            new EtapaTreinoLlmDto(2, "INTERVALADO", "Aceleração 1/4 - 1min", 1, 0.17, "136-142 bpm", 1, null),
-                            new EtapaTreinoLlmDto(3, "RECUPERACAO", "Recuperação 1 - 2min trote", 2, 0.33, "120-136 bpm", 1, null),
-                            new EtapaTreinoLlmDto(4, "INTERVALADO", "Aceleração 2/4 - 1min", 1, 0.17, "136-142 bpm", 1, null),
-                            new EtapaTreinoLlmDto(5, "RECUPERACAO", "Recuperação 2 - 2min trote", 2, 0.33, "120-136 bpm", 1, null),
-                            new EtapaTreinoLlmDto(6, "INTERVALADO", "Aceleração 3/4 - 1min", 1, 0.17, "136-142 bpm", 1, null),
-                            new EtapaTreinoLlmDto(7, "RECUPERACAO", "Recuperação 3 - 2min trote", 2, 0.33, "120-136 bpm", 1, null),
-                            new EtapaTreinoLlmDto(8, "INTERVALADO", "Aceleração 4/4 - 1min", 1, 0.17, "136-142 bpm", 1, null),
-                            new EtapaTreinoLlmDto(9, "RECUPERACAO", "Recuperação 4 - 2min trote", 2, 0.33, "120-136 bpm", 1, null),
+                            new EtapaTreinoLlmDto(2, "INTERVALADO", "Aceleração 1/4 - 1min", 1, 0.0, "136-142 bpm", 1, null),
+                            new EtapaTreinoLlmDto(3, "RECUPERACAO", "Recuperação 1 - 2min trote", 2, 0.3, "120-136 bpm", 1, null),
+                            new EtapaTreinoLlmDto(4, "INTERVALADO", "Aceleração 2/4 - 1min", 1, 0.0, "136-142 bpm", 1, null),
+                            new EtapaTreinoLlmDto(5, "RECUPERACAO", "Recuperação 2 - 2min trote", 2, 0.3, "120-136 bpm", 1, null),
+                            new EtapaTreinoLlmDto(6, "INTERVALADO", "Aceleração 3/4 - 1min", 1, 0.0, "136-142 bpm", 1, null),
+                            new EtapaTreinoLlmDto(7, "RECUPERACAO", "Recuperação 3 - 2min trote", 2, 0.3, "120-136 bpm", 1, null),
+                            new EtapaTreinoLlmDto(8, "INTERVALADO", "Aceleração 4/4 - 1min", 1, 0.0, "136-142 bpm", 1, null),
+                            new EtapaTreinoLlmDto(9, "RECUPERACAO", "Recuperação 4 - 2min trote", 2, 0.3, "120-136 bpm", 1, null),
                             new EtapaTreinoLlmDto(10, "DESAQUECIMENTO", "Caminhada", 10, 1.67, "120-136 bpm", 1, null)),
                     null, null, null);
 

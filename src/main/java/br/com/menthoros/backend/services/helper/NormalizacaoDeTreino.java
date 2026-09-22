@@ -189,8 +189,10 @@ public class NormalizacaoDeTreino {
         ), caudaComum));
 
         mapa.put(FamiliaTreino.FARTLEK, receita(List.of(
-                corrigirTemporais,
+                // expandir ANTES de corrigir-temporais: as recuperações criadas pela expansão nascem sem
+                // distância e só ganham o pace de trote se corrigir-temporais vier depois
                 expandir,
+                corrigirTemporais,
                 // ── depois de expandir: uma série comprimida reconhecível já virou pares; o que sobra
                 //    sem acelerações é "fartlek livre" numa etapa só — reprovar leva ao turno de reparo.
                 //    Sem gate-balanceamento: o "Misto" do system prompt tem 2 acelerações por recuperação
