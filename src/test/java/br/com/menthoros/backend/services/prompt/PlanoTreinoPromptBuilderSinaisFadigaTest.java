@@ -32,9 +32,9 @@ class PlanoTreinoPromptBuilderSinaisFadigaTest {
     void sinaisChegamNoPromptGerado() {
         var gerado = montar(atleta(NivelExperiencia.INTERMEDIARIO), meta(-18.0));
 
-        assertThat(gerado.sinaisFadiga()).extracting(FatigueSignal::type)
+        assertThat(gerado.cobertura().fatigueSignals()).extracting(FatigueSignal::type)
                 .contains(FatigueSignalType.TSB_BAIXO);
-        var tsb = gerado.sinaisFadiga().stream()
+        var tsb = gerado.cobertura().fatigueSignals().stream()
                 .filter(s -> s.type() == FatigueSignalType.TSB_BAIXO).findFirst().orElseThrow();
         assertThat(tsb.value()).isEqualTo(-18.0);
         assertThat(tsb.threshold()).isEqualTo(-15.0);
@@ -45,7 +45,7 @@ class PlanoTreinoPromptBuilderSinaisFadigaTest {
     void semFadigaListaVazia() {
         var gerado = montar(atleta(NivelExperiencia.INTERMEDIARIO), meta(5.0));
 
-        assertThat(gerado.sinaisFadiga()).isNotNull().isEmpty();
+        assertThat(gerado.cobertura().fatigueSignals()).isNotNull().isEmpty();
     }
 
     private PlanoTreinoPromptBuilder.PromptGerado montar(Atleta atleta, PlanoMetaDados meta) {

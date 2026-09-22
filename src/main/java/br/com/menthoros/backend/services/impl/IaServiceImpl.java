@@ -176,16 +176,12 @@ public class IaServiceImpl implements IaService {
 
         var promptGerado = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos, decisaoProgressao, revisaoConsumida, skeleton, usaV2);
 
-        // Cobertura da semana: em PROXIMA_SEMANA os dias efetivos chegam nulos (o prompt usa todos os
-        // dias do atleta), então a lista é materializada aqui — a regra precisa saber o que cobrir.
-        // Não roda com skeleton: ali o planner é dono da frequência ("gere exatamente estas sessões").
-        List<DiaSemana> diasCobertura = diasEfetivos != null ? diasEfetivos : atleta.getDiasDisponiveis();
+        // O contexto de cobertura vem do prompt builder — é o mesmo objeto que escreveu o bloco de
+        // cobertura, então prompt e validação não podem divergir. Não roda com skeleton: ali o
+        // planner é dono da frequência ("gere exatamente estas sessões").
         WeeklyCoverageContext cobertura = coberturaSemanalHabilitada && skeleton == null
-                && diasCobertura != null && !diasCobertura.isEmpty()
-                ? new WeeklyCoverageContext(diasCobertura, promptGerado.sinaisFadiga(),
-                        ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracaoPlano),
-                        metaDados != null ? metaDados.getDiaPreferidoLongo() : null,
-                        promptGerado.maxDiasConsecutivos())
+                && !promptGerado.cobertura().effectiveDays().isEmpty()
+                ? promptGerado.cobertura()
                 : null;
         // system é byte-idêntico entre tentativas — capturado aqui e aplicado direto no
         // ChatClient; nunca passa pelo PlanoResilienceService, então o retry (que só reescreve o

@@ -100,6 +100,7 @@ final class PlanoPromptArquetipos {
                         new IntervaladoElegibilidadeSkill(), new br.com.menthoros.backend.config.core.ReadinessProperties()),
                 new br.com.menthoros.backend.services.helper.FatigueSignalsService(
                         new br.com.menthoros.backend.config.core.ReadinessProperties()),
+                new CoberturaSemanalPromptFormatter(),
                 new PaceHistoricoFormatter(),
                 new PaceZoneCalculator(zona),
                 new ThresholdConstraintFormatter(new ThresholdInferenceService()),

@@ -179,11 +179,24 @@
 ### Recomendações para Esta Semana
 - **Máximo de dias consecutivos recomendado:** 3 dias
 - ⚠️ **ALERTA:** Atleta já atingiu ou ultrapassou o limite recomendado
-- **AÇÃO:** Incluir dia de descanso completo ou regenerativo OBRIGATÓRIO
-- **Dia de descanso sugerido:** Quarta-feira (meio da semana)
+- **AÇÃO:** Incluir treino regenerativo OBRIGATÓRIO — ou descanso em `restDays`, se a COBERTURA DA SEMANA autorizar
+- **Dia sugerido para a sessão mais leve (ou descanso, se autorizado):** Quarta-feira (meio da semana)
 
 
 ---
+
+
+## 📆 COBERTURA DA SEMANA (obrigatório)
+
+**Dias a cobrir:** SEGUNDA, TERCA, QUARTA, QUINTA, SEXTA, SABADO
+Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDays`. Não deixe nenhum dia de fora e não repita dia.
+
+**Sinais de fadiga detectados:**
+- horas desde o último treino intenso 24,0 (limiar 48,0) → pode virar descanso, nos dias listados abaixo
+- dias seguidos disponíveis 6,0 (limiar 3,0) → pode virar descanso, nos dias listados abaixo
+
+**Descanso:** no máximo 1, e apenas em: SEGUNDA, TERCA, QUARTA, QUINTA, SEXTA, SABADO. Cada descanso vai em `restDays` com `reason` citando o sinal, o valor e o limiar.
+Nos demais dias, se a intensidade não couber, prescreva treino leve — nunca omita o dia.
 
 
 **ANÁLISE PRÉ-PLANEJAMENTO (últimas 4 semanas):**

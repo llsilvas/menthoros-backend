@@ -176,6 +176,14 @@
 ---
 
 
+## 📆 COBERTURA DA SEMANA (obrigatório)
+
+**Dias a cobrir:** SEGUNDA, QUARTA, SEXTA, SABADO
+Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDays`. Não deixe nenhum dia de fora e não repita dia.
+
+**Sinais de fadiga:** nenhum. Todos os dias recebem treino; `restDays` fica vazio.
+
+
 **ANÁLISE PRÉ-PLANEJAMENTO (últimas 4 semanas):**
 
 ### 1. Padrão de Estímulos
