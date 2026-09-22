@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
+import br.com.menthoros.backend.enums.CategoriaIntervalado;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -60,6 +61,46 @@ class TreinoNormalizadorFartlekExpansaoTest {
         }
 
         @Test
+        @DisplayName("CA10: aceleração expandida tem distância = duração ÷ pace médio do ritmoAlvo; recuperação nasce 0.0")
+        void distanciaDaAceleracaoVemDoRitmoNaoDaDistanciaDeclarada() {
+            // a PRINCIPAL declara 5,0 km (a distância do treino inteiro) — não pode ser repartida pela série
+            EtapaTreinoLlmDto principal = new EtapaTreinoLlmDto(1, "PRINCIPAL", "Fartlek 5× (1min Z3 + 2min Z2)",
+                    25, 5.0, "136-150 bpm", 1, "6:20-6:45/km");
+
+            TreinoPlanejadoLlmDto resultado = normalizador.expandirEtapasAgregadas(fartlek(principal), zonasFC160);
+
+            // pace médio de 6:20-6:45 = 6,54 min/km → 1min / 6,54 = 0,15 km
+            assertThat(resultado.etapas())
+                    .filteredOn(e -> "INTERVALADO".equals(e.tipoEtapa()))
+                    .extracting(EtapaTreinoLlmDto::distanciaKm)
+                    .containsOnly(0.15);
+            assertThat(resultado.etapas())
+                    .filteredOn(e -> "RECUPERACAO".equals(e.tipoEtapa()))
+                    .extracting(EtapaTreinoLlmDto::distanciaKm)
+                    .containsOnly(0.0);
+        }
+
+        @Test
+        @DisplayName("CA10: sem ritmoAlvo interpretável a aceleração fica com distância 0.0 (desconhecida)")
+        void semRitmoAlvoDistanciaDaAceleracaoEhDesconhecida() {
+            TreinoPlanejadoLlmDto treino = fartlek(etapa("PRINCIPAL", "Fartlek 5× (1min Z3 + 2min Z2)", 25, 5.0));
+
+            TreinoPlanejadoLlmDto resultado = normalizador.expandirEtapasAgregadas(treino, zonasFC160);
+
+            assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsOnly(0.0);
+        }
+
+        @Test
+        @DisplayName("CA11: a expansão troca só as etapas — a duração do treino fica para recalcular-duracao")
+        void expansaoPreservaDuracaoDoTreino() {
+            TreinoPlanejadoLlmDto treino = fartlek(etapa("PRINCIPAL", "Fartlek 5× (1min Z3 + 2min Z2)", 25, 5.0));
+
+            TreinoPlanejadoLlmDto resultado = normalizador.expandirEtapasAgregadas(treino, zonasFC160);
+
+            assertThat(resultado.duracaoMin()).isEqualTo(treino.duracaoMin());
+        }
+
+        @Test
         @DisplayName("preserva etapa PRINCIPAL sem padrão de compressão na descrição")
         void preservaPrincipalContinua() {
             EtapaTreinoLlmDto original = etapa("PRINCIPAL", "Corrida contínua em Z2", 30, 5.0);
@@ -100,6 +141,38 @@ class TreinoNormalizadorFartlekExpansaoTest {
             assertThat(resultado.etapas()).hasSize(12);
             assertThat(resultado.etapas().getFirst().tipoEtapa()).isEqualTo("INTERVALADO");
             assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(0.4);
+        }
+    }
+
+    /**
+     * fix-fartlek-etapas-estruturadas (CA1): a instrução da Categoria D chega ao user prompt quando o
+     * intervalado é degradado. Ela pedia "fartlek livre ... acelerações espontâneas" e a LLM obedecia,
+     * gerando uma PRINCIPAL única que nenhum padrão do expansor reconhece.
+     */
+    @Nested
+    @DisplayName("instrução da Categoria D")
+    class InstrucaoCategoriaD {
+
+        @Test
+        @DisplayName("não pede fartlek livre nem acelerações espontâneas")
+        void naoPedeFartlekSemEstrutura() {
+            assertThat(CategoriaIntervalado.D.getInstrucaoPadrao())
+                    .doesNotContainIgnoringCase("livre")
+                    .doesNotContainIgnoringCase("espontânea");
+        }
+
+        @Test
+        @DisplayName("o exemplo da instrução, copiado numa PRINCIPAL, é expandido em pares aceleração/recuperação")
+        void exemploDaInstrucaoEhReconhecidoPeloExpansor() {
+            TreinoPlanejadoLlmDto treino = fartlek(etapa(
+                    "PRINCIPAL", CategoriaIntervalado.D.getInstrucaoPadrao(), 15, 0.0));
+
+            TreinoPlanejadoLlmDto resultado = normalizador.expandirEtapasAgregadas(treino, zonasFC160);
+
+            assertThat(resultado.etapas()).hasSizeGreaterThanOrEqualTo(4);
+            assertThat(resultado.etapas())
+                    .extracting(EtapaTreinoLlmDto::tipoEtapa)
+                    .containsOnly("INTERVALADO", "RECUPERACAO");
         }
     }
 

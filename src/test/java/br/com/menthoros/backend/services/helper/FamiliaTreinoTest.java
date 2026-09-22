@@ -54,6 +54,7 @@ class FamiliaTreinoTest {
             assertThat(normalizacao.receita(FamiliaTreino.INTERVALADO_TIRO).nomes()).containsExactly(
                     "corrigir-temporais",
                     "expandir",
+                    "corrigir-temporais", // 2ª vez: recuperações criadas por série por tempo nascem com 0.0
                     "gate-existencia",
                     "gate-contagem",
                     "gate-presenca-aquec-desaq",
@@ -76,17 +77,20 @@ class FamiliaTreinoTest {
         }
 
         @Test
-        @DisplayName("FARTLEK: corrige, expande e reconcilia; sem gate estrutural próprio")
+        @DisplayName("FARTLEK: gates estruturais DEPOIS de expandir (série comprimida vira pares antes de ser julgada)")
         void fartlek() {
             assertThat(normalizacao.receita(FamiliaTreino.FARTLEK).nomes())
-                    .containsExactlyElementsOf(concat(List.of("corrigir-temporais", "expandir", "reconciliar-distancia")));
+                    .containsExactlyElementsOf(concat(List.of("expandir", "corrigir-temporais",
+                            "gate-existencia", "gate-presenca-aquec-desaq", "gate-ordem-aquec-desaq",
+                            "gate-aceleracoes-fartlek", "gate-sequencia", "reconciliar-distancia")));
         }
 
         @Test
         @DisplayName("TRES_ETAPAS: reparar ANTES de validar por tipo (só passa REGENERATIVO só com PRINCIPAL por isso)")
         void tresEtapas() {
             assertThat(normalizacao.receita(FamiliaTreino.TRES_ETAPAS).nomes())
-                    .containsExactlyElementsOf(concat(List.of("reparar-3-etapas", "validar-por-tipo")));
+                    .containsExactlyElementsOf(concat(List.of("reparar-3-etapas", "validar-por-tipo",
+                            "corrigir-temporais", "distancia-principal-por-pace", "reconciliar-distancia")));
         }
 
         @Test

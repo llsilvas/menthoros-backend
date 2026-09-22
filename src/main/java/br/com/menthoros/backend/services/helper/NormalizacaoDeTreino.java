@@ -36,7 +36,7 @@ import java.util.stream.Collectors;
  * {@code PlanoEstruturaReparador} e {@code PaceValidator} são internal seams: nada mais os chama.</p>
  *
  * <p>Idempotent: YES — mesma entrada, mesma saída; sem estado entre chamadas. Side Effects: NONE
- * além de log e do contador {@code plano_violacao_estrutural}. Tenant-aware: NO — recebe o
+ * além de log e dos contadores {@code plano_violacao_estrutural} e {@code plano_etapas_total_divergente}. Tenant-aware: NO — recebe o
  * {@code Atleta} já resolvido pelo tenant no {@link ContextoNormalizacao}.</p>
  */
 @Slf4j
@@ -168,6 +168,9 @@ public class NormalizacaoDeTreino {
         mapa.put(FamiliaTreino.INTERVALADO_TIRO, receita(List.of(
                 corrigirTemporais,
                 expandir,
+                // 2ª vez: uma série por tempo ("4x (3min + 2min)") cria recuperações com 0.0 — só este
+                // passo lhes dá o pace de trote. Idempotente para aquec/desaq e para o caminho NxDist
+                corrigirTemporais,
                 // ── validarTreinoIntervalado, item a item, ANTES de normalizar: normalizar-intervalado
                 //    sintetiza pares tiro+recuperação — validar depois mascararia um treino de 4 etapas
                 gate("gate-existencia", this::gateExistencia),
@@ -189,8 +192,18 @@ public class NormalizacaoDeTreino {
         ), caudaComum));
 
         mapa.put(FamiliaTreino.FARTLEK, receita(List.of(
-                corrigirTemporais,
+                // expandir ANTES de corrigir-temporais: as recuperações criadas pela expansão nascem sem
+                // distância e só ganham o pace de trote se corrigir-temporais vier depois
                 expandir,
+                corrigirTemporais,
+                // ── depois de expandir: uma série comprimida reconhecível já virou pares; o que sobra
+                //    sem acelerações é "fartlek livre" numa etapa só — reprovar leva ao turno de reparo.
+                //    Sem gate-balanceamento: o "Misto" do system prompt tem 2 acelerações por recuperação
+                gate("gate-existencia", this::gateExistencia),
+                gate("gate-presenca-aquec-desaq", this::gatePresencaAquecDesaq),
+                gate("gate-ordem-aquec-desaq", this::gateOrdemAquecDesaq),
+                gate("gate-aceleracoes-fartlek", this::gateAceleracoesFartlek),
+                gate("gate-sequencia", this::gateSequencia),
                 reconciliarDistancia
         ), caudaComum));
 
@@ -198,7 +211,13 @@ public class NormalizacaoDeTreino {
                 // reparar é identidade fora de TIPOS_3_ETAPAS (PlanoEstruturaReparador:43-46) — por isso
                 // mora só aqui, uma vez, e não na cauda
                 new Passo("reparar-3-etapas", (t, c) -> estruturaReparador.reparar(t, t.tipoTreino())),
-                gate("validar-por-tipo", this::validarPorTipo)
+                gate("validar-por-tipo", this::validarPorTipo),
+                // distância das etapas pelo pace (fix-etapas-continuos-pace): a LLM põe o total do
+                // treino na PRINCIPAL e deixa aquec/desaq com 0 — o total fica certo, as etapas não
+                corrigirTemporais,
+                new Passo("distancia-principal-por-pace",
+                        (t, c) -> treinoNormalizador.distanciaPrincipalPorPace(t)),
+                new Passo("reconciliar-distancia", this::reconciliarContinuo)
         ), caudaComum));
 
         mapa.put(FamiliaTreino.PADRAO, receita(List.of(), caudaComum));
@@ -275,6 +294,64 @@ public class NormalizacaoDeTreino {
             log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} não termina com desaquecimento (termina com {})",
                     ctx.atletaId(), treino.tipoTreino(), ultima.tipoEtapa());
             throw new LLMException(String.format("Treino %s inválido: deve terminar com desaquecimento", treino.tipoTreino()));
+        }
+    }
+
+    /**
+     * Total do contínuo = soma das etapas, com tolerância zero, quando toda etapa é confiável: as
+     * distâncias vieram do pace e o reparo não inventou nenhuma. Nos outros casos o total da LLM fica:
+     * <ul>
+     *   <li>sem distância da LLM — {@code garantir-distancia-continuo} (cauda) assume; reconciliar aqui
+     *       adotaria a soma parcial e a PRINCIPAL sem ritmo nunca seria preenchida;</li>
+     *   <li>etapa sintetizada — ela se soma à prescrição: um regenerativo de 30min/4km viraria
+     *       45min/6,94km sem ninguém ter prescrito (decisão de produto de 22/09, mesma regra do CA4b);</li>
+     *   <li>PRINCIPAL sem ritmo — carrega o total que a LLM concentrou ali; somada a aquec/desaq, infla.</li>
+     * </ul>
+     * Nos dois últimos, a divergência entre etapas e total fica e é contada.
+     */
+    private TreinoPlanejadoLlmDto reconciliarContinuo(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
+        if (treino.distanciaKm() == null || treino.distanciaKm() <= 0) return treino;
+        String motivo = treino.etapas().stream().anyMatch(PlanoEstruturaReparador::foiSintetizada)
+                ? "etapa-sintetizada"
+                : !treinoNormalizador.principaisComDistanciaPorPace(treino) ? "principal-sem-ritmo" : null;
+        if (motivo == null) return treinoNormalizador.adotarSomaDasEtapas(treino);
+        registrarDivergenciaMantida(treino, motivo, ctx);
+        return treino;
+    }
+
+    /** Acima de 10% a tela do atleta (etapas) e a do treinador (total) contam histórias diferentes. */
+    private void registrarDivergenciaMantida(TreinoPlanejadoLlmDto treino, String motivo, ContextoNormalizacao ctx) {
+        double soma = treino.etapas().stream()
+                .mapToDouble(e -> e.distanciaKm() != null ? e.distanciaKm() : 0.0).sum();
+        double desvio = Math.abs(soma - treino.distanciaKm()) / treino.distanciaKm();
+        if (desvio <= 0.10) return;
+        log.warn("ETAPAS × TOTAL [Atleta {}] [{}]: etapas somam {} km, total {} km mantido ({}% de desvio, motivo={})",
+                ctx.atletaId(), treino.tipoTreino(), String.format("%.2f", soma), treino.distanciaKm(),
+                Math.round(desvio * 100), motivo);
+        Counter.builder("plano_etapas_total_divergente")
+                .tag("tipo", treino.tipoTreino()).tag("motivo", motivo)
+                .register(meterRegistry).increment();
+    }
+
+    private void gateAceleracoesFartlek(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
+        long numAceleracoes = contar(treino.etapas(), "INTERVALADO");
+        if (numAceleracoes < 2) {
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} tem {} aceleração(ões) individual(is) (mínimo 2)",
+                    ctx.atletaId(), treino.tipoTreino(), numAceleracoes);
+            contarViolacaoEstrutural(treino.tipoTreino());
+            throw new LLMException(String.format(
+                    "Treino %s inválido: tem %d aceleração(ões) — o fartlek precisa de no mínimo 2 acelerações "
+                            + "individuais (etapas INTERVALADO), cada uma seguida da sua RECUPERACAO, entre "
+                            + "aquecimento e desaquecimento. Não descreva a série inteira numa etapa única.",
+                    treino.tipoTreino(), numAceleracoes));
+        }
+        if (contar(treino.etapas(), "RECUPERACAO") == 0) {
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} sem etapa de recuperação entre as acelerações",
+                    ctx.atletaId(), treino.tipoTreino());
+            contarViolacaoEstrutural(treino.tipoTreino());
+            throw new LLMException(String.format(
+                    "Treino %s inválido: sem etapa de recuperação (RECUPERACAO) entre as acelerações",
+                    treino.tipoTreino()));
         }
     }
 

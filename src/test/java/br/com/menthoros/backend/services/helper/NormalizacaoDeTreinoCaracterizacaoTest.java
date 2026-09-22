@@ -86,28 +86,32 @@ class NormalizacaoDeTreinoCaracterizacaoTest {
         }
 
         @Test
-        @DisplayName("LONGO bem-formado atravessa intacto")
+        @DisplayName("LONGO: etapas pelo pace (fix-etapas-continuos-pace) e total reconciliado com a soma")
         void longo() {
+            // fix-etapas-continuos-pace: PRINCIPAL pelo pace (60 ÷ 5,75 = 10,43), aquec/desaq a Z2 (6,0);
+            // a soma 12,93 desvia 14% dos 15 km da LLM (que a 5:30-6:00 esperaria 86min) → total = soma
             var esperado = new TreinoPlanejadoLlmDto("SABADO", "LONGO", "136-150 bpm", 90, 0.85, 6,
-                    "Construir base aeróbica", "75:00", 15.0, "5:30-6:00/km",
+                    "Construir base aeróbica", "75:00", 12.93, "5:30-6:00/km",
                     List.of(
-                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve Z1-Z2", 10, 1.5, "120-136 bpm", 1, null),
-                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Longo contínuo Z2-Z3", 60, 12.0, "136-150 bpm", 1, "5:30-6:00/km"),
-                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve Z1", 5, 1.5, "120-136 bpm", 1, null)),
+                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve Z1-Z2", 10, 1.67, "120-136 bpm", 1, null),
+                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Longo contínuo Z2-Z3", 60, 10.43, "136-150 bpm", 1, "5:30-6:00/km"),
+                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve Z1", 5, 0.83, "120-136 bpm", 1, null)),
                     null, null, null);
 
             assertThat(normalizar(atletaSemFc, entradaLongo())).isEqualTo(esperado);
         }
 
         @Test
-        @DisplayName("REGENERATIVO bem-formado atravessa intacto")
+        @DisplayName("REGENERATIVO: etapas pelo pace e total = soma das etapas (tolerância zero)")
         void regenerativo() {
+            // fix-etapas-continuos-pace: PRINCIPAL 25 ÷ 6,75 = 3,70; aquec/desaq 5 ÷ 6,0 = 0,83; com toda
+            // etapa pelo pace o total é a soma (tolerância zero): 5,0 → 5,36
             var esperado = new TreinoPlanejadoLlmDto("QUARTA", "REGENERATIVO", "115-130 bpm", 25, 0.6, 3,
-                    "Recuperação ativa", "35:00", 5.0, "6:30-7:00/km",
+                    "Recuperação ativa", "35:00", 5.36, "6:30-7:00/km",
                     List.of(
-                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento muito leve", 5, 0.7, "115-130 bpm", 1, null),
-                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Trote regenerativo Z1", 25, 3.6, "115-130 bpm", 1, "6:30-7:00/km"),
-                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve", 5, 0.7, "115-130 bpm", 1, null)),
+                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento muito leve", 5, 0.83, "115-130 bpm", 1, null),
+                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Trote regenerativo Z1", 25, 3.7, "115-130 bpm", 1, "6:30-7:00/km"),
+                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve", 5, 0.83, "115-130 bpm", 1, null)),
                     null, null, null);
 
             assertThat(normalizar(atletaSemFc, entradaRegenerativo())).isEqualTo(esperado);
@@ -116,18 +120,21 @@ class NormalizacaoDeTreinoCaracterizacaoTest {
         @Test
         @DisplayName("FARTLEK com zonas FC: '4x (1min Z2 + 2min Z1)' expande em 4 acelerações Z2 + 4 recuperações Z1 (IA-02)")
         void fartlekComZonas() {
+            // fix-fartlek-etapas-estruturadas: sem ritmoAlvo na série a distância das acelerações é
+            // desconhecida (0.0) — a reconciliação mantém os 7 km e o triângulo os 40:00 da LLM. A
+            // baseline anterior (5,34 km / 32:00) vinha de repartir os 2 km da PRINCIPAL pela série
             var esperado = new TreinoPlanejadoLlmDto("QUINTA", "FARTLEK", "136-160 bpm", 55, 1.0, 7,
-                    "Variação de ritmo", "32:00", 5.34, "5:00-5:45/km",
+                    "Variação de ritmo", "40:00", 7.0, "5:00-5:45/km",
                     List.of(
                             new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 10, 1.67, "120-136 bpm", 1, null),
-                            new EtapaTreinoLlmDto(2, "INTERVALADO", "Aceleração 1/4 - 1min", 1, 0.17, "136-142 bpm", 1, null),
-                            new EtapaTreinoLlmDto(3, "RECUPERACAO", "Recuperação 1 - 2min trote", 2, 0.33, "120-136 bpm", 1, null),
-                            new EtapaTreinoLlmDto(4, "INTERVALADO", "Aceleração 2/4 - 1min", 1, 0.17, "136-142 bpm", 1, null),
-                            new EtapaTreinoLlmDto(5, "RECUPERACAO", "Recuperação 2 - 2min trote", 2, 0.33, "120-136 bpm", 1, null),
-                            new EtapaTreinoLlmDto(6, "INTERVALADO", "Aceleração 3/4 - 1min", 1, 0.17, "136-142 bpm", 1, null),
-                            new EtapaTreinoLlmDto(7, "RECUPERACAO", "Recuperação 3 - 2min trote", 2, 0.33, "120-136 bpm", 1, null),
-                            new EtapaTreinoLlmDto(8, "INTERVALADO", "Aceleração 4/4 - 1min", 1, 0.17, "136-142 bpm", 1, null),
-                            new EtapaTreinoLlmDto(9, "RECUPERACAO", "Recuperação 4 - 2min trote", 2, 0.33, "120-136 bpm", 1, null),
+                            new EtapaTreinoLlmDto(2, "INTERVALADO", "Aceleração 1/4 - 1min", 1, 0.0, "136-142 bpm", 1, null),
+                            new EtapaTreinoLlmDto(3, "RECUPERACAO", "Recuperação 1 - 2min trote", 2, 0.3, "120-136 bpm", 1, null),
+                            new EtapaTreinoLlmDto(4, "INTERVALADO", "Aceleração 2/4 - 1min", 1, 0.0, "136-142 bpm", 1, null),
+                            new EtapaTreinoLlmDto(5, "RECUPERACAO", "Recuperação 2 - 2min trote", 2, 0.3, "120-136 bpm", 1, null),
+                            new EtapaTreinoLlmDto(6, "INTERVALADO", "Aceleração 3/4 - 1min", 1, 0.0, "136-142 bpm", 1, null),
+                            new EtapaTreinoLlmDto(7, "RECUPERACAO", "Recuperação 3 - 2min trote", 2, 0.3, "120-136 bpm", 1, null),
+                            new EtapaTreinoLlmDto(8, "INTERVALADO", "Aceleração 4/4 - 1min", 1, 0.0, "136-142 bpm", 1, null),
+                            new EtapaTreinoLlmDto(9, "RECUPERACAO", "Recuperação 4 - 2min trote", 2, 0.3, "120-136 bpm", 1, null),
                             new EtapaTreinoLlmDto(10, "DESAQUECIMENTO", "Caminhada", 10, 1.67, "120-136 bpm", 1, null)),
                     null, null, null);
 
@@ -172,18 +179,21 @@ class NormalizacaoDeTreinoCaracterizacaoTest {
         }
 
         @Test
-        @DisplayName("REGENERATIVO só com PRINCIPAL: só passa em validar-por-tipo porque reparar-3-etapas sintetiza aquec/desaq antes (distanciaKm=null, como hoje); duração da LLM mantida")
+        @DisplayName("REGENERATIVO só com PRINCIPAL: só passa em validar-por-tipo porque reparar-3-etapas sintetiza aquec/desaq antes; etapas pelo pace, total e duração da LLM mantidos")
         void regenerativoSoPrincipal() {
             // Decisão (fix-normalizador-etapas-incompletas): o baseline original era "45:00" — a soma das
             // etapas (10 sintetizado + 30 + 5 sintetizado) sobrescrevia o "30:00" da LLM e produzia 4 km
             // em 45 min a 6:30-7:00/km. Agora recalcular-duracao vê que 30:00 fecha com pace × distância
             // (27 min) e a soma não (67% de desvio), e mantém a duração da LLM.
+            // fix-etapas-continuos-pace: as etapas ganham distância pelo pace (PRINCIPAL 30 ÷ 6,75 = 4,44,
+            // aquec/desaq a Z2), mas o total NÃO é reconciliado — aquec/desaq foram sintetizados pelo
+            // reparo e se somam à prescrição; reconciliar levaria o regenerativo a 45min/6,94km.
             var esperado = new TreinoPlanejadoLlmDto("QUARTA", "REGENERATIVO", "115-130 bpm", 25, 0.6, 3,
                     "Recuperação ativa", "30:00", 4.0, "6:30-7:00/km",
                     List.of(
-                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve em Z1-Z2 (gerado pelo sistema)", 10, null, null, 1, null),
-                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Trote regenerativo Z1", 30, 4.0, "115-130 bpm", 1, "6:30-7:00/km"),
-                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve em Z1 (gerado pelo sistema)", 5, null, null, 1, null)),
+                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve em Z1-Z2 (gerado pelo sistema)", 10, 1.67, null, 1, null),
+                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Trote regenerativo Z1", 30, 4.44, "115-130 bpm", 1, "6:30-7:00/km"),
+                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve em Z1 (gerado pelo sistema)", 5, 0.83, null, 1, null)),
                     null, null, null);
 
             assertThat(normalizar(atletaSemFc, entradaRegenerativoSoPrincipal())).isEqualTo(esperado);
@@ -192,12 +202,13 @@ class NormalizacaoDeTreinoCaracterizacaoTest {
         @Test
         @DisplayName("repeticoes == null é aceito por validar-repeticoes (semântica de null preservada)")
         void repeticoesNull() {
+            // fix-etapas-continuos-pace: mesmas distâncias do caso longo — repeticoes null não interfere
             var esperado = new TreinoPlanejadoLlmDto("SABADO", "LONGO", "136-150 bpm", 90, 0.85, 6,
-                    "Base", "75:00", 15.0, "5:30-6:00/km",
+                    "Base", "75:00", 12.93, "5:30-6:00/km",
                     List.of(
-                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve", 10, 1.5, "120-136 bpm", null, null),
-                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Longo contínuo", 60, 12.0, "136-150 bpm", null, "5:30-6:00/km"),
-                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve", 5, 1.5, "120-136 bpm", null, null)),
+                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve", 10, 1.67, "120-136 bpm", null, null),
+                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Longo contínuo", 60, 10.43, "136-150 bpm", null, "5:30-6:00/km"),
+                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve", 5, 0.83, "120-136 bpm", null, null)),
                     null, null, null);
 
             assertThat(normalizar(atletaSemFc, entradaRepeticoesNull())).isEqualTo(esperado);
