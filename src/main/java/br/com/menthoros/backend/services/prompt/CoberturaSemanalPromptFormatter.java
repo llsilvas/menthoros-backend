@@ -30,7 +30,9 @@ public class CoberturaSemanalPromptFormatter {
         StringBuilder sb = new StringBuilder("## 📆 COBERTURA DA SEMANA (obrigatório)\n\n");
         sb.append("**Dias a cobrir:** ").append(nomes(ctx.effectiveDays())).append("\n");
         sb.append("Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDays`. ")
-                .append("Não deixe nenhum dia de fora e não repita dia.\n\n");
+                .append("Não deixe nenhum dia de fora e não repita dia.\n")
+                .append("`restDays` é só para dias **desta lista** que deixam de ter treino. Os outros dias da ")
+                .append("semana já são folga do atleta: não os declare em `restDays` nem em `treinosPlanejados`.\n\n");
 
         List<FatigueSignal> sinais = ctx.sinaisEfetivos();
         if (sinais.isEmpty()) {

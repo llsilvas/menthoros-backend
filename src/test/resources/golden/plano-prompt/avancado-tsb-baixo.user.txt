@@ -190,6 +190,7 @@
 
 **Dias a cobrir:** SEGUNDA, TERCA, QUARTA, QUINTA, SEXTA, SABADO
 Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDays`. Não deixe nenhum dia de fora e não repita dia.
+`restDays` é só para dias **desta lista** que deixam de ter treino. Os outros dias da semana já são folga do atleta: não os declare em `restDays` nem em `treinosPlanejados`.
 
 **Sinais de fadiga detectados:**
 - horas desde o último treino intenso 24,0 (limiar 48,0) → pode virar descanso, nos dias listados abaixo

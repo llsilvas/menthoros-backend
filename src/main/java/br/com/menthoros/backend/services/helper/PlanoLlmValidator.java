@@ -73,6 +73,21 @@ public class PlanoLlmValidator {
         if (cobertura == null) return plano;
 
         PlanoSemanalLlmDto ancorado = longRunAnchor.ancorar(plano, cobertura);
+
+        // A LLM lê "restDays" como "os dias de folga da semana" e declara também os dias em que o
+        // atleta nunca treina (geração real de 22/09 17:08). Esses são descartados — derrubar o plano
+        // por um mal-entendido de vocabulário custaria duas chamadas e um erro ao treinador.
+        var foraDosDias = weeklyCoverageValidator.descansosForaDosDiasDisponiveis(
+                ancorado.restDays(), cobertura);
+        if (!foraDosDias.isEmpty()) {
+            log.info("DESCANSO DESCARTADO: {} — dia(s) fora dos disponíveis do atleta", foraDosDias);
+            ancorado = ancorado.toBuilder()
+                    .restDays(ancorado.restDays().stream()
+                            .filter(d -> foraDosDias.stream().noneMatch(dia -> dia.name().equalsIgnoreCase(d.dayOfWeek())))
+                            .toList())
+                    .build();
+        }
+
         List<Violacao> violacoes = weeklyCoverageValidator.validar(
                 ancorado.treinosPlanejados(), ancorado.restDays(), cobertura);
         if (!violacoes.isEmpty()) {

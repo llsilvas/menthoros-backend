@@ -44,6 +44,19 @@ public class WeeklyCoverageValidator {
     private static final int MOTIVO_MAX = 200;
 
     /**
+     * Dias de descanso que o plano declarou fora dos dias disponíveis do atleta — são descartados
+     * antes de persistir (ver {@code registrarDias}).
+     */
+    public Set<DiaSemana> descansosForaDosDiasDisponiveis(@Nullable List<RestDayLlmDto> restDays,
+                                                          WeeklyCoverageContext ctx) {
+        if (restDays == null) return Set.of();
+        return restDays.stream()
+                .map(d -> converter(d.dayOfWeek()))
+                .filter(d -> d != null && !ctx.effectiveDays().contains(d))
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    /**
      * @param treinos  treinos do plano (pode ser nulo)
      * @param restDays dias de descanso do plano (pode ser nulo)
      * @param ctx      dias a cobrir, sinais e limites
@@ -57,10 +70,11 @@ public class WeeklyCoverageValidator {
         List<Violacao> violacoes = new ArrayList<>();
 
         Map<DiaSemana, Integer> ocupacao = new LinkedHashMap<>();
+        Set<DiaSemana> descansosIgnorados = new LinkedHashSet<>();
         registrarDias(listaTreinos.stream().map(TreinoPlanejadoLlmDto::diaSemana).toList(),
-                ctx, ocupacao, violacoes, "treino");
+                ctx, ocupacao, violacoes, "treino", descansosIgnorados);
         registrarDias(listaDescansos.stream().map(RestDayLlmDto::dayOfWeek).toList(),
-                ctx, ocupacao, violacoes, "descanso");
+                ctx, ocupacao, violacoes, "descanso", descansosIgnorados);
 
         ocupacao.forEach((dia, vezes) -> {
             if (vezes > 1) {
@@ -80,14 +94,21 @@ public class WeeklyCoverageValidator {
                             + ". Prescreva um treino em cada um — leve, se a intensidade não couber."));
         }
 
-        violacoes.addAll(validarDescansos(listaDescansos, ctx));
+        List<RestDayLlmDto> descansosRelevantes = listaDescansos.stream()
+                .filter(d -> {
+                    DiaSemana dia = converter(d.dayOfWeek());
+                    return dia == null || !descansosIgnorados.contains(dia);
+                })
+                .toList();
+        violacoes.addAll(validarDescansos(descansosRelevantes, ctx));
         violacoes.addAll(validarIntensosAdjacentes(listaTreinos));
         return List.copyOf(violacoes);
     }
 
     /** Converte os dias declarados, acusando dia inválido ou fora dos disponíveis. */
     private void registrarDias(List<String> dias, WeeklyCoverageContext ctx,
-                               Map<DiaSemana, Integer> ocupacao, List<Violacao> violacoes, String origem) {
+                               Map<DiaSemana, Integer> ocupacao, List<Violacao> violacoes, String origem,
+                               Set<DiaSemana> ignorados) {
         for (String bruto : dias) {
             DiaSemana dia = converter(bruto);
             if (dia == null) {
@@ -96,6 +117,14 @@ public class WeeklyCoverageValidator {
                 continue;
             }
             if (!ctx.effectiveDays().contains(dia)) {
+                // Descanso fora dos dias disponíveis é ruído de vocabulário, não erro de prescrição: a
+                // LLM lê "restDays" como "os dias de folga da semana" (geração real de 22/09 17:08,
+                // que declarou quarta, sexta e domingo). Descartar é melhor que derrubar o plano —
+                // o dia já não teria treino mesmo. Treino em dia indisponível continua violação.
+                if ("descanso".equals(origem)) {
+                    ignorados.add(dia);
+                    continue;
+                }
                 violacoes.add(new Violacao("COBERTURA_DIAS",
                         "O " + origem + " de " + dia.name() + " não está disponível para este atleta nesta semana."));
                 continue;

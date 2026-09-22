@@ -98,12 +98,44 @@ class WeeklyCoverageValidatorTest {
         }
 
         @Test
-        @DisplayName("descanso em dia fora dos disponíveis também reprova")
-        void descansoForaDosEfetivos() {
+        @DisplayName("descanso em dia que o atleta nunca treina é descartado, não vira violação")
+        void descansoForaDosEfetivosEhIgnorado() {
+            // caso real 22/09 17:08: a LLM leu restDays como "os dias de folga da semana" e declarou
+            // quarta, sexta e domingo — derrubar o plano por isso custa duas chamadas e um erro ao coach
             var violacoes = validator.validar(treinos(DIAS_LEANDRO.toArray(DiaSemana[]::new)),
-                    List.of(descanso(DiaSemana.DOMINGO)), ctxComCheckin());
+                    List.of(descanso(DiaSemana.DOMINGO), descanso(DiaSemana.QUARTA), descanso(DiaSemana.SEXTA)),
+                    ctxSemSinal());
 
-            assertThat(violacoes).anySatisfy(v -> assertThat(v.mensagem()).contains("DOMINGO"));
+            assertThat(violacoes).isEmpty();
+        }
+
+        @Test
+        @DisplayName("descanso fora dos dias não conta para o teto de 1 por semana")
+        void descansoForaNaoContaNoTeto() {
+            var violacoes = validator.validar(treinos(DiaSemana.TERCA, DiaSemana.QUINTA, DiaSemana.SABADO),
+                    List.of(descanso(DiaSemana.SEGUNDA), descanso(DiaSemana.QUARTA), descanso(DiaSemana.DOMINGO)),
+                    ctxComCheckin());
+
+            assertThat(violacoes).isEmpty();
+        }
+
+        @Test
+        @DisplayName("os dias descartados são reportados para quem persiste")
+        void reportaDescansosDescartados() {
+            var descartados = validator.descansosForaDosDiasDisponiveis(
+                    List.of(descanso(DiaSemana.DOMINGO), descanso(DiaSemana.SEGUNDA)), ctxComCheckin());
+
+            assertThat(descartados).containsExactly(DiaSemana.DOMINGO);
+        }
+
+        @Test
+        @DisplayName("treino em dia que o atleta não treina continua sendo violação")
+        void treinoForaDosEfetivosReprova() {
+            var violacoes = validator.validar(
+                    treinos(DiaSemana.SEGUNDA, DiaSemana.TERCA, DiaSemana.QUARTA, DiaSemana.QUINTA, DiaSemana.SABADO),
+                    List.of(), ctxSemSinal());
+
+            assertThat(violacoes).anySatisfy(v -> assertThat(v.mensagem()).contains("QUARTA"));
         }
 
         @Test
