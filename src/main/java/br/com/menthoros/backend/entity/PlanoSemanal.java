@@ -173,4 +173,13 @@ public class PlanoSemanal {
     public List<RestDay> getRestDaysOuVazio() {
         return restDays == null ? List.of() : restDays;
     }
+
+    /**
+     * Guarda sempre uma lista mutável: o Hibernate trata {@code List<RestDay>} como coleção e o
+     * {@code merge} chama {@code clear()} nela — uma lista imutável derruba o save com
+     * {@code UnsupportedOperationException} (geração real de 22/09 17:30).
+     */
+    public void setRestDays(List<RestDay> restDays) {
+        this.restDays = restDays == null ? null : new java.util.ArrayList<>(restDays);
+    }
 }

@@ -55,6 +55,7 @@ import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.Objects;
 import java.util.Set;
 import java.util.Optional;
@@ -494,9 +495,12 @@ public class PlanGenerationPersister {
                 .map(d -> d.trim().toUpperCase())
                 .collect(Collectors.toSet());
 
-        List<RestDay> mantidos = descansos.stream()
+        // ArrayList, não List.of/toList: o Hibernate trata List<RestDay> como coleção e o merge chama
+        // clear() na lista — com uma lista imutável, o save estoura UnsupportedOperationException
+        // (geração real de 22/09 17:30).
+        List<RestDay> mantidos = new ArrayList<>(descansos.stream()
                 .filter(d -> d.dayOfWeek() == null || !diasComTreino.contains(d.dayOfWeek().trim().toUpperCase()))
-                .toList();
+                .toList());
 
         if (mantidos.size() != descansos.size()) {
             descansos.stream()

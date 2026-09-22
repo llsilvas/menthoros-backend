@@ -226,9 +226,10 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
         var descansos = plano.getRestDaysOuVazio();
         if (descansos.isEmpty() || diaSemana == null) return;
 
-        var mantidos = descansos.stream()
+        // ArrayList por causa do merge do Hibernate — ver PlanGenerationPersister.removerDescansosDeDiasComTreino
+        var mantidos = new java.util.ArrayList<>(descansos.stream()
                 .filter(d -> d.dayOfWeek() == null || !diaSemana.name().equalsIgnoreCase(d.dayOfWeek().trim()))
-                .toList();
+                .toList());
         if (mantidos.size() != descansos.size()) {
             log.info("coach-substituiu-descanso-por-treino: planoId={}, dia={}", plano.getId(), diaSemana.name());
             plano.setRestDays(mantidos);

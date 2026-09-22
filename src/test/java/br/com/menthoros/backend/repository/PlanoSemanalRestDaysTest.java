@@ -83,6 +83,25 @@ class PlanoSemanalRestDaysTest extends AbstractIntegrationTest {
         assertThat(planoSemanalRepository.findById(plano.getId()).orElseThrow().getRestDaysOuVazio()).isEmpty();
     }
 
+    @Test
+    @DisplayName("regressão 22/09 17:30: atualizar os descansos e salvar de novo não estoura no merge")
+    void atualizarDescansosESalvarDeNovo() {
+        PlanoSemanal plano = salvarPlano(new java.util.ArrayList<>(List.of(
+                new RestDay("QUINTA", "check-in de hoje: DESCANSAR"),
+                new RestDay("SABADO", "motivo"))));
+        entityManager.flush();
+
+        // O setter normaliza para lista mutável — com List.of o Hibernate estourava
+        // UnsupportedOperationException no clear() do merge.
+        plano.setRestDays(List.of(new RestDay("QUINTA", "check-in de hoje: DESCANSAR")));
+        planoSemanalRepository.save(plano);
+        entityManager.flush();
+        entityManager.clear();
+
+        assertThat(planoSemanalRepository.findById(plano.getId()).orElseThrow().getRestDaysOuVazio())
+                .containsExactly(new RestDay("QUINTA", "check-in de hoje: DESCANSAR"));
+    }
+
     private PlanoSemanal salvarPlano(List<RestDay> restDays) {
         Assessoria assessoria = new Assessoria();
         assessoria.setNome("Assessoria Rest Days");
