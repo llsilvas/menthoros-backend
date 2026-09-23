@@ -45,6 +45,7 @@ public class PlanoLlmValidator {
     private final PaceHistoricoFormatter paceHistoricoFormatter;
     private final ZonaTreinoService zonaTreinoService;
     private final NormalizacaoDeTreino normalizacaoDeTreino;
+    private final DescansoNaoAutorizadoConverter descansoNaoAutorizadoConverter;
     private final WeeklyCoverageValidator weeklyCoverageValidator;
     private final LongRunAnchor longRunAnchor;
 
@@ -52,12 +53,14 @@ public class PlanoLlmValidator {
                              PaceHistoricoFormatter paceHistoricoFormatter,
                              ZonaTreinoService zonaTreinoService,
                              NormalizacaoDeTreino normalizacaoDeTreino,
+                             DescansoNaoAutorizadoConverter descansoNaoAutorizadoConverter,
                              WeeklyCoverageValidator weeklyCoverageValidator,
                              LongRunAnchor longRunAnchor) {
         this.treinoHistoricoProvider = treinoHistoricoProvider;
         this.paceHistoricoFormatter = paceHistoricoFormatter;
         this.zonaTreinoService = zonaTreinoService;
         this.normalizacaoDeTreino = normalizacaoDeTreino;
+        this.descansoNaoAutorizadoConverter = descansoNaoAutorizadoConverter;
         this.weeklyCoverageValidator = weeklyCoverageValidator;
         this.longRunAnchor = longRunAnchor;
     }
@@ -110,6 +113,11 @@ public class PlanoLlmValidator {
         if (plano == null || plano.treinosPlanejados() == null) {
             throw new LLMException("Plano gerado está nulo ou sem treinos");
         }
+
+        // Antes de normalizar: descanso que a regra não aceita vira treino leve (ou cai, se o dia já
+        // tem treino). Aqui, e não no aplicarCobertura, para o treino sintetizado passar pelo mesmo
+        // pipeline de normalização dos demais.
+        plano = descansoNaoAutorizadoConverter.converter(plano, cobertura);
 
         ContextoNormalizacao ctx = contexto(atleta, atletaId);
 

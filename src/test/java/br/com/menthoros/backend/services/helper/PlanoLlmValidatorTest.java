@@ -228,6 +228,7 @@ class PlanoLlmValidatorTest {
                         new PlanoEstruturaReparador(new SimpleMeterRegistry()),
                         new PaceValidator(),
                         new SimpleMeterRegistry()),
+                new DescansoNaoAutorizadoConverter(new SimpleMeterRegistry()),
                 new WeeklyCoverageValidator(), new LongRunAnchor());
     }
 
