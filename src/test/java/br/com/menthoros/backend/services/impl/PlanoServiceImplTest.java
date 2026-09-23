@@ -157,7 +157,8 @@ class PlanoServiceImplTest {
         persister = new br.com.menthoros.backend.services.helper.PlanGenerationPersister(
                 planoSemanalRepository, planoMetadadosRepository, treinoMapper, planoSemanalMapper,
                 redistribuicaoHelper, metricasAlertaService, metricasAgregadasService, plannerShadowService,
-                onboardingService, planoReviewService, eventPublisher, provaNoPlanoService, meterRegistry);
+                onboardingService, planoReviewService, eventPublisher, provaNoPlanoService, meterRegistry,
+                org.mockito.Mockito.mock(br.com.menthoros.backend.services.helper.CoberturaSemanalPolicy.class));
         org.springframework.test.util.ReflectionTestUtils.setField(persister, "autoApproveEnabled", true);
         llmConcurrencyLimiter = org.mockito.Mockito.spy(
                 new br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter(4, 2, 1));

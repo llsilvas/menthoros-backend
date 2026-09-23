@@ -26,6 +26,7 @@ import br.com.menthoros.backend.services.helper.PlannerShadowService;
 import br.com.menthoros.backend.services.helper.PlanoLlmValidator;
 import br.com.menthoros.backend.services.helper.AthleteZones;
 import br.com.menthoros.backend.services.helper.SchemaVersionResolver;
+import br.com.menthoros.backend.services.helper.CoberturaSemanalPolicy;
 import br.com.menthoros.backend.services.helper.WeeklyCoverageContext;
 import br.com.menthoros.backend.services.helper.SessionResolver;
 import br.com.menthoros.backend.services.helper.RepairTurnMessageBuilder;
@@ -79,15 +80,16 @@ public class IaServiceImpl implements IaService {
     private final SessionResolver sessionResolver;
 
     /**
-     * Kill-switch da regra de cobertura da semana (add-descanso-explicito-por-fadiga): com
-     * {@code false}, dia omitido volta a passar como antes da change — sem deploy de código.
+     * Decide se a cobertura da semana comanda a geração — o MESMO componente que o
+     * {@code PlanGenerationPersister} consulta antes de redistribuir. O kill-switch
+     * {@code app.plano.weekly-coverage.enabled} mora lá dentro.
      */
-    @Value("${app.plano.weekly-coverage.enabled:true}")
-    private boolean coberturaSemanalHabilitada;
+    private final CoberturaSemanalPolicy coberturaSemanalPolicy;
 
     public IaServiceImpl(ModelRouter modelRouter, PlanoTreinoPromptBuilder promptBuilder,
                          LlmJsonSchemaBuilder llmJsonSchemaBuilder,
                          AtletaRepository atletaRepository, RegraGeracaoTreino regraGeracaoTreino,
+                         CoberturaSemanalPolicy coberturaSemanalPolicy,
                          PlanQualityChecker planQualityChecker,
                          PlanoLlmValidator planoLlmValidator,
                          PlanoResilienceService planoResilienceService,
@@ -104,6 +106,7 @@ public class IaServiceImpl implements IaService {
         this.atletaRepository = atletaRepository;
         this.llmJsonSchemaBuilder = llmJsonSchemaBuilder;
         this.regraGeracaoTreino = regraGeracaoTreino;
+        this.coberturaSemanalPolicy = coberturaSemanalPolicy;
         this.planQualityChecker = planQualityChecker;
         this.planoLlmValidator = planoLlmValidator;
         this.planoResilienceService = planoResilienceService;
@@ -165,9 +168,7 @@ public class IaServiceImpl implements IaService {
     public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracaoPlano, DecisaoProgressao decisaoProgressao, RevisaoSemanal revisaoConsumida, LocalDate inicioSemana, br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeleton){
         // Para SEMANA_ATUAL, filtra apenas os dias que ainda não passaram e informa o LLM.
         // Para PROXIMA_SEMANA, passa null — o prompt usa todos os dias disponíveis do atleta.
-        List<DiaSemana> diasEfetivos = ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracaoPlano)
-                ? regraGeracaoTreino.filtrarDiasDisponiveis(atleta.getDiasDisponiveis(), LocalDate.now(), modoGeracaoPlano)
-                : null;
+        List<DiaSemana> diasEfetivos = coberturaSemanalPolicy.diasEfetivos(atleta, modoGeracaoPlano);
 
         // semantic-session-schema: resolvido uma vez por geração (allowlist de tenant), não a cada
         // tentativa de retry — o schema (v1/v2) não muda entre a 1ª e a 2ª tentativa.
@@ -179,9 +180,10 @@ public class IaServiceImpl implements IaService {
         // O contexto de cobertura vem do prompt builder — é o mesmo objeto que escreveu o bloco de
         // cobertura, então prompt e validação não podem divergir. Não roda com skeleton: ali o
         // planner é dono da frequência ("gere exatamente estas sessões").
-        WeeklyCoverageContext cobertura = coberturaSemanalHabilitada
+        // A MESMA resposta que o PlanGenerationPersister consulta para decidir se pode redistribuir
+        // (CoberturaSemanalPolicy) — as duas decisões divergindo foi o bug de 22/09 20:49.
+        WeeklyCoverageContext cobertura = coberturaSemanalPolicy.ativa(atleta, modoGeracaoPlano, skeleton)
                 && promptGerado.cobertura() != null
-                && !promptGerado.cobertura().effectiveDays().isEmpty()
                 ? promptGerado.cobertura()
                 : null;
         // system é byte-idêntico entre tentativas — capturado aqui e aplicado direto no

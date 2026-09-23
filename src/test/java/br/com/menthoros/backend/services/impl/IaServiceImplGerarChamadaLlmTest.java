@@ -63,12 +63,12 @@ class IaServiceImplGerarChamadaLlmTest {
         chatClient = ChatClient.builder(chatModel).build();
         llmUsageLogger = new LlmUsageLogger();
 
-        service = new IaServiceImpl(
-                mock(br.com.menthoros.backend.routing.ModelRouter.class),
+        service = new IaServiceImpl(mock(br.com.menthoros.backend.routing.ModelRouter.class),
                 mock(br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder.class),
                 new LlmJsonSchemaBuilder(),
                 mock(br.com.menthoros.backend.repository.AtletaRepository.class),
                 mock(br.com.menthoros.backend.services.helper.RegraGeracaoTreino.class),
+                org.mockito.Mockito.mock(br.com.menthoros.backend.services.helper.CoberturaSemanalPolicy.class),
                 mock(br.com.menthoros.backend.services.quality.PlanQualityChecker.class),
                 mock(br.com.menthoros.backend.services.helper.PlanoLlmValidator.class),
                 mock(PlanoResilienceService.class),

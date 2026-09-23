@@ -93,6 +93,7 @@ public class PlanGenerationPersister {
     private final ApplicationEventPublisher eventPublisher;
     private final ProvaNoPlanoService provaNoPlanoService;
     private final MeterRegistry meterRegistry;
+    private final CoberturaSemanalPolicy coberturaSemanalPolicy;
 
     @Value("${onboarding.auto-approve.enabled:true}")
     private boolean autoApproveEnabled;
@@ -153,8 +154,12 @@ public class PlanGenerationPersister {
         java.util.Map<TipoTreino, DiaSemana> diasAlvoPorTipo = diasAlvoDaRedistribuicao(skeletonPrePrompt);
 
         DiaSemana diaPrioritarioLongo = inferirDiaPrioritarioLongo(dadosPlano);
+        // Cobertura validada => a colocação por dia já foi garantida (e o LongRunAnchor já ancorou o
+        // longo): redistribuir aqui desfaz o que o validador aprovou.
+        boolean coberturaAtiva = coberturaSemanalPolicy.ativa(atleta, modoGeracao, skeletonPrePrompt.skeleton());
         List<TreinoPlanejadoLlmDto> treinos = obterTreinosParaPlano(
-                planoDto.treinosPlanejados(), atleta, periodo, modoGeracao, diaPrioritarioLongo, diasAlvoPorTipo);
+                planoDto.treinosPlanejados(), atleta, periodo, modoGeracao, diaPrioritarioLongo, diasAlvoPorTipo,
+                coberturaAtiva);
 
         // Volume recalculado da lista final (pós-garantia da prova), não o que o LLM declarou em
         // planoDto.volumePlanejadoKm() — sem isso PlanoMetaDados e o alerta de progressão ficam
@@ -310,7 +315,7 @@ public class PlanGenerationPersister {
         plano.setPlannerRequiresCoachReview(true);
     }
 
-    private record PeriodoPlano(LocalDate inicio, LocalDate fim) {
+    record PeriodoPlano(LocalDate inicio, LocalDate fim) {
         PeriodoPlano(LocalDate inicio) {
             this(inicio, inicio.plusDays(DIAS_POR_SEMANA));
         }
@@ -322,14 +327,21 @@ public class PlanGenerationPersister {
      * (longao ancorado, duras nao-adjacentes, leve pos-dura via {@code diasAlvoPorTipo}); com
      * {@code enabled=false} preserva os dias do LLM byte-a-byte (CA9). Demais modos usam a LLM direto.
      */
-    private List<TreinoPlanejadoLlmDto> obterTreinosParaPlano(List<TreinoPlanejadoLlmDto> treinosLlm,
+    // package-private para o teste de regressão da 4.3b (PlanGenerationPersisterCoberturaTest)
+    List<TreinoPlanejadoLlmDto> obterTreinosParaPlano(List<TreinoPlanejadoLlmDto> treinosLlm,
                                                               Atleta atleta,
                                                               PeriodoPlano periodo,
                                                               ModoGeracaoPlano modoGeracao,
                                                               DiaSemana diaPrioritarioLongo,
-                                                              java.util.Map<TipoTreino, DiaSemana> diasAlvoPorTipo) {
-        boolean redistribui = ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracao)
-                || (plannerEnabled && ModoGeracaoPlano.PROXIMA_SEMANA.equals(modoGeracao));
+                                                              java.util.Map<TipoTreino, DiaSemana> diasAlvoPorTipo,
+                                                              boolean coberturaAtiva) {
+        // add-descanso-explicito-por-fadiga, Decisão 6 + task 4.3b: com a cobertura validada, a
+        // redistribuição não roda. Ela move treino de dia e descarta treino em conflito de dias
+        // consecutivos — na geração real de 22/09 20:49 levou o CONTINUO de SÁBADO para QUINTA, que
+        // era o dia de descanso prescrito pelo check-in, e deixou o sábado vazio.
+        boolean redistribui = !coberturaAtiva
+                && (ModoGeracaoPlano.SEMANA_ATUAL.equals(modoGeracao)
+                    || (plannerEnabled && ModoGeracaoPlano.PROXIMA_SEMANA.equals(modoGeracao)));
         List<TreinoPlanejadoLlmDto> treinos = redistribui
                 ? redistribuicaoHelper.redistribuirTreinos(
                         treinosLlm,
@@ -505,7 +517,10 @@ public class PlanGenerationPersister {
         if (mantidos.size() != descansos.size()) {
             descansos.stream()
                     .filter(d -> !mantidos.contains(d))
-                    .forEach(d -> log.info("DESCANSO REMOVIDO [{}]: o dia recebeu treino (prova garantida na semana)",
+                    .forEach(d -> // A causa esperada é a prova garantida depois da validação, mas o gatilho é "o dia tem
+                    // treino" — dizer "prova" sempre já enganou o diagnóstico de 22/09 20:49, onde não
+                    // havia prova alguma e o treino tinha chegado ali pela redistribuição.
+                    log.info("DESCANSO REMOVIDO [{}]: o dia passou a ter treino, e um dia não pode ter os dois",
                             d.dayOfWeek()));
             plano.setRestDays(mantidos);
         }
