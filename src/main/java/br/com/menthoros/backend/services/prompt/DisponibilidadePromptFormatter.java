@@ -107,13 +107,17 @@ public class DisponibilidadePromptFormatter {
         if (metaDados.getDiasConsecutivosTreino() != null &&
                 metaDados.getDiasConsecutivosTreino() >= maxDiasConsecutivos) {
             sb.append("- ⚠️ **ALERTA:** Atleta já atingiu ou ultrapassou o limite recomendado\n");
-            sb.append("- **AÇÃO:** Incluir dia de descanso completo ou regenerativo OBRIGATÓRIO\n");
+            // Descanso só quando a COBERTURA DA SEMANA o autorizar (sinal do dia); fora disso a
+            // resposta a fadiga é treino leve, não tirar a sessão (add-descanso-explicito-por-fadiga).
+            sb.append("- **AÇÃO:** Incluir treino regenerativo OBRIGATÓRIO — ou descanso em `restDays`, "
+                    + "se a COBERTURA DA SEMANA autorizar\n");
         }
 
         // Dia de descanso recomendado
         String diaDescansoRecomendado = recomendarDiaDescanso(metaDados, atleta);
         if (diaDescansoRecomendado != null) {
-            sb.append(String.format("- **Dia de descanso sugerido:** %s\n", diaDescansoRecomendado));
+            sb.append(String.format("- **Dia sugerido para a sessão mais leve (ou descanso, se autorizado):** %s\n",
+                    diaDescansoRecomendado));
         }
 
         sb.append("\n");

@@ -73,6 +73,7 @@ class IaServiceImplGerarChamadaLlmV2Test {
                 new LlmJsonSchemaBuilder(),
                 mock(br.com.menthoros.backend.repository.AtletaRepository.class),
                 mock(br.com.menthoros.backend.services.helper.RegraGeracaoTreino.class),
+                mock(br.com.menthoros.backend.services.helper.CoberturaSemanalPolicy.class),
                 mock(br.com.menthoros.backend.services.quality.PlanQualityChecker.class),
                 mock(br.com.menthoros.backend.services.helper.PlanoLlmValidator.class),
                 mock(PlanoResilienceService.class),

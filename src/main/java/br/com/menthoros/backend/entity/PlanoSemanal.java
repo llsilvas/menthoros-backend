@@ -8,6 +8,7 @@ import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import jakarta.persistence.*;
 import lombok.*;
+import br.com.menthoros.backend.domain.plano.RestDay;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -120,6 +121,16 @@ public class PlanoSemanal {
     @OneToMany(mappedBy = "planoSemanal", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TreinoPlanejado> treinosPlanejados;
 
+    /**
+     * Normaliza para lista mutável: o {@code merge} do Hibernate chama {@code clear()} na coleção
+     * gerenciada, e uma lista imutável ({@code List.of}, {@code Stream.toList}) estoura
+     * {@link UnsupportedOperationException} no save — foi o que derrubou a geração de 22/09 17:46,
+     * onde o plano já estava gerenciado quando {@code salvarPlanoCompleto} rodou.
+     */
+    public void setTreinosPlanejados(List<TreinoPlanejado> treinosPlanejados) {
+        this.treinosPlanejados = treinosPlanejados == null ? null : new java.util.ArrayList<>(treinosPlanejados);
+    }
+
     @Version
     @Column(name = "versao")
     private Long versao;
@@ -158,4 +169,27 @@ public class PlanoSemanal {
     @Column(name = "planner_metadata_json", columnDefinition = "jsonb")
     private String plannerMetadataJson;
 
+    /**
+     * Dias prescritos como descanso (add-descanso-explicito-por-fadiga). Fora de
+     * {@code treinosPlanejados}: descanso não é treino a cumprir — ali viraria PERDIDO no
+     * encerramento da semana e entraria no denominador de aderência. {@code null} em plano anterior
+     * à feature; {@link #getRestDaysOuVazio()} normaliza para quem só quer iterar.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "rest_days", columnDefinition = "jsonb")
+    private List<RestDay> restDays;
+
+    /** Nunca nulo — plano anterior à feature tem a coluna nula. */
+    public List<RestDay> getRestDaysOuVazio() {
+        return restDays == null ? List.of() : restDays;
+    }
+
+    /**
+     * Guarda sempre uma lista mutável: o Hibernate trata {@code List<RestDay>} como coleção e o
+     * {@code merge} chama {@code clear()} nela — uma lista imutável derruba o save com
+     * {@code UnsupportedOperationException} (geração real de 22/09 17:30).
+     */
+    public void setRestDays(List<RestDay> restDays) {
+        this.restDays = restDays == null ? null : new java.util.ArrayList<>(restDays);
+    }
 }

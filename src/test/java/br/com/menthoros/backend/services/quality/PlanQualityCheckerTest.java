@@ -150,7 +150,7 @@ class PlanQualityCheckerTest {
     // ===== helpers =====
 
     private static PlanoSemanalLlmDto plano(TreinoPlanejadoLlmDto... treinos) {
-        return new PlanoSemanalLlmDto(0.0, 0.0, null, null, null, null, List.of(treinos));
+        return new PlanoSemanalLlmDto(0.0, 0.0, null, null, null, null, List.of(treinos), List.of());
     }
 
     private static TreinoPlanejadoLlmDto treino(String dia, String tipo, String ritmo) {

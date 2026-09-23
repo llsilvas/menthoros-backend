@@ -65,6 +65,9 @@ public class SessionResolver {
                 .status(planoV2.status())
                 .objetivoSemanal(planoV2.objetivoSemanal())
                 .treinosPlanejados(treinos)
+                // Sem isto o descanso prescrito no v2 se perderia na conversão para v1, e a regra de
+                // cobertura reprovaria o dia como omitido (add-descanso-explicito-por-fadiga).
+                .restDays(planoV2.restDays())
                 .build();
     }
 

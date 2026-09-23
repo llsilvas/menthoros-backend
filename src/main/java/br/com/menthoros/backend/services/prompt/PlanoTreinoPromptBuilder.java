@@ -15,6 +15,9 @@ import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import java.time.DayOfWeek;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.services.helper.FatigueSignal;
+import br.com.menthoros.backend.services.helper.FatigueSignalsService;
+import br.com.menthoros.backend.services.helper.WeeklyCoverageContext;
 import br.com.menthoros.backend.services.helper.IntervaladoElegibilidadeService;
 import br.com.menthoros.backend.services.helper.PaceZoneCalculator;
 import br.com.menthoros.backend.services.helper.RecomendacaoIntervalado;
@@ -54,6 +57,8 @@ public class PlanoTreinoPromptBuilder {
     private final VariabilidadePromptFormatter variabilidadePromptFormatter;
     private final DisponibilidadePromptFormatter disponibilidadePromptFormatter;
     private final IntervaladoElegibilidadeService intervaladoElegibilidadeService;
+    private final FatigueSignalsService fatigueSignalsService;
+    private final CoberturaSemanalPromptFormatter coberturaSemanalPromptFormatter;
     private final PaceHistoricoFormatter paceHistoricoFormatter;
     private final PaceZoneCalculator paceZoneCalculator;
     private final ThresholdConstraintFormatter thresholdConstraintFormatter;
@@ -72,6 +77,8 @@ public class PlanoTreinoPromptBuilder {
                                     VariabilidadePromptFormatter variabilidadePromptFormatter,
                                     DisponibilidadePromptFormatter disponibilidadePromptFormatter,
                                     IntervaladoElegibilidadeService intervaladoElegibilidadeService,
+                                    FatigueSignalsService fatigueSignalsService,
+                                    CoberturaSemanalPromptFormatter coberturaSemanalPromptFormatter,
                                     PaceHistoricoFormatter paceHistoricoFormatter,
                                     PaceZoneCalculator paceZoneCalculator,
                                     ThresholdConstraintFormatter thresholdConstraintFormatter,
@@ -88,6 +95,8 @@ public class PlanoTreinoPromptBuilder {
         this.variabilidadePromptFormatter = variabilidadePromptFormatter;
         this.disponibilidadePromptFormatter = disponibilidadePromptFormatter;
         this.intervaladoElegibilidadeService = intervaladoElegibilidadeService;
+        this.fatigueSignalsService = fatigueSignalsService;
+        this.coberturaSemanalPromptFormatter = coberturaSemanalPromptFormatter;
         this.paceHistoricoFormatter = paceHistoricoFormatter;
         this.paceZoneCalculator = paceZoneCalculator;
         this.thresholdConstraintFormatter = thresholdConstraintFormatter;
@@ -228,6 +237,26 @@ public class PlanoTreinoPromptBuilder {
         }
         // 2. ALERTAS OBRIGATÓRIOS NO TOPO (prioridade máxima)
         int maxDiasConsecutivos = disponibilidadePromptFormatter.calcularMaxDiasConsecutivos(metaDados, atleta);
+
+        // Sinais de fadiga completos (add-descanso-explicito-por-fadiga, Decisão 3): a recomendação
+        // do intervalado acima para no 1º portão, então quem precisa do conjunto olha aqui.
+        List<FatigueSignal> sinaisFadiga = fatigueSignalsService.avaliar(
+                atleta, metaDados, ctx.treinosUltimas4Semanas(), ctx.dataReferencia(),
+                ctx.nivelProntidaoHoje(), maxDiasConsecutivos);
+
+        // diasEfetivos != null só em SEMANA_ATUAL (o chamador filtra os dias que já passaram); em
+        // PROXIMA_SEMANA a lista é materializada aqui, com os dias configurados do atleta.
+        //
+        // Com skeleton, o planner é dono da frequência ("gere exatamente estas sessões") e a regra de
+        // cobertura não roda — então o bloco também não é escrito. Pedir cobertura no prompt e não
+        // cobrar na validação foi o que levou a LLM a inventar um descanso não autorizado na geração
+        // real de 22/09 16:39 (o ambiente local roda com PLANNER_ENGINE_ENABLED=true).
+        WeeklyCoverageContext cobertura = skeleton != null ? null : new WeeklyCoverageContext(
+                diasEfetivos != null ? diasEfetivos : atleta.getDiasDisponiveis(),
+                sinaisFadiga,
+                diasEfetivos != null,
+                metaDados != null ? metaDados.getDiaPreferidoLongo() : null,
+                maxDiasConsecutivos);
         String alertasObrigatorios = alertasPromptFormatter.gerarAlertasObrigatorios(
                 atleta, metaDados, maxDiasConsecutivos, ctx.treinosUltimas4Semanas(), ctx.dataReferencia());
 
@@ -305,6 +334,7 @@ public class PlanoTreinoPromptBuilder {
 
         // ETAPA 4: Disponibilidade e padrões de treino
         historicoCompleto.append(disponibilidadePromptFormatter.formatarDisponibilidade(atleta, metaDados, inicioSemana, diasEfetivos)).append("\n\n");
+        historicoCompleto.append(coberturaSemanalPromptFormatter.formatar(cobertura)).append("\n\n");
 
         // ETAPA 5: Análise de estímulos recentes
         historicoCompleto.append(analiseEstimulos).append("\n\n");
@@ -406,17 +436,21 @@ public class PlanoTreinoPromptBuilder {
                 provas,                                                                                        // %s - Provas
                 historicoFinal.toString()                                                                      // %s - Histórico completo (com alertas no topo)
         );
-        // Retorna system + user + as Constraint já computadas (evita recomputar contexto pós-geração).
-        return new PromptGerado(system, user, regras);
+        // Retorna system + user + as Constraint já computadas (evita recomputar contexto pós-geração)
+        // + os sinais de fadiga, calculados uma vez por geração e consumidos pela regra de cobertura.
+        return new PromptGerado(system, user, regras, cobertura);
     }
 
     /**
      * {@code system}: template estático cru (persona + regras), byte-idêntico entre atletas e
      * tentativas — liga o cache de prefixo do provedor. {@code user}: perfil do atleta + histórico
      * dinâmico. {@code regras}: {@link Constraint} ativas usadas no bloco [1] e pelo
-     * {@code PlanQualityChecker} (system-user-prompt-split, CA1).
+     * {@code PlanQualityChecker} (system-user-prompt-split, CA1). {@code cobertura}: dias a cobrir,
+     * sinais de fadiga e limites (add-descanso-explicito-por-fadiga) — o mesmo objeto que escreve o
+     * bloco de cobertura no prompt e que o validador usa depois, para os dois não divergirem.
      */
-    public record PromptGerado(String system, String user, List<Constraint> regras) {}
+    public record PromptGerado(String system, String user, List<Constraint> regras,
+                               @Nullable WeeklyCoverageContext cobertura) {}
 
     // ======================== MÉTODOS AUXILIARES (mantidos) ========================
 

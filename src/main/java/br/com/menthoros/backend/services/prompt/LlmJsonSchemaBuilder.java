@@ -39,6 +39,28 @@ public class LlmJsonSchemaBuilder {
                 .build();
     }
 
+    /**
+     * Restringe o array {@code restDays}: dia como enum de strings e motivo de até 200 caracteres
+     * (add-descanso-explicito-por-fadiga). O array em si vem do DTO; aqui só apertamos os itens.
+     */
+    @SuppressWarnings("unchecked")
+    private static void ajustarRestDays(Map<String, Object> planoProps) {
+        Map<String, Object> restDays = (Map<String, Object>) planoProps.get("restDays");
+        if (restDays == null) return;
+        Map<String, Object> items = (Map<String, Object>) restDays.get("items");
+        if (items == null) return;
+        Map<String, Object> itemProps = (Map<String, Object>) items.get("properties");
+        if (itemProps == null) return;
+
+        putEnum(itemProps, "dayOfWeek",
+                List.of("DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO"));
+        Map<String, Object> reason = (Map<String, Object>) itemProps.get("reason");
+        if (reason != null) {
+            reason.put("maxLength", 200);
+        }
+        enforceAllRequired(items);
+    }
+
     @SuppressWarnings("unchecked")
     private static void enforceAllRequired(Map<String, Object> objNode) {
         if (objNode == null) return;
@@ -103,13 +125,17 @@ public class LlmJsonSchemaBuilder {
         }
         putEnum(planoProps, "status", List.of("PLANEJADO", "INICIADO", "EM_ANDAMENTO", "ATIVO", "CONCLUIDO"));
 
+        ajustarRestDays(planoProps);
+
         Map<String, Object> treinos = (Map<String, Object>) planoProps.get("treinosPlanejados");
         if (treinos == null) {
             enforceAllRequired(schema);
             return schema;
         }
-        treinos.put("minItems", 3);
-        treinos.put("maxItems", 5);
+        // 1..7: a cobertura da semana governa quantos treinos existem (um por dia disponível que não
+        // for descanso), inclusive para quem treina 6-7 dias (add-descanso-explicito-por-fadiga).
+        treinos.put("minItems", 1);
+        treinos.put("maxItems", 7);
 
         Map<String, Object> treinoItems = (Map<String, Object>) treinos.get("items");
         Map<String, Object> treinoProps = treinoItems != null
@@ -201,10 +227,13 @@ public class LlmJsonSchemaBuilder {
         putEnum(planoProps, "status", List.of("PLANEJADO", "INICIADO", "EM_ANDAMENTO", "ATIVO", "CONCLUIDO"));
 
         // treinosPlanejados array 3..5
+        ajustarRestDays(planoProps);
+
         Map<String, Object> treinos = (Map<String, Object>) planoProps.get("treinosPlanejados");
         if (treinos != null) {
-            treinos.put("minItems", 3);
-            treinos.put("maxItems", 5);
+            // 1..7 — ver buildSchemaV2 (add-descanso-explicito-por-fadiga)
+            treinos.put("minItems", 1);
+            treinos.put("maxItems", 7);
 
             // TREINO items
             Map<String, Object> treinoItems = (Map<String, Object>) treinos.get("items");

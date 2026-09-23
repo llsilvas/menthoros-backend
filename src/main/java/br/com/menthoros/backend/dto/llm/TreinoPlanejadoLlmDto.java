@@ -61,6 +61,13 @@ public record TreinoPlanejadoLlmDto(
                 etapas, descricao, zonaAlvo, provaId);
     }
 
+    /** Troca o dia da semana — usado pela âncora do longo (add-descanso-explicito-por-fadiga). */
+    public TreinoPlanejadoLlmDto comDiaSemana(String novoDiaSemana) {
+        return new TreinoPlanejadoLlmDto(novoDiaSemana, tipoTreino, fcAlvo, tssPlanejado, intensidadePlanejada,
+                percepcaoEsforcoEsperada, justificativaIa, duracaoMin, distanciaKm, ritmoAlvo,
+                etapas, descricao, zonaAlvo, provaId);
+    }
+
     public TreinoPlanejadoLlmDto comDuracao(String novaDuracaoMin) {
         return new TreinoPlanejadoLlmDto(diaSemana, tipoTreino, fcAlvo, tssPlanejado, intensidadePlanejada,
                 percepcaoEsforcoEsperada, justificativaIa, novaDuracaoMin, distanciaKm, ritmoAlvo,

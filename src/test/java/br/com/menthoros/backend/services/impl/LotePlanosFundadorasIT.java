@@ -444,6 +444,6 @@ class LotePlanosFundadorasIT extends AbstractIntegrationTest {
         TreinoPlanejadoLlmDto treino = new TreinoPlanejadoLlmDto(
                 "SEGUNDA", "FACIL", "130-140 bpm", 40, 1.0, 4,
                 "Base aeróbica", "45", 8.0, "5:40", List.of());
-        return new PlanoSemanalLlmDto(8.0, 8.0, null, null, "PLANEJADO", "Semana de base", List.of(treino));
+        return new PlanoSemanalLlmDto(8.0, 8.0, null, null, "PLANEJADO", "Semana de base", List.of(treino), List.of());
     }
 }

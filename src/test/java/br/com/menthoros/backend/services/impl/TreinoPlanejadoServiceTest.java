@@ -59,6 +59,8 @@ class TreinoPlanejadoServiceTest {
     @Mock private TssCalculatorService tssCalculatorService;
     @Mock private TreinoMapper treinoMapper;
     @Mock private EtapaMapper etapaMapper;
+    @org.mockito.Spy private final io.micrometer.core.instrument.MeterRegistry meterRegistry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
 
     @InjectMocks private TreinoPlanejadoServiceImpl service;
 
@@ -85,6 +87,50 @@ class TreinoPlanejadoServiceTest {
     }
 
     @Nested
+    @DisplayName("excluirTreino — dia sem prescrição")
+    class ExcluirTreinoCobertura {
+
+        @Test
+        @DisplayName("/qa: excluir o último treino do dia registra o dia em branco (log + contador)")
+        void diaFicaSemPrescricao() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setDiaSemana(DiaSemana.SEXTA);
+            plano.getTreinosPlanejados().add(treino);
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treino.getId(), planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+
+            service.excluirTreino(planoId, treino.getId());
+
+            assertThat(contadorDiaEmBranco()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("dia que ainda tem descanso prescrito não conta como dia em branco")
+        void diaComDescansoNaoConta() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setDiaSemana(DiaSemana.SEXTA);
+            plano.getTreinosPlanejados().add(treino);
+            plano.setRestDays(new ArrayList<>(List.of(
+                    new br.com.menthoros.backend.domain.plano.RestDay("SEXTA", "check-in de hoje: DESCANSAR"))));
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treino.getId(), planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+
+            service.excluirTreino(planoId, treino.getId());
+
+            assertThat(contadorDiaEmBranco()).isZero();
+        }
+
+        private double contadorDiaEmBranco() {
+            var c = meterRegistry.find("plano_dia_sem_prescricao").tag("origem", "coach").counter();
+            return c == null ? 0.0 : c.count();
+        }
+    }
+
+    @Nested
     @DisplayName("adicionarTreino")
     class AdicionarTreino {
 
@@ -105,6 +151,41 @@ class TreinoPlanejadoServiceTest {
             assertThat(treino.isAdicionadoPeloCoach()).isTrue();
             assertThat(treino.getStatusTreino()).isEqualTo(TreinoExecucaoStatus.PENDENTE);
             assertThat(treino.getFonteDados()).isEqualTo(FonteDados.MANUAL);
+        }
+
+        @Test
+        @DisplayName("CA14: treino criado num dia de descanso remove aquele descanso do plano")
+        void treinoEmDiaDeDescansoRemoveODescanso() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            plano.setRestDays(new ArrayList<>(List.of(
+                    new br.com.menthoros.backend.domain.plano.RestDay("SEXTA", "check-in de hoje: DESCANSAR"),
+                    new br.com.menthoros.backend.domain.plano.RestDay("QUINTA", "36h desde o último intensivo"))));
+            stubPlanoFound(plano);
+            TreinoPlanejado saved = new TreinoPlanejado();
+            when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
+            when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+
+            service.adicionarTreino(planoId, dtoSimples(DATA_SEXTA));
+
+            assertThat(plano.getRestDaysOuVazio())
+                    .extracting(br.com.menthoros.backend.domain.plano.RestDay::dayOfWeek)
+                    .containsExactly("QUINTA");
+        }
+
+        @Test
+        @DisplayName("treino em dia sem descanso não mexe na lista de descansos")
+        void treinoEmDiaSemDescansoNaoMexe() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            var descansos = List.of(new br.com.menthoros.backend.domain.plano.RestDay("QUINTA", "motivo"));
+            plano.setRestDays(new ArrayList<>(descansos));
+            stubPlanoFound(plano);
+            TreinoPlanejado saved = new TreinoPlanejado();
+            when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
+            when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+
+            service.adicionarTreino(planoId, dtoSimples(DATA_SEXTA));
+
+            assertThat(plano.getRestDaysOuVazio()).isEqualTo(descansos);
         }
 
         @Test
@@ -876,7 +957,7 @@ class TreinoPlanejadoServiceTest {
             // asserção não prova escala nenhuma — e escala é exatamente o que o BUG-CONF-001 quebrava.
             TreinoPlanejadoServiceImpl servicoComCalculadorReal = new TreinoPlanejadoServiceImpl(
                     planoSemanalRepository, treinoPlanejadoRepository, new TssCalculatorService(),
-                    treinoMapper, etapaMapper);
+                    treinoMapper, etapaMapper, meterRegistry);
 
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
             TreinoPlanejado treino = criarTreino(plano);

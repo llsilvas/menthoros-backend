@@ -47,12 +47,12 @@ class IaServiceImplComplianceEstagio1Test {
     void setUp() {
         plannerShadowService = mock(PlannerShadowService.class);
         meterRegistry = new SimpleMeterRegistry();
-        service = new IaServiceImpl(
-                mock(br.com.menthoros.backend.routing.ModelRouter.class),
+        service = new IaServiceImpl(mock(br.com.menthoros.backend.routing.ModelRouter.class),
                 mock(br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder.class),
                 new br.com.menthoros.backend.services.prompt.LlmJsonSchemaBuilder(),
                 mock(br.com.menthoros.backend.repository.AtletaRepository.class),
                 mock(br.com.menthoros.backend.services.helper.RegraGeracaoTreino.class),
+                org.mockito.Mockito.mock(br.com.menthoros.backend.services.helper.CoberturaSemanalPolicy.class),
                 mock(br.com.menthoros.backend.services.quality.PlanQualityChecker.class),
                 mock(br.com.menthoros.backend.services.helper.PlanoLlmValidator.class),
                 mock(br.com.menthoros.backend.services.helper.PlanoResilienceService.class),
@@ -63,8 +63,7 @@ class IaServiceImplComplianceEstagio1Test {
                 new br.com.menthoros.backend.services.helper.RepairTurnMessageBuilder(),
                 new com.fasterxml.jackson.databind.ObjectMapper(),
                 mock(br.com.menthoros.backend.services.helper.SchemaVersionResolver.class),
-                mock(br.com.menthoros.backend.services.helper.SessionResolver.class)
-        );
+                mock(br.com.menthoros.backend.services.helper.SessionResolver.class));
     }
 
     private static WeekPlanSkeleton skeletonMinimo() {
@@ -74,7 +73,7 @@ class IaServiceImplComplianceEstagio1Test {
     }
 
     private static PlanoSemanalLlmDto plano() {
-        return new PlanoSemanalLlmDto(30.0, 30.0, null, null, "ATIVO", "base aerobica", List.of());
+        return new PlanoSemanalLlmDto(30.0, 30.0, null, null, "ATIVO", "base aerobica", List.of(), List.of());
     }
 
     private PlanoSemanalLlmDto invoke(PlanoSemanalLlmDto validado, WeekPlanSkeleton skeleton) throws Exception {

@@ -66,32 +66,10 @@ public class IntervaladoElegibilidadeService {
         this.readinessProperties = readinessProperties;
     }
 
-    // ── Portão 2: limiares de TSB por nível ──────────────────────────────────
-    private static final Map<NivelExperiencia, Double> TSB_THRESHOLD = Map.of(
-            NivelExperiencia.INICIANTE,     -10.0,
-            NivelExperiencia.INTERMEDIARIO, -15.0,
-            NivelExperiencia.AVANCADO,      -20.0,
-            NivelExperiencia.ELITE,         -25.0
-    );
-
-    // ── Portão 3: horas mínimas de recuperação por nível ─────────────────────
-    private static final Map<NivelExperiencia, Long> MIN_HORAS_RECUPERACAO = Map.of(
-            NivelExperiencia.INICIANTE,     72L,
-            NivelExperiencia.INTERMEDIARIO, 60L,
-            NivelExperiencia.AVANCADO,      48L,
-            NivelExperiencia.ELITE,         48L
-    );
-
-    // ── Portão 4: CTL mínimo por nível ───────────────────────────────────────
-    private static final Map<NivelExperiencia, Double> CTL_MINIMO = Map.of(
-            NivelExperiencia.INICIANTE,     15.0,
-            NivelExperiencia.INTERMEDIARIO, 25.0,
-            NivelExperiencia.AVANCADO,      40.0,
-            NivelExperiencia.ELITE,         55.0
-    );
-
-    private static final double RPE_THRESHOLD      = 7.5;
-    private static final double TSB_ABSOLUTE_BLOCK = -30.0;
+    // Limiares dos portões 2, 3 e 4 vivem em FatigueThresholds — mesma régua que FatigueSignalsService
+    // usa para listar os sinais da semana (add-descanso-explicito-por-fadiga, Decisão 3).
+    private static final double RPE_THRESHOLD      = FatigueThresholds.RPE_MEDIO_7D;
+    private static final double TSB_ABSOLUTE_BLOCK = FatigueThresholds.TSB_BLOQUEIO_ABSOLUTO;
 
     /**
      * Ponto de entrada. Avalia os 5 portões sequencialmente e retorna a recomendação.
@@ -232,7 +210,7 @@ public class IntervaladoElegibilidadeService {
 
         // ── PORTÃO 2: Prontidão fisiológica por nível ────────────────────────
 
-        double tsbLimiar = TSB_THRESHOLD.getOrDefault(nivel, -15.0);
+        double tsbLimiar = FatigueThresholds.tsb(nivel);
         if (tsb != null && tsb < tsbLimiar) {
             String tsbStr = String.format("%.1f", tsb);
             return criarDegradado(
@@ -256,7 +234,7 @@ public class IntervaladoElegibilidadeService {
 
         // ── PORTÃO 3: Recuperação desde último treino intensivo ──────────────
 
-        long minHoras = MIN_HORAS_RECUPERACAO.getOrDefault(nivel, 60L);
+        long minHoras = FatigueThresholds.horasRecuperacao(nivel);
         Optional<TreinoRealizado> ultimoIntensivo = encontrarUltimoTreinoIntensivo(
                 treinosUltimas4Semanas, dataReferencia);
 
@@ -278,7 +256,7 @@ public class IntervaladoElegibilidadeService {
 
         // ── PORTÃO 4: Base aeróbica mínima ───────────────────────────────────
 
-        double ctlMinimo = CTL_MINIMO.getOrDefault(nivel, 25.0);
+        double ctlMinimo = FatigueThresholds.ctlMinimo(nivel);
         if (ctl != null && ctl < ctlMinimo) {
             String ctlStr = String.format("%.1f", ctl);
             return criarDegradado(
