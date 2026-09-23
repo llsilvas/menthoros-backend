@@ -22,7 +22,9 @@ import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.domain.billing.AthleteBilling;
 import br.com.menthoros.backend.enums.AthleteBillingStatus;
 import br.com.menthoros.backend.services.AthleteContractService;
+import br.com.menthoros.backend.enums.StatusSugestao;
 import java.util.Map;
+import java.util.Set;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -32,6 +34,7 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.SugestaoCoachRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -75,6 +78,7 @@ class CoachDashboardServiceImplTest {
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock private CoachAttentionQueueService coachAttentionQueueService;
     @Mock private AthleteContractService athleteContractService;
+    @Mock private SugestaoCoachRepository sugestaoCoachRepository;
 
     private CoachDashboardServiceImpl service;
     private UUID tenantId;
@@ -87,11 +91,13 @@ class CoachDashboardServiceImplTest {
         service = new CoachDashboardServiceImpl(
                 atletaRepository, metricasDiariasRepository, planoMetadadosRepository,
                 treinoRealizadoRepository, treinoPlanejadoRepository, coachAttentionQueueService,
-                athleteContractService, clock);
+                athleteContractService, sugestaoCoachRepository, clock);
         // Default: ninguém com cobrança (os testes de cobrança sobrescrevem)
         lenient().when(athleteContractService.resolveBilling(anyCollection(), any(LocalDate.class))).thenReturn(Map.of());
         // Default: sem itens de atenção (cada teste de calendário que precisar sobrescreve)
         lenient().when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of());
+        // Default: ninguém com sugestão pendente (os testes de add-pending-suggestion-badge sobrescrevem)
+        lenient().when(sugestaoCoachRepository.findAtletaIdsByTenantIdAndStatus(any(), any(), any())).thenReturn(Set.of());
     }
 
     @AfterEach
@@ -245,6 +251,28 @@ class CoachDashboardServiceImplTest {
             verify(athleteContractService, times(1)).resolveBilling(anyCollection(), any(LocalDate.class));
         }
 
+        @Test
+        @DisplayName("temSugestaoPendente reflete o set resolvido uma vez para o roster inteiro (CA1/CA2/CA4)")
+        void temSugestaoPendenteEmLote() {
+            Atleta comSugestao = atletaSemMetricas("Com", "Sugestao");
+            Atleta semSugestao = atletaSemMetricas("Sem", "Sugestao");
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId))
+                    .thenReturn(List.of(comSugestao, semSugestao));
+            for (Atleta a : List.of(comSugestao, semSugestao)) {
+                when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
+                when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
+            }
+            when(sugestaoCoachRepository.findAtletaIdsByTenantIdAndStatus(eq(tenantId), eq(StatusSugestao.PENDING), any()))
+                    .thenReturn(Set.of(comSugestao.getId()));
+
+            List<CoachAtletaResumoDto> roster = service.getRoster();
+
+            assertThat(roster).extracting(CoachAtletaResumoDto::temSugestaoPendente)
+                    .containsExactly(true, false);
+            verify(sugestaoCoachRepository, times(1))
+                    .findAtletaIdsByTenantIdAndStatus(eq(tenantId), eq(StatusSugestao.PENDING), any());
+        }
+
         private Atleta atletaSemMetricas(String nome, String sobrenome) {
             return Atleta.builder().id(UUID.randomUUID()).nome(nome).sobrenome(sobrenome)
                     .ativo(AtletaStatus.ATIVO).build();
@@ -301,6 +329,22 @@ class CoachDashboardServiceImplTest {
             CoachCalendarioDto cal = service.getCalendarioSemanal(null);
 
             assertThat(cal.treinos()).extracting(t -> t.nomeAtleta(), t -> t.hasAlert())
+                    .containsExactly(tuple("Ana", true), tuple("Bia", false));
+        }
+
+        @Test
+        @DisplayName("hasPendingSuggestion = true para atleta com SugestaoCoach PENDING (CA3, fecha add-coach-suggestion-inbox)")
+        void hasPendingSuggestionReal() {
+            Atleta ana = Atleta.builder().id(UUID.randomUUID()).nome("Ana").build();
+            Atleta bia = Atleta.builder().id(UUID.randomUUID()).nome("Bia").build();
+            when(treinoPlanejadoRepository.findByTenantAndDataBetween(tenantId, INICIO_SEMANA, FIM_SEMANA))
+                    .thenReturn(List.of(planejado(ana, HOJE, TipoTreino.LONGO), planejado(bia, HOJE, TipoTreino.REGENERATIVO)));
+            when(sugestaoCoachRepository.findAtletaIdsByTenantIdAndStatus(eq(tenantId), eq(StatusSugestao.PENDING), any()))
+                    .thenReturn(Set.of(ana.getId()));
+
+            CoachCalendarioDto cal = service.getCalendarioSemanal(null);
+
+            assertThat(cal.treinos()).extracting(t -> t.nomeAtleta(), t -> t.hasPendingSuggestion())
                     .containsExactly(tuple("Ana", true), tuple("Bia", false));
         }
     }
@@ -423,6 +467,21 @@ class CoachDashboardServiceImplTest {
             assertThat(dashboard.attentionQueue()).containsExactly(atenção);
             assertThat(dashboard.calendar().semanaInicio()).isEqualTo(INICIO_SEMANA);
             assertThat(dashboard.insights().kpis().treinosPlanejadosSemana()).isGreaterThanOrEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("query de sugestão pendente roda no máx. 2x, não 3x (CA8, design D2)")
+        void queryDeSugestaoPendenteRodaNoMaximoDuasVezes() {
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of());
+            when(treinoPlanejadoRepository.findByTenantAndDataBetween(eq(tenantId), any(), any())).thenReturn(List.of());
+
+            service.getDashboard(new CoachDashboardQueryDto(
+                    null, null, null, 0, 10, null, null, null));
+
+            // 1x na resolução explícita de getDashboard(), 1x no getInsights() interno (que
+            // rechama getRoster() sem args) — nunca 3x, que seria o achado do pre-mortem.
+            verify(sugestaoCoachRepository, times(2))
+                    .findAtletaIdsByTenantIdAndStatus(eq(tenantId), eq(StatusSugestao.PENDING), any());
         }
 
         @Test

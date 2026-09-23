@@ -52,5 +52,8 @@ public record CoachAtletaResumoDto(
         AthleteBillingStatus billingStatus,
 
         @Schema(description = "Próximo vencimento (menor em aberto, ou o próximo calculado); ausente junto com billingStatus", example = "2026-10-10")
-        LocalDate nextDueDate
+        LocalDate nextDueDate,
+
+        @Schema(description = "Há SugestaoCoach PENDING não-expirada para este atleta", example = "true")
+        boolean temSugestaoPendente
 ) {}
