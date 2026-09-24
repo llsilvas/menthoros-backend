@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.helper;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
 import br.com.menthoros.backend.enums.ConfiancaInferencia;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.DistanciaProva;
@@ -269,6 +270,36 @@ class ThresholdInferenceServiceTest {
     }
 
     @Nested
+    @DisplayName("inferirPaceLimiarDeMelhorEsforco")
+    class InferirPaceLimiarDeMelhorEsforco {
+
+        @Test
+        @DisplayName("10K exato — sem normalização, offset direto (mesmo cálculo de inferirPaceLimiarDeProva)")
+        void dez_k_exato_semNormalizacao() {
+            MelhorEsforcoDto marca = new MelhorEsforcoDto("10k", 10000.0, 2700, "4:30/km"); // 2700s
+            BigDecimal resultado = service.inferirPaceLimiarDeMelhorEsforco(marca);
+            assertThat(resultado.toString()).isEqualTo("4.6333");
+        }
+
+        @Test
+        @DisplayName("5000m — normalização + offset")
+        void cinco_mil_metros_normalizacaoEOffset() {
+            MelhorEsforcoDto marca = new MelhorEsforcoDto("5k", 5000.0, 1500, "5:00/km"); // 1500s
+            BigDecimal resultado = service.inferirPaceLimiarDeMelhorEsforco(marca);
+            assertThat(resultado.doubleValue()).isCloseTo(5.3457, within(0.02));
+        }
+
+        @Test
+        @DisplayName("resultado é determinístico — mesma marca gera sempre o mesmo valor")
+        void resultadoDeterministico() {
+            MelhorEsforcoDto marca = new MelhorEsforcoDto("10k", 10000.0, 2400, "4:00/km");
+            BigDecimal primeira = service.inferirPaceLimiarDeMelhorEsforco(marca);
+            BigDecimal segunda = service.inferirPaceLimiarDeMelhorEsforco(marca);
+            assertThat(primeira).isEqualByComparingTo(segunda);
+        }
+    }
+
+    @Nested
     @DisplayName("encontrarProvaValidaMaisRecente")
     class EncontrarProvaValidaMaisRecente {
 
@@ -428,6 +459,53 @@ class ThresholdInferenceServiceTest {
         void testeRecenteNaoEDesatualizado() {
             Atleta atleta = atletaComPace(new BigDecimal("4.50"), hoje.minusDays(30));
             assertThat(service.isPaceLimiarDesatualizado(atleta, hoje)).isFalse();
+        }
+    }
+
+    /**
+     * refactor-threshold-call-outside-transaction, design.md D1b: overload de primitivos —
+     * mesma lógica do overload `(Atleta, LocalDate)`, sem exigir a entidade carregada.
+     */
+    @Nested
+    @DisplayName("isPaceLimiarDesatualizado (overload de primitivos)")
+    class IsPaceLimiarDesatualizadoPrimitivos {
+
+        @Test
+        @DisplayName("paceLimiar null retorna true")
+        void paceLimiarNullRetornaTrue() {
+            assertThat(service.isPaceLimiarDesatualizado(null, hoje.minusDays(10), hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("dataUltimoTestePace null retorna true")
+        void dataUltimoTestePaceNullRetornaTrue() {
+            assertThat(service.isPaceLimiarDesatualizado(new BigDecimal("4.50"), null, hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("teste com mais de 90 dias retorna true")
+        void testeComMaisDe90DiasRetornaTrue() {
+            assertThat(service.isPaceLimiarDesatualizado(
+                    new BigDecimal("4.50"), hoje.minusDays(91), hoje)).isTrue();
+        }
+
+        @Test
+        @DisplayName("teste recente (< 90 dias) não é desatualizado")
+        void testeRecenteNaoEDesatualizado() {
+            assertThat(service.isPaceLimiarDesatualizado(
+                    new BigDecimal("4.50"), hoje.minusDays(30), hoje)).isFalse();
+        }
+
+        @Test
+        @DisplayName("overload (Atleta, LocalDate) delega pro overload de primitivos, não duplica a lógica")
+        void overloadAtletaDelegaProPrimitivos() {
+            Atleta atleta = atletaComPace(new BigDecimal("4.50"), hoje.minusDays(91));
+
+            boolean viaAtleta = service.isPaceLimiarDesatualizado(atleta, hoje);
+            boolean viaPrimitivos = service.isPaceLimiarDesatualizado(
+                    atleta.getPaceLimiar(), atleta.getDataUltimoTestePace(), hoje);
+
+            assertThat(viaAtleta).isEqualTo(viaPrimitivos).isTrue();
         }
     }
 

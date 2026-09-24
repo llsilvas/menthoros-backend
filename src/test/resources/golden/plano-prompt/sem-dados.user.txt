@@ -161,6 +161,15 @@ Nenhum treino realizado nos últimos 14 dias.
 ---
 
 
+## 📆 COBERTURA DA SEMANA (obrigatório)
+
+**Dias a cobrir:** SEGUNDA, QUARTA, SEXTA, SABADO
+Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDays`. Não deixe nenhum dia de fora e não repita dia.
+`restDays` é só para dias **desta lista** que deixam de ter treino. Os outros dias da semana já são folga do atleta: não os declare em `restDays` nem em `treinosPlanejados`.
+
+**Sinais de fadiga:** nenhum. Todos os dias recebem treino; `restDays` fica vazio.
+
+
 **ANÁLISE PRÉ-PLANEJAMENTO:**
 
 ❌ Nenhum treino realizado nos últimos 28 dias.

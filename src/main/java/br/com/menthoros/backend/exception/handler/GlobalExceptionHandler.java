@@ -13,6 +13,7 @@ import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
 import br.com.menthoros.backend.exception.EmailDeliveryException;
 import br.com.menthoros.backend.exception.FitParseException;
+import br.com.menthoros.backend.exception.IntervalsIcuApiException;
 import br.com.menthoros.backend.exception.IntervalsIcuRateLimitException;
 import br.com.menthoros.backend.exception.KeycloakIntegrationException;
 import br.com.menthoros.backend.exception.SignupRateLimitException;
@@ -452,6 +453,22 @@ public class GlobalExceptionHandler {
                 "message", ex.getMessage()
         );
         return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(body);
+    }
+
+    /**
+     * Falha ao chamar a API do intervals.icu num caminho síncrono (ex.: melhores esforços do
+     * atleta) — 502, sem detalhe de transporte no corpo (a mensagem já vem sem body cru, ver
+     * {@code IntervalsIcuClientImpl.traduz}).
+     */
+    @ExceptionHandler(IntervalsIcuApiException.class)
+    public ResponseEntity<Map<String, Object>> handleIntervalsIcuApiException(IntervalsIcuApiException ex) {
+        log.warn("Falha ao chamar o intervals.icu: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 502,
+                "error", "Bad Gateway",
+                "message", "Não foi possível carregar dados do intervals.icu agora. Tente de novo em instantes."
+        );
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(body);
     }
 
     /**

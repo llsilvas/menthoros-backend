@@ -96,6 +96,71 @@ class PlanoEstruturaReparadorTest {
         }
     }
 
+    /**
+     * fix-etapas-continuos-pace: quem soma etapas precisa distinguir o que a LLM prescreveu do que o
+     * reparo inventou — o aquec/desaq sintetizado se soma à prescrição e não pode inflar o total.
+     */
+    @Nested
+    @DisplayName("foiSintetizada")
+    class FoiSintetizada {
+
+        @Test
+        @DisplayName("aquecimento sintetizado pelo reparo → true")
+        void aquecimentoSintetizado() {
+            var r = reparador.reparar(treino("CONTINUO", etapa("PRINCIPAL"), etapa("DESAQUECIMENTO")), "CONTINUO");
+
+            assertThat(PlanoEstruturaReparador.foiSintetizada(r.etapas().get(0))).isTrue();
+        }
+
+        @Test
+        @DisplayName("desaquecimento sintetizado pelo reparo → true")
+        void desaquecimentoSintetizado() {
+            var r = reparador.reparar(treino("REGENERATIVO", etapa("AQUECIMENTO"), etapa("PRINCIPAL")), "REGENERATIVO");
+
+            assertThat(PlanoEstruturaReparador.foiSintetizada(r.etapas().get(2))).isTrue();
+        }
+
+        @Test
+        @DisplayName("PRINCIPAL sozinha: os dois extremos sintetizados, a PRINCIPAL não")
+        void soPrincipal() {
+            var r = reparador.reparar(treino("REGENERATIVO", etapa("PRINCIPAL")), "REGENERATIVO");
+
+            assertThat(r.etapas()).extracting(PlanoEstruturaReparador::foiSintetizada).containsExactly(true, false, true);
+        }
+
+        @Test
+        @DisplayName("etapas da LLM, inclusive após só reordenar, → false")
+        void reordenadoNaoEhSintetizado() {
+            var r = reparador.reparar(treino("TEMPO_RUN", etapa("PRINCIPAL"), etapa("AQUECIMENTO"), etapa("DESAQUECIMENTO")), "TEMPO_RUN");
+
+            assertThat(r.etapas()).noneMatch(PlanoEstruturaReparador::foiSintetizada);
+        }
+
+        @Test
+        @DisplayName("etapa null ou sem descrição → false")
+        void nullSemDescricao() {
+            assertThat(PlanoEstruturaReparador.foiSintetizada(null)).isFalse();
+            assertThat(PlanoEstruturaReparador.foiSintetizada(
+                    new EtapaTreinoLlmDto(1, "AQUECIMENTO", null, 10, null, null, 1, null))).isFalse();
+        }
+
+        @Test
+        @DisplayName("a marca só vale no fim da descrição — citada no meio do texto, não")
+        void marcaNoMeioNaoConta() {
+            var etapa = new EtapaTreinoLlmDto(1, "AQUECIMENTO",
+                    "Aquecimento " + PlanoEstruturaReparador.MARCA_SINTETIZADA + " revisado pelo coach", 10, 1.0, null, 1, null);
+
+            assertThat(PlanoEstruturaReparador.foiSintetizada(etapa)).isFalse();
+        }
+
+        @Test
+        @DisplayName("descrição comum da LLM → false")
+        void descricaoComum() {
+            assertThat(PlanoEstruturaReparador.foiSintetizada(
+                    new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve em Z1-Z2", 10, 1.0, null, 1, null))).isFalse();
+        }
+    }
+
     private double contador(String tipo, String acao) {
         var c = registry.find("plano_reparo_aplicado").tag("tipo", tipo).tag("acao", acao).counter();
         return c == null ? 0.0 : c.count();

@@ -13,6 +13,7 @@ import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
+import br.com.menthoros.backend.testsupport.LimiarPaceStatusProjectionTestStub;
 import br.com.menthoros.backend.testsupport.ProvaRepositoryTestStub;
 import br.com.menthoros.backend.testsupport.TsbRecalculoExecutorInline;
 import org.junit.jupiter.api.DisplayName;
@@ -87,6 +88,11 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
                 new Class<?>[]{AtletaRepository.class},
                 (proxy, method, args) -> {
                     if ("findById".equals(method.getName())) return Optional.of(atleta);
+                    // "recém-testado" — isPaceLimiarDesatualizado=false, resolverPaceSeNecessario
+                    // curto-circuita sem precisar estubar treinos/provas (teste não exercita pace).
+                    if ("findLimiarPaceStatusById".equals(method.getName())) {
+                        return Optional.of(LimiarPaceStatusProjectionTestStub.naoDesatualizado(assessoria.getId(), hoje));
+                    }
                     if ("toString".equals(method.getName())) return "AtletaRepositoryStub";
                     throw new UnsupportedOperationException("Método não suportado: " + method.getName());
                 }
@@ -132,15 +138,28 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
             }
         };
 
+        ThresholdInferenceService thresholdInferenceService = new ThresholdInferenceService();
+        AthleteThresholdUpdater athleteThresholdUpdater = new AthleteThresholdUpdater(
+                treinoRepo, ProvaRepositoryTestStub.semProvas(), thresholdInferenceService);
+        TsbDiaPersister tsbDiaPersister = new TsbDiaPersister(
+                treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaServiceStub,
+                athleteThresholdUpdater, planoMetadadosService);
+
         TsbServiceImpl service = new TsbServiceImpl(
                 treinoRepo,
                 planoRepo,
                 metricasRepo,
                 atletaRepo,
                 alertaServiceStub,
-                new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
+                athleteThresholdUpdater,
+                thresholdInferenceService,
                 new TsbRecalculoExecutorInline(),
-                planoMetadadosService
+                planoMetadadosService,
+                tsbDiaPersister,
+                // findLimiarPaceStatusById estuba "não desatualizado" acima — resolverPaceSeNecessario
+                // curto-circuita antes de buscarMelhorEsforcoSeguro, então melhorEsforcoService nunca
+                // é chamado neste teste.
+                null
         );
 
         RuntimeException propagada = assertThrows(RuntimeException.class,

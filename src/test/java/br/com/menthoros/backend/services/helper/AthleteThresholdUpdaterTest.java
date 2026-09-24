@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
@@ -37,6 +38,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -355,7 +357,8 @@ class AthleteThresholdUpdaterTest {
             assertThat(logCapture.list).noneMatch(evento -> evento.getLevel() == Level.WARN);
             assertThat(logCapture.list)
                     .anyMatch(evento -> evento.getLevel() == Level.INFO
-                            && evento.getFormattedMessage().contains("atualizado via prova"));
+                            && evento.getFormattedMessage().contains("atualizado")
+                            && evento.getFormattedMessage().contains("provaId="));
         }
     }
 
@@ -395,6 +398,354 @@ class AthleteThresholdUpdaterTest {
             verify(thresholdInferenceService).inferirFcLimiar(treinosBrutos, HOJE);
             verify(thresholdInferenceService).inferirPaceLimiar(treinosBrutos, HOJE);
             assertThat(metaDados.getFcLimiarEstimado()).isEqualTo(163);
+        }
+    }
+
+    /**
+     * use-best-effort-for-threshold-inference, design.md D2: seleção da marca elegível
+     * (5k/10k) dentro da lista de {@link MelhorEsforcoDto} devolvida por
+     * {@code MelhorEsforcoService.buscar}, 10k vence quando ambos presentes.
+     */
+    @Nested
+    @DisplayName("encontrarMelhorEsforcoValido (design.md D2)")
+    class EncontrarMelhorEsforcoValido {
+
+        @Test
+        @DisplayName("só 10k presente — devolve o 10k")
+        void so10kPresente() {
+            MelhorEsforcoDto dez = marcaDe("10k", 10000.0, 2400);
+            Optional<MelhorEsforcoDto> resultado = updater.encontrarMelhorEsforcoValido(List.of(dez));
+            assertThat(resultado).contains(dez);
+        }
+
+        @Test
+        @DisplayName("só 5k presente — devolve o 5k")
+        void so5kPresente() {
+            MelhorEsforcoDto cinco = marcaDe("5k", 5000.0, 1200);
+            Optional<MelhorEsforcoDto> resultado = updater.encontrarMelhorEsforcoValido(List.of(cinco));
+            assertThat(resultado).contains(cinco);
+        }
+
+        @Test
+        @DisplayName("10k e 5k presentes — 10k vence")
+        void dez_e_cincoPresentes_dezVence() {
+            MelhorEsforcoDto dez = marcaDe("10k", 10000.0, 2400);
+            MelhorEsforcoDto cinco = marcaDe("5k", 5000.0, 1200);
+            Optional<MelhorEsforcoDto> resultado = updater.encontrarMelhorEsforcoValido(List.of(cinco, dez));
+            assertThat(resultado).contains(dez);
+        }
+
+        @Test
+        @DisplayName("nenhuma das duas distâncias elegíveis — vazio")
+        void nenhumaElegivel_vazio() {
+            MelhorEsforcoDto oitocentos = marcaDe("800m", 800.0, 130);
+            MelhorEsforcoDto tresK = marcaDe("3k", 3000.0, 600);
+            Optional<MelhorEsforcoDto> resultado =
+                    updater.encontrarMelhorEsforcoValido(List.of(oitocentos, tresK));
+            assertThat(resultado).isEmpty();
+        }
+
+        private MelhorEsforcoDto marcaDe(String label, double metros, int segundos) {
+            return new MelhorEsforcoDto(label, metros, segundos, "pace");
+        }
+    }
+
+    /**
+     * refactor-threshold-call-outside-transaction, design.md D1: {@code resolverFontePace} extrai
+     * a lógica de {@code atualizarPaceLimiarInferido} sem receber {@code PlanoMetaDados} — mesmos
+     * 3 cenários (prova válida, só quintil, nenhuma fonte), função pura. use-best-effort-for-
+     * threshold-inference, design.md D1: ganha o degrau de melhor esforço entre prova e quintil.
+     */
+    @Nested
+    @DisplayName("resolverFontePace (design.md D1)")
+    class ResolverFontePace {
+
+        private final UUID atletaId = UUID.randomUUID();
+        private final UUID tenantId = UUID.randomUUID();
+
+        @Test
+        @DisplayName("prova válida tem precedência sobre o quintil, retorna PROVA_REGISTRADA com confiança ALTA")
+        void provaValidaTemPrecedencia() {
+            Prova provaValida = provaBase();
+            BigDecimal paceDaProva = new BigDecimal("4.6333");
+            when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of(provaValida));
+            when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of(provaValida)))
+                    .thenReturn(Optional.of(provaValida));
+            when(thresholdInferenceService.inferirPaceLimiarDeProva(provaValida)).thenReturn(paceDaProva);
+
+            Optional<PaceLimiarResolvido> resultado = updater.resolverFontePace(
+                    atletaId, tenantId, HOJE, List.of(), null, List.of());
+
+            assertThat(resultado).isPresent();
+            assertThat(resultado.get().valor()).isEqualByComparingTo(paceDaProva);
+            assertThat(resultado.get().confianca()).isEqualTo(ConfiancaInferencia.ALTA);
+            assertThat(resultado.get().fonte()).isEqualTo(FonteLimiarInferencia.PROVA_REGISTRADA);
+            verify(thresholdInferenceService, never()).inferirPaceLimiar(any(), any());
+        }
+
+        @Test
+        @DisplayName("prova válida vence sobre melhor esforço disponível (regressão de precedência)")
+        void provaValidaVenceSobreMelhorEsforco() {
+            Prova provaValida = provaBase();
+            BigDecimal paceDaProva = new BigDecimal("4.6333");
+            MelhorEsforcoDto dez = new MelhorEsforcoDto("10k", 10000.0, 2500, "pace");
+            when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of(provaValida));
+            when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of(provaValida)))
+                    .thenReturn(Optional.of(provaValida));
+            when(thresholdInferenceService.inferirPaceLimiarDeProva(provaValida)).thenReturn(paceDaProva);
+
+            Optional<PaceLimiarResolvido> resultado = updater.resolverFontePace(
+                    atletaId, tenantId, HOJE, List.of(), null, List.of(dez));
+
+            assertThat(resultado).isPresent();
+            assertThat(resultado.get().fonte()).isEqualTo(FonteLimiarInferencia.PROVA_REGISTRADA);
+            verify(thresholdInferenceService, never()).inferirPaceLimiarDeMelhorEsforco(any());
+        }
+
+        @Test
+        @DisplayName("sem prova válida, melhor esforço de 10k vence sobre o quintil, retorna MELHOR_ESFORCO "
+                + "com valor calculado a partir do tempo/distância do 10k (não só a fonte)")
+        void semProvaValida_melhorEsforcoVenceSobreQuintil() {
+            MelhorEsforcoDto dez = new MelhorEsforcoDto("10k", 10000.0, 2500, "pace");
+            BigDecimal paceDoMelhorEsforco = new BigDecimal("4.5000");
+            when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of());
+            when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of()))
+                    .thenReturn(Optional.empty());
+            when(thresholdInferenceService.inferirPaceLimiarDeMelhorEsforco(dez))
+                    .thenReturn(paceDoMelhorEsforco);
+
+            Optional<PaceLimiarResolvido> resultado = updater.resolverFontePace(
+                    atletaId, tenantId, HOJE, List.of(), null, List.of(dez));
+
+            assertThat(resultado).isPresent();
+            assertThat(resultado.get().valor()).isEqualByComparingTo(paceDoMelhorEsforco);
+            assertThat(resultado.get().confianca()).isEqualTo(ConfiancaInferencia.ALTA);
+            assertThat(resultado.get().fonte()).isEqualTo(FonteLimiarInferencia.MELHOR_ESFORCO);
+            verify(thresholdInferenceService, never()).inferirPaceLimiar(any(), any());
+        }
+
+        @Test
+        @DisplayName("sem prova nem melhor esforço válidos, fallback por quintil (regressão inalterada)")
+        void semProvaNemMelhorEsforco_fallbackQuintil() {
+            List<TreinoRealizado> treinos = treinos10ComFcMedia(150);
+            BigDecimal paceEstimado = new BigDecimal("4.7500");
+            when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of());
+            when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of()))
+                    .thenReturn(Optional.empty());
+            when(thresholdInferenceService.inferirPaceLimiar(treinos, HOJE))
+                    .thenReturn(Optional.of(new ThresholdEstimate<>(paceEstimado, 6, ConfiancaInferencia.MEDIA)));
+
+            Optional<PaceLimiarResolvido> resultado = updater.resolverFontePace(
+                    atletaId, tenantId, HOJE, treinos, null, List.of());
+
+            assertThat(resultado).isPresent();
+            assertThat(resultado.get().fonte()).isEqualTo(FonteLimiarInferencia.MEDIA_TREINOS);
+        }
+
+        @Test
+        @DisplayName("log INFO com fonte/marca dispara sempre que fonte=MELHOR_ESFORCO, mesmo sem "
+                + "paceLimiarAnterior (design.md D7, achado da 2ª rodada de pre-mortem)")
+        void logInfoDisparaSempreParaMelhorEsforco() {
+            logCapture = new ListAppender<>();
+            logCapture.start();
+            ((Logger) LoggerFactory.getLogger(AthleteThresholdUpdater.class)).addAppender(logCapture);
+            try {
+                MelhorEsforcoDto dez = new MelhorEsforcoDto("10k", 10000.0, 2500, "pace");
+                when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                        .thenReturn(List.of());
+                when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of()))
+                        .thenReturn(Optional.empty());
+                when(thresholdInferenceService.inferirPaceLimiarDeMelhorEsforco(dez))
+                        .thenReturn(new BigDecimal("4.5000"));
+
+                updater.resolverFontePace(atletaId, tenantId, HOJE, List.of(), null, List.of(dez));
+
+                assertThat(logCapture.list)
+                        .anyMatch(evento -> evento.getLevel() == Level.INFO
+                                && evento.getFormattedMessage().contains("10k"));
+            } finally {
+                ((Logger) LoggerFactory.getLogger(AthleteThresholdUpdater.class)).detachAppender(logCapture);
+            }
+        }
+
+        @Test
+        @DisplayName("sem prova válida, fallback por quintil, retorna MEDIA_TREINOS")
+        void semProvaValidaFallbackPorQuintil() {
+            List<TreinoRealizado> treinos = treinos10ComFcMedia(150);
+            BigDecimal paceEstimado = new BigDecimal("4.7500");
+            when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of());
+            when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of()))
+                    .thenReturn(Optional.empty());
+            when(thresholdInferenceService.inferirPaceLimiar(treinos, HOJE))
+                    .thenReturn(Optional.of(new ThresholdEstimate<>(paceEstimado, 6, ConfiancaInferencia.MEDIA)));
+
+            Optional<PaceLimiarResolvido> resultado = updater.resolverFontePace(
+                    atletaId, tenantId, HOJE, treinos, null, List.of());
+
+            assertThat(resultado).isPresent();
+            assertThat(resultado.get().valor()).isEqualByComparingTo(paceEstimado);
+            assertThat(resultado.get().confianca()).isEqualTo(ConfiancaInferencia.MEDIA);
+            assertThat(resultado.get().fonte()).isEqualTo(FonteLimiarInferencia.MEDIA_TREINOS);
+        }
+
+        @Test
+        @DisplayName("nenhuma fonte disponível retorna vazio (mesmo com lista de melhor esforço vazia)")
+        void nenhumaFonteDisponivelRetornaVazio() {
+            when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                    .thenReturn(List.of());
+            when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of()))
+                    .thenReturn(Optional.empty());
+            when(thresholdInferenceService.inferirPaceLimiar(List.of(), HOJE))
+                    .thenReturn(Optional.empty());
+
+            Optional<PaceLimiarResolvido> resultado = updater.resolverFontePace(
+                    atletaId, tenantId, HOJE, List.of(), null, List.of());
+
+            assertThat(resultado).isEmpty();
+        }
+
+        @Test
+        @DisplayName("delta de outlier (D5) usa paceLimiarAnterior, não uma entidade — e o WARN "
+                + "existente pra fonte=PROVA_REGISTRADA continua disparando sem alteração "
+                + "(não-regressão, achado da 3ª rodada de pre-mortem)")
+        void deltaDeOutlierUsaValorPrimitivo() {
+            logCapture = new ListAppender<>();
+            logCapture.start();
+            ((Logger) LoggerFactory.getLogger(AthleteThresholdUpdater.class)).addAppender(logCapture);
+            try {
+                Prova provaValida = provaBase();
+                when(provaRepository.findProvasRealizadasRecentes(eq(atletaId), eq(tenantId), any()))
+                        .thenReturn(List.of(provaValida));
+                when(thresholdInferenceService.encontrarProvaValidaMaisRecente(List.of(provaValida)))
+                        .thenReturn(Optional.of(provaValida));
+                when(thresholdInferenceService.inferirPaceLimiarDeProva(provaValida))
+                        .thenReturn(new BigDecimal("4.5000")); // delta = -30s/km vs. 5.0000
+
+                updater.resolverFontePace(atletaId, tenantId, HOJE, List.of(), new BigDecimal("5.0000"), List.of());
+
+                assertThat(logCapture.list)
+                        .anyMatch(evento -> evento.getLevel() == Level.WARN
+                                && evento.getFormattedMessage().contains("outlier"));
+            } finally {
+                ((Logger) LoggerFactory.getLogger(AthleteThresholdUpdater.class)).detachAppender(logCapture);
+            }
+        }
+
+        private ListAppender<ILoggingEvent> logCapture;
+    }
+
+    /**
+     * refactor-threshold-call-outside-transaction, design.md D1: {@code aplicarPaceLimiar} só faz
+     * a mutação — sem lógica de decisão.
+     */
+    @Nested
+    @DisplayName("aplicarPaceLimiar (design.md D1)")
+    class AplicarPaceLimiarTest {
+
+        @Test
+        @DisplayName("seta os 4 campos de metaDados a partir do resolvido")
+        void setaOsCamposDeMetaDados() {
+            PlanoMetaDados metaDados = metaDadosBase(atletaBase());
+            PaceLimiarResolvido resolvido = new PaceLimiarResolvido(
+                    FonteLimiarInferencia.PROVA_REGISTRADA, new BigDecimal("4.5000"), ConfiancaInferencia.ALTA);
+
+            updater.aplicarPaceLimiar(metaDados, resolvido, HOJE);
+
+            assertThat(metaDados.getPaceLimiarEstimado()).isEqualByComparingTo("4.5000");
+            assertThat(metaDados.getConfiancaInferenciaPace()).isEqualTo(ConfiancaInferencia.ALTA);
+            assertThat(metaDados.getFonteLimiarPace()).isEqualTo(FonteLimiarInferencia.PROVA_REGISTRADA);
+            assertThat(metaDados.getDataInferenciaLimiar()).isEqualTo(HOJE);
+        }
+
+        @Test
+        @DisplayName("resolvido vazio não altera metaDados")
+        void resolvidoVazioNaoAltera() {
+            PlanoMetaDados metaDados = metaDadosBase(atletaBase());
+
+            updater.aplicarPaceLimiar(metaDados, null, HOJE);
+
+            assertThat(metaDados.getPaceLimiarEstimado()).isNull();
+            assertThat(metaDados.getDataInferenciaLimiar()).isNull();
+        }
+    }
+
+    /**
+     * refactor-threshold-call-outside-transaction, seção 4: extraída de {@code atualizarLimiares}
+     * pra dar ao {@code TsbDiaPersister} um jeito de tratar só FC dentro da transação, já que pace
+     * agora chega pré-resolvido (fora dela). FC continua sem a separação decisão/aplicação (D3,
+     * YAGNI) — só precisava de um método próprio pra ser chamável isoladamente.
+     */
+    @Nested
+    @DisplayName("atualizarFcLimiar (seção 4, extraído de atualizarLimiares)")
+    class AtualizarFcLimiarTest {
+
+        @Test
+        @DisplayName("seta fcLimiarEstimado quando desatualizado e inferência retorna valor")
+        void setaFcEstimadoQuandoDesatualizado() {
+            Atleta atleta = atletaBase();
+            atleta.setFcLimiar(null);
+            atleta.setDataUltimoTesteFc(null);
+            PlanoMetaDados metaDados = metaDadosBase(atleta);
+
+            List<TreinoRealizado> treinos = treinos10ComFcMedia(163);
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(any(), any(), any(), any()))
+                    .thenReturn(treinos);
+            when(thresholdInferenceService.inferirFcLimiar(treinos, HOJE))
+                    .thenReturn(Optional.of(new ThresholdEstimate<>(163, 10, ConfiancaInferencia.ALTA)));
+
+            updater.atualizarFcLimiar(atleta, metaDados, HOJE);
+
+            assertThat(metaDados.getFcLimiarEstimado()).isEqualTo(163);
+            assertThat(metaDados.getConfiancaInferenciaFc()).isEqualTo(ConfiancaInferencia.ALTA);
+            assertThat(metaDados.getDataInferenciaLimiar()).isEqualTo(HOJE);
+        }
+
+        @Test
+        @DisplayName("FC recente (< 90 dias) não busca treinos nem altera metaDados")
+        void fcRecenteNaoAltera() {
+            Atleta atleta = atletaBase();
+            atleta.setFcLimiar(165);
+            atleta.setDataUltimoTesteFc(HOJE.minusDays(30));
+            PlanoMetaDados metaDados = metaDadosBase(atleta);
+
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(false);
+
+            updater.atualizarFcLimiar(atleta, metaDados, HOJE);
+
+            assertThat(metaDados.getFcLimiarEstimado()).isNull();
+            verifyNoInteractions(treinoRealizadoRepository);
+        }
+
+        @Test
+        @DisplayName("atleta sem assessoria retorna sem erro e sem atualizar")
+        void semAssessoriaNaoAltera() {
+            Atleta atleta = atletaBase();
+            atleta.setAssessoria(null);
+            atleta.setFcLimiar(null);
+            atleta.setDataUltimoTesteFc(null);
+            PlanoMetaDados metaDados = metaDadosBase(atleta);
+
+            when(thresholdInferenceService.isFcLimiarDesatualizado(atleta, HOJE)).thenReturn(true);
+
+            updater.atualizarFcLimiar(atleta, metaDados, HOJE);
+
+            assertThat(metaDados.getFcLimiarEstimado()).isNull();
+            verifyNoInteractions(treinoRealizadoRepository);
+        }
+
+        @Test
+        @DisplayName("atleta nulo lança IllegalArgumentException")
+        void atletaNuloLancaExcecao() {
+            PlanoMetaDados metaDados = metaDadosBase(atletaBase());
+
+            assertThatThrownBy(() -> updater.atualizarFcLimiar(null, metaDados, HOJE))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
     }
 

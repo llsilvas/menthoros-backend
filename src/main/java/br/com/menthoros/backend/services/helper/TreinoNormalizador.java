@@ -143,13 +143,13 @@ public class TreinoNormalizador {
                 EtapaTreinoLlmDto recTemplate = recuperacaoAdjacenteOu(etapas, i + 1);
                 if (recTemplate != null) i++;
 
-                int totalMinPorRep = fp.duracaoAceleracao() + fp.duracaoRecuperacao();
-                Double distTotal   = etapa.distanciaKm();
-                double distPorRep  = (distTotal != null && distTotal > 0 && totalMinPorRep > 0)
-                        ? arredondar2(distTotal / fp.n()) : 0.0;
-                double distAccel   = distPorRep > 0
-                        ? arredondar2(distPorRep * fp.duracaoAceleracao() / totalMinPorRep) : 0.0;
-                double distRecov   = distPorRep > 0 ? arredondar2(distPorRep - distAccel) : 0.0;
+                // Distância vem do pace, não da distanciaKm da etapa de origem: a LLM costuma pôr ali a
+                // distância do treino inteiro, e repartir 5 km por 5×(1min+2min) deu 1 km a cada 3min
+                // (caso real 22/09). A recuperação nasce 0.0 e corrigir-temporais aplica o pace de trote.
+                var paceAccel    = paceValidator.calcularPaceMedia(etapa.ritmoAlvo());
+                double distAccel = paceAccel.isPresent() && paceAccel.getAsDouble() > 0
+                        ? arredondar2(fp.duracaoAceleracao() / paceAccel.getAsDouble()) : 0.0;
+                double distRecov = 0.0;
 
                 String fcAccel = fp.zonaAceleracao() != null ? zonaParaFc(fp.zonaAceleracao(), zonas)
                         : (etapa.fcAlvoEtapa() != null ? etapa.fcAlvoEtapa() : "75-85% FCmax");
@@ -181,7 +181,9 @@ public class TreinoNormalizador {
         }
 
         if (!expandiu) return treino;
-        return recalcularDuracaoTreino(treino, reordenarEtapas(resultado));
+        // Só as etapas: a duração do treino fica com recalcular-duracao, que desempata pelo triângulo
+        // pace×dist×dur — sobrescrever aqui escondia dele a duração que a LLM prescreveu.
+        return treino.comEtapas(reordenarEtapas(resultado));
     }
 
     /** Retorna o próximo estágio se for RECUPERACAO, ou null caso contrário. */
@@ -265,6 +267,60 @@ public class TreinoNormalizador {
         };
         if (pace <= 0) return e;
         return e.comDistancia(arredondar2(e.duracaoMin() / pace));
+    }
+
+    /**
+     * Deriva a distância de cada etapa PRINCIPAL pelo pace: {@code duracaoMin ÷ pace médio do
+     * ritmoAlvo} da própria etapa. A LLM concentra ali a distância do treino inteiro — caso real
+     * 22/09: REGENERATIVO com PRINCIPAL de 5,5 km em 30min a 7:28-7:55/km (fix-etapas-continuos-pace).
+     * Sem duração ou sem {@code ritmoAlvo} interpretável, a etapa fica como a LLM mandou.
+     */
+    public TreinoPlanejadoLlmDto distanciaPrincipalPorPace(TreinoPlanejadoLlmDto treino) {
+        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
+        List<EtapaTreinoLlmDto> etapas = treino.etapas().stream().map(e -> {
+            if (!ehPrincipal(e)) return e;
+            var pace = paceDerivavel(e);
+            if (pace.isEmpty()) return e;
+            return e.comDistancia(arredondar2(e.duracaoMin() / pace.getAsDouble()));
+        }).toList();
+        return treino.comEtapas(etapas);
+    }
+
+    /**
+     * Se toda PRINCIPAL teve (ou teria) a distância derivada do pace por {@link #distanciaPrincipalPorPace}.
+     * Sem isso a soma das etapas carrega a distância que a LLM concentrou na PRINCIPAL e não serve para
+     * reconciliar o total. Treino sem PRINCIPAL devolve {@code false}: não há o que derivar.
+     */
+    public boolean principaisComDistanciaPorPace(TreinoPlanejadoLlmDto treino) {
+        if (treino.etapas() == null) return false;
+        List<EtapaTreinoLlmDto> principais = treino.etapas().stream().filter(this::ehPrincipal).toList();
+        return !principais.isEmpty() && principais.stream().allMatch(e -> paceDerivavel(e).isPresent());
+    }
+
+    /**
+     * Total do treino = soma das etapas, com tolerância zero e arredondado a 2 casas. Só para quem já
+     * sabe que toda etapa é confiável (distância derivada do pace, nada sintetizado) — ver a receita
+     * TRES_ETAPAS. Etapa sem distância torna a soma um piso, e o treino fica como está.
+     */
+    public TreinoPlanejadoLlmDto adotarSomaDasEtapas(TreinoPlanejadoLlmDto treino) {
+        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
+        if (treino.etapas().stream().anyMatch(e -> e.distanciaKm() == null || e.distanciaKm() <= 0)) return treino;
+        double soma = arredondar2(somarDistancias(treino.etapas()));
+        if (treino.distanciaKm() != null && treino.distanciaKm() == soma) return treino;
+        log.info("RECONCILIAÇÃO [{}]: distanciaKm={} km → soma das etapas pelo pace {} km (tolerância zero)",
+                treino.tipoTreino(), treino.distanciaKm(), soma);
+        return treino.comDistancia(soma);
+    }
+
+    private boolean ehPrincipal(EtapaTreinoLlmDto e) {
+        return "PRINCIPAL".equals(normalizarTipoEtapa(e.tipoEtapa()));
+    }
+
+    /** Pace médio do ritmoAlvo da etapa, quando a etapa tem duração e ritmo interpretável. */
+    private java.util.OptionalDouble paceDerivavel(EtapaTreinoLlmDto e) {
+        if (e.duracaoMin() == null || e.duracaoMin() <= 0) return java.util.OptionalDouble.empty();
+        var pace = paceValidator.calcularPaceMedia(e.ritmoAlvo());
+        return pace.isPresent() && pace.getAsDouble() > 0 ? pace : java.util.OptionalDouble.empty();
     }
 
     /**
@@ -443,6 +499,12 @@ public class TreinoNormalizador {
      * <p>Após expansão de etapas (Fartlek, Intervalado), a distância declarada no nível
      * do treino pode divergir da soma das etapas individuais. Se o desvio for superior
      * a 10%, substitui distanciaKm pela soma das etapas (que representa a realidade).</p>
+     *
+     * <p>Só reconcilia quando <b>todas</b> as etapas têm distância: uma etapa em 0/null (a LLM pode
+     * devolver {@code 0.0} quando não sabe calcular; "Fartlek livre" não é expandido) torna a soma
+     * um piso, não um total — substituir a distância da LLM por ela gerou um FARTLEK de 2,64 km em
+     * 50 min (fix-normalizador-etapas-incompletas). Sem distância da LLM, a soma continua sendo o
+     * melhor valor disponível.</p>
      */
     public TreinoPlanejadoLlmDto reconciliarDistanciaComEtapas(TreinoPlanejadoLlmDto treino) {
         if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
@@ -454,6 +516,15 @@ public class TreinoNormalizador {
             log.info("RECONCILIAÇÃO [{}]: distanciaKm não definida → usando soma das etapas: {} km",
                     treino.tipoTreino(), somaEtapas);
             return treino.comDistancia(somaEtapas);
+        }
+
+        long etapasSemDistancia = treino.etapas().stream()
+                .filter(e -> e.distanciaKm() == null || e.distanciaKm() <= 0)
+                .count();
+        if (etapasSemDistancia > 0) {
+            log.warn("RECONCILIAÇÃO [{}]: {} etapa(s) sem distância (soma parcial {} km) → mantendo distanciaKm={} km da LLM",
+                    treino.tipoTreino(), etapasSemDistancia, String.format("%.2f", somaEtapas), distanciaAtual);
+            return treino;
         }
 
         double desvioPercent = Math.abs(somaEtapas - distanciaAtual) / distanciaAtual;

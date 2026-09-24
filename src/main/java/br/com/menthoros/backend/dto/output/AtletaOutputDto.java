@@ -1,12 +1,13 @@
 package br.com.menthoros.backend.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import br.com.menthoros.backend.domain.billing.AthleteBilling;
+import br.com.menthoros.backend.enums.AthleteBillingStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.Sexo;
-import br.com.menthoros.backend.enums.StatusVencimentoPlano;
-import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import io.swagger.v3.oas.annotations.media.Schema;
+import org.jspecify.annotations.Nullable;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -53,18 +54,24 @@ public record AtletaOutputDto(
         @Schema(description = "Lista de provas do atleta")
         List<ProvaOutputDto> provas,
 
-        @Schema(description = "Tipo de plano do atleta com a assessoria; ausente quando não cadastrado", example = "MENSAL")
-        TipoPlanoAtleta tipoPlanoAtleta,
+        @Schema(description = "Status de cobrança derivado das mensalidades em aberto (UP_TO_DATE/DUE_SOON/OVERDUE); ausente sem contrato ativo nem mensalidade em aberto. Nunca carrega valor.", example = "DUE_SOON")
+        AthleteBillingStatus billingStatus,
 
-        @Schema(description = "Data de vencimento do plano do atleta com a assessoria; ausente quando não cadastrado", example = "2026-08-15")
-        LocalDate dataVencimentoPlano,
-
-        @Schema(description = "Status de vencimento derivado (EM_DIA/PROXIMO_VENCIMENTO/VENCIDO); ausente quando dataVencimentoPlano não cadastrada", example = "PROXIMO_VENCIMENTO")
-        StatusVencimentoPlano statusVencimentoPlano,
+        @Schema(description = "Próximo vencimento (menor em aberto, ou o próximo calculado); ausente junto com billingStatus", example = "2026-10-10")
+        LocalDate nextDueDate,
 
         @Schema(description = "E-mail do atleta; ausente em atletas cadastrados antes do campo existir", example = "joao@exemplo.com")
         String email,
 
         @Schema(description = "Sexo do atleta; ausente quando não cadastrado", example = "MASCULINO")
         Sexo sexo) {
+
+    /** Cobrança é resolvida pelo serviço, não pelo mapper (evita N+1 na listagem). */
+    public AtletaOutputDto withBilling(@Nullable AthleteBilling billing) {
+        return new AtletaOutputDto(id, nome, idade, pesoKg, alturaCm, objetivo, nivelExperiencia, diasDisponiveis,
+                diaPreferidoLongo, temLesao, descricaoLesao, provas,
+                billing != null ? billing.status() : null,
+                billing != null ? billing.nextDueDate() : null,
+                email, sexo);
+    }
 }

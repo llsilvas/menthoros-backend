@@ -65,7 +65,9 @@ class RepairTurnRevalidationIntegrationTest {
                         new EtapaFcValidator(),
                         new PlanoEstruturaReparador(new SimpleMeterRegistry()),
                         new PaceValidator(),
-                        new SimpleMeterRegistry()));
+                        new SimpleMeterRegistry()),
+                new DescansoNaoAutorizadoConverter(new SimpleMeterRegistry()),
+                new WeeklyCoverageValidator(), new LongRunAnchor());
     }
 
     @Test
@@ -95,7 +97,7 @@ class RepairTurnRevalidationIntegrationTest {
     // ---------- arranjo ----------
 
     private static PlanoSemanalLlmDto plano(TreinoPlanejadoLlmDto... treinos) {
-        return new PlanoSemanalLlmDto(30.0, 30.0, null, null, "ATIVO", "base aeróbica", List.of(treinos));
+        return new PlanoSemanalLlmDto(30.0, 30.0, null, null, "ATIVO", "base aeróbica", List.of(treinos), List.of());
     }
 
     private static TreinoPlanejadoLlmDto treinoValido(String dia) {

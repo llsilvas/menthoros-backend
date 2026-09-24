@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.domain.billing.AthleteBilling;
 import br.com.menthoros.backend.dto.input.AtletaInputDto;
 import br.com.menthoros.backend.dto.output.AtletaOutputDto;
 import br.com.menthoros.backend.entity.Assessoria;
@@ -15,6 +16,7 @@ import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.specification.AtletaSpecification;
+import br.com.menthoros.backend.services.AthleteContractService;
 import br.com.menthoros.backend.services.AtletaService;
 import br.com.menthoros.backend.services.AthleteInviteService;
 import br.com.menthoros.backend.services.TsbService;
@@ -29,7 +31,10 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -45,6 +50,8 @@ public class AtletaServiceImpl implements AtletaService {
     private final TsbService tsbService;
     private final AthleteInviteService athleteInviteService;
     private final LlmCallLedger llmCallLedger;
+    private final AthleteContractService athleteContractService;
+    private final Clock clock;
 
     private static final String HAS_TENANT =
             "T(br.com.menthoros.backend.multitenancy.TenantContext).hasTenant()";
@@ -126,7 +133,7 @@ public class AtletaServiceImpl implements AtletaService {
 
         atletaMapper.updateEntity(atletaInputDto, atleta);
         Atleta saved = atletaRepository.save(atleta);
-        return atletaMapper.toOutputDto(saved);
+        return comCobranca(atletaMapper.toOutputDto(saved));
     }
 
     /**
@@ -160,6 +167,8 @@ public class AtletaServiceImpl implements AtletaService {
         atleta.setAtivo(AtletaStatus.INATIVO);
         atletaRepository.save(atleta);
         llmCallLedger.anonimizarRespostasDoAtleta(id);
+        // sem atleta não há a quem cobrar: o contrato ativo encerra junto, senão o scheduler gera mensalidade para ninguém
+        athleteContractService.findActiveContract(id).ifPresent(c -> athleteContractService.end(id));
     }
 
     /**
@@ -185,7 +194,7 @@ public class AtletaServiceImpl implements AtletaService {
 
         Hibernate.initialize(atleta.getProvas());
         Hibernate.initialize(atleta.getDiasDisponiveis());
-        return atletaMapper.toOutputDto(atleta);
+        return comCobranca(atletaMapper.toOutputDto(atleta));
     }
 
     /**
@@ -225,11 +234,19 @@ public class AtletaServiceImpl implements AtletaService {
             spec = spec.and(AtletaSpecification.withTemLesao(temLesao));
         }
 
-        return atletaRepository.findAll(spec).stream().map(atleta -> {
+        List<AtletaOutputDto> atletas = atletaRepository.findAll(spec).stream().map(atleta -> {
             Hibernate.initialize(atleta.getDiasDisponiveis());
             Hibernate.initialize(atleta.getProvas());
             return atletaMapper.toOutputDto(atleta);
         }).toList();
+        // uma resolução em lote para a lista inteira — sem N+1 (design D4)
+        Map<UUID, AthleteBilling> cobranca = athleteContractService.resolveBilling(
+                atletas.stream().map(AtletaOutputDto::id).toList(), LocalDate.now(clock));
+        return atletas.stream().map(dto -> dto.withBilling(cobranca.get(dto.id()))).toList();
+    }
+
+    private AtletaOutputDto comCobranca(AtletaOutputDto dto) {
+        return dto.withBilling(athleteContractService.resolveBilling(dto.id(), LocalDate.now(clock)).orElse(null));
     }
 
     /**

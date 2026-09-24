@@ -185,6 +185,32 @@ class SessionResolverTest {
             return resolver.resolverPlano(planoV2, ZONAS).treinosPlanejados().get(0);
         }
 
+        @Test
+        @DisplayName("CA11: restDays do plano v2 sobrevive à conversão para v1 (o resolver reconstrói campo a campo)")
+        void restDaysSobrevivemAConversao() {
+            BlocoDto bloco = new BlocoDto(Papel.PRINCIPAL, 1, BigDecimal.valueOf(30), UnidadeQuantidade.MIN, Zona.Z2, null);
+            TreinoPlanejadoLlmDtoV2 treinoV2 = new TreinoPlanejadoLlmDtoV2("SEGUNDA", "CONTINUO", "justificativa",
+                    List.of(bloco));
+            var descanso = new br.com.menthoros.backend.dto.llm.RestDayLlmDto("QUINTA", "check-in de hoje: DESCANSAR");
+            PlanoSemanalLlmDtoV2 planoV2 = umPlanoCom(treinoV2).toBuilder().restDays(List.of(descanso)).build();
+
+            PlanoSemanalLlmDto resolvido = resolver.resolverPlano(planoV2, ZONAS);
+
+            assertThat(resolvido.restDays()).containsExactly(descanso);
+        }
+
+        @Test
+        @DisplayName("plano v2 sem descanso resolve com restDays vazio, nunca null")
+        void semDescansoListaVazia() {
+            BlocoDto bloco = new BlocoDto(Papel.PRINCIPAL, 1, BigDecimal.valueOf(30), UnidadeQuantidade.MIN, Zona.Z2, null);
+            TreinoPlanejadoLlmDtoV2 treinoV2 = new TreinoPlanejadoLlmDtoV2("SEGUNDA", "CONTINUO", "justificativa",
+                    List.of(bloco));
+
+            PlanoSemanalLlmDto resolvido = resolver.resolverPlano(umPlanoCom(treinoV2), ZONAS);
+
+            assertThat(resolvido.restDays()).isNotNull().isEmpty();
+        }
+
         private PlanoSemanalLlmDtoV2 umPlanoCom(TreinoPlanejadoLlmDtoV2 treinoV2) {
             return PlanoSemanalLlmDtoV2.builder()
                     .volumePlanejadoKm(30.0)

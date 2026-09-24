@@ -59,6 +59,8 @@ class TreinoPlanejadoServiceTest {
     @Mock private TssCalculatorService tssCalculatorService;
     @Mock private TreinoMapper treinoMapper;
     @Mock private EtapaMapper etapaMapper;
+    @org.mockito.Spy private final io.micrometer.core.instrument.MeterRegistry meterRegistry =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
 
     @InjectMocks private TreinoPlanejadoServiceImpl service;
 
@@ -85,6 +87,50 @@ class TreinoPlanejadoServiceTest {
     }
 
     @Nested
+    @DisplayName("excluirTreino — dia sem prescrição")
+    class ExcluirTreinoCobertura {
+
+        @Test
+        @DisplayName("/qa: excluir o último treino do dia registra o dia em branco (log + contador)")
+        void diaFicaSemPrescricao() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setDiaSemana(DiaSemana.SEXTA);
+            plano.getTreinosPlanejados().add(treino);
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treino.getId(), planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+
+            service.excluirTreino(planoId, treino.getId());
+
+            assertThat(contadorDiaEmBranco()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("dia que ainda tem descanso prescrito não conta como dia em branco")
+        void diaComDescansoNaoConta() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setDiaSemana(DiaSemana.SEXTA);
+            plano.getTreinosPlanejados().add(treino);
+            plano.setRestDays(new ArrayList<>(List.of(
+                    new br.com.menthoros.backend.domain.plano.RestDay("SEXTA", "check-in de hoje: DESCANSAR"))));
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treino.getId(), planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+
+            service.excluirTreino(planoId, treino.getId());
+
+            assertThat(contadorDiaEmBranco()).isZero();
+        }
+
+        private double contadorDiaEmBranco() {
+            var c = meterRegistry.find("plano_dia_sem_prescricao").tag("origem", "coach").counter();
+            return c == null ? 0.0 : c.count();
+        }
+    }
+
+    @Nested
     @DisplayName("adicionarTreino")
     class AdicionarTreino {
 
@@ -105,6 +151,41 @@ class TreinoPlanejadoServiceTest {
             assertThat(treino.isAdicionadoPeloCoach()).isTrue();
             assertThat(treino.getStatusTreino()).isEqualTo(TreinoExecucaoStatus.PENDENTE);
             assertThat(treino.getFonteDados()).isEqualTo(FonteDados.MANUAL);
+        }
+
+        @Test
+        @DisplayName("CA14: treino criado num dia de descanso remove aquele descanso do plano")
+        void treinoEmDiaDeDescansoRemoveODescanso() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            plano.setRestDays(new ArrayList<>(List.of(
+                    new br.com.menthoros.backend.domain.plano.RestDay("SEXTA", "check-in de hoje: DESCANSAR"),
+                    new br.com.menthoros.backend.domain.plano.RestDay("QUINTA", "36h desde o último intensivo"))));
+            stubPlanoFound(plano);
+            TreinoPlanejado saved = new TreinoPlanejado();
+            when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
+            when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+
+            service.adicionarTreino(planoId, dtoSimples(DATA_SEXTA));
+
+            assertThat(plano.getRestDaysOuVazio())
+                    .extracting(br.com.menthoros.backend.domain.plano.RestDay::dayOfWeek)
+                    .containsExactly("QUINTA");
+        }
+
+        @Test
+        @DisplayName("treino em dia sem descanso não mexe na lista de descansos")
+        void treinoEmDiaSemDescansoNaoMexe() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            var descansos = List.of(new br.com.menthoros.backend.domain.plano.RestDay("QUINTA", "motivo"));
+            plano.setRestDays(new ArrayList<>(descansos));
+            stubPlanoFound(plano);
+            TreinoPlanejado saved = new TreinoPlanejado();
+            when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
+            when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+
+            service.adicionarTreino(planoId, dtoSimples(DATA_SEXTA));
+
+            assertThat(plano.getRestDaysOuVazio()).isEqualTo(descansos);
         }
 
         @Test
@@ -716,6 +797,103 @@ class TreinoPlanejadoServiceTest {
         }
 
         @Test
+        @DisplayName("aumentar a distância do treino soma o delta no volume do plano (CA1)")
+        void aumentarDistanciaSomaDeltaNoVolumeDoPlano() {
+            // Antes desta change, editarTreino nunca ajustava o volume do plano — só
+            // adicionarTreino/excluirTreino faziam isso. O campo persistido do plano ficava
+            // congelado no valor de quando o plano foi gerado.
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            plano.setVolumePlanejadoKm(BigDecimal.valueOf(20.0));
+            plano.setVolumeAlvoKm(BigDecimal.valueOf(20.0));
+            TreinoPlanejado treino = criarTreino(plano); // distanciaKm = 10.0
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, BigDecimal.valueOf(18.0), null, null, null, null, null, null);
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            assertThat(plano.getVolumePlanejadoKm()).isEqualByComparingTo(BigDecimal.valueOf(28.0));
+            assertThat(plano.getVolumeAlvoKm()).isEqualByComparingTo(BigDecimal.valueOf(28.0));
+            verify(planoSemanalRepository).save(plano);
+        }
+
+        @Test
+        @DisplayName("reduzir a distância do treino subtrai o delta no volume do plano (CA2)")
+        void reduzirDistanciaSubtraiDeltaNoVolumeDoPlano() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            plano.setVolumePlanejadoKm(BigDecimal.valueOf(20.0));
+            plano.setVolumeAlvoKm(BigDecimal.valueOf(20.0));
+            TreinoPlanejado treino = criarTreino(plano); // distanciaKm = 10.0
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, BigDecimal.valueOf(3.0), null, null, null, null, null, null);
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            assertThat(plano.getVolumePlanejadoKm()).isEqualByComparingTo(BigDecimal.valueOf(13.0));
+            verify(planoSemanalRepository).save(plano);
+        }
+
+        @Test
+        @DisplayName("patch sem distanciaKm não mexe no volume do plano nem salva o plano (CA3)")
+        void patchSemDistanciaNaoMexeNoVolumeDoPlano() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            plano.setVolumePlanejadoKm(BigDecimal.valueOf(20.0));
+            plano.setVolumeAlvoKm(BigDecimal.valueOf(20.0));
+            TreinoPlanejado treino = criarTreino(plano); // distanciaKm = 10.0
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, "Ajuste de texto só", null, null, null, null, null, null, null);
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            assertThat(plano.getVolumePlanejadoKm()).isEqualByComparingTo(BigDecimal.valueOf(20.0));
+            verify(planoSemanalRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("distância anterior nula não lança NPE e soma o volume normalmente (CA4)")
+        void distanciaAnteriorNulaNaoLancaNpe() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            plano.setVolumePlanejadoKm(BigDecimal.ZERO);
+            plano.setVolumeAlvoKm(BigDecimal.ZERO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setDistanciaKm(null);
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, null, BigDecimal.valueOf(4.0), null, null, null, null, null, null);
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            assertThat(plano.getVolumePlanejadoKm()).isEqualByComparingTo(BigDecimal.valueOf(4.0));
+            verify(planoSemanalRepository).save(plano);
+        }
+
+        @Test
         @DisplayName("ignora campos null — patch semântico preserva valores existentes")
         void ignoraCamposNullPatchSemantico() {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
@@ -779,7 +957,7 @@ class TreinoPlanejadoServiceTest {
             // asserção não prova escala nenhuma — e escala é exatamente o que o BUG-CONF-001 quebrava.
             TreinoPlanejadoServiceImpl servicoComCalculadorReal = new TreinoPlanejadoServiceImpl(
                     planoSemanalRepository, treinoPlanejadoRepository, new TssCalculatorService(),
-                    treinoMapper, etapaMapper);
+                    treinoMapper, etapaMapper, meterRegistry);
 
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
             TreinoPlanejado treino = criarTreino(plano);

@@ -234,10 +234,19 @@ class TsbServiceImplRecalculoSemanticaTest {
         PlanoMetadadosRepository planoRepo = planoRepoStub(planoMetaDados, salvo);
 
         MetricasAlertaService alertaService = alertaServiceStub();
+        ThresholdInferenceService thresholdInferenceService = new ThresholdInferenceService();
+        AthleteThresholdUpdater athleteThresholdUpdater = new AthleteThresholdUpdater(
+                treinoRepo, ProvaRepositoryTestStub.semProvas(), thresholdInferenceService);
+        PlanoMetadadosService planoMetadadosService = planoMetadadosServiceStub(planoMetaDados);
+        TsbDiaPersister tsbDiaPersister = new TsbDiaPersister(
+                treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
+                athleteThresholdUpdater, planoMetadadosService);
 
+        // Só exercitado via recalcularHistoricoCompleto (caminho legado, sem
+        // buscarMelhorEsforcoSeguro) — melhorEsforcoService nunca é chamado neste teste.
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
-                new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
-                new TsbRecalculoExecutorInline(), planoMetadadosServiceStub(planoMetaDados));
+                athleteThresholdUpdater, thresholdInferenceService,
+                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null);
     }
 
     private TsbServiceImpl construirServiceComPrimeiroTreino(
@@ -349,10 +358,19 @@ class TsbServiceImplRecalculoSemanticaTest {
         );
 
         MetricasAlertaService alertaService = alertaServiceStub();
+        ThresholdInferenceService thresholdInferenceService = new ThresholdInferenceService();
+        AthleteThresholdUpdater athleteThresholdUpdater = new AthleteThresholdUpdater(
+                treinoRepo, ProvaRepositoryTestStub.semProvas(), thresholdInferenceService);
+        PlanoMetadadosService planoMetadadosService = planoMetadadosServiceStub(planoMetaDados);
+        TsbDiaPersister tsbDiaPersister = new TsbDiaPersister(
+                treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, alertaService,
+                athleteThresholdUpdater, planoMetadadosService);
 
+        // Só exercitado via recalcularHistoricoCompleto (caminho legado, sem
+        // buscarMelhorEsforcoSeguro) — melhorEsforcoService nunca é chamado neste teste.
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, alertaService,
-                new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
-                new TsbRecalculoExecutorInline(), planoMetadadosServiceStub(planoMetaDados));
+                athleteThresholdUpdater, thresholdInferenceService,
+                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null);
     }
 
     private static AtletaRepository atletaRepoStub(Atleta atleta) {

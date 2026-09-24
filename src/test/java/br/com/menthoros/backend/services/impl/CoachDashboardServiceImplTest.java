@@ -19,14 +19,22 @@ import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
-import br.com.menthoros.backend.enums.StatusVencimentoPlano;
-import br.com.menthoros.backend.enums.TipoPlanoAtleta;
+import br.com.menthoros.backend.domain.billing.AthleteBilling;
+import br.com.menthoros.backend.enums.AthleteBillingStatus;
+import br.com.menthoros.backend.services.AthleteContractService;
+import br.com.menthoros.backend.enums.StatusSugestao;
+import java.util.Map;
+import java.util.Set;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.SugestaoCoachRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -69,6 +77,8 @@ class CoachDashboardServiceImplTest {
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock private CoachAttentionQueueService coachAttentionQueueService;
+    @Mock private AthleteContractService athleteContractService;
+    @Mock private SugestaoCoachRepository sugestaoCoachRepository;
 
     private CoachDashboardServiceImpl service;
     private UUID tenantId;
@@ -80,9 +90,14 @@ class CoachDashboardServiceImplTest {
         Clock clock = Clock.fixed(Instant.parse("2026-06-17T12:00:00Z"), ZoneOffset.UTC);
         service = new CoachDashboardServiceImpl(
                 atletaRepository, metricasDiariasRepository, planoMetadadosRepository,
-                treinoRealizadoRepository, treinoPlanejadoRepository, coachAttentionQueueService, clock);
+                treinoRealizadoRepository, treinoPlanejadoRepository, coachAttentionQueueService,
+                athleteContractService, sugestaoCoachRepository, clock);
+        // Default: ninguém com cobrança (os testes de cobrança sobrescrevem)
+        lenient().when(athleteContractService.resolveBilling(anyCollection(), any(LocalDate.class))).thenReturn(Map.of());
         // Default: sem itens de atenção (cada teste de calendário que precisar sobrescreve)
         lenient().when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of());
+        // Default: ninguém com sugestão pendente (os testes de add-pending-suggestion-badge sobrescrevem)
+        lenient().when(sugestaoCoachRepository.findAtletaIdsByTenantIdAndStatus(any(), any(), any())).thenReturn(Set.of());
     }
 
     @AfterEach
@@ -196,8 +211,8 @@ class CoachDashboardServiceImplTest {
         }
 
         @Test
-        @DisplayName("dataVencimentoPlano nulo → tipoPlanoAtleta e statusVencimentoPlano ausentes")
-        void semDadosDeCobranca() {
+        @DisplayName("atleta sem cobrança → billingStatus e nextDueDate ausentes (CA1)")
+        void semCobranca() {
             Atleta a = atletaSemMetricas("Sem", "Dados");
             when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
             when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
@@ -205,73 +220,57 @@ class CoachDashboardServiceImplTest {
 
             CoachAtletaResumoDto dto = service.getRoster().get(0);
 
-            assertThat(dto.tipoPlanoAtleta()).isNull();
-            assertThat(dto.dataVencimentoPlano()).isNull();
-            assertThat(dto.statusVencimentoPlano()).isNull();
+            assertThat(dto.billingStatus()).isNull();
+            assertThat(dto.nextDueDate()).isNull();
         }
 
         @Test
-        @DisplayName("dataVencimentoPlano no passado → VENCIDO")
-        void dataNoPassadoRetornaVencido() {
-            Atleta a = atletaSemMetricas("Ana", "Vencida").toBuilder()
-                    .tipoPlanoAtleta(TipoPlanoAtleta.ANUAL)
-                    .dataVencimentoPlano(HOJE.minusDays(5))
-                    .build();
-            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
-            when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
-            when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
-
-            CoachAtletaResumoDto dto = service.getRoster().get(0);
-
-            assertThat(dto.tipoPlanoAtleta()).isEqualTo(TipoPlanoAtleta.ANUAL);
-            assertThat(dto.statusVencimentoPlano()).isEqualTo(StatusVencimentoPlano.VENCIDO);
-        }
-
-        @Test
-        @DisplayName("dataVencimentoPlano dentro de 7 dias → PROXIMO_VENCIMENTO")
-        void dataProximaRetornaProximoVencimento() {
-            Atleta a = atletaSemMetricas("Bia", "Proxima").toBuilder()
-                    .dataVencimentoPlano(HOJE.plusDays(4)).build();
-            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
-            when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
-            when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
-
-            assertThat(service.getRoster().get(0).statusVencimentoPlano())
-                    .isEqualTo(StatusVencimentoPlano.PROXIMO_VENCIMENTO);
-        }
-
-        @Test
-        @DisplayName("dataVencimentoPlano fora da janela de alerta → EM_DIA")
-        void dataDistanteRetornaEmDia() {
-            Atleta a = atletaSemMetricas("Caio", "Distante").toBuilder()
-                    .dataVencimentoPlano(HOJE.plusDays(60)).build();
-            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
-            when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
-            when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
-
-            assertThat(service.getRoster().get(0).statusVencimentoPlano())
-                    .isEqualTo(StatusVencimentoPlano.EM_DIA);
-        }
-
-        @Test
-        @DisplayName("múltiplos atletas com vencimentos diferentes usam o mesmo 'hoje' no roster")
-        void multiplosAtletasVencimentosDiferentes() {
-            Atleta vencido = atletaSemMetricas("Vencido", "S").toBuilder()
-                    .dataVencimentoPlano(HOJE.minusDays(1)).build();
-            Atleta proximo = atletaSemMetricas("Proximo", "S").toBuilder()
-                    .dataVencimentoPlano(HOJE.plusDays(1)).build();
-            Atleta emDia = atletaSemMetricas("EmDia", "S").toBuilder()
-                    .dataVencimentoPlano(HOJE.plusDays(90)).build();
+        @DisplayName("cobrança vem do serviço de contrato, resolvida uma vez para o roster inteiro com o 'hoje' do clock (CA6)")
+        void cobrancaEmLote() {
+            Atleta vencido = atletaSemMetricas("Vencido", "S");
+            Atleta proximo = atletaSemMetricas("Proximo", "S");
+            Atleta semNada = atletaSemMetricas("Sem", "S");
             when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId))
-                    .thenReturn(List.of(vencido, proximo, emDia));
-            for (Atleta a : List.of(vencido, proximo, emDia)) {
+                    .thenReturn(List.of(vencido, proximo, semNada));
+            for (Atleta a : List.of(vencido, proximo, semNada)) {
                 when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
                 when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
             }
+            when(athleteContractService.resolveBilling(
+                    eq(List.of(vencido.getId(), proximo.getId(), semNada.getId())), eq(HOJE)))
+                    .thenReturn(Map.of(
+                            vencido.getId(), new AthleteBilling(AthleteBillingStatus.OVERDUE, HOJE.minusDays(2)),
+                            proximo.getId(), new AthleteBilling(AthleteBillingStatus.DUE_SOON, HOJE.plusDays(3))));
 
-            assertThat(service.getRoster()).extracting(CoachAtletaResumoDto::statusVencimentoPlano)
-                    .containsExactly(StatusVencimentoPlano.VENCIDO, StatusVencimentoPlano.PROXIMO_VENCIMENTO,
-                            StatusVencimentoPlano.EM_DIA);
+            List<CoachAtletaResumoDto> roster = service.getRoster();
+
+            assertThat(roster).extracting(CoachAtletaResumoDto::billingStatus)
+                    .containsExactly(AthleteBillingStatus.OVERDUE, AthleteBillingStatus.DUE_SOON, null);
+            assertThat(roster).extracting(CoachAtletaResumoDto::nextDueDate)
+                    .containsExactly(HOJE.minusDays(2), HOJE.plusDays(3), null);
+            verify(athleteContractService, times(1)).resolveBilling(anyCollection(), any(LocalDate.class));
+        }
+
+        @Test
+        @DisplayName("hasPendingSuggestion reflete o set resolvido uma vez para o roster inteiro (CA1/CA2/CA4)")
+        void hasPendingSuggestionEmLote() {
+            Atleta comSugestao = atletaSemMetricas("Com", "Sugestao");
+            Atleta semSugestao = atletaSemMetricas("Sem", "Sugestao");
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId))
+                    .thenReturn(List.of(comSugestao, semSugestao));
+            for (Atleta a : List.of(comSugestao, semSugestao)) {
+                when(metricasDiariasRepository.findLatestByAtletaId(a.getId())).thenReturn(Optional.empty());
+                when(treinoRealizadoRepository.findTopByAtletaIdOrderByDataTreinoDesc(a.getId())).thenReturn(Optional.empty());
+            }
+            when(sugestaoCoachRepository.findAtletaIdsByTenantIdAndStatus(eq(tenantId), eq(StatusSugestao.PENDING), any()))
+                    .thenReturn(Set.of(comSugestao.getId()));
+
+            List<CoachAtletaResumoDto> roster = service.getRoster();
+
+            assertThat(roster).extracting(CoachAtletaResumoDto::hasPendingSuggestion)
+                    .containsExactly(true, false);
+            verify(sugestaoCoachRepository, times(1))
+                    .findAtletaIdsByTenantIdAndStatus(eq(tenantId), eq(StatusSugestao.PENDING), any());
         }
 
         private Atleta atletaSemMetricas(String nome, String sobrenome) {
@@ -330,6 +329,22 @@ class CoachDashboardServiceImplTest {
             CoachCalendarioDto cal = service.getCalendarioSemanal(null);
 
             assertThat(cal.treinos()).extracting(t -> t.nomeAtleta(), t -> t.hasAlert())
+                    .containsExactly(tuple("Ana", true), tuple("Bia", false));
+        }
+
+        @Test
+        @DisplayName("hasPendingSuggestion = true para atleta com SugestaoCoach PENDING (CA3, fecha add-coach-suggestion-inbox)")
+        void hasPendingSuggestionReal() {
+            Atleta ana = Atleta.builder().id(UUID.randomUUID()).nome("Ana").build();
+            Atleta bia = Atleta.builder().id(UUID.randomUUID()).nome("Bia").build();
+            when(treinoPlanejadoRepository.findByTenantAndDataBetween(tenantId, INICIO_SEMANA, FIM_SEMANA))
+                    .thenReturn(List.of(planejado(ana, HOJE, TipoTreino.LONGO), planejado(bia, HOJE, TipoTreino.REGENERATIVO)));
+            when(sugestaoCoachRepository.findAtletaIdsByTenantIdAndStatus(eq(tenantId), eq(StatusSugestao.PENDING), any()))
+                    .thenReturn(Set.of(ana.getId()));
+
+            CoachCalendarioDto cal = service.getCalendarioSemanal(null);
+
+            assertThat(cal.treinos()).extracting(t -> t.nomeAtleta(), t -> t.hasPendingSuggestion())
                     .containsExactly(tuple("Ana", true), tuple("Bia", false));
         }
     }
@@ -452,6 +467,21 @@ class CoachDashboardServiceImplTest {
             assertThat(dashboard.attentionQueue()).containsExactly(atenção);
             assertThat(dashboard.calendar().semanaInicio()).isEqualTo(INICIO_SEMANA);
             assertThat(dashboard.insights().kpis().treinosPlanejadosSemana()).isGreaterThanOrEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("query de sugestão pendente roda exatamente 1x, não 2x nem 3x (CA8, design D2, achado de QA)")
+        void queryDeSugestaoPendenteRodaExatamenteUmaVez() {
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of());
+            when(treinoPlanejadoRepository.findByTenantAndDataBetween(eq(tenantId), any(), any())).thenReturn(List.of());
+
+            service.getDashboard(new CoachDashboardQueryDto(
+                    null, null, null, 0, 10, null, null, null));
+
+            // getDashboard() resolve uma vez e reusa nos overloads privados de getRoster,
+            // getInsights e getCalendarioSemanal — nenhum deles rechama a versão pública.
+            verify(sugestaoCoachRepository, times(1))
+                    .findAtletaIdsByTenantIdAndStatus(eq(tenantId), eq(StatusSugestao.PENDING), any());
         }
 
         @Test

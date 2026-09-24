@@ -57,7 +57,7 @@ class CoachDashboardControllerTest {
         when(service.getRoster()).thenReturn(List.of(new CoachAtletaResumoDto(
                 UUID.randomUUID(), "Ana Silva", 52.3, 44.0, 8.3, "BUILD", "warning",
                 LocalDate.of(2026, 6, 15), new BigDecimal("32.5"), 80, "FORMA_IDEAL",
-                null, null, null)));
+                null, null, false)));
 
         mockMvc.perform(get("/api/v1/coach/atletas"))
                 .andExpect(status().isOk())
@@ -114,7 +114,7 @@ class CoachDashboardControllerTest {
                 new CoachDashboardRosterPageDto(
                         List.of(new CoachAtletaResumoDto(UUID.randomUUID(), "Bruno S", 52.3, 44.0, -12.4, "BUILD", "warning",
                                 LocalDate.of(2026, 6, 15), new BigDecimal("32.5"), 80, "ACUMULANDO_FADIGA",
-                                null, null, null)),
+                                null, null, false)),
                         0, 10, 1, 1),
                 List.of(attention),
                 new CoachCalendarioDto(LocalDate.of(2026, 6, 15), LocalDate.of(2026, 6, 21), List.of()),

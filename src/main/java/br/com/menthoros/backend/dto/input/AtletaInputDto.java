@@ -3,7 +3,6 @@ package br.com.menthoros.backend.dto.input;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.Sexo;
-import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
 
@@ -53,12 +52,6 @@ public record AtletaInputDto(
         @Schema(description = "Descrição detalhada da lesão, caso exista", example = "Tendinite no joelho direito")
         @Size(max = 1000, message = "Descrição da lesão deve ter no máximo 1000 caracteres")
         String descricaoLesao,
-
-        @Schema(description = "Tipo de plano do atleta com a assessoria; opcional", example = "MENSAL")
-        TipoPlanoAtleta tipoPlanoAtleta,
-
-        @Schema(description = "Data de vencimento do plano do atleta com a assessoria; opcional", example = "2026-08-15")
-        LocalDate dataVencimentoPlano,
 
         @Schema(description = "E-mail do atleta; opcional para cadastrar, obrigatório para gerar convite de acesso", example = "joao@exemplo.com")
         @Email(message = "Email inválido")

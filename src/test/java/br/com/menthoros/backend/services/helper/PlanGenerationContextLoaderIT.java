@@ -147,7 +147,7 @@ class PlanGenerationContextLoaderIT extends AbstractIntegrationTest {
         br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto treino = new br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto(
                 "SEGUNDA", "FACIL", "130-140 bpm", 40, 1.0, 4, "Base aeróbica", "45", 8.0, "5:40", List.of());
         br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto planoDto = new br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto(
-                8.0, 8.0, null, null, "PLANEJADO", "Semana de base", List.of(treino));
+                8.0, 8.0, null, null, "PLANEJADO", "Semana de base", List.of(treino), List.of());
 
         assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
         plannerShadowService.aplicarShadow(plano, planoDto, ctx.dados(), ctx.decisaoProgressao(),

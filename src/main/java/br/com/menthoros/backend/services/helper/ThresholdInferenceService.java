@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
@@ -133,11 +134,34 @@ public class ThresholdInferenceService {
     public BigDecimal inferirPaceLimiarDeProva(Prova provaValida) {
         int distanciaM = resolverDistanciaMetros(provaValida);
         long tempoProvaSegundos = provaValida.getTempoRealizado().getSeconds();
+        return calcularPaceLimiarPorRiegel(tempoProvaSegundos, distanciaM);
+    }
 
-        double tempo10kEquivalenteSegundos =
-                tempoProvaSegundos * Math.pow(10000.0 / distanciaM, EXPONENTE_RIEGEL);
+    /**
+     * Deriva `paceLimiarEstimado` a partir do melhor esforço recente do atleta (5k/10k) — mesma
+     * fórmula de Riegel de {@link #inferirPaceLimiarDeProva}, ancorada no tempo/distância da marca
+     * em vez do resultado de uma prova (design.md D3, use-best-effort-for-threshold-inference).
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    public BigDecimal inferirPaceLimiarDeMelhorEsforco(MelhorEsforcoDto melhorEsforco) {
+        return calcularPaceLimiarPorRiegel(melhorEsforco.tempoSegundos(), melhorEsforco.distanciaMetros());
+    }
+
+    /**
+     * Normaliza um tempo/distância pra pace-equivalente de 10K (`t_10k = t * (10000/distanciaM) ^
+     * EXPONENTE_RIEGEL`), converte pra pace por km e soma o offset de limiar — fórmula de Riegel
+     * isolada, sem chamar `RiegelCalculator.calculate()` (exige `RegressionResult` do pipeline de
+     * projeção, não é função pura reaproveitável aqui, ver design.md D2). Extraído do corpo comum
+     * de {@link #inferirPaceLimiarDeProva}/{@link #inferirPaceLimiarDeMelhorEsforco} (achado do QA
+     * clean-code-reviewer: fórmula duplicada linha a linha nos dois métodos, risco de divergência
+     * silenciosa se um ajuste de constante/arredondamento for feito só num deles).
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    private BigDecimal calcularPaceLimiarPorRiegel(long tempoSegundos, double distanciaMetros) {
+        double tempo10kEquivalenteSegundos = tempoSegundos * Math.pow(10000.0 / distanciaMetros, EXPONENTE_RIEGEL);
         double paceLimiarSegundosPorKm = (tempo10kEquivalenteSegundos / 10.0) + OFFSET_LIMIAR_SEC_KM;
-
         return BigDecimal.valueOf(paceLimiarSegundosPorKm / 60.0).setScale(4, RoundingMode.HALF_UP);
     }
 
@@ -180,8 +204,20 @@ public class ThresholdInferenceService {
      */
     public boolean isPaceLimiarDesatualizado(Atleta atleta, LocalDate hoje) {
         if (atleta == null) return false;
-        if (atleta.getPaceLimiar() == null || atleta.getDataUltimoTestePace() == null) return true;
-        return ChronoUnit.DAYS.between(atleta.getDataUltimoTestePace(), hoje) > DIAS_LIMIAR_DESATUALIZACAO;
+        return isPaceLimiarDesatualizado(atleta.getPaceLimiar(), atleta.getDataUltimoTestePace(), hoje);
+    }
+
+    /**
+     * Overload de primitivos — mesma lógica de {@link #isPaceLimiarDesatualizado(Atleta,
+     * LocalDate)}, sem exigir a entidade `Atleta` carregada (refactor-threshold-call-outside-
+     * transaction, design.md D1b: permite checar staleness fora da transação de escrita, onde o
+     * agregado ainda não existe carregado).
+     *
+     * Idempotent: YES · Side Effects: NONE
+     */
+    public boolean isPaceLimiarDesatualizado(BigDecimal paceLimiar, LocalDate dataUltimoTestePace, LocalDate hoje) {
+        if (paceLimiar == null || dataUltimoTestePace == null) return true;
+        return ChronoUnit.DAYS.between(dataUltimoTestePace, hoje) > DIAS_LIMIAR_DESATUALIZACAO;
     }
 
     /** Converte pace decimal (minutos) para formato "mm:ss/km". Ex: 4.7500 → "4:45/km". */

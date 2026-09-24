@@ -157,7 +157,8 @@ class PlanoServiceImplTest {
         persister = new br.com.menthoros.backend.services.helper.PlanGenerationPersister(
                 planoSemanalRepository, planoMetadadosRepository, treinoMapper, planoSemanalMapper,
                 redistribuicaoHelper, metricasAlertaService, metricasAgregadasService, plannerShadowService,
-                onboardingService, planoReviewService, eventPublisher, provaNoPlanoService, meterRegistry);
+                onboardingService, planoReviewService, eventPublisher, provaNoPlanoService, meterRegistry,
+                org.mockito.Mockito.mock(br.com.menthoros.backend.services.helper.CoberturaSemanalPolicy.class));
         org.springframework.test.util.ReflectionTestUtils.setField(persister, "autoApproveEnabled", true);
         llmConcurrencyLimiter = org.mockito.Mockito.spy(
                 new br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter(4, 2, 1));
@@ -1095,7 +1096,7 @@ class PlanoServiceImplTest {
         PlanoMetaDados metaDados = criarPlanoMetaDadosMock();
         PlanoSemanalLlmDto planoDto = new PlanoSemanalLlmDto(
                 22, 22, 50.0, 60.0, PlanoStatus.PLANEJADO.getValue(), "Teste Plano", Collections.emptyList()
-        );
+        , List.of());
 
         when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
         when(planoMetadadosService.buscarOuCriarMetadados(atleta)).thenReturn(metaDados);
@@ -1582,7 +1583,7 @@ class PlanoServiceImplTest {
 
         return new PlanoSemanalLlmDto(
                 22, 22, 50.0, 60.0, PlanoStatus.PLANEJADO.getValue(), "Teste Plano", treinos
-        );
+        , List.of());
     }
 
     private List<TreinoPlanejadoLlmDto> criarTreinosCompletos() {

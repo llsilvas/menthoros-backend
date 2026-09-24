@@ -49,7 +49,12 @@ class TsbServiceImplRecalculoHistoricoTest {
                 null,
                 null,
                 null,
+                null,
                 new TsbRecalculoExecutorInline(),
+                null,
+                null,
+                // determinarIntervaloRecalculo chamado direto via reflection — nunca passa por
+                // resolverPaceSeNecessario/buscarMelhorEsforcoSeguro.
                 null
         );
 
@@ -93,7 +98,12 @@ class TsbServiceImplRecalculoHistoricoTest {
                 atletaRepo(atleta),
                 metricasAlertaServiceStub(),
                 new AthleteThresholdUpdater(null, null, new ThresholdInferenceService()),
+                new ThresholdInferenceService(),
                 new TsbRecalculoExecutorInline(),
+                null,
+                null,
+                // recalcularHistoricoCompleto (caminho legado) nunca passa por
+                // buscarMelhorEsforcoSeguro.
                 null
         );
 

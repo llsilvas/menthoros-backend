@@ -36,7 +36,9 @@ public class CacheConfig {
                 "planos-semanais",
                 "metadados-atleta",
                 "embeddings",
-                "ia-responses"
+                "ia-responses",
+                "melhores-esforcos",
+                "melhores-esforcos-atleta"
         ));
 
         return cacheManager;

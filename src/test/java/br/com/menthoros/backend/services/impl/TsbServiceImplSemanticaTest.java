@@ -267,6 +267,13 @@ class TsbServiceImplSemanticaTest {
                 new Class<?>[]{AtletaRepository.class},
                 (proxy, method, args) -> {
                     if ("findById".equals(method.getName())) return Optional.of(atleta);
+                    // "recém-testado" — pace não desatualizado, resolverPaceSeNecessario curto-
+                    // circuita sem exercitar prova/quintil (fora do escopo destes testes de
+                    // semântica de CTL/ATL/TSB).
+                    if ("findLimiarPaceStatusById".equals(method.getName())) {
+                        return Optional.of(br.com.menthoros.backend.testsupport.LimiarPaceStatusProjectionTestStub
+                                .naoDesatualizado(atleta.getAssessoria().getId(), hoje));
+                    }
                     if ("toString".equals(method.getName())) return "AtletaRepositoryStub";
                     throw new UnsupportedOperationException("Método não suportado: " + method.getName());
                 }
@@ -379,8 +386,18 @@ class TsbServiceImplSemanticaTest {
             }
         };
 
+        ThresholdInferenceService thresholdInferenceService = new ThresholdInferenceService();
+        AthleteThresholdUpdater athleteThresholdUpdater = new AthleteThresholdUpdater(
+                treinoRepo, ProvaRepositoryTestStub.semProvas(), thresholdInferenceService);
+        TsbDiaPersister tsbDiaPersister = new TsbDiaPersister(
+                treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
+                athleteThresholdUpdater, planoMetadadosService);
+
+        // findLimiarPaceStatusById estuba "não desatualizado" acima — resolverPaceSeNecessario
+        // curto-circuita antes de buscarMelhorEsforcoSeguro, então melhorEsforcoService nunca é
+        // chamado nestes testes de semântica de CTL/ATL/TSB.
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
-                new AthleteThresholdUpdater(treinoRepo, ProvaRepositoryTestStub.semProvas(), new ThresholdInferenceService()),
-                new TsbRecalculoExecutorInline(), planoMetadadosService);
+                athleteThresholdUpdater, thresholdInferenceService,
+                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null);
     }
 }

@@ -45,22 +45,79 @@ public class PlanoLlmValidator {
     private final PaceHistoricoFormatter paceHistoricoFormatter;
     private final ZonaTreinoService zonaTreinoService;
     private final NormalizacaoDeTreino normalizacaoDeTreino;
+    private final DescansoNaoAutorizadoConverter descansoNaoAutorizadoConverter;
+    private final WeeklyCoverageValidator weeklyCoverageValidator;
+    private final LongRunAnchor longRunAnchor;
 
     public PlanoLlmValidator(TreinoHistoricoProvider treinoHistoricoProvider,
                              PaceHistoricoFormatter paceHistoricoFormatter,
                              ZonaTreinoService zonaTreinoService,
-                             NormalizacaoDeTreino normalizacaoDeTreino) {
+                             NormalizacaoDeTreino normalizacaoDeTreino,
+                             DescansoNaoAutorizadoConverter descansoNaoAutorizadoConverter,
+                             WeeklyCoverageValidator weeklyCoverageValidator,
+                             LongRunAnchor longRunAnchor) {
         this.treinoHistoricoProvider = treinoHistoricoProvider;
         this.paceHistoricoFormatter = paceHistoricoFormatter;
         this.zonaTreinoService = zonaTreinoService;
         this.normalizacaoDeTreino = normalizacaoDeTreino;
+        this.descansoNaoAutorizadoConverter = descansoNaoAutorizadoConverter;
+        this.weeklyCoverageValidator = weeklyCoverageValidator;
+        this.longRunAnchor = longRunAnchor;
+    }
+
+    /**
+     * Cobertura da semana (add-descanso-explicito-por-fadiga): ancora o longo no dia preferido e
+     * valida que todo dia disponível tem treino ou descanso legítimo. Com {@code cobertura == null}
+     * (kill-switch desligado, ou planner no comando) devolve o plano intacto — comportamento de antes
+     * da change.
+     */
+    private PlanoSemanalLlmDto aplicarCobertura(PlanoSemanalLlmDto plano,
+                                                @Nullable WeeklyCoverageContext cobertura) {
+        if (cobertura == null) return plano;
+
+        PlanoSemanalLlmDto ancorado = longRunAnchor.ancorar(plano, cobertura);
+
+        // A LLM lê "restDays" como "os dias de folga da semana" e declara também os dias em que o
+        // atleta nunca treina (geração real de 22/09 17:08). Esses são descartados — derrubar o plano
+        // por um mal-entendido de vocabulário custaria duas chamadas e um erro ao treinador.
+        var foraDosDias = weeklyCoverageValidator.descansosForaDosDiasDisponiveis(
+                ancorado.restDays(), cobertura);
+        if (!foraDosDias.isEmpty()) {
+            log.info("DESCANSO DESCARTADO: {} — dia(s) fora dos disponíveis do atleta", foraDosDias);
+            ancorado = ancorado.toBuilder()
+                    .restDays(ancorado.restDays().stream()
+                            .filter(d -> foraDosDias.stream().noneMatch(dia -> dia.name().equalsIgnoreCase(d.dayOfWeek())))
+                            .toList())
+                    .build();
+        }
+
+        List<Violacao> violacoes = weeklyCoverageValidator.validar(
+                ancorado.treinosPlanejados(), ancorado.restDays(), cobertura);
+        if (!violacoes.isEmpty()) {
+            throw new PlanoNaoConformeException(
+                    "Plano não cobre a semana: "
+                            + violacoes.stream().map(Violacao::mensagem).collect(Collectors.joining("; ")),
+                    violacoes);
+        }
+        return ancorado;
     }
 
     /** Ponto único de entrada: prepara contexto → normaliza cada treino → valida carga semanal. */
     public PlanoSemanalLlmDto validarENormalizarPlano(PlanoSemanalLlmDto plano, Atleta atleta, UUID atletaId) {
+        return validarENormalizarPlano(plano, atleta, atletaId, null);
+    }
+
+    /** Mesma validação, com a regra de cobertura da semana quando o contexto é fornecido. */
+    public PlanoSemanalLlmDto validarENormalizarPlano(PlanoSemanalLlmDto plano, Atleta atleta, UUID atletaId,
+                                                      @Nullable WeeklyCoverageContext cobertura) {
         if (plano == null || plano.treinosPlanejados() == null) {
             throw new LLMException("Plano gerado está nulo ou sem treinos");
         }
+
+        // Antes de normalizar: descanso que a regra não aceita vira treino leve (ou cai, se o dia já
+        // tem treino). Aqui, e não no aplicarCobertura, para o treino sintetizado passar pelo mesmo
+        // pipeline de normalização dos demais.
+        plano = descansoNaoAutorizadoConverter.converter(plano, cobertura);
 
         ContextoNormalizacao ctx = contexto(atleta, atletaId);
 
@@ -88,15 +145,16 @@ public class PlanoLlmValidator {
 
         validarDistribuicaoCargaSemanal(treinosNormalizados);
 
-        return new PlanoSemanalLlmDto(
+        return aplicarCobertura(new PlanoSemanalLlmDto(
                 plano.volumePlanejadoKm(),
                 plano.volumeAlvoKm(),
                 plano.tsbInicio(),
                 plano.tsbFim(),
                 plano.status(),
                 plano.objetivoSemanal(),
-                treinosNormalizados
-        );
+                treinosNormalizados,
+                plano.restDays()
+        ), cobertura);
     }
 
     /**
@@ -110,6 +168,13 @@ public class PlanoLlmValidator {
      */
     public PlanoSemanalLlmDto validarPlanoV2(PlanoSemanalLlmDto plano, Atleta atleta, UUID atletaId,
                                               @Nullable WeekPlanSkeleton skeleton) {
+        return validarPlanoV2(plano, atleta, atletaId, skeleton, null);
+    }
+
+    /** Mesma validação v2, com a regra de cobertura da semana quando o contexto é fornecido. */
+    public PlanoSemanalLlmDto validarPlanoV2(PlanoSemanalLlmDto plano, Atleta atleta, UUID atletaId,
+                                              @Nullable WeekPlanSkeleton skeleton,
+                                              @Nullable WeeklyCoverageContext cobertura) {
         if (plano == null || plano.treinosPlanejados() == null) {
             throw new LLMException("Plano gerado está nulo ou sem treinos");
         }
@@ -134,7 +199,7 @@ public class PlanoLlmValidator {
                             + violacoesEstruturais.stream().map(Violacao::mensagem).collect(Collectors.joining("; ")),
                     violacoesEstruturais);
         }
-        return plano;
+        return aplicarCobertura(plano, cobertura);
     }
 
     /**

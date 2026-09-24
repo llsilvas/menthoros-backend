@@ -5,7 +5,6 @@ import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.Sexo;
-import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -157,14 +156,9 @@ public class Atleta extends AuditableEntity {
     @Column(name = "ativo")
     private AtletaStatus ativo;
 
-    // ===== DADOS DE COBRANÇA (plano do atleta com a assessoria — distinto de PlanoAssessoria/PlanoMetaDados) =====
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "tipo_plano_atleta", length = 20)
-    private TipoPlanoAtleta tipoPlanoAtleta;
-
-    @Column(name = "data_vencimento_plano")
-    private LocalDate dataVencimentoPlano;
+    // Cobrança do atleta vive em AthleteContract/AthleteInvoice (add-contrato-atleta-mensalidade).
+    // As colunas legadas tipo_plano_atleta e data_vencimento_plano seguem no banco, não mapeadas,
+    // até o DROP em add-aviso-mensalidade.
 
     // Métricas atuais (OneToOne)
     @OneToOne(mappedBy = "atleta", fetch = FetchType.LAZY,

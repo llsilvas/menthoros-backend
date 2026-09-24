@@ -95,7 +95,7 @@ class EvalAgreementGraderTest {
             TreinoPlanejadoLlmDto treino = new TreinoPlanejadoLlmDto("TERCA", tipoTreino, "121-133 bpm",
                     tss, 0.8, 5, "justificativa", "44:00", 7.0, "5:30/km", List.of(etapa));
             PlanoSemanalLlmDto plano = new PlanoSemanalLlmDto(20.0, 20.0, 5.0, 5.0, "PLANEJADO",
-                    "objetivo", List.of(treino));
+                    "objetivo", List.of(treino), List.of());
             return objectMapper.writeValueAsString(plano);
         }
 

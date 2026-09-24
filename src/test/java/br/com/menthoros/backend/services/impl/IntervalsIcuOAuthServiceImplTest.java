@@ -272,6 +272,102 @@ class IntervalsIcuOAuthServiceImplTest {
 
             verify(connectionService).pausarStravaAutomaticamente(atletaId, tenantId);
         }
+
+        // Origem: investigação do bug de FC alvo elevada no relógio (210/228/210 bpm vs
+        // 107-121/121-126/107-121 enviados) — o Menthoros nunca escrevia fcLimiar/fcMaxima no
+        // intervals.icu, então o atleta ficava com valores divergentes entre os dois sistemas.
+
+        @Test
+        @DisplayName("conexão com fcLimiar e fcMaxima sincroniza lthr/max_hr no intervals.icu (CA1)")
+        void sincronizaFcQuandoAtletaTemAmbos() {
+            stubTokenOk();
+            Assessoria assessoria = new Assessoria();
+            assessoria.setId(tenantId);
+            Atleta atleta = Atleta.builder().id(atletaId).assessoria(assessoria)
+                    .fcLimiar(142).fcMaxima(172).build();
+
+            when(atletaRepository.findByIdBasic(atletaId)).thenReturn(Optional.of(atleta));
+            when(integracaoRepository.findOtherActiveByExternalAthleteIdAndPlataformaAndTenantId(
+                    any(), any(), any(), any())).thenReturn(List.of());
+            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(
+                    atletaId, FonteDados.INTERVALS_ICU, tenantId)).thenReturn(Optional.empty());
+            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.exchangeCodeForToken("code-ok", signer.assinar(atletaId));
+
+            var captor = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.JsonNode.class);
+            verify(intervalsIcuClient).atualizarSportSettings(
+                    eq("tok-abc"), eq(EXTERNAL_ATHLETE_ID), eq("Run"), captor.capture());
+            com.fasterxml.jackson.databind.JsonNode payload = captor.getValue();
+            assertThat(payload.get("lthr").asInt()).isEqualTo(142);
+            assertThat(payload.get("max_hr").asInt()).isEqualTo(172);
+        }
+
+        @Test
+        @DisplayName("atleta sem fcLimiar nem fcMaxima não chama sport-settings (CA2)")
+        void naoSincronizaQuandoAtletaSemFc() {
+            stubTokenOk();
+            when(atletaRepository.findByIdBasic(atletaId)).thenReturn(Optional.of(atletaComTenant()));
+            when(integracaoRepository.findOtherActiveByExternalAthleteIdAndPlataformaAndTenantId(
+                    any(), any(), any(), any())).thenReturn(List.of());
+            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(
+                    atletaId, FonteDados.INTERVALS_ICU, tenantId)).thenReturn(Optional.empty());
+            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.exchangeCodeForToken("code-ok", signer.assinar(atletaId));
+
+            verify(intervalsIcuClient, never()).atualizarSportSettings(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("falha no sync de FC não derruba a conexão (CA3)")
+        void falhaNoSyncNaoDerrubaConexao() {
+            stubTokenOk();
+            Assessoria assessoria = new Assessoria();
+            assessoria.setId(tenantId);
+            Atleta atleta = Atleta.builder().id(atletaId).assessoria(assessoria)
+                    .fcLimiar(142).fcMaxima(172).build();
+
+            when(atletaRepository.findByIdBasic(atletaId)).thenReturn(Optional.of(atleta));
+            when(integracaoRepository.findOtherActiveByExternalAthleteIdAndPlataformaAndTenantId(
+                    any(), any(), any(), any())).thenReturn(List.of());
+            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(
+                    atletaId, FonteDados.INTERVALS_ICU, tenantId)).thenReturn(Optional.empty());
+            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            doThrow(new br.com.menthoros.backend.exception.IntervalsIcuApiException(
+                    org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR, "falhou"))
+                    .when(intervalsIcuClient).atualizarSportSettings(any(), any(), any(), any());
+
+            Resultado resultado = service.exchangeCodeForToken("code-ok", signer.assinar(atletaId));
+
+            assertThat(resultado).isEqualTo(Resultado.SUCESSO);
+        }
+
+        @Test
+        @DisplayName("só fcLimiar presente sincroniza só lthr, sem max_hr (CA4)")
+        void sincronizaSoLthrQuandoFaltaFcMaxima() {
+            stubTokenOk();
+            Assessoria assessoria = new Assessoria();
+            assessoria.setId(tenantId);
+            Atleta atleta = Atleta.builder().id(atletaId).assessoria(assessoria)
+                    .fcLimiar(142).build();
+
+            when(atletaRepository.findByIdBasic(atletaId)).thenReturn(Optional.of(atleta));
+            when(integracaoRepository.findOtherActiveByExternalAthleteIdAndPlataformaAndTenantId(
+                    any(), any(), any(), any())).thenReturn(List.of());
+            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(
+                    atletaId, FonteDados.INTERVALS_ICU, tenantId)).thenReturn(Optional.empty());
+            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.exchangeCodeForToken("code-ok", signer.assinar(atletaId));
+
+            var captor = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.JsonNode.class);
+            verify(intervalsIcuClient).atualizarSportSettings(
+                    eq("tok-abc"), eq(EXTERNAL_ATHLETE_ID), eq("Run"), captor.capture());
+            com.fasterxml.jackson.databind.JsonNode payload = captor.getValue();
+            assertThat(payload.get("lthr").asInt()).isEqualTo(142);
+            assertThat(payload.has("max_hr")).isFalse();
+        }
     }
 
     @Nested

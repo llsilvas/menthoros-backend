@@ -86,7 +86,8 @@ class PlanGenerationPersisterProvaTest {
                 redistribuicaoHelper, metricasAlertaService, metricasAgregadasService,
                 plannerShadowService, onboardingService, planoReviewService, eventPublisher,
                 provaNoPlanoService,
-                meterRegistry);
+                meterRegistry,
+                org.mockito.Mockito.mock(CoberturaSemanalPolicy.class));
 
         lenient().when(planoSemanalRepository.existePlanoAtivoNaSemana(any(), any(), any())).thenReturn(false);
         lenient().when(planoSemanalRepository.findTopByAtletaIdOrderBySemanaInicioDesc(any())).thenReturn(Optional.empty());

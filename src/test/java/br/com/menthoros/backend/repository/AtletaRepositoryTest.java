@@ -135,6 +135,45 @@ class AtletaRepositoryTest extends AbstractIntegrationTest {
     }
 
     /**
+     * refactor-threshold-call-outside-transaction, design.md D1: projeção pra
+     * {@code resolverPaceSeNecessario} conseguir checar staleness e resolver o tenant sem carregar
+     * o agregado {@code Atleta} inteiro (que só existiria dentro da transação de escrita).
+     */
+    @Test
+    @DisplayName("findLimiarPaceStatusById: devolve assessoriaId/paceLimiar/dataUltimoTestePace sem carregar o agregado")
+    void findLimiarPaceStatusById_devolveOsTresCampos() {
+        atletaAtivo.setPaceLimiar(new java.math.BigDecimal("4.5000"));
+        atletaAtivo.setDataUltimoTestePace(java.time.LocalDate.of(2026, 6, 1));
+        atletaRepository.save(atletaAtivo);
+
+        var result = atletaRepository.findLimiarPaceStatusById(atletaAtivo.getId());
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getAssessoriaId()).isEqualTo(tenant.getId());
+        assertThat(result.get().getPaceLimiar()).isEqualByComparingTo("4.5000");
+        assertThat(result.get().getDataUltimoTestePace()).isEqualTo(java.time.LocalDate.of(2026, 6, 1));
+    }
+
+    @Test
+    @DisplayName("findLimiarPaceStatusById: paceLimiar/dataUltimoTestePace nulos vêm nulos, sem erro")
+    void findLimiarPaceStatusById_camposNulosNaoQuebra() {
+        var result = atletaRepository.findLimiarPaceStatusById(atletaAtivo.getId());
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getAssessoriaId()).isEqualTo(tenant.getId());
+        assertThat(result.get().getPaceLimiar()).isNull();
+        assertThat(result.get().getDataUltimoTestePace()).isNull();
+    }
+
+    @Test
+    @DisplayName("findLimiarPaceStatusById: atleta inexistente devolve vazio")
+    void findLimiarPaceStatusById_atletaInexistenteDevolveVazio() {
+        var result = atletaRepository.findLimiarPaceStatusById(UUID.randomUUID());
+
+        assertThat(result).isEmpty();
+    }
+
+    /**
      * Trocou de nome e de semântica em 2026-08-15. A versão anterior
      * ({@code findAtivosByTenantIdOrderByNome}) devolvia todos os status, o que tornava o soft delete
      * inócuo: o atleta inativado seguia no roster do dashboard, na fila de atenção e na métrica de

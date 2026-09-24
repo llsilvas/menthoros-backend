@@ -17,6 +17,7 @@ import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalDouble;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -35,7 +36,7 @@ import java.util.stream.Collectors;
  * {@code PlanoEstruturaReparador} e {@code PaceValidator} são internal seams: nada mais os chama.</p>
  *
  * <p>Idempotent: YES — mesma entrada, mesma saída; sem estado entre chamadas. Side Effects: NONE
- * além de log e do contador {@code plano_violacao_estrutural}. Tenant-aware: NO — recebe o
+ * além de log e dos contadores {@code plano_violacao_estrutural} e {@code plano_etapas_total_divergente}. Tenant-aware: NO — recebe o
  * {@code Atleta} já resolvido pelo tenant no {@link ContextoNormalizacao}.</p>
  */
 @Slf4j
@@ -43,6 +44,8 @@ import java.util.stream.Collectors;
 public class NormalizacaoDeTreino {
 
     private static final Pattern DURACAO_MM_SS = Pattern.compile("^(\\d{1,3}):(\\d{2})$");
+    /** Tolerância da identidade pace × distância = duração, compartilhada pelo gate e pelo desempate de recalcular-duracao. */
+    private static final double TOLERANCIA_TRIANGULO = 0.20;
 
     private final TreinoNormalizador treinoNormalizador;
     private final EtapaFcValidator etapaFcValidator;
@@ -165,6 +168,9 @@ public class NormalizacaoDeTreino {
         mapa.put(FamiliaTreino.INTERVALADO_TIRO, receita(List.of(
                 corrigirTemporais,
                 expandir,
+                // 2ª vez: uma série por tempo ("4x (3min + 2min)") cria recuperações com 0.0 — só este
+                // passo lhes dá o pace de trote. Idempotente para aquec/desaq e para o caminho NxDist
+                corrigirTemporais,
                 // ── validarTreinoIntervalado, item a item, ANTES de normalizar: normalizar-intervalado
                 //    sintetiza pares tiro+recuperação — validar depois mascararia um treino de 4 etapas
                 gate("gate-existencia", this::gateExistencia),
@@ -186,8 +192,18 @@ public class NormalizacaoDeTreino {
         ), caudaComum));
 
         mapa.put(FamiliaTreino.FARTLEK, receita(List.of(
-                corrigirTemporais,
+                // expandir ANTES de corrigir-temporais: as recuperações criadas pela expansão nascem sem
+                // distância e só ganham o pace de trote se corrigir-temporais vier depois
                 expandir,
+                corrigirTemporais,
+                // ── depois de expandir: uma série comprimida reconhecível já virou pares; o que sobra
+                //    sem acelerações é "fartlek livre" numa etapa só — reprovar leva ao turno de reparo.
+                //    Sem gate-balanceamento: o "Misto" do system prompt tem 2 acelerações por recuperação
+                gate("gate-existencia", this::gateExistencia),
+                gate("gate-presenca-aquec-desaq", this::gatePresencaAquecDesaq),
+                gate("gate-ordem-aquec-desaq", this::gateOrdemAquecDesaq),
+                gate("gate-aceleracoes-fartlek", this::gateAceleracoesFartlek),
+                gate("gate-sequencia", this::gateSequencia),
                 reconciliarDistancia
         ), caudaComum));
 
@@ -195,7 +211,13 @@ public class NormalizacaoDeTreino {
                 // reparar é identidade fora de TIPOS_3_ETAPAS (PlanoEstruturaReparador:43-46) — por isso
                 // mora só aqui, uma vez, e não na cauda
                 new Passo("reparar-3-etapas", (t, c) -> estruturaReparador.reparar(t, t.tipoTreino())),
-                gate("validar-por-tipo", this::validarPorTipo)
+                gate("validar-por-tipo", this::validarPorTipo),
+                // distância das etapas pelo pace (fix-etapas-continuos-pace): a LLM põe o total do
+                // treino na PRINCIPAL e deixa aquec/desaq com 0 — o total fica certo, as etapas não
+                corrigirTemporais,
+                new Passo("distancia-principal-por-pace",
+                        (t, c) -> treinoNormalizador.distanciaPrincipalPorPace(t)),
+                new Passo("reconciliar-distancia", this::reconciliarContinuo)
         ), caudaComum));
 
         mapa.put(FamiliaTreino.PADRAO, receita(List.of(), caudaComum));
@@ -272,6 +294,64 @@ public class NormalizacaoDeTreino {
             log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} não termina com desaquecimento (termina com {})",
                     ctx.atletaId(), treino.tipoTreino(), ultima.tipoEtapa());
             throw new LLMException(String.format("Treino %s inválido: deve terminar com desaquecimento", treino.tipoTreino()));
+        }
+    }
+
+    /**
+     * Total do contínuo = soma das etapas, com tolerância zero, quando toda etapa é confiável: as
+     * distâncias vieram do pace e o reparo não inventou nenhuma. Nos outros casos o total da LLM fica:
+     * <ul>
+     *   <li>sem distância da LLM — {@code garantir-distancia-continuo} (cauda) assume; reconciliar aqui
+     *       adotaria a soma parcial e a PRINCIPAL sem ritmo nunca seria preenchida;</li>
+     *   <li>etapa sintetizada — ela se soma à prescrição: um regenerativo de 30min/4km viraria
+     *       45min/6,94km sem ninguém ter prescrito (decisão de produto de 22/09, mesma regra do CA4b);</li>
+     *   <li>PRINCIPAL sem ritmo — carrega o total que a LLM concentrou ali; somada a aquec/desaq, infla.</li>
+     * </ul>
+     * Nos dois últimos, a divergência entre etapas e total fica e é contada.
+     */
+    private TreinoPlanejadoLlmDto reconciliarContinuo(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
+        if (treino.distanciaKm() == null || treino.distanciaKm() <= 0) return treino;
+        String motivo = treino.etapas().stream().anyMatch(PlanoEstruturaReparador::foiSintetizada)
+                ? "etapa-sintetizada"
+                : !treinoNormalizador.principaisComDistanciaPorPace(treino) ? "principal-sem-ritmo" : null;
+        if (motivo == null) return treinoNormalizador.adotarSomaDasEtapas(treino);
+        registrarDivergenciaMantida(treino, motivo, ctx);
+        return treino;
+    }
+
+    /** Acima de 10% a tela do atleta (etapas) e a do treinador (total) contam histórias diferentes. */
+    private void registrarDivergenciaMantida(TreinoPlanejadoLlmDto treino, String motivo, ContextoNormalizacao ctx) {
+        double soma = treino.etapas().stream()
+                .mapToDouble(e -> e.distanciaKm() != null ? e.distanciaKm() : 0.0).sum();
+        double desvio = Math.abs(soma - treino.distanciaKm()) / treino.distanciaKm();
+        if (desvio <= 0.10) return;
+        log.warn("ETAPAS × TOTAL [Atleta {}] [{}]: etapas somam {} km, total {} km mantido ({}% de desvio, motivo={})",
+                ctx.atletaId(), treino.tipoTreino(), String.format("%.2f", soma), treino.distanciaKm(),
+                Math.round(desvio * 100), motivo);
+        Counter.builder("plano_etapas_total_divergente")
+                .tag("tipo", treino.tipoTreino()).tag("motivo", motivo)
+                .register(meterRegistry).increment();
+    }
+
+    private void gateAceleracoesFartlek(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
+        long numAceleracoes = contar(treino.etapas(), "INTERVALADO");
+        if (numAceleracoes < 2) {
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} tem {} aceleração(ões) individual(is) (mínimo 2)",
+                    ctx.atletaId(), treino.tipoTreino(), numAceleracoes);
+            contarViolacaoEstrutural(treino.tipoTreino());
+            throw new LLMException(String.format(
+                    "Treino %s inválido: tem %d aceleração(ões) — o fartlek precisa de no mínimo 2 acelerações "
+                            + "individuais (etapas INTERVALADO), cada uma seguida da sua RECUPERACAO, entre "
+                            + "aquecimento e desaquecimento. Não descreva a série inteira numa etapa única.",
+                    treino.tipoTreino(), numAceleracoes));
+        }
+        if (contar(treino.etapas(), "RECUPERACAO") == 0) {
+            log.error("VALIDAÇÃO FALHOU [Atleta {}]: Treino {} sem etapa de recuperação entre as acelerações",
+                    ctx.atletaId(), treino.tipoTreino());
+            contarViolacaoEstrutural(treino.tipoTreino());
+            throw new LLMException(String.format(
+                    "Treino %s inválido: sem etapa de recuperação (RECUPERACAO) entre as acelerações",
+                    treino.tipoTreino()));
         }
     }
 
@@ -574,13 +654,36 @@ public class NormalizacaoDeTreino {
         return Objects.equals(ritmoValidado, treino.ritmoAlvo()) ? treino : treino.comRitmo(ritmoValidado);
     }
 
-    /** Duração total = soma das etapas (override do valor da LLM) — só com etapas e soma > 0. */
+    /**
+     * Duração total = soma das etapas (override do valor da LLM) — só com etapas e soma > 0.
+     *
+     * <p>Exceção (fix-normalizador-etapas-incompletas): fora de INTERVALADO/TIRO, quando a duração da
+     * LLM está mais perto de {@code ritmoAlvo × distanciaKm} do que a soma das etapas, as etapas é que
+     * estão erradas (a LLM devolve etapas que não cobrem o treino, ou o reparo estrutural acrescenta
+     * aquec/desaq por cima de etapas que já fechavam o total) — mantém a duração da LLM. Em
+     * INTERVALADO/TIRO o {@code ritmoAlvo} é o pace do tiro, não do treino, e a soma segue
+     * autoritativa. Sem triângulo (ritmo ou distância ausentes) não há desempate e a soma prevalece,
+     * como antes; em empate, também.</p>
+     */
     private TreinoPlanejadoLlmDto recalcularDuracao(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
         if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
         int totalMinEtapas = treinoNormalizador.somarDuracoesMin(treino.etapas());
         if (totalMinEtapas <= 0) return treino;
 
         String duracaoAtual = treino.duracaoMin();
+        if (FamiliaTreino.de(treino.tipoTreino()) != FamiliaTreino.INTERVALADO_TIRO) {
+            var esperada = duracaoEsperadaMin(treino);
+            var atual = parseDuracaoMin(duracaoAtual);
+            if (esperada.isPresent() && atual.isPresent()
+                    && desvio(atual.getAsDouble(), esperada.getAsDouble())
+                       < desvio(totalMinEtapas, esperada.getAsDouble())) {
+                log.warn("DURAÇÃO MANTIDA [{}]: etapas somam {} min mas ritmoAlvo='{}' × {} km esperam {} min → mantendo '{}' da LLM",
+                        treino.tipoTreino(), totalMinEtapas, treino.ritmoAlvo(), treino.distanciaKm(),
+                        String.format("%.1f", esperada.getAsDouble()), duracaoAtual);
+                return treino;
+            }
+        }
+
         TreinoPlanejadoLlmDto recalculado = treinoNormalizador.recalcularDuracaoTreino(treino, treino.etapas());
         if (!Objects.equals(duracaoAtual, recalculado.duracaoMin())) {
             log.info("DURAÇÃO RECALCULADA [{}]: '{}' → '{}' (baseado nas {} etapas)",
@@ -594,32 +697,45 @@ public class NormalizacaoDeTreino {
      * Não corrige: os três são prescrições da LLM e nenhum tem precedência clara.
      */
     private void validarTrianguloPaceDuracaoDistancia(TreinoPlanejadoLlmDto treino) {
-        if (treino.ritmoAlvo() == null || treino.distanciaKm() == null || treino.duracaoMin() == null) return;
+        var esperada = duracaoEsperadaMin(treino);
+        var duracao = parseDuracaoMin(treino.duracaoMin());
+        if (esperada.isEmpty() || duracao.isEmpty()) return;
 
-        var paceMediaOpt = paceValidator.calcularPaceMedia(treino.ritmoAlvo());
-        if (paceMediaOpt.isEmpty()) return;
+        double duracaoEsperada = esperada.getAsDouble();
+        double duracaoMin = duracao.getAsDouble();
+        double desvio = desvio(duracaoMin, duracaoEsperada);
 
-        double distanciaKm = treino.distanciaKm();
-        if (distanciaKm <= 0) return;
-
-        var mDuracao = DURACAO_MM_SS.matcher(treino.duracaoMin().trim());
-        if (!mDuracao.matches()) return;
-        double duracaoMin;
-        try {
-            duracaoMin = Integer.parseInt(mDuracao.group(1)) + Integer.parseInt(mDuracao.group(2)) / 60.0;
-        } catch (NumberFormatException e) {
-            return;
-        }
-        if (duracaoMin <= 0) return;
-
-        double paceMedia = paceMediaOpt.getAsDouble();
-        double duracaoEsperada = paceMedia * distanciaKm;
-        double desvio = Math.abs(duracaoEsperada - duracaoMin) / duracaoEsperada;
-
-        if (desvio > 0.20) {
+        if (desvio > TOLERANCIA_TRIANGULO) {
             log.warn("TRIÂNGULO pace×dist×dur [{}]: ritmoAlvo='{}', dist={} km, duracao={} min → esperado {} min (desvio {}%)",
-                    treino.tipoTreino(), treino.ritmoAlvo(), distanciaKm, duracaoMin,
+                    treino.tipoTreino(), treino.ritmoAlvo(), treino.distanciaKm(), duracaoMin,
                     String.format("%.1f", duracaoEsperada), String.format("%.0f", desvio * 100));
         }
+    }
+
+    /** Duração implícita por ritmoAlvo × distanciaKm; vazio quando qualquer um dos dois não é utilizável. */
+    private OptionalDouble duracaoEsperadaMin(TreinoPlanejadoLlmDto treino) {
+        if (treino.ritmoAlvo() == null || treino.distanciaKm() == null || treino.distanciaKm() <= 0) {
+            return OptionalDouble.empty();
+        }
+        var paceMediaOpt = paceValidator.calcularPaceMedia(treino.ritmoAlvo());
+        if (paceMediaOpt.isEmpty()) return OptionalDouble.empty();
+        return OptionalDouble.of(paceMediaOpt.getAsDouble() * treino.distanciaKm());
+    }
+
+    /** "MM:SS" → minutos decimais; vazio se ausente, malformado ou não positivo. */
+    private static OptionalDouble parseDuracaoMin(String duracao) {
+        if (duracao == null) return OptionalDouble.empty();
+        var m = DURACAO_MM_SS.matcher(duracao.trim());
+        if (!m.matches()) return OptionalDouble.empty();
+        try {
+            double minutos = Integer.parseInt(m.group(1)) + Integer.parseInt(m.group(2)) / 60.0;
+            return minutos > 0 ? OptionalDouble.of(minutos) : OptionalDouble.empty();
+        } catch (NumberFormatException e) {
+            return OptionalDouble.empty();
+        }
+    }
+
+    private static double desvio(double valor, double esperado) {
+        return Math.abs(esperado - valor) / esperado;
     }
 }

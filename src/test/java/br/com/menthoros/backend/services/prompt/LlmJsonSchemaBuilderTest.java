@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,6 +50,31 @@ class LlmJsonSchemaBuilderTest {
     }
 
     @Test
+    @DisplayName("CA15 — treinos vão de 1 a 7: a cobertura governa o número, não o schema")
+    void treinosDeUmASete() {
+        Map<String, Object> treinos = treinos(builder.buildSchemaTightInlineOrDefs());
+
+        assertThat(treinos.get("minItems")).isEqualTo(1);
+        assertThat(treinos.get("maxItems")).isEqualTo(7);
+    }
+
+    @Test
+    @DisplayName("CA10 (v1) — restDays é array de {dayOfWeek enum, reason} com motivo de até 200 caracteres")
+    void restDaysNoSchemaV1() {
+        Map<String, Object> schema = builder.buildSchemaTightInlineOrDefs();
+        Map<String, Object> props = (Map<String, Object>) schema.get("properties");
+
+        Map<String, Object> restDays = (Map<String, Object>) props.get("restDays");
+        assertThat(restDays).as("restDays presente no schema v1").isNotNull();
+        Map<String, Object> items = (Map<String, Object>) restDays.get("items");
+        Map<String, Object> itemProps = (Map<String, Object>) items.get("properties");
+        assertThat((List<String>) ((Map<String, Object>) itemProps.get("dayOfWeek")).get("enum"))
+                .containsExactlyInAnyOrder("DOMINGO", "SEGUNDA", "TERCA", "QUARTA", "QUINTA", "SEXTA", "SABADO");
+        assertThat(((Map<String, Object>) itemProps.get("reason")).get("maxLength")).isEqualTo(200);
+        assertThat((List<String>) schema.get("required")).contains("restDays");
+    }
+
+    @Test
     @DisplayName("CA10 — prompt e schema declaram o mesmo teto de treinos (maxItems == 'máximo N treinos')")
     void promptESchemaAlinhamTetoDeTreinos() throws Exception {
         Map<String, Object> schema = builder.buildSchemaTightInlineOrDefs();
@@ -62,7 +88,7 @@ class LlmJsonSchemaBuilderTest {
         assertThat(template)
                 .as("prompt deve declarar 'máximo %d treinos' alinhado ao maxItems do schema", schemaMax)
                 .contains("máximo " + schemaMax + " treinos");
-        assertThat(schemaMax).isEqualTo(5);
+        assertThat(schemaMax).isEqualTo(7);
     }
 
     @Test
@@ -87,6 +113,19 @@ class LlmJsonSchemaBuilderTest {
     @org.junit.jupiter.api.Nested
     @DisplayName("buildSchemaV2 (semantic-session-schema)")
     class BuildSchemaV2 {
+
+        @Test
+        @DisplayName("CA10 (v2) — restDays também existe no schema v2, com o mesmo formato")
+        void restDaysNoSchemaV2() {
+            Map<String, Object> schema = builder.buildSchemaV2();
+            Map<String, Object> props = (Map<String, Object>) schema.get("properties");
+
+            Map<String, Object> restDays = (Map<String, Object>) props.get("restDays");
+            assertThat(restDays).isNotNull();
+            Map<String, Object> itemProps = (Map<String, Object>)
+                    ((Map<String, Object>) restDays.get("items")).get("properties");
+            assertThat(((Map<String, Object>) itemProps.get("reason")).get("maxLength")).isEqualTo(200);
+        }
 
         @Test
         @DisplayName("blocos é array com minItems 1, sem pace/FC/distância/duração no treino")

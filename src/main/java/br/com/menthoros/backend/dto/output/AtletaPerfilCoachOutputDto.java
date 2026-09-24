@@ -7,9 +7,8 @@ import br.com.menthoros.backend.enums.MotivoAtencao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.Sensacao;
 import br.com.menthoros.backend.enums.Severidade;
+import br.com.menthoros.backend.enums.AthleteBillingStatus;
 import br.com.menthoros.backend.enums.StatusSugestao;
-import br.com.menthoros.backend.enums.StatusVencimentoPlano;
-import br.com.menthoros.backend.enums.TipoPlanoAtleta;
 import br.com.menthoros.backend.enums.TipoSugestao;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -69,17 +68,20 @@ public record AtletaPerfilCoachOutputDto(
         @Schema(description = "Limiares fisiológicos inferidos por dados recentes; null quando limiares estão atualizados ou sem dados suficientes")
         LimiareisInferidosDto limiareisInferidos,
 
-        @Schema(description = "Tipo de plano do atleta com a assessoria; ausente quando não cadastrado", example = "MENSAL")
-        TipoPlanoAtleta tipoPlanoAtleta,
+        @Schema(description = "Status de cobrança derivado das mensalidades em aberto (UP_TO_DATE/DUE_SOON/OVERDUE); ausente sem contrato ativo nem mensalidade em aberto. Nunca carrega valor.", example = "DUE_SOON")
+        AthleteBillingStatus billingStatus,
 
-        @Schema(description = "Data de vencimento do plano do atleta com a assessoria; ausente quando não cadastrado", example = "2026-08-15")
-        LocalDate dataVencimentoPlano,
-
-        @Schema(description = "Status de vencimento derivado (EM_DIA/PROXIMO_VENCIMENTO/VENCIDO); ausente quando dataVencimentoPlano não cadastrada", example = "PROXIMO_VENCIMENTO")
-        StatusVencimentoPlano statusVencimentoPlano,
+        @Schema(description = "Próximo vencimento (menor em aberto, ou o próximo calculado); ausente junto com billingStatus", example = "2026-10-10")
+        LocalDate nextDueDate,
 
         @Schema(description = "Treinos realizados dos últimos 7 dias, mais recente primeiro — inclui feedback pós-treino (RPE/sensações/comentário) quando registrado")
-        List<RealizadoRecenteDto> realizadosRecentes
+        List<RealizadoRecenteDto> realizadosRecentes,
+
+        @Schema(description = "Melhor tempo contínuo por distância de referência (400m-10k), janela rolante de 42 dias — diferente de 'recordes' (PR de treino inteiro); pode faltar distância ou vir vazio se o atleta não tem integração intervals.icu ativa")
+        List<MelhorEsforcoDto> melhoresEsforcos,
+
+        @Schema(description = "Se o atleta tem integração intervals.icu ativa — distingue 'sem PRs ainda' (true, marcas vazias) de 'nunca conectou' (false)")
+        boolean melhoresEsforcosIntegracaoConectada
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
