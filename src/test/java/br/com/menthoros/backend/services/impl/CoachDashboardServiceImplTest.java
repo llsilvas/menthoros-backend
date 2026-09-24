@@ -252,8 +252,8 @@ class CoachDashboardServiceImplTest {
         }
 
         @Test
-        @DisplayName("temSugestaoPendente reflete o set resolvido uma vez para o roster inteiro (CA1/CA2/CA4)")
-        void temSugestaoPendenteEmLote() {
+        @DisplayName("hasPendingSuggestion reflete o set resolvido uma vez para o roster inteiro (CA1/CA2/CA4)")
+        void hasPendingSuggestionEmLote() {
             Atleta comSugestao = atletaSemMetricas("Com", "Sugestao");
             Atleta semSugestao = atletaSemMetricas("Sem", "Sugestao");
             when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId))
@@ -267,7 +267,7 @@ class CoachDashboardServiceImplTest {
 
             List<CoachAtletaResumoDto> roster = service.getRoster();
 
-            assertThat(roster).extracting(CoachAtletaResumoDto::temSugestaoPendente)
+            assertThat(roster).extracting(CoachAtletaResumoDto::hasPendingSuggestion)
                     .containsExactly(true, false);
             verify(sugestaoCoachRepository, times(1))
                     .findAtletaIdsByTenantIdAndStatus(eq(tenantId), eq(StatusSugestao.PENDING), any());
@@ -470,17 +470,17 @@ class CoachDashboardServiceImplTest {
         }
 
         @Test
-        @DisplayName("query de sugestão pendente roda no máx. 2x, não 3x (CA8, design D2)")
-        void queryDeSugestaoPendenteRodaNoMaximoDuasVezes() {
+        @DisplayName("query de sugestão pendente roda exatamente 1x, não 2x nem 3x (CA8, design D2, achado de QA)")
+        void queryDeSugestaoPendenteRodaExatamenteUmaVez() {
             when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of());
             when(treinoPlanejadoRepository.findByTenantAndDataBetween(eq(tenantId), any(), any())).thenReturn(List.of());
 
             service.getDashboard(new CoachDashboardQueryDto(
                     null, null, null, 0, 10, null, null, null));
 
-            // 1x na resolução explícita de getDashboard(), 1x no getInsights() interno (que
-            // rechama getRoster() sem args) — nunca 3x, que seria o achado do pre-mortem.
-            verify(sugestaoCoachRepository, times(2))
+            // getDashboard() resolve uma vez e reusa nos overloads privados de getRoster,
+            // getInsights e getCalendarioSemanal — nenhum deles rechama a versão pública.
+            verify(sugestaoCoachRepository, times(1))
                     .findAtletaIdsByTenantIdAndStatus(eq(tenantId), eq(StatusSugestao.PENDING), any());
         }
 

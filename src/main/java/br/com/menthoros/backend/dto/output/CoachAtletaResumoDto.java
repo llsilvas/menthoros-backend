@@ -55,5 +55,5 @@ public record CoachAtletaResumoDto(
         LocalDate nextDueDate,
 
         @Schema(description = "Há SugestaoCoach PENDING não-expirada para este atleta", example = "true")
-        boolean temSugestaoPendente
+        boolean hasPendingSuggestion
 ) {}

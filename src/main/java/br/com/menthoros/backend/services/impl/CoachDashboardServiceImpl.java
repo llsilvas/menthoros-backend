@@ -110,12 +110,15 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     @Transactional(readOnly = true)
     public CoachCalendarioDto getCalendarioSemanal(LocalDate from) {
         UUID tenantId = TenantContext.getRequiredTenantId();
-        return getCalendarioSemanal(from, resolverAtletasComSugestaoPendente(tenantId));
+        return getCalendarioSemanal(from, tenantId, resolverAtletasComSugestaoPendente(tenantId));
     }
 
-    /** Overload usado por {@code getDashboard()} para reusar um set já resolvido (design D2, add-pending-suggestion-badge). */
-    private CoachCalendarioDto getCalendarioSemanal(LocalDate from, Set<UUID> atletasComSugestaoPendente) {
-        UUID tenantId = TenantContext.getRequiredTenantId();
+    /**
+     * Overload usado por {@code getDashboard()} para reusar o {@code tenantId} e o set já
+     * resolvidos (design D2, add-pending-suggestion-badge) — evita uma segunda leitura do
+     * {@link TenantContext} para o mesmo valor na mesma requisição.
+     */
+    private CoachCalendarioDto getCalendarioSemanal(LocalDate from, UUID tenantId, Set<UUID> atletasComSugestaoPendente) {
         LocalDate base = (from != null) ? from : LocalDate.now(clock);
         LocalDate inicio = base.with(DayOfWeek.MONDAY);
         LocalDate fim = inicio.plusDays(6);
@@ -143,6 +146,16 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     @Override
     @Transactional(readOnly = true)
     public CoachInsightsDto getInsights(LocalDate from, LocalDate to) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        return getInsights(from, to, tenantId, resolverAtletasComSugestaoPendente(tenantId));
+    }
+
+    /**
+     * Overload usado por {@code getDashboard()} para reusar o roster e o set já resolvidos
+     * (design D2, add-pending-suggestion-badge) — elimina a 2ª execução da query de sugestão
+     * pendente que a versão pública, via {@code getRoster()} sem args, disparava de novo.
+     */
+    private CoachInsightsDto getInsights(LocalDate from, LocalDate to, UUID tenantId, Set<UUID> atletasComSugestaoPendente) {
         LocalDate fim = (to != null) ? to : LocalDate.now(clock);
         LocalDate inicio = (from != null) ? from : fim.minusWeeks(SEMANAS_INSIGHTS);
         if (inicio.isAfter(fim)) {
@@ -151,7 +164,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
 
         // Custo: O(N atletas) — reusa getRoster() (status/KPIs) + 1 query de realizados por atleta.
         // Aceitável para o roster de um tenant; ver follow-up de batch-loading se crescer.
-        List<CoachAtletaResumoDto> roster = getRoster();
+        List<CoachAtletaResumoDto> roster = getRoster(tenantId, atletasComSugestaoPendente);
         CoachInsightsDto.Kpis kpis = new CoachInsightsDto.Kpis(
                 roster.size(),
                 (int) roster.stream().filter(r -> "active".equals(r.status())).count(),
@@ -214,10 +227,9 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         log.info("Montando dashboard do coach: tenantId={}, q={}, status={}, sortBy={}, page={}, size={}, from={}, to={}, weekFrom={}",
                 tenantId, query.q(), query.status(), sortBy, page, size, query.from(), query.to(), query.weekFrom());
 
-        // Resolvido uma vez aqui e reusado no roster e no calendário — sem isso a query rodaria
-        // 3x na mesma requisição (design D2, add-pending-suggestion-badge, achado do pre-mortem).
-        // getInsights() abaixo rechama getRoster() sem args e resolve de novo (débito
-        // pré-existente da própria duplicação de roster ali, não piorado por esta change).
+        // Resolvido uma vez aqui e reusado no roster, no calendário e nos insights — os três
+        // overloads privados recebem o mesmo set, garantindo uma única execução da query por
+        // requisição (design D2, add-pending-suggestion-badge, achado do pre-mortem/QA).
         Set<UUID> atletasComSugestaoPendente = resolverAtletasComSugestaoPendente(tenantId);
 
         List<CoachAtletaResumoDto> roster = getRoster(tenantId, atletasComSugestaoPendente).stream()
@@ -232,9 +244,9 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         int toIndex = Math.min(fromIndex + size, totalElements);
 
         List<CoachAtletaResumoDto> pageItems = roster.subList(fromIndex, toIndex);
-        CoachInsightsDto insights = getInsights(query.from(), query.to());
+        CoachInsightsDto insights = getInsights(query.from(), query.to(), tenantId, atletasComSugestaoPendente);
         List<CoachAttentionItemOutputDto> attentionQueue = coachAttentionQueueService.getAttentionQueue();
-        CoachCalendarioDto calendar = getCalendarioSemanal(query.weekFrom(), atletasComSugestaoPendente);
+        CoachCalendarioDto calendar = getCalendarioSemanal(query.weekFrom(), tenantId, atletasComSugestaoPendente);
 
         CoachDashboardSummaryDto summary = new CoachDashboardSummaryDto(
                 insights.kpis(),
@@ -273,7 +285,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     }
 
     private CoachAtletaResumoDto montarResumo(Atleta atleta, LocalDate hoje, LocalDate inicioSemana, LocalDate fimSemana,
-                                              AthleteBilling cobranca, boolean temSugestaoPendente) {
+                                              AthleteBilling cobranca, boolean hasPendingSuggestion) {
         UUID atletaId = atleta.getId();
         UUID tenantId = TenantContext.getRequiredTenantId();
         MetricasDiarias metrica = metricasDiariasRepository.findLatestByAtletaId(atletaId).orElse(null);
@@ -312,7 +324,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
                 FaixaTsb.classificarNome(tsb),
                 cobranca != null ? cobranca.status() : null,
                 cobranca != null ? cobranca.nextDueDate() : null,
-                temSugestaoPendente);
+                hasPendingSuggestion);
     }
 
     private CoachCalendarioDto.TreinoAgendado montarTreinoAgendado(TreinoPlanejado tp, Set<UUID> atletasEmAtencao,
