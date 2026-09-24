@@ -104,7 +104,7 @@ class AthleteBillingExposureTest {
         when(coachDashboardService.getRoster()).thenReturn(List.of(new CoachAtletaResumoDto(
                 atletaId, "Ana Silva", 52.3, 44.0, 8.3, "BUILD", "warning",
                 LocalDate.of(2026, 9, 15), new BigDecimal("32.5"), 80, "FORMA_IDEAL",
-                AthleteBillingStatus.OVERDUE, vencimento)));
+                AthleteBillingStatus.OVERDUE, vencimento, false)));
 
         String corpo = mockMvc.perform(get("/api/v1/coach/atletas").with(tecnicoJwt()))
                 .andExpect(status().isOk())

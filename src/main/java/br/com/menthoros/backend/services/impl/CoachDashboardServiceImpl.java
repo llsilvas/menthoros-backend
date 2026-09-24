@@ -13,6 +13,7 @@ import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.FaixaTsb;
+import br.com.menthoros.backend.enums.StatusSugestao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.domain.billing.AthleteBilling;
 import br.com.menthoros.backend.services.AthleteContractService;
@@ -21,6 +22,7 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.SugestaoCoachRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.dto.output.CoachAttentionItemOutputDto;
@@ -34,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.IsoFields;
 import java.util.ArrayList;
@@ -77,12 +80,18 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final CoachAttentionQueueService coachAttentionQueueService;
     private final AthleteContractService athleteContractService;
+    private final SugestaoCoachRepository sugestaoCoachRepository;
     private final Clock clock;
 
     @Override
     @Transactional(readOnly = true)
     public List<CoachAtletaResumoDto> getRoster() {
         UUID tenantId = TenantContext.getRequiredTenantId();
+        return getRoster(tenantId, resolverAtletasComSugestaoPendente(tenantId));
+    }
+
+    /** Overload usado por {@code getDashboard()} para reusar um set já resolvido (design D2, add-pending-suggestion-badge). */
+    private List<CoachAtletaResumoDto> getRoster(UUID tenantId, Set<UUID> atletasComSugestaoPendente) {
         LocalDate hoje = LocalDate.now(clock);
         LocalDate inicioSemana = hoje.with(DayOfWeek.MONDAY);
         LocalDate fimSemana = inicioSemana.plusDays(6);
@@ -92,7 +101,8 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         Map<UUID, AthleteBilling> cobranca = athleteContractService.resolveBilling(
                 atletas.stream().map(Atleta::getId).toList(), hoje);
         return atletas.stream()
-                .map(atleta -> montarResumo(atleta, hoje, inicioSemana, fimSemana, cobranca.get(atleta.getId())))
+                .map(atleta -> montarResumo(atleta, hoje, inicioSemana, fimSemana, cobranca.get(atleta.getId()),
+                        atletasComSugestaoPendente.contains(atleta.getId())))
                 .toList();
     }
 
@@ -100,6 +110,15 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     @Transactional(readOnly = true)
     public CoachCalendarioDto getCalendarioSemanal(LocalDate from) {
         UUID tenantId = TenantContext.getRequiredTenantId();
+        return getCalendarioSemanal(from, tenantId, resolverAtletasComSugestaoPendente(tenantId));
+    }
+
+    /**
+     * Overload usado por {@code getDashboard()} para reusar o {@code tenantId} e o set já
+     * resolvidos (design D2, add-pending-suggestion-badge) — evita uma segunda leitura do
+     * {@link TenantContext} para o mesmo valor na mesma requisição.
+     */
+    private CoachCalendarioDto getCalendarioSemanal(LocalDate from, UUID tenantId, Set<UUID> atletasComSugestaoPendente) {
         LocalDate base = (from != null) ? from : LocalDate.now(clock);
         LocalDate inicio = base.with(DayOfWeek.MONDAY);
         LocalDate fim = inicio.plusDays(6);
@@ -110,15 +129,33 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
 
         List<CoachCalendarioDto.TreinoAgendado> treinos =
                 treinoPlanejadoRepository.findByTenantAndDataBetween(tenantId, inicio, fim).stream()
-                        .map(tp -> montarTreinoAgendado(tp, atletasEmAtencao))
+                        .map(tp -> montarTreinoAgendado(tp, atletasEmAtencao, atletasComSugestaoPendente))
                         .toList();
 
         return new CoachCalendarioDto(inicio, fim, treinos);
     }
 
+    /**
+     * IDs de atletas com SugestaoCoach PENDING não-expirada no tenant, resolvido uma vez por
+     * chamada de topo (design D1/D2, add-pending-suggestion-badge).
+     */
+    private Set<UUID> resolverAtletasComSugestaoPendente(UUID tenantId) {
+        return sugestaoCoachRepository.findAtletaIdsByTenantIdAndStatus(tenantId, StatusSugestao.PENDING, Instant.now(clock));
+    }
+
     @Override
     @Transactional(readOnly = true)
     public CoachInsightsDto getInsights(LocalDate from, LocalDate to) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        return getInsights(from, to, tenantId, resolverAtletasComSugestaoPendente(tenantId));
+    }
+
+    /**
+     * Overload usado por {@code getDashboard()} para reusar o roster e o set já resolvidos
+     * (design D2, add-pending-suggestion-badge) — elimina a 2ª execução da query de sugestão
+     * pendente que a versão pública, via {@code getRoster()} sem args, disparava de novo.
+     */
+    private CoachInsightsDto getInsights(LocalDate from, LocalDate to, UUID tenantId, Set<UUID> atletasComSugestaoPendente) {
         LocalDate fim = (to != null) ? to : LocalDate.now(clock);
         LocalDate inicio = (from != null) ? from : fim.minusWeeks(SEMANAS_INSIGHTS);
         if (inicio.isAfter(fim)) {
@@ -127,7 +164,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
 
         // Custo: O(N atletas) — reusa getRoster() (status/KPIs) + 1 query de realizados por atleta.
         // Aceitável para o roster de um tenant; ver follow-up de batch-loading se crescer.
-        List<CoachAtletaResumoDto> roster = getRoster();
+        List<CoachAtletaResumoDto> roster = getRoster(tenantId, atletasComSugestaoPendente);
         CoachInsightsDto.Kpis kpis = new CoachInsightsDto.Kpis(
                 roster.size(),
                 (int) roster.stream().filter(r -> "active".equals(r.status())).count(),
@@ -190,7 +227,12 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         log.info("Montando dashboard do coach: tenantId={}, q={}, status={}, sortBy={}, page={}, size={}, from={}, to={}, weekFrom={}",
                 tenantId, query.q(), query.status(), sortBy, page, size, query.from(), query.to(), query.weekFrom());
 
-        List<CoachAtletaResumoDto> roster = getRoster().stream()
+        // Resolvido uma vez aqui e reusado no roster, no calendário e nos insights — os três
+        // overloads privados recebem o mesmo set, garantindo uma única execução da query por
+        // requisição (design D2, add-pending-suggestion-badge, achado do pre-mortem/QA).
+        Set<UUID> atletasComSugestaoPendente = resolverAtletasComSugestaoPendente(tenantId);
+
+        List<CoachAtletaResumoDto> roster = getRoster(tenantId, atletasComSugestaoPendente).stream()
                 .filter(atleta -> matchesSearch(atleta, query.q()))
                 .filter(atleta -> matchesStatus(atleta, query.status()))
                 .sorted(comparator(sortBy))
@@ -202,9 +244,9 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         int toIndex = Math.min(fromIndex + size, totalElements);
 
         List<CoachAtletaResumoDto> pageItems = roster.subList(fromIndex, toIndex);
-        CoachInsightsDto insights = getInsights(query.from(), query.to());
+        CoachInsightsDto insights = getInsights(query.from(), query.to(), tenantId, atletasComSugestaoPendente);
         List<CoachAttentionItemOutputDto> attentionQueue = coachAttentionQueueService.getAttentionQueue();
-        CoachCalendarioDto calendar = getCalendarioSemanal(query.weekFrom());
+        CoachCalendarioDto calendar = getCalendarioSemanal(query.weekFrom(), tenantId, atletasComSugestaoPendente);
 
         CoachDashboardSummaryDto summary = new CoachDashboardSummaryDto(
                 insights.kpis(),
@@ -243,7 +285,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     }
 
     private CoachAtletaResumoDto montarResumo(Atleta atleta, LocalDate hoje, LocalDate inicioSemana, LocalDate fimSemana,
-                                              AthleteBilling cobranca) {
+                                              AthleteBilling cobranca, boolean hasPendingSuggestion) {
         UUID atletaId = atleta.getId();
         UUID tenantId = TenantContext.getRequiredTenantId();
         MetricasDiarias metrica = metricasDiariasRepository.findLatestByAtletaId(atletaId).orElse(null);
@@ -281,13 +323,16 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
                 deriveStatus(atleta, tsb, lastActivity, hoje), lastActivity, weeklyVolume, aderenciaPercentual,
                 FaixaTsb.classificarNome(tsb),
                 cobranca != null ? cobranca.status() : null,
-                cobranca != null ? cobranca.nextDueDate() : null);
+                cobranca != null ? cobranca.nextDueDate() : null,
+                hasPendingSuggestion);
     }
 
-    private CoachCalendarioDto.TreinoAgendado montarTreinoAgendado(TreinoPlanejado tp, Set<UUID> atletasEmAtencao) {
+    private CoachCalendarioDto.TreinoAgendado montarTreinoAgendado(TreinoPlanejado tp, Set<UUID> atletasEmAtencao,
+                                                                    Set<UUID> atletasComSugestaoPendente) {
         Atleta atleta = tp.getAtleta();
         TipoTreino tipo = tp.getTipoTreino();
         boolean hasAlert = atleta != null && atletasEmAtencao.contains(atleta.getId());
+        boolean hasPendingSuggestion = atleta != null && atletasComSugestaoPendente.contains(atleta.getId());
         return new CoachCalendarioDto.TreinoAgendado(
                 atleta != null ? atleta.getId() : null,
                 atleta != null ? nomeCompleto(atleta) : null,
@@ -295,7 +340,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
                 tipo != null ? tipo.name() : null,
                 tipo != null && TIPOS_CHAVE.contains(tipo),
                 hasAlert,  // atleta presente na fila de atenção (add-coach-attention-queue)
-                false); // hasPendingSuggestion — fonte: add-coach-suggestion-inbox (não entregue)
+                hasPendingSuggestion); // sugestão PENDING não-expirada (add-pending-suggestion-badge)
     }
 
     /**

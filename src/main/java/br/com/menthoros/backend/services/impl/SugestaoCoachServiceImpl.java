@@ -41,7 +41,7 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
     public List<SugestaoCoachOutputDto> listarPorAtleta(UUID atletaId) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         log.info("listarPorAtleta: atletaId={}, tenantId={}", atletaId, tenantId);
-        return repository.findAllByAtletaIdAndTenantId(atletaId, tenantId)
+        return repository.findAllByAtletaIdAndTenantId(atletaId, tenantId, Instant.now())
                 .stream().map(mapper::toOutputDto).toList();
     }
 

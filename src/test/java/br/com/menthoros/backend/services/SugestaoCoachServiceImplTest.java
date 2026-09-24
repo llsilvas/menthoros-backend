@@ -167,19 +167,19 @@ class SugestaoCoachServiceImplTest {
         void retornaListaMapeada() {
             SugestaoCoach s = sugestao(StatusSugestao.PENDING);
             SugestaoCoachOutputDto dto = outputDto(sugestaoId);
-            when(repository.findAllByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(List.of(s));
+            when(repository.findAllByAtletaIdAndTenantId(eq(atletaId), eq(tenantId), any())).thenReturn(List.of(s));
             when(mapper.toOutputDto(s)).thenReturn(dto);
 
             List<SugestaoCoachOutputDto> result = service.listarPorAtleta(atletaId);
 
             assertThat(result).containsExactly(dto);
-            verify(repository).findAllByAtletaIdAndTenantId(atletaId, tenantId);
+            verify(repository).findAllByAtletaIdAndTenantId(eq(atletaId), eq(tenantId), any());
         }
 
         @Test
         @DisplayName("retorna lista vazia quando o atleta não possui sugestões")
         void retornaListaVazia() {
-            when(repository.findAllByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(List.of());
+            when(repository.findAllByAtletaIdAndTenantId(eq(atletaId), eq(tenantId), any())).thenReturn(List.of());
 
             List<SugestaoCoachOutputDto> result = service.listarPorAtleta(atletaId);
 
@@ -191,12 +191,12 @@ class SugestaoCoachServiceImplTest {
         @DisplayName("cross-tenant — atletaId de outro tenant retorna vazio (query filtra por tenantId)")
         void crossTenantRetornaVazio() {
             UUID atletaOutroTenant = UUID.randomUUID();
-            when(repository.findAllByAtletaIdAndTenantId(atletaOutroTenant, tenantId)).thenReturn(List.of());
+            when(repository.findAllByAtletaIdAndTenantId(eq(atletaOutroTenant), eq(tenantId), any())).thenReturn(List.of());
 
             List<SugestaoCoachOutputDto> result = service.listarPorAtleta(atletaOutroTenant);
 
             assertThat(result).isEmpty();
-            verify(repository).findAllByAtletaIdAndTenantId(atletaOutroTenant, tenantId);
+            verify(repository).findAllByAtletaIdAndTenantId(eq(atletaOutroTenant), eq(tenantId), any());
             verifyNoInteractions(mapper);
         }
     }
