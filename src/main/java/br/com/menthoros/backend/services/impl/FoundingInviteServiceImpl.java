@@ -180,7 +180,10 @@ public class FoundingInviteServiceImpl implements FoundingInviteService {
         Map<String, String> valores = Map.of(
                 "nome", nome,
                 "link", frontendUrl + INVITE_PATH + token.value(),
-                "validade", validityDays + (validityDays == 1 ? " dia" : " dias"));
+                "validade", validityDays + (validityDays == 1 ? " dia" : " dias"),
+                // Logo do cabeçalho: PNGs servidos pelo frontend em /email/ (clientes de e-mail não
+                // carregam imagem inline em base64 de forma confiável; URL pública é o caminho seguro).
+                "assetsUrl", frontendUrl + "/email");
         return new EmailMessage(email, SUBJECT,
                 templates.render("founding-invite.html", valores),
                 templates.render("founding-invite.txt", valores));

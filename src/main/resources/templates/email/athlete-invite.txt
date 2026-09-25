@@ -1,10 +1,14 @@
-Menthoros
+Menthoros · Convite da sua assessoria
 
 {{nome}}, seu treinador te convidou.
 
 A assessoria {{assessoria}} usa o Menthoros para planejar e acompanhar seus
-treinos. Com a sua conta você acessa seu painel: treino do dia, plano da
-semana, provas e evolução.
+treinos. Com a sua conta você acessa seu painel com tudo o que o seu treinador
+preparou para você:
+
+1. Treino do dia, com cada bloco, duração e zona já definidos pelo seu treinador.
+2. Plano da semana e provas, para você saber o que vem pela frente.
+3. Sua evolução, treino a treino, acompanhada de perto pelo seu treinador.
 
 Para entrar, confirme seus dados e escolha uma senha. Leva menos de dois minutos:
 
