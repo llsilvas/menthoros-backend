@@ -1,14 +1,37 @@
-Menthoros · Turma fundadora
+Menthoros · Turma fundadora · 10 vagas
 
 {{nome}}, sua vaga está reservada.
 
-Você foi uma das dez assessorias escolhidas para fundar o Menthoros com a gente.
-Seu convite dá acesso completo à plataforma para você e seus atletas, sem custo
-durante a fase fundadora.
+Meu nome é Leandro, sou o fundador do Menthoros. Nos últimos meses, construí uma
+plataforma de inteligência de performance pensada para assessorias de corrida: a IA
+analisa os dados dos seus atletas e traz sugestões de ajuste da semana, mas quem decide
+é sempre você. O atleta não fala com a IA, fala com o treinador.
 
-Para entrar, escolha o nome da sua assessoria e uma senha. Leva menos de dois minutos:
+Antes de abrir para o mercado, estou montando uma turma fundadora com dez assessorias
+que já vivem esse dia a dia. Uma dessas vagas é sua.
+
+O que a turma fundadora recebe:
+
+1. 60 dias de acesso completo, sem custo, para você e todos os seus atletas.
+   Sem cartão para começar.
+2. Voz direta no produto. O que você pedir entra na fila de prioridade antes de
+   qualquer cliente futuro.
+3. Canal direto comigo. Onboarding feito por mim e suporte pelo WhatsApp durante os
+   60 dias do período fundador.
+
+IMPORTANTE · PERÍODO FUNDADOR
+O acesso sem custo vale por 60 dias. Ao fim desse período, sua assessoria segue no
+plano Basic (R$ 99/mês, 1 técnico e até 20 atletas): basta cadastrar o cartão. Sem o
+cadastro, o acesso é encerrado.
+
+Para entrar, escolha o nome da sua assessoria e uma senha. Leva menos de dois minutos,
+e a partir daí você já pode cadastrar seus atletas:
 
 {{link}}
+
+Um abraço,
+Leandro Silva
+Fundador · Menthoros
 
 Este convite é pessoal e vale por {{validade}}. Se expirar, é só responder este e-mail
 que enviamos outro. Se você não pediu para entrar na lista de espera, pode ignorar

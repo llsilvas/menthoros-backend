@@ -19,7 +19,8 @@ class EmailTemplateRendererTest {
         return Map.of(
                 "nome", "Maria",
                 "link", "https://app.menthoros.com/#/cadastro?convite=abc_DEF-123",
-                "validade", "7 dias");
+                "validade", "7 dias",
+                "assetsUrl", "https://app.menthoros.com/email");
     }
 
     @Nested
@@ -27,15 +28,18 @@ class EmailTemplateRendererTest {
     class Render {
 
         @Test
-        @DisplayName("HTML do convite: nenhum placeholder sobra e o link aparece duas vezes (botão e texto)")
+        @DisplayName("HTML do convite: nenhum placeholder sobra e o link aparece quatro vezes (botão VML, botão, href e texto)")
         void htmlCompleto() {
             String html = renderer.render("founding-invite.html", valores());
 
             assertThat(html)
                     .doesNotContain("{{")
                     .contains("Maria")
-                    .contains("7 dias");
-            assertThat(html.split("convite=abc_DEF-123", -1)).hasSize(3);
+                    .contains("7 dias")
+                    .contains("https://app.menthoros.com/email/menthoros-rhino.png")
+                    .contains("60 dias")
+                    .contains("plano Basic");
+            assertThat(html.split("convite=abc_DEF-123", -1)).hasSize(5);
         }
 
         @Test
@@ -46,13 +50,16 @@ class EmailTemplateRendererTest {
             assertThat(texto)
                     .doesNotContain("{{")
                     .contains("https://app.menthoros.com/#/cadastro?convite=abc_DEF-123")
-                    .contains("Maria");
+                    .contains("Maria")
+                    .contains("60 dias")
+                    .contains("plano Basic");
         }
 
         @Test
         @DisplayName("no HTML o nome é escapado — um inscrito com <script> no nome não vira injeção")
         void escapaHtml() {
-            var valores = Map.of("nome", "<script>alert(1)</script>", "link", "https://x", "validade", "7 dias");
+            var valores = Map.of("nome", "<script>alert(1)</script>", "link", "https://x", "validade", "7 dias",
+                    "assetsUrl", "https://x/email");
 
             String html = renderer.render("founding-invite.html", valores);
 
@@ -72,7 +79,8 @@ class EmailTemplateRendererTest {
         @Test
         @DisplayName("placeholder sem valor é erro, não string vazia")
         void placeholderSemValor() {
-            assertThatThrownBy(() -> renderer.render("founding-invite.html", Map.of("nome", "Maria")))
+            assertThatThrownBy(() -> renderer.render("founding-invite.html",
+                    Map.of("nome", "Maria", "assetsUrl", "https://x/email")))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("link");
         }

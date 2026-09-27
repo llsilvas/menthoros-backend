@@ -304,7 +304,9 @@ public class AthleteInviteServiceImpl implements AthleteInviteService {
                 "nome", atleta.getNome(),
                 "assessoria", nomeAssessoria,
                 "link", frontendUrl + INVITE_PATH + token.value(),
-                "validade", validityDays + (validityDays == 1 ? " dia" : " dias"));
+                "validade", validityDays + (validityDays == 1 ? " dia" : " dias"),
+                // Logo do cabeçalho: PNGs servidos pelo frontend em /email/ (mesma origem do founding-invite).
+                "assetsUrl", frontendUrl + "/email");
         return new EmailMessage(atleta.getEmail(), SUBJECT,
                 templates.render("athlete-invite.html", valores),
                 templates.render("athlete-invite.txt", valores));
