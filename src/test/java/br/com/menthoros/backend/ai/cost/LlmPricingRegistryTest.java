@@ -59,6 +59,17 @@ class LlmPricingRegistryTest {
         }
 
         @Test
+        @DisplayName("resolve o snapshot datado que a OpenAI devolve na resposta, com o preço de gpt-4o-mini")
+        void resolveSnapshotDatadoGpt4oMini() {
+            LlmPricingRegistry registry = new LlmPricingRegistry(routingVigente());
+
+            LlmPricingRegistry.PrecoModelo preco = registry.precoDe("gpt-4o-mini-2024-07-18").orElseThrow();
+            LlmPricingRegistry.PrecoModelo base = registry.precoDe("gpt-4o-mini").orElseThrow();
+
+            assertThat(preco).isEqualTo(base);
+        }
+
+        @Test
         @DisplayName("retorna Optional vazio para modelo sem preço cadastrado")
         void vazioParaModeloDesconhecido() {
             LlmPricingRegistry registry = new LlmPricingRegistry(routingVigente());

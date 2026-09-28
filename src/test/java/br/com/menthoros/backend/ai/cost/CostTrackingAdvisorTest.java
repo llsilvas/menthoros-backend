@@ -222,6 +222,20 @@ class CostTrackingAdvisorTest {
         }
 
         @Test
+        @DisplayName("snapshot datado do gpt-4o-mini registra custo")
+        void snapshotDatadoRegistraCusto() {
+            Usage usage = new DefaultUsage(1_000_000, 1_000_000);
+            when(chain.nextCall(any())).thenReturn(respostaCom(usage, "gpt-4o-mini-2024-07-18"));
+
+            CostTrackingAdvisor advisor = CostTrackingAdvisor.paraRota("simple", pricing, meterRegistry, ledger);
+            advisor.adviseCall(request, chain);
+
+            // 1 MTok * 0.15 + 1 MTok * 0.60
+            assertThat(contador("llm.cost.estimated.usd", "gpt-4o-mini-2024-07-18", "simple"))
+                    .isCloseTo(0.75, within(1e-9));
+        }
+
+        @Test
         @DisplayName("modelo sem preço registra tokens mas não custo, sem quebrar a chamada")
         void modeloSemPrecoNaoQuebra() {
             Usage usage = new DefaultUsage(10, 5);
