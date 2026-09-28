@@ -30,7 +30,14 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import br.com.menthoros.backend.config.external.MultiModelConfig;
+import org.mockito.ArgumentCaptor;
+import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.anthropic.api.AnthropicCacheTtl;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.MessageType;
+import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.converter.StructuredOutputConverter;
 import org.springframework.core.io.ResourceLoader;
 
 import java.time.LocalDate;
@@ -68,6 +75,8 @@ class WorkoutAnalysisListenerTest {
     private UUID treinoId;
     private UUID tenantId;
     private TreinoRegistradoEvent event;
+    private ChatClient.ChatClientRequestSpec requestSpec;
+    private ChatClient.CallResponseSpec callSpec;
 
     @BeforeEach
     void setUp() {
@@ -253,14 +262,15 @@ class WorkoutAnalysisListenerTest {
                 "recommendation", null, 8, "rationale");
 
         ChatClient sonnet = mock(ChatClient.class);
-        ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
-        ChatClient.CallResponseSpec callSpec = mock(ChatClient.CallResponseSpec.class);
+        requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+        callSpec = mock(ChatClient.CallResponseSpec.class);
         when(modelRouter.route(TaskComplexity.COMPLEX)).thenReturn(sonnet);
         when(sonnet.prompt()).thenReturn(requestSpec);
         when(requestSpec.system(nullable(String.class))).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
+        when(requestSpec.options(any(ChatOptions.class))).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callSpec);
-        when(callSpec.entity(AnaliseWorkoutRawDto.class)).thenReturn(raw);
+        when(callSpec.entity(any(StructuredOutputConverter.class))).thenReturn(raw);
         when(translator.translate(raw)).thenReturn(raw);
         return raw;
     }
@@ -387,5 +397,64 @@ class WorkoutAnalysisListenerTest {
                         && a.getAtletaComoFoi() == null
                         && a.getAtletaBloqueadoMotivo() == null
                         && "summary".equals(a.getSummaryPt())));
+    }
+
+    @Test
+    void resposta_com_chave_repetida_termina_completed_com_o_ultimo_valor() {
+        // fix-workout-analysis-duplicate-keys CA1: antes, o record recusava a segunda ocorrência e a
+        // análise ficava FAILED.
+        stubCaminhoCompleto();
+        respostaDoLlm("""
+                {"summary":"summary","primary_cause":"NORMAL","execution_score":6,
+                 "primary_cause":"PACING_ERROR","execution_score":8}
+                """);
+        when(translator.translate(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(athleteMessageGenerator.gerar(anyString(), any())).thenReturn(Optional.empty());
+
+        listener.onTreinoRegistrado(event);
+
+        verify(analiseRepository, atLeastOnce()).save(argThat(a ->
+                a.getStatus() == AnaliseStatus.COMPLETED
+                        && Integer.valueOf(8).equals(a.getExecutionScore())
+                        && a.getPrimaryCause() == PrimaryAnalysisCause.PACING_ERROR));
+    }
+
+    @Test
+    void resposta_que_nao_e_json_termina_failed() {
+        // CA3: a tolerância é só para chave repetida — texto livre continua falhando.
+        stubCaminhoCompleto();
+        respostaDoLlm("desculpe, não consegui analisar este treino");
+
+        listener.onTreinoRegistrado(event);
+
+        verify(analiseRepository, atLeastOnce()).save(argThat(a -> a.getStatus() == AnaliseStatus.FAILED));
+        verify(analiseRepository, never()).save(argThat(a -> a.getStatus() == AnaliseStatus.COMPLETED));
+    }
+
+    @Test
+    void chama_o_llm_com_temperatura_baixa_preservando_o_cache_da_rota() {
+        // CA5: sem o cacheOptions explícito, o Spring AI 1.1.6 trataria a opção por chamada como
+        // cache DISABLED e o system prompt (a skill) deixaria de ser cacheado.
+        stubCaminhoCompleto();
+        when(athleteMessageGenerator.gerar(anyString(), any())).thenReturn(Optional.empty());
+
+        listener.onTreinoRegistrado(event);
+
+        ArgumentCaptor<ChatOptions> captor = ArgumentCaptor.forClass(ChatOptions.class);
+        verify(requestSpec).options(captor.capture());
+        assertThat(captor.getValue()).isInstanceOf(AnthropicChatOptions.class);
+        AnthropicChatOptions opcoes = (AnthropicChatOptions) captor.getValue();
+        assertThat(opcoes.getTemperature()).isEqualTo(0.2);
+        assertThat(opcoes.getModel()).isNull();
+        assertThat(opcoes.getMaxTokens()).isNull();
+        assertThat(opcoes.getCacheOptions().getStrategy())
+                .isEqualTo(MultiModelConfig.cacheDoSystemPrompt().getStrategy());
+        assertThat(opcoes.getCacheOptions().getMessageTypeTtl())
+                .containsEntry(MessageType.SYSTEM, AnthropicCacheTtl.ONE_HOUR);
+    }
+
+    private void respostaDoLlm(String texto) {
+        when(callSpec.entity(any(StructuredOutputConverter.class))).thenAnswer(inv ->
+                ((StructuredOutputConverter<?>) inv.getArgument(0)).convert(texto));
     }
 }

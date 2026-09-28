@@ -1,6 +1,8 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.ai.output.DuplicateKeyTolerantOutputConverter;
 import br.com.menthoros.backend.config.core.WorkoutAnalysisProperties;
+import br.com.menthoros.backend.config.external.MultiModelConfig;
 import br.com.menthoros.backend.dto.llm.AnaliseWorkoutRawDto;
 import br.com.menthoros.backend.dto.llm.AthleteMessageDto;
 import br.com.menthoros.backend.entity.AnaliseWorkout;
@@ -24,6 +26,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.scheduling.annotation.Async;
@@ -63,6 +66,13 @@ public class WorkoutAnalysisListener {
     private final MeterRegistry meterRegistry;
 
     private static final String SKILL_PATH = "classpath:skills/analise/workout-analyzer/SKILL.md";
+
+    // Saída estruturada com temperatura alta repetia chaves no JSON (fix-workout-analysis-duplicate-keys).
+    // Vale só para esta chamada: a rota COMPLEX segue com a temperatura configurada.
+    private static final double TEMPERATURA_ANALISE = 0.2;
+
+    private static final DuplicateKeyTolerantOutputConverter<AnaliseWorkoutRawDto> CONVERSOR_ANALISE =
+            new DuplicateKeyTolerantOutputConverter<>(AnaliseWorkoutRawDto.class);
     private String cachedSkillContent;
 
     @PostConstruct
@@ -123,8 +133,12 @@ public class WorkoutAnalysisListener {
                 AnaliseWorkoutRawDto raw = sonnet.prompt()
                         .system(skillContent)
                         .user(userPrompt)
+                        .options(AnthropicChatOptions.builder()
+                                .temperature(TEMPERATURA_ANALISE)
+                                .cacheOptions(MultiModelConfig.cacheDoSystemPrompt())
+                                .build())
                         .call()
-                        .entity(AnaliseWorkoutRawDto.class);
+                        .entity(CONVERSOR_ANALISE);
 
                 AnaliseWorkoutRawDto translated;
                 boolean translationFailed = false;

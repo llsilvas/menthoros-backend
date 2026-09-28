@@ -9,7 +9,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.anthropic.AnthropicChatOptions; import org.springframework.ai.anthropic.api.AnthropicCacheStrategy; import org.springframework.ai.anthropic.api.AnthropicCacheTtl; import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.DefaultUsage;
@@ -69,6 +69,18 @@ class MultiModelConfigTest {
             assertThat(options.getTemperature()).isEqualTo(0.7);
             assertThat(options.getMaxTokens()).isEqualTo(4000);
             assertThat(options.getCacheOptions()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("usa o cache do system prompt exposto para opções por chamada")
+        void usaCacheDoSystemPrompt() {
+            AnthropicChatOptions options = MultiModelConfig.opcoesAnthropic(rota("claude-sonnet-4-6", 0.7, 4000));
+
+            assertThat(options.getCacheOptions().getStrategy()).isEqualTo(AnthropicCacheStrategy.SYSTEM_ONLY);
+            assertThat(options.getCacheOptions().getMessageTypeTtl())
+                    .containsEntry(MessageType.SYSTEM, AnthropicCacheTtl.ONE_HOUR);
+            assertThat(MultiModelConfig.cacheDoSystemPrompt().getStrategy())
+                    .isEqualTo(AnthropicCacheStrategy.SYSTEM_ONLY);
         }
     }
 
