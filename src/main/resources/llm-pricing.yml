@@ -31,6 +31,12 @@ modelos:
     input-per-mtok: 2.50
     cached-input-per-mtok: 1.25
     output-per-mtok: 10.00
+  # Snapshot datado que a OpenAI devolve para chamadas a gpt-4o (rotas plano e expert). Mesmos
+  # valores de gpt-4o.
+  gpt-4o-2024-08-06:
+    input-per-mtok: 2.50
+    cached-input-per-mtok: 1.25
+    output-per-mtok: 10.00
   claude-haiku-4-5-20251001:
     input-per-mtok: 1.00
     cached-input-per-mtok: 0.10
