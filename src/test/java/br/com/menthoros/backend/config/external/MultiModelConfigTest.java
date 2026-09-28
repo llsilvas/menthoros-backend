@@ -9,7 +9,16 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.anthropic.AnthropicChatOptions; import org.springframework.ai.anthropic.api.AnthropicCacheStrategy; import org.springframework.ai.anthropic.api.AnthropicCacheTtl; import org.springframework.ai.chat.messages.MessageType;
+import org.mockito.ArgumentCaptor;
+import org.springframework.ai.anthropic.AnthropicChatModel;
+import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.anthropic.api.AnthropicApi;
+import org.springframework.ai.anthropic.api.AnthropicCacheStrategy;
+import org.springframework.ai.anthropic.api.AnthropicCacheTtl;
+import org.springframework.ai.chat.messages.MessageType;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.retry.support.RetryTemplate;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.DefaultUsage;
@@ -72,15 +81,59 @@ class MultiModelConfigTest {
         }
 
         @Test
-        @DisplayName("usa o cache do system prompt exposto para opções por chamada")
+        @DisplayName("usa cache SYSTEM_ONLY com TTL de 1h no system prompt")
         void usaCacheDoSystemPrompt() {
             AnthropicChatOptions options = MultiModelConfig.opcoesAnthropic(rota("claude-sonnet-4-6", 0.7, 4000));
 
             assertThat(options.getCacheOptions().getStrategy()).isEqualTo(AnthropicCacheStrategy.SYSTEM_ONLY);
             assertThat(options.getCacheOptions().getMessageTypeTtl())
                     .containsEntry(MessageType.SYSTEM, AnthropicCacheTtl.ONE_HOUR);
-            assertThat(MultiModelConfig.cacheDoSystemPrompt().getStrategy())
-                    .isEqualTo(AnthropicCacheStrategy.SYSTEM_ONLY);
+        }
+    }
+
+    @Nested
+    @DisplayName("opcoesAnthropicPorChamada")
+    class OpcoesAnthropicPorChamada {
+
+        @Test
+        @DisplayName("leva só a temperatura e o cache do system prompt; model e maxTokens ficam para a rota")
+        void soTemperaturaECache() {
+            AnthropicChatOptions options = MultiModelConfig.opcoesAnthropicPorChamada(0.2);
+
+            assertThat(options.getTemperature()).isEqualTo(0.2);
+            assertThat(options.getModel()).isNull();
+            assertThat(options.getMaxTokens()).isNull();
+            assertThat(options.getCacheOptions().getStrategy()).isEqualTo(AnthropicCacheStrategy.SYSTEM_ONLY);
+        }
+
+        @Test
+        @DisplayName("no AnthropicChatModel real, preserva model/maxTokens da rota, aplica a temperatura e mantém o cache")
+        void mergeRealComOpcoesDaRota() {
+            // Exercita o merge do Spring AI de verdade (não um ChatClient mockado): se a opção por
+            // chamada substituísse as da rota, a requisição sairia sem model/maxTokens.
+            AnthropicApi api = mock(AnthropicApi.class);
+            when(api.chatCompletionEntity(any(), any())).thenThrow(new IllegalStateException("sem rede"));
+            AnthropicChatModel model = AnthropicChatModel.builder()
+                    .anthropicApi(api)
+                    .defaultOptions(MultiModelConfig.opcoesAnthropic(rota("claude-sonnet-4-6", 0.7, 4000)))
+                    .retryTemplate(RetryTemplate.builder().maxAttempts(1).build())
+                    .build();
+            Prompt prompt = new Prompt(
+                    List.of(new SystemMessage("skill de análise"), new UserMessage("dados do treino")),
+                    MultiModelConfig.opcoesAnthropicPorChamada(0.2));
+
+            assertThatThrownBy(() -> model.call(prompt)).hasMessageContaining("sem rede");
+
+            ArgumentCaptor<AnthropicApi.ChatCompletionRequest> captor =
+                    ArgumentCaptor.forClass(AnthropicApi.ChatCompletionRequest.class);
+            verify(api).chatCompletionEntity(captor.capture(), any());
+            AnthropicApi.ChatCompletionRequest request = captor.getValue();
+            assertThat(request.model()).isEqualTo("claude-sonnet-4-6");
+            assertThat(request.maxTokens()).isEqualTo(4000);
+            assertThat(request.temperature()).isEqualTo(0.2);
+            // Após o merge do Spring AI os blocos do system chegam como Map (conversão via JSON).
+            assertThat(request.system()).isInstanceOfSatisfying(List.class, blocos ->
+                    assertThat(((java.util.Map<?, ?>) blocos.get(0)).get("cache_control")).isNotNull());
         }
     }
 

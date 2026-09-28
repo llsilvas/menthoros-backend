@@ -26,7 +26,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.core.io.ResourceLoader;
 import org.springframework.scheduling.annotation.Async;
@@ -71,6 +70,7 @@ public class WorkoutAnalysisListener {
     // Vale só para esta chamada: a rota COMPLEX segue com a temperatura configurada.
     private static final double TEMPERATURA_ANALISE = 0.2;
 
+    // Compartilhado entre threads e tenants de propósito: o conversor não guarda estado de requisição.
     private static final DuplicateKeyTolerantOutputConverter<AnaliseWorkoutRawDto> CONVERSOR_ANALISE =
             new DuplicateKeyTolerantOutputConverter<>(AnaliseWorkoutRawDto.class);
     private String cachedSkillContent;
@@ -133,10 +133,7 @@ public class WorkoutAnalysisListener {
                 AnaliseWorkoutRawDto raw = sonnet.prompt()
                         .system(skillContent)
                         .user(userPrompt)
-                        .options(AnthropicChatOptions.builder()
-                                .temperature(TEMPERATURA_ANALISE)
-                                .cacheOptions(MultiModelConfig.cacheDoSystemPrompt())
-                                .build())
+                        .options(MultiModelConfig.opcoesAnthropicPorChamada(TEMPERATURA_ANALISE))
                         .call()
                         .entity(CONVERSOR_ANALISE);
 

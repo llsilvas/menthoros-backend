@@ -95,6 +95,19 @@ class DuplicateKeyTolerantOutputConverterTest {
         }
 
         @Test
+        @DisplayName("erro de parse não carrega o conteúdo da resposta na mensagem")
+        void erroNaoCarregaConteudo() {
+            // A mensagem vai para log e para AnaliseWorkout.errorMessage; a resposta pode trazer
+            // dado do atleta.
+            assertThatThrownBy(() -> converter.convert("{\"summary\":\"dado-sensivel\",\"execution_score\":}"))
+                    .satisfies(e -> {
+                        for (Throwable t = e; t != null; t = t.getCause()) {
+                            assertThat(String.valueOf(t.getMessage())).doesNotContain("dado-sensivel");
+                        }
+                    });
+        }
+
+        @Test
         @DisplayName("registra WARN com o campo repetido quando há duplicata, sem logar o corpo")
         void registraWarnNaDuplicata() {
             converter.convert("{\"summary\":\"segredo\",\"execution_score\":5,\"execution_score\":9}");

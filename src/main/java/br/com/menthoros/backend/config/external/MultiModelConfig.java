@@ -214,13 +214,24 @@ public class MultiModelConfig {
     }
 
     /**
-     * Cache de 1h do system prompt, usado pelas rotas Anthropic.
+     * Opções por chamada para uma rota Anthropic, sobrescrevendo só a temperatura.
      *
-     * Público porque quem passa {@code AnthropicChatOptions} por chamada precisa repeti-lo: no
-     * Spring AI 1.1.6 o {@code cacheOptions} da opção por chamada substitui o da rota, e o default
-     * dele é {@code DISABLED}.
+     * Único ponto para montá-las: no Spring AI 1.1.6 o {@code cacheOptions} da opção por chamada
+     * substitui o da rota, e o default dele é {@code DISABLED} — montar {@code AnthropicChatOptions}
+     * direto no chamador desliga o cache do system prompt sem erro, só com custo e latência maiores.
+     * Model e maxTokens ficam nulos de propósito: o {@code AnthropicChatModel} completa com os da rota.
      */
-    public static AnthropicCacheOptions cacheDoSystemPrompt() {
+    public static AnthropicChatOptions opcoesAnthropicPorChamada(double temperatura) {
+        return AnthropicChatOptions.builder()
+                .temperature(temperatura)
+                .cacheOptions(cacheDoSystemPrompt())
+                .build();
+    }
+
+    /**
+     * Cache de 1h do system prompt, usado pelas rotas Anthropic.
+     */
+    static AnthropicCacheOptions cacheDoSystemPrompt() {
         return AnthropicCacheOptions.builder()
                 .strategy(AnthropicCacheStrategy.SYSTEM_ONLY)
                 .messageTypeTtl(MessageType.SYSTEM, AnthropicCacheTtl.ONE_HOUR)

@@ -30,9 +30,9 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
-import br.com.menthoros.backend.config.external.MultiModelConfig;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.anthropic.api.AnthropicCacheStrategy;
 import org.springframework.ai.anthropic.api.AnthropicCacheTtl;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.MessageType;
@@ -447,8 +447,7 @@ class WorkoutAnalysisListenerTest {
         assertThat(opcoes.getTemperature()).isEqualTo(0.2);
         assertThat(opcoes.getModel()).isNull();
         assertThat(opcoes.getMaxTokens()).isNull();
-        assertThat(opcoes.getCacheOptions().getStrategy())
-                .isEqualTo(MultiModelConfig.cacheDoSystemPrompt().getStrategy());
+        assertThat(opcoes.getCacheOptions().getStrategy()).isEqualTo(AnthropicCacheStrategy.SYSTEM_ONLY);
         assertThat(opcoes.getCacheOptions().getMessageTypeTtl())
                 .containsEntry(MessageType.SYSTEM, AnthropicCacheTtl.ONE_HOUR);
     }
