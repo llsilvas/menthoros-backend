@@ -21,6 +21,12 @@ modelos:
     input-per-mtok: 0.15
     cached-input-per-mtok: 0.075
     output-per-mtok: 0.60
+  # Snapshot datado: é o nome que a OpenAI devolve na resposta para chamadas a gpt-4o-mini, e o
+  # CostTrackingAdvisor busca o preço por esse nome exato. Mesmos valores de gpt-4o-mini.
+  gpt-4o-mini-2024-07-18:
+    input-per-mtok: 0.15
+    cached-input-per-mtok: 0.075
+    output-per-mtok: 0.60
   gpt-4o:
     input-per-mtok: 2.50
     cached-input-per-mtok: 1.25
