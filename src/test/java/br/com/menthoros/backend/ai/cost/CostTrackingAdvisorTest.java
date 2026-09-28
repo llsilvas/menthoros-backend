@@ -288,6 +288,27 @@ class CostTrackingAdvisorTest {
         }
 
         @Test
+        @DisplayName("rota plano com o snapshot datado do gpt-4o: custo chega ao ledger e à métrica")
+        void snapshotDatadoGpt4oNaRotaPlanoGravaCustoNoLedger() {
+            // A OpenAI devolve o snapshot datado, não o alias configurado na rota; sem preço para ele o
+            // custo da geração de plano não era registrado (fix-llm-pricing-gpt4o-snapshot, CA2).
+            OpenAiApi.Usage nativo = new OpenAiApi.Usage(50, 100, 150,
+                    new OpenAiApi.Usage.PromptTokensDetails(0, 40), null);
+            when(chain.nextCall(any()))
+                    .thenReturn(respostaCom(new DefaultUsage(100, 50, 150, nativo), "gpt-4o-2024-08-06"));
+
+            CostTrackingAdvisor.paraRota("plano", pricing, meterRegistry, ledger).adviseCall(request, chain);
+
+            LlmCallRegistro r = registroGravado();
+            assertThat(r.route()).isEqualTo("plano");
+            assertThat(r.model()).isEqualTo("gpt-4o-2024-08-06");
+            // 60*2.50 + 40*1.25 + 50*10.00 = 700 por MTok -> 0.0007 USD
+            assertThat(r.costUsd()).isEqualByComparingTo("0.0007");
+            assertThat(contador("llm.cost.estimated.usd", "gpt-4o-2024-08-06", "plano"))
+                    .isCloseTo(0.0007, within(1e-9));
+        }
+
+        @Test
         @DisplayName("sem escopo: linha genérica SUCCESS, sem contexto nem texto, com tokens, custo e latência")
         void semEscopoGravaGenerico() {
             TenantContext.setTenantId(TENANT);
