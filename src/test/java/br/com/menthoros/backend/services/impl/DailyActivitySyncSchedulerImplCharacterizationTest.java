@@ -66,7 +66,7 @@ class DailyActivitySyncSchedulerImplCharacterizationTest {
 
     @BeforeEach
     void setUpScheduler() {
-        CandidateSelector candidateSelector = new CandidateSelector(treinoPlanejadoRepository, activityTypeCompatibilityMatrix);
+        CandidateSelector candidateSelector = new CandidateSelector(treinoPlanejadoRepository, activityTypeCompatibilityMatrix, treinoRealizadoRepository);
         ReconciliationDecisionExecutor executor = new ReconciliationDecisionExecutor(
                 matchingScoreCalculator, matchingDecisionEngine, treinoRealizadoRepository,
                 treinoPlanejadoRepository, treinoReconciliacaoRepository, provaResultadoSyncer);
