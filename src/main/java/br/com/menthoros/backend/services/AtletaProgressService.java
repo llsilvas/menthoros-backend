@@ -72,7 +72,8 @@ public interface AtletaProgressService {
      * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
      *
      * @param atletaId ID do atleta
-     * @param weeks    número de semanas (recomendado: 8)
+     * @param weeks    número de semanas, em [1, {@link #MAX_SEMANAS_ADERENCIA}] (recomendado: 8)
+     * @throws br.com.menthoros.backend.exception.DomainRuleViolationException com {@code weeks} fora do intervalo
      */
     DistanceSummaryDto getDistanceSummary(UUID atletaId, int weeks);
 
