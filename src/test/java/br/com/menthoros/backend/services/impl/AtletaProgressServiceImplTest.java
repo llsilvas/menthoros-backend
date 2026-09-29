@@ -750,6 +750,101 @@ class AtletaProgressServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("getDistanceSummary")
+    class GetDistanceSummary {
+
+        // HOJE = 2026-06-17 (quarta); 8 semanas ISO → primeira segunda = 2026-04-27
+        private final LocalDate PRIMEIRA_SEGUNDA = LocalDate.of(2026, 4, 27);
+
+        private TreinoRealizado corrida(LocalDate data, String km) {
+            TreinoRealizado tr = new TreinoRealizado();
+            tr.setId(UUID.randomUUID());
+            tr.setDataTreino(data);
+            tr.setDistanciaKm(km != null ? new BigDecimal(km) : null);
+            return tr;
+        }
+
+        private void realizados(TreinoRealizado... treinos) {
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, PRIMEIRA_SEGUNDA, HOJE))
+                    .thenReturn(List.of(treinos));
+        }
+
+        @Test
+        @DisplayName("atleta de outro tenant → DomainNotFoundException, sem consultar treinos")
+        void atletaDeOutroTenant() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.getDistanceSummary(atletaId, 8))
+                    .isInstanceOf(DomainNotFoundException.class);
+            org.mockito.Mockito.verifyNoInteractions(treinoRealizadoRepository);
+        }
+
+        @Test
+        @DisplayName("sem treinos → 8 semanas contínuas com 0 e 7 dias zerados")
+        void semTreinos() {
+            atletaExisteNoTenant();
+            realizados();
+
+            var resumo = service.getDistanceSummary(atletaId, 8);
+
+            assertThat(resumo.weekly()).hasSize(8);
+            assertThat(resumo.weekly().get(0).weekStart()).isEqualTo(PRIMEIRA_SEGUNDA);
+            assertThat(resumo.weekly().get(7).weekStart()).isEqualTo(LocalDate.of(2026, 6, 15));
+            assertThat(resumo.weekly()).allSatisfy(w -> assertThat(w.distanceKm()).isEqualByComparingTo("0"));
+            assertThat(resumo.last7DaysKm()).isEqualByComparingTo("0");
+            assertThat(resumo.previous7DaysKm()).isEqualByComparingTo("0");
+        }
+
+        @Test
+        @DisplayName("soma por semana ISO: domingo fica na semana anterior, segunda abre a nova")
+        void bordaDeSemana() {
+            atletaExisteNoTenant();
+            realizados(
+                    corrida(LocalDate.of(2026, 6, 8), "10.5"),
+                    corrida(LocalDate.of(2026, 6, 14), "21.1"), // domingo
+                    corrida(LocalDate.of(2026, 6, 15), "5.25"), // segunda
+                    corrida(LocalDate.of(2026, 6, 17), "8"));
+
+            var weekly = service.getDistanceSummary(atletaId, 8).weekly();
+
+            assertThat(weekly.get(6).weekStart()).isEqualTo(LocalDate.of(2026, 6, 8));
+            assertThat(weekly.get(6).distanceKm()).isEqualByComparingTo("31.6");
+            assertThat(weekly.get(7).distanceKm()).isEqualByComparingTo("13.25");
+        }
+
+        @Test
+        @DisplayName("treino cancelado e distância ausente não entram na soma")
+        void canceladoFora() {
+            atletaExisteNoTenant();
+            TreinoRealizado cancelado = corrida(LocalDate.of(2026, 6, 16), "12");
+            cancelado.setStatusSincronizacao(br.com.menthoros.backend.enums.StatusSincronizacao.CANCELADO);
+            realizados(cancelado, corrida(LocalDate.of(2026, 6, 16), null), corrida(LocalDate.of(2026, 6, 16), "6"));
+
+            var resumo = service.getDistanceSummary(atletaId, 8);
+
+            assertThat(resumo.weekly().get(7).distanceKm()).isEqualByComparingTo("6");
+            assertThat(resumo.last7DaysKm()).isEqualByComparingTo("6");
+        }
+
+        @Test
+        @DisplayName("últimos 7 dias (hoje inclusive) e os 7 anteriores, por data")
+        void seteDias() {
+            atletaExisteNoTenant();
+            realizados(
+                    corrida(LocalDate.of(2026, 6, 3), "50"),   // fora das duas janelas
+                    corrida(LocalDate.of(2026, 6, 4), "3.7"),  // primeiro dia da janela anterior
+                    corrida(LocalDate.of(2026, 6, 10), "1"),   // último dia da janela anterior
+                    corrida(LocalDate.of(2026, 6, 11), "2"),   // primeiro dia da janela atual
+                    corrida(LocalDate.of(2026, 6, 17), "3"));
+
+            var resumo = service.getDistanceSummary(atletaId, 8);
+
+            assertThat(resumo.last7DaysKm()).isEqualByComparingTo("5");
+            assertThat(resumo.previous7DaysKm()).isEqualByComparingTo("4.7");
+        }
+    }
+
     // ===== helpers =====
 
     private TreinoPlanejado treinoPlanejadoComRealizado(LocalDate data, boolean realizado) {

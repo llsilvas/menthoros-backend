@@ -85,6 +85,11 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 () -> atletaProgressService.getAderenciaSemanal(atletaId, 8));
         log.debug("[perfil] aderencia: {}ms", ms(t2));
 
+        long t2b = System.nanoTime();
+        DistanceSummaryDto distanceSummary = buscarNullable("distanceSummary", avisos,
+                () -> atletaProgressService.getDistanceSummary(atletaId, 8));
+        log.debug("[perfil] distanceSummary: {}ms", ms(t2b));
+
         long t3 = System.nanoTime();
         List<RecordeDto> recordes = buscarLista("recordes", avisos,
                 () -> atletaProgressService.getRecordes(atletaId));
@@ -166,7 +171,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 cobranca != null ? cobranca.nextDueDate() : null,
                 realizadosRecentes,
                 melhoresEsforcos,
-                melhoresEsforcosIntegracaoConectada
+                melhoresEsforcosIntegracaoConectada,
+                distanceSummary
         );
     }
 

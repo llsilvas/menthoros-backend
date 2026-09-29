@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaHomeDto;
+import br.com.menthoros.backend.dto.output.DistanceSummaryDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
 import br.com.menthoros.backend.dto.output.ReadinessDto;
 import br.com.menthoros.backend.dto.output.RecordeDto;
@@ -45,6 +46,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * Implementação read-only do progresso do atleta.
@@ -316,6 +318,53 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
 
         boolean temDados = resultado.stream().anyMatch(a -> a.totalPlanejado() > 0);
         return temDados ? resultado : List.of();
+    }
+
+    /**
+     * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
+     *
+     * <p>Uma consulta cobre as duas saídas: a janela de semanas começa bem antes de {@code hoje − 13},
+     * início da janela anterior de 7 dias. Soma em Java, como nos insights do coach.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public DistanceSummaryDto getDistanceSummary(UUID atletaId, int weeks) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        validarAtletaNoTenant(atletaId);
+
+        LocalDate hoje = LocalDate.now(clock);
+        LocalDate primeiraSegunda = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                .minusWeeks(weeks - 1L);
+
+        List<TreinoRealizado> treinos = treinoRealizadoRepository
+                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, primeiraSegunda, hoje)
+                .stream()
+                .filter(TreinoRealizado::contaNaCarga)
+                .filter(tr -> tr.getDistanciaKm() != null && tr.getDataTreino() != null)
+                .toList();
+
+        Map<LocalDate, BigDecimal> porSemana = treinos.stream()
+                .collect(Collectors.groupingBy(
+                        tr -> tr.getDataTreino().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)),
+                        Collectors.reducing(BigDecimal.ZERO, TreinoRealizado::getDistanciaKm, BigDecimal::add)));
+
+        List<DistanceSummaryDto.WeeklyDistanceDto> weekly = IntStream.range(0, weeks)
+                .mapToObj(i -> primeiraSegunda.plusWeeks(i))
+                .map(segunda -> new DistanceSummaryDto.WeeklyDistanceDto(
+                        segunda, porSemana.getOrDefault(segunda, BigDecimal.ZERO)))
+                .toList();
+
+        return new DistanceSummaryDto(
+                weekly,
+                somarKm(treinos, hoje.minusDays(6), hoje),
+                somarKm(treinos, hoje.minusDays(13), hoje.minusDays(7)));
+    }
+
+    private static BigDecimal somarKm(List<TreinoRealizado> treinos, LocalDate inicio, LocalDate fim) {
+        return treinos.stream()
+                .filter(tr -> !tr.getDataTreino().isBefore(inicio) && !tr.getDataTreino().isAfter(fim))
+                .map(TreinoRealizado::getDistanciaKm)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**

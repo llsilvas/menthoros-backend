@@ -303,6 +303,47 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         @Test
+        @DisplayName("distanceSummary — km por semana e 7 dias vêm do serviço de progresso, mesma janela de 8 semanas")
+        void distanceSummaryPreenchido() {
+            stubAtleta();
+            stubPmc();
+            stubAderencia();
+            stubRecordes();
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+            when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+            var resumo = new br.com.menthoros.backend.dto.output.DistanceSummaryDto(
+                    List.of(new br.com.menthoros.backend.dto.output.DistanceSummaryDto.WeeklyDistanceDto(
+                            LocalDate.of(2026, 9, 21), new java.math.BigDecimal("5.0"))),
+                    new java.math.BigDecimal("5.0"), new java.math.BigDecimal("3.7"));
+            when(atletaProgressService.getDistanceSummary(atletaId, 8)).thenReturn(resumo);
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.distanceSummary()).isEqualTo(resumo);
+            assertThat(perfil.avisos()).isNull();
+        }
+
+        @Test
+        @DisplayName("distanceSummary — falha vira aviso 'distanceSummary', campo ausente, resto carrega")
+        void distanceSummaryFalhaNaoQuebraPerfil() {
+            stubAtleta();
+            stubPmc();
+            stubAderencia();
+            stubRecordes();
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+            when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+            when(atletaProgressService.getDistanceSummary(atletaId, 8)).thenThrow(new RuntimeException("timeout"));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.distanceSummary()).isNull();
+            assertThat(perfil.avisos()).containsExactly("distanceSummary");
+            assertThat(perfil.aderenciaSemanal()).hasSize(1);
+        }
+
+        @Test
         @DisplayName("sub-serviço de PMC falha — avisos inclui 'pmc', demais blocos carregam")
         void falhaParialPmc() {
             stubAtleta();
