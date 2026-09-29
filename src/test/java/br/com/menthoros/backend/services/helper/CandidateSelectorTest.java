@@ -6,6 +6,7 @@ import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
+import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.ActivityTypeCompatibilityMatrix;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,10 +18,15 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,6 +38,8 @@ class CandidateSelectorTest {
     private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock
     private ActivityTypeCompatibilityMatrix activityTypeCompatibilityMatrix;
+    @Mock
+    private TreinoRealizadoRepository treinoRealizadoRepository;
 
     private CandidateSelector selector;
     private UUID tenantId;
@@ -39,7 +47,7 @@ class CandidateSelectorTest {
 
     @BeforeEach
     void setUp() {
-        selector = new CandidateSelector(treinoPlanejadoRepository, activityTypeCompatibilityMatrix);
+        selector = new CandidateSelector(treinoPlanejadoRepository, activityTypeCompatibilityMatrix, treinoRealizadoRepository);
         tenantId = UUID.randomUUID();
         Assessoria assessoria = new Assessoria();
         assessoria.setId(tenantId);
@@ -105,6 +113,84 @@ class CandidateSelectorTest {
 
             assertThat(resultado).isEmpty();
             verify(activityTypeCompatibilityMatrix, never()).isCompatible(any(), any());
+        }
+        @Test
+        @DisplayName("descarta planejado já vinculado a outro realizado (caso 29/09: o treino da véspera não concorre)")
+        void descartaPlanejadoVinculadoAOutroRealizado() {
+            TreinoRealizado activity = activity(LocalDate.of(2026, 9, 29));
+            TreinoPlanejado vespera = planejado(TipoTreino.CONTINUO);
+            TreinoPlanejado hoje = planejado(TipoTreino.REGENERATIVO);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
+                    .thenReturn(List.of(vespera, hoje));
+            when(activityTypeCompatibilityMatrix.isCompatible(any(), any())).thenReturn(true);
+            when(treinoRealizadoRepository.findPlanejadoIdsVinculadosAOutroRealizado(anyCollection(), eq(activity.getId())))
+                    .thenReturn(Set.of(vespera.getId()));
+
+            List<TreinoPlanejado> resultado = selector.buscarCandidatos(activity, tenantId);
+
+            assertThat(resultado).containsExactly(hoje);
+        }
+
+        @Test
+        @DisplayName("consulta o vínculo uma vez, com os ids da janela e excluindo o próprio realizado")
+        void consultaVinculoUmaVezExcluindoOProprioRealizado() {
+            TreinoRealizado activity = activity(LocalDate.of(2026, 9, 29));
+            TreinoPlanejado a = planejado(TipoTreino.CONTINUO);
+            TreinoPlanejado b = planejado(TipoTreino.REGENERATIVO);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
+                    .thenReturn(List.of(a, b));
+            when(activityTypeCompatibilityMatrix.isCompatible(any(), any())).thenReturn(true);
+            when(treinoRealizadoRepository.findPlanejadoIdsVinculadosAOutroRealizado(anyCollection(), any()))
+                    .thenReturn(Set.of());
+
+            List<TreinoPlanejado> resultado = selector.buscarCandidatos(activity, tenantId);
+
+            assertThat(resultado).containsExactly(a, b);
+            verify(treinoRealizadoRepository).findPlanejadoIdsVinculadosAOutroRealizado(
+                    argThat(ids -> ids.size() == 2 && ids.containsAll(List.of(a.getId(), b.getId()))),
+                    eq(activity.getId()));
+        }
+
+        @Test
+        @DisplayName("único planejado da janela já vinculado a outro realizado resulta em lista vazia")
+        void unicoCandidatoOcupadoRetornaVazio() {
+            TreinoRealizado activity = activity(LocalDate.of(2026, 9, 29));
+            TreinoPlanejado ocupado = planejado(TipoTreino.CONTINUO);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
+                    .thenReturn(List.of(ocupado));
+            when(activityTypeCompatibilityMatrix.isCompatible(any(), any())).thenReturn(true);
+            when(treinoRealizadoRepository.findPlanejadoIdsVinculadosAOutroRealizado(anyCollection(), any()))
+                    .thenReturn(Set.of(ocupado.getId()));
+
+            List<TreinoPlanejado> resultado = selector.buscarCandidatos(activity, tenantId);
+
+            assertThat(resultado).isEmpty();
+        }
+
+        @Test
+        @DisplayName("sem candidatos compatíveis não consulta vínculo")
+        void semCandidatosNaoConsultaVinculo() {
+            TreinoRealizado activity = activity(LocalDate.of(2026, 9, 29));
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any())).thenReturn(List.of());
+
+            selector.buscarCandidatos(activity, tenantId);
+
+            verify(treinoRealizadoRepository, never()).findPlanejadoIdsVinculadosAOutroRealizado(any(), any());
+        }
+
+        @Test
+        @DisplayName("realizado sem id com candidatos rejeita em vez de concluir 'nenhum ocupado'")
+        void realizadoSemIdRejeita() {
+            TreinoRealizado activity = activity(LocalDate.of(2026, 9, 29));
+            activity.setId(null);
+            when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(any(), any(), any()))
+                    .thenReturn(List.of(planejado(TipoTreino.CONTINUO)));
+            when(activityTypeCompatibilityMatrix.isCompatible(any(), any())).thenReturn(true);
+
+            assertThatThrownBy(() -> selector.buscarCandidatos(activity, tenantId))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("persistido");
+            verify(treinoRealizadoRepository, never()).findPlanejadoIdsVinculadosAOutroRealizado(any(), any());
         }
     }
 

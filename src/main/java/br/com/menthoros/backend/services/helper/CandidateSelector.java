@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.helper;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
+import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.ActivityTypeCompatibilityMatrix;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -29,10 +31,13 @@ public class CandidateSelector {
 
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final ActivityTypeCompatibilityMatrix activityTypeCompatibilityMatrix;
+    private final TreinoRealizadoRepository treinoRealizadoRepository;
 
     /**
      * Busca candidatos na janela [data-1, data+1] da data do {@code realizado}, filtrados por
-     * compatibilidade de tipo e por tenant.
+     * compatibilidade de tipo, por tenant e por ocupação: planejado já vinculado a OUTRO realizado
+     * não concorre — senão o treino da véspera, já feito, empata com o do dia e força
+     * {@code TIE_BREAK} (fix-reconciliation-exclude-realized-candidates).
      */
     public List<TreinoPlanejado> buscarCandidatos(TreinoRealizado realizado, UUID tenantId) {
         LocalDate data = realizado.getDataTreino();
@@ -42,7 +47,7 @@ public class CandidateSelector {
         List<TreinoPlanejado> candidatos = treinoPlanejadoRepository
                 .findByAtletaIdAndDataBetween(realizado.getAtleta().getId(), windowStart, windowEnd);
 
-        return filterCompatibleCandidatos(realizado, candidatos).stream()
+        List<TreinoPlanejado> doTenant = filterCompatibleCandidatos(realizado, candidatos).stream()
                 .filter(c -> {
                     boolean mesmoTenant = c.getAtleta().getAssessoria().getId().equals(tenantId);
                     if (!mesmoTenant) {
@@ -51,6 +56,31 @@ public class CandidateSelector {
                     }
                     return mesmoTenant;
                 })
+                .toList();
+
+        return descartarOcupados(realizado, doTenant);
+    }
+
+    // Critério é o vínculo, não status_treino: o status é efeito colateral do vínculo e pode divergir dele.
+    private List<TreinoPlanejado> descartarOcupados(TreinoRealizado realizado, List<TreinoPlanejado> candidatos) {
+        if (candidatos.isEmpty()) {
+            return candidatos;
+        }
+        // Com id nulo, "tr.id <> :realizadoId" vira UNKNOWN em SQL e a query diria "nada ocupado" em silêncio.
+        if (realizado.getId() == null) {
+            throw new IllegalArgumentException("TreinoRealizado precisa estar persistido para buscar candidatos de reconciliação");
+        }
+
+        List<UUID> ids = candidatos.stream().map(TreinoPlanejado::getId).toList();
+        Set<UUID> ocupados = treinoRealizadoRepository.findPlanejadoIdsVinculadosAOutroRealizado(ids, realizado.getId());
+        if (ocupados.isEmpty()) {
+            return candidatos;
+        }
+
+        log.info("Reconciliação do treino {}: {} candidato(s) descartado(s) por já estarem vinculados: {}",
+                realizado.getId(), ocupados.size(), ocupados);
+        return candidatos.stream()
+                .filter(c -> !ocupados.contains(c.getId()))
                 .toList();
     }
 
