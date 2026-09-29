@@ -29,7 +29,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -58,6 +61,21 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final MelhorEsforcoService melhorEsforcoService;
     private final MeterRegistry meterRegistry;
     private final AthleteContractService athleteContractService;
+    private final PlatformTransactionManager transactionManager;
+
+    /**
+     * Transação própria para cada bloco degradável do perfil. Participando da transação do perfil,
+     * uma exceção dentro de um método {@code @Transactional} interno (ex.: {@code getHistoricoPmc})
+     * a marcava rollback-only: o {@code catch} de {@link #buscarLista} a engolia, mas o commit do
+     * perfil falhava com {@code UnexpectedRollbackException}. No Postgres, um erro de SQL ainda
+     * aborta a transação inteira e derruba as consultas seguintes. Isolado, o bloco falha sozinho.
+     */
+    private TransactionTemplate degradavel() {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        template.setReadOnly(true);
+        return template;
+    }
 
     /**
      * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
@@ -293,7 +311,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
     private <T> List<T> buscarLista(String campo, List<String> avisos, Supplier<List<T>> fn) {
         try {
-            return fn.get();
+            return degradavel().execute(status -> fn.get());
         } catch (DomainNotFoundException | IllegalStateException e) {
             throw e;
         } catch (Exception e) {
@@ -305,7 +323,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
     private <T> T buscarNullable(String campo, List<String> avisos, Supplier<T> fn) {
         try {
-            return fn.get();
+            return degradavel().execute(status -> fn.get());
         } catch (DomainNotFoundException | IllegalStateException e) {
             throw e;
         } catch (Exception e) {

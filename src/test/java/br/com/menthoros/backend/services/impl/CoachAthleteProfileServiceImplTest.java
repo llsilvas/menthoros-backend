@@ -87,6 +87,9 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private br.com.menthoros.backend.repository.TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private MelhorEsforcoService melhorEsforcoService;
     @Mock private AthleteContractService athleteContractService;
+    // Mock devolve status nulo: o TransactionTemplate só executa o callback — o isolamento real é
+    // provado em CoachAthleteProfileDegradacaoIT.
+    @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
 
     private SimpleMeterRegistry meterRegistry;
     private CoachAthleteProfileServiceImpl service;
@@ -119,7 +122,7 @@ class CoachAthleteProfileServiceImplTest {
                 atletaRepository, atletaProgressService, coachAttentionQueueService, sugestaoCoachService,
                 planoService, planoMetadadosRepository, provaRepository, provaMapper, treinoRealizadoRepository,
                 intervalsIcuConnectionService, thresholdInferenceService, melhorEsforcoService, meterRegistry,
-                athleteContractService);
+                athleteContractService, transactionManager);
         // Default: sem cobrança (os testes de cobrança sobrescrevem)
         lenient().when(athleteContractService.resolveBilling(eq(atletaId), any(LocalDate.class)))
                 .thenReturn(java.util.Optional.empty());
