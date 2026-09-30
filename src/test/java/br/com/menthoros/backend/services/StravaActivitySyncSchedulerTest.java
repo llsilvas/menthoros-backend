@@ -160,6 +160,24 @@ class StravaActivitySyncSchedulerTest {
     }
 
     @Test
+    @org.junit.jupiter.api.DisplayName("QA — integração desativada entre a listagem e a vez do atleta é pulada, sem registrar FALHA")
+    void inativaNoLateCheckEPulada() {
+        UUID tenantId = UUID.randomUUID();
+        UUID atletaId = UUID.randomUUID();
+        IntegracaoExterna listada = integracaoAtiva(tenantId, atletaId);
+        IntegracaoExterna fresca = integracaoAtiva(tenantId, atletaId);
+        fresca.setAtivo(false);
+        when(integracaoExternaRepository.findAllActiveByPlataforma(FonteDados.STRAVA)).thenReturn(List.of(listada));
+        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
+                .thenReturn(Optional.of(fresca));
+
+        scheduler.runDailyIncrementalSync();
+
+        verify(stravaActivityService, never()).pullAgendado(any(UUID.class));
+        verify(pullLogWriter, never()).registrar(any(), any(), any(), any(), any());
+    }
+
+    @Test
     @org.junit.jupiter.api.DisplayName("CA8 — cada ciclo grava o registro do pull com o tenant da integração")
     void registraOPull() {
         UUID tenantId = UUID.randomUUID();

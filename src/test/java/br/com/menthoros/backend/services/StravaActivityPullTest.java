@@ -173,6 +173,18 @@ class StravaActivityPullTest {
         return "[" + String.join(",", atividades) + "]";
     }
 
+    /**
+     * Página com 30 itens (as corridas + bikes para completar): só página cheia faz a varredura pedir a
+     * próxima — página curta é a última (task 0.1).
+     */
+    private static String paginaCheia(long idBase, String... corridas) {
+        List<String> itens = new java.util.ArrayList<>(List.of(corridas));
+        for (int i = itens.size(); i < 30; i++) {
+            itens.add(atividade(idBase + i, "Ride", "2026-09-10T08:00:00Z"));
+        }
+        return "[" + String.join(",", itens) + "]";
+    }
+
     private void paginaDaFatia(long after, int page, String corpo) {
         wireMock.stubFor(get(urlPathEqualTo("/athlete/activities")).atPriority(1)
                 .withQueryParam("after", equalTo(String.valueOf(after)))
@@ -259,10 +271,11 @@ class StravaActivityPullTest {
             Instant cursor = cursorDiasAtras(20);
             integracaoComCursor(cursor);
             long inicio = inicioDaJanela(cursor);
-            // 1ª fatia completa e vazia (página 1 vazia); 2ª fatia: páginas 1 e 2 com corridas, 3 com 429
+            // 1ª fatia completa e vazia (página 1 vazia); 2ª fatia: páginas 1 e 2 cheias, com uma corrida
+            // cada, e a 3 com 429
             paginaDaFatia(inicio, 1, "[]");
-            paginaDeQualquerFatia(1, pagina(corrida(11)));
-            paginaDeQualquerFatia(2, pagina(corrida(12)));
+            paginaDeQualquerFatia(1, paginaCheia(2000, corrida(11)));
+            paginaDeQualquerFatia(2, paginaCheia(3000, corrida(12)));
             statusNaPagina(3, 429);
 
             PullResultado resultado = service.pullAgendado(atletaId);
@@ -408,6 +421,94 @@ class StravaActivityPullTest {
             assertThat(importados()).containsExactly("1", "2", "3");
             assertThat(cursoresGravados()).hasSize(1);
             assertThat(resultado).isEqualTo(new PullResultado(ResultadoPull.PARCIAL, ErroCategoriaPull.INESPERADO, 2, 1));
+            // QA: o coach precisa saber que houve atividade não importada
+            verify(integracaoExternaRepository).atualizarStatusSync(eq(integracaoId), eq(tenantId), any(), any(),
+                    org.mockito.ArgumentMatchers.contains("1 atividade(s) não importada(s)"));
+        }
+
+        @Test
+        @DisplayName("QA — descartada numa fatia não é tentada de novo na sobreposição com a seguinte")
+        void descarteValeParaAFatiaSeguinte() {
+            integracaoComCursor(cursorDiasAtras(20));
+            paginaDeQualquerFatia(1, pagina(corrida(2)));
+            when(ingestaoTreinoRealizadoService.registrar(any(), eq("2"))).thenThrow(new IllegalStateException("erro"));
+            when(descarteWriter.registrarFalha(tenantId, atletaId, FonteDados.STRAVA, "2")).thenReturn(true);
+
+            PullResultado resultado = service.pullAgendado(atletaId);
+
+            verify(descarteWriter, times(1)).registrarFalha(tenantId, atletaId, FonteDados.STRAVA, "2");
+            assertThat(resultado.ignoradas()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("QA — falha de banco (deadlock) é transitória: não conta tentativa, para a fatia sem avançar")
+        void falhaDeBancoNaoContaTentativa() {
+            Instant cursor = cursorDiasAtras(1);
+            integracaoComCursor(cursor);
+            paginaDaFatia(inicioDaJanela(cursor), 1, pagina(corrida(1), corrida(2)));
+            when(ingestaoTreinoRealizadoService.registrar(any(), eq("2")))
+                    .thenThrow(new org.springframework.dao.CannotAcquireLockException("deadlock"));
+
+            PullResultado resultado = service.pullAgendado(atletaId);
+
+            verify(descarteWriter, never()).registrarFalha(any(), any(), any(), any());
+            assertThat(cursoresGravados()).isEmpty();
+            assertThat(resultado).isEqualTo(new PullResultado(ResultadoPull.PARCIAL, ErroCategoriaPull.TRANSITORIO, 1, 0));
+        }
+
+        @Test
+        @DisplayName("QA — página curta é a última: sem requisição extra por fatia")
+        void paginaCurtaEncerraAFatia() {
+            Instant cursor = cursorDiasAtras(1);
+            integracaoComCursor(cursor);
+            paginaDaFatia(inicioDaJanela(cursor), 1, pagina(corrida(1)));
+
+            service.pullAgendado(atletaId);
+
+            wireMock.verify(1, getRequestedFor(urlPathEqualTo("/athlete/activities")));
+        }
+
+        @Test
+        @DisplayName("QA — laps são buscados ANTES de abrir a transação da atividade (conexão não fica presa no HTTP)")
+        void lapsForaDaTransacao() {
+            Instant cursor = cursorDiasAtras(1);
+            integracaoComCursor(cursor);
+            paginaDaFatia(inicioDaJanela(cursor), 1, pagina(corrida(1)));
+            List<Integer> lapsJaBuscadosAoAbrirTransacao = new java.util.ArrayList<>();
+            TransactionOperations espia = new TransactionOperations() {
+                @Override
+                public <T> T execute(org.springframework.transaction.support.TransactionCallback<T> action) {
+                    lapsJaBuscadosAoAbrirTransacao.add(
+                            wireMock.countRequestsMatching(getRequestedFor(urlPathMatching("/activities/.*/laps")).build()).getCount());
+                    return action.doInTransaction(null);
+                }
+            };
+            StravaProperties props = new StravaProperties();
+            props.setApiBaseUrl(wireMock.baseUrl());
+            StravaActivityServiceImpl comEspia = new StravaActivityServiceImpl(atletaRepository, treinoRealizadoRepository,
+                    integracaoExternaRepository, stravaOAuthService, treinoMapper, eventPublisher,
+                    new StravaWebClientConfig(props).stravaWebClient(), ingestaoTreinoRealizadoService,
+                    espia, descarteWriter, props);
+
+            comEspia.pullAgendado(atletaId);
+
+            assertThat(lapsJaBuscadosAoAbrirTransacao).containsExactly(1);
+        }
+
+        @Test
+        @DisplayName("QA — cota zerada no header dos laps: a atividade é gravada, e só depois o ciclo para")
+        void cotaZeradaNosLapsNaoDesfazAAtividade() {
+            Instant cursor = cursorDiasAtras(1);
+            integracaoComCursor(cursor);
+            paginaDaFatia(inicioDaJanela(cursor), 1, pagina(corrida(1), corrida(2)));
+            wireMock.stubFor(get(urlPathEqualTo("/activities/1/laps")).atPriority(1)
+                    .willReturn(okJson("[]").withHeader("X-RateLimit-Remaining", "0,500")));
+
+            PullResultado resultado = service.pullAgendado(atletaId);
+
+            assertThat(importados()).containsExactly("1");
+            assertThat(resultado).isEqualTo(new PullResultado(ResultadoPull.PARCIAL, ErroCategoriaPull.RATE_LIMIT, 1, 0));
+            assertThat(cursoresGravados()).isEmpty();
         }
 
         @Test
@@ -479,7 +580,7 @@ class StravaActivityPullTest {
         @DisplayName("CA2 — sync manual com rate limit: 200 parcial, cursor intocado, lastSyncError com a frase")
         void manualComRateLimit() {
             integracaoComCursor(cursorDiasAtras(1));
-            paginaDeQualquerFatia(1, pagina(corrida(1)));
+            paginaDeQualquerFatia(1, paginaCheia(2000, corrida(1)));
             statusNaPagina(2, 429);
 
             StravaSyncResponseDto resposta = service.syncActivitiesForAtleta(atletaId, tenantId);
@@ -502,6 +603,21 @@ class StravaActivityPullTest {
             assertThat(integracao.isAtivo()).isTrue();
             verify(integracaoExternaRepository, never()).save(any());
             verify(integracaoExternaRepository).atualizarStatusSync(eq(integracaoId), eq(tenantId), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("QA — 503 depois de 2 inserções: status com a contagem real e mensagem segura, sem detalhe interno")
+        void manualComFalhaDepoisDeProgresso() {
+            integracaoComCursor(cursorDiasAtras(1));
+            paginaDeQualquerFatia(1, paginaCheia(2000, corrida(1), corrida(2)));
+            statusNaPagina(2, 503);
+
+            assertThatThrownBy(() -> service.syncActivitiesForAtleta(atletaId, tenantId)).isInstanceOf(RuntimeException.class);
+
+            ArgumentCaptor<String> erro = ArgumentCaptor.forClass(String.class);
+            verify(integracaoExternaRepository).atualizarStatusSync(eq(integracaoId), eq(tenantId), any(), eq(2), erro.capture());
+            assertThat(erro.getValue()).isEqualTo("Falha temporária na sincronização — nova tentativa no próximo ciclo")
+                    .doesNotContain("localhost").doesNotContain("503 Service");
         }
 
         @Test

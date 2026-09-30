@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -37,15 +38,14 @@ public class StravaActivitySyncScheduler {
             try {
                 TenantContext.setTenantId(tenantId);
 
-                // Late-check (D5.2, TOCTOU): revalida autoSyncPausado com query fresca — não reusa
-                // o valor lido em findAllActiveByPlataforma na listagem inicial do ciclo. Cobre o
-                // coach pausando o atleta ENTRE a listagem e o processamento dele.
-                boolean aindaPausado = integracaoExternaRepository
-                        .findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId)
-                        .map(IntegracaoExterna::isAutoSyncPausado)
-                        .orElse(false);
-                if (aindaPausado) {
-                    log.info("Strava daily sync pulado (autoSyncPausado=true no late-check): tenant={} atleta={}",
+                // Late-check (D5.2, TOCTOU): revalida ativo E autoSyncPausado com query fresca — não
+                // reusa o valor lido em findAllActiveByPlataforma na listagem inicial do ciclo. Cobre o
+                // coach pausando ou desconectando o atleta ENTRE a listagem e o processamento dele;
+                // sem o ativo, a desconexão virava FALHA no registro e poluía a métrica de saúde.
+                Optional<IntegracaoExterna> fresca = integracaoExternaRepository
+                        .findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId);
+                if (fresca.isEmpty() || !fresca.get().isAtivo() || fresca.get().isAutoSyncPausado()) {
+                    log.info("Strava daily sync pulado (inativa/pausada no late-check): tenant={} atleta={}",
                             tenantId, atletaId);
                     continue;
                 }

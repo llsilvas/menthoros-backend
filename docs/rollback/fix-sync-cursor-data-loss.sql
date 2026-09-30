@@ -1,9 +1,11 @@
 -- =====================================================================
--- Rollback de fix-sync-cursor-data-loss (V98) — passo 2 de 2
+-- Rollback de fix-sync-cursor-data-loss (V98) — ordem obrigatoria:
 --
--- Passo 1: reverter o PR (o binario volta a usar ultima_sincronizacao como cursor do pull).
--- Passo 2: rodar ESTE script ANTES do primeiro ciclo de pull do codigo antigo (os schedulers de
--- pull rodam 1 min depois do boot e a cada 2 h — rode com o app parado, ou logo antes do deploy).
+-- 1. PARAR todas as instancias do backend (o codigo novo ainda grava ultima_sincronizacao = now();
+--    com ele rodando, o script e desfeito no ciclo seguinte).
+-- 2. Rodar ESTE script, numa transacao, com acesso de DBA.
+-- 3. Subir o binario ANTIGO (PR revertido). Os schedulers de pull rodam 1 min depois do boot e
+--    passam a ler ultima_sincronizacao como cursor — por isso o passo 2 vem antes.
 --
 -- Por que existe: com esta change, os schedulers gravam ultima_sincronizacao = now() mesmo quando o
 -- pull foi PARCIAL. O codigo antigo le esse campo como cursor e pularia a janela que ficou para tras.

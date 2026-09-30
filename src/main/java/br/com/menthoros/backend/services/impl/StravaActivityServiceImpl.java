@@ -62,6 +62,14 @@ public class StravaActivityServiceImpl implements StravaActivityService {
 
     private static final FonteDados STRAVA = FonteDados.STRAVA;
     private static final Set<String> RUN_SPORT_TYPES = Set.of("Run", "TrailRun", "VirtualRun");
+    private static final int POR_PAGINA = 30;
+    /** Tamanho da fatia de tempo do pull (D3.2): pequena o bastante para uma fatia caber na cota. */
+    private static final Duration FATIA = Duration.ofDays(14);
+    /**
+     * {@code after} e {@code before} são exclusivos na API (task 0.1): sem sobreposição, uma atividade
+     * no segundo exato da fronteira não viria em nenhuma das duas fatias.
+     */
+    private static final Duration SOBREPOSICAO_FATIAS = Duration.ofSeconds(60);
 
     private final AtletaRepository atletaRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
@@ -74,14 +82,6 @@ public class StravaActivityServiceImpl implements StravaActivityService {
     private final TransactionOperations transactionOperations;
     private final SyncDescarteWriter descarteWriter;
     private final StravaProperties stravaProperties;
-
-    /** Tamanho da fatia de tempo do pull (D3.2): pequena o bastante para uma fatia caber na cota. */
-    private static final Duration FATIA = Duration.ofDays(14);
-    /**
-     * {@code after} e {@code before} são exclusivos na API (task 0.1): sem sobreposição, uma atividade
-     * no segundo exato da fronteira não viria em nenhuma das duas fatias.
-     */
-    private static final Duration SOBREPOSICAO_FATIAS = Duration.ofSeconds(60);
 
     public StravaActivityServiceImpl(AtletaRepository atletaRepository, TreinoRealizadoRepository treinoRealizadoRepository, IntegracaoExternaRepository integracaoExternaRepository, StravaOAuthService stravaOAuthService, TreinoMapper treinoMapper, ApplicationEventPublisher eventPublisher, @Qualifier("stravaWebClient")WebClient stravaWebClient, IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService,
                                      TransactionOperations transactionOperations, SyncDescarteWriter descarteWriter, StravaProperties stravaProperties) {
@@ -105,6 +105,21 @@ public class StravaActivityServiceImpl implements StravaActivityService {
 
     @Transactional(readOnly = true)
     public List<StravaSplitDto> fetchActivityLaps(String accessToken, Long activityId) {
+        Laps laps = buscarLaps(accessToken, activityId);
+        if (laps.cotaEsgotada()) {
+            throw new StravaRateLimitException("Limite de requisições Strava atingido");
+        }
+        return laps.splits();
+    }
+
+    /**
+     * Laps e o estado da cota, sem lançar pela cota: o pull precisa gravar a atividade cujos laps já
+     * pagou antes de parar pelo header (QA de fix-sync-cursor-data-loss).
+     */
+    private record Laps(List<StravaSplitDto> splits, boolean cotaEsgotada) {
+    }
+
+    private Laps buscarLaps(String accessToken, Long activityId) {
         ResponseEntity<List<StravaSplitDto>> response = stravaWebClient.get()
                 .uri(uriBuilder -> uriBuilder.path("/activities/{id}/laps").build(activityId))
                 .header("Authorization", "Bearer " + accessToken)
@@ -114,10 +129,10 @@ public class StravaActivityServiceImpl implements StravaActivityService {
                 .block();
 
         if (response == null) {
-            return Collections.emptyList();
+            return new Laps(Collections.emptyList(), false);
         }
-        checkRateLimit(response.getHeaders());
-        return response.getBody() == null ? Collections.emptyList() : response.getBody();
+        boolean cotaEsgotada = cotaEsgotada(response.getHeaders());
+        return new Laps(response.getBody() == null ? Collections.emptyList() : response.getBody(), cotaEsgotada);
     }
 
     public TreinoRealizado mapToTreinoRealizado(StravaActivityDto activity, Atleta atleta) {
@@ -187,8 +202,10 @@ public class StravaActivityServiceImpl implements StravaActivityService {
                 acc.interrompido(ErroCategoriaPull.CREDENCIAL);
                 erro = mensagemDoPull(ErroCategoriaPull.CREDENCIAL, null);
             } else {
+                // mutável: o que for descartado nesta varredura não é tentado de novo na sobreposição
+                // com a fatia seguinte
                 Varredura varredura = new Varredura(integracao.getId(), atletaId, tenantId, token,
-                        descarteWriter.descartadas(tenantId, atletaId, STRAVA), true);
+                        new HashSet<>(descarteWriter.descartadas(tenantId, atletaId, STRAVA)), true);
                 varrer(varredura, cursor.minus(overlap()), fim, acc);
             }
         } catch (RuntimeException ex) {
@@ -231,7 +248,8 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         // FALHA não finge sincronização: o "último sync" que o coach vê fica onde estava
         Instant ultima = resultado.resultado() == ResultadoPull.FALHA ? atual.get().getUltimaSincronizacao() : Instant.now();
         int contagem = defaultInt(atual.get().getSyncActivityCount()) + resultado.insercoes();
-        integracaoExternaRepository.atualizarStatusSync(integracaoId, tenantId, ultima, contagem, erro);
+        integracaoExternaRepository.atualizarStatusSync(integracaoId, tenantId, ultima, contagem,
+                erro != null ? erro : resultado.avisoDeIgnoradas());
     }
 
     @Transactional
@@ -317,9 +335,13 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         } catch (RuntimeException e) {
             // O setAtivo(false) que existia aqui era desfeito pelo rollback da própria transação ao
             // relançar — a falha manual nunca desativou de fato. Mantido esse efeito: registra e relança.
+            // A mensagem é a segura (lastSyncError é exibido ao coach; a da exceção pode trazer URL, SQL
+            // ou corpo de resposta), e o que já commitou antes da falha entra na contagem.
+            boolean houveProgresso = acc.insercoes() > 0;
             integracaoExternaRepository.atualizarStatusSync(integracao.getId(), tenantId,
-                    integracao.getUltimaSincronizacao(), integracao.getSyncActivityCount(),
-                    truncateErrorMessage(e.getMessage()));
+                    houveProgresso ? Instant.now() : integracao.getUltimaSincronizacao(),
+                    houveProgresso ? acc.insercoes() : integracao.getSyncActivityCount(),
+                    mensagemDoPull(categoria(e), e));
             throw e;
         }
 
@@ -445,6 +467,11 @@ public class StravaActivityServiceImpl implements StravaActivityService {
                     importarSeNova(v, activity, acc);
                 }
             }
+            // página curta é a última (task 0.1): pedir a próxima só para ouvir "vazia" dobraria o custo
+            // de cada fatia numa cota compartilhada entre todos os atletas
+            if (pagina.originais().size() < POR_PAGINA) {
+                return;
+            }
         }
     }
 
@@ -460,13 +487,20 @@ public class StravaActivityServiceImpl implements StravaActivityService {
             return;
         }
         try {
+            // laps ANTES da transação: a chamada HTTP (até 10 s) não segura conexão do pool
+            Laps laps = buscarLaps(v.token(), activity.id());
             // transação por atividade (D3.5): uma falha desfaz só esta, nunca as anteriores
-            Boolean inserida = transactionOperations.execute(status -> persistirNova(v, activity, externalId));
+            Boolean inserida = transactionOperations.execute(
+                    status -> persistirNova(v, activity, externalId, laps.splits()));
             if (Boolean.TRUE.equals(inserida)) {
                 acc.inserida();
             } else {
                 // vencedor de uma corrida com o webhook: já está lá, mas não é inserção deste pull
                 acc.avancou();
+            }
+            if (laps.cotaEsgotada()) {
+                // só depois do commit: a atividade (e os laps já pagos) não se perdem por causa do header
+                throw new StravaRateLimitException("Limite de requisições Strava atingido");
             }
         } catch (RuntimeException ex) {
             if (!v.agendado() || categoria(ex) != ErroCategoriaPull.INESPERADO) {
@@ -476,7 +510,8 @@ public class StravaActivityServiceImpl implements StravaActivityService {
             // registro, para não travar a fatia (e o atleta) para sempre (D7, CA12)
             if (descarteWriter.registrarFalha(v.tenantId(), v.atletaId(), STRAVA, externalId)) {
                 log.warn("Atividade Strava {} do atleta {} descartada após falhas recorrentes: {}",
-                        externalId, v.atletaId(), ex.getMessage());
+                        externalId, v.atletaId(), ex.getClass().getSimpleName());
+                v.descartadas().add(externalId);
                 acc.ignorada(ErroCategoriaPull.INESPERADO);
                 return;
             }
@@ -484,14 +519,15 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         }
     }
 
-    private boolean persistirNova(Varredura v, StravaActivityDto activity, String externalId) {
+    private boolean persistirNova(Varredura v, StravaActivityDto activity, String externalId,
+                                  List<StravaSplitDto> splits) {
         // recarregado dentro da transação: mergeActivityIntoTreino lê atleta.getAssessoria() (lazy),
         // e uma instância de fora dela não teria sessão para inicializar
         Atleta atleta = atletaRepository.findByIdAndTenantId(v.atletaId(), v.tenantId())
                 .orElseThrow(() -> new ResourceNotFoundException("Atleta não encontrado"));
         TreinoRealizado treino = new TreinoRealizado();
         mergeActivityIntoTreino(treino, activity, atleta);
-        attachLaps(treino, v.token(), activity.id());
+        attachLaps(treino, splits);
         return ingestaoTreinoRealizadoService.registrar(treino, externalId).inserted();
     }
 
@@ -508,6 +544,10 @@ public class StravaActivityServiceImpl implements StravaActivityService {
 
     /** Classificação do erro para o registro do pull e para decidir se conta tentativa (D3.6). */
     static ErroCategoriaPull categoria(Throwable ex) {
+        if (PullAcumulador.falhaDeInfraestrutura(ex)) {
+            // banco/transação: não é defeito da atividade — como INESPERADO contaria tentativa de descarte
+            return ErroCategoriaPull.TRANSITORIO;
+        }
         if (ex instanceof StravaRateLimitException) {
             return ErroCategoriaPull.RATE_LIMIT;
         }
@@ -525,11 +565,13 @@ public class StravaActivityServiceImpl implements StravaActivityService {
     }
 
     private String mensagemDoPull(ErroCategoriaPull categoria, @Nullable Exception ex) {
+        // sem default: uma categoria nova tem de ganhar texto aqui em tempo de compilação
         return switch (categoria) {
             case RATE_LIMIT -> "Sincronização parcial (limite do Strava) — o restante entra no próximo ciclo";
             case CREDENCIAL -> "Credencial Strava inválida ou revogada — reconecte a integração";
-            case TRANSITORIO -> "Strava indisponível — nova tentativa no próximo ciclo";
-            default -> "Falha inesperada no sync (" + (ex == null ? "desconhecida" : ex.getClass().getSimpleName()) + ")";
+            case TRANSITORIO -> "Falha temporária na sincronização — nova tentativa no próximo ciclo";
+            case DADOS_INVALIDOS, CONFLITO, INESPERADO ->
+                    "Falha inesperada no sync (" + (ex == null ? "desconhecida" : ex.getClass().getSimpleName()) + ")";
         };
     }
 
@@ -542,7 +584,10 @@ public class StravaActivityServiceImpl implements StravaActivityService {
     }
 
     private void attachLaps(TreinoRealizado treino, String accessToken, Long activityId) {
-        List<StravaSplitDto> splits = fetchActivityLaps(accessToken, activityId);
+        attachLaps(treino, fetchActivityLaps(accessToken, activityId));
+    }
+
+    private void attachLaps(TreinoRealizado treino, List<StravaSplitDto> splits) {
         List<EtapaRealizada> etapas = new ArrayList<>();
         for (int i = 0; i < splits.size(); i++) {
             EtapaRealizada etapa = mapToEtapaRealizada(splits.get(i));
@@ -564,7 +609,7 @@ public class StravaActivityServiceImpl implements StravaActivityService {
                         .queryParam("after", after.getEpochSecond())
                         .queryParamIfPresent("before", Optional.ofNullable(before).map(Instant::getEpochSecond))
                         .queryParam("page", page)
-                        .queryParam("per_page", 30)
+                        .queryParam("per_page", POR_PAGINA)
                         .build())
                 .header("Authorization", "Bearer " + accessToken)
                 .retrieve()
@@ -629,6 +674,13 @@ public class StravaActivityServiceImpl implements StravaActivityService {
     }
 
     private void checkRateLimit(HttpHeaders headers) {
+        if (cotaEsgotada(headers)) {
+            throw new StravaRateLimitException("Limite de requisições Strava atingido");
+        }
+    }
+
+    /** Lê a cota dos headers de uma resposta de sucesso; {@code true} se alguma janela zerou. */
+    private boolean cotaEsgotada(HttpHeaders headers) {
         String remaining = headers.getFirst("X-RateLimit-Remaining");
         String usage    = headers.getFirst("X-RateLimit-Usage");
         String limit    = headers.getFirst("X-RateLimit-Limit");
@@ -641,7 +693,7 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         }
 
         if (remaining == null || remaining.isBlank()) {
-            return;
+            return false;
         }
 
         int minRemaining = Integer.MAX_VALUE;
@@ -654,9 +706,7 @@ public class StravaActivityServiceImpl implements StravaActivityService {
             }
         }
 
-        if (minRemaining == 0) {
-            throw new StravaRateLimitException("Limite de requisições Strava atingido");
-        }
+        return minRemaining == 0;
     }
 
     private LocalDate parseActivityDate(String startDateLocal) {
@@ -813,12 +863,6 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         return thirtySecondsAgo.isBefore(integracao.getUltimaSincronizacao());
     }
 
-    private String truncateErrorMessage(String message) {
-        if (message == null) {
-            return "Erro desconhecido";
-        }
-        return message.length() <= 500 ? message : message.substring(0, 500);
-    }
 
     /**
      * {@code originais} decide o fim da paginação; {@code corridas} é o que se importa. Misturar os

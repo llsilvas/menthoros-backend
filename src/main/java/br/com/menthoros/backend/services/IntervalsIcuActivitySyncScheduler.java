@@ -143,6 +143,9 @@ public class IntervalsIcuActivitySyncScheduler {
             lote.esgotouJanela = pendentes.size() <= maxPorCiclo;
             processarLote(pendentes.subList(0, Math.min(maxPorCiclo, pendentes.size())),
                     atletaId, tenantId, acc, lote);
+            if (!lote.esgotouJanela) {
+                acc.backlogPendente();
+            }
             log.info("intervals.icu lote tenant={} atleta={} novas={} pendentesRestantes={}",
                     tenantId, atletaId, acc.insercoes(), Math.max(0, pendentes.size() - maxPorCiclo));
         } catch (IntervalsIcuApiException ex) {
@@ -152,7 +155,8 @@ public class IntervalsIcuActivitySyncScheduler {
             erroStatus = mensagemSegura(ex);
         } catch (RuntimeException ex) {
             log.warn("Falha inesperada no ciclo intervals.icu tenant={} atleta={}: {}", tenantId, atletaId, ex.getMessage());
-            acc.interrompido(ErroCategoriaPull.INESPERADO);
+            acc.interrompido(PullAcumulador.falhaDeInfraestrutura(ex)
+                    ? ErroCategoriaPull.TRANSITORIO : ErroCategoriaPull.INESPERADO);
             lote.falhaTransitoria = true;
             erroStatus = mensagemSegura(ex);
         }
@@ -253,6 +257,14 @@ public class IntervalsIcuActivitySyncScheduler {
                 log.warn("Activity {} do atleta {} descartada (permanente): {}",
                         pendente.id(), atletaId, ex.getMessage());
             } catch (RuntimeException ex) {
+                if (PullAcumulador.falhaDeInfraestrutura(ex)) {
+                    // banco/transação: não é defeito da atividade, então não conta tentativa (QA)
+                    estado.falhaTransitoria = true;
+                    acc.interrompido(ErroCategoriaPull.TRANSITORIO);
+                    log.warn("Lote intervals.icu interrompido por falha de infraestrutura em activity {} do atleta {}: {}",
+                            pendente.id(), atletaId, ex.getClass().getSimpleName());
+                    return;
+                }
                 // Inesperada: retentada até a 3ª vez (cursor não passa); depois descartada com
                 // registro, para uma atividade com erro determinístico não travar o atleta (D7, CA12).
                 if (descarteWriter.registrarFalha(tenantId, atletaId, PLATAFORMA, pendente.id())) {
@@ -293,8 +305,9 @@ public class IntervalsIcuActivitySyncScheduler {
                 ? atual.getUltimaSincronizacao()
                 : Instant.now();
         int contagem = (atual.getSyncActivityCount() == null ? 0 : atual.getSyncActivityCount()) + acc.insercoes();
+        String erro = erroStatus != null ? erroStatus : estado.erro();
         integracaoExternaRepository.atualizarStatusSync(integracaoId, tenantId, ultima, contagem,
-                erroStatus != null ? erroStatus : estado.erro());
+                erro != null ? erro : acc.resultado().avisoDeIgnoradas());
     }
 
     /** Para onde o cursor vai depois do lote, e o que fica em {@code lastSyncError}. */
@@ -376,15 +389,13 @@ public class IntervalsIcuActivitySyncScheduler {
     }
 
     private void registrarErro(UUID atletaId, UUID tenantId, String mensagem) {
-        // Reload imediatamente antes do save: a instância do início do ciclo pode estar stale, e
-        // salvá-la ressuscitaria uma conexão desativada no meio.
+        // UPDATE pontual, não save (D0): um save regravaria tokens e demais colunas com o que foi lido
+        // aqui, desfazendo o que outro escritor gravou entre a leitura e o commit.
         integracaoExternaRepository
                 .findByAtletaIdAndPlataformaAndTenantId(atletaId, PLATAFORMA, tenantId)
                 .filter(IntegracaoExterna::isAtivo)
-                .ifPresent(i -> {
-                    i.setLastSyncError(mensagem);
-                    integracaoExternaRepository.save(i);
-                });
+                .ifPresent(i -> integracaoExternaRepository.atualizarStatusSync(i.getId(), tenantId,
+                        i.getUltimaSincronizacao(), i.getSyncActivityCount(), mensagem));
     }
 
     /**

@@ -341,7 +341,8 @@ class IntervalsIcuActivitySyncSchedulerTest {
             assertThat(idsImportadosEmOrdem()).containsExactly("i1", "i2");
             assertThat(cursorGravado()).isEqualTo(Instant.parse("2026-08-16T10:00:00Z"));
             assertThat(statusGravado().erro()).isNull();
-            assertThat(pullRegistrado().resultado()).isEqualTo(ResultadoPull.COMPLETO);
+            // QA: sobrou trabalho na janela — COMPLETO aqui distorceria a métrica "0 faltantes em COMPLETO"
+            assertThat(pullRegistrado()).isEqualTo(new PullResultado(ResultadoPull.PARCIAL, null, 2, 0));
         }
 
         @Test
@@ -509,6 +510,22 @@ class IntervalsIcuActivitySyncSchedulerTest {
         }
 
         @Test
+        @DisplayName("QA — falha de banco (deadlock) é transitória: não conta tentativa nem descarta")
+        void falhaDeBancoNaoContaTentativa() {
+            atletaAtivo(CURSOR);
+            listagemDevolve(A2, A1);
+            doThrow(new org.springframework.dao.CannotAcquireLockException("deadlock"))
+                    .when(ingestionService).importarAtividadeAgendada(atletaId, "i2", tenantId);
+
+            scheduler.runDailyIncrementalSync();
+
+            verify(descarteWriter, never()).registrarFalha(any(), any(), any(), any());
+            assertThat(cursorGravado()).isEqualTo(Instant.parse("2026-08-15T10:00:00Z"));
+            assertThat(pullRegistrado())
+                    .isEqualTo(new PullResultado(ResultadoPull.PARCIAL, ErroCategoriaPull.TRANSITORIO, 1, 0));
+        }
+
+        @Test
         @DisplayName("CA8 — 2 inserções + falha ao gravar o cursor → PARCIAL com 2, não FALHA/0")
         void falhaNaFinalizacaoPreservaContagem() {
             atletaAtivo(CURSOR);
@@ -638,6 +655,23 @@ class IntervalsIcuActivitySyncSchedulerTest {
     }
 
     @Test
+    @DisplayName("QA — rede do catch externo grava o erro por UPDATE pontual, nunca save da entidade (D0)")
+    void registrarErroSemSave() {
+        IntegracaoExterna i = integracao(integracaoId, atletaId, tenantId, CURSOR);
+        when(integracaoExternaRepository.findAllActiveByPlataforma(FonteDados.INTERVALS_ICU)).thenReturn(List.of(i));
+        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
+                .thenThrow(new IllegalStateException("falha no late-check"))
+                .thenReturn(Optional.of(i));
+
+        scheduler.runDailyIncrementalSync();
+
+        verify(integracaoExternaRepository, never()).save(any());
+        Status status = statusGravado();
+        assertThat(status.erro()).isEqualTo("Falha inesperada no sync (IllegalStateException)");
+        assertThat(status.ultima()).isEqualTo(i.getUltimaSincronizacao());
+    }
+
+    @Test
     @DisplayName("falha ao gravar o registro de pull não derruba o ciclo dos demais atletas")
     void falhaNoRegistroNaoDerrubaOCiclo() {
         atletaAtivo(CURSOR);
@@ -672,6 +706,8 @@ class IntervalsIcuActivitySyncSchedulerTest {
             assertThat(cursorGravado()).isAfterOrEqualTo(inicioDoTeste);
             assertThat(pullRegistrado())
                     .isEqualTo(new PullResultado(ResultadoPull.PARCIAL, ErroCategoriaPull.DADOS_INVALIDOS, 2, 1));
+            // QA: o coach precisa saber que houve atividade não importada
+            assertThat(statusGravado().erro()).contains("1 atividade(s) não importada(s)");
         }
 
         @Test

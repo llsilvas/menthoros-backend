@@ -80,4 +80,28 @@ class PullAcumuladorTest {
         assertThat(acc.resultado())
                 .isEqualTo(new PullResultado(ResultadoPull.FALHA, ErroCategoriaPull.CREDENCIAL, 0, 1));
     }
+
+    @Test
+    @DisplayName("QA — janela não esgotada (teto por ciclo) é PARCIAL, não COMPLETO: sobrou trabalho")
+    void backlogPendenteEParcial() {
+        var acc = new PullAcumulador();
+        acc.inserida();
+        acc.backlogPendente();
+
+        assertThat(acc.resultado()).isEqualTo(new PullResultado(ResultadoPull.PARCIAL, null, 1, 0));
+    }
+
+    @Test
+    @DisplayName("QA — falha de infraestrutura (banco) é transitória, nunca inesperada")
+    void falhaDeBancoETransitoria() {
+        assertThat(PullAcumulador.falhaDeInfraestrutura(new org.springframework.dao.CannotAcquireLockException("deadlock")))
+                .isTrue();
+        assertThat(PullAcumulador.falhaDeInfraestrutura(
+                new IllegalStateException("envolve", new org.springframework.dao.QueryTimeoutException("timeout"))))
+                .isTrue();
+        assertThat(PullAcumulador.falhaDeInfraestrutura(
+                new org.springframework.transaction.CannotCreateTransactionException("pool esgotado")))
+                .isTrue();
+        assertThat(PullAcumulador.falhaDeInfraestrutura(new IllegalStateException("bug no mapper"))).isFalse();
+    }
 }
