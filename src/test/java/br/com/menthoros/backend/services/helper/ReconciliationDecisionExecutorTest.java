@@ -225,6 +225,91 @@ class ReconciliationDecisionExecutorTest {
         }
     }
 
+    @Nested
+    @DisplayName("auditoria registra o planejado (fix-reconciliation-audit-planned-id)")
+    class AuditoriaDoPlanejado {
+
+        @Test
+        @DisplayName("VINCULADO_AUTOMATICO grava o planejado vinculado como 'depois' e 'antes' nulo")
+        void vinculadoGravaPlanejadoComoDepois() {
+            TreinoRealizado realizado = realizadoCompleto();
+            TreinoPlanejado planejado = planejadoCompleto();
+            when(matchingDecisionEngine.decide(any(), any()))
+                    .thenReturn(decisao(ReconciliationStatus.VINCULADO_AUTOMATICO, planejado, "AUTO_MATCH", "0.90"));
+
+            executor.executar(realizado, List.of(planejado), atleta);
+
+            TreinoReconciliacao evento = eventoGravado();
+            assertThat(evento.getAfterPlannedIdUuid()).isEqualTo(planejado.getId());
+            assertThat(evento.getBeforePlannedIdUuid()).isNull();
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @EnumSource(value = ReconciliationStatus.class, names = {"AMBIGUO", "NAO_PLANEJADO"})
+        @DisplayName("sem vínculo o 'depois' é nulo, mesmo com o topo da decisão em selectedPlanned")
+        void semVinculoDepoisNulo(ReconciliationStatus status) {
+            TreinoRealizado realizado = realizadoCompleto();
+            TreinoPlanejado topo = planejadoCompleto();
+            when(matchingDecisionEngine.decide(any(), any()))
+                    .thenReturn(decisao(status, topo, "RAZAO", "0.60"));
+
+            executor.executar(realizado, List.of(topo), atleta);
+
+            assertThat(eventoGravado().getAfterPlannedIdUuid()).isNull();
+        }
+
+        @Test
+        @DisplayName("AMBIGUO forçado pela guarda de campos ausentes não grava 'depois'")
+        void guardaDeCamposAusentesNaoGravaDepois() {
+            TreinoRealizado realizado = realizadoCompleto();
+            TreinoPlanejado planejado = planejadoCompleto();
+            planejado.setDistanciaKm(null);
+            when(matchingDecisionEngine.decide(any(), any()))
+                    .thenReturn(decisao(ReconciliationStatus.VINCULADO_AUTOMATICO, planejado, "AUTO_MATCH", "0.90"));
+
+            executor.executar(realizado, List.of(planejado), atleta);
+
+            TreinoReconciliacao evento = eventoGravado();
+            assertThat(evento.getAfterStatus()).isEqualTo(ReconciliationStatus.AMBIGUO);
+            assertThat(evento.getAfterPlannedIdUuid()).isNull();
+        }
+
+        @Test
+        @DisplayName("VINCULADO_AUTOMATICO sem planejado selecionado não grava 'depois'")
+        void vinculadoSemPlanejadoNaoGravaDepois() {
+            TreinoRealizado realizado = realizadoCompleto();
+            when(matchingDecisionEngine.decide(any(), any()))
+                    .thenReturn(decisao(ReconciliationStatus.VINCULADO_AUTOMATICO, null, "AUTO_MATCH", "0.90"));
+
+            executor.executar(realizado, List.of(), atleta);
+
+            assertThat(eventoGravado().getAfterPlannedIdUuid()).isNull();
+        }
+
+        @Test
+        @DisplayName("vínculo anterior vira 'antes', capturado antes de o executor trocar a associação")
+        void vinculoAnteriorViraAntes() {
+            TreinoRealizado realizado = realizadoCompleto();
+            TreinoPlanejado anterior = planejadoCompleto();
+            realizado.setTreinoPlanejado(anterior);
+            TreinoPlanejado novo = planejadoCompleto();
+            when(matchingDecisionEngine.decide(any(), any()))
+                    .thenReturn(decisao(ReconciliationStatus.VINCULADO_AUTOMATICO, novo, "AUTO_MATCH", "0.90"));
+
+            executor.executar(realizado, List.of(novo), atleta);
+
+            TreinoReconciliacao evento = eventoGravado();
+            assertThat(evento.getBeforePlannedIdUuid()).isEqualTo(anterior.getId());
+            assertThat(evento.getAfterPlannedIdUuid()).isEqualTo(novo.getId());
+        }
+
+        private TreinoReconciliacao eventoGravado() {
+            ArgumentCaptor<TreinoReconciliacao> captor = ArgumentCaptor.forClass(TreinoReconciliacao.class);
+            verify(treinoReconciliacaoRepository).save(captor.capture());
+            return captor.getValue();
+        }
+    }
+
     enum CasoAusente {
         REALIZADO_SEM_DURACAO {
             void aplicar(TreinoRealizado r, TreinoPlanejado p) { r.setDuracaoMin(Duration.ZERO); }
