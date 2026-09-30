@@ -1,0 +1,83 @@
+package br.com.menthoros.backend.services.helper;
+
+import br.com.menthoros.backend.enums.ErroCategoriaPull;
+import br.com.menthoros.backend.enums.ResultadoPull;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@DisplayName("PullAcumulador: o resultado do pull a partir do que aconteceu")
+class PullAcumuladorTest {
+
+    @Test
+    @DisplayName("sem interrupção nem ignoradas → COMPLETO, com as inserções")
+    void completo() {
+        var acc = new PullAcumulador();
+        acc.inserida();
+        acc.inserida();
+
+        assertThat(acc.resultado()).isEqualTo(new PullResultado(ResultadoPull.COMPLETO, null, 2, 0));
+    }
+
+    @Test
+    @DisplayName("janela vazia sem erro → COMPLETO com zero")
+    void janelaVazia() {
+        assertThat(new PullAcumulador().resultado())
+                .isEqualTo(new PullResultado(ResultadoPull.COMPLETO, null, 0, 0));
+    }
+
+    @Test
+    @DisplayName("interrompido depois de inserir → PARCIAL com o que foi commitado")
+    void parcialPorInsercao() {
+        var acc = new PullAcumulador();
+        acc.inserida();
+        acc.inserida();
+        acc.interrompido(ErroCategoriaPull.INESPERADO);
+
+        assertThat(acc.resultado())
+                .isEqualTo(new PullResultado(ResultadoPull.PARCIAL, ErroCategoriaPull.INESPERADO, 2, 0));
+    }
+
+    @Test
+    @DisplayName("interrompido depois de avançar sem inserir (fatia varrida sem corrida) → PARCIAL")
+    void parcialPorAvanco() {
+        var acc = new PullAcumulador();
+        acc.avancou();
+        acc.interrompido(ErroCategoriaPull.RATE_LIMIT);
+
+        assertThat(acc.resultado().resultado()).isEqualTo(ResultadoPull.PARCIAL);
+    }
+
+    @Test
+    @DisplayName("interrompido sem progresso → FALHA")
+    void falha() {
+        var acc = new PullAcumulador();
+        acc.interrompido(ErroCategoriaPull.RATE_LIMIT);
+
+        assertThat(acc.resultado())
+                .isEqualTo(new PullResultado(ResultadoPull.FALHA, ErroCategoriaPull.RATE_LIMIT, 0, 0));
+    }
+
+    @Test
+    @DisplayName("ignorada sem interrupção → PARCIAL com a categoria da ignorada")
+    void ignoradaDaParcial() {
+        var acc = new PullAcumulador();
+        acc.inserida();
+        acc.ignorada(ErroCategoriaPull.DADOS_INVALIDOS);
+
+        assertThat(acc.resultado())
+                .isEqualTo(new PullResultado(ResultadoPull.PARCIAL, ErroCategoriaPull.DADOS_INVALIDOS, 1, 1));
+    }
+
+    @Test
+    @DisplayName("a categoria da interrupção prevalece sobre a da ignorada")
+    void interrupcaoPrevalece() {
+        var acc = new PullAcumulador();
+        acc.ignorada(ErroCategoriaPull.DADOS_INVALIDOS);
+        acc.interrompido(ErroCategoriaPull.CREDENCIAL);
+
+        assertThat(acc.resultado())
+                .isEqualTo(new PullResultado(ResultadoPull.FALHA, ErroCategoriaPull.CREDENCIAL, 0, 1));
+    }
+}
