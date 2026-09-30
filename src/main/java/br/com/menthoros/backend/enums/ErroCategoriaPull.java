@@ -6,5 +6,7 @@ public enum ErroCategoriaPull {
     CREDENCIAL,
     TRANSITORIO,
     DADOS_INVALIDOS,
+    /** Estado do atleta impede o import (ex.: Strava ainda ativo, conexão desativada no meio). */
+    CONFLITO,
     INESPERADO
 }

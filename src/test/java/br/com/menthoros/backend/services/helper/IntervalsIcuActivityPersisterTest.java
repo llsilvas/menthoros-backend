@@ -100,7 +100,7 @@ class IntervalsIcuActivityPersisterTest {
             when(reconciliationDecisionExecutor.executar(mapeado, candidatos, atleta))
                     .thenReturn(new MatchingDecision(ReconciliationStatus.NAO_PLANEJADO, null, List.of(), "NO_CANDIDATES", "razão"));
 
-            TreinoRealizado resultado = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
+            TreinoRealizado resultado = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID).treino();
 
             assertThat(resultado).isSameAs(mapeado);
             assertThat(mapeado.getTssCalculado()).isEqualTo(55);
@@ -120,9 +120,11 @@ class IntervalsIcuActivityPersisterTest {
             when(treinoDedupHelper.saveIdempotent(mapeado, EXTERNAL_ID, atleta.getId()))
                     .thenReturn(new TreinoDedupHelper.SaveResult(jaExistente, false));
 
-            TreinoRealizado resultado = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
+            TreinoDedupHelper.SaveResult resultado = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
 
-            assertThat(resultado).isSameAs(jaExistente);
+            assertThat(resultado.treino()).isSameAs(jaExistente);
+            // o pull conta inserções por esta flag: o vencedor de outra requisição não é inserção deste
+            assertThat(resultado.inserted()).isFalse();
             verify(tssCalculatorService, never()).calcularTss(any());
             verify(tsbService, never()).recalcularDesde(any(), any());
             verify(candidateSelector, never()).buscarCandidatos(any(), any());
@@ -192,7 +194,7 @@ class IntervalsIcuActivityPersisterTest {
                     .thenReturn(new TreinoDedupHelper.SaveResult(mapeado, true));
             when(candidateSelector.buscarCandidatos(mapeado, tenantId)).thenReturn(List.of());
 
-            TreinoRealizado salvo = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
+            TreinoRealizado salvo = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID).treino();
 
             // O persister nao mexe em etapas: quem anexa e o mapper, e o cascade persiste.
             assertThat(salvo.getEtapasRealizadas()).hasSize(3);
@@ -212,7 +214,7 @@ class IntervalsIcuActivityPersisterTest {
             when(treinoDedupHelper.saveIdempotent(mapeado, EXTERNAL_ID, atleta.getId()))
                     .thenReturn(new TreinoDedupHelper.SaveResult(vencedor, false));
 
-            TreinoRealizado salvo = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
+            TreinoRealizado salvo = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID).treino();
 
             assertThat(salvo).isSameAs(vencedor);
             assertThat(salvo.getEtapasRealizadas()).hasSize(3);
@@ -230,7 +232,7 @@ class IntervalsIcuActivityPersisterTest {
                     .thenReturn(new TreinoDedupHelper.SaveResult(mapeado, true));
             when(candidateSelector.buscarCandidatos(mapeado, tenantId)).thenReturn(List.of());
 
-            TreinoRealizado salvo = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID);
+            TreinoRealizado salvo = persister.persistir(dto, atleta, tenantId, EXTERNAL_ID).treino();
 
             assertThat(salvo.getEtapasRealizadas()).isEmpty();
             verify(tsbService).recalcularDesde(eq(atleta.getId()), any());

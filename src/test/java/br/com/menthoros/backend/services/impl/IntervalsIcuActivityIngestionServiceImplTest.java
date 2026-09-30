@@ -19,8 +19,10 @@ import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.IntervalsIcuClient;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.ImportacaoResultado;
 import br.com.menthoros.backend.services.helper.IntervalsIcuActivityMapper;
 import br.com.menthoros.backend.services.helper.IntervalsIcuActivityPersister;
+import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -199,7 +201,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
                     .thenReturn(List.of());
             when(intervalsIcuClient.buscarAtividade(API_KEY, ACTIVITY_ID, true)).thenReturn(dto);
             when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
-            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoRealizado());
+            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoDedupHelper.SaveResult(new TreinoRealizado(), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mockOutputDto());
 
             service.importarAtividade(atletaId, ACTIVITY_ID, tenantId);
@@ -386,7 +388,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
             when(intervalsIcuActivityMapper.parseDataTreino(dto.startDateLocal()))
                     .thenReturn(LocalDate.now().minusDays(10));
             when(intervalsIcuProperties.getSyncDaysBack()).thenReturn(90);
-            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoRealizado());
+            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoDedupHelper.SaveResult(new TreinoRealizado(), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mockOutputDto());
 
             service.importarAtividade(atletaId, ACTIVITY_ID, tenantId);
@@ -402,12 +404,70 @@ class IntervalsIcuActivityIngestionServiceImplTest {
             when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
             when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
             when(intervalsIcuActivityMapper.parseDataTreino(dto.startDateLocal())).thenReturn(null);
-            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoRealizado());
+            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoDedupHelper.SaveResult(new TreinoRealizado(), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mockOutputDto());
 
             service.importarAtividade(atletaId, ACTIVITY_ID, tenantId);
 
             verify(persister).persistir(dto, atleta, tenantId, ACTIVITY_ID);
+        }
+    }
+
+    @Nested
+    @DisplayName("importarAtividadeAgendada — pull sem o limite do import manual (fix-sync-cursor-data-loss D4)")
+    class ImportacaoAgendada {
+
+        @Test
+        @DisplayName("CA5 — atividade de D−100 é aceita pelo pull agendado, e o manual continua recusando")
+        void backlogAntigoAceitoNoAgendado() {
+            stubAteAntesDoClient();
+            IcuActivityDto dto = icuDto();
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
+            when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
+            when(intervalsIcuActivityMapper.parseDataTreino(dto.startDateLocal()))
+                    .thenReturn(LocalDate.now().minusDays(100));
+            when(intervalsIcuProperties.getSyncDaysBack()).thenReturn(90);
+            TreinoRealizado salvo = new TreinoRealizado();
+            when(persister.persistir(dto, atleta, tenantId, ACTIVITY_ID))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(salvo, true));
+            when(treinoMapper.toOutputDto(salvo)).thenReturn(mockOutputDto());
+
+            ImportacaoResultado resultado = service.importarAtividadeAgendada(atletaId, ACTIVITY_ID, tenantId);
+
+            assertThat(resultado.inserida()).isTrue();
+            assertThatThrownBy(() -> service.importarAtividade(atletaId, ACTIVITY_ID, tenantId))
+                    .isInstanceOf(DomainRuleViolationException.class);
+        }
+
+        @Test
+        @DisplayName("já importada → inserida = false, sem chamada externa")
+        void jaImportadaNaoContaComoInsercao() {
+            TreinoRealizado existente = new TreinoRealizado();
+            when(treinoRealizadoRepository.findByTenantIdAndFonteDadosAndExternalId(tenantId, FonteDados.INTERVALS_ICU, ACTIVITY_ID))
+                    .thenReturn(Optional.of(existente));
+            when(treinoMapper.toOutputDto(existente)).thenReturn(mockOutputDto());
+
+            ImportacaoResultado resultado = service.importarAtividadeAgendada(atletaId, ACTIVITY_ID, tenantId);
+
+            assertThat(resultado.inserida()).isFalse();
+            verifyNoInteractions(intervalsIcuClient);
+        }
+
+        @Test
+        @DisplayName("corrida concorrente no persister (inserted = false) não conta como inserção")
+        void corridaConcorrenteNaoContaComoInsercao() {
+            stubAteAntesDoClient();
+            IcuActivityDto dto = icuDto();
+            when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
+            when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
+            TreinoRealizado vencedor = new TreinoRealizado();
+            when(persister.persistir(dto, atleta, tenantId, ACTIVITY_ID))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(vencedor, false));
+            when(treinoMapper.toOutputDto(vencedor)).thenReturn(mockOutputDto());
+
+            ImportacaoResultado resultado = service.importarAtividadeAgendada(atletaId, ACTIVITY_ID, tenantId);
+
+            assertThat(resultado.inserida()).isFalse();
         }
     }
 
@@ -423,7 +483,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
             when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
             when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
             TreinoRealizado salvo = new TreinoRealizado();
-            when(persister.persistir(eq(dto), eq(atleta), eq(tenantId), eq(ACTIVITY_ID))).thenReturn(salvo);
+            when(persister.persistir(eq(dto), eq(atleta), eq(tenantId), eq(ACTIVITY_ID))).thenReturn(new TreinoDedupHelper.SaveResult(salvo, true));
             TreinoRealizadoOutputDto outputDto = mockOutputDto();
             when(treinoMapper.toOutputDto(salvo)).thenReturn(outputDto);
 
@@ -440,7 +500,7 @@ class IntervalsIcuActivityIngestionServiceImplTest {
             IcuActivityDto dto = icuDto();
             when(intervalsIcuClient.buscarAtividade(anyString(), anyString(), anyBoolean())).thenReturn(dto);
             when(intervalsIcuActivityMapper.isModalidadeSuportada(dto.type())).thenReturn(true);
-            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoRealizado());
+            when(persister.persistir(any(), any(), any(), any())).thenReturn(new TreinoDedupHelper.SaveResult(new TreinoRealizado(), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mockOutputDto());
 
             service.importarAtividade(atletaId, ACTIVITY_ID, tenantId);
