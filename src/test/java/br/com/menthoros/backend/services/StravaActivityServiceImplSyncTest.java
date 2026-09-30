@@ -68,7 +68,8 @@ class StravaActivityServiceImplSyncTest {
         service = new StravaActivityServiceImpl(
                 atletaRepository, treinoRealizadoRepository, integracaoExternaRepository,
                 stravaOAuthService, treinoMapper, eventPublisher, stravaWebClient,
-                ingestaoTreinoRealizadoService);
+                ingestaoTreinoRealizadoService,
+                org.springframework.transaction.support.TransactionOperations.withoutTransaction(), null, new br.com.menthoros.backend.config.external.StravaProperties());
 
         Assessoria assessoria = new Assessoria();
         assessoria.setId(UUID.randomUUID());
@@ -128,6 +129,56 @@ class StravaActivityServiceImplSyncTest {
         }
 
         @Test
+        @DisplayName("CA7 — webhook update sem perceived_exertion preserva RPE, feedback e sensações do atleta, e não toca o cursor do pull")
+        void updatePreservaEnriquecimentoDoAtleta() {
+            IntegracaoExterna integracao = new IntegracaoExterna();
+            StravaActivityDto activity = stravaActivity(778L);
+            stubStravaCall(activity);
+            TreinoRealizado existente = new TreinoRealizado();
+            existente.setId(UUID.randomUUID());
+            existente.setPercepcaoEsforco(7);
+            existente.setFeedbackAtleta("pernas pesadas");
+            existente.setSensacoes(new java.util.HashSet<>(java.util.Set.of(br.com.menthoros.backend.enums.Sensacao.values()[0])));
+            when(treinoRealizadoRepository.findByExternalIdAndAtletaId("778", atleta.getId()))
+                    .thenReturn(Optional.of(existente));
+            stubLapsVazias();
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), false));
+
+            service.syncSingleActivityById(atleta, integracao, 778L);
+
+            assertThat(existente.getPercepcaoEsforco()).isEqualTo(7);
+            assertThat(existente.getFeedbackAtleta()).isEqualTo("pernas pesadas");
+            assertThat(existente.getSensacoes()).hasSize(1);
+            verify(integracaoExternaRepository, never()).atualizarPullCursor(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("treino novo recebe o RPE que o Strava trouxer")
+        void novoRecebeRpeDoStrava() {
+            IntegracaoExterna integracao = new IntegracaoExterna();
+            StravaActivityDto base = stravaActivity(779L);
+            StravaActivityDto comRpe = new StravaActivityDto(
+                    base.id(), base.name(), base.sportType(), base.startDateLocal(), base.distance(),
+                    base.movingTime(), base.elapsedTime(), base.totalElevationGain(), base.averageSpeed(),
+                    base.averageHeartrate(), base.maxHeartrate(), base.hasHeartrate(), base.sufferScore(),
+                    6.0, base.description(), base.manual(), base.workoutType(), base.averageCadence(),
+                    base.deviceName(), base.gear(), base.splitsMetric());
+            stubStravaCall(comRpe);
+            when(treinoRealizadoRepository.findByExternalIdAndAtletaId("779", atleta.getId()))
+                    .thenReturn(Optional.empty());
+            stubLapsVazias();
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+
+            service.syncSingleActivityById(atleta, integracao, 779L);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), eq("779"));
+            assertThat(captor.getValue().getPercepcaoEsforco()).isEqualTo(6);
+        }
+
+        @Test
         @DisplayName("Strava reporta data diferente da já sincronizada (usuário editou no Strava): chama reprocessar com a data antiga [achado Codex]")
         void dataMudouNoStravaChamaReprocessarComDataAntiga() {
             IntegracaoExterna integracao = new IntegracaoExterna();
@@ -173,6 +224,8 @@ class StravaActivityServiceImplSyncTest {
     }
 
     private void stubLapsVazias() {
+        // a busca de laps traduz 429 em StravaRateLimitException via onStatus (fix-sync-cursor-data-loss D3.6)
+        doReturn(responseSpec).when(responseSpec).onStatus(any(), any());
         doReturn(Mono.just(org.springframework.http.ResponseEntity.ok(List.of())))
                 .when(responseSpec).toEntityList(br.com.menthoros.backend.dto.strava.StravaSplitDto.class);
     }

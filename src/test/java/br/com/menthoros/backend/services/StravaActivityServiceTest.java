@@ -59,7 +59,8 @@ class StravaActivityServiceTest {
                 treinoMapper,
                 eventPublisher,
                 stravaWebClient,
-                ingestaoTreinoRealizadoService
+                ingestaoTreinoRealizadoService,
+                org.springframework.transaction.support.TransactionOperations.withoutTransaction(), null, new br.com.menthoros.backend.config.external.StravaProperties()
         );
 
         Atleta atleta = mockAtleta();
@@ -112,7 +113,8 @@ class StravaActivityServiceTest {
                 treinoMapper,
                 eventPublisher,
                 stravaWebClient,
-                ingestaoTreinoRealizadoService
+                ingestaoTreinoRealizadoService,
+                org.springframework.transaction.support.TransactionOperations.withoutTransaction(), null, new br.com.menthoros.backend.config.external.StravaProperties()
         );
 
         StravaSplitDto split = new StravaSplitDto(

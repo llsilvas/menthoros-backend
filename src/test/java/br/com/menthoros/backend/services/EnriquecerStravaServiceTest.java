@@ -71,7 +71,8 @@ class EnriquecerStravaServiceTest {
                 treinoMapper,
                 eventPublisher,
                 stravaWebClient,
-                ingestaoTreinoRealizadoService
+                ingestaoTreinoRealizadoService,
+                org.springframework.transaction.support.TransactionOperations.withoutTransaction(), null, new br.com.menthoros.backend.config.external.StravaProperties()
         );
 
         treinoId = UUID.randomUUID();

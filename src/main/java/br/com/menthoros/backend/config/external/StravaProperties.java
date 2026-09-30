@@ -19,4 +19,9 @@ public class StravaProperties {
     private String apiBaseUrl;
     private String webhookVerifyToken;
     private int syncDaysBack = 90;
+    /**
+     * Quanto o pull relista para trás de {@code pull_cursor}: cobre upload tardio com data anterior ao
+     * cursor. Upload com mais atraso que isso fica para o webhook {@code create}.
+     */
+    private int syncOverlapDays = 7;
 }
