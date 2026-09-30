@@ -2,10 +2,14 @@ package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.enums.FonteDados;
+import org.jspecify.annotations.Nullable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -87,4 +91,41 @@ public interface IntegracaoExternaRepository extends JpaRepository<IntegracaoExt
 
     @Query("SELECT COUNT(DISTINCT ie.atleta.id) FROM IntegracaoExterna ie WHERE ie.plataforma = 'STRAVA' AND ie.ativo = true")
     Integer countAthletesWithActiveStrava();
+
+    /**
+     * Único escritor de {@code pull_cursor} (mapeado somente leitura na entidade). {@code @Transactional}
+     * porque {@code @Modifying} não abre transação, e os schedulers chamam sem uma. Participa da
+     * transação do chamador quando há. Retorno {@code 0} = tenant errado ou integração removida.
+     */
+    @Transactional
+    @Modifying(flushAutomatically = true)
+    @Query("""
+    update IntegracaoExterna i set i.pullCursor = :cursor
+    where i.id = :id and i.tenantId = :tenantId
+    """)
+    int atualizarPullCursor(
+            @Param("id") UUID id,
+            @Param("tenantId") UUID tenantId,
+            @Param("cursor") Instant cursor
+    );
+
+    /**
+     * Status do sync sem salvar a entidade: uma instância carregada antes de uma chamada externa
+     * está velha (ex.: {@code getValidToken} pode ter renovado e commitado os tokens no meio), e um
+     * {@code save} dela desfaria o que outro escritor gravou.
+     */
+    @Transactional
+    @Modifying(flushAutomatically = true)
+    @Query("""
+    update IntegracaoExterna i
+       set i.ultimaSincronizacao = :ultima, i.syncActivityCount = :count, i.lastSyncError = :erro
+     where i.id = :id and i.tenantId = :tenantId
+    """)
+    int atualizarStatusSync(
+            @Param("id") UUID id,
+            @Param("tenantId") UUID tenantId,
+            @Param("ultima") Instant ultima,
+            @Param("count") Integer count,
+            @Param("erro") @Nullable String erro
+    );
 }

@@ -16,11 +16,13 @@ import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.ImportacaoResultado;
 import br.com.menthoros.backend.services.IntervalsIcuActivityIngestionService;
 import br.com.menthoros.backend.services.IntervalsIcuClient;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
 import br.com.menthoros.backend.services.helper.IntervalsIcuActivityMapper;
 import br.com.menthoros.backend.services.helper.IntervalsIcuActivityPersister;
+import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatusCode;
@@ -64,6 +66,16 @@ public class IntervalsIcuActivityIngestionServiceImpl implements IntervalsIcuAct
 
     @Override
     public TreinoRealizadoOutputDto importarAtividade(UUID atletaId, String activityId, UUID tenantId) {
+        return importar(atletaId, activityId, tenantId, true).treino();
+    }
+
+    @Override
+    public ImportacaoResultado importarAtividadeAgendada(UUID atletaId, String activityId, UUID tenantId) {
+        return importar(atletaId, activityId, tenantId, false);
+    }
+
+    private ImportacaoResultado importar(UUID atletaId, String activityId, UUID tenantId,
+                                         boolean aplicarLimiteRetroatividade) {
         if (atletaId == null) {
             throw new IllegalArgumentException("atletaId não pode ser nulo");
         }
@@ -79,7 +91,7 @@ public class IntervalsIcuActivityIngestionServiceImpl implements IntervalsIcuAct
                 .findByTenantIdAndFonteDadosAndExternalId(tenantId, INTERVALS_ICU, normalizedActivityId);
         if (existente.isPresent()) {
             log.info("Activity intervals.icu já importada: activityId={}, atletaId={}", normalizedActivityId, atletaId);
-            return treinoMapper.toOutputDto(existente.get());
+            return new ImportacaoResultado(treinoMapper.toOutputDto(existente.get()), false);
         }
 
         // Passo 1: precondição de pausa Strava (D5.2 — safety net residual, ver design.md).
@@ -119,7 +131,11 @@ public class IntervalsIcuActivityIngestionServiceImpl implements IntervalsIcuAct
         // syncDaysBack), este endpoint é síncrono na thread do request — sem teto, uma atividade
         // muito antiga faria persister.persistir (TsbService#recalcularDesde, D13) reprocessar
         // centenas/milhares de dias segurando conexão e thread do coach que chamou o import.
-        LocalDate dataAtividade = intervalsIcuActivityMapper.parseDataTreino(dto.startDateLocal());
+        // O pull agendado não aplica o limite: lá o custo é assíncrono, e recusar descartava o
+        // backlog antigo como erro permanente (fix-sync-cursor-data-loss D4).
+        LocalDate dataAtividade = aplicarLimiteRetroatividade
+                ? intervalsIcuActivityMapper.parseDataTreino(dto.startDateLocal())
+                : null;
         if (dataAtividade != null) {
             int syncDaysBack = intervalsIcuProperties.getSyncDaysBack();
             LocalDate limite = LocalDate.now().minusDays(syncDaysBack);
@@ -131,8 +147,8 @@ public class IntervalsIcuActivityIngestionServiceImpl implements IntervalsIcuAct
         }
 
         // Passos 6-9: persistência + reconciliação, em transação própria do colaborador.
-        TreinoRealizado salvo = persister.persistir(dto, atleta, tenantId, normalizedActivityId);
-        return treinoMapper.toOutputDto(salvo);
+        TreinoDedupHelper.SaveResult salvo = persister.persistir(dto, atleta, tenantId, normalizedActivityId);
+        return new ImportacaoResultado(treinoMapper.toOutputDto(salvo.treino()), salvo.inserted());
     }
 
     private void verificarPrecondicaoStrava(UUID atletaId, UUID tenantId) {

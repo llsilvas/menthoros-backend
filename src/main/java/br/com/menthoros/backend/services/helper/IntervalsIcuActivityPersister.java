@@ -48,8 +48,13 @@ public class IntervalsIcuActivityPersister {
     private final ApplicationEventPublisher eventPublisher;
     private final MeterRegistry meterRegistry;
 
+    /**
+     * Devolve o {@link TreinoDedupHelper.SaveResult} inteiro, não só o treino: o pull agendado conta
+     * inserções por {@code inserted()}, e o vencedor de uma corrida concorrente não é inserção desta
+     * chamada (fix-sync-cursor-data-loss D4).
+     */
     @Transactional
-    public TreinoRealizado persistir(IcuActivityDto dto, Atleta atleta, UUID tenantId, String externalId) {
+    public TreinoDedupHelper.SaveResult persistir(IcuActivityDto dto, Atleta atleta, UUID tenantId, String externalId) {
         // Passo 6 (TOCTOU, pre-mortem #9): a conexão pode ter sido desativada entre a leitura
         // inicial (orquestrador) e este ponto — recarrega dentro da TX antes de persistir.
         intervalsIcuConnectionService.conexaoAtiva(atleta.getId(), tenantId)
@@ -79,7 +84,7 @@ public class IntervalsIcuActivityPersister {
                     salvo.getId(), atleta.getId(), externalId);
         }
 
-        return salvo;
+        return resultado;
     }
 
     /**
