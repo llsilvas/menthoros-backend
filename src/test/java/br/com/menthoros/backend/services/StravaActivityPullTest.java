@@ -457,6 +457,23 @@ class StravaActivityPullTest {
         }
 
         @Test
+        @DisplayName("QA — violação de constraint é determinística: conta tentativa e, na 3ª, descarta (não trava a fatia)")
+        void violacaoDeConstraintContaTentativa() {
+            Instant cursor = cursorDiasAtras(1);
+            integracaoComCursor(cursor);
+            paginaDaFatia(inicioDaJanela(cursor), 1, pagina(corrida(1), corrida(2)));
+            when(ingestaoTreinoRealizadoService.registrar(any(), eq("2")))
+                    .thenThrow(new org.springframework.dao.DataIntegrityViolationException("value too long"));
+            when(descarteWriter.registrarFalha(tenantId, atletaId, FonteDados.STRAVA, "2")).thenReturn(true);
+
+            PullResultado resultado = service.pullAgendado(atletaId);
+
+            verify(descarteWriter).registrarFalha(tenantId, atletaId, FonteDados.STRAVA, "2");
+            assertThat(cursoresGravados()).hasSize(1);
+            assertThat(resultado).isEqualTo(new PullResultado(ResultadoPull.PARCIAL, ErroCategoriaPull.INESPERADO, 1, 1));
+        }
+
+        @Test
         @DisplayName("QA — página curta é a última: sem requisição extra por fatia")
         void paginaCurtaEncerraAFatia() {
             Instant cursor = cursorDiasAtras(1);

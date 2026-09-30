@@ -102,6 +102,34 @@ class PullAcumuladorTest {
         assertThat(PullAcumulador.falhaDeInfraestrutura(
                 new org.springframework.transaction.CannotCreateTransactionException("pool esgotado")))
                 .isTrue();
+        assertThat(PullAcumulador.falhaDeInfraestrutura(
+                new org.springframework.jdbc.CannotGetJdbcConnectionException("conexão recusada")))
+                .isTrue();
         assertThat(PullAcumulador.falhaDeInfraestrutura(new IllegalStateException("bug no mapper"))).isFalse();
+    }
+
+    @Test
+    @DisplayName("QA — erro de banco DETERMINÍSTICO (constraint, uso da API) não é transitório: tem de contar tentativa")
+    void erroDeterministicoDeBancoNaoETransitorio() {
+        // se fosse transitório, a atividade "veneno" nunca chegaria a 3 tentativas e travaria a fatia para sempre
+        assertThat(PullAcumulador.falhaDeInfraestrutura(
+                new org.springframework.dao.DataIntegrityViolationException("value too long for type varchar(100)")))
+                .isFalse();
+        assertThat(PullAcumulador.falhaDeInfraestrutura(
+                new org.springframework.dao.InvalidDataAccessApiUsageException("uso errado")))
+                .isFalse();
+        assertThat(PullAcumulador.falhaDeInfraestrutura(
+                new org.springframework.transaction.TransactionSystemException("commit falhou por validação")))
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("cadeia de causa cíclica não trava a classificação")
+    void causaCiclicaNaoTrava() {
+        var a = new IllegalStateException("a");
+        var b = new IllegalArgumentException("b", a);
+        a.initCause(b);
+
+        assertThat(PullAcumulador.falhaDeInfraestrutura(a)).isFalse();
     }
 }

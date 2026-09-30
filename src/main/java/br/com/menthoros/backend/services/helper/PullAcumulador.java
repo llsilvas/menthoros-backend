@@ -3,8 +3,11 @@ package br.com.menthoros.backend.services.helper;
 import br.com.menthoros.backend.enums.ErroCategoriaPull;
 import br.com.menthoros.backend.enums.ResultadoPull;
 import org.jspecify.annotations.Nullable;
-import org.springframework.dao.DataAccessException;
-import org.springframework.transaction.TransactionException;
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.RecoverableDataAccessException;
+import org.springframework.dao.TransientDataAccessException;
+import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.transaction.TransactionTimedOutException;
 
 /**
  * Acumula o que o pull fez ao longo de TODAS as fases — carga, varredura e finalização (cursor e
@@ -55,18 +58,30 @@ public final class PullAcumulador {
         backlog = true;
     }
 
+    /** Uma cadeia de causa mais funda que isso é cíclica ou patológica; não vale percorrer. */
+    private static final int PROFUNDIDADE_MAXIMA_DA_CAUSA = 16;
+
     /**
-     * Falha de banco ou de transação (deadlock, timeout, pool esgotado) é da infraestrutura, não da
-     * atividade: tratá-la como inesperada contaria tentativa e, na 3ª, descartaria um treino válido.
+     * Falha TRANSITÓRIA de banco ou de transação (deadlock, lock, timeout, conexão, pool esgotado) é da
+     * infraestrutura, não da atividade: tratá-la como inesperada contaria tentativa e, na 3ª, descartaria
+     * um treino válido.
+     *
+     * <p>Só as famílias transitórias, de propósito: um erro determinístico de banco
+     * ({@code DataIntegrityViolationException} — coluna longa, NOT NULL, FK) tem de contar tentativa, senão
+     * a atividade que o provoca nunca é descartada e trava a fatia para sempre (D7). Pelo mesmo motivo,
+     * {@code TransactionSystemException} (commit que falhou por validação) fica de fora.</p>
      */
     public static boolean falhaDeInfraestrutura(Throwable ex) {
-        for (Throwable t = ex; t != null; t = t.getCause()) {
-            if (t instanceof DataAccessException || t instanceof TransactionException) {
+        Throwable t = ex;
+        for (int profundidade = 0; t != null && profundidade < PROFUNDIDADE_MAXIMA_DA_CAUSA; profundidade++) {
+            if (t instanceof TransientDataAccessException
+                    || t instanceof RecoverableDataAccessException
+                    || t instanceof DataAccessResourceFailureException
+                    || t instanceof CannotCreateTransactionException
+                    || t instanceof TransactionTimedOutException) {
                 return true;
             }
-            if (t.getCause() == t) {
-                return false;
-            }
+            t = t.getCause();
         }
         return false;
     }
