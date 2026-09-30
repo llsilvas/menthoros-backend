@@ -27,6 +27,7 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.repository.projection.DistanciaDiaProjection;
 import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import org.junit.jupiter.api.AfterEach;
@@ -747,6 +748,112 @@ class AtletaProgressServiceImplTest {
             assertThat(resultado).hasSize(1);
             assertThat(resultado.get(0).percentual()).isZero();
             assertThat(resultado.get(0).totalRealizado()).isZero();
+        }
+    }
+
+    @Nested
+    @DisplayName("getDistanceSummary")
+    class GetDistanceSummary {
+
+        // HOJE = 2026-06-17 (quarta); 8 semanas ISO → primeira segunda = 2026-04-27
+        private final LocalDate PRIMEIRA_SEGUNDA = LocalDate.of(2026, 4, 27);
+
+        private DistanciaDiaProjection dia(LocalDate data, String km) {
+            return new DistanciaDiaProjection() {
+                @Override public LocalDate getDataTreino() { return data; }
+                @Override public BigDecimal getDistanciaKm() { return new BigDecimal(km); }
+            };
+        }
+
+        private void kmPorDia(LocalDate inicio, DistanciaDiaProjection... dias) {
+            when(treinoRealizadoRepository.somarDistanciaPorDia(atletaId, tenantId, inicio, HOJE)).thenReturn(List.of(dias));
+        }
+
+        @Test
+        @DisplayName("atleta de outro tenant → DomainNotFoundException, sem consultar treinos")
+        void atletaDeOutroTenant() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.getDistanceSummary(atletaId, 8))
+                    .isInstanceOf(DomainNotFoundException.class);
+            org.mockito.Mockito.verifyNoInteractions(treinoRealizadoRepository);
+        }
+
+        @ParameterizedTest
+        @CsvSource({"0", "-1", "105"})
+        @DisplayName("weeks fora de 1..MAX_SEMANAS_ADERENCIA → DomainRuleViolationException, sem consultar")
+        void weeksInvalido(int weeks) {
+            assertThatThrownBy(() -> service.getDistanceSummary(atletaId, weeks))
+                    .isInstanceOf(DomainRuleViolationException.class);
+            org.mockito.Mockito.verifyNoInteractions(treinoRealizadoRepository);
+        }
+
+        @Test
+        @DisplayName("sem treinos → 8 semanas contínuas com 0 e 7 dias zerados")
+        void semTreinos() {
+            atletaExisteNoTenant();
+            kmPorDia(PRIMEIRA_SEGUNDA);
+
+            var resumo = service.getDistanceSummary(atletaId, 8);
+
+            assertThat(resumo.weekly()).hasSize(8);
+            assertThat(resumo.weekly().get(0).weekStart()).isEqualTo(PRIMEIRA_SEGUNDA);
+            assertThat(resumo.weekly().get(7).weekStart()).isEqualTo(LocalDate.of(2026, 6, 15));
+            assertThat(resumo.weekly()).allSatisfy(w -> assertThat(w.distanceKm()).isEqualByComparingTo("0"));
+            assertThat(resumo.last7DaysKm()).isEqualByComparingTo("0");
+            assertThat(resumo.previous7DaysKm()).isEqualByComparingTo("0");
+        }
+
+        @Test
+        @DisplayName("soma por semana ISO: domingo fica na semana anterior, segunda abre a nova")
+        void bordaDeSemana() {
+            atletaExisteNoTenant();
+            kmPorDia(PRIMEIRA_SEGUNDA,
+                    dia(LocalDate.of(2026, 6, 8), "10.5"),
+                    dia(LocalDate.of(2026, 6, 14), "21.1"), // domingo
+                    dia(LocalDate.of(2026, 6, 15), "5.25"), // segunda
+                    dia(LocalDate.of(2026, 6, 17), "8"));
+
+            var weekly = service.getDistanceSummary(atletaId, 8).weekly();
+
+            assertThat(weekly.get(6).weekStart()).isEqualTo(LocalDate.of(2026, 6, 8));
+            assertThat(weekly.get(6).distanceKm()).isEqualByComparingTo("31.6");
+            assertThat(weekly.get(7).distanceKm()).isEqualByComparingTo("13.25");
+        }
+
+        @Test
+        @DisplayName("últimos 7 dias (hoje inclusive) e os 7 anteriores, por data")
+        void seteDias() {
+            atletaExisteNoTenant();
+            kmPorDia(PRIMEIRA_SEGUNDA,
+                    dia(LocalDate.of(2026, 6, 3), "50"),   // fora das duas janelas
+                    dia(LocalDate.of(2026, 6, 4), "3.7"),  // primeiro dia da janela anterior
+                    dia(LocalDate.of(2026, 6, 10), "1"),   // último dia da janela anterior
+                    dia(LocalDate.of(2026, 6, 11), "2"),   // primeiro dia da janela atual
+                    dia(LocalDate.of(2026, 6, 17), "3"));
+
+            var resumo = service.getDistanceSummary(atletaId, 8);
+
+            assertThat(resumo.last7DaysKm()).isEqualByComparingTo("5");
+            assertThat(resumo.previous7DaysKm()).isEqualByComparingTo("4.7");
+        }
+
+        /** Com poucas semanas, a janela semanal começa depois de hoje−13; as de 7 dias não podem truncar. */
+        @Test
+        @DisplayName("weeks=1: consulta desde hoje−13 e as duas janelas de 7 dias ficam completas")
+        void umaSemanaNaoTruncaSeteDias() {
+            atletaExisteNoTenant();
+            kmPorDia(LocalDate.of(2026, 6, 4),
+                    dia(LocalDate.of(2026, 6, 5), "4"),
+                    dia(LocalDate.of(2026, 6, 12), "6"),
+                    dia(LocalDate.of(2026, 6, 16), "2"));
+
+            var resumo = service.getDistanceSummary(atletaId, 1);
+
+            assertThat(resumo.weekly()).hasSize(1);
+            assertThat(resumo.weekly().get(0).distanceKm()).isEqualByComparingTo("2");
+            assertThat(resumo.last7DaysKm()).isEqualByComparingTo("8");
+            assertThat(resumo.previous7DaysKm()).isEqualByComparingTo("4");
         }
     }
 

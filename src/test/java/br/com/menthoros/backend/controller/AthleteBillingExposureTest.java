@@ -121,7 +121,7 @@ class AthleteBillingExposureTest {
         when(coachAthleteProfileService.buscarPerfil(atletaId)).thenReturn(new AtletaPerfilCoachOutputDto(
                 atletaId, "Ana Silva", "Correr maratona", null, "INTERMEDIARIO", null,
                 List.of(), List.of(), null, List.of(), List.of(), List.of(),
-                Instant.now(), null, null, AthleteBillingStatus.DUE_SOON, vencimento, List.of(), List.of(), false));
+                Instant.now(), null, null, AthleteBillingStatus.DUE_SOON, vencimento, List.of(), List.of(), false, null));
 
         String corpo = mockMvc.perform(get("/api/v1/coach/atletas/{id}/perfil", atletaId).with(tecnicoJwt()))
                 .andExpect(status().isOk())

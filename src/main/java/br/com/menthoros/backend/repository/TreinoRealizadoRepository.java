@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.repository;
 
+import br.com.menthoros.backend.repository.projection.DistanciaDiaProjection;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
@@ -133,6 +134,22 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
      */
     @Query("SELECT tr FROM TreinoRealizado tr LEFT JOIN FETCH tr.treinoPlanejado WHERE tr.atleta.id = :atletaId AND tr.tenantId = :tenantId AND tr.dataTreino BETWEEN :dataInicio AND :dataFim ORDER BY tr.dataTreino DESC")
     List<TreinoRealizado> findByAtletaIdAndTenantIdAndDataTreinoBetween(
+            @Param("atletaId") UUID atletaId,
+            @Param("tenantId") UUID tenantId,
+            @Param("dataInicio") LocalDate dataInicio,
+            @Param("dataFim") LocalDate dataFim);
+
+    /**
+     * Km realizados por dia no intervalo, somados no banco. Exclui {@code CANCELADO} mantendo o
+     * status {@code NULL} (FIT/manual), como {@link #findQueContamByAtletaIdAndDataTreino}; dias sem
+     * distância não aparecem. Tenant-aware: YES.
+     */
+    @Query("SELECT tr.dataTreino AS dataTreino, SUM(tr.distanciaKm) AS distanciaKm FROM TreinoRealizado tr "
+            + "WHERE tr.atleta.id = :atletaId AND tr.tenantId = :tenantId "
+            + "AND tr.dataTreino BETWEEN :dataInicio AND :dataFim AND tr.distanciaKm IS NOT NULL "
+            + "AND (tr.statusSincronizacao IS NULL OR tr.statusSincronizacao <> br.com.menthoros.backend.enums.StatusSincronizacao.CANCELADO) "
+            + "GROUP BY tr.dataTreino")
+    List<DistanciaDiaProjection> somarDistanciaPorDia(
             @Param("atletaId") UUID atletaId,
             @Param("tenantId") UUID tenantId,
             @Param("dataInicio") LocalDate dataInicio,
