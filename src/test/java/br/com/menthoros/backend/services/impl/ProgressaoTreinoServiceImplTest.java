@@ -391,6 +391,40 @@ class ProgressaoTreinoServiceImplTest {
         }
 
         @Test
+        @DisplayName("borda exata do teto de pendência: 25,0% (1 de 4 devidos) ainda decide — não é \"> 25%\"")
+        void tetoDePendenciaNaBordaExataAindaDecide() {
+            List<TreinoPlanejado> planejados = new ArrayList<>();
+            planejados.add(vinculadoCumprido(planejadoDevido(INICIO_JANELA)));
+            planejados.add(vinculadoCumprido(planejadoDevido(INICIO_JANELA.plusDays(1))));
+            planejados.add(vinculadoCumprido(planejadoDevido(INICIO_JANELA.plusDays(2))));
+            planejados.add(planejadoDevido(INICIO_JANELA.plusDays(3))); // pendente — 1 de 4 devidos = 25,0%
+            List<TreinoRealizado> avulsos = List.of(avulso(INICIO_JANELA.plusDays(3), null, null));
+            stubJanela(planejados, avulsos);
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosPendentes()).isEqualTo(1);
+            assertThat(resultado.aderencia()).isNotNull();
+            assertThat(resultado.aderencia()).isEqualTo(1.0); // 3 cumpridos / (3 cumpridos + 0 faltas)
+        }
+
+        @Test
+        @DisplayName("regressão — três avulsos no mesmo dia, só um triado por humano, continua pendente")
+        void tresAvulsosNoMesmoDiaSoUmHumanoAindaPendente() {
+            TreinoPlanejado semVinculo = planejadoDevido(INICIO_JANELA);
+            List<TreinoRealizado> avulsos = List.of(
+                    avulso(INICIO_JANELA, ReconciliationStatus.NAO_PLANEJADO, "coach-123"),
+                    avulso(INICIO_JANELA, ReconciliationStatus.AMBIGUO, "SYSTEM"),
+                    avulso(INICIO_JANELA, ReconciliationStatus.NAO_PLANEJADO, "SYSTEM"));
+            stubJanela(List.of(semVinculo), avulsos);
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosPendentes()).isEqualTo(1);
+            assertThat(resultado.treinosFaltas()).isZero();
+        }
+
+        @Test
         @DisplayName("CA7 — histórico mínimo continua contando todos os realizados, vinculados ou não")
         void historicoMinimoIndependenteDoVinculo() {
             TreinoRealizado r1 = treino(HOJE.minusDays(2), TipoTreino.FACIL, 8.0, null);
@@ -651,6 +685,113 @@ class ProgressaoTreinoServiceImplTest {
             ProgressaoHistoricoResumo resumo = resumoComAderencia(aderencia, 2, null, -10.0);
 
             assertThat(service.calcularDecisao(resumo).estado()).isEqualTo(esperado);
+        }
+
+        @Test
+        @DisplayName("borda exata de TSB: -15.0 não libera PROGREDIR (comparação é estrita, > -15)")
+        void bordaExataTsbProgredir() {
+            ProgressaoHistoricoResumo resumo = resumoComAderencia(0.85, 2, 7.0, -15.0);
+
+            assertThat(service.calcularDecisao(resumo).estado()).isNotEqualTo(EstadoProgressao.PROGREDIR);
+        }
+
+        @Test
+        @DisplayName("borda exata de TSB: -22.0 não dispara REDUZIR (comparação é estrita, < -22)")
+        void bordaExataTsbReduzir() {
+            ProgressaoHistoricoResumo resumo = resumoComAderencia(0.85, 2, 7.0, -22.0);
+
+            assertThat(service.calcularDecisao(resumo).estado()).isNotEqualTo(EstadoProgressao.REDUZIR);
+        }
+
+        @Test
+        @DisplayName("borda exata de RPE: 7.5 ainda libera PROGREDIR (<=, não <)")
+        void bordaExataRpeProgredir() {
+            ProgressaoHistoricoResumo resumo = resumoComAderencia(0.85, 2, 7.5, -10.0);
+
+            assertThat(service.calcularDecisao(resumo).estado()).isEqualTo(EstadoProgressao.PROGREDIR);
+        }
+
+        @Test
+        @DisplayName("borda exata de RPE: 8.5 não dispara REDUZIR (comparação é estrita, > 8.5)")
+        void bordaExataRpeReduzir() {
+            ProgressaoHistoricoResumo resumo = resumoComAderencia(0.85, 2, 8.5, -10.0);
+
+            assertThat(service.calcularDecisao(resumo).estado()).isNotEqualTo(EstadoProgressao.REDUZIR);
+        }
+    }
+
+    /**
+     * Estresse nas zonas fisiológicas que a literatura esportiva marca como ponto de virada — não
+     * para validar os números em si (o proposal já fecha 60/70/80%, -15/-22, 7.5/8.5 como não
+     * recalibráveis nesta change), mas para garantir que a fadiga comprovada (TSB/RPE) nunca é
+     * mascarada por uma aderência alta, nos extremos que a pesquisa aponta como reais:
+     * <ul>
+     *   <li>TSB: zona produtiva −10 a −30 (TrainingPeaks/Joe Friel); overtraining abaixo de −30
+     *       por mais de uma semana. O limiar de REDUZIR (−22) fica dentro da zona produtiva, com
+     *       margem antes do overtraining — mas a fadiga tem que vencer MESMO numa zona ainda
+     *       "produtiva" segundo a literatura, porque o motor decide semana a semana, não com a
+     *       visão de uma semana de overtraining sustentado.</li>
+     *   <li>RPE: escala Borg CR-10, onde 7-8 é "muito forte" e 10 é esforço máximo (Foster,
+     *       sessão-RPE). RPE 10 tem que reduzir mesmo com aderência perfeita.</li>
+     *   <li>ACWR (acute:chronic workload ratio): a "sweet spot" de menor risco de lesão é
+     *       0.8–1.3; acima de 1.5 o risco de lesão é o maior observado (revisões sistemáticas
+     *       2020-2025). O incremento de PROGREDIR (6%/semana) é bem mais conservador que o teto
+     *       da ACWR — não precisa de teste, é só o porquê do número ser pequeno.</li>
+     * </ul>
+     */
+    @Nested
+    @DisplayName("calcularDecisao — estresse nas zonas fisiológicas (literatura: TSB/RPE/ACWR)")
+    class EstresseFisiologico {
+
+        @Test
+        @DisplayName("TSB em overtraining profundo (-35, abaixo do limiar de -30 da literatura) reduz mesmo com aderência perfeita")
+        void tsbOvertrainingProfundoSempreReduz() {
+            ProgressaoHistoricoResumo resumo = resumoComAderencia(1.0, 4, 6.0, -35.0);
+
+            DecisaoProgressao decisao = service.calcularDecisao(resumo);
+
+            assertThat(decisao.estado()).isEqualTo(EstadoProgressao.REDUZIR);
+        }
+
+        @Test
+        @DisplayName("TSB em zona de pico (+20, dentro de +15/+25 da literatura) não trava PROGREDIR")
+        void tsbZonaDePicoNaoBloqueiaProgresso() {
+            ProgressaoHistoricoResumo resumo = resumoComAderencia(0.90, 3, 5.0, 20.0);
+
+            DecisaoProgressao decisao = service.calcularDecisao(resumo);
+
+            assertThat(decisao.estado()).isEqualTo(EstadoProgressao.PROGREDIR);
+        }
+
+        @Test
+        @DisplayName("RPE máximo da escala Borg CR-10 (10) reduz mesmo com aderência perfeita e TSB seguro")
+        void rpeMaximoDaEscalaSempreReduz() {
+            ProgressaoHistoricoResumo resumo = resumoComAderencia(1.0, 4, 10.0, -5.0);
+
+            DecisaoProgressao decisao = service.calcularDecisao(resumo);
+
+            assertThat(decisao.estado()).isEqualTo(EstadoProgressao.REDUZIR);
+        }
+
+        @Test
+        @DisplayName("aderência 0% (treino zero cumprido) com TSB/RPE seguros ainda reduz pela aderência, não pela fadiga")
+        void aderenciaZeroReduzSemFadiga() {
+            ProgressaoHistoricoResumo resumo = resumoComAderencia(0.0, 0, 5.0, -5.0);
+
+            DecisaoProgressao decisao = service.calcularDecisao(resumo);
+
+            assertThat(decisao.estado()).isEqualTo(EstadoProgressao.REDUZIR);
+            assertThat(decisao.motivo()).contains("60%");
+        }
+
+        @Test
+        @DisplayName("TSB e RPE no limite simultaneamente (-22.01 e 8.51) — qualquer um dos dois já basta para reduzir")
+        void tsbERpeNoLimiteSimultaneo() {
+            ProgressaoHistoricoResumo resumo = resumoComAderencia(0.95, 4, 8.51, -22.01);
+
+            DecisaoProgressao decisao = service.calcularDecisao(resumo);
+
+            assertThat(decisao.estado()).isEqualTo(EstadoProgressao.REDUZIR);
         }
     }
 
