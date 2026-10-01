@@ -292,10 +292,16 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
 
         LocalDate hoje = LocalDate.now(clock);
         LocalDate inicioSemanaAtual = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate fimSemanaAtual = inicioSemanaAtual.plusDays(6);
         LocalDate dataInicio = inicioSemanaAtual.minusWeeks(semanas - 1L);
 
+        // fix-weekly-adherence-future-days-excluded: dataFim=hoje cortava a semana em curso antes
+        // dela terminar — um treino planejado pro sábado nem entrava no "total" da semana até o
+        // sábado chegar, inflando a aderência da semana atual pra 100% com um dia ainda pendente.
+        // fimSemanaAtual ainda impede que a próxima semana vaze pra cá (fix-adherence-count-until-today,
+        // D5), só não corta a atual pela metade.
         List<TreinoPlanejado> treinos = treinoPlanejadoRepository
-                .findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, dataInicio, hoje);
+                .findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, dataInicio, fimSemanaAtual);
 
         if (treinos.isEmpty()) {
             return List.of();
@@ -309,7 +315,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                 .map(e -> {
                     int total = e.getValue().size();
                     int realizado = (int) e.getValue().stream()
-                            .filter(tp -> tp.getTreinoRealizado() != null)
+                            .filter(tp -> tp.getTreinoRealizado() != null && tp.getTreinoRealizado().contaNaCarga())
                             .count();
                     int percentual = total > 0 ? (int) Math.round(realizado * 100.0 / total) : 0;
                     return new AderenciasSemanalDto(e.getKey(), total, realizado, percentual);

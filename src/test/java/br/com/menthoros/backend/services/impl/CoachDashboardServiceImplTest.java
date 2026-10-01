@@ -191,7 +191,7 @@ class CoachDashboardServiceImplTest {
             TreinoPlanejado naorealizado = planejado(a, HOJE.minusDays(1), TipoTreino.REGENERATIVO);
 
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(
-                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3)), eq(HOJE)))
+                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3)), eq(FIM_SEMANA)))
                     .thenReturn(List.of(realizado1, realizado2, naorealizado));
 
             // 2 de 3 realizados = 67%
@@ -204,10 +204,47 @@ class CoachDashboardServiceImplTest {
             Atleta a = atletaRoster("semplano", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
             when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(
-                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3)), eq(HOJE)))
+                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3)), eq(FIM_SEMANA)))
                     .thenReturn(List.of());
 
             assertThat(service.getRoster().get(0).aderenciaPercentual()).isNull();
+        }
+
+        @Test
+        @DisplayName("regressão (fix-weekly-adherence-future-days-excluded) — planejado pra depois de HOJE na semana atual entra no total")
+        void aderenciaPercentualIncluiDiaFuturoDaSemanaAtual() {
+            Atleta a = atletaRoster("futuro", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+
+            TreinoPlanejado feito = planejado(a, HOJE, TipoTreino.REGENERATIVO);
+            feito.setTreinoRealizado(treino(HOJE, "5.0", 40));
+            // Antes do fix, dataFim=HOJE fazia o repositório nem devolver este planejado futuro,
+            // e a aderência ficava 1/1 = 100% com o treino de depois de HOJE ainda pendente.
+            TreinoPlanejado pendenteDepoisDeHoje = planejado(a, FIM_SEMANA, TipoTreino.REGENERATIVO);
+
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(
+                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3)), eq(FIM_SEMANA)))
+                    .thenReturn(List.of(feito, pendenteDepoisDeHoje));
+
+            assertThat(service.getRoster().get(0).aderenciaPercentual()).isEqualTo(50);
+        }
+
+        @Test
+        @DisplayName("regressão — vínculo CANCELADO no Strava não conta como realizado na aderência do roster")
+        void aderenciaPercentualIgnoraVinculoCancelado() {
+            Atleta a = atletaRoster("cancelado", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
+            when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+
+            TreinoPlanejado tp = planejado(a, HOJE, TipoTreino.REGENERATIVO);
+            TreinoRealizado trCancelado = treino(HOJE, "5.0", 40);
+            trCancelado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
+            tp.setTreinoRealizado(trCancelado);
+
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(
+                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3)), eq(FIM_SEMANA)))
+                    .thenReturn(List.of(tp));
+
+            assertThat(service.getRoster().get(0).aderenciaPercentual()).isEqualTo(0);
         }
 
         @Test
