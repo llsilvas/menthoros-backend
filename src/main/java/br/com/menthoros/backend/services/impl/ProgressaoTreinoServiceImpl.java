@@ -78,7 +78,12 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
         UUID tenantId = TenantContext.getRequiredTenantId();
         Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
-        LocalDate hoje = atletaHojeResolver.hojeDe(atleta);
+        // Achado do Codex (adversarial-review + review nativo, 2026-10-01): as janelas legadas de
+        // carga/volume/longões/RPE e a aderência da regra antiga são fora do escopo desta change —
+        // continuam no relógio do servidor. Só a aderência por devidos (nova) usa o "hoje" no fuso
+        // do atleta (task 1.3); misturar os dois faria CA8 (flag desligada = regra antiga idêntica)
+        // divergir sempre que servidor e atleta estiverem em datas calendário diferentes.
+        LocalDate hoje = LocalDate.now(clock);
         LocalDate inicio7d = hoje.minusDays(7);
         LocalDate inicio21d = hoje.minusDays(21);
         LocalDate inicio42d = hoje.minusDays(42);
@@ -113,7 +118,7 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
         int treinosRealizados21d = treinos21d.size();
 
         AderenciaJanela aderenciaJanela = aderenciaDevidosEnabled
-                ? calcularAderenciaJanelaFechada(atletaId, tenantId, hoje)
+                ? calcularAderenciaJanelaFechada(atletaId, tenantId, atletaHojeResolver.hojeDe(atleta))
                 : calcularAderenciaRegraAntiga(atletaId, tenantId, inicio21d, hoje, treinosRealizados21d);
 
         PlanoMetaDados metaDados = planoMetadadosService.buscarPorAtletaId(atletaId);
@@ -150,8 +155,13 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
         List<TreinoRealizado> realizadosJanela = treinoRealizadoRepository
                 .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, inicioJanela, fimJanela);
 
+        // Achado do Codex (review nativo, 2026-10-01): um avulso CANCELADO no Strava continua na
+        // tabela (StravaWebhookServiceImpl.markAsCanceled só marca o status, nunca apaga a linha) —
+        // sem o filtro de contaNaCarga(), ele seria tratado como candidato de verdade e poderia
+        // encobrir uma falta como pendência (ou pendência como falta) por um dado que já não conta.
         Map<LocalDate, List<TreinoRealizado>> avulsosPorData = realizadosJanela.stream()
                 .filter(r -> r.getTreinoPlanejado() == null)
+                .filter(TreinoRealizado::contaNaCarga)
                 .collect(Collectors.groupingBy(TreinoRealizado::getDataTreino));
 
         int cumpridos = 0;
@@ -198,8 +208,14 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
         return planejado.getTipoTreino() != TipoTreino.DESCANSO;
     }
 
+    /**
+     * {@code allMatch}, não {@code anyMatch} (achado do Codex adversarial-review, 2026-10-01): com
+     * dois avulsos no mesmo dia, um já triado por humano como NAO_PLANEJADO não encobre o outro
+     * ainda PENDENTE/AMBIGUO — a ambiguidade do dia só está de fato resolvida quando TODOS os
+     * avulsos candidatos foram descartados por um humano.
+     */
     private static boolean temTriagemHumanaDeNaoCorrespondencia(List<TreinoRealizado> avulsos) {
-        return avulsos.stream().anyMatch(r ->
+        return avulsos.stream().allMatch(r ->
                 r.getReconciliationStatus() == ReconciliationStatus.NAO_PLANEJADO
                         && !ATOR_SISTEMA.equals(r.getReconciledBy()));
     }

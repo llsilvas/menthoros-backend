@@ -151,6 +151,26 @@ class ProgressaoTreinoServiceImplTest {
         }
 
         @Test
+        @DisplayName("regressão (Codex, 2026-10-01) — janelas legadas (42/21/7d) usam o relógio do servidor, não o fuso do atleta")
+        void janelasLegadasNaoUsamFusoDoAtleta() {
+            // Atleta num fuso bem distante do relógio do teste (America/Sao_Paulo): se calcularHistorico
+            // confundisse "hoje" legado com o hoje no fuso do atleta, as datas destas duas assinaturas
+            // divergiriam de HOJE/INICIO_21D/INICIO_42D (fora de escopo desta change — CA8/D7).
+            Atleta atletaFusoDistante = Atleta.builder().timezone("Asia/Tokyo").build();
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atletaFusoDistante));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), eq(INICIO_42D), eq(HOJE)))
+                    .thenReturn(Collections.emptyList());
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), eq(INICIO_21D), eq(HOJE)))
+                    .thenReturn(Collections.emptyList());
+            when(planoMetadadosService.buscarPorAtletaId(atletaId)).thenReturn(metaDados(0.0, 0.0, 0.0));
+
+            service.calcularHistorico(atletaId);
+
+            verify(treinoRealizadoRepository).findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, INICIO_42D, HOJE);
+            verify(treinoPlanejadoRepository).findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, INICIO_21D, HOJE);
+        }
+
+        @Test
         @DisplayName("novo atleta sem treinos — campos zerados, sem exceção")
         void atletaSemTreinos() {
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
@@ -425,6 +445,40 @@ class ProgressaoTreinoServiceImplTest {
 
             assertThat(resultado.treinosPendentes()).isEqualTo(1);
             assertThat(resultado.treinosFaltas()).isZero();
+        }
+
+        @Test
+        @DisplayName("regressão (Codex adversarial-review, 2026-10-01) — avulso humano não encobre outro ainda ambíguo no mesmo dia")
+        void doisAvulsosNoMesmoDiaUmHumanoOutroAindaAmbiguoContinuaPendente() {
+            TreinoPlanejado semVinculo = planejadoDevido(INICIO_JANELA);
+            List<TreinoRealizado> avulsos = List.of(
+                    avulso(INICIO_JANELA, ReconciliationStatus.NAO_PLANEJADO, "coach-123"),
+                    avulso(INICIO_JANELA, ReconciliationStatus.AMBIGUO, "SYSTEM"));
+            stubJanela(List.of(semVinculo), avulsos);
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            // Um avulso já triado como "não corresponde" não resolve a ambiguidade do dia enquanto
+            // o outro candidato ainda não passou por triagem humana — a pendência precisa continuar
+            // fora da conta (nem falta, nem cumprido), e não CA11 (allMatch, não anyMatch).
+            assertThat(resultado.treinosPendentes()).isEqualTo(1);
+            assertThat(resultado.treinosFaltas()).isZero();
+        }
+
+        @Test
+        @DisplayName("regressão (Codex review, 2026-10-01) — avulso CANCELADO não vira candidato de pendência/falta")
+        void avulsoCanceladoNaoContaComoCandidato() {
+            TreinoPlanejado semVinculo = planejadoDevido(INICIO_JANELA);
+            TreinoRealizado avulsoCancelado = avulso(INICIO_JANELA, ReconciliationStatus.NAO_PLANEJADO, "SYSTEM");
+            avulsoCancelado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
+            stubJanela(List.of(semVinculo), List.of(avulsoCancelado));
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            // O avulso foi apagado no Strava (markAsCanceled nunca remove a linha) — não pode
+            // encobrir a falta como se houvesse um candidato de verdade no dia.
+            assertThat(resultado.treinosFaltas()).isEqualTo(1);
+            assertThat(resultado.treinosPendentes()).isZero();
         }
 
         @ParameterizedTest(name = "hoje = segunda da semana atual + {0} dia(s)")

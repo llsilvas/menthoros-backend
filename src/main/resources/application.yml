@@ -436,13 +436,14 @@ onboarding:
 #
 # aderencia-devidos.enabled: rollback sem deploy (D7) — desligada, calcularHistorico volta a medir
 # aderencia pela regra antiga (planejados de hoje-21 ate hoje, sem excluir DESCANSO/pendencia).
-# Default false ate o gate de merge (tasks.md secao 2 — comparacao contra atletas reais do homelab)
-# confirmar que a regra nova nao causa reducao indevida; D7 preve ligar por padrao so depois disso.
+# Gate de merge (tasks.md secao 2.1 — comparacao contra atletas reais do homelab) passou em
+# 2026-10-01: ligada por padrao, conforme D7. PROGRESSAO_ADERENCIA_DEVIDOS_ENABLED=false continua
+# disponivel como rollback sem deploy se algo passar batido no pos-deploy (tasks.md secao 3).
 # ----------------------------------------
 menthoros:
   progressao:
     aderencia-devidos:
-      enabled: ${PROGRESSAO_ADERENCIA_DEVIDOS_ENABLED:false}
+      enabled: ${PROGRESSAO_ADERENCIA_DEVIDOS_ENABLED:true}
 
 # ----------------------------------------
 # ASAAS BILLING INTEGRATION (assessoria-billing-asaas)
