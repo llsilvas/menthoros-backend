@@ -268,7 +268,7 @@ class PlannerEngineGoldenSetTest {
                     diasDisponiveis, modalidade);
             DecisaoProgressao decisao = new DecisaoProgressao(estado, ajusteVolumePercentual, 0, true, "golden set");
             ProgressaoHistoricoResumo historico = new ProgressaoHistoricoResumo(
-                    0, 0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, ctlAtual, 0.0, semanasProgressaoContinua);
+                    0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, ctlAtual, 0.0, semanasProgressaoContinua, 0, 0, 0, null);
 
             return new PlannerInputSnapshot(
                     athlete, decisao, historico, provas, historicoDiario, Optional.empty(), REFERENCIA, 30);
@@ -378,7 +378,7 @@ class PlannerEngineGoldenSetTest {
                     diasDisponiveis, modalidade);
             DecisaoProgressao decisao = new DecisaoProgressao(estado, ajusteVolumePercentual, 0, true, "golden set");
             ProgressaoHistoricoResumo historico = new ProgressaoHistoricoResumo(
-                    0, 0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, ctlAtual, 0.0, semanasProgressaoContinua);
+                    0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, ctlAtual, 0.0, semanasProgressaoContinua, 0, 0, 0, null);
 
             return new PlannerInputSnapshot(
                     athlete, decisao, historico, provas, List.of(), Optional.empty(), REFERENCIA, 30);

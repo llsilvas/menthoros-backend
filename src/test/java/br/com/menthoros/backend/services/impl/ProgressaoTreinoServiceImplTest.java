@@ -2,53 +2,74 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.ProgressaoHistoricoResumo;
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.EstadoProgressao;
+import br.com.menthoros.backend.enums.ReconciliationStatus;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.temporal.TemporalAdjusters;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class ProgressaoTreinoServiceImplTest {
 
+    private static final ZoneId ZONA = ZoneId.of("America/Sao_Paulo");
     private static final LocalDate HOJE = LocalDate.of(2026, 7, 8);
     private static final LocalDate INICIO_7D = HOJE.minusDays(7);
     private static final LocalDate INICIO_21D = HOJE.minusDays(21);
     private static final LocalDate INICIO_42D = HOJE.minusDays(42);
+    private static final LocalDate SEGUNDA_ATUAL = HOJE.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+    private static final LocalDate INICIO_JANELA = SEGUNDA_ATUAL.minusDays(21);
+    private static final LocalDate FIM_JANELA = SEGUNDA_ATUAL.minusDays(1);
 
     @Mock
     private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock
     private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock
+    private AtletaRepository atletaRepository;
+    @Mock
     private PlanoMetadadosService planoMetadadosService;
 
+    private Clock clock;
     private ProgressaoTreinoServiceImpl service;
 
     private UUID atletaId;
@@ -60,13 +81,19 @@ class ProgressaoTreinoServiceImplTest {
         tenantId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
 
-        Clock clock = Clock.fixed(HOJE.atStartOfDay(ZoneId.systemDefault()).toInstant(), ZoneId.systemDefault());
-        service = new ProgressaoTreinoServiceImpl(treinoRealizadoRepository, treinoPlanejadoRepository, planoMetadadosService, clock);
+        clock = Clock.fixed(HOJE.atStartOfDay(ZONA).toInstant(), ZONA);
+        service = new ProgressaoTreinoServiceImpl(
+                treinoRealizadoRepository, treinoPlanejadoRepository, atletaRepository,
+                new AtletaHojeResolver(clock), planoMetadadosService, clock);
     }
 
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+    }
+
+    private void stubAtletaPadrao() {
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(new Atleta()));
     }
 
     @Nested
@@ -85,6 +112,7 @@ class ProgressaoTreinoServiceImplTest {
                     .thenReturn(List.of(longo7d, intervalado21d, longo21d, facil42d));
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(planejado(), planejado(), planejado(), planejado()));
+            stubAtletaPadrao();
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(-10.0, 50.0, 55.0));
 
@@ -95,25 +123,30 @@ class ProgressaoTreinoServiceImplTest {
             assertThat(resultado.volumeKm42d()).isEqualTo(60.0);
             assertThat(resultado.longoesRealizados7d()).isEqualTo(1);
             assertThat(resultado.longoesRealizados21d()).isEqualTo(2);
-            assertThat(resultado.treinosConcluidos21d()).isEqualTo(3);
-            assertThat(resultado.treinosPlanejados21d()).isEqualTo(4);
+            assertThat(resultado.treinosRealizados21d()).isEqualTo(3);
+            // CA8: flag desligada (default do campo @Value em teste puro) reproduz a regra antiga —
+            // aderência = realizados/planejados, sem filtro de DESCANSO/pendência.
+            assertThat(resultado.treinosCumpridos()).isEqualTo(3);
+            assertThat(resultado.treinosFaltas()).isEqualTo(1);
+            assertThat(resultado.aderencia()).isEqualTo(0.75);
             assertThat(resultado.tsbAtual()).isEqualTo(-10.0);
             assertThat(resultado.ctlAtual()).isEqualTo(50.0);
         }
 
         @Test
-        @DisplayName("treinosPlanejados21d consulta o repositório com dataFim = hoje — não vaza dias futuros da janela")
+        @DisplayName("regra antiga (flag desligada) consulta o repositório com dataFim = hoje — não vaza dias futuros da janela")
         void planejadosLimitadosAHoje() {
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(Collections.emptyList());
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), eq(INICIO_21D), eq(HOJE)))
                     .thenReturn(List.of(planejado()));
+            stubAtletaPadrao();
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(0.0, 0.0, 0.0));
 
             ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
 
-            assertThat(resultado.treinosPlanejados21d()).isEqualTo(1);
+            assertThat(resultado.treinosFaltas()).isEqualTo(1);
             verify(treinoPlanejadoRepository).findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, INICIO_21D, HOJE);
         }
 
@@ -124,6 +157,7 @@ class ProgressaoTreinoServiceImplTest {
                     .thenReturn(Collections.emptyList());
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(Collections.emptyList());
+            stubAtletaPadrao();
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(0.0, 0.0, 0.0));
 
@@ -134,8 +168,10 @@ class ProgressaoTreinoServiceImplTest {
             assertThat(resultado.volumeKm42d()).isZero();
             assertThat(resultado.longoesRealizados7d()).isZero();
             assertThat(resultado.longoesRealizados21d()).isZero();
-            assertThat(resultado.treinosConcluidos21d()).isZero();
-            assertThat(resultado.treinosPlanejados21d()).isZero();
+            assertThat(resultado.treinosRealizados21d()).isZero();
+            assertThat(resultado.treinosCumpridos()).isZero();
+            assertThat(resultado.treinosFaltas()).isZero();
+            assertThat(resultado.aderencia()).isEqualTo(0.0);
             assertThat(resultado.rpeMedioTreinosDuros()).isNull();
         }
 
@@ -149,6 +185,7 @@ class ProgressaoTreinoServiceImplTest {
                     .thenReturn(List.of(intervalado, tempoRun));
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(planejado(), planejado()));
+            stubAtletaPadrao();
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(0.0, 0.0, 0.0));
 
@@ -170,6 +207,7 @@ class ProgressaoTreinoServiceImplTest {
                     .thenReturn(List.of(longoMalClassificado, longoOk));
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(planejado(), planejado()));
+            stubAtletaPadrao();
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(-10.0, 50.0, 55.0));
 
@@ -191,6 +229,7 @@ class ProgressaoTreinoServiceImplTest {
                     .thenReturn(List.of(avulso, longo));
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(planejado(), planejado()));
+            stubAtletaPadrao();
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(-10.0, 50.0, 55.0));
 
@@ -205,7 +244,7 @@ class ProgressaoTreinoServiceImplTest {
         void treinoCanceladoNaoContaNaCarga() {
             TreinoRealizado longoValido = treino(HOJE.minusDays(3), TipoTreino.LONGO, 20.0, null);
             TreinoRealizado longoCancelado = treino(HOJE.minusDays(5), TipoTreino.LONGO, 25.0, null);
-            longoCancelado.setStatusSincronizacao(br.com.menthoros.backend.enums.StatusSincronizacao.CANCELADO);
+            longoCancelado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
             TreinoRealizado semStatus = treino(HOJE.minusDays(6), TipoTreino.FACIL, 8.0, null);
             semStatus.setStatusSincronizacao(null);
 
@@ -213,14 +252,208 @@ class ProgressaoTreinoServiceImplTest {
                     .thenReturn(List.of(longoValido, longoCancelado, semStatus));
             when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(planejado(), planejado(), planejado()));
+            stubAtletaPadrao();
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(-10.0, 50.0, 55.0));
 
             ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
 
-            assertThat(resultado.treinosConcluidos21d()).isEqualTo(2);
+            assertThat(resultado.treinosRealizados21d()).isEqualTo(2);
             assertThat(resultado.longoesRealizados21d()).isEqualTo(1);
             assertThat(resultado.volumeKm21d()).isEqualTo(28.0);
+        }
+    }
+
+    @Nested
+    @DisplayName("calcularHistorico — aderência por devidos (D1/D2/D6/D7, flag ligada)")
+    class AderenciaJanelaFechada {
+
+        @BeforeEach
+        void ligarFlag() {
+            ReflectionTestUtils.setField(service, "aderenciaDevidosEnabled", true);
+            stubAtletaPadrao();
+            when(planoMetadadosService.buscarPorAtletaId(atletaId)).thenReturn(metaDados(0.0, 0.0, 0.0));
+            // a janela de carga (42/21/7d corridos) não importa a estes testes — só a aderência.
+            lenient().when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                            eq(atletaId), eq(tenantId), any(), any()))
+                    .thenReturn(Collections.emptyList());
+        }
+
+        private void stubJanela(List<TreinoPlanejado> planejados, List<TreinoRealizado> avulsos) {
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(
+                    eq(atletaId), eq(tenantId), eq(INICIO_JANELA), eq(FIM_JANELA)))
+                    .thenReturn(planejados);
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    eq(atletaId), eq(tenantId), eq(INICIO_JANELA), eq(FIM_JANELA)))
+                    .thenReturn(avulsos);
+        }
+
+        @Test
+        @DisplayName("CA2 — DESCANSO não entra no denominador")
+        void descansoForaDoDenominador() {
+            TreinoPlanejado descanso = planejadoDescanso(INICIO_JANELA);
+            TreinoPlanejado cumprido1 = vinculadoCumprido(planejadoDevido(INICIO_JANELA.plusDays(1)));
+            TreinoPlanejado cumprido2 = vinculadoCumprido(planejadoDevido(INICIO_JANELA.plusDays(2)));
+            stubJanela(List.of(descanso, cumprido1, cumprido2), List.of());
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosCumpridos()).isEqualTo(2);
+            assertThat(resultado.treinosFaltas()).isZero();
+            assertThat(resultado.aderencia()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("CA3 — treino extra sem planejado na janela não infla a aderência")
+        void extraNaoInfla() {
+            List<TreinoPlanejado> planejados = new ArrayList<>();
+            for (int i = 0; i < 3; i++) {
+                planejados.add(vinculadoCumprido(planejadoDevido(INICIO_JANELA.plusDays(i))));
+            }
+            for (int i = 3; i < 6; i++) {
+                // sem vínculo e sem avulso no mesmo dia → falta
+                planejados.add(planejadoDevido(INICIO_JANELA.plusDays(i)));
+            }
+            List<TreinoRealizado> extras = List.of(
+                    avulso(INICIO_JANELA.plusDays(10), null, null),
+                    avulso(INICIO_JANELA.plusDays(11), null, null),
+                    avulso(INICIO_JANELA.plusDays(12), null, null),
+                    avulso(INICIO_JANELA.plusDays(13), null, null)
+            );
+            stubJanela(planejados, extras);
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosCumpridos()).isEqualTo(3);
+            assertThat(resultado.treinosFaltas()).isEqualTo(3);
+            assertThat(resultado.aderencia()).isEqualTo(0.5);
+        }
+
+        @Test
+        @DisplayName("CA4 — pendência de reconciliação fica fora da conta (nem cumprido, nem falta)")
+        void pendenciaForaDaConta() {
+            List<TreinoPlanejado> planejados = new ArrayList<>();
+            for (int i = 0; i < 3; i++) {
+                planejados.add(vinculadoCumprido(planejadoDevido(INICIO_JANELA.plusDays(i))));
+            }
+            planejados.add(planejadoDevido(INICIO_JANELA.plusDays(3))); // pendente — avulso ambíguo no dia
+            planejados.add(planejadoDevido(INICIO_JANELA.plusDays(4))); // falta
+            planejados.add(planejadoDevido(INICIO_JANELA.plusDays(5))); // falta
+            List<TreinoRealizado> avulsos = List.of(avulso(INICIO_JANELA.plusDays(3), null, null));
+            stubJanela(planejados, avulsos);
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosCumpridos()).isEqualTo(3);
+            assertThat(resultado.treinosFaltas()).isEqualTo(2);
+            assertThat(resultado.treinosPendentes()).isEqualTo(1);
+            assertThat(resultado.aderencia()).isEqualTo(0.6);
+        }
+
+        @Test
+        @DisplayName("CA5 — pendências acima de 25% dos devidos tornam a aderência ausente")
+        void pendenciaDemaisTornaAderenciaAusente() {
+            List<TreinoPlanejado> planejados = new ArrayList<>();
+            planejados.add(vinculadoCumprido(planejadoDevido(INICIO_JANELA)));
+            planejados.add(vinculadoCumprido(planejadoDevido(INICIO_JANELA.plusDays(1))));
+            planejados.add(planejadoDevido(INICIO_JANELA.plusDays(2))); // pendente
+            planejados.add(planejadoDevido(INICIO_JANELA.plusDays(3))); // pendente
+            List<TreinoRealizado> avulsos = List.of(
+                    avulso(INICIO_JANELA.plusDays(2), null, null),
+                    avulso(INICIO_JANELA.plusDays(3), null, null)
+            );
+            stubJanela(planejados, avulsos);
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosPendentes()).isEqualTo(2);
+            assertThat(resultado.aderencia()).isNull();
+        }
+
+        @Test
+        @DisplayName("CA7 — histórico mínimo continua contando todos os realizados, vinculados ou não")
+        void historicoMinimoIndependenteDoVinculo() {
+            TreinoRealizado r1 = treino(HOJE.minusDays(2), TipoTreino.FACIL, 8.0, null);
+            TreinoRealizado r2 = treino(HOJE.minusDays(5), TipoTreino.FACIL, 8.0, null);
+            TreinoRealizado r3 = treino(HOJE.minusDays(9), TipoTreino.FACIL, 8.0, null);
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                            eq(atletaId), eq(tenantId), eq(INICIO_42D), eq(HOJE)))
+                    .thenReturn(List.of(r1, r2, r3));
+            stubJanela(List.of(), List.of());
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosRealizados21d()).isEqualTo(3);
+            assertThat(service.calcularDecisao(resultado).motivo()).doesNotContain("insuficiente");
+        }
+
+        @Test
+        @DisplayName("CA10 — vínculo cancelado não conta como cumprido")
+        void vinculoCanceladoContaComoFalta() {
+            TreinoPlanejado cancelado = vinculadoCancelado(planejadoDevido(INICIO_JANELA));
+            stubJanela(List.of(cancelado), List.of());
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosCumpridos()).isZero();
+            assertThat(resultado.treinosFaltas()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("CA11 — triagem humana de não-correspondência resolve a pendência como falta")
+        void triagemHumanaContaComoFalta() {
+            TreinoPlanejado semVinculo = planejadoDevido(INICIO_JANELA);
+            List<TreinoRealizado> avulsos = List.of(
+                    avulso(INICIO_JANELA, ReconciliationStatus.NAO_PLANEJADO, "coach-123"));
+            stubJanela(List.of(semVinculo), avulsos);
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosFaltas()).isEqualTo(1);
+            assertThat(resultado.treinosPendentes()).isZero();
+        }
+
+        @Test
+        @DisplayName("CA12 — NAO_PLANEJADO automático (reconciledBy=SYSTEM) continua pendente")
+        void naoPlanejadoAutomaticoContinuaPendente() {
+            TreinoPlanejado semVinculo = planejadoDevido(INICIO_JANELA);
+            List<TreinoRealizado> avulsos = List.of(
+                    avulso(INICIO_JANELA, ReconciliationStatus.NAO_PLANEJADO, "SYSTEM"));
+            stubJanela(List.of(semVinculo), avulsos);
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosPendentes()).isEqualTo(1);
+            assertThat(resultado.treinosFaltas()).isZero();
+        }
+
+        @ParameterizedTest(name = "hoje = segunda da semana atual + {0} dia(s)")
+        @ValueSource(ints = {0, 1, 2, 3, 4, 5, 6})
+        @DisplayName("CA1 — semana em curso fica fora da janela, qualquer dia em que o histórico for calculado")
+        void semanaEmCursoForaDaJanela(int offsetDias) {
+            LocalDate segundaAtualDoCaso = LocalDate.of(2026, 7, 6);
+            LocalDate hojeDoCaso = segundaAtualDoCaso.plusDays(offsetDias);
+            Clock clockDoCaso = Clock.fixed(hojeDoCaso.atStartOfDay(ZONA).toInstant(), ZONA);
+            ProgressaoTreinoServiceImpl servicoDoCaso = new ProgressaoTreinoServiceImpl(
+                    treinoRealizadoRepository, treinoPlanejadoRepository, atletaRepository,
+                    new AtletaHojeResolver(clockDoCaso), planoMetadadosService, clockDoCaso);
+            ReflectionTestUtils.setField(servicoDoCaso, "aderenciaDevidosEnabled", true);
+
+            LocalDate inicioJanelaCaso = segundaAtualDoCaso.minusDays(21);
+            LocalDate fimJanelaCaso = segundaAtualDoCaso.minusDays(1);
+            List<TreinoPlanejado> tresSemanasCompletas = new ArrayList<>();
+            for (LocalDate data = inicioJanelaCaso; !data.isAfter(fimJanelaCaso); data = data.plusDays(1)) {
+                tresSemanasCompletas.add(vinculadoCumprido(planejadoDevido(data)));
+            }
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(
+                            eq(atletaId), eq(tenantId), eq(inicioJanelaCaso), eq(fimJanelaCaso)))
+                    .thenReturn(tresSemanasCompletas);
+
+            ProgressaoHistoricoResumo resultado = servicoDoCaso.calcularHistorico(atletaId);
+
+            // A semana atual (1 de 4 treinos feitos) fica inteiramente fora da janela — não é
+            // consultada, e por isso nem precisa ser estubada: só as 3 semanas fechadas decidem.
+            assertThat(resultado.aderencia()).isEqualTo(1.0);
         }
     }
 
@@ -298,7 +531,8 @@ class ProgressaoTreinoServiceImplTest {
         @DisplayName("REDUZIR — RPE médio > 8.5 nos treinos duros")
         void reduzirPorRpe() {
             ProgressaoHistoricoResumo resumo = new ProgressaoHistoricoResumo(
-                    5, 6, 30.0, 80.0, 200.0, 1, 2, 9.0, -10.0, 50.0, 55.0, 2
+                    5, 30.0, 80.0, 200.0, 1, 2, 9.0, -10.0, 50.0, 55.0, 2,
+                    5, 1, 0, 5.0 / 6.0
             );
 
             DecisaoProgressao decisao = service.calcularDecisao(resumo);
@@ -310,7 +544,8 @@ class ProgressaoTreinoServiceImplTest {
         @DisplayName("MANTER — fallback quando histórico insuficiente (< 3 treinos em 21 dias)")
         void fallbackHistoricoInsuficiente() {
             ProgressaoHistoricoResumo resumo = new ProgressaoHistoricoResumo(
-                    2, 4, 10.0, 20.0, 50.0, 0, 1, null, -5.0, 40.0, 42.0, 1
+                    2, 10.0, 20.0, 50.0, 0, 1, null, -5.0, 40.0, 42.0, 1,
+                    2, 2, 0, 0.5
             );
 
             DecisaoProgressao decisao = service.calcularDecisao(resumo);
@@ -331,6 +566,37 @@ class ProgressaoTreinoServiceImplTest {
             DecisaoProgressao decisao = service.calcularDecisao(resumo);
 
             assertThat(decisao.estado()).isNotEqualTo(EstadoProgressao.PROGREDIR);
+        }
+
+        @Test
+        @DisplayName("CA6 — aderência ausente não libera PROGREDIR/PROGREDIR_LEVE; REDUZIR só por fadiga comprovada")
+        void aderenciaAusenteNaoProgride() {
+            assertThat(service.calcularDecisao(resumoComAderencia(null, 3, 7.0, -10.0)).estado())
+                    .isEqualTo(EstadoProgressao.MANTER);
+
+            DecisaoProgressao decisaoTsb = service.calcularDecisao(resumoComAderencia(null, 3, 7.0, -25.0));
+            assertThat(decisaoTsb.estado()).isEqualTo(EstadoProgressao.REDUZIR);
+            assertThat(decisaoTsb.motivo()).contains("aderência ausente");
+
+            DecisaoProgressao decisaoRpe = service.calcularDecisao(resumoComAderencia(null, 3, 9.0, -10.0));
+            assertThat(decisaoRpe.estado()).isEqualTo(EstadoProgressao.REDUZIR);
+            assertThat(decisaoRpe.motivo()).contains("aderência ausente");
+        }
+
+        @ParameterizedTest(name = "aderência {0} → {1}")
+        @CsvSource({
+                "0.59, REDUZIR",
+                "0.60, MANTER",
+                "0.69, MANTER",
+                "0.70, PROGREDIR_LEVE",
+                "0.79, PROGREDIR_LEVE",
+                "0.80, PROGREDIR"
+        })
+        @DisplayName("bordas 59/60/69/70/79/80% com aderência presente")
+        void bordasDeAderencia(double aderencia, EstadoProgressao esperado) {
+            ProgressaoHistoricoResumo resumo = resumoComAderencia(aderencia, 2, null, -10.0);
+
+            assertThat(service.calcularDecisao(resumo).estado()).isEqualTo(esperado);
         }
     }
 
@@ -477,6 +743,7 @@ class ProgressaoTreinoServiceImplTest {
                 .thenReturn(treinos);
         when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                 .thenReturn(Collections.nCopies(planejados21d, planejado()));
+        stubAtletaPadrao();
         when(planoMetadadosService.buscarPorAtletaId(atletaId)).thenReturn(metaDados);
     }
 
@@ -500,6 +767,46 @@ class ProgressaoTreinoServiceImplTest {
         return realizado;
     }
 
+    /** Planejado "devido" (não-DESCANSO) dentro da janela de aderência. */
+    private TreinoPlanejado planejadoDevido(LocalDate data) {
+        TreinoPlanejado p = new TreinoPlanejado();
+        p.setDataTreino(data);
+        p.setTipoTreino(TipoTreino.FACIL);
+        return p;
+    }
+
+    private TreinoPlanejado planejadoDescanso(LocalDate data) {
+        TreinoPlanejado p = new TreinoPlanejado();
+        p.setDataTreino(data);
+        p.setTipoTreino(TipoTreino.DESCANSO);
+        return p;
+    }
+
+    /** Vincula um {@link TreinoRealizado} que conta na carga (cumprimento normal) ao planejado. */
+    private TreinoPlanejado vinculadoCumprido(TreinoPlanejado planejado) {
+        TreinoRealizado realizado = new TreinoRealizado();
+        realizado.setDataTreino(planejado.getDataTreino());
+        planejado.setTreinoRealizado(realizado);
+        return planejado;
+    }
+
+    /** Vincula um {@link TreinoRealizado} cancelado no Strava — não conta como cumprido (CA10). */
+    private TreinoPlanejado vinculadoCancelado(TreinoPlanejado planejado) {
+        TreinoRealizado realizado = new TreinoRealizado();
+        realizado.setDataTreino(planejado.getDataTreino());
+        realizado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
+        planejado.setTreinoRealizado(realizado);
+        return planejado;
+    }
+
+    private TreinoRealizado avulso(LocalDate data, ReconciliationStatus status, String reconciledBy) {
+        TreinoRealizado r = new TreinoRealizado();
+        r.setDataTreino(data);
+        r.setReconciliationStatus(status);
+        r.setReconciledBy(reconciledBy);
+        return r;
+    }
+
     private PlanoMetaDados metaDados(double tsb, double ctl, double atl) {
         return PlanoMetaDados.builder()
                 .tsbAtual(tsb)
@@ -510,7 +817,9 @@ class ProgressaoTreinoServiceImplTest {
     }
 
     /**
-     * Cria um ProgressaoHistoricoResumo com valores controlados para testar calcularDecisao.
+     * Cria um ProgressaoHistoricoResumo com valores controlados para testar calcularDecisao, com a
+     * aderência derivada de concluidos/planejados (semântica da regra antiga — suficiente para os
+     * testes que não cobrem CA6/bordas diretamente).
      *
      * @param concluidos21d treinos concluídos nos últimos 21 dias
      * @param planejados21d treinos planejados nos últimos 21 dias
@@ -520,13 +829,33 @@ class ProgressaoTreinoServiceImplTest {
      */
     private ProgressaoHistoricoResumo resumoCom(int concluidos21d, int planejados21d,
                                                 int longoes21d, Double rpe, double tsb) {
+        double aderencia = planejados21d == 0 ? 0.0 : (double) concluidos21d / planejados21d;
+        int cumpridos = Math.min(concluidos21d, planejados21d);
+        int faltas = Math.max(0, planejados21d - concluidos21d);
         return new ProgressaoHistoricoResumo(
-                concluidos21d, planejados21d,
+                concluidos21d,
                 30.0, 80.0, 200.0,
                 0, longoes21d,
                 rpe,
                 tsb, 50.0, 55.0,
-                2
+                2,
+                cumpridos, faltas, 0, aderencia
+        );
+    }
+
+    /** Cria um resumo com aderência controlada diretamente — para CA6 e os testes de borda (D3). */
+    private ProgressaoHistoricoResumo resumoComAderencia(Double aderencia, int longoes21d, Double rpe, double tsb) {
+        return new ProgressaoHistoricoResumo(
+                5,
+                30.0, 80.0, 200.0,
+                0, longoes21d,
+                rpe,
+                tsb, 50.0, 55.0,
+                2,
+                aderencia == null ? 0 : 3,
+                aderencia == null ? 0 : 1,
+                0,
+                aderencia
         );
     }
 }

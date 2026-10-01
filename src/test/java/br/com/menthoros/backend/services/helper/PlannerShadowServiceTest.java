@@ -255,7 +255,7 @@ class PlannerShadowServiceTest {
     }
 
     private ProgressaoHistoricoResumo historico(double tsbAtual, double ctlAtual, int semanasProgressaoContinua) {
-        return new ProgressaoHistoricoResumo(0, 0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, ctlAtual, 0.0, semanasProgressaoContinua);
+        return new ProgressaoHistoricoResumo(0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, ctlAtual, 0.0, semanasProgressaoContinua, 0, 0, 0, null);
     }
 
     private PlanoSemanalLlmDto planoGerado() {

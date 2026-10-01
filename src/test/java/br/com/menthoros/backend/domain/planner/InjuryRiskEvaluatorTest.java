@@ -97,7 +97,7 @@ class InjuryRiskEvaluatorTest {
     }
 
     private ProgressaoHistoricoResumo historicoComTsb(double tsbAtual) {
-        return new ProgressaoHistoricoResumo(0, 0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, 40.0, 0.0, 0);
+        return new ProgressaoHistoricoResumo(0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, 40.0, 0.0, 0, 0, 0, 0, null);
     }
 
     private List<TreinoRealizadoSnapshot> historicoVariado() {

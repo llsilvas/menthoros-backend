@@ -65,8 +65,9 @@ final class EvalCandidateFixtures {
         DecisaoProgressao decisao = new DecisaoProgressao(EstadoProgressao.MANTER, 0.0, 0, true,
                 "eval candidato");
         ProgressaoHistoricoResumo historico = new ProgressaoHistoricoResumo(
-                0, 0, 0.0, 0.0, 0.0, 0, 0, null, meta.getTsbAtual(), meta.getCtlAtual(), 0.0,
-                meta.getSemanasProgressaoContinua() != null ? meta.getSemanasProgressaoContinua() : 0);
+                0, 0.0, 0.0, 0.0, 0, 0, null, meta.getTsbAtual(), meta.getCtlAtual(), 0.0,
+                meta.getSemanasProgressaoContinua() != null ? meta.getSemanasProgressaoContinua() : 0,
+                0, 0, 0, null);
         List<ProvaSnapshot> provas = provaOuVazio(arq.prova());
 
         return new PlannerInputSnapshot(athleteSnapshot, decisao, historico, provas, List.of(),
