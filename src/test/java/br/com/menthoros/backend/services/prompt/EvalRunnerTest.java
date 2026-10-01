@@ -3,7 +3,6 @@ package br.com.menthoros.backend.services.prompt;
 import br.com.menthoros.backend.domain.compliance.SkeletonComplianceChecker;
 import br.com.menthoros.backend.domain.planner.PlannerEngine;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
-import br.com.menthoros.backend.services.ProgressaoTreinoService;
 import br.com.menthoros.backend.services.helper.AthleteZones;
 import br.com.menthoros.backend.services.helper.EvalAgreementGrader;
 import br.com.menthoros.backend.services.helper.EvalCandidateRunner;
@@ -131,11 +130,11 @@ class EvalRunnerTest {
         // PlannerShadowService real (não mock) — achado do /qa (Codex): um mock sem stub sempre
         // devolve lista vazia de PlannerViolation, então a coluna "compliance" nunca refletia o
         // skeleton de verdade. checkPreRedistribution só usa complianceChecker/resolverConstraints
-        // (nunca plannerEngine/progressaoTreinoService/periodizacaoPromptFormatter) — os demais
-        // colaboradores ficam mockados sem uso real.
+        // (nunca plannerEngine/periodizacaoPromptFormatter) — os demais colaboradores ficam
+        // mockados sem uso real.
         var plannerShadowService = new PlannerShadowService(
                 mock(PlannerEngine.class), new SkeletonComplianceChecker(),
-                mock(ProgressaoTreinoService.class), mock(PeriodizacaoPromptFormatter.class),
+                mock(PeriodizacaoPromptFormatter.class),
                 new SimpleMeterRegistry(), OBJECT_MAPPER, false, 30);
         var grader = new EvalDeterministicGrader(OBJECT_MAPPER, sessionResolver, plannerShadowService);
         var runner = new EvalCandidateRunner(chatClient, llmJsonSchemaBuilder, grader);

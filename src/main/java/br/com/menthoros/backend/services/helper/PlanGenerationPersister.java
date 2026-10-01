@@ -178,7 +178,8 @@ public class PlanGenerationPersister {
         // legada, nunca altera plano/prompt/persistencia (CA12); falha isolada internamente (CA11).
         // batch=false: este call site nao distingue interativo de lote — tag de metrica aproximada.
         Optional<WeekPlanSkeleton> weekPlanSkeleton = plannerShadowService.aplicarShadow(
-                plano, planoDto, dadosPlano, decisaoProgressao, periodo.inicio(), false, onboardingContext);
+                plano, planoDto, dadosPlano, decisaoProgressao, ctx.historicoProgressao(), periodo.inicio(), false,
+                onboardingContext);
 
         // planner-engine-enforcement §5 (Decisao 2) + 8.5.h: estagio 2 terminal — roda sobre os treinos
         // ja redistribuidos E com prova garantida (plano.getTreinosPlanejados()), como ULTIMO passo
