@@ -82,7 +82,7 @@ class PlannerScopeTest {
                 UUID.randomUUID(), NivelExperiencia.INTERMEDIARIO, false, null, null, List.of(), modalidade);
         DecisaoProgressao decisao = new DecisaoProgressao(EstadoProgressao.MANTER, 0.0, 0, false, "progressao normal");
         ProgressaoHistoricoResumo historico = new ProgressaoHistoricoResumo(
-                0, 0, 0.0, 0.0, 0.0, 0, 0, null, -2.0, 45.0, 0.0, 0);
+                0, 0.0, 0.0, 0.0, 0, 0, null, -2.0, 45.0, 0.0, 0, 0, 0, 0, null);
 
         return new PlannerInputSnapshot(
                 athlete, decisao, historico, List.of(), List.of(), Optional.empty(), referencia, 30);

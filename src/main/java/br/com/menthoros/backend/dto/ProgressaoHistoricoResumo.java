@@ -1,8 +1,14 @@
 package br.com.menthoros.backend.dto;
 
+/**
+ * {@code treinosRealizados21d} é o histórico mínimo (fix-progression-adherence-window, D6): conta
+ * todos os realizados em 21 dias, vinculados ou não. {@code treinosCumpridos}/{@code treinosFaltas}/
+ * {@code treinosPendentes} e {@code aderencia} (nullable — ausente quando não há planejado devido na
+ * janela ou a pendência de reconciliação passa do teto) vêm de uma janela diferente: as 3 semanas ISO
+ * fechadas antes da atual, não os últimos 21 dias corridos — ver {@code ProgressaoTreinoServiceImpl}.
+ */
 public record ProgressaoHistoricoResumo(
-        int treinosConcluidos21d,
-        int treinosPlanejados21d,
+        int treinosRealizados21d,
         double volumeKm7d,
         double volumeKm21d,
         double volumeKm42d,
@@ -12,5 +18,9 @@ public record ProgressaoHistoricoResumo(
         Double tsbAtual,
         Double ctlAtual,
         Double atlAtual,
-        int semanasProgressaoContinua
+        int semanasProgressaoContinua,
+        int treinosCumpridos,
+        int treinosFaltas,
+        int treinosPendentes,
+        Double aderencia
 ) {}

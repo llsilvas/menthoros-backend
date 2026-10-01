@@ -118,7 +118,7 @@ public class PlanGenerationContextLoader {
         Hibernate.initialize(atleta.getDiasDisponiveis());
         Hibernate.initialize(atleta.getAssessoria());
 
-        DecisaoProgressao decisaoProgressao = calcularDecisaoProgressao(atletaId);
+        ResultadoProgressao progressao = calcularProgressao(atletaId);
 
         // Resolvida UMA vez e repassada: recalcular depois do LLM (que pode levar dezenas de
         // segundos e, em lote, esperar no semáforo) usaria um LocalDate.now() diferente.
@@ -147,8 +147,8 @@ public class PlanGenerationContextLoader {
         Optional<OnboardingContext> onboardingContext = resolverOnboardingContext(atletaId, tenantId);
 
         return new PlanGenerationContext(
-                dados, decisaoProgressao, semanaInicio, revisaoConsumida, proximaProva, onboardingContext,
-                generationRequestId);
+                dados, progressao.decisao(), progressao.historico(), semanaInicio, revisaoConsumida,
+                proximaProva, onboardingContext, generationRequestId);
     }
 
     /**
@@ -250,17 +250,25 @@ public class PlanGenerationContextLoader {
                 atleta.getId(), atleta.getDiasDisponiveis().size(), atleta.getNivelExperiencia());
     }
 
-    private DecisaoProgressao calcularDecisaoProgressao(UUID atletaId) {
+    /**
+     * Histórico e decisão de progressão vêm do MESMO cálculo (fix-progression-adherence-window,
+     * D5): o {@code PlannerShadowService} reusa este resultado em vez de recalcular a aderência
+     * num instante diferente, o que poderia divergir da decisão que o pipeline legado já usou.
+     */
+    private ResultadoProgressao calcularProgressao(UUID atletaId) {
         try {
             ProgressaoHistoricoResumo historico = progressaoTreinoService.calcularHistorico(atletaId);
-            return progressaoTreinoService.calcularDecisao(historico);
+            DecisaoProgressao decisao = progressaoTreinoService.calcularDecisao(historico);
+            return new ResultadoProgressao(decisao, historico);
         } catch (DomainNotFoundException | IllegalStateException e) {
             throw e;
         } catch (Exception e) {
             log.warn("Falha ao calcular decisão de progressão para atleta {} — plano será gerado sem contexto de progressão", atletaId, e);
-            return null;
+            return new ResultadoProgressao(null, null);
         }
     }
+
+    private record ResultadoProgressao(DecisaoProgressao decisao, ProgressaoHistoricoResumo historico) {}
 
     /**
      * Próxima prova futura do atleta: a marcada como alvo ou, na falta dela, a de data mais próxima.

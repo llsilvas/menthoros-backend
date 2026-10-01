@@ -23,7 +23,6 @@ import br.com.menthoros.backend.enums.EstadoProgressao;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoTreino;
-import br.com.menthoros.backend.services.ProgressaoTreinoService;
 import br.com.menthoros.backend.services.prompt.PeriodizacaoPromptFormatter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -40,7 +39,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 
@@ -52,8 +50,6 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class PlannerShadowServiceTest {
 
-    @Mock
-    private ProgressaoTreinoService progressaoTreinoService;
     @Mock
     private PeriodizacaoPromptFormatter periodizacaoPromptFormatter;
 
@@ -72,9 +68,9 @@ class PlannerShadowServiceTest {
         SkeletonComplianceChecker checker = new SkeletonComplianceChecker();
         ObjectMapper objectMapper = new ObjectMapper();
 
-        shadowHabilitado = new PlannerShadowService(engine, checker, progressaoTreinoService,
+        shadowHabilitado = new PlannerShadowService(engine, checker,
                 periodizacaoPromptFormatter, meterRegistry, objectMapper, true, 30);
-        shadowDesabilitado = new PlannerShadowService(engine, checker, progressaoTreinoService,
+        shadowDesabilitado = new PlannerShadowService(engine, checker,
                 periodizacaoPromptFormatter, meterRegistry, objectMapper, false, 30);
     }
 
@@ -87,7 +83,8 @@ class PlannerShadowServiceTest {
         void shadowDesabilitadoSoMarcaPlannerEnabledFalse() {
             PlanoSemanal plano = planoBase();
 
-            shadowDesabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(), semanaInicio, false);
+            shadowDesabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(),
+                    historico(-2.0, 45.0, 0), semanaInicio, false);
 
             assertThat(plano.getPlannerEnabled()).isFalse();
             assertThat(plano.getPlannerVersion()).isNull();
@@ -103,13 +100,13 @@ class PlannerShadowServiceTest {
         @Test
         @DisplayName("persiste auditoria completa sem alterar os treinos ja redistribuidos (CA12)")
         void persisteAuditoriaSemAlterarPlano() {
-            when(progressaoTreinoService.calcularHistorico(any())).thenReturn(historico(-2.0, 45.0, 0));
             when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("BUILD");
             Atleta atleta = atletaBase();
             PlanoSemanal plano = planoBase();
             List<TreinoPlanejado> treinosOriginais = plano.getTreinosPlanejados();
 
-            shadowHabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atleta), decisaoNeutra(), semanaInicio, false);
+            shadowHabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atleta), decisaoNeutra(),
+                    historico(-2.0, 45.0, 0), semanaInicio, false);
 
             assertThat(plano.getPlannerEnabled()).isFalse();
             assertThat(plano.getPlannerVersion()).isEqualTo("planner-v1");
@@ -123,10 +120,10 @@ class PlannerShadowServiceTest {
         @Test
         @DisplayName("registra planner.generated.count com as tags de fase, versao e batch")
         void registraMetricaDeGeracao() {
-            when(progressaoTreinoService.calcularHistorico(any())).thenReturn(historico(-2.0, 45.0, 0));
             when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("BUILD");
 
-            shadowHabilitado.aplicarShadow(planoBase(), planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(), semanaInicio, true);
+            shadowHabilitado.aplicarShadow(planoBase(), planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(),
+                    historico(-2.0, 45.0, 0), semanaInicio, true);
 
             assertThat(meterRegistry.find("planner.generated.count").counter()).isNotNull();
             assertThat(meterRegistry.find("planner.generated.count").tag("batch", "true").counter()).isNotNull();
@@ -136,11 +133,11 @@ class PlannerShadowServiceTest {
         @Test
         @DisplayName("TSB abaixo de -30 registra planner.requires_coach_review.count com o motivo fisiologico")
         void registraMetricaDeReviewQuandoTsbBaixo() {
-            when(progressaoTreinoService.calcularHistorico(any())).thenReturn(historico(-35.0, 45.0, 0));
             when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("BUILD");
 
             PlanoSemanal plano = planoBase();
-            shadowHabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(), semanaInicio, false);
+            shadowHabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(),
+                    historico(-35.0, 45.0, 0), semanaInicio, false);
 
             assertThat(meterRegistry.find("planner.requires_coach_review.count")
                     .tag("reason", "TSB abaixo de -30 (fadiga acumulada alta)").counter()).isNotNull();
@@ -150,12 +147,12 @@ class PlannerShadowServiceTest {
         @Test
         @DisplayName("lesao ativa registra planner.requires_coach_review.count com o motivo de lesao, nao 'OUTRO'")
         void registraMetricaDeReviewComMotivoDeLesao() {
-            when(progressaoTreinoService.calcularHistorico(any())).thenReturn(historico(-2.0, 45.0, 0));
             when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("RECOVERY");
             Atleta atletaComLesao = atletaBase().toBuilder().temLesao(true).build();
 
             PlanoSemanal plano = planoBase();
-            shadowHabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atletaComLesao), decisaoNeutra(), semanaInicio, false);
+            shadowHabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atletaComLesao), decisaoNeutra(),
+                    historico(-2.0, 45.0, 0), semanaInicio, false);
 
             assertThat(meterRegistry.find("planner.requires_coach_review.count")
                     .tag("reason", "INJURY_ACTIVE").counter()).isNotNull();
@@ -167,11 +164,11 @@ class PlannerShadowServiceTest {
         @Test
         @DisplayName("TSS do plano gerado fora da faixa registra planner.compliance.hypothetical_failure.count")
         void registraMetricaDeComplianceQuandoTssForaDaFaixa() {
-            when(progressaoTreinoService.calcularHistorico(any())).thenReturn(historico(-2.0, 45.0, 0));
             when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("BUILD");
             // CTL 45 -> alvo semanal ~315 TSS; planoGerado() tem so 60 TSS -> fora da faixa +-10%.
 
-            shadowHabilitado.aplicarShadow(planoBase(), planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(), semanaInicio, false);
+            shadowHabilitado.aplicarShadow(planoBase(), planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(),
+                    historico(-2.0, 45.0, 0), semanaInicio, false);
 
             // TSS_FORA_DA_FAIXA e check do estagio 2 (soft) desde a calibracao 2026-09-11 -> tag stage=POST.
             assertThat(meterRegistry.find("planner.compliance.hypothetical_failure.count")
@@ -186,11 +183,11 @@ class PlannerShadowServiceTest {
         @Test
         @DisplayName("planner e formatter concordando na fase nao incrementa a divergencia")
         void semDivergenciaNaoIncrementaContador() {
-            when(progressaoTreinoService.calcularHistorico(any())).thenReturn(historico(-2.0, 45.0, 0));
             // atletaBase() tem prova a 70 dias -> PlannerEngine resolve BUILD; formatter concorda.
             when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("BUILD");
 
-            shadowHabilitado.aplicarShadow(planoBase(), planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(), semanaInicio, false);
+            shadowHabilitado.aplicarShadow(planoBase(), planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(),
+                    historico(-2.0, 45.0, 0), semanaInicio, false);
 
             assertThat(meterRegistry.find("planner.phase.divergence.count").counter()).isNull();
         }
@@ -198,11 +195,11 @@ class PlannerShadowServiceTest {
         @Test
         @DisplayName("planner e formatter divergindo na fase incrementa planner.phase.divergence.count")
         void comDivergenciaIncrementaContador() {
-            when(progressaoTreinoService.calcularHistorico(any())).thenReturn(historico(-2.0, 45.0, 0));
             // PlannerEngine resolve BUILD (70 dias); formatter (mock) diz TAPER -> divergencia.
             when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("TAPER");
 
-            shadowHabilitado.aplicarShadow(planoBase(), planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(), semanaInicio, false);
+            shadowHabilitado.aplicarShadow(planoBase(), planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(),
+                    historico(-2.0, 45.0, 0), semanaInicio, false);
 
             assertThat(meterRegistry.find("planner.phase.divergence.count")
                     .tag("plannerPhase", "BUILD").tag("formatterPhase", "TAPER").counter()).isNotNull();
@@ -214,17 +211,21 @@ class PlannerShadowServiceTest {
     class IsolamentoDeErro {
 
         @Test
-        @DisplayName("excecao dentro do shadow nao propaga; planner.shadow.error.count incrementa")
-        void excecaoNoShadowNaoPropaga() {
-            when(progressaoTreinoService.calcularHistorico(any())).thenThrow(new RuntimeException("falha simulada"));
+        @DisplayName("historico ausente (decisaoProgressao tambem null, mesmo calculo no loader) nao propaga; planner.shadow.error.count incrementa")
+        void historicoAusenteNaoPropaga() {
+            // fix-progression-adherence-window D5: historico e decisaoProgressao vem do MESMO calculo
+            // no PlanGenerationContextLoader — quando ele falha, os dois chegam null aqui. O shadow
+            // nao recalcula mais (antes, um RuntimeException de calcularHistorico simulava a falha;
+            // agora o motor e quem usa historico.tsbAtual() sem checar null, e e isso que falha).
             PlanoSemanal plano = planoBase();
 
-            shadowHabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(), semanaInicio, false);
+            shadowHabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(),
+                    null, semanaInicio, false);
 
             assertThat(plano.getPlannerEnabled()).isFalse(); // marcado antes do try — sempre persiste
             assertThat(plano.getPlannerVersion()).isNull(); // shadow abortou antes de calcular
             assertThat(meterRegistry.find("planner.shadow.error.count").counter()).isNotNull();
-            assertThat(meterRegistry.find("planner.shadow.error.count").tag("reason", "RuntimeException").counter()).isNotNull();
+            assertThat(meterRegistry.find("planner.shadow.error.count").tag("reason", "NullPointerException").counter()).isNotNull();
         }
     }
 
@@ -255,7 +256,7 @@ class PlannerShadowServiceTest {
     }
 
     private ProgressaoHistoricoResumo historico(double tsbAtual, double ctlAtual, int semanasProgressaoContinua) {
-        return new ProgressaoHistoricoResumo(0, 0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, ctlAtual, 0.0, semanasProgressaoContinua);
+        return new ProgressaoHistoricoResumo(0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, ctlAtual, 0.0, semanasProgressaoContinua, 0, 0, 0, null);
     }
 
     private PlanoSemanalLlmDto planoGerado() {
