@@ -159,6 +159,92 @@ class IntervalsIcuClientImplTest {
     }
 
     @Nested
+    @DisplayName("buscarLthrCorrida")
+    class BuscarLthrCorrida {
+
+        @Test
+        @DisplayName("lê o lthr das sport settings de Run (ignora as de outros esportes)")
+        void leLthrDeRun() {
+            wireMock.stubFor(get(urlEqualTo("/api/v1/athlete/i641775/sport-settings"))
+                    .withHeader("Authorization", equalTo("Bearer " + TOKEN))
+                    .willReturn(okJson("["
+                            + "{\"id\":1,\"types\":[\"Ride\"],\"lthr\":160},"
+                            + "{\"id\":2,\"types\":[\"Run\",\"TrailRun\"],\"lthr\":168,\"max_hr\":185}]")));
+
+            assertThat(client.buscarLthrCorrida(TOKEN, "i641775")).contains(168);
+        }
+
+        @Test
+        @DisplayName("sem sport settings de corrida → vazio, sem exceção")
+        void semCorridaVazio() {
+            wireMock.stubFor(get(urlEqualTo("/api/v1/athlete/i641775/sport-settings"))
+                    .willReturn(okJson("[{\"id\":1,\"types\":[\"Ride\"],\"lthr\":160}]")));
+
+            assertThat(client.buscarLthrCorrida(TOKEN, "i641775")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("sport settings de Run sem lthr → vazio")
+        void runSemLthrVazio() {
+            wireMock.stubFor(get(urlEqualTo("/api/v1/athlete/i641775/sport-settings"))
+                    .willReturn(okJson("[{\"id\":2,\"types\":[\"Run\"],\"max_hr\":185}]")));
+
+            assertThat(client.buscarLthrCorrida(TOKEN, "i641775")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("403 (token sem SETTINGS:READ) → vazio, sem exceção")
+        void forbiddenVazio() {
+            wireMock.stubFor(get(urlEqualTo("/api/v1/athlete/i641775/sport-settings"))
+                    .willReturn(aResponse().withStatus(403)
+                            .withBody("{\"status\":403,\"error\":\"Access denied (SETTINGS:READ scope required)\"}")));
+
+            assertThat(client.buscarLthrCorrida(TOKEN, "i641775")).isEmpty();
+        }
+
+        @Test
+        @DisplayName("500 lança IntervalsIcuApiException")
+        void erro500Lanca() {
+            wireMock.stubFor(get(urlEqualTo("/api/v1/athlete/i641775/sport-settings"))
+                    .willReturn(aResponse().withStatus(500)));
+
+            assertThatThrownBy(() -> client.buscarLthrCorrida(TOKEN, "i641775"))
+                    .isInstanceOf(IntervalsIcuApiException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("buscarLthrResolvido")
+    class BuscarLthrResolvido {
+
+        @Test
+        @DisplayName("lê workout_doc.lthr do primeiro evento resolvido que o traz (fixture real de 2026-10-01)")
+        void leLthrDoEventoResolvido() {
+            wireMock.stubFor(get(urlPathEqualTo("/api/v1/athlete/i641775/events"))
+                    .withHeader("Authorization", equalTo("Bearer " + TOKEN))
+                    .withQueryParam("oldest", equalTo("2026-09-17"))
+                    .withQueryParam("newest", equalTo("2026-10-15"))
+                    .withQueryParam("category", equalTo("WORKOUT"))
+                    .withQueryParam("resolve", equalTo("true"))
+                    .willReturn(okJson("[{\"id\":1,\"workout_doc\":{\"steps\":[]}},"
+                            + "{\"id\":139455734,\"workout_doc\":{\"lthr\":168,\"target\":\"HR\",\"steps\":[]}}]")));
+
+            assertThat(client.buscarLthrResolvido(TOKEN, "i641775",
+                    LocalDate.of(2026, 9, 17), LocalDate.of(2026, 10, 15))).contains(168);
+        }
+
+        @Test
+        @DisplayName("janela sem evento com lthr → vazio")
+        void semLthrVazio() {
+            wireMock.stubFor(get(urlPathEqualTo("/api/v1/athlete/i641775/events"))
+                    .willReturn(okJson("[]")));
+
+            assertThat(client.buscarLthrResolvido(TOKEN, "i641775",
+                    LocalDate.of(2026, 9, 17), LocalDate.of(2026, 10, 15))).isEmpty();
+        }
+    }
+
+    @Nested
     @DisplayName("atualizarSportSettings")
     class AtualizarSportSettings {
 

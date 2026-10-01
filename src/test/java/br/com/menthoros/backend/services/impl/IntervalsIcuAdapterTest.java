@@ -28,6 +28,7 @@ import org.springframework.http.HttpStatus;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Stream;
 
@@ -81,6 +82,7 @@ class IntervalsIcuAdapterTest {
             StructuredWorkout workout = new StructuredWorkout(
                     "menthoros-1", "CONTINUO 15/07", null, DATA, "Treino continuo de base", steps);
 
+            when(client.buscarLthrCorrida(API_KEY, ATHLETE_ID)).thenReturn(Optional.of(LTHR_PROVEDOR));
             when(client.listarEventos(API_KEY, ATHLETE_ID, DATA, DATA)).thenReturn(List.of());
             when(client.criarEvento(eq(API_KEY), eq(ATHLETE_ID), any()))
                     .thenReturn(new IcuEventDto(999L, "menthoros-1", "CONTINUO 15/07", "2026-07-15T00:00:00"));
@@ -107,12 +109,15 @@ class IntervalsIcuAdapterTest {
             JsonNode nodeSteps = doc.get("steps");
             assertThat(nodeSteps).hasSize(5);
 
-            JsonNode hrBpm = nodeSteps.get(0);
-            assertThat(hrBpm.get("text").asText()).isEqualTo("Aquecimento");
-            assertThat(hrBpm.get("duration").asInt()).isEqualTo(600);
-            assertThat(hrBpm.get("hr").get("units").asText()).isEqualTo("bpm");
-            assertThat(hrBpm.get("hr").get("start").asInt()).isEqualTo(140);
-            assertThat(hrBpm.get("hr").get("end").asInt()).isEqualTo(150);
+            // FC vai como %lthr do provedor: o que importa é o bpm em que ELE resolve (trunca).
+            JsonNode hrStep = nodeSteps.get(0);
+            assertThat(hrStep.get("text").asText()).isEqualTo("Aquecimento");
+            assertThat(hrStep.get("duration").asInt()).isEqualTo(600);
+            assertThat(hrStep.get("hr").get("units").asText()).isEqualTo("%lthr");
+            assertThat(hrStep.get("hr").has("start")).isTrue();
+            assertThat(hrStep.get("hr").has("end")).isTrue();
+            assertThat(resolvidoPeloProvedor(hrStep.get("hr").get("start").asDouble(), LTHR_PROVEDOR)).isEqualTo(140);
+            assertThat(resolvidoPeloProvedor(hrStep.get("hr").get("end").asDouble(), LTHR_PROVEDOR)).isEqualTo(150);
 
             JsonNode paceRange = nodeSteps.get(1);
             assertThat(paceRange.get("distance").asInt()).isEqualTo(1000);
@@ -137,6 +142,93 @@ class IntervalsIcuAdapterTest {
             JsonNode sub = bloco.get("steps").get(0);
             assertThat(sub.get("text").asText()).isEqualTo("Tiro");
             assertThat(sub.get("duration").asInt()).isEqualTo(180);
+        }
+
+        @Test
+        @DisplayName("sem LTHR no perfil, usa o workout_doc.lthr de um evento resolvido perto da data")
+        void lthrViaReadBackResolvido() {
+            StructuredWorkout workout = workoutComFc("menthoros-lthr-rb", 107, 121);
+            when(client.buscarLthrCorrida(API_KEY, ATHLETE_ID)).thenReturn(Optional.empty());
+            when(client.buscarLthrResolvido(API_KEY, ATHLETE_ID, DATA.minusDays(14), DATA.plusDays(14)))
+                    .thenReturn(Optional.of(168));
+            when(client.atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(5L), any()))
+                    .thenReturn(new IcuEventDto(5L, "menthoros-lthr-rb", "X", "2026-07-15T00:00:00"));
+
+            PushResult resultado = adapter.push(conexao, workout, 5L);
+
+            assertThat(resultado.sucesso()).isTrue();
+            ArgumentCaptor<JsonNode> captor = ArgumentCaptor.forClass(JsonNode.class);
+            verify(client).atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(5L), captor.capture());
+            JsonNode hr = captor.getValue().get("workout_doc").get("steps").get(0).get("hr");
+            assertThat(hr.get("units").asText()).isEqualTo("%lthr");
+            // O caso real de 2026-10-01: 63,69% de 168 truncava em 106; o ponto médio resolve em 107.
+            assertThat(resolvidoPeloProvedor(hr.get("start").asDouble(), 168)).isEqualTo(107);
+            assertThat(resolvidoPeloProvedor(hr.get("end").asDouble(), 168)).isEqualTo(121);
+        }
+
+        @Test
+        @DisplayName("sem LTHR em lugar nenhum, falha com ERRO_VALIDACAO e não cria nem atualiza o evento")
+        void semLthrFalhaSemTocarNoCanal() {
+            StructuredWorkout workout = workoutComFc("menthoros-sem-lthr", 140, 150);
+            when(client.buscarLthrCorrida(API_KEY, ATHLETE_ID)).thenReturn(Optional.empty());
+            when(client.buscarLthrResolvido(eq(API_KEY), eq(ATHLETE_ID), any(), any())).thenReturn(Optional.empty());
+
+            PushResult resultado = adapter.push(conexao, workout, 5L);
+
+            assertThat(resultado.sucesso()).isFalse();
+            assertThat(resultado.statusErro()).isEqualTo(StatusSincronizacao.ERRO_VALIDACAO);
+            assertThat(resultado.mensagem()).contains("LTHR");
+            verify(client, never()).criarEvento(any(), any(), any());
+            verify(client, never()).atualizarEvento(any(), any(), anyLong(), any());
+        }
+
+        @Test
+        @DisplayName("treino sem alvo de FC não consulta LTHR nenhum")
+        void semFcNaoConsultaLthr() {
+            StructuredWorkout workout = workoutSimples("menthoros-sem-fc");
+            when(client.atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(5L), any()))
+                    .thenReturn(new IcuEventDto(5L, "menthoros-sem-fc", "X", "2026-07-15T00:00:00"));
+
+            PushResult resultado = adapter.push(conexao, workout, 5L);
+
+            assertThat(resultado.sucesso()).isTrue();
+            verify(client, never()).buscarLthrCorrida(any(), any());
+            verify(client, never()).buscarLthrResolvido(any(), any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("FC dentro de bloco de repetição também exige LTHR e sai como %lthr")
+        void fcDentroDeBlocoUsaLthr() {
+            StructuredWorkout workout = new StructuredWorkout("menthoros-bloco", "FARTLEK", null, DATA, "d",
+                    List.of(WorkoutStep.bloco(null, 5, List.of(
+                            WorkoutStep.simples("Tiro", null, 300, new HrTarget(136, 146)),
+                            WorkoutStep.simples("Rec", null, 200, new HrTarget(121, 126))))));
+            when(client.buscarLthrCorrida(API_KEY, ATHLETE_ID)).thenReturn(Optional.of(168));
+            when(client.atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(5L), any()))
+                    .thenReturn(new IcuEventDto(5L, "menthoros-bloco", "X", "2026-07-15T00:00:00"));
+
+            adapter.push(conexao, workout, 5L);
+
+            ArgumentCaptor<JsonNode> captor = ArgumentCaptor.forClass(JsonNode.class);
+            verify(client).atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(5L), captor.capture());
+            JsonNode sub = captor.getValue().get("workout_doc").get("steps").get(0).get("steps");
+            assertThat(resolvidoPeloProvedor(sub.get(0).get("hr").get("start").asDouble(), 168)).isEqualTo(136);
+            assertThat(resolvidoPeloProvedor(sub.get(0).get("hr").get("end").asDouble(), 168)).isEqualTo(146);
+            assertThat(resolvidoPeloProvedor(sub.get(1).get("hr").get("start").asDouble(), 168)).isEqualTo(121);
+            assertThat(resolvidoPeloProvedor(sub.get(1).get("hr").get("end").asDouble(), 168)).isEqualTo(126);
+        }
+
+        @Test
+        @DisplayName("falha de API ao ler o LTHR vira PushResult.erro, nunca exceção")
+        void falhaAoLerLthrViraErro() {
+            StructuredWorkout workout = workoutComFc("menthoros-lthr-500", 140, 150);
+            when(client.buscarLthrCorrida(API_KEY, ATHLETE_ID))
+                    .thenThrow(new IntervalsIcuApiException(HttpStatus.INTERNAL_SERVER_ERROR, "erro 500"));
+
+            PushResult resultado = adapter.push(conexao, workout, 5L);
+
+            assertThat(resultado.sucesso()).isFalse();
+            assertThat(resultado.statusErro()).isEqualTo(StatusSincronizacao.ERRO_TEMPORARIO);
         }
 
         @Test
@@ -344,7 +436,52 @@ class IntervalsIcuAdapterTest {
         }
     }
 
+    @Nested
+    @DisplayName("percentualDoLimiar")
+    class PercentualDoLimiar {
+
+        @Test
+        @DisplayName("truncado pelo provedor, resolve exatamente no bpm para todo LTHR fisiológico")
+        void truncaExatamenteNoBpm() {
+            for (int lthr = 100; lthr <= 200; lthr++) {
+                for (int bpm = 60; bpm <= 210; bpm++) {
+                    double pct = IntervalsIcuAdapter.percentualDoLimiar(bpm, lthr);
+                    assertThat(resolvidoPeloProvedor(pct, lthr))
+                            .as("bpm=%d lthr=%d pct=%s", bpm, lthr, pct)
+                            .isEqualTo(bpm);
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("o caso que motivou: 107 bpm com LTHR 168 — 63,69% dava 106, o ponto médio dá 107")
+        void casoReal() {
+            assertThat(resolvidoPeloProvedor(63.69, 168)).isEqualTo(106);
+            assertThat(resolvidoPeloProvedor(IntervalsIcuAdapter.percentualDoLimiar(107, 168), 168)).isEqualTo(107);
+        }
+
+        @Test
+        @DisplayName("percentual tem no máximo duas casas decimais")
+        void duasCasas() {
+            double pct = IntervalsIcuAdapter.percentualDoLimiar(107, 168);
+            assertThat(Math.round(pct * 100) / 100.0).isEqualTo(pct);
+        }
+    }
+
     // ===== Fixtures =====
+
+    /** LTHR cadastrado no provedor — deliberadamente ≠ de qualquer valor do Menthoros. */
+    private static final int LTHR_PROVEDOR = 185;
+
+    /** Reproduz a resolução do intervals.icu observada em 2026-10-01: {@code floor(pct × lthr / 100)}. */
+    static int resolvidoPeloProvedor(double pct, int lthr) {
+        return (int) Math.floor(pct * lthr / 100.0);
+    }
+
+    private StructuredWorkout workoutComFc(String externalId, int startBpm, int endBpm) {
+        return new StructuredWorkout(externalId, "CONTINUO 15/07", null, DATA, "desc",
+                List.of(WorkoutStep.simples("Corrida", 1800, null, new HrTarget(startBpm, endBpm))));
+    }
 
     private StructuredWorkout workoutSimples(String externalId) {
         return new StructuredWorkout(externalId, "CONTINUO 15/07", null, DATA, "desc",

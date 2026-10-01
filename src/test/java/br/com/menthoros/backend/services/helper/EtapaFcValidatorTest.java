@@ -289,6 +289,100 @@ class EtapaFcValidatorTest {
             EtapaTreinoLlmDto resultado = validator.validarFcEtapa(etapa, "FARTLEK", zonasFC160);
             assertThat(resultado.fcAlvoEtapa()).isEqualTo("999-999 bpm");
         }
+
+        // --- faixa que sobrepõe ≥50% mas sai da banda: recorte, não quartil central ---
+
+        @Test
+        @DisplayName("INTERVALADO sobrepondo Z4-Z5 mas 10 bpm acima do teto → recortado ao teto (155-170), não ao quartil")
+        void intervalado_acimaDoTeto_recortadoAoTeto() {
+            // Z4-Z5 = 150-170; prescrito 155-180: sobreposição 15/25 = 60% — passava intacto e
+            // mandava 180 bpm (acima de Z5) pro relógio.
+            var etapa = new EtapaTreinoLlmDto(2, "INTERVALADO", "1km forte", 5, 1.0, "155-180 bpm", 1, null);
+
+            EtapaTreinoLlmDto resultado = validator.validarFcEtapa(etapa, "INTERVALADO", zonasFC160);
+
+            assertThat(resultado.fcAlvoEtapa()).isEqualTo("155-170 bpm");
+        }
+
+        @Test
+        @DisplayName("sobreposição exatamente 50% e teto estourado → recorta (limite inferior da regra de recorte)")
+        void sobreposicaoExata50_tetoEstourado_recorta() {
+            // Z4-Z5 = 150-170; prescrito 159-181: largura 22, sobreposição 11 = 50,0%.
+            var etapa = new EtapaTreinoLlmDto(2, "INTERVALADO", "Tiro", 4, 0.8, "159-181 bpm", 1, null);
+
+            EtapaTreinoLlmDto resultado = validator.validarFcEtapa(etapa, "INTERVALADO", zonasFC160);
+
+            assertThat(resultado.fcAlvoEtapa()).isEqualTo("159-170 bpm");
+        }
+
+        @Test
+        @DisplayName("AQUECIMENTO sobrepondo Z1 mas abaixo do piso → recortado ao piso (120-130)")
+        void aquecimento_abaixoDoPiso_recortadoAoPiso() {
+            // Z1 = 120-136; prescrito 112-130: sobreposição 10/18 = 56%.
+            var etapa = new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote", 10, 1.5, "112-130 bpm", 1, null);
+
+            EtapaTreinoLlmDto resultado = validator.validarFcEtapa(etapa, "LONGO", zonasFC160);
+
+            assertThat(resultado.fcAlvoEtapa()).isEqualTo("120-130 bpm");
+        }
+
+        @Test
+        @DisplayName("PRINCIPAL CONTINUO saindo dos dois lados de Z2-Z3 → recortado à banda inteira (136-150)")
+        void principal_saiDosDoisLados_recortadoABanda() {
+            // Z2-Z3 = 136-150; prescrito 130-156: sobreposição 14/26 = 54%.
+            var etapa = new EtapaTreinoLlmDto(2, "PRINCIPAL", "Contínuo", 40, 7.0, "130-156 bpm", 1, null);
+
+            EtapaTreinoLlmDto resultado = validator.validarFcEtapa(etapa, "CONTINUO", zonasFC160);
+
+            assertThat(resultado.fcAlvoEtapa()).isEqualTo("136-150 bpm");
+        }
+
+        @Test
+        @DisplayName("faixa encostada no teto e no piso da banda (150-170 em Z4-Z5) → inalterada")
+        void faixaIgualABanda_inalterada() {
+            var etapa = new EtapaTreinoLlmDto(2, "INTERVALADO", "Tiro", 4, 0.8, "150-170 bpm", 1, null);
+
+            EtapaTreinoLlmDto resultado = validator.validarFcEtapa(etapa, "INTERVALADO", zonasFC160);
+
+            assertThat(resultado.fcAlvoEtapa()).isEqualTo("150-170 bpm");
+        }
+
+        @Test
+        @DisplayName("1 bpm acima do teto (150-171) → recortado para 150-170 (borda da regra)")
+        void umBpmAcimaDoTeto_recortado() {
+            var etapa = new EtapaTreinoLlmDto(2, "INTERVALADO", "Tiro", 4, 0.8, "150-171 bpm", 1, null);
+
+            EtapaTreinoLlmDto resultado = validator.validarFcEtapa(etapa, "INTERVALADO", zonasFC160);
+
+            assertThat(resultado.fcAlvoEtapa()).isEqualTo("150-170 bpm");
+        }
+
+        @Test
+        @DisplayName("sobreposição <50% continua indo pro quartil central, não pro recorte (regra anterior preservada)")
+        void sobreposicaoInsuficiente_continuaQuartilCentral() {
+            // Z4-Z5 = 150-170; prescrito 165-195: sobreposição 5/30 = 17% → quartil central = 155-165.
+            var etapa = new EtapaTreinoLlmDto(2, "INTERVALADO", "Tiro", 4, 0.8, "165-195 bpm", 1, null);
+
+            EtapaTreinoLlmDto resultado = validator.validarFcEtapa(etapa, "INTERVALADO", zonasFC160);
+
+            assertThat(resultado.fcAlvoEtapa()).isEqualTo("155-165 bpm");
+        }
+
+        @Test
+        @DisplayName("recorte preserva os demais campos da etapa")
+        void recorte_preservaDemaisCampos() {
+            var etapa = new EtapaTreinoLlmDto(3, "INTERVALADO", "800m forte", 4, 0.8, "155-180 bpm", 1, "4:00-4:10/km");
+
+            EtapaTreinoLlmDto resultado = validator.validarFcEtapa(etapa, "INTERVALADO", zonasFC160);
+
+            assertThat(resultado.ordem()).isEqualTo(3);
+            assertThat(resultado.tipoEtapa()).isEqualTo("INTERVALADO");
+            assertThat(resultado.descricaoEtapa()).isEqualTo("800m forte");
+            assertThat(resultado.duracaoMin()).isEqualTo(4);
+            assertThat(resultado.distanciaKm()).isEqualTo(0.8);
+            assertThat(resultado.repeticoes()).isEqualTo(1);
+            assertThat(resultado.ritmoAlvo()).isEqualTo("4:00-4:10/km");
+        }
     }
 
     // ======================== P0 — bypass de validação FC corrigido ========================

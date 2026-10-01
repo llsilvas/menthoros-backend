@@ -104,6 +104,48 @@ class IntervalsIcuFcAlvoResolverTest {
             assertThat(resolucao.alvo()).isNull();
             assertThat(resolucao.descartadoPorFaltaDeDado()).isFalse();
         }
+
+        @Test
+        @DisplayName("bpm literal acima da FC máxima do atleta é descartado, não vira meta impossível no relógio")
+        void bpmAcimaDaFcMaximaDescarta() {
+            // fcMaxima do atleta é 195 (comLimiar); 223 é fisiologicamente implausível para ele.
+            IntervalsIcuFcAlvoResolver.Resolucao resolucao = resolver.resolver(
+                    new FcAlvoBruto(FcAlvoBruto.Base.BPM, 197, 223), comLimiar(170));
+
+            assertThat(resolucao.alvo()).isNull();
+            assertThat(resolucao.descartadoPorFaltaDeDado()).isTrue();
+        }
+
+        @ParameterizedTest
+        @CsvSource({
+                "39, 50, true",    // abaixo do piso plausível (40): descarta
+                "40, 50, false",   // exatamente no piso: aceita
+                "100, 195, false", // exatamente na FC máxima do atleta (195): aceita
+                "100, 196, true",  // 1 bpm acima da FC máxima: descarta
+                "1, 270, true"     // faixa degenerada (piso e teto violados): descarta
+        })
+        @DisplayName("bpm literal fora da faixa fisiológica plausível (piso ou FC máxima do atleta) é descartado")
+        void bpmForaDaFaixaPlausivelDescarta(int inicio, int fim, boolean descartadoEsperado) {
+            IntervalsIcuFcAlvoResolver.Resolucao resolucao = resolver.resolver(
+                    new FcAlvoBruto(FcAlvoBruto.Base.BPM, inicio, fim), comLimiar(170));
+
+            assertThat(resolucao.descartadoPorFaltaDeDado()).isEqualTo(descartadoEsperado);
+            if (descartadoEsperado) {
+                assertThat(resolucao.alvo()).isNull();
+            } else {
+                assertThat(resolucao.alvo()).isEqualTo(new HrTarget(inicio, fim));
+            }
+        }
+
+        @Test
+        @DisplayName("sem atleta, bpm literal só respeita o piso plausível (sem teto de FC máxima pra checar)")
+        void bpmSemAtletaIgnoraTeto() {
+            IntervalsIcuFcAlvoResolver.Resolucao resolucao = resolver.resolver(
+                    new FcAlvoBruto(FcAlvoBruto.Base.BPM, 140, 150), null);
+
+            assertThat(resolucao.alvo()).isEqualTo(new HrTarget(140, 150));
+            assertThat(resolucao.descartadoPorFaltaDeDado()).isFalse();
+        }
     }
 
     private Atleta comLimiar(int fcLimiar) {

@@ -35,13 +35,16 @@ import static org.mockito.Mockito.when;
 /**
  * O que o relógio recebe tem que ser o bpm que o treinador prescreveu.
  *
- * <p>Cobre a costura converter → adapter porque é exatamente onde o defeito vivia: cada lado estava
- * certo isoladamente. O converter produzia um alvo relativo fiel ao texto do plano (base %LTHR) e o
- * adapter o serializava fielmente como {@code %hr} — canal que o padrão Garmin define como %FCmax.
- * Nenhum teste de uma classe só pega isso; é preciso olhar o número que sai da ponta.</p>
+ * <p>Cobre a costura converter → adapter porque é exatamente onde o defeito viveu duas vezes, e
+ * cada lado estava certo isoladamente. Primeiro (task 0.1) o converter produzia um alvo relativo
+ * fiel ao texto do plano (base %LTHR) e o adapter o serializava como {@code %hr}, que o provedor
+ * lê como %FCmax: +14,7%. Depois (2026-10-01) o adapter passou a mandar {@code units:"bpm"} — que
+ * o provedor aceita, guarda e <b>ignora</b>, resolvendo o número como %FCmax de novo: 107-121 bpm
+ * viraram 197-223 no relógio. Nenhum teste de uma classe só pega isso; é preciso olhar o número
+ * em que o provedor resolve ({@code floor(pct × lthr / 100)}), não a string da unidade.</p>
  */
 @ExtendWith(MockitoExtension.class)
-@DisplayName("Alvo de FC chega ao relógio em bpm absoluto")
+@DisplayName("Alvo de FC chega ao relógio no bpm prescrito")
 class IntervalsIcuFcAlvoAbsolutoTest {
 
     private static final String TOKEN = "token-123";
@@ -51,6 +54,9 @@ class IntervalsIcuFcAlvoAbsolutoTest {
     /** Atleta real do banco de dev, o mesmo que mediu +14,7% de inflação na task 0.1. */
     private static final int FC_LIMIAR = 170;
     private static final int FC_MAXIMA = 195;
+
+    /** LTHR que o provedor usa — deliberadamente ≠ do Menthoros, como no caso real (168 × 142). */
+    private static final int LTHR_PROVEDOR = 168;
 
     @Mock
     private IntervalsIcuClient client;
@@ -80,9 +86,10 @@ class IntervalsIcuFcAlvoAbsolutoTest {
 
         // Intenção: 60-70% do LTHR (170) = 102-119 bpm.
         // Enviado como "%hr", o relógio lia 60-70% da FCmax (195) = 117-137 bpm: +14,7%.
-        assertThat(hr.get("units").asText()).isEqualTo("bpm");
-        assertThat(hr.get("start").asInt()).isEqualTo(102);
-        assertThat(hr.get("end").asInt()).isEqualTo(119);
+        // Enviado como "bpm", o provedor resolvia 102-119 como %FCmax: 188-220.
+        assertThat(hr.get("units").asText()).isEqualTo("%lthr");
+        assertThat(resolvidoPeloProvedor(hr.get("start").asDouble())).isEqualTo(102);
+        assertThat(resolvidoPeloProvedor(hr.get("end").asDouble())).isEqualTo(119);
     }
 
     @Test
@@ -94,24 +101,41 @@ class IntervalsIcuFcAlvoAbsolutoTest {
 
         // Z2 = 85-89% do LTHR (170), o mesmo que ZonaTreinoService calcula. Valores fixados de
         // propósito: só a igualdade com o serviço deixaria as duas pontas quebrarem juntas.
-        assertThat(hr.get("units").asText()).isEqualTo("bpm");
-        assertThat(hr.get("start").asInt()).isEqualTo(145);
-        assertThat(hr.get("end").asInt()).isEqualTo(151);
+        assertThat(hr.get("units").asText()).isEqualTo("%lthr");
+        assertThat(resolvidoPeloProvedor(hr.get("start").asDouble())).isEqualTo(145);
+        assertThat(resolvidoPeloProvedor(hr.get("end").asDouble())).isEqualTo(151);
 
         ZonaTreinoService.ZonaFC z2 =
                 new ZonaTreinoService().calcularZonasFC(FC_MAXIMA, FC_LIMIAR).get(1);
-        assertThat(hr.get("start").asInt()).isEqualTo(z2.fcMin());
-        assertThat(hr.get("end").asInt()).isEqualTo(z2.fcMax());
+        assertThat(resolvidoPeloProvedor(hr.get("start").asDouble())).isEqualTo(z2.fcMin());
+        assertThat(resolvidoPeloProvedor(hr.get("end").asDouble())).isEqualTo(z2.fcMax());
     }
 
     @Test
-    @DisplayName("nenhum alvo relativo trafega: nem %hr, nem hr_zone")
-    void nenhumAlvoRelativoTrafega() {
+    @DisplayName("nem %hr (base %FCmax) nem hr_zone (zonas do relógio) nem bpm (ignorado) trafegam")
+    void nenhumAlvoNaoDeterministicoTrafega() {
         TreinoPlanejado treino = treinoComZonaAlvo("Z4");
 
         String payload = payloadDoPush(treino).toString();
 
-        assertThat(payload).doesNotContain("%hr").doesNotContain("hr_zone");
+        assertThat(payload).doesNotContain("\"%hr\"").doesNotContain("hr_zone").doesNotContain("\"bpm\"");
+    }
+
+    @Test
+    @DisplayName("o percentual é relativo ao LTHR do PROVEDOR, não ao do Menthoros")
+    void percentualRelativoAoLthrDoProvedor() {
+        TreinoPlanejado treino = treinoComEtapaDeFc("107-121 bpm");
+
+        JsonNode hr = primeiroHrDoPayload(treino);
+
+        // Contra o LTHR do Menthoros (170) o mesmo percentual daria outro bpm — prova de que a base
+        // certa foi usada.
+        assertThat(resolvidoPeloProvedor(hr.get("start").asDouble())).isEqualTo(107);
+        assertThat((int) Math.floor(hr.get("start").asDouble() * FC_LIMIAR / 100.0)).isNotEqualTo(107);
+    }
+
+    private static int resolvidoPeloProvedor(double pct) {
+        return (int) Math.floor(pct * LTHR_PROVEDOR / 100.0);
     }
 
     // ===== Helpers =====
@@ -125,6 +149,7 @@ class IntervalsIcuFcAlvoAbsolutoTest {
     private JsonNode payloadDoPush(TreinoPlanejado treino) {
         StructuredWorkout workout = converter.converter(treino).orElseThrow().workout();
 
+        when(client.buscarLthrCorrida(TOKEN, ATHLETE_ID)).thenReturn(java.util.Optional.of(LTHR_PROVEDOR));
         when(client.listarEventos(TOKEN, ATHLETE_ID, DATA, DATA)).thenReturn(List.of());
         when(client.criarEvento(eq(TOKEN), eq(ATHLETE_ID), any()))
                 .thenReturn(new IcuEventDto(1L, workout.externalId(), workout.name(), DATA + "T00:00:00"));

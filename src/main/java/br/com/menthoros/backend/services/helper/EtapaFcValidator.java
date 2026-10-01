@@ -87,6 +87,13 @@ public class EtapaFcValidator {
      * Verifica se o {@code fcAlvoEtapa} tem sobreposição ≥50% com a zona fisiológica esperada.
      * <p>Em caso de divergência, corrige o valor para o quartil central da zona esperada
      * e registra um {@code WARN}. Nunca lança exceção — manter o plano válido é prioridade.</p>
+     *
+     * <p>Sobreposição suficiente não basta: uma faixa que cobre metade da banda e ainda avança
+     * dezenas de bpm acima do teto dela passava intacta ({@code 197-223} contra Z4–Z5 de
+     * {@code 188-212}: 58% de sobreposição, 11 bpm acima do que a fisiologia do atleta permite —
+     * e esse número ia direto pro relógio, porque bpm literal é confiado adiante). Quando a faixa
+     * sobrepõe mas sai da banda, ela é recortada para a interseção; a sobreposição ≥50% garante
+     * que a interseção preserva pelo menos metade da largura prescrita.</p>
      */
     public EtapaTreinoLlmDto validarFcEtapa(EtapaTreinoLlmDto etapa, String tipoTreino, List<ZonaFC> zonasFC) {
         int[] prescrito = parseFcRange(etapa.fcAlvoEtapa());
@@ -116,11 +123,22 @@ public class EtapaFcValidator {
             String fcCorrigida = centroMin + "-" + centroMax + " bpm";
             log.warn("FC fora da zona esperada: tipo='{}', prescrito='{}', esperado='{}-{} bpm', corrigindo para '{}'",
                     etapa.tipoEtapa(), etapa.fcAlvoEtapa(), espMin, espMax, fcCorrigida);
-            return new EtapaTreinoLlmDto(
-                    etapa.ordem(), etapa.tipoEtapa(), etapa.descricaoEtapa(),
-                    etapa.duracaoMin(), etapa.distanciaKm(), fcCorrigida, etapa.repeticoes(), etapa.ritmoAlvo()
-            );
+            return comFc(etapa, fcCorrigida);
+        }
+
+        if (prescMin < espMin || prescMax > espMax) {
+            String fcRecortada = Math.max(prescMin, espMin) + "-" + Math.min(prescMax, espMax) + " bpm";
+            log.warn("FC sai da zona esperada: tipo='{}', prescrito='{}', esperado='{}-{} bpm', recortando para '{}'",
+                    etapa.tipoEtapa(), etapa.fcAlvoEtapa(), espMin, espMax, fcRecortada);
+            return comFc(etapa, fcRecortada);
         }
         return etapa;
+    }
+
+    private static EtapaTreinoLlmDto comFc(EtapaTreinoLlmDto etapa, String fcAlvoEtapa) {
+        return new EtapaTreinoLlmDto(
+                etapa.ordem(), etapa.tipoEtapa(), etapa.descricaoEtapa(),
+                etapa.duracaoMin(), etapa.distanciaKm(), fcAlvoEtapa, etapa.repeticoes(), etapa.ritmoAlvo()
+        );
     }
 }
