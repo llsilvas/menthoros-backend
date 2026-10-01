@@ -308,7 +308,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         Double tsb = metrica != null ? metrica.getTsb() : null;
 
         List<TreinoPlanejado> treinosAderencia = treinoPlanejadoRepository
-                .findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, inicioSemana.minusWeeks(3));
+                .findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, inicioSemana.minusWeeks(3), hoje);
 
         Integer aderenciaPercentual = null;
         if (!treinosAderencia.isEmpty()) {

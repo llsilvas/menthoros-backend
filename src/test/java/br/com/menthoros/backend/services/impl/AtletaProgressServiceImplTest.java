@@ -688,7 +688,7 @@ class AtletaProgressServiceImplTest {
         @Test
         @DisplayName("nenhum treino planejado no período → lista vazia")
         void semTreinos() {
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, DATA_INICIO))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, HOJE))
                     .thenReturn(List.of());
 
             assertThat(service.getAderenciaSemanal(atletaId, 8)).isEmpty();
@@ -697,10 +697,11 @@ class AtletaProgressServiceImplTest {
         @Test
         @DisplayName("treinos na mesma semana — calcula percentual corretamente")
         void calculaPercentualSemanal() {
-            // semana 2026-06-15 (seg): Jun 17 (qua) e Jun 18 (qui) → 2 planejados, 1 realizado → 50%
+            // semana 2026-06-15 (seg): Jun 16 (ter) e Jun 17 (qua, HOJE) → 2 planejados, 1 realizado → 50%
+            // (Jun 18 seria futuro relativo a HOJE e o repositório não o devolveria — ver dataFim)
             TreinoPlanejado tp1 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 17), true);
-            TreinoPlanejado tp2 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 18), false);
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, DATA_INICIO))
+            TreinoPlanejado tp2 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 16), false);
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, HOJE))
                     .thenReturn(List.of(tp1, tp2));
 
             var resultado = service.getAderenciaSemanal(atletaId, 8);
@@ -722,7 +723,7 @@ class AtletaProgressServiceImplTest {
             // semana B começa 2026-06-15 (seg): Jun 16 (ter), Jun 17 (qua) — 2 planejados, 2 realizados → 100%
             TreinoPlanejado tpB1 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 16), true);
             TreinoPlanejado tpB2 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 17), true);
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, DATA_INICIO))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, HOJE))
                     .thenReturn(List.of(tpA1, tpA2, tpA3, tpB1, tpB2));
 
             var resultado = service.getAderenciaSemanal(atletaId, 8);
@@ -740,7 +741,7 @@ class AtletaProgressServiceImplTest {
         @DisplayName("todos os treinos sem realizado → percentual 0, lista retornada (tem planejados)")
         void semNenhumRealizado() {
             TreinoPlanejado tp = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 16), false);
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, DATA_INICIO))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, HOJE))
                     .thenReturn(List.of(tp));
 
             var resultado = service.getAderenciaSemanal(atletaId, 8);
