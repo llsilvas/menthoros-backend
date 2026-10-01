@@ -114,6 +114,80 @@ public class IntervalsIcuClientImpl implements IntervalsIcuClient {
 
     /**
      * Idempotent: YES — leitura pura.
+     * Side Effects: External API call (GET /api/v1/athlete/{id}/sport-settings)
+     * Tenant-aware: NO — credencial é do atleta, não do tenant.
+     */
+    @Override
+    public Optional<Integer> buscarLthrCorrida(String token, String externalAthleteId) {
+        JsonNode settings;
+        try {
+            settings = webClient.get()
+                    .uri("/api/v1/athlete/{id}/sport-settings", externalAthleteId)
+                    .headers(h -> bearer(h, token))
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .block();
+        } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() == 403) {
+                log.debug("Sport settings ilegíveis (403 — token sem escopo SETTINGS:READ)");
+                return Optional.empty();
+            }
+            throw traduz(e, "buscar sport-settings");
+        } catch (Exception e) {
+            throw new IntervalsIcuApiException("Falha de transporte ao buscar sport-settings", e);
+        }
+        return lthrDeCorrida(settings);
+    }
+
+    private Optional<Integer> lthrDeCorrida(JsonNode settings) {
+        if (settings == null || !settings.isArray()) {
+            return Optional.empty();
+        }
+        for (JsonNode s : settings) {
+            JsonNode types = s.get("types");
+            boolean corrida = types != null && types.isArray()
+                    && java.util.stream.StreamSupport.stream(types.spliterator(), false)
+                            .anyMatch(t -> "Run".equals(t.asText()));
+            if (corrida && s.get("lthr") != null && s.get("lthr").isNumber() && s.get("lthr").asInt() > 0) {
+                return Optional.of(s.get("lthr").asInt());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Idempotent: YES — leitura pura.
+     * Side Effects: External API call (GET events?oldest&newest&category=WORKOUT&resolve=true)
+     * Tenant-aware: NO — credencial é do atleta, não do tenant.
+     */
+    @Override
+    public Optional<Integer> buscarLthrResolvido(String token, String externalAthleteId,
+                                                 LocalDate oldest, LocalDate newest) {
+        JsonNode eventos = executa("listar eventos resolvidos", () -> webClient.get()
+                .uri(uri -> uri.path("/api/v1/athlete/{id}/events")
+                        .queryParam("oldest", oldest.toString())
+                        .queryParam("newest", newest.toString())
+                        .queryParam("category", "WORKOUT")
+                        .queryParam("resolve", "true")
+                        .build(externalAthleteId))
+                .headers(h -> bearer(h, token))
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .block());
+        if (eventos == null || !eventos.isArray()) {
+            return Optional.empty();
+        }
+        for (JsonNode evento : eventos) {
+            JsonNode lthr = evento.path("workout_doc").path("lthr");
+            if (lthr.isNumber() && lthr.asInt() > 0) {
+                return Optional.of(lthr.asInt());
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Idempotent: YES — leitura pura.
      * Side Effects: External API call (GET activities?oldest&newest)
      * Tenant-aware: NO
      */

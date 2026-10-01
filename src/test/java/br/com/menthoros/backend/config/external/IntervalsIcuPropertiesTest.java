@@ -134,11 +134,12 @@ class IntervalsIcuPropertiesTest {
     @DisplayName("applicationYmlReal")
     class ApplicationYmlReal {
 
-        // O escopo pedido precisa cobrir as duas operações que já existem em produção:
-        // ACTIVITY:READ para a ingestão e CALENDAR:WRITE para o push de treino planejado
-        // ao relógio (D4). Um escopo faltando só apareceria na primeira operação real.
+        // O escopo pedido precisa cobrir as três operações que existem em produção:
+        // ACTIVITY:READ para a ingestão, CALENDAR:WRITE para o push de treino planejado ao
+        // relógio (D4) e SETTINGS:READ para ler o LTHR do provedor — sem ele o alvo de FC não tem
+        // como virar %lthr (2026-10-01). Um escopo faltando só apareceria na primeira operação real.
         @Test
-        @DisplayName("o yml real pede ACTIVITY:READ e CALENDAR:WRITE, e o token-uri tem o /api")
+        @DisplayName("o yml real pede ACTIVITY:READ, CALENDAR:WRITE e SETTINGS:READ, e o token-uri tem o /api")
         void contratoDoYmlReal() {
             new ApplicationContextRunner()
                     .withInitializer(new org.springframework.boot.test.context.ConfigDataApplicationContextInitializer())
@@ -151,7 +152,7 @@ class IntervalsIcuPropertiesTest {
                     .run(ctx -> {
                         IntervalsIcuProperties props = ctx.getBean(IntervalsIcuProperties.class);
 
-                        assertThat(props.getScope()).contains("ACTIVITY:READ", "CALENDAR:WRITE");
+                        assertThat(props.getScope()).contains("ACTIVITY:READ", "CALENDAR:WRITE", "SETTINGS:READ");
                         // O /api no caminho foi uma das três premissas erradas da spec anterior.
                         assertThat(props.getTokenUri()).isEqualTo("https://intervals.icu/api/oauth/token");
                         assertThat(props.getAuthorizationUri()).isEqualTo("https://intervals.icu/oauth/authorize");

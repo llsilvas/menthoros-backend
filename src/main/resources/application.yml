@@ -390,7 +390,10 @@ app:
     redirect-uri: ${INTERVALS_ICU_REDIRECT_URI:http://localhost:8099/api/v1/integracoes/intervals-icu/callback}
     authorization-uri: https://intervals.icu/oauth/authorize
     token-uri: https://intervals.icu/api/oauth/token
-    scope: ACTIVITY:READ,CALENDAR:WRITE
+    # SETTINGS:READ (2026-10-01): o alvo de FC so existe no provedor como %LTHR, e o LTHR dele so e
+    # legivel com este escopo (GET /sport-settings). Token antigo sem ele cai no read-back por
+    # eventos resolvidos (IntervalsIcuAdapter.resolverLthr); o atleta ganha o escopo ao reconectar.
+    scope: ACTIVITY:READ,CALENDAR:WRITE,SETTINGS:READ
     # Scheduler de sync automatico (intervals-icu-activity-sync-scheduler). Ver IntervalsIcuProperties.
     sync-days-back: ${INTERVALS_ICU_SYNC_DAYS_BACK:90}
     sync-overlap-days: ${INTERVALS_ICU_SYNC_OVERLAP_DAYS:7}
