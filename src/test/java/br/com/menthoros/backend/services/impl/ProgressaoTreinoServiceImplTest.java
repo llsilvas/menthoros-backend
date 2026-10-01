@@ -31,6 +31,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -82,7 +83,7 @@ class ProgressaoTreinoServiceImplTest {
 
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(longo7d, intervalado21d, longo21d, facil42d));
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(planejado(), planejado(), planejado(), planejado()));
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(-10.0, 50.0, 55.0));
@@ -101,11 +102,27 @@ class ProgressaoTreinoServiceImplTest {
         }
 
         @Test
+        @DisplayName("treinosPlanejados21d consulta o repositório com dataFim = hoje — não vaza dias futuros da janela")
+        void planejadosLimitadosAHoje() {
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
+                    .thenReturn(Collections.emptyList());
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), eq(INICIO_21D), eq(HOJE)))
+                    .thenReturn(List.of(planejado()));
+            when(planoMetadadosService.buscarPorAtletaId(atletaId))
+                    .thenReturn(metaDados(0.0, 0.0, 0.0));
+
+            ProgressaoHistoricoResumo resultado = service.calcularHistorico(atletaId);
+
+            assertThat(resultado.treinosPlanejados21d()).isEqualTo(1);
+            verify(treinoPlanejadoRepository).findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, INICIO_21D, HOJE);
+        }
+
+        @Test
         @DisplayName("novo atleta sem treinos — campos zerados, sem exceção")
         void atletaSemTreinos() {
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(Collections.emptyList());
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(Collections.emptyList());
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(0.0, 0.0, 0.0));
@@ -130,7 +147,7 @@ class ProgressaoTreinoServiceImplTest {
 
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(intervalado, tempoRun));
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(planejado(), planejado()));
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(0.0, 0.0, 0.0));
@@ -151,7 +168,7 @@ class ProgressaoTreinoServiceImplTest {
 
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(longoMalClassificado, longoOk));
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(planejado(), planejado()));
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(-10.0, 50.0, 55.0));
@@ -172,7 +189,7 @@ class ProgressaoTreinoServiceImplTest {
 
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(avulso, longo));
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(planejado(), planejado()));
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(-10.0, 50.0, 55.0));
@@ -194,7 +211,7 @@ class ProgressaoTreinoServiceImplTest {
 
             when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(longoValido, longoCancelado, semStatus));
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                     .thenReturn(List.of(planejado(), planejado(), planejado()));
             when(planoMetadadosService.buscarPorAtletaId(atletaId))
                     .thenReturn(metaDados(-10.0, 50.0, 55.0));
@@ -458,7 +475,7 @@ class ProgressaoTreinoServiceImplTest {
     private void stubHistorico(List<TreinoRealizado> treinos, int planejados21d, PlanoMetaDados metaDados) {
         when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(eq(atletaId), eq(tenantId), any(), any()))
                 .thenReturn(treinos);
-        when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(eq(atletaId), eq(tenantId), any()))
+        when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(eq(atletaId), eq(tenantId), any(), any()))
                 .thenReturn(Collections.nCopies(planejados21d, planejado()));
         when(planoMetadadosService.buscarPorAtletaId(atletaId)).thenReturn(metaDados);
     }

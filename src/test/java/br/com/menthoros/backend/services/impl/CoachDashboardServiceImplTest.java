@@ -190,8 +190,8 @@ class CoachDashboardServiceImplTest {
             realizado2.setTreinoRealizado(treino(HOJE.minusDays(3), "8.0", 60));
             TreinoPlanejado naorealizado = planejado(a, HOJE.minusDays(1), TipoTreino.REGENERATIVO);
 
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(
-                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3))))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(
+                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3)), eq(HOJE)))
                     .thenReturn(List.of(realizado1, realizado2, naorealizado));
 
             // 2 de 3 realizados = 67%
@@ -203,8 +203,8 @@ class CoachDashboardServiceImplTest {
         void aderenciaPercentualNullSemPlano() {
             Atleta a = atletaRoster("semplano", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
             when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(
-                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3))))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(
+                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3)), eq(HOJE)))
                     .thenReturn(List.of());
 
             assertThat(service.getRoster().get(0).aderenciaPercentual()).isNull();

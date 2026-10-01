@@ -92,7 +92,7 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
 
         int treinosConcluidos21d = treinos21d.size();
         List<TreinoPlanejado> planejados = treinoPlanejadoRepository
-                .findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, inicio21d);
+                .findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, inicio21d, hoje);
         int treinosPlanejados21d = planejados.size();
 
         PlanoMetaDados metaDados = planoMetadadosService.buscarPorAtletaId(atletaId);

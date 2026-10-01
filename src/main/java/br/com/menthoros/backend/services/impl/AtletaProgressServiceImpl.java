@@ -295,7 +295,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
         LocalDate dataInicio = inicioSemanaAtual.minusWeeks(semanas - 1L);
 
         List<TreinoPlanejado> treinos = treinoPlanejadoRepository
-                .findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, dataInicio);
+                .findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, dataInicio, hoje);
 
         if (treinos.isEmpty()) {
             return List.of();
