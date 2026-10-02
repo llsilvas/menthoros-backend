@@ -17,6 +17,7 @@ import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.NivelProntidao;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -671,6 +672,9 @@ class AtletaProgressServiceImplTest {
         // HOJE = 2026-06-17 (quarta), inicioSemanaAtual = 2026-06-15 (seg)
         // semanas=8 → dataInicio = 2026-06-15 - 7 semanas = 2026-04-27
         private final LocalDate DATA_INICIO = LocalDate.of(2026, 4, 27);
+        // fix-weekly-adherence-future-days-excluded: dataFim da consulta é o fim da semana ATUAL
+        // (domingo), não HOJE — senão um planejado pro resto da semana nem entraria no total.
+        private final LocalDate FIM_SEMANA_ATUAL = LocalDate.of(2026, 6, 21);
 
         @BeforeEach
         void stubAtleta() {
@@ -688,7 +692,7 @@ class AtletaProgressServiceImplTest {
         @Test
         @DisplayName("nenhum treino planejado no período → lista vazia")
         void semTreinos() {
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, HOJE))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, FIM_SEMANA_ATUAL))
                     .thenReturn(List.of());
 
             assertThat(service.getAderenciaSemanal(atletaId, 8)).isEmpty();
@@ -698,10 +702,10 @@ class AtletaProgressServiceImplTest {
         @DisplayName("treinos na mesma semana — calcula percentual corretamente")
         void calculaPercentualSemanal() {
             // semana 2026-06-15 (seg): Jun 16 (ter) e Jun 17 (qua, HOJE) → 2 planejados, 1 realizado → 50%
-            // (Jun 18 seria futuro relativo a HOJE e o repositório não o devolveria — ver dataFim)
+            // (Jun 18+ é futuro mas dentro da semana atual — a query vai até domingo, não até HOJE)
             TreinoPlanejado tp1 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 17), true);
             TreinoPlanejado tp2 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 16), false);
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, HOJE))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, FIM_SEMANA_ATUAL))
                     .thenReturn(List.of(tp1, tp2));
 
             var resultado = service.getAderenciaSemanal(atletaId, 8);
@@ -714,6 +718,42 @@ class AtletaProgressServiceImplTest {
         }
 
         @Test
+        @DisplayName("regressão — treino planejado pra depois de HOJE na semana atual entra no total (não fica 100% com dia pendente)")
+        void treinoFuturoNaSemanaAtualEntraNoTotal() {
+            // Jun 17 (qua, HOJE) feito; Jun 20 (sáb) ainda não chegou — antes do fix, dataFim=HOJE
+            // fazia o repositório nem devolver o planejado de sábado, e o total ficava 1/1 = 100%.
+            TreinoPlanejado feito = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 17), true);
+            TreinoPlanejado pendente = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 20), false);
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, FIM_SEMANA_ATUAL))
+                    .thenReturn(List.of(feito, pendente));
+
+            var resultado = service.getAderenciaSemanal(atletaId, 8);
+
+            assertThat(resultado).hasSize(1);
+            assertThat(resultado.get(0).totalPlanejado()).isEqualTo(2);
+            assertThat(resultado.get(0).totalRealizado()).isEqualTo(1);
+            assertThat(resultado.get(0).percentual()).isEqualTo(50);
+        }
+
+        @Test
+        @DisplayName("regressão — vínculo CANCELADO no Strava não conta como realizado")
+        void vinculoCanceladoNaoContaComoRealizado() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(LocalDate.of(2026, 6, 17));
+            TreinoRealizado trCancelado = new TreinoRealizado();
+            trCancelado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
+            tp.setTreinoRealizado(trCancelado);
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, FIM_SEMANA_ATUAL))
+                    .thenReturn(List.of(tp));
+
+            var resultado = service.getAderenciaSemanal(atletaId, 8);
+
+            assertThat(resultado).hasSize(1);
+            assertThat(resultado.get(0).totalRealizado()).isZero();
+            assertThat(resultado.get(0).percentual()).isZero();
+        }
+
+        @Test
         @DisplayName("treinos em semanas distintas — resultado ordenado por semanaInicio ASC")
         void multiplas_semanas_ordenadas() {
             // semana A começa 2026-06-08 (seg): Jun 9 (ter), Jun 10 (qua), Jun 11 (qui) — 3 planejados, 2 realizados → 67%
@@ -723,7 +763,7 @@ class AtletaProgressServiceImplTest {
             // semana B começa 2026-06-15 (seg): Jun 16 (ter), Jun 17 (qua) — 2 planejados, 2 realizados → 100%
             TreinoPlanejado tpB1 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 16), true);
             TreinoPlanejado tpB2 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 17), true);
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, HOJE))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, FIM_SEMANA_ATUAL))
                     .thenReturn(List.of(tpA1, tpA2, tpA3, tpB1, tpB2));
 
             var resultado = service.getAderenciaSemanal(atletaId, 8);
@@ -741,7 +781,7 @@ class AtletaProgressServiceImplTest {
         @DisplayName("todos os treinos sem realizado → percentual 0, lista retornada (tem planejados)")
         void semNenhumRealizado() {
             TreinoPlanejado tp = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 16), false);
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, HOJE))
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, FIM_SEMANA_ATUAL))
                     .thenReturn(List.of(tp));
 
             var resultado = service.getAderenciaSemanal(atletaId, 8);
