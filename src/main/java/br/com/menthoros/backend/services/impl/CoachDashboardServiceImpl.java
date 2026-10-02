@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.input.CoachDashboardQueryDto;
+import br.com.menthoros.backend.dto.output.Aderencia4SemanasDto;
 import br.com.menthoros.backend.dto.output.CoachAtletaResumoDto;
 import br.com.menthoros.backend.dto.output.CoachCalendarioDto;
 import br.com.menthoros.backend.dto.output.CoachDashboardOutputDto;
@@ -17,6 +18,7 @@ import br.com.menthoros.backend.enums.StatusSugestao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.domain.billing.AthleteBilling;
 import br.com.menthoros.backend.services.AthleteContractService;
+import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
@@ -78,6 +80,7 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
+    private final AtletaProgressService atletaProgressService;
     private final CoachAttentionQueueService coachAttentionQueueService;
     private final AthleteContractService athleteContractService;
     private final SugestaoCoachRepository sugestaoCoachRepository;
@@ -287,7 +290,6 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
     private CoachAtletaResumoDto montarResumo(Atleta atleta, LocalDate hoje, LocalDate inicioSemana, LocalDate fimSemana,
                                               AthleteBilling cobranca, boolean hasPendingSuggestion) {
         UUID atletaId = atleta.getId();
-        UUID tenantId = TenantContext.getRequiredTenantId();
         MetricasDiarias metrica = metricasDiariasRepository.findLatestByAtletaId(atletaId).orElse(null);
 
         String fase = planoMetadadosRepository.findByAtletaId(atletaId)
@@ -307,23 +309,11 @@ public class CoachDashboardServiceImpl implements CoachDashboardService {
         Double atl = metrica != null ? metrica.getAtl() : null;
         Double tsb = metrica != null ? metrica.getTsb() : null;
 
-        // fix-weekly-adherence-future-days-excluded: o teto de data tinha de impedir que a próxima
-        // semana vazasse pra cá (fix-adherence-count-until-today, D5), não cortar o resto da semana
-        // ATUAL antes dela terminar — com dataFim=hoje, um treino planejado pro sábado nem entrava
-        // no total até o sábado chegar, inflando a aderência da semana em curso pra 100% com um dia
-        // ainda pendente. O teto correto é o fim da semana atual (fimSemana), que já bloqueia
-        // qualquer semana futura sem cortar a atual pela metade.
-        List<TreinoPlanejado> treinosAderencia = treinoPlanejadoRepository
-                .findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, inicioSemana.minusWeeks(3), fimSemana);
-
-        Integer aderenciaPercentual = null;
-        if (!treinosAderencia.isEmpty()) {
-            int totalAderencia = treinosAderencia.size();
-            int realizadoAderencia = (int) treinosAderencia.stream()
-                    .filter(tp -> tp.getTreinoRealizado() != null && tp.getTreinoRealizado().contaNaCarga())
-                    .count();
-            aderenciaPercentual = (int) Math.round(realizadoAderencia * 100.0 / totalAderencia);
-        }
+        // fix-athlete-profile-aderencia-4-semanas: fonte única com o perfil do atleta — os dois
+        // chamam atletaProgressService.getAderencia4Semanas, nunca reimplementam a consulta (o
+        // perfil esperava um campo que nunca foi exposto, achado do Codex review, 2026-10-01).
+        Aderencia4SemanasDto aderencia4Semanas = atletaProgressService.getAderencia4Semanas(atletaId);
+        Integer aderenciaPercentual = aderencia4Semanas.planejado() > 0 ? aderencia4Semanas.percentual() : null;
 
         return new CoachAtletaResumoDto(atletaId, nomeCompleto(atleta), ctl, atl, tsb, fase,
                 deriveStatus(atleta, tsb, lastActivity, hoje), lastActivity, weeklyVolume, aderenciaPercentual,
