@@ -793,6 +793,92 @@ class AtletaProgressServiceImplTest {
     }
 
     @Nested
+    @DisplayName("getAderencia4Semanas")
+    class GetAderencia4Semanas {
+
+        // HOJE = 2026-06-17 (quarta), inicioSemanaAtual = 2026-06-15 (seg), fimSemanaAtual = 2026-06-21 (dom)
+        // dataInicio = inicioSemanaAtual - 3 semanas = 2026-05-25
+        private final LocalDate DATA_INICIO = LocalDate.of(2026, 5, 25);
+        private final LocalDate FIM_SEMANA_ATUAL = LocalDate.of(2026, 6, 21);
+
+        @BeforeEach
+        void stubAtleta() {
+            atletaExisteNoTenant();
+        }
+
+        @Test
+        @DisplayName("atleta não existe no tenant → DomainNotFoundException")
+        void atletaNaoExiste() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            assertThatThrownBy(() -> service.getAderencia4Semanas(atletaId))
+                    .isInstanceOf(DomainNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("nenhum treino planejado na janela → zerado, não null")
+        void semTreinos() {
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, FIM_SEMANA_ATUAL))
+                    .thenReturn(List.of());
+
+            var resultado = service.getAderencia4Semanas(atletaId);
+
+            assertThat(resultado.planejado()).isZero();
+            assertThat(resultado.realizado()).isZero();
+            assertThat(resultado.percentual()).isZero();
+        }
+
+        @Test
+        @DisplayName("calcula percentual sobre a janela de 4 semanas (atual + 3 anteriores)")
+        void calculaPercentual() {
+            TreinoPlanejado feito1 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 1), true);
+            TreinoPlanejado feito2 = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 10), true);
+            TreinoPlanejado pendente = treinoPlanejadoComRealizado(LocalDate.of(2026, 6, 16), false);
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, FIM_SEMANA_ATUAL))
+                    .thenReturn(List.of(feito1, feito2, pendente));
+
+            var resultado = service.getAderencia4Semanas(atletaId);
+
+            assertThat(resultado.planejado()).isEqualTo(3);
+            assertThat(resultado.realizado()).isEqualTo(2);
+            assertThat(resultado.percentual()).isEqualTo(67);
+        }
+
+        @Test
+        @DisplayName("regressão — planejado pra depois de HOJE na semana atual entra no total (não fica 100% com dia pendente)")
+        void incluiDiaFuturoDaSemanaAtual() {
+            TreinoPlanejado feito = treinoPlanejadoComRealizado(HOJE, true);
+            // Antes do fix (fix-weekly-adherence-future-days-excluded), dataFim=HOJE fazia o
+            // repositório nem devolver este planejado futuro, e a aderência ficava 1/1 = 100%.
+            TreinoPlanejado pendenteDepoisDeHoje = treinoPlanejadoComRealizado(FIM_SEMANA_ATUAL, false);
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, FIM_SEMANA_ATUAL))
+                    .thenReturn(List.of(feito, pendenteDepoisDeHoje));
+
+            var resultado = service.getAderencia4Semanas(atletaId);
+
+            assertThat(resultado.planejado()).isEqualTo(2);
+            assertThat(resultado.realizado()).isEqualTo(1);
+            assertThat(resultado.percentual()).isEqualTo(50);
+        }
+
+        @Test
+        @DisplayName("regressão — vínculo CANCELADO no Strava não conta como realizado")
+        void vinculoCanceladoNaoContaComoRealizado() {
+            TreinoPlanejado tp = new TreinoPlanejado();
+            tp.setDataTreino(HOJE);
+            TreinoRealizado trCancelado = new TreinoRealizado();
+            trCancelado.setStatusSincronizacao(StatusSincronizacao.CANCELADO);
+            tp.setTreinoRealizado(trCancelado);
+            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, DATA_INICIO, FIM_SEMANA_ATUAL))
+                    .thenReturn(List.of(tp));
+
+            var resultado = service.getAderencia4Semanas(atletaId);
+
+            assertThat(resultado.realizado()).isZero();
+            assertThat(resultado.percentual()).isZero();
+        }
+    }
+
+    @Nested
     @DisplayName("getDistanceSummary")
     class GetDistanceSummary {
 

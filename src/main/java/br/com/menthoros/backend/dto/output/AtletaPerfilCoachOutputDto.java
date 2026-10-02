@@ -47,6 +47,9 @@ public record AtletaPerfilCoachOutputDto(
         @Schema(description = "Aderência semanal das últimas 8 semanas; lista vazia se sem dados de treino")
         List<AderenciasSemanalDto> aderenciaSemanal,
 
+        @Schema(description = "Aderência da semana atual + 3 anteriores — mesma função que alimenta roster.aderenciaPercentual")
+        Aderencia4SemanasDto aderencia4Semanas,
+
         @Schema(description = "Plano mais recente do atleta com semanaFim >= hoje; null se não existe")
         PlanoVigenteDto planoVigente,
 

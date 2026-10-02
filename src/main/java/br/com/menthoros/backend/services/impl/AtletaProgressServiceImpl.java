@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.output.Aderencia4SemanasDto;
 import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaHomeDto;
 import br.com.menthoros.backend.dto.output.DistanceSummaryDto;
@@ -325,6 +326,39 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
 
         boolean temDados = resultado.stream().anyMatch(a -> a.totalPlanejado() > 0);
         return temDados ? resultado : List.of();
+    }
+
+    /**
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     *
+     * <p>Mesma janela e mesmo predicado de {@code CoachDashboardServiceImpl} (roster) — fonte
+     * única: ambos chamam este método, nunca reimplementam a consulta (fix-athlete-profile-
+     * aderencia-4-semanas, 2026-10-01).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Aderencia4SemanasDto getAderencia4Semanas(UUID atletaId) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        validarAtletaNoTenant(atletaId);
+
+        LocalDate hoje = LocalDate.now(clock);
+        LocalDate inicioSemanaAtual = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate fimSemanaAtual = inicioSemanaAtual.plusDays(6);
+        LocalDate dataInicio = inicioSemanaAtual.minusWeeks(3);
+
+        List<TreinoPlanejado> treinos = treinoPlanejadoRepository
+                .findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, dataInicio, fimSemanaAtual);
+
+        if (treinos.isEmpty()) {
+            return new Aderencia4SemanasDto(0, 0, 0);
+        }
+
+        int planejado = treinos.size();
+        int realizado = (int) treinos.stream()
+                .filter(tp -> tp.getTreinoRealizado() != null && tp.getTreinoRealizado().contaNaCarga())
+                .count();
+        int percentual = (int) Math.round(realizado * 100.0 / planejado);
+        return new Aderencia4SemanasDto(realizado, planejado, percentual);
     }
 
     /**
