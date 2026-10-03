@@ -26,6 +26,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Calcula scores, decide e persiste a reconciliação de um {@link TreinoRealizado} contra
@@ -110,6 +111,9 @@ public class ReconciliationDecisionExecutor {
 
     private void persistir(TreinoRealizado realizado, MatchingDecision decision, Atleta atleta) {
         BigDecimal scoreToRecord = decision.getSelectedScore() != null ? decision.getSelectedScore() : BigDecimal.ZERO;
+        // Pela associação e antes da mutação abaixo: getTreinoPlanejadoId() é espelho somente leitura da FK.
+        UUID plannedAntes = realizado.getTreinoPlanejado() != null ? realizado.getTreinoPlanejado().getId() : null;
+        UUID plannedDepois = null;
 
         realizado.setReconciliationStatus(decision.getStatus());
         realizado.setReconciliationScore(scoreToRecord);
@@ -124,6 +128,7 @@ public class ReconciliationDecisionExecutor {
                 planned.limparPulo();
                 planned.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
                 realizado.setTreinoPlanejado(planned);
+                plannedDepois = planned.getId();
                 treinoPlanejadoRepository.save(planned);
                 // prova-no-plano-semanal, D6: treino PROVA vinculado fecha o resultado da prova.
                 provaResultadoSyncer.aoVincular(planned, realizado);
@@ -143,6 +148,8 @@ public class ReconciliationDecisionExecutor {
         auditEvent.setBeforeStatus(ReconciliationStatus.PENDENTE);
         auditEvent.setAfterStatus(decision.getStatus());
         auditEvent.setBeforePlannedId(null);
+        auditEvent.setBeforePlannedIdUuid(plannedAntes);
+        auditEvent.setAfterPlannedIdUuid(plannedDepois);
         auditEvent.setScore(scoreToRecord);
         auditEvent.setReasonCode(decision.getReasonCode());
         auditEvent.setReasonText(decision.getReasonText());

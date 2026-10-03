@@ -1,7 +1,9 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.output.Aderencia4SemanasDto;
 import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
 import br.com.menthoros.backend.dto.output.AtletaHomeDto;
+import br.com.menthoros.backend.dto.output.DistanceSummaryDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
 import br.com.menthoros.backend.dto.output.ReadinessDto;
 import br.com.menthoros.backend.dto.output.RecordeDto;
@@ -22,6 +24,7 @@ import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.repository.projection.DistanciaDiaProjection;
 import br.com.menthoros.backend.security.AuthenticatedAtletaResolver;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
@@ -45,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * Implementação read-only do progresso do atleta.
@@ -289,10 +293,16 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
 
         LocalDate hoje = LocalDate.now(clock);
         LocalDate inicioSemanaAtual = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate fimSemanaAtual = inicioSemanaAtual.plusDays(6);
         LocalDate dataInicio = inicioSemanaAtual.minusWeeks(semanas - 1L);
 
+        // fix-weekly-adherence-future-days-excluded: dataFim=hoje cortava a semana em curso antes
+        // dela terminar — um treino planejado pro sábado nem entrava no "total" da semana até o
+        // sábado chegar, inflando a aderência da semana atual pra 100% com um dia ainda pendente.
+        // fimSemanaAtual ainda impede que a próxima semana vaze pra cá (fix-adherence-count-until-today,
+        // D5), só não corta a atual pela metade.
         List<TreinoPlanejado> treinos = treinoPlanejadoRepository
-                .findComRealizadoByAtletaAndPeriodo(atletaId, tenantId, dataInicio);
+                .findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, dataInicio, fimSemanaAtual);
 
         if (treinos.isEmpty()) {
             return List.of();
@@ -306,7 +316,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
                 .map(e -> {
                     int total = e.getValue().size();
                     int realizado = (int) e.getValue().stream()
-                            .filter(tp -> tp.getTreinoRealizado() != null)
+                            .filter(tp -> tp.getTreinoRealizado() != null && tp.getTreinoRealizado().contaNaCarga())
                             .count();
                     int percentual = total > 0 ? (int) Math.round(realizado * 100.0 / total) : 0;
                     return new AderenciasSemanalDto(e.getKey(), total, realizado, percentual);
@@ -316,6 +326,92 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
 
         boolean temDados = resultado.stream().anyMatch(a -> a.totalPlanejado() > 0);
         return temDados ? resultado : List.of();
+    }
+
+    /**
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     *
+     * <p>Mesma janela e mesmo predicado de {@code CoachDashboardServiceImpl} (roster) — fonte
+     * única: ambos chamam este método, nunca reimplementam a consulta (fix-athlete-profile-
+     * aderencia-4-semanas, 2026-10-01).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public Aderencia4SemanasDto getAderencia4Semanas(UUID atletaId) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        validarAtletaNoTenant(atletaId);
+
+        LocalDate hoje = LocalDate.now(clock);
+        LocalDate inicioSemanaAtual = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate fimSemanaAtual = inicioSemanaAtual.plusDays(6);
+        LocalDate dataInicio = inicioSemanaAtual.minusWeeks(3);
+
+        List<TreinoPlanejado> treinos = treinoPlanejadoRepository
+                .findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, dataInicio, fimSemanaAtual);
+
+        if (treinos.isEmpty()) {
+            return new Aderencia4SemanasDto(0, 0, 0);
+        }
+
+        int planejado = treinos.size();
+        int realizado = (int) treinos.stream()
+                .filter(tp -> tp.getTreinoRealizado() != null && tp.getTreinoRealizado().contaNaCarga())
+                .count();
+        int percentual = (int) Math.round(realizado * 100.0 / planejado);
+        return new Aderencia4SemanasDto(realizado, planejado, percentual);
+    }
+
+    /**
+     * Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES.
+     *
+     * <p>Uma consulta, já agregada por dia no banco, cobre as duas saídas: semanas e as duas janelas
+     * de 7 dias. Carregar os treinos inteiros traria a coleção EAGER de sensações por linha.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public DistanceSummaryDto getDistanceSummary(UUID atletaId, int weeks) {
+        if (weeks < 1 || weeks > MAX_SEMANAS_ADERENCIA) {
+            throw new DomainRuleViolationException(
+                    "Número de semanas fora do intervalo [1, " + MAX_SEMANAS_ADERENCIA + "]: " + weeks);
+        }
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        validarAtletaNoTenant(atletaId);
+
+        LocalDate hoje = LocalDate.now(clock);
+        LocalDate primeiraSegunda = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                .minusWeeks(weeks - 1L);
+        // Com poucas semanas a janela semanal começa depois de hoje−13; as janelas de 7 dias não
+        // podem ser truncadas por isso.
+        LocalDate inicioConsulta = primeiraSegunda.isBefore(hoje.minusDays(13)) ? primeiraSegunda : hoje.minusDays(13);
+
+        Map<LocalDate, BigDecimal> kmPorDia = treinoRealizadoRepository
+                .somarDistanciaPorDia(atletaId, tenantId, inicioConsulta, hoje)
+                .stream()
+                .collect(Collectors.toMap(DistanciaDiaProjection::getDataTreino, DistanciaDiaProjection::getDistanciaKm));
+
+        Map<LocalDate, BigDecimal> porSemana = kmPorDia.entrySet().stream()
+                .filter(e -> !e.getKey().isBefore(primeiraSegunda))
+                .collect(Collectors.groupingBy(
+                        e -> e.getKey().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)),
+                        Collectors.reducing(BigDecimal.ZERO, Map.Entry::getValue, BigDecimal::add)));
+
+        List<DistanceSummaryDto.WeeklyDistanceDto> weekly = IntStream.range(0, weeks)
+                .mapToObj(primeiraSegunda::plusWeeks)
+                .map(segunda -> new DistanceSummaryDto.WeeklyDistanceDto(
+                        segunda, porSemana.getOrDefault(segunda, BigDecimal.ZERO)))
+                .toList();
+
+        return new DistanceSummaryDto(
+                weekly,
+                somarKm(kmPorDia, hoje.minusDays(6), hoje),
+                somarKm(kmPorDia, hoje.minusDays(13), hoje.minusDays(7)));
+    }
+
+    private static BigDecimal somarKm(Map<LocalDate, BigDecimal> kmPorDia, LocalDate inicio, LocalDate fim) {
+        return kmPorDia.entrySet().stream()
+                .filter(e -> !e.getKey().isBefore(inicio) && !e.getKey().isAfter(fim))
+                .map(Map.Entry::getValue)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**

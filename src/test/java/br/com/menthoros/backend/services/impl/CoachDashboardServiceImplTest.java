@@ -76,6 +76,7 @@ class CoachDashboardServiceImplTest {
     @Mock private PlanoMetadadosRepository planoMetadadosRepository;
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
+    @Mock private br.com.menthoros.backend.services.AtletaProgressService atletaProgressService;
     @Mock private CoachAttentionQueueService coachAttentionQueueService;
     @Mock private AthleteContractService athleteContractService;
     @Mock private SugestaoCoachRepository sugestaoCoachRepository;
@@ -90,14 +91,17 @@ class CoachDashboardServiceImplTest {
         Clock clock = Clock.fixed(Instant.parse("2026-06-17T12:00:00Z"), ZoneOffset.UTC);
         service = new CoachDashboardServiceImpl(
                 atletaRepository, metricasDiariasRepository, planoMetadadosRepository,
-                treinoRealizadoRepository, treinoPlanejadoRepository, coachAttentionQueueService,
-                athleteContractService, sugestaoCoachRepository, clock);
+                treinoRealizadoRepository, treinoPlanejadoRepository, atletaProgressService,
+                coachAttentionQueueService, athleteContractService, sugestaoCoachRepository, clock);
         // Default: ninguém com cobrança (os testes de cobrança sobrescrevem)
         lenient().when(athleteContractService.resolveBilling(anyCollection(), any(LocalDate.class))).thenReturn(Map.of());
         // Default: sem itens de atenção (cada teste de calendário que precisar sobrescreve)
         lenient().when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of());
         // Default: ninguém com sugestão pendente (os testes de add-pending-suggestion-badge sobrescrevem)
         lenient().when(sugestaoCoachRepository.findAtletaIdsByTenantIdAndStatus(any(), any(), any())).thenReturn(Set.of());
+        // Default: sem aderência (os testes de aderência sobrescrevem) — fix-athlete-profile-aderencia-4-semanas
+        lenient().when(atletaProgressService.getAderencia4Semanas(any()))
+                .thenReturn(new br.com.menthoros.backend.dto.output.Aderencia4SemanasDto(0, 0, 0));
     }
 
     @AfterEach
@@ -179,33 +183,26 @@ class CoachDashboardServiceImplTest {
         }
 
         @Test
-        @DisplayName("aderenciaPercentual calculada sobre as últimas 4 semanas")
+        @DisplayName("aderenciaPercentual vem de atletaProgressService.getAderencia4Semanas (fix-athlete-profile-aderencia-4-semanas)")
         void aderenciaPercentual() {
             Atleta a = atletaRoster("ader", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
             when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
+            // O cálculo em si (janela, contaNaCarga) é testado em AtletaProgressServiceImplTest —
+            // aqui só verifica que o roster repassa o resultado do método compartilhado, fonte
+            // única com o perfil do atleta (nunca reimplementa a consulta).
+            when(atletaProgressService.getAderencia4Semanas(a.getId()))
+                    .thenReturn(new br.com.menthoros.backend.dto.output.Aderencia4SemanasDto(2, 3, 67));
 
-            TreinoPlanejado realizado1 = planejado(a, HOJE.minusDays(7), TipoTreino.REGENERATIVO);
-            realizado1.setTreinoRealizado(treino(HOJE.minusDays(7), "5.0", 40));
-            TreinoPlanejado realizado2 = planejado(a, HOJE.minusDays(3), TipoTreino.REGENERATIVO);
-            realizado2.setTreinoRealizado(treino(HOJE.minusDays(3), "8.0", 60));
-            TreinoPlanejado naorealizado = planejado(a, HOJE.minusDays(1), TipoTreino.REGENERATIVO);
-
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(
-                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3))))
-                    .thenReturn(List.of(realizado1, realizado2, naorealizado));
-
-            // 2 de 3 realizados = 67%
             assertThat(service.getRoster().get(0).aderenciaPercentual()).isEqualTo(67);
         }
 
         @Test
-        @DisplayName("aderenciaPercentual é null quando atleta não tem plano")
+        @DisplayName("aderenciaPercentual é null quando não há planejado devido na janela")
         void aderenciaPercentualNullSemPlano() {
             Atleta a = atletaRoster("semplano", AtletaStatus.ATIVO, 5.0, HOJE.minusDays(1));
             when(atletaRepository.findAtivosByTenantIdOrderByNome(tenantId)).thenReturn(List.of(a));
-            when(treinoPlanejadoRepository.findComRealizadoByAtletaAndPeriodo(
-                    eq(a.getId()), eq(tenantId), eq(INICIO_SEMANA.minusWeeks(3))))
-                    .thenReturn(List.of());
+            when(atletaProgressService.getAderencia4Semanas(a.getId()))
+                    .thenReturn(new br.com.menthoros.backend.dto.output.Aderencia4SemanasDto(0, 0, 0));
 
             assertThat(service.getRoster().get(0).aderenciaPercentual()).isNull();
         }

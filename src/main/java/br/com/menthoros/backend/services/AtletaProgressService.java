@@ -1,6 +1,8 @@
 package br.com.menthoros.backend.services;
 
+import br.com.menthoros.backend.dto.output.Aderencia4SemanasDto;
 import br.com.menthoros.backend.dto.output.AderenciasSemanalDto;
+import br.com.menthoros.backend.dto.output.DistanceSummaryDto;
 import br.com.menthoros.backend.dto.output.AtletaHomeDto;
 import br.com.menthoros.backend.dto.output.PmcPontoDto;
 import br.com.menthoros.backend.dto.output.ReadinessDto;
@@ -62,6 +64,30 @@ public interface AtletaProgressService {
      * @param semanas  número de semanas a analisar (recomendado: 8)
      */
     List<AderenciasSemanalDto> getAderenciaSemanal(UUID atletaId, int semanas);
+
+    /**
+     * Aderência da semana atual + 3 anteriores — mesma janela e mesmo predicado
+     * (`contaNaCarga()`) usados pelo roster do coach ({@code CoachAtletaResumoDto.aderenciaPercentual}).
+     * Única fonte desse cálculo: roster e perfil chamam este método, nunca reimplementam a consulta
+     * (achado do Codex review, fix-athlete-profile-aderencia-4-semanas, 2026-10-01 — o perfil
+     * esperava um campo que nunca foi implementado no backend).
+     *
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     */
+    Aderencia4SemanasDto getAderencia4Semanas(UUID atletaId);
+
+    /**
+     * Distância realizada nas últimas {@code weeks} semanas ISO (contínuas, 0 onde não houve treino)
+     * e nos últimos 7 dias vs. os 7 anteriores. Mesma janela de semanas de
+     * {@link #getAderenciaSemanal}, para o front alinhar pela segunda-feira.
+     *
+     * Idempotent: YES. Side Effects: NONE. Tenant-aware: YES.
+     *
+     * @param atletaId ID do atleta
+     * @param weeks    número de semanas, em [1, {@link #MAX_SEMANAS_ADERENCIA}] (recomendado: 8)
+     * @throws br.com.menthoros.backend.exception.DomainRuleViolationException com {@code weeks} fora do intervalo
+     */
+    DistanceSummaryDto getDistanceSummary(UUID atletaId, int weeks);
 
     /**
      * Resolve o {@code atletaId} do usuário autenticado (endpoints {@code me/*}).

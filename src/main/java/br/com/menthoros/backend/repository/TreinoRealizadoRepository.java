@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.repository;
 
+import br.com.menthoros.backend.repository.projection.DistanciaDiaProjection;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
@@ -14,8 +15,10 @@ import org.springframework.data.repository.PagingAndSortingRepository;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -136,6 +139,22 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
             @Param("dataInicio") LocalDate dataInicio,
             @Param("dataFim") LocalDate dataFim);
 
+    /**
+     * Km realizados por dia no intervalo, somados no banco. Exclui {@code CANCELADO} mantendo o
+     * status {@code NULL} (FIT/manual), como {@link #findQueContamByAtletaIdAndDataTreino}; dias sem
+     * distância não aparecem. Tenant-aware: YES.
+     */
+    @Query("SELECT tr.dataTreino AS dataTreino, SUM(tr.distanciaKm) AS distanciaKm FROM TreinoRealizado tr "
+            + "WHERE tr.atleta.id = :atletaId AND tr.tenantId = :tenantId "
+            + "AND tr.dataTreino BETWEEN :dataInicio AND :dataFim AND tr.distanciaKm IS NOT NULL "
+            + "AND (tr.statusSincronizacao IS NULL OR tr.statusSincronizacao <> br.com.menthoros.backend.enums.StatusSincronizacao.CANCELADO) "
+            + "GROUP BY tr.dataTreino")
+    List<DistanciaDiaProjection> somarDistanciaPorDia(
+            @Param("atletaId") UUID atletaId,
+            @Param("tenantId") UUID tenantId,
+            @Param("dataInicio") LocalDate dataInicio,
+            @Param("dataFim") LocalDate dataFim);
+
     Optional<PlanoMetaDados> findByPlanoSemanalId(UUID planoSemanalId);
 
     List<TreinoRealizado> findTreinoRealizadosByAtleta(Atleta atleta);
@@ -221,4 +240,16 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
        WHERE tr.id = :id AND tr.atleta.assessoria.id = :tenantId
        """)
     boolean existsByIdAndAtleta_TenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+
+    /**
+     * Dentre {@code planejadoIds}, devolve os que já estão vinculados a um treino realizado
+     * diferente de {@code realizadoId} — o vínculo é 1:1, então esses planejados já têm dono e
+     * não podem concorrer na reconciliação automática. Uma consulta para a janela inteira, sem N+1.
+     */
+    @Query("""
+       SELECT tr.treinoPlanejado.id FROM TreinoRealizado tr
+       WHERE tr.treinoPlanejado.id IN :planejadoIds AND tr.id <> :realizadoId
+       """)
+    Set<UUID> findPlanejadoIdsVinculadosAOutroRealizado(@Param("planejadoIds") Collection<UUID> planejadoIds,
+                                                        @Param("realizadoId") UUID realizadoId);
 }

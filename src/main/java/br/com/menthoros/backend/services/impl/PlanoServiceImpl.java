@@ -230,7 +230,8 @@ public class PlanoServiceImpl implements PlanoService {
             // Optional.empty() aqui, então o skeleton que guia o prompt nunca via calibrationStage/CTL
             // de calibração (o regime cold-start só auditava depois de gerado, no estágio 2).
             WeekPlanSkeleton skeleton = plannerShadowService.computarSkeleton(
-                    ctx.dados(), ctx.decisaoProgressao(), ctx.semanaInicio(), ctx.onboardingContext());
+                    ctx.dados(), ctx.decisaoProgressao(), ctx.historicoProgressao(), ctx.semanaInicio(),
+                    ctx.onboardingContext());
             return SkeletonPrePrompt.sucesso(skeleton);
         } catch (Exception e) {
             // Planner falha ANTES do LLM (design Decisao 3, matriz fail-open):

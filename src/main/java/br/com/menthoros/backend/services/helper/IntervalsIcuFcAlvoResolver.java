@@ -16,6 +16,13 @@ import org.springframework.stereotype.Component;
 @Component
 public class IntervalsIcuFcAlvoResolver {
 
+    /**
+     * Piso fisiológico abaixo do qual um bpm literal não é um alvo de treino plausível — é texto
+     * mal formado chegando disfarçado de "NN-NNN bpm" (o parser já exige 2-3 dígitos, mas o piso
+     * fica aqui como segunda barreira, perto de onde o valor vira meta real no relógio).
+     */
+    private static final int FC_BPM_MINIMA_PLAUSIVEL = 40;
+
     private final ZonaTreinoService zonaTreinoService;
 
     public IntervalsIcuFcAlvoResolver(ZonaTreinoService zonaTreinoService) {
@@ -53,7 +60,7 @@ public class IntervalsIcuFcAlvoResolver {
             return new Resolucao(null, false);
         }
         if (bruto.base() == IntervalsIcuTargetParser.FcAlvoBruto.Base.BPM) {
-            return Resolucao.resolvido(new HrTarget(bruto.inicio(), bruto.fim()));
+            return resolverBpmLiteral(bruto.inicio(), bruto.fim(), atleta);
         }
 
         // Deliberadamente getFcLimiar(), não getFcLimiarCalculada(): o getter "calculada" cai em
@@ -80,6 +87,27 @@ public class IntervalsIcuFcAlvoResolver {
             case ZONE -> Resolucao.resolvido(faixaDaZona(bruto.inicio(), atleta, fcLimiar));
             case BPM -> throw new IllegalStateException("BPM já tratado acima");
         };
+    }
+
+    /**
+     * Bpm literal ({@code "140-150 bpm"}) é passthrough — mas passthrough de texto que o plano
+     * escreveu sem nenhum cruzamento com o atleta, então é o único dos três formatos sem nenhuma
+     * barreira fisiológica antes deste commit. Etapa prescrita acima da FC máxima do atleta (ou
+     * abaixo do piso plausível) é descartada pelo mesmo caminho da falta de limiar: o ritmo assume
+     * quando existe, e o descarte fica registrado para o treinador — nunca viram uma meta
+     * irreal no relógio, e nunca falham silenciosamente.
+     */
+    private Resolucao resolverBpmLiteral(int inicio, int fim, Atleta atleta) {
+        Integer fcMaximaAtleta = atleta != null ? atleta.getFcMaximaComFallback() : null;
+        if (inicio < FC_BPM_MINIMA_PLAUSIVEL || fim < FC_BPM_MINIMA_PLAUSIVEL
+                || (fcMaximaAtleta != null && (inicio > fcMaximaAtleta || fim > fcMaximaAtleta))) {
+            log.warn("Alvo de FC literal {}-{} bpm fora da faixa fisiológica plausível do atleta "
+                            + "(FC máxima {}) — descartado, etapa cai para ritmo/sem meta em vez de "
+                            + "mandar o valor implausível pro relógio",
+                    inicio, fim, fcMaximaAtleta);
+            return Resolucao.descartado();
+        }
+        return Resolucao.resolvido(new HrTarget(inicio, fim));
     }
 
     /**

@@ -174,7 +174,7 @@ class PlannerEngineTest {
                 List.of(DiaSemana.SEGUNDA, DiaSemana.QUINTA), null);
 
         ProgressaoHistoricoResumo historico = new ProgressaoHistoricoResumo(
-                0, 0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, ctlAtual, 0.0, semanasProgressaoContinua);
+                0, 0.0, 0.0, 0.0, 0, 0, null, tsbAtual, ctlAtual, 0.0, semanasProgressaoContinua, 0, 0, 0, null);
 
         return new PlannerInputSnapshot(
                 athlete, decisao, historico, List.of(), List.of(), onboardingContext, referencia, 30);

@@ -47,6 +47,9 @@ public record AtletaPerfilCoachOutputDto(
         @Schema(description = "Aderência semanal das últimas 8 semanas; lista vazia se sem dados de treino")
         List<AderenciasSemanalDto> aderenciaSemanal,
 
+        @Schema(description = "Aderência da semana atual + 3 anteriores — mesma função que alimenta roster.aderenciaPercentual")
+        Aderencia4SemanasDto aderencia4Semanas,
+
         @Schema(description = "Plano mais recente do atleta com semanaFim >= hoje; null se não existe")
         PlanoVigenteDto planoVigente,
 
@@ -81,7 +84,10 @@ public record AtletaPerfilCoachOutputDto(
         List<MelhorEsforcoDto> melhoresEsforcos,
 
         @Schema(description = "Se o atleta tem integração intervals.icu ativa — distingue 'sem PRs ainda' (true, marcas vazias) de 'nunca conectou' (false)")
-        boolean melhoresEsforcosIntegracaoConectada
+        boolean melhoresEsforcosIntegracaoConectada,
+
+        @Schema(description = "Km realizados por semana (mesmas 8 semanas de aderenciaSemanal, contínuas) e nos últimos 7 dias vs. os 7 anteriores; ausente quando a consulta falha (ver avisos)")
+        DistanceSummaryDto distanceSummary
 ) {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

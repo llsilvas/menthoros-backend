@@ -2,6 +2,7 @@ package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.enums.FonteDados;
 import jakarta.persistence.*;
+import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -63,6 +64,17 @@ public class IntegracaoExterna {
 
     @Column(name = "ultima_sincronizacao")
     private Instant ultimaSincronizacao;
+
+    /**
+     * Até onde o pull de atividades confirmou ter importado — distinto de {@link #ultimaSincronizacao},
+     * que push, webhook e sync manual também gravam. Somente leitura no ORM: esta entidade não tem
+     * {@code @DynamicUpdate}, então sem {@code updatable = false} qualquer {@code save} de uma
+     * instância carregada antes reescreveria o cursor com o valor antigo. O único escritor é
+     * {@link br.com.menthoros.backend.repository.IntegracaoExternaRepository#atualizarPullCursor}.
+     */
+    @Setter(AccessLevel.NONE)
+    @Column(name = "pull_cursor", insertable = false, updatable = false)
+    private Instant pullCursor;
 
     @Column(name = "sync_activity_count")
     private Integer syncActivityCount;

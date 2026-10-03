@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
+import br.com.menthoros.backend.dto.ProgressaoHistoricoResumo;
 import br.com.menthoros.backend.dto.input.DadosPlanoDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
@@ -30,6 +31,11 @@ import java.util.UUID;
  *
  * @param dados              atleta, metadados, histórico de 42 dias e plano anterior
  * @param decisaoProgressao  decisão de progressão, ou {@code null} quando o cálculo falhou
+ * @param historicoProgressao resumo de histórico usado para calcular {@code decisaoProgressao}
+ *                           (fix-progression-adherence-window, D5) — {@code null} exatamente quando
+ *                           {@code decisaoProgressao} também é, mesmo cálculo. Repassado ao
+ *                           {@code PlannerShadowService} para que decisão legada e shadow nunca
+ *                           divirjam por recalcular a aderência num instante diferente.
  * @param semanaInicio       semana do plano, resolvida uma única vez para prompt e persistência
  * @param revisaoConsumida   revisão da semana anterior que alimenta o prompt, ou {@code null}
  * @param proximaProva       prova alvo (ou a mais próxima) do atleta, ou {@code null}
@@ -42,6 +48,7 @@ import java.util.UUID;
  */
 public record PlanGenerationContext(DadosPlanoDto dados,
                                     @Nullable DecisaoProgressao decisaoProgressao,
+                                    @Nullable ProgressaoHistoricoResumo historicoProgressao,
                                     LocalDate semanaInicio,
                                     @Nullable RevisaoSemanal revisaoConsumida,
                                     @Nullable Prova proximaProva,

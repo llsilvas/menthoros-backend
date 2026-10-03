@@ -28,7 +28,6 @@ import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
-import br.com.menthoros.backend.services.ProgressaoTreinoService;
 import br.com.menthoros.backend.services.prompt.PeriodizacaoPromptFormatter;
 import br.com.menthoros.backend.util.Utils;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -63,7 +62,6 @@ public class PlannerShadowService {
 
     private final PlannerEngine plannerEngine;
     private final SkeletonComplianceChecker complianceChecker;
-    private final ProgressaoTreinoService progressaoTreinoService;
     private final PeriodizacaoPromptFormatter periodizacaoPromptFormatter;
     private final MeterRegistry meterRegistry;
     private final ObjectMapper objectMapper;
@@ -72,7 +70,6 @@ public class PlannerShadowService {
 
     public PlannerShadowService(PlannerEngine plannerEngine,
                                  SkeletonComplianceChecker complianceChecker,
-                                 ProgressaoTreinoService progressaoTreinoService,
                                  PeriodizacaoPromptFormatter periodizacaoPromptFormatter,
                                  MeterRegistry meterRegistry,
                                  ObjectMapper objectMapper,
@@ -80,7 +77,6 @@ public class PlannerShadowService {
                                  @Value("${planner-engine.injury.recent-window-days:30}") int injuryRecentWindowDays) {
         this.plannerEngine = plannerEngine;
         this.complianceChecker = complianceChecker;
-        this.progressaoTreinoService = progressaoTreinoService;
         this.periodizacaoPromptFormatter = periodizacaoPromptFormatter;
         this.meterRegistry = meterRegistry;
         this.objectMapper = objectMapper;
@@ -105,9 +101,10 @@ public class PlannerShadowService {
                                PlanoSemanalLlmDto planoGeradoPeloLlm,
                                DadosPlanoDto dadosPlano,
                                DecisaoProgressao decisaoProgressao,
+                               ProgressaoHistoricoResumo historico,
                                LocalDate semanaInicio,
                                boolean batch) {
-        return aplicarShadow(plano, planoGeradoPeloLlm, dadosPlano, decisaoProgressao, semanaInicio, batch, Optional.empty());
+        return aplicarShadow(plano, planoGeradoPeloLlm, dadosPlano, decisaoProgressao, historico, semanaInicio, batch, Optional.empty());
     }
 
     /**
@@ -120,6 +117,7 @@ public class PlannerShadowService {
                                PlanoSemanalLlmDto planoGeradoPeloLlm,
                                DadosPlanoDto dadosPlano,
                                DecisaoProgressao decisaoProgressao,
+                               ProgressaoHistoricoResumo historico,
                                LocalDate semanaInicio,
                                boolean batch,
                                Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext) {
@@ -128,7 +126,7 @@ public class PlannerShadowService {
             return Optional.empty();
         }
         try {
-            return Optional.of(executar(plano, planoGeradoPeloLlm, dadosPlano, decisaoProgressao, semanaInicio, batch, onboardingContext));
+            return Optional.of(executar(plano, planoGeradoPeloLlm, dadosPlano, decisaoProgressao, historico, semanaInicio, batch, onboardingContext));
         } catch (Exception e) {
             Atleta atleta = dadosPlano.atleta();
             log.error("[planner-shadow] erro ao processar atleta {}: {}", atleta != null ? atleta.getId() : null, e.getMessage(), e);
@@ -141,11 +139,12 @@ public class PlannerShadowService {
                            PlanoSemanalLlmDto planoGeradoPeloLlm,
                            DadosPlanoDto dadosPlano,
                            DecisaoProgressao decisaoProgressao,
+                           ProgressaoHistoricoResumo historico,
                            LocalDate semanaInicio,
                            boolean batch,
                            Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext) throws Exception {
         Atleta atleta = dadosPlano.atleta();
-        PlannerInputSnapshot snapshot = mapToSnapshot(atleta, dadosPlano, decisaoProgressao, semanaInicio, onboardingContext);
+        PlannerInputSnapshot snapshot = mapToSnapshot(atleta, dadosPlano, decisaoProgressao, historico, semanaInicio, onboardingContext);
 
         WeekPlanSkeleton skeleton = plannerEngine.planWeek(snapshot);
 
@@ -185,9 +184,10 @@ public class PlannerShadowService {
      */
     public WeekPlanSkeleton computarSkeleton(DadosPlanoDto dadosPlano,
                                              DecisaoProgressao decisaoProgressao,
+                                             ProgressaoHistoricoResumo historico,
                                              LocalDate semanaInicio,
                                              Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext) {
-        PlannerInputSnapshot snapshot = mapToSnapshot(dadosPlano.atleta(), dadosPlano, decisaoProgressao, semanaInicio, onboardingContext);
+        PlannerInputSnapshot snapshot = mapToSnapshot(dadosPlano.atleta(), dadosPlano, decisaoProgressao, historico, semanaInicio, onboardingContext);
         return plannerEngine.planWeek(snapshot);
     }
 
@@ -238,6 +238,7 @@ public class PlannerShadowService {
     private PlannerInputSnapshot mapToSnapshot(Atleta atleta,
                                                 DadosPlanoDto dadosPlano,
                                                 DecisaoProgressao decisaoProgressao,
+                                                ProgressaoHistoricoResumo historico,
                                                 LocalDate semanaInicio,
                                                 Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext) {
         AthleteSnapshot athleteSnapshot = new AthleteSnapshot(
@@ -249,8 +250,9 @@ public class PlannerShadowService {
                 atleta.getDiasDisponiveis(),
                 null); // modalidade reservada — Atleta ainda nao tem esse campo
 
-        ProgressaoHistoricoResumo historico = progressaoTreinoService.calcularHistorico(atleta.getId());
-
+        // fix-progression-adherence-window D5: historico vem do PlanGenerationContextLoader (mesmo
+        // calculo que gerou a decisaoProgressao) — nunca recalculado aqui, para decisao e shadow
+        // nunca divergirem por um instante ou uma consulta diferentes.
         List<ProvaSnapshot> provas = atleta.getProvas() == null ? List.of() : atleta.getProvas().stream()
                 .filter(p -> p.getDataProva() != null) // dado incompleto/legado — nao entra no calendario do planner
                 .map(this::mapProva)

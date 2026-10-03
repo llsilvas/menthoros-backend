@@ -29,4 +29,16 @@ public interface IntervalsIcuActivityIngestionService {
      * @return o treino importado (novo ou já existente)
      */
     TreinoRealizadoOutputDto importarAtividade(UUID atletaId, String activityId, UUID tenantId);
+
+    /**
+     * Mesmo pipeline de {@link #importarAtividade}, para o pull agendado: sem o limite de
+     * retroatividade do import manual. O limite protege a thread do request do recálculo de TSB de
+     * uma atividade muito antiga; no scheduler esse custo é assíncrono, e aplicá-lo fazia backlog com
+     * mais de 90 dias ser descartado como erro permanente (fix-sync-cursor-data-loss D4).
+     *
+     * <p>Idempotent: YES. Side Effects: os mesmos de {@link #importarAtividade}. Tenant-aware: YES.
+     *
+     * @return o treino e se esta chamada o inseriu
+     */
+    ImportacaoResultado importarAtividadeAgendada(UUID atletaId, String activityId, UUID tenantId);
 }

@@ -121,6 +121,30 @@ public interface TreinoPlanejadoRepository extends BaseRepository<TreinoPlanejad
                                                               @Param("dataInicio") LocalDate dataInicio);
 
     /**
+     * Mesma consulta de {@link #findComRealizadoByAtletaAndPeriodo}, com limite superior explícito
+     * em {@code dataTreino}. Usar quando o período inclui a semana corrente (ainda em andamento):
+     * sem o limite, treinos planejados para dias futuros da semana entram no denominador da
+     * aderência antes de o atleta ter tido a chance de realizá-los, deflacionando o percentual.
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE.
+     * Tenant-aware: YES — filtra por tenantId direto no TreinoPlanejado (herdado de TreinoBase).
+     */
+    @Query("""
+       SELECT tp FROM TreinoPlanejado tp
+       LEFT JOIN FETCH tp.treinoRealizado
+       WHERE tp.atleta.id = :atletaId
+         AND tp.tenantId = :tenantId
+         AND tp.dataTreino >= :dataInicio
+         AND tp.dataTreino <= :dataFim
+       ORDER BY tp.dataTreino ASC
+       """)
+    List<TreinoPlanejado> findComRealizadoByAtletaAndPeriodoAteData(@Param("atletaId") UUID atletaId,
+                                                                     @Param("tenantId") UUID tenantId,
+                                                                     @Param("dataInicio") LocalDate dataInicio,
+                                                                     @Param("dataFim") LocalDate dataFim);
+
+    /**
      * Valida se um TreinoPlanejado pertence a um tenant específico.
      * Usado pelo TenantValidationAspect para validação de isolamento.
      *

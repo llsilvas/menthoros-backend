@@ -39,6 +39,23 @@ public interface IntervalsIcuClient {
     List<IcuEventDto> listarEventos(String token, String externalAthleteId, LocalDate oldest, LocalDate newest);
 
     /**
+     * GET /api/v1/athlete/{id}/sport-settings → {@code [types ∋ "Run"].lthr}. Vazio quando o token
+     * não tem {@code SETTINGS:READ} (403 — conexões anteriores a 2026-10-01) ou quando não há
+     * LTHR de corrida cadastrado — não é erro, é "não sei"; erro HTTP de outra natureza vira
+     * IntervalsIcuApiException.
+     */
+    Optional<Integer> buscarLthrCorrida(String token, String externalAthleteId);
+
+    /**
+     * GET /api/v1/athlete/{id}/events?oldest=&newest=&category=WORKOUT&resolve=true →
+     * {@code workout_doc.lthr} do primeiro evento resolvido que o traga. É o LTHR que o
+     * intervals.icu <b>efetivamente usa</b> para converter alvos relativos em bpm, lido pelo único
+     * caminho que funciona com os escopos atuais ({@code CALENDAR:WRITE}). Vazio sem evento com
+     * alvo de FC na janela; erro HTTP vira IntervalsIcuApiException.
+     */
+    Optional<Integer> buscarLthrResolvido(String token, String externalAthleteId, LocalDate oldest, LocalDate newest);
+
+    /**
      * GET /api/v1/athlete/{id}/activities?oldest=&newest= — erro HTTP vira
      * IntervalsIcuApiException(status, mensagem), sem tradução aqui: retryable vs. permanente é
      * decisão do scheduler.

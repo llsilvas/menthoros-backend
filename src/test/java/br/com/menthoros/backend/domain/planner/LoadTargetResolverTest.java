@@ -266,12 +266,13 @@ class LoadTargetResolverTest {
 
     private ProgressaoHistoricoResumo historicoComCtl(double ctlAtual, int semanasProgressaoContinua) {
         return new ProgressaoHistoricoResumo(
-                0, 0, 0.0, 0.0, 0.0, 0, 0,
+                0, 0.0, 0.0, 0.0, 0, 0,
                 null,
                 0.0,
                 ctlAtual,
                 0.0,
-                semanasProgressaoContinua
+                semanasProgressaoContinua,
+                0, 0, 0, null
         );
     }
 }

@@ -55,9 +55,19 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
         }
         String token = conexao.getAccessToken();
         String externalAthleteId = conexao.getExternalAthleteId();
-        JsonNode payload = montarPayload(workout);
 
         try {
+            Integer lthr = null;
+            if (temAlvoDeFc(workout.steps())) {
+                lthr = resolverLthr(token, externalAthleteId, workout.scheduledDate());
+                if (lthr == null) {
+                    return PushResult.erro(StatusSincronizacao.ERRO_VALIDACAO,
+                            "Alvo de FC não pôde ser enviado: o intervals.icu não tem FC de limiar (LTHR) "
+                                    + "configurada para o atleta");
+                }
+            }
+            JsonNode payload = montarPayload(workout, lthr);
+
             if (eventIdArmazenado != null) {
                 return atualizarOuRecriar(token, externalAthleteId, eventIdArmazenado, payload);
             }
@@ -191,9 +201,41 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
         };
     }
 
+    // ===== LTHR do intervals.icu =====
+
+    /** Janela do read-back resolvido: qualquer evento com alvo de FC perto da data serve. */
+    private static final int JANELA_LTHR_DIAS = 14;
+
+    private boolean temAlvoDeFc(List<WorkoutStep> steps) {
+        if (steps == null) {
+            return false;
+        }
+        for (WorkoutStep step : steps) {
+            if (step.meta() instanceof HrTarget || temAlvoDeFc(step.steps())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * O LTHR que o intervals.icu vai usar ao resolver {@code %lthr}: primeiro o perfil do atleta
+     * (quando o escopo permite ler as sport settings), senão o {@code workout_doc.lthr} de um evento
+     * já resolvido perto da data. Nulo quando nenhum dos dois responde — e aí não há como expressar
+     * bpm no canal, então o push falha em vez de mandar número errado.
+     */
+    private Integer resolverLthr(String token, String externalAthleteId, LocalDate data) {
+        Optional<Integer> doPerfil = client.buscarLthrCorrida(token, externalAthleteId);
+        if (doPerfil.isPresent()) {
+            return doPerfil.get();
+        }
+        return client.buscarLthrResolvido(token, externalAthleteId,
+                data.minusDays(JANELA_LTHR_DIAS), data.plusDays(JANELA_LTHR_DIAS)).orElse(null);
+    }
+
     // ===== Montagem do payload =====
 
-    private JsonNode montarPayload(StructuredWorkout workout) {
+    private JsonNode montarPayload(StructuredWorkout workout, Integer lthr) {
         ObjectNode evento = objectMapper.createObjectNode();
         evento.put("category", "WORKOUT");
         evento.put("start_date_local", workout.scheduledDate() + "T00:00:00");
@@ -207,7 +249,7 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
         }
         ArrayNode steps = objectMapper.createArrayNode();
         for (WorkoutStep step : workout.steps()) {
-            steps.add(montarStep(step));
+            steps.add(montarStep(step, lthr));
         }
         workoutDoc.set("steps", steps);
 
@@ -221,7 +263,7 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
                 : workout.name();
     }
 
-    private ObjectNode montarStep(WorkoutStep step) {
+    private ObjectNode montarStep(WorkoutStep step, Integer lthr) {
         ObjectNode node = objectMapper.createObjectNode();
         if (step.text() != null) {
             node.put("text", step.text());
@@ -230,7 +272,7 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
             node.put("reps", step.reps());
             ArrayNode subSteps = objectMapper.createArrayNode();
             for (WorkoutStep sub : step.steps()) {
-                subSteps.add(montarStep(sub));
+                subSteps.add(montarStep(sub, lthr));
             }
             node.set("steps", subSteps);
             return node;
@@ -243,7 +285,7 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
         }
         switch (step.meta()) {
             case PaceTarget pace -> node.set("pace", montarPace(pace));
-            case HrTarget hr -> node.set("hr", montarHr(hr));
+            case HrTarget hr -> node.set("hr", montarHr(hr, lthr));
             case IntensityTarget.NoTarget ignored -> {
                 // "Sem objetivo": o step vai sem meta, e isso é prescrição válida.
             }
@@ -267,16 +309,27 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
     }
 
     /**
-     * Alvo de FC sempre absoluto. As formas relativas do padrão ({@code %hr}, {@code hr_zone}) não
-     * são emitidas: a primeira é %FCmax por definição do formato, enquanto o domínio é %LTHR, e a
-     * segunda delega a conversão às zonas configuradas no relógio, que o Menthoros não escreve.
-     * O {@code HrTarget} já chega resolvido do converter.
+     * O {@code HrTarget} chega em bpm absoluto, mas o intervals.icu <b>não tem</b> alvo de FC
+     * absoluto: {@code units:"bpm"} é aceito e guardado, e na resolução o número é lido como
+     * {@code %hr} (% da FC máxima) — foi assim que 107-121 bpm virou 197-223 no relógio
+     * (2026-10-01, fator 1,85 = FC máxima estimada do atleta no provedor). As unidades reais são
+     * {@code %lthr}, {@code %hr} e {@code hr_zone}; só {@code %lthr} é determinística a partir de um
+     * número que conseguimos ler (o LTHR do provedor), então o bpm vira {@code %lthr} aqui.
+     *
+     * <p>O provedor <b>trunca</b> ao resolver ({@code floor(pct × lthr / 100)}): 63,69% de 168 dá
+     * 106,999 → 106. Por isso o percentual mira o ponto médio do bpm ({@code bpm + 0,5}), que
+     * trunca exatamente no bpm prescrito para qualquer LTHR fisiológico.</p>
      */
-    private ObjectNode montarHr(HrTarget hr) {
+    private ObjectNode montarHr(HrTarget hr, Integer lthr) {
         ObjectNode node = objectMapper.createObjectNode();
-        node.put("units", "bpm");
-        node.put("start", hr.startBpm());
-        node.put("end", hr.endBpm());
+        node.put("units", "%lthr");
+        node.put("start", percentualDoLimiar(hr.startBpm(), lthr));
+        node.put("end", percentualDoLimiar(hr.endBpm(), lthr));
         return node;
+    }
+
+    /** Percentual de {@code lthr} que, truncado pelo provedor, resolve exatamente em {@code bpm}. */
+    static double percentualDoLimiar(int bpm, int lthr) {
+        return Math.round((bpm + 0.5) / lthr * 10_000) / 100.0;
     }
 }

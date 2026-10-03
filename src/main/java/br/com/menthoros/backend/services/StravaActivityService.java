@@ -9,6 +9,7 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.services.helper.PullResultado;
 
 import java.time.Instant;
 import java.util.List;
@@ -24,7 +25,11 @@ public interface StravaActivityService {
 
     EtapaRealizada mapToEtapaRealizada(StravaSplitDto split);
 
-    int syncActivities(UUID atletaId);
+    /**
+     * Pull agendado sobre {@code pull_cursor} (fix-sync-cursor-data-loss D3). Só o scheduler chama.
+     * Não lança depois de carregar a integração; o resultado diz o que foi commitado.
+     */
+    PullResultado pullAgendado(UUID atletaId);
 
     void syncSingleActivityById(Atleta atleta, IntegracaoExterna integracao, Long activityId);
 

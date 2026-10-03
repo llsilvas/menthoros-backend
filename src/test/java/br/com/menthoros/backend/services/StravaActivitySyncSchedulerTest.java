@@ -5,7 +5,11 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.enums.ErroCategoriaPull;
+import br.com.menthoros.backend.enums.ResultadoPull;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
+import br.com.menthoros.backend.services.helper.PullResultado;
+import br.com.menthoros.backend.services.helper.SyncPullLogWriter;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,8 +40,13 @@ class StravaActivitySyncSchedulerTest {
     @Mock
     private StravaActivityService stravaActivityService;
 
+    @Mock
+    private SyncPullLogWriter pullLogWriter;
+
     @InjectMocks
     private StravaActivitySyncScheduler scheduler;
+
+    private static final PullResultado COMPLETO_1 = new PullResultado(ResultadoPull.COMPLETO, null, 1, 0);
 
     @AfterEach
     void tearDown() {
@@ -65,12 +74,12 @@ class StravaActivitySyncSchedulerTest {
                 .thenReturn(List.of(integracao));
         when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
                 .thenReturn(Optional.of(integracao));
-        when(stravaActivityService.syncActivities(any(UUID.class))).thenReturn(1);
+        when(stravaActivityService.pullAgendado(any(UUID.class))).thenReturn(COMPLETO_1);
 
         scheduler.runDailyIncrementalSync();
 
         ArgumentCaptor<UUID> atletaIdCaptor = ArgumentCaptor.forClass(UUID.class);
-        verify(stravaActivityService, times(1)).syncActivities(atletaIdCaptor.capture());
+        verify(stravaActivityService, times(1)).pullAgendado(atletaIdCaptor.capture());
         assertEquals(atletaId, atletaIdCaptor.getValue());
         assertFalse(TenantContext.hasTenant());
     }
@@ -108,7 +117,7 @@ class StravaActivitySyncSchedulerTest {
 
         scheduler.runDailyIncrementalSync();
 
-        verify(stravaActivityService, never()).syncActivities(any(UUID.class));
+        verify(stravaActivityService, never()).pullAgendado(any(UUID.class));
     }
 
     @Test
@@ -135,10 +144,10 @@ class StravaActivitySyncSchedulerTest {
         // Captura o tenant EFETIVAMENTE lido de TenantContext no momento em que a chamada externa
         // acontece pra cada atleta — não o valor esperado, o valor real visto pelo colaborador.
         java.util.Map<UUID, UUID> tenantVistoPorAtleta = new java.util.HashMap<>();
-        when(stravaActivityService.syncActivities(any(UUID.class))).thenAnswer(invocation -> {
+        when(stravaActivityService.pullAgendado(any(UUID.class))).thenAnswer(invocation -> {
             UUID atletaIdChamado = invocation.getArgument(0);
             tenantVistoPorAtleta.put(atletaIdChamado, TenantContext.getRequiredTenantId());
-            return 1;
+            return COMPLETO_1;
         });
 
         scheduler.runDailyIncrementalSync();
@@ -148,6 +157,61 @@ class StravaActivitySyncSchedulerTest {
         assertEquals(tenantB, tenantVistoPorAtleta.get(atletaB),
                 "tenant visto durante o processamento do atleta B deve ser o tenant B, não o tenant A residual");
         assertFalse(TenantContext.hasTenant(), "TenantContext deve estar limpo após o ciclo inteiro");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("QA — integração desativada entre a listagem e a vez do atleta é pulada, sem registrar FALHA")
+    void inativaNoLateCheckEPulada() {
+        UUID tenantId = UUID.randomUUID();
+        UUID atletaId = UUID.randomUUID();
+        IntegracaoExterna listada = integracaoAtiva(tenantId, atletaId);
+        IntegracaoExterna fresca = integracaoAtiva(tenantId, atletaId);
+        fresca.setAtivo(false);
+        when(integracaoExternaRepository.findAllActiveByPlataforma(FonteDados.STRAVA)).thenReturn(List.of(listada));
+        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
+                .thenReturn(Optional.of(fresca));
+
+        scheduler.runDailyIncrementalSync();
+
+        verify(stravaActivityService, never()).pullAgendado(any(UUID.class));
+        verify(pullLogWriter, never()).registrar(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("CA8 — cada ciclo grava o registro do pull com o tenant da integração")
+    void registraOPull() {
+        UUID tenantId = UUID.randomUUID();
+        UUID atletaId = UUID.randomUUID();
+        IntegracaoExterna integracao = integracaoAtiva(tenantId, atletaId);
+        when(integracaoExternaRepository.findAllActiveByPlataforma(FonteDados.STRAVA)).thenReturn(List.of(integracao));
+        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
+                .thenReturn(Optional.of(integracao));
+        PullResultado parcial = new PullResultado(ResultadoPull.PARCIAL, ErroCategoriaPull.RATE_LIMIT, 3, 0);
+        when(stravaActivityService.pullAgendado(atletaId)).thenReturn(parcial);
+
+        scheduler.runDailyIncrementalSync();
+
+        verify(pullLogWriter).registrar(org.mockito.ArgumentMatchers.eq(tenantId), org.mockito.ArgumentMatchers.eq(atletaId),
+                org.mockito.ArgumentMatchers.eq(FonteDados.STRAVA), org.mockito.ArgumentMatchers.eq(parcial), any());
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("CA8 — exceção fora do pull (rede para bug) registra FALHA/INESPERADO com 0")
+    void excecaoRegistraFalha() {
+        UUID tenantId = UUID.randomUUID();
+        UUID atletaId = UUID.randomUUID();
+        IntegracaoExterna integracao = integracaoAtiva(tenantId, atletaId);
+        when(integracaoExternaRepository.findAllActiveByPlataforma(FonteDados.STRAVA)).thenReturn(List.of(integracao));
+        when(integracaoExternaRepository.findByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.STRAVA, tenantId))
+                .thenReturn(Optional.of(integracao));
+        when(stravaActivityService.pullAgendado(atletaId)).thenThrow(new IllegalStateException("Atleta sem integração Strava ativa"));
+
+        scheduler.runDailyIncrementalSync();
+
+        verify(pullLogWriter).registrar(org.mockito.ArgumentMatchers.eq(tenantId), org.mockito.ArgumentMatchers.eq(atletaId),
+                org.mockito.ArgumentMatchers.eq(FonteDados.STRAVA),
+                org.mockito.ArgumentMatchers.eq(new PullResultado(ResultadoPull.FALHA, ErroCategoriaPull.INESPERADO, 0, 0)), any());
+        assertFalse(TenantContext.hasTenant());
     }
 
     private static IntegracaoExterna integracaoAtiva(UUID tenantId, UUID atletaId) {
