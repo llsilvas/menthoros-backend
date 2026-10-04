@@ -9,6 +9,7 @@ import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.PlanoService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -21,6 +22,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @Tag(name = "plano-semanal", description = "Operações relacionadas ao gerenciamento de planos de treino")
@@ -97,5 +99,22 @@ public class PlanoTreinoController {
             throw new DomainNotFoundException("Plano não encontrado para o atleta: " + id);
         }
         return ResponseEntity.ok(planoService.buscarPlanoPorAtleta(id, apenasAprovados));
+    }
+
+    @GetMapping("/atletas/{atletaId}/semanas")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @Operation(summary = "Listar semanas do atleta", description = "Planos em andamento do atleta mais as "
+            + "4 últimas semanas concluídas, da mais recente para a mais antiga (em andamento primeiro). "
+            + "Alimenta o dialog de planos do coach; lista vazia quando o atleta não tem plano.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Semanas do atleta",
+                    content = @Content(mediaType = "application/json",
+                            array = @ArraySchema(schema = @Schema(implementation = PlanoSemanalOutputDto.class)))),
+            @ApiResponse(responseCode = "403", description = "Acesso negado - requer TECNICO ou ADMIN",
+                    content = @Content(mediaType = "application/json"))
+    })
+    public ResponseEntity<List<PlanoSemanalOutputDto>> listarSemanasDoAtleta(
+            @Parameter(description = "ID do atleta") @PathVariable UUID atletaId) {
+        return ResponseEntity.ok(planoService.listarSemanasDoAtleta(atletaId));
     }
 }

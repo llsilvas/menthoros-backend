@@ -1845,6 +1845,48 @@ class PlanoServiceImplTest {
     }
 
     @Nested
+    @DisplayName("listarSemanasDoAtleta")
+    class ListarSemanasDoAtleta {
+
+        @Test
+        @DisplayName("devolve os em andamento e depois as concluídas, pedindo só as 4 últimas concluídas")
+        void devolveAndamentoMaisUltimasConcluidas() {
+            UUID atletaId = UUID.randomUUID();
+            PlanoSemanal aberto = criarPlanoSemanalMock();
+            PlanoSemanal concluido1 = criarPlanoSemanalMock();
+            PlanoSemanal concluido2 = criarPlanoSemanalMock();
+
+            when(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId)).thenReturn(List.of(aberto));
+            when(planoSemanalRepository.findConcluidosPorAtleta(
+                    atletaId, tenantId, org.springframework.data.domain.PageRequest.of(0, 4)))
+                    .thenReturn(List.of(concluido1, concluido2));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    any(), any(), any(), any())).thenReturn(List.of());
+            when(planoSemanalMapper.toOutputDto(any(PlanoSemanal.class))).thenReturn(planoSemanalOutputDtoStub(0.0));
+
+            List<PlanoSemanalOutputDto> resultado = planoService.listarSemanasDoAtleta(atletaId);
+
+            assertThat(resultado).hasSize(3);
+            verify(planoSemanalRepository).findConcluidosPorAtleta(
+                    atletaId, tenantId, org.springframework.data.domain.PageRequest.of(0, 4));
+        }
+
+        @Test
+        @DisplayName("atleta sem plano: lista vazia, sem lançar e sem mapear nada")
+        void atletaSemPlanoDevolveListaVazia() {
+            UUID atletaId = UUID.randomUUID();
+
+            when(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId)).thenReturn(List.of());
+            when(planoSemanalRepository.findConcluidosPorAtleta(
+                    atletaId, tenantId, org.springframework.data.domain.PageRequest.of(0, 4)))
+                    .thenReturn(List.of());
+
+            assertThat(planoService.listarSemanasDoAtleta(atletaId)).isEmpty();
+            verifyNoInteractions(planoSemanalMapper);
+        }
+    }
+
+    @Nested
     @DisplayName("buscarPlanoPorAtleta")
     class BuscarPlanoPorAtleta {
 
