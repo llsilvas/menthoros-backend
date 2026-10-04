@@ -57,7 +57,7 @@ public class AdherenceCalculator {
      */
     public Aderencia4SemanasDto getAderencia4Semanas(UUID atletaId, UUID tenantId) {
         LocalDate hoje = LocalDate.now(clock);
-        LocalDate inicioSemanaAtual = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate inicioSemanaAtual = segundaDaSemana(hoje);
         LocalDate fimSemanaAtual = inicioSemanaAtual.plusDays(6);
         LocalDate dataInicio = inicioSemanaAtual.minusWeeks(3);
 
@@ -81,7 +81,7 @@ public class AdherenceCalculator {
      */
     public List<AderenciasSemanalDto> getAderenciaSemanal(UUID atletaId, UUID tenantId, int semanas) {
         LocalDate hoje = LocalDate.now(clock);
-        LocalDate inicioSemanaAtual = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate inicioSemanaAtual = segundaDaSemana(hoje);
         LocalDate fimSemanaAtual = inicioSemanaAtual.plusDays(6);
         LocalDate dataInicio = inicioSemanaAtual.minusWeeks(semanas - 1L);
 
@@ -98,8 +98,7 @@ public class AdherenceCalculator {
         }
 
         Map<LocalDate, List<TreinoPlanejado>> porSemana = treinos.stream()
-                .collect(Collectors.groupingBy(
-                        tp -> tp.getDataTreino().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))));
+                .collect(Collectors.groupingBy(tp -> segundaDaSemana(tp.getDataTreino())));
 
         List<AderenciasSemanalDto> resultado = porSemana.entrySet().stream()
                 .map(e -> {
@@ -125,7 +124,7 @@ public class AdherenceCalculator {
      * <p>Idempotent: YES — leitura. Side Effects: NONE. Tenant-aware: YES (tenantId por parâmetro).</p>
      */
     public AderenciaJanela calcularAderenciaJanelaFechada(UUID atletaId, UUID tenantId, LocalDate hoje) {
-        LocalDate segundaAtual = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDate segundaAtual = segundaDaSemana(hoje);
         LocalDate inicioJanela = segundaAtual.minusDays(21);
         LocalDate fimJanela = segundaAtual.minusDays(1);
 
@@ -185,6 +184,10 @@ public class AdherenceCalculator {
         int cumpridos = Math.min(treinosRealizados21d, treinosPlanejados21d);
         int faltas = Math.max(0, treinosPlanejados21d - treinosRealizados21d);
         return new AderenciaJanela(cumpridos, faltas, 0, aderencia);
+    }
+
+    private static LocalDate segundaDaSemana(LocalDate data) {
+        return data.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
     }
 
     private static boolean isDevido(TreinoPlanejado planejado) {
