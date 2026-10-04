@@ -44,10 +44,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -365,6 +367,28 @@ public class PlanoServiceImpl implements PlanoService {
                             "Plano não encontrado para o atleta: " + atletaId));
         }
 
+        return montarOutputDto(planoSemanal, atletaId, tenantId);
+    }
+
+    /** Quantas semanas concluídas o dialog de planos do coach recebe — as demais ficam no banco. */
+    static final int LIMITE_SEMANAS_CONCLUIDAS = 4;
+
+    @Transactional
+    @Override
+    public List<PlanoSemanalOutputDto> listarSemanasDoAtleta(UUID atletaId) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+
+        List<PlanoSemanal> semanas = new ArrayList<>(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId));
+        semanas.addAll(planoSemanalRepository.findConcluidosPorAtleta(
+                atletaId, tenantId, PageRequest.of(0, LIMITE_SEMANAS_CONCLUIDAS)));
+
+        return semanas.stream()
+                .map(plano -> montarOutputDto(plano, atletaId, tenantId))
+                .toList();
+    }
+
+    /** Plano → DTO de saída com volume realizado e flag de análise; compartilhado pelas leituras por atleta. */
+    private PlanoSemanalOutputDto montarOutputDto(PlanoSemanal planoSemanal, UUID atletaId, UUID tenantId) {
         Hibernate.initialize(planoSemanal.getTreinosPlanejados());
         double volumeRealizadoKm = calcularVolumeRealizadoKm(
                 atletaId, tenantId, planoSemanal.getSemanaInicio(), planoSemanal.getSemanaFim());
