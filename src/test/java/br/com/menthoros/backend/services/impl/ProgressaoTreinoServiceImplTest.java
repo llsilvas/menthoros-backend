@@ -83,8 +83,9 @@ class ProgressaoTreinoServiceImplTest {
 
         clock = Clock.fixed(HOJE.atStartOfDay(ZONA).toInstant(), ZONA);
         service = new ProgressaoTreinoServiceImpl(
-                treinoRealizadoRepository, treinoPlanejadoRepository, atletaRepository,
-                new AtletaHojeResolver(clock), planoMetadadosService, clock);
+                treinoRealizadoRepository, atletaRepository,
+                new AtletaHojeResolver(clock), planoMetadadosService, clock,
+                new AdherenceCalculator(treinoPlanejadoRepository, treinoRealizadoRepository, clock));
     }
 
     @AfterEach
@@ -523,8 +524,9 @@ class ProgressaoTreinoServiceImplTest {
             LocalDate hojeDoCaso = segundaAtualDoCaso.plusDays(offsetDias);
             Clock clockDoCaso = Clock.fixed(hojeDoCaso.atStartOfDay(ZONA).toInstant(), ZONA);
             ProgressaoTreinoServiceImpl servicoDoCaso = new ProgressaoTreinoServiceImpl(
-                    treinoRealizadoRepository, treinoPlanejadoRepository, atletaRepository,
-                    new AtletaHojeResolver(clockDoCaso), planoMetadadosService, clockDoCaso);
+                    treinoRealizadoRepository, atletaRepository,
+                    new AtletaHojeResolver(clockDoCaso), planoMetadadosService, clockDoCaso,
+                    new AdherenceCalculator(treinoPlanejadoRepository, treinoRealizadoRepository, clockDoCaso));
             ReflectionTestUtils.setField(servicoDoCaso, "aderenciaDevidosEnabled", true);
 
             LocalDate inicioJanelaCaso = segundaAtualDoCaso.minusDays(21);
