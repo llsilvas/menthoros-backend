@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -56,6 +57,23 @@ public interface PlanoService {
      * @param apenasAprovados true para ATLETA (só vê APROVADO); false para TECNICO/ADMIN
      */
     PlanoSemanalOutputDto buscarPlanoPorAtleta(UUID atletaId, boolean apenasAprovados);
+
+    /**
+     * Semanas do atleta para o dialog de planos do coach: TODOS os planos em andamento (não
+     * {@code CONCLUIDO}, não {@code REJEITADO}) mais as últimas {@code LIMITE_SEMANAS_CONCLUIDAS}
+     * semanas concluídas. Cada lista vem da semana mais recente para a mais antiga; em andamento primeiro.
+     *
+     * <p>Existe porque {@link #buscarPlanoPorAtleta} devolve um único plano e nunca um
+     * {@code CONCLUIDO} — não há como montar histórico a partir dele.</p>
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES — usa TenantContext internamente
+     *
+     * @param atletaId ID do atleta
+     * @return lista vazia quando o atleta não tem plano (não lança)
+     */
+    List<PlanoSemanalOutputDto> listarSemanasDoAtleta(UUID atletaId);
 
     /**
      * Busca o plano mais recente do atleta cuja semana ainda não encerrou.

@@ -3,6 +3,7 @@ package br.com.menthoros.backend.repository;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -88,6 +89,29 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
             """)
     List<PlanoSemanal> findAtivosPorAtleta(@Param("atletaId") UUID atletaId,
                                             @Param("tenantId") UUID tenantId);
+
+    /**
+     * Semanas já encerradas ({@code CONCLUIDO}) de um atleta, da mais recente para a mais antiga.
+     * O limite vem do {@link Pageable}: o chamador pede só as últimas N, nunca o histórico inteiro.
+     *
+     * <p>Exclui {@code REJEITADO}, o mesmo critério de {@link #findAtivosPorAtleta}: plano rejeitado
+     * não representa a semana.</p>
+     *
+     * Idempotent: YES — leitura pura.
+     * Side Effects: NONE
+     * Tenant-aware: YES — filtra por assessoria.id
+     */
+    @Query("""
+            select ps from PlanoSemanal ps
+            where ps.atleta.id = :atletaId
+              and ps.assessoria.id = :tenantId
+              and ps.status = br.com.menthoros.backend.enums.PlanoStatus.CONCLUIDO
+              and ps.reviewStatus <> br.com.menthoros.backend.enums.PlanoReviewStatus.REJEITADO
+            order by ps.semanaInicio desc
+            """)
+    List<PlanoSemanal> findConcluidosPorAtleta(@Param("atletaId") UUID atletaId,
+                                               @Param("tenantId") UUID tenantId,
+                                               Pageable pageable);
 
     /**
      * Busca um PlanoSemanal filtrando por id e tenantId (assessoria.id).
