@@ -4,15 +4,12 @@ import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.ProgressaoHistoricoResumo;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
-import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.EstadoProgressao;
-import br.com.menthoros.backend.enums.ReconciliationStatus;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
-import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.ProgressaoTreinoService;
@@ -24,15 +21,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.temporal.TemporalAdjusters;
 import java.util.List;
-import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -52,8 +45,6 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
     private static final double THRESHOLD_RPE_REDUZIR = 8.5;
     private static final int LONGAS_MINIMAS_PROGREDIR = 2;
     private static final int TREINOS_MINIMOS_21D = 3;
-    private static final double TETO_PENDENCIA = 0.25;
-    private static final String ATOR_SISTEMA = "SYSTEM";
 
     private static final double AJUSTE_VOLUME_PROGREDIR      =  0.06;
     private static final double AJUSTE_VOLUME_PROGREDIR_LEVE =  0.03;
@@ -63,11 +54,11 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
     private static final int    AJUSTE_LONGO_REDUZIR         = -10;
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
-    private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final AtletaRepository atletaRepository;
     private final AtletaHojeResolver atletaHojeResolver;
     private final PlanoMetadadosService planoMetadadosService;
     private final Clock clock;
+    private final AdherenceCalculator adherenceCalculator;
 
     @Value("${menthoros.progressao.aderencia-devidos.enabled:false}")
     private boolean aderenciaDevidosEnabled;
@@ -117,9 +108,9 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
 
         int treinosRealizados21d = treinos21d.size();
 
-        AderenciaJanela aderenciaJanela = aderenciaDevidosEnabled
-                ? calcularAderenciaJanelaFechada(atletaId, tenantId, atletaHojeResolver.hojeDe(atleta))
-                : calcularAderenciaRegraAntiga(atletaId, tenantId, inicio21d, hoje, treinosRealizados21d);
+        AdherenceCalculator.AderenciaJanela aderenciaJanela = aderenciaDevidosEnabled
+                ? adherenceCalculator.calcularAderenciaJanelaFechada(atletaId, tenantId, atletaHojeResolver.hojeDe(atleta))
+                : adherenceCalculator.calcularAderenciaRegraAntiga(atletaId, tenantId, inicio21d, hoje, treinosRealizados21d);
 
         PlanoMetaDados metaDados = planoMetadadosService.buscarPorAtletaId(atletaId);
 
@@ -139,96 +130,6 @@ public class ProgressaoTreinoServiceImpl implements ProgressaoTreinoService {
                 aderenciaJanela.aderencia()
         );
     }
-
-    /**
-     * D1/D2 (fix-progression-adherence-window): aderência medida sobre as 3 semanas ISO fechadas
-     * antes da atual — a semana em curso fica inteiramente fora, então "hoje só se feito" não se
-     * aplica aqui (todo planejado da janela já venceu).
-     */
-    private AderenciaJanela calcularAderenciaJanelaFechada(UUID atletaId, UUID tenantId, LocalDate hoje) {
-        LocalDate segundaAtual = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-        LocalDate inicioJanela = segundaAtual.minusDays(21);
-        LocalDate fimJanela = segundaAtual.minusDays(1);
-
-        List<TreinoPlanejado> planejadosJanela = treinoPlanejadoRepository
-                .findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, inicioJanela, fimJanela);
-        List<TreinoRealizado> realizadosJanela = treinoRealizadoRepository
-                .findByAtletaIdAndTenantIdAndDataTreinoBetween(atletaId, tenantId, inicioJanela, fimJanela);
-
-        // Achado do Codex (review nativo, 2026-10-01): um avulso CANCELADO no Strava continua na
-        // tabela (StravaWebhookServiceImpl.markAsCanceled só marca o status, nunca apaga a linha) —
-        // sem o filtro de contaNaCarga(), ele seria tratado como candidato de verdade e poderia
-        // encobrir uma falta como pendência (ou pendência como falta) por um dado que já não conta.
-        Map<LocalDate, List<TreinoRealizado>> avulsosPorData = realizadosJanela.stream()
-                .filter(r -> r.getTreinoPlanejado() == null)
-                .filter(TreinoRealizado::contaNaCarga)
-                .collect(Collectors.groupingBy(TreinoRealizado::getDataTreino));
-
-        int cumpridos = 0;
-        int faltas = 0;
-        int pendentes = 0;
-        for (TreinoPlanejado planejado : planejadosJanela) {
-            if (!isDevido(planejado)) {
-                continue; // DESCANSO fora da conta (D2)
-            }
-            TreinoRealizado vinculado = planejado.getTreinoRealizado();
-            if (vinculado != null) {
-                if (vinculado.contaNaCarga()) {
-                    cumpridos++;
-                } else {
-                    faltas++; // vínculo sobrevive ao cancelamento no Strava — não é cumprimento (CA10)
-                }
-                continue;
-            }
-            List<TreinoRealizado> avulsosNoDia = avulsosPorData.getOrDefault(planejado.getDataTreino(), List.of());
-            if (avulsosNoDia.isEmpty()) {
-                faltas++;
-            } else if (temTriagemHumanaDeNaoCorrespondencia(avulsosNoDia)) {
-                faltas++; // triagem humana já resolveu a ambiguidade (CA11)
-            } else {
-                pendentes++; // dado incompleto ou triagem automática (CA4/CA12) — fora da conta
-            }
-        }
-
-        return new AderenciaJanela(cumpridos, faltas, pendentes, calcularAderenciaComTeto(cumpridos, faltas, pendentes));
-    }
-
-    /** D7: flag desligada reproduz a regra antiga (CA8) — sem filtro de DESCANSO/pendência/cancelado. */
-    private AderenciaJanela calcularAderenciaRegraAntiga(UUID atletaId, UUID tenantId, LocalDate inicio21d,
-                                                          LocalDate hoje, int treinosRealizados21d) {
-        int treinosPlanejados21d = treinoPlanejadoRepository
-                .findComRealizadoByAtletaAndPeriodoAteData(atletaId, tenantId, inicio21d, hoje).size();
-        double aderencia = treinosPlanejados21d == 0 ? 0.0 : (double) treinosRealizados21d / treinosPlanejados21d;
-        int cumpridos = Math.min(treinosRealizados21d, treinosPlanejados21d);
-        int faltas = Math.max(0, treinosPlanejados21d - treinosRealizados21d);
-        return new AderenciaJanela(cumpridos, faltas, 0, aderencia);
-    }
-
-    private static boolean isDevido(TreinoPlanejado planejado) {
-        return planejado.getTipoTreino() != TipoTreino.DESCANSO;
-    }
-
-    /**
-     * {@code allMatch}, não {@code anyMatch} (achado do Codex adversarial-review, 2026-10-01): com
-     * dois avulsos no mesmo dia, um já triado por humano como NAO_PLANEJADO não encobre o outro
-     * ainda PENDENTE/AMBIGUO — a ambiguidade do dia só está de fato resolvida quando TODOS os
-     * avulsos candidatos foram descartados por um humano.
-     */
-    private static boolean temTriagemHumanaDeNaoCorrespondencia(List<TreinoRealizado> avulsos) {
-        return avulsos.stream().allMatch(r ->
-                r.getReconciliationStatus() == ReconciliationStatus.NAO_PLANEJADO
-                        && !ATOR_SISTEMA.equals(r.getReconciledBy()));
-    }
-
-    /** null (ausente) quando não há devido na janela ou a pendência passa de 25% dos devidos (D2). */
-    private static Double calcularAderenciaComTeto(int cumpridos, int faltas, int pendentes) {
-        int devidos = cumpridos + faltas + pendentes;
-        if (devidos == 0) return null;
-        if ((double) pendentes / devidos > TETO_PENDENCIA) return null;
-        return (double) cumpridos / (cumpridos + faltas);
-    }
-
-    private record AderenciaJanela(int cumpridos, int faltas, int pendentes, Double aderencia) {}
 
     @Override
     public DecisaoProgressao calcularDecisao(ProgressaoHistoricoResumo resumo) {
