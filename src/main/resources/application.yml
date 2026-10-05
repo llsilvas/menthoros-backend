@@ -155,6 +155,10 @@ app:
   frontend:
     url: ${FRONTEND_URL:http://localhost:5174}
 
+  # Central de ajuda (menthoros-docs) — URL fixa, igual em todo ambiente; DOCS_URL só para
+  # sobrescrever num deploy de preview, se necessário.
+  docs:
+    url: ${DOCS_URL:https://docs.menthoros.com}
 
   # ----------------------------------------
   # CONVITE DE ATLETA (por token do backend)
