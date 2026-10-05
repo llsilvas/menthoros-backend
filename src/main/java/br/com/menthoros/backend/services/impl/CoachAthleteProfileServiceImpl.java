@@ -216,6 +216,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                                 ? (int) tr.getDuracaoMin().toMinutes() : null,
                         tr.getDistanciaKm() != null ? tr.getDistanciaKm().doubleValue() : null,
                         tr.getPercepcaoEsforco(),
+                        tr.getTssCalculado(),
                         tr.getSensacoes() != null ? List.copyOf(tr.getSensacoes()) : null,
                         tr.getFeedbackAtleta(),
                         tr.getFeedbackRegistradoEm()))
@@ -279,6 +280,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             tp.getDuracaoMin() != null ? tp.getDuracaoMin().toString() : null,
                             tp.getZonaAlvo(),
                             tp.getPercepcaoEsforcoEsperada(),
+                            tp.getTssPlanejado(),
                             safeGetEtapasResumo(tp),
                             tp.getStatusSincronizacao() != null
                                     ? tp.getStatusSincronizacao().name()

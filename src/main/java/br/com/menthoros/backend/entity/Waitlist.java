@@ -66,4 +66,7 @@ public class Waitlist {
     @Builder.Default
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
+
+    @Column(name = "docs_notified_at")
+    private Instant docsNotifiedAt;
 }
