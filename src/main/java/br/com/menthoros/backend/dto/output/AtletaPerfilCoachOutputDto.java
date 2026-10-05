@@ -177,6 +177,9 @@ public record AtletaPerfilCoachOutputDto(
             @Schema(description = "Percepção de esforço esperada (1–10)", example = "6")
             Integer percepcaoEsforcoEsperada,
 
+            @Schema(description = "TSS planejado/estimado do treino; ausente quando não calculado", example = "65")
+            Integer tssPlanejado,
+
             @Schema(description = "Etapas do treino (aquecimento, esforço, recuperação, desaquecimento)")
             List<EtapaTreinoDto> etapas,
 

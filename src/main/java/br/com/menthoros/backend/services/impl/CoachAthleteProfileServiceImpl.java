@@ -280,6 +280,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             tp.getDuracaoMin() != null ? tp.getDuracaoMin().toString() : null,
                             tp.getZonaAlvo(),
                             tp.getPercepcaoEsforcoEsperada(),
+                            tp.getTssPlanejado(),
                             safeGetEtapasResumo(tp),
                             tp.getStatusSincronizacao() != null
                                     ? tp.getStatusSincronizacao().name()
