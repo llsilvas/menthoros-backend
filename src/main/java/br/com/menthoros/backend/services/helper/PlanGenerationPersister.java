@@ -269,8 +269,13 @@ public class PlanGenerationPersister {
         // FALLBACK (8.5.h, achado do security-reviewer): o planner falhou antes do LLM e o estagio 2
         // NUNCA rodou sobre este plano — nao tem base para confianca alta automatica, mesmo que o
         // shadow (recomputado dentro da transacao) tenha tido sucesso onde a fase 2 falhou.
+        // VIOLATIONS_DETECTED (fix-auto-approve-violations-detected): status gravado pelo shadow do
+        // planner deterministico — auditoria em paralelo, sem enforcement, que NAO seta
+        // requiresCoachReview. Sem este veto, o plano com violacao detectada (ex.: treino em dia
+        // indisponivel, taper violado) vazava pelo auto-approve sem revisao do coach.
         if (PlannerComplianceStatus.FAILED.name().equals(plano.getPlannerComplianceStatus())
                 || PlannerComplianceStatus.FALLBACK.name().equals(plano.getPlannerComplianceStatus())
+                || PlannerComplianceStatus.VIOLATIONS_DETECTED.name().equals(plano.getPlannerComplianceStatus())
                 || Boolean.TRUE.equals(plano.getPlannerRequiresCoachReview())) {
             return;
         }

@@ -12,6 +12,7 @@ import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.ModoGeracaoPlano;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.enums.OrigemAprovacao;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.mapper.TreinoMapperImpl;
@@ -342,7 +343,10 @@ class PlanGenerationPersisterProvaTest {
 
         private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeletonSemReview() {
             return new br.com.menthoros.backend.domain.planner.WeekPlanSkeleton(
-                    null, null, List.of(), null, null, false, null,
+                    null, null, List.of(),
+                    new br.com.menthoros.backend.domain.planner.InjuryRiskAssessment(
+                            br.com.menthoros.backend.domain.planner.InjuryRiskLevel.SAFE, false, null),
+                    null, false, null,
                     LocalDate.of(2026, 9, 7), null, Optional.empty());
         }
 
@@ -394,6 +398,34 @@ class PlanGenerationPersisterProvaTest {
 
             verify(planoReviewService, org.mockito.Mockito.never())
                     .aprovarTransicao(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("plano VIOLATIONS_DETECTED (shadow) nao e auto-aprovado mesmo sem requiresCoachReview "
+                + "(fix-auto-approve-violations-detected, CA1): o shadow grava o status sem setar "
+                + "requiresCoachReview, e o gap deixava o plano vazar pelo auto-approve sem revisao do coach")
+        void planoViolationsDetectedNaoAprovado() throws Exception {
+            PlanoSemanal plano = new PlanoSemanal();
+            plano.setPlannerComplianceStatus(
+                    br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.VIOLATIONS_DETECTED.name());
+            plano.setPlannerRequiresCoachReview(null);
+
+            invoke(plano);
+
+            verify(planoReviewService, org.mockito.Mockito.never())
+                    .aprovarTransicao(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("plano COMPLIANT com skeleton sem risco continua auto-aprovado (CA2, caminho feliz intacto)")
+        void planoCompliantAprovado() throws Exception {
+            PlanoSemanal plano = new PlanoSemanal();
+            plano.setPlannerComplianceStatus(
+                    br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.COMPLIANT.name());
+
+            invoke(plano);
+
+            verify(planoReviewService).aprovarTransicao(plano, tenantId, OrigemAprovacao.AUTO_CONFIANCA_ALTA);
         }
     }
 
