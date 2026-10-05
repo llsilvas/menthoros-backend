@@ -441,6 +441,28 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         @Test
+        @DisplayName("tssPlanejado é exposto quando presente e ausente (null) quando não calculado")
+        void tssPlanejadoExposto() {
+            stubAtleta();
+            when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
+            when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
+            when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
+            when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+            when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId))
+                    .thenReturn(Optional.empty());
+
+            when(planoService.findPlanoVigenteRelevante(atletaId, tenantId))
+                    .thenReturn(Optional.of(planoAprovadoComTreinos()));
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).tssPlanejado()).isEqualTo(65);
+            assertThat(treinos.get(1).tssPlanejado()).isNull();
+        }
+
+        @Test
         @DisplayName("sem conexão intervals.icu ativa — flag atletaConectadoIntervalsIcu é false e status default NAO_SINCRONIZADO")
         void treinoSemConexaoAtiva() {
             stubAtleta();
@@ -761,6 +783,7 @@ class CoachAthleteProfileServiceImplTest {
         tp1.setTipoTreino(TipoTreino.FACIL);
         tp1.setDistanciaKm(BigDecimal.valueOf(8.0));
         tp1.setStatusTreino(TreinoExecucaoStatus.PENDENTE);
+        tp1.setTssPlanejado(65);
 
         TreinoPlanejado tp2 = new TreinoPlanejado();
         tp2.setDataTreino(LocalDate.of(2026, 6, 18));
