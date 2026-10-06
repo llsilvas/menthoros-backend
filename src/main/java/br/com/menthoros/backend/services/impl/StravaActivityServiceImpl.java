@@ -31,6 +31,7 @@ import br.com.menthoros.backend.services.StravaOAuthService;
 import br.com.menthoros.backend.config.external.StravaProperties;
 import br.com.menthoros.backend.enums.ErroCategoriaPull;
 import br.com.menthoros.backend.enums.ResultadoPull;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.PullAcumulador;
 import br.com.menthoros.backend.services.helper.PullResultado;
 import br.com.menthoros.backend.services.helper.SyncDescarteWriter;
@@ -82,9 +83,10 @@ public class StravaActivityServiceImpl implements StravaActivityService {
     private final TransactionOperations transactionOperations;
     private final SyncDescarteWriter descarteWriter;
     private final StravaProperties stravaProperties;
+    private final AtletaHojeResolver hojeResolver;
 
     public StravaActivityServiceImpl(AtletaRepository atletaRepository, TreinoRealizadoRepository treinoRealizadoRepository, IntegracaoExternaRepository integracaoExternaRepository, StravaOAuthService stravaOAuthService, TreinoMapper treinoMapper, ApplicationEventPublisher eventPublisher, @Qualifier("stravaWebClient")WebClient stravaWebClient, IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService,
-                                     TransactionOperations transactionOperations, SyncDescarteWriter descarteWriter, StravaProperties stravaProperties) {
+                                     TransactionOperations transactionOperations, SyncDescarteWriter descarteWriter, StravaProperties stravaProperties, AtletaHojeResolver hojeResolver) {
         this.atletaRepository = atletaRepository;
         this.treinoRealizadoRepository = treinoRealizadoRepository;
         this.integracaoExternaRepository = integracaoExternaRepository;
@@ -96,6 +98,7 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         this.transactionOperations = transactionOperations;
         this.descarteWriter = descarteWriter;
         this.stravaProperties = stravaProperties;
+        this.hojeResolver = hojeResolver;
     }
 
     @Transactional(readOnly = true)
@@ -633,7 +636,9 @@ public class StravaActivityServiceImpl implements StravaActivityService {
     private void mergeActivityIntoTreino(TreinoRealizado treino, StravaActivityDto activity, Atleta atleta) {
         LocalDate treinoDate = parseActivityDate(activity.startDateLocal());
         if (treinoDate == null) {
-            treinoDate = LocalDate.now();
+            // Fuso do atleta, não do servidor — LocalDate.now() cru podia gravar o dia errado perto
+            // da virada de dia UTC (fix-treino-registro-fuso-atleta).
+            treinoDate = hojeResolver.hojeDe(atleta);
         }
 
         treino.setAtleta(atleta);
@@ -709,26 +714,29 @@ public class StravaActivityServiceImpl implements StravaActivityService {
         return minRemaining == 0;
     }
 
+    /**
+     * A Strava documenta {@code start_date_local} como hora de parede local do atleta — mas
+     * formata com sufixo "Z", que aqui NÃO significa UTC real (inconsistência conhecida da API).
+     * Interpretar o "Z" literalmente (via {@code Instant.parse}) e depois reconverter por
+     * {@code ZoneId.systemDefault()} só "funcionava" por coincidência de a JVM rodar em UTC — quebra
+     * silenciosamente se isso mudar. Em vez disso, lê a hora de parede diretamente, ignorando o
+     * sufixo de zona, no mesmo espírito de {@link br.com.menthoros.backend.services.helper.IntervalsIcuActivityMapper#parseDataTreino}
+     * (fix-treino-registro-fuso-atleta).
+     */
     private LocalDate parseActivityDate(String startDateLocal) {
-        Instant instant = parseActivityInstant(startDateLocal);
-        return instant != null ? instant.atZone(ZoneId.systemDefault()).toLocalDate() : null;
-    }
-
-    private Instant parseActivityInstant(String startDateLocal) {
         if (startDateLocal == null || startDateLocal.isBlank()) {
             return null;
         }
+        String semSufixoDeZona = startDateLocal.endsWith("Z")
+                ? startDateLocal.substring(0, startDateLocal.length() - 1)
+                : startDateLocal;
         try {
-            return Instant.parse(startDateLocal);
+            return LocalDateTime.parse(semSufixoDeZona).toLocalDate();
         } catch (DateTimeParseException ignored) {
             try {
-                return OffsetDateTime.parse(startDateLocal).toInstant();
+                return OffsetDateTime.parse(startDateLocal).toLocalDate();
             } catch (DateTimeParseException ignoredAgain) {
-                try {
-                    return LocalDateTime.parse(startDateLocal).atZone(ZoneId.systemDefault()).toInstant();
-                } catch (DateTimeParseException ignoredThird) {
-                    return null;
-                }
+                return null;
             }
         }
     }

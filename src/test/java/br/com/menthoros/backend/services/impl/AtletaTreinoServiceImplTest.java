@@ -22,6 +22,7 @@ import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
 import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import org.junit.jupiter.api.AfterEach;
@@ -71,6 +72,7 @@ class AtletaTreinoServiceImplTest {
     @Mock private TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
     @Mock private java.time.Clock clock;
     @Mock private br.com.menthoros.backend.services.plano.ProvaResultadoSyncer provaResultadoSyncer;
+    @Mock private AtletaHojeResolver hojeResolver;
 
     @InjectMocks private TreinoServiceImpl service;
 
@@ -104,11 +106,12 @@ class AtletaTreinoServiceImplTest {
     class RegistrarTreinoManualAtleta {
 
         @BeforeEach
-        void stubClock() {
-            // "hoje" (janela de 7 dias, CA da task) é resolvido no início do método em toda
-            // chamada — precisa de clock estável independente do cenário.
-            when(clock.instant()).thenReturn(java.time.Instant.now());
-            when(clock.getZone()).thenReturn(java.time.ZoneId.systemDefault());
+        void stubHojeResolver() {
+            // "hoje" (janela de 7 dias, CA da task) é resolvido pelo fuso do atleta, não do
+            // servidor (fix-treino-registro-fuso-atleta) — precisa de valor estável por teste.
+            // lenient: só é invocado depois que o atleta é carregado com sucesso — o cenário de
+            // "atleta não encontrado" lança antes de chegar aqui, e isso é esperado, não dead code.
+            org.mockito.Mockito.lenient().when(hojeResolver.hojeDe(any())).thenReturn(LocalDate.now());
         }
 
         @Test
@@ -252,12 +255,16 @@ class AtletaTreinoServiceImplTest {
         @DisplayName("lança DomainRuleViolationException quando data é anterior a 7 dias")
         void lancaExcecaoQuandoDataAnteriorA7Dias() {
             var input = novoInput(LocalDate.now().minusDays(8));
+            // O atleta agora é carregado ANTES da validação de janela — hojeResolver.hojeDe(atleta)
+            // precisa do atleta para resolver o fuso (fix-treino-registro-fuso-atleta); antes a
+            // validação usava o clock cru e não dependia do repositório.
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
 
             assertThatThrownBy(() -> service.registrarTreinoManualAtleta(atletaId, input))
                     .isInstanceOf(DomainRuleViolationException.class)
                     .hasMessageContaining("7 dias");
 
-            verifyNoInteractions(atletaRepository, treinoRealizadoRepository, eventPublisher, ingestaoTreinoRealizadoService);
+            verifyNoInteractions(treinoRealizadoRepository, eventPublisher, ingestaoTreinoRealizadoService);
         }
 
         @Test
@@ -273,6 +280,29 @@ class AtletaTreinoServiceImplTest {
                     .thenReturn(Optional.empty());
             when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());
 
+            assertThatCode(() -> service.registrarTreinoManualAtleta(atletaId, input)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("a janela de 7 dias usa hojeResolver.hojeDe(atleta) — não LocalDate.now() do servidor")
+        void janelaDe7DiasUsaHojeDoAtletaNaoDoServidor() {
+            // "hoje" do atleta deliberadamente bem longe do "hoje" real do servidor, para provar
+            // que a validação usa o retorno do hojeResolver, não um LocalDate.now() cru
+            // (fix-treino-registro-fuso-atleta).
+            LocalDate hojeDoAtleta = LocalDate.of(2030, 1, 15);
+            when(hojeResolver.hojeDe(atleta)).thenReturn(hojeDoAtleta);
+            var input = novoInput(hojeDoAtleta.minusDays(7));
+            var treinoSalvo = stubTreinoRealizado();
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(ingestaoTreinoRealizadoService.registrar(any(), isNull()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(treinoSalvo, true));
+            when(treinoPlanejadoRepository.findFirstForManualMatch(any(), any(), any(), any(), any()))
+                    .thenReturn(Optional.empty());
+            when(treinoMapper.toOutputDto(treinoSalvo)).thenReturn(stubOutputDto());
+
+            // Aceita porque está a exatamente 7 dias do "hoje" do ATLETA — rejeitaria se a
+            // validação ainda usasse o relógio real do servidor (muito distante de 2030).
             assertThatCode(() -> service.registrarTreinoManualAtleta(atletaId, input)).doesNotThrowAnyException();
         }
 
