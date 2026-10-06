@@ -1,15 +1,20 @@
 package br.com.menthoros.backend.services;
 
+import br.com.menthoros.backend.dto.input.RejeitarSugestaoRequestDto;
 import br.com.menthoros.backend.dto.output.SugestaoCoachOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.SugestaoCoach;
+import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.StatusSugestao;
 import br.com.menthoros.backend.enums.TipoSugestao;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.SugestaoCoachMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.SugestaoCoachRepository;
+import br.com.menthoros.backend.repository.UsuarioRepository;
+import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
 import br.com.menthoros.backend.services.impl.SugestaoCoachServiceImpl;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,6 +35,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -37,6 +44,8 @@ class SugestaoCoachServiceImplTest {
 
     @Mock private SugestaoCoachRepository repository;
     @Mock private SugestaoCoachMapper mapper;
+    @Mock private AuthenticatedPrincipalResolver principalResolver;
+    @Mock private UsuarioRepository usuarioRepository;
 
     @InjectMocks private SugestaoCoachServiceImpl service;
 
@@ -48,6 +57,16 @@ class SugestaoCoachServiceImplTest {
         tenantId = UUID.randomUUID();
         sugestaoId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
+    }
+
+    /** Estabiliza o par sub/Usuario resolvido pelo security context — usado só nos testes que chegam ao ramo PENDING. */
+    private UUID stubReviewedBy() {
+        UUID usuarioId = UUID.randomUUID();
+        String sub = "keycloak-sub-" + usuarioId;
+        Usuario usuario = Usuario.builder().id(usuarioId).build();
+        when(principalResolver.getCurrentSubject()).thenReturn(sub);
+        when(usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId)).thenReturn(Optional.of(usuario));
+        return usuarioId;
     }
 
     @AfterEach
@@ -79,7 +98,7 @@ class SugestaoCoachServiceImplTest {
     private SugestaoCoachOutputDto outputDto(UUID id) {
         return new SugestaoCoachOutputDto(id, UUID.randomUUID(), "Ana", TipoSugestao.RECOVERY,
                 StatusSugestao.PENDING, "HIGH", "Revisar carga", null,
-                Instant.now(), null, null);
+                Instant.now(), null, null, null, null);
     }
 
     // ── listar ───────────────────────────────────────────────────────────────
@@ -236,12 +255,15 @@ class SugestaoCoachServiceImplTest {
     class Aprovar {
 
         @Test
-        @DisplayName("PENDING → APPROVED: salva com reviewedAt e retorna DTO")
+        @DisplayName("PENDING → APPROVED: grava reviewedBy do security context (nunca do corpo, CA1/CA4), "
+                + "limpa motivoRejeicao e retorna DTO")
         void pendingParaApproved() {
             SugestaoCoach s = sugestao(StatusSugestao.PENDING);
+            UUID usuarioId = stubReviewedBy();
             SugestaoCoachOutputDto dto = outputDto(sugestaoId);
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
-            when(repository.save(s)).thenReturn(s);
+            when(repository.decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
+                    eq(StatusSugestao.APPROVED), any(), eq(usuarioId), isNull())).thenReturn(1);
             when(mapper.toOutputDto(s)).thenReturn(dto);
 
             SugestaoCoachOutputDto result = service.aprovar(sugestaoId);
@@ -249,11 +271,14 @@ class SugestaoCoachServiceImplTest {
             assertThat(result).isEqualTo(dto);
             assertThat(s.getStatus()).isEqualTo(StatusSugestao.APPROVED);
             assertThat(s.getReviewedAt()).isNotNull();
-            verify(repository).save(s);
+            assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
+            assertThat(s.getMotivoRejeicao()).isNull();
+            verify(repository).decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
+                    eq(StatusSugestao.APPROVED), any(), eq(usuarioId), isNull());
         }
 
         @Test
-        @DisplayName("APPROVED → APPROVED: no-op — save não chamado")
+        @DisplayName("APPROVED → APPROVED: no-op — decidirSePendente não chamado")
         void reAprovarENoOp() {
             SugestaoCoach s = sugestao(StatusSugestao.APPROVED);
             SugestaoCoachOutputDto dto = outputDto(sugestaoId);
@@ -262,7 +287,8 @@ class SugestaoCoachServiceImplTest {
 
             service.aprovar(sugestaoId);
 
-            verify(repository, never()).save(any());
+            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any());
+            verifyNoInteractions(principalResolver);
         }
 
         @Test
@@ -275,7 +301,7 @@ class SugestaoCoachServiceImplTest {
                     .isInstanceOf(DomainRuleViolationException.class)
                     .hasMessageContaining("REJECTED");
 
-            verify(repository, never()).save(any());
+            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any());
         }
 
         @Test
@@ -286,6 +312,22 @@ class SugestaoCoachServiceImplTest {
             assertThatThrownBy(() -> service.aprovar(sugestaoId))
                     .isInstanceOf(DomainNotFoundException.class);
         }
+
+        @Test
+        @DisplayName("decisão concorrente perde a corrida (0 linhas afetadas): lança DomainConflictException "
+                + "(409, CA6) — entidade em memória não é mutada, auditoria da vencedora não é sobrescrita")
+        void decisaoConcorrenteLancaConflito() {
+            SugestaoCoach s = sugestao(StatusSugestao.PENDING);
+            stubReviewedBy();
+            when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
+            when(repository.decidirSePendente(any(), any(), any(), any(), any(), any(), any())).thenReturn(0);
+
+            assertThatThrownBy(() -> service.aprovar(sugestaoId))
+                    .isInstanceOf(DomainConflictException.class);
+
+            assertThat(s.getStatus()).isEqualTo(StatusSugestao.PENDING);
+            verifyNoInteractions(mapper);
+        }
     }
 
     // ── rejeitar ──────────────────────────────────────────────────────────────
@@ -295,33 +337,56 @@ class SugestaoCoachServiceImplTest {
     class Rejeitar {
 
         @Test
-        @DisplayName("PENDING → REJECTED: salva com reviewedAt e retorna DTO")
-        void pendingParaRejected() {
+        @DisplayName("PENDING → REJECTED sem corpo: reviewedBy gravado, motivoRejeicao null (CA3)")
+        void pendingParaRejectedSemMotivo() {
             SugestaoCoach s = sugestao(StatusSugestao.PENDING);
+            UUID usuarioId = stubReviewedBy();
             SugestaoCoachOutputDto dto = outputDto(sugestaoId);
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
-            when(repository.save(s)).thenReturn(s);
+            when(repository.decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
+                    eq(StatusSugestao.REJECTED), any(), eq(usuarioId), isNull())).thenReturn(1);
             when(mapper.toOutputDto(s)).thenReturn(dto);
 
-            SugestaoCoachOutputDto result = service.rejeitar(sugestaoId);
+            SugestaoCoachOutputDto result = service.rejeitar(sugestaoId, null);
 
             assertThat(result).isEqualTo(dto);
             assertThat(s.getStatus()).isEqualTo(StatusSugestao.REJECTED);
             assertThat(s.getReviewedAt()).isNotNull();
-            verify(repository).save(s);
+            assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
+            assertThat(s.getMotivoRejeicao()).isNull();
         }
 
         @Test
-        @DisplayName("REJECTED → REJECTED: no-op — save não chamado")
+        @DisplayName("PENDING → REJECTED com motivoRejeicao: motivo gravado junto da auditoria (CA2)")
+        void pendingParaRejectedComMotivo() {
+            SugestaoCoach s = sugestao(StatusSugestao.PENDING);
+            UUID usuarioId = stubReviewedBy();
+            SugestaoCoachOutputDto dto = outputDto(sugestaoId);
+            RejeitarSugestaoRequestDto request = new RejeitarSugestaoRequestDto("volume alto demais para a semana");
+            when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
+            when(repository.decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
+                    eq(StatusSugestao.REJECTED), any(), eq(usuarioId), eq("volume alto demais para a semana")))
+                    .thenReturn(1);
+            when(mapper.toOutputDto(s)).thenReturn(dto);
+
+            service.rejeitar(sugestaoId, request);
+
+            assertThat(s.getMotivoRejeicao()).isEqualTo("volume alto demais para a semana");
+            assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
+        }
+
+        @Test
+        @DisplayName("REJECTED → REJECTED: no-op — decidirSePendente não chamado")
         void reRejeitarENoOp() {
             SugestaoCoach s = sugestao(StatusSugestao.REJECTED);
             SugestaoCoachOutputDto dto = outputDto(sugestaoId);
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
             when(mapper.toOutputDto(s)).thenReturn(dto);
 
-            service.rejeitar(sugestaoId);
+            service.rejeitar(sugestaoId, null);
 
-            verify(repository, never()).save(any());
+            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any());
+            verifyNoInteractions(principalResolver);
         }
 
         @Test
@@ -330,11 +395,11 @@ class SugestaoCoachServiceImplTest {
             SugestaoCoach s = sugestao(StatusSugestao.APPROVED);
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
 
-            assertThatThrownBy(() -> service.rejeitar(sugestaoId))
+            assertThatThrownBy(() -> service.rejeitar(sugestaoId, null))
                     .isInstanceOf(DomainRuleViolationException.class)
                     .hasMessageContaining("APPROVED");
 
-            verify(repository, never()).save(any());
+            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any());
         }
 
         @Test
@@ -342,8 +407,23 @@ class SugestaoCoachServiceImplTest {
         void lançaNotFound() {
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.rejeitar(sugestaoId))
+            assertThatThrownBy(() -> service.rejeitar(sugestaoId, null))
                     .isInstanceOf(DomainNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("decisão concorrente perde a corrida (0 linhas afetadas): lança DomainConflictException (409, CA6)")
+        void decisaoConcorrenteLancaConflito() {
+            SugestaoCoach s = sugestao(StatusSugestao.PENDING);
+            stubReviewedBy();
+            when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
+            when(repository.decidirSePendente(any(), any(), any(), any(), any(), any(), any())).thenReturn(0);
+
+            assertThatThrownBy(() -> service.rejeitar(sugestaoId, null))
+                    .isInstanceOf(DomainConflictException.class);
+
+            assertThat(s.getStatus()).isEqualTo(StatusSugestao.PENDING);
+            verifyNoInteractions(mapper);
         }
     }
 }

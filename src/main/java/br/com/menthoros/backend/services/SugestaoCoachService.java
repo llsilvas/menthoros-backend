@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services;
 
+import br.com.menthoros.backend.dto.input.RejeitarSugestaoRequestDto;
 import br.com.menthoros.backend.dto.output.SugestaoCoachOutputDto;
 import br.com.menthoros.backend.enums.StatusSugestao;
 
@@ -39,20 +40,30 @@ public interface SugestaoCoachService {
     List<SugestaoCoachOutputDto> listarPorAtleta(UUID atletaId);
 
     /**
-     * Aprova uma sugestão PENDING, transicionando para APPROVED.
-     * Idempotent: YES (aprovar já-APPROVED é no-op). Side Effects: DB update. Tenant-aware: YES.
+     * Aprova uma sugestão PENDING, transicionando para APPROVED. Grava {@code reviewedBy}
+     * resolvido do security context (add-coach-suggestion-decision-audit, design D1) e limpa
+     * {@code motivoRejeicao}. Idempotent: YES (aprovar já-APPROVED é no-op). Side Effects: DB
+     * update. Tenant-aware: YES.
      *
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException se não encontrada
      * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se status == REJECTED (422)
+     * @throws br.com.menthoros.backend.exception.DomainConflictException se outra decisão
+     *         concorrente já transicionou a sugestão (design D4, 409)
      */
     SugestaoCoachOutputDto aprovar(UUID id);
 
     /**
-     * Rejeita uma sugestão PENDING, transicionando para REJECTED.
-     * Idempotent: YES (re-rejeitar já-REJECTED é no-op). Side Effects: DB update. Tenant-aware: YES.
+     * Rejeita uma sugestão PENDING, transicionando para REJECTED. Grava {@code reviewedBy}
+     * resolvido do security context e {@code motivoRejeicao} quando presente em {@code request}
+     * (add-coach-suggestion-decision-audit, design D1/D2). Idempotent: YES (re-rejeitar
+     * já-REJECTED é no-op). Side Effects: DB update. Tenant-aware: YES.
      *
+     * @param request corpo opcional com o motivo da rejeição; {@code null} ou
+     *                 {@code motivoRejeicao() == null} são válidos (motivo é opcional)
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException se não encontrada
      * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se status == APPROVED (422)
+     * @throws br.com.menthoros.backend.exception.DomainConflictException se outra decisão
+     *         concorrente já transicionou a sugestão (design D4, 409)
      */
-    SugestaoCoachOutputDto rejeitar(UUID id);
+    SugestaoCoachOutputDto rejeitar(UUID id, RejeitarSugestaoRequestDto request);
 }
