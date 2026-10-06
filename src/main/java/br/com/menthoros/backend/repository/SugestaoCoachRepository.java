@@ -73,9 +73,14 @@ public interface SugestaoCoachRepository extends JpaRepository<SugestaoCoach, UU
      * condicionado a {@code status = PENDING}. Duas decisões concorrentes nunca sobrescrevem uma à
      * outra — a que perder a corrida recebe {@code 0} linhas afetadas (ver
      * {@code SugestaoCoachServiceImpl}, que converte isso em {@code DomainConflictException}).
-     * {@code clearAutomatically} detacha a entidade da sessão: o chamador atualiza o objeto em
-     * memória manualmente (sem round-trip de SELECT) e sem risco do flush automático do Hibernate
-     * reemitir um UPDATE incondicional por fora desta query.
+     * {@code clearAutomatically} limpa o {@code EntityManager} inteiro (não só esta entidade) após
+     * o UPDATE — hoje seguro porque {@code aprovar}/{@code rejeitar} não carregam mais nada antes
+     * de chamar isto (só {@code sugestao}, já com {@code atleta} via JOIN FETCH em
+     * {@link #findByIdAndTenantId}, portanto já materializado em memória, não um proxy lazy). O
+     * chamador atualiza o objeto detachado manualmente (sem round-trip de SELECT) e sem risco do
+     * flush automático do Hibernate reemitir um UPDATE incondicional por fora desta query. Se este
+     * método passar a ser chamado depois de outras entidades carregadas na mesma transação, revisar
+     * esta suposição.
      */
     @Modifying(clearAutomatically = true)
     @Query("""
