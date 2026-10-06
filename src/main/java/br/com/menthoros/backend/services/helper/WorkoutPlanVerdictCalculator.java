@@ -1,8 +1,10 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.config.core.WorkoutAnalysisProperties;
 import br.com.menthoros.backend.dto.output.AthleteWorkoutAnalysisOutputDto.Executado;
 import br.com.menthoros.backend.dto.output.AthleteWorkoutAnalysisOutputDto.Planejado;
 import br.com.menthoros.backend.enums.WorkoutPlanVerdict;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -46,6 +48,11 @@ public class WorkoutPlanVerdictCalculator {
     public WorkoutPlanVerdictCalculator(double toleranciaPct, int deltaRpe) {
         this.toleranciaPct = toleranciaPct;
         this.deltaRpe = deltaRpe;
+    }
+
+    @Autowired
+    public WorkoutPlanVerdictCalculator(WorkoutAnalysisProperties properties) {
+        this(properties.getVerdict().getToleranciaPct(), properties.getVerdict().getDeltaRpe());
     }
 
     public WorkoutPlanVerdict calcular(Executado executado, Planejado planejado) {

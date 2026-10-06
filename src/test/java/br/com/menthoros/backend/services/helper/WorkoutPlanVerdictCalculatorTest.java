@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.config.core.WorkoutAnalysisProperties;
 import br.com.menthoros.backend.dto.output.AthleteWorkoutAnalysisOutputDto.Executado;
 import br.com.menthoros.backend.dto.output.AthleteWorkoutAnalysisOutputDto.Planejado;
 import br.com.menthoros.backend.enums.WorkoutPlanVerdict;
@@ -235,6 +236,27 @@ class WorkoutPlanVerdictCalculatorTest {
                     planejado(null, null, null)
             );
             assertThat(resultado).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("construtor a partir de WorkoutAnalysisProperties")
+    class ConstrutorComProperties {
+
+        @Test
+        @DisplayName("usa toleranciaPct e deltaRpe configurados nas properties")
+        void usaLimiaresConfigurados() {
+            WorkoutAnalysisProperties properties = new WorkoutAnalysisProperties();
+            properties.getVerdict().setToleranciaPct(10.0);
+            properties.getVerdict().setDeltaRpe(1);
+            var calculadoraConfigurada = new WorkoutPlanVerdictCalculator(properties);
+
+            // 12% abaixo: dentro dos 15% default, mas fora dos 10% configurados
+            var resultado = calculadoraConfigurada.calcular(
+                    executado(53L, null, 5),
+                    planejado(60L, null, 5)
+            );
+            assertThat(resultado).isEqualTo(WorkoutPlanVerdict.ABAIXO_DO_PLANO);
         }
     }
 }
