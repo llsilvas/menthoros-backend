@@ -9,6 +9,7 @@ import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import br.com.menthoros.backend.services.impl.StravaActivityServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -55,6 +56,7 @@ class StravaActivityServiceImplSyncTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private WebClient stravaWebClient;
     @Mock private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
+    @Mock private AtletaHojeResolver hojeResolver;
 
     @Mock private WebClient.RequestHeadersUriSpec<?> uriSpec;
     @Mock private WebClient.RequestHeadersSpec<?> headersSpec;
@@ -69,7 +71,8 @@ class StravaActivityServiceImplSyncTest {
                 atletaRepository, treinoRealizadoRepository, integracaoExternaRepository,
                 stravaOAuthService, treinoMapper, eventPublisher, stravaWebClient,
                 ingestaoTreinoRealizadoService,
-                org.springframework.transaction.support.TransactionOperations.withoutTransaction(), null, new br.com.menthoros.backend.config.external.StravaProperties());
+                org.springframework.transaction.support.TransactionOperations.withoutTransaction(), null,
+                new br.com.menthoros.backend.config.external.StravaProperties(), hojeResolver);
 
         Assessoria assessoria = new Assessoria();
         assessoria.setId(UUID.randomUUID());
