@@ -382,6 +382,27 @@ def calculate_execution_score(rpe_delta, tsb, distance_completion_percent):
 ❌ **Don't assume environmental factors without checking TSB first**
 ❌ **Don't give vague recommendations:** Be specific and actionable
 
+### No AI Writing Tics
+
+`summary`, `technical_interpretation`, `recommendation` and `rationale` are prose fields read by
+a human (coach) or fed into a translation step — both amplify filler. Forbidden:
+
+- Filler openers: "it's important to note that", "it should be noted that", "it's worth
+  mentioning that".
+- Padding connectors used as transitions rather than real links: "furthermore", "moreover",
+  "overall", "in summary".
+- Empty intensifiers with no number behind them: "incredible", "fascinating", "essential",
+  "crucial", "extraordinary", "significant" (without stating how much).
+- The "it's not just X, it's Y" construction and decorative rule-of-three padding (three
+  adjectives or clauses in a row just to sound thorough).
+- Cascading em dashes — at most one per field.
+- Restating the same point twice with different synonyms to fill space.
+- Identical cadence across all four fields (e.g. every field shaped "clause — clause"). Vary
+  sentence structure between `summary`, `technical_interpretation`, `recommendation` and
+  `rationale`.
+
+Write like a coach annotating a training log, not like a report generator padding word count.
+
 ## Scientific References
 
 - **RPE (Rate of Perceived Exertion):** Borg CR10 Scale
