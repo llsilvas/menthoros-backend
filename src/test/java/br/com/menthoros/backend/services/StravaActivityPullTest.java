@@ -15,6 +15,7 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.PullResultado;
 import br.com.menthoros.backend.services.helper.SyncDescarteWriter;
 import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
@@ -87,6 +88,7 @@ class StravaActivityPullTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     @Mock private SyncDescarteWriter descarteWriter;
+    @Mock private AtletaHojeResolver hojeResolver;
 
     private WireMockServer wireMock;
     private StravaActivityServiceImpl service;
@@ -107,7 +109,7 @@ class StravaActivityPullTest {
         service = new StravaActivityServiceImpl(atletaRepository, treinoRealizadoRepository,
                 integracaoExternaRepository, stravaOAuthService, treinoMapper, eventPublisher,
                 new StravaWebClientConfig(props).stravaWebClient(), ingestaoTreinoRealizadoService,
-                TransactionOperations.withoutTransaction(), descarteWriter, props);
+                TransactionOperations.withoutTransaction(), descarteWriter, props, hojeResolver);
 
         integracaoId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
@@ -505,7 +507,7 @@ class StravaActivityPullTest {
             StravaActivityServiceImpl comEspia = new StravaActivityServiceImpl(atletaRepository, treinoRealizadoRepository,
                     integracaoExternaRepository, stravaOAuthService, treinoMapper, eventPublisher,
                     new StravaWebClientConfig(props).stravaWebClient(), ingestaoTreinoRealizadoService,
-                    espia, descarteWriter, props);
+                    espia, descarteWriter, props, hojeResolver);
 
             comEspia.pullAgendado(atletaId);
 

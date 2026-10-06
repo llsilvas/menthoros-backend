@@ -21,6 +21,7 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import org.springframework.security.access.AccessDeniedException;
 import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.services.TreinoService;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
 import br.com.menthoros.backend.services.helper.TreinoDedupHelper;
 import br.com.menthoros.backend.services.plano.ProvaResultadoSyncer;
@@ -60,6 +61,7 @@ public class TreinoServiceImpl implements TreinoService {
     private final TipoTreinoConsistenciaValidator tipoTreinoConsistenciaValidator;
     private final Clock clock;
     private final ProvaResultadoSyncer provaResultadoSyncer;
+    private final AtletaHojeResolver hojeResolver;
 
     /**
      * Registra um treino realizado vinculado (opcionalmente) a um treino planejado.
@@ -92,9 +94,12 @@ public class TreinoServiceImpl implements TreinoService {
 
         // 4) Monta realizado — data resolvida uma única vez (D7): antes duplicava LocalDate.now()
         //    aqui e na resolução do plano semanal, podendo divergir numa fronteira de dia.
+        //    hojeResolver.hojeDe(atleta) (fuso do atleta, não do servidor) — LocalDate.now(clock)
+        //    usava o fuso do servidor e podia gravar o dia errado perto da virada de dia UTC
+        //    (fix-treino-registro-fuso-atleta).
         LocalDate dataTreino = treinoRealizado.dataTreino() != null
                 ? treinoRealizado.dataTreino()
-                : LocalDate.now(clock);
+                : hojeResolver.hojeDe(atleta);
         TreinoRealizado realizado = montarTreinoRealizado(treinoRealizado, atleta, planejado);
         realizado.setDataTreino(dataTreino);
 
@@ -357,10 +362,12 @@ public class TreinoServiceImpl implements TreinoService {
         treinoRealizado.setAtleta(atleta);
         treinoRealizado.setTenantId(atleta.getAssessoria().getId());
         // Default de data resolvido uma única vez (D7) — antes duplicava LocalDate.now() aqui e
-        // na chamada de TSB, podendo divergir numa fronteira de dia.
+        // na chamada de TSB, podendo divergir numa fronteira de dia. hojeResolver.hojeDe(atleta)
+        // (fuso do atleta) em vez de LocalDate.now(clock) (fuso do servidor) — ver
+        // fix-treino-registro-fuso-atleta.
         treinoRealizado.setDataTreino(treinoRealizadoInputDto.dataTreino() != null
                 ? treinoRealizadoInputDto.dataTreino()
-                : LocalDate.now(clock));
+                : hojeResolver.hojeDe(atleta));
 
         // Persiste, deduplica, publica evento e recalcula a carga do dia — responsabilidade do
         // seam único de ingestão (ingestao-treino-realizado); antes chamava tsbService.atualizarTsbDia
@@ -553,14 +560,17 @@ public class TreinoServiceImpl implements TreinoService {
     @Override
     @Transactional
     public TreinoRealizadoOutputDto registrarTreinoManualAtleta(UUID atletaId, TreinoManualInputDto input) {
-        LocalDate hoje = LocalDate.now(clock);
-        if (input.data().isBefore(hoje.minusDays(7))) {
-            throw new DomainRuleViolationException("Data do treino não pode ser anterior a 7 dias atrás.");
-        }
-
         UUID tenantId = TenantContext.getRequiredTenantId();
         Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado para o tenant"));
+
+        // hojeResolver.hojeDe(atleta) (fuso do atleta) em vez de LocalDate.now(clock) (fuso do
+        // servidor) — perto da virada de dia UTC, a janela de 7 dias podia rejeitar/aceitar um
+        // treino de forma inconsistente com o calendário do atleta (fix-treino-registro-fuso-atleta).
+        LocalDate hoje = hojeResolver.hojeDe(atleta);
+        if (input.data().isBefore(hoje.minusDays(7))) {
+            throw new DomainRuleViolationException("Data do treino não pode ser anterior a 7 dias atrás.");
+        }
 
         // Best-effort match: busca TreinoPlanejado sem realizado vinculado para a mesma data/tipo
         List<TreinoExecucaoStatus> statusesElegiveis = List.of(

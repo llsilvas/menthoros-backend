@@ -22,6 +22,7 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.TipoTreinoConsistenciaValidator;
 import org.hibernate.Hibernate;
 import org.junit.jupiter.api.AfterEach;
@@ -84,6 +85,8 @@ class TreinoServiceImplTest {
     private java.time.Clock clock;
     @Mock
     private br.com.menthoros.backend.services.plano.ProvaResultadoSyncer provaResultadoSyncer;
+    @Mock
+    private AtletaHojeResolver hojeResolver;
 
     @InjectMocks
     private TreinoServiceImpl treinoService;
@@ -417,6 +420,33 @@ class TreinoServiceImplTest {
             verify(ingestaoTreinoRealizadoService).registrar(entidade, null);
             verifyNoInteractions(eventPublisher);
         }
+
+        @Test
+        @DisplayName("sem dataTreino no input, usa hojeResolver.hojeDe(atleta) — não o relógio do servidor")
+        void semDataTreinoUsaHojeDoAtleta() {
+            UUID atletaId = UUID.randomUUID();
+            TreinoRealizadoInputDto dto = novoInput(atletaId, 7, 12.0, null, null);
+
+            Atleta atleta = criarAtleta(atletaId);
+            LocalDate hojeDoAtleta = LocalDate.of(2030, 1, 15);
+            TreinoRealizado entidade = new TreinoRealizado();
+            TreinoRealizado salvo = new TreinoRealizado();
+            salvo.setId(UUID.randomUUID());
+            salvo.setTenantId(tenantId);
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(hojeResolver.hojeDe(atleta)).thenReturn(hojeDoAtleta);
+            when(treinoMapper.toEntity(dto)).thenReturn(entidade);
+            when(ingestaoTreinoRealizadoService.registrar(entidade, null))
+                    .thenReturn(new br.com.menthoros.backend.services.helper.TreinoDedupHelper.SaveResult(salvo, true));
+            when(tipoTreinoConsistenciaValidator.validarEstrutura(salvo)).thenReturn(Optional.empty());
+            when(treinoMapper.toOutputDto(salvo)).thenReturn(outputStub(salvo.getId()));
+
+            treinoService.lancarTreino(atletaId, dto);
+
+            assertEquals(hojeDoAtleta, entidade.getDataTreino());
+            verify(hojeResolver).hojeDe(atleta);
+        }
     }
 
     @Nested
@@ -454,6 +484,30 @@ class TreinoServiceImplTest {
             assertThrows(DomainNotFoundException.class, () -> treinoService.addTreino(null, dto));
 
             verify(treinoRealizadoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("sem dataTreino no input, usa hojeResolver.hojeDe(atleta) — não o relógio do servidor")
+        void semDataTreinoUsaHojeDoAtleta() {
+            UUID atletaId = UUID.randomUUID();
+            TreinoRealizadoInputDto dto = novoInput(atletaId, 6, 9.0, null, null);
+
+            Atleta atleta = criarAtleta(atletaId);
+            LocalDate hojeDoAtleta = LocalDate.of(2030, 1, 15);
+            TreinoRealizado entidade = new TreinoRealizado();
+            TreinoRealizado salvo = new TreinoRealizado();
+            salvo.setId(UUID.randomUUID());
+
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(hojeResolver.hojeDe(atleta)).thenReturn(hojeDoAtleta);
+            when(treinoMapper.toEntity(dto)).thenReturn(entidade);
+            when(ingestaoTreinoRealizadoService.registrar(entidade, null))
+                    .thenReturn(new br.com.menthoros.backend.services.helper.TreinoDedupHelper.SaveResult(salvo, true));
+
+            treinoService.addTreino(null, dto);
+
+            assertEquals(hojeDoAtleta, entidade.getDataTreino());
+            verify(hojeResolver).hojeDe(atleta);
         }
 
         @Test

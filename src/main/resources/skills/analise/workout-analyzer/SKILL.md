@@ -80,30 +80,46 @@ Delta: +3 → CONCERNING
 
 ```python
 # Decision Tree for Root Cause Analysis
+#
+# Nested under "rpe_delta >= +3" on purpose: a concerning RPE delta must never fall
+# through to NORMAL just because it lands in the -20..-10 TSB zone that doesn't match
+# ACCUMULATED_FATIGUE's "< -20" nor ENVIRONMENTAL's "> -10" condition. The inner ELSE
+# below is exactly that zone, after CNS/pacing signals were already checked and found
+# no better explanation — it still tags the workout as fatigue-related, never NORMAL.
 
-IF rpe_delta >= +3 AND tsb < -20:
-    PRIMARY_CAUSE = "ACCUMULATED_FATIGUE"
-    SEVERITY = "HIGH"
-    RECOMMENDATION = "Mandatory recovery 48-72 hours"
-    TAGS = ["FATIGUE_DETECTED", "ACCUMULATED_FATIGUE", "RECOVERY_NEEDED"]
+IF rpe_delta >= +3:
 
-ELIF rpe_delta >= +3 AND tsb > -10:
-    PRIMARY_CAUSE = "ENVIRONMENTAL_FACTORS or INADEQUATE_FUELING"
-    SEVERITY = "MEDIUM"
-    RECOMMENDATION = "Check nutrition/hydration strategy, weather conditions"
-    TAGS = ["ENVIRONMENTAL_STRESS"]
+    IF tsb < -20:
+        PRIMARY_CAUSE = "ACCUMULATED_FATIGUE"
+        SEVERITY = "HIGH"
+        RECOMMENDATION = "Mandatory recovery 48-72 hours"
+        TAGS = ["FATIGUE_DETECTED", "ACCUMULATED_FATIGUE", "RECOVERY_NEEDED"]
 
-ELIF rpe_delta >= +3 AND consecutive_load_days >= 5:
-    PRIMARY_CAUSE = "CNS_FATIGUE"
-    SEVERITY = "HIGH"
-    RECOMMENDATION = "Active recovery or complete rest day"
-    TAGS = ["CNS_FATIGUE", "RECOVERY_NEEDED"]
+    ELIF tsb > -10:
+        PRIMARY_CAUSE = "ENVIRONMENTAL_FACTORS or INADEQUATE_FUELING"
+        SEVERITY = "MEDIUM"
+        RECOMMENDATION = "Check nutrition/hydration strategy, weather conditions"
+        TAGS = ["ENVIRONMENTAL_STRESS"]
 
-ELIF rpe_delta >= +3 AND actual.distance < planned.distance * 0.9:
-    PRIMARY_CAUSE = "PACING_ERROR"
-    SEVERITY = "MEDIUM"
-    RECOMMENDATION = "Review pacing strategy, consider starting slower"
-    TAGS = ["PACING_ERROR", "WORKOUT_INCOMPLETE"]
+    ELIF consecutive_load_days >= 5:
+        PRIMARY_CAUSE = "CNS_FATIGUE"
+        SEVERITY = "HIGH"
+        RECOMMENDATION = "Active recovery or complete rest day"
+        TAGS = ["CNS_FATIGUE", "RECOVERY_NEEDED"]
+
+    ELIF actual.distance < planned.distance * 0.9:
+        PRIMARY_CAUSE = "PACING_ERROR"
+        SEVERITY = "MEDIUM"
+        RECOMMENDATION = "Review pacing strategy, consider starting slower"
+        TAGS = ["PACING_ERROR", "WORKOUT_INCOMPLETE"]
+
+    ELSE:
+        # -20 <= tsb <= -10, no CNS or pacing signal either — still concerning per the
+        # classification table above, so it stays fatigue-related, not NORMAL.
+        PRIMARY_CAUSE = "ACCUMULATED_FATIGUE"
+        SEVERITY = "MEDIUM"
+        RECOMMENDATION = "24-48 hours lighter load; monitor TSB trend next session"
+        TAGS = ["FATIGUE_DETECTED"]
 
 ELSE:
     PRIMARY_CAUSE = "NORMAL"
@@ -170,8 +186,17 @@ def calculate_execution_score(rpe_delta, tsb, distance_completion_percent):
     if abs(rpe_delta) == 1:
         return 9
     
-    # Good execution (context-dependent)
-    if abs(rpe_delta) == 2:
+    # Easier than expected (could be good or concerning) — checked BEFORE the generic
+    # abs()==2 branch below. Checking abs() first would catch rpe_delta == -2 as plain
+    # "Good execution" and the undertraining read here would never run for that value.
+    if rpe_delta <= -2:
+        if tsb > 0:
+            return 7  # Good recovery, easy day
+        else:
+            return 6  # Possible undertraining
+    
+    # Good execution, harder than expected by 2 (context-dependent)
+    if rpe_delta == 2:
         if tsb > -10:
             return 8  # Normal fatigue
         else:
@@ -186,13 +211,6 @@ def calculate_execution_score(rpe_delta, tsb, distance_completion_percent):
             score -= 1
         
         return max(1, score)
-    
-    # Easier than expected (could be good or concerning)
-    if rpe_delta <= -2:
-        if tsb > 0:
-            return 7  # Good recovery, easy day
-        else:
-            return 6  # Possible undertraining
     
     return 5  # Default
 ```
@@ -381,6 +399,27 @@ def calculate_execution_score(rpe_delta, tsb, distance_completion_percent):
 ❌ **Don't recommend hard workouts when TSB < -20:** This risks injury
 ❌ **Don't assume environmental factors without checking TSB first**
 ❌ **Don't give vague recommendations:** Be specific and actionable
+
+### No AI Writing Tics
+
+`summary`, `technical_interpretation`, `recommendation` and `rationale` are prose fields read by
+a human (coach) or fed into a translation step — both amplify filler. Forbidden:
+
+- Filler openers: "it's important to note that", "it should be noted that", "it's worth
+  mentioning that".
+- Padding connectors used as transitions rather than real links: "furthermore", "moreover",
+  "overall", "in summary".
+- Empty intensifiers with no number behind them: "incredible", "fascinating", "essential",
+  "crucial", "extraordinary", "significant" (without stating how much).
+- The "it's not just X, it's Y" construction and decorative rule-of-three padding (three
+  adjectives or clauses in a row just to sound thorough).
+- Cascading em dashes — at most one per field.
+- Restating the same point twice with different synonyms to fill space.
+- Identical cadence across all four fields (e.g. every field shaped "clause — clause"). Vary
+  sentence structure between `summary`, `technical_interpretation`, `recommendation` and
+  `rationale`.
+
+Write like a coach annotating a training log, not like a report generator padding word count.
 
 ## Scientific References
 

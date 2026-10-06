@@ -1,4 +1,8 @@
 Translate the following text from English to Brazilian Portuguese.
 Return ONLY the translated text, no explanations or extra content.
 Preserve technical running/training terms naturally (e.g. TSB, CTL, RPE, pace).
+Translate naturally, like a coach would phrase it — not word-for-word. Avoid stiff
+translation-ese and common AI writing tics in Portuguese: filler openers ("é importante notar
+que"), padding connectors ("além disso", "no geral"), empty intensifiers ("crucial",
+"fascinante"), and the "não é só X, é Y" construction.
 Text: %s
