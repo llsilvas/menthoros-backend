@@ -6,11 +6,13 @@ import br.com.menthoros.backend.entity.AnaliseWorkout;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AnaliseStatus;
+import br.com.menthoros.backend.enums.WorkoutPlanVerdict;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.AtletaWorkoutAnalysisService;
 import br.com.menthoros.backend.services.WorkoutAnalysisEligibility;
+import br.com.menthoros.backend.services.helper.WorkoutPlanVerdictCalculator;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -41,12 +43,15 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisService {
 
+    private static final String SEM_VEREDITO = "sem_planejado";
+
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final AiWorkoutAnalysisRepository analiseRepository;
     private final WorkoutAnalysisEligibility eligibility;
     private final WorkoutAnalysisProperties properties;
     private final MeterRegistry meterRegistry;
     private final Clock clock;
+    private final WorkoutPlanVerdictCalculator verdictCalculator;
 
     /**
      * Idempotent: quase — a primeira chamada com COMPLETED carimba a visualização; as demais só leem.
@@ -78,12 +83,13 @@ public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisSe
             return Optional.empty();
         }
 
-        registrarPrimeiraVisualizacao(pronta);
-        return Optional.of(dtoCompleto(treino, pronta));
+        AthleteWorkoutAnalysisOutputDto dto = dtoCompleto(treino, pronta);
+        registrarPrimeiraVisualizacao(pronta, dto.veredito());
+        return Optional.of(dto);
     }
 
     /** Carimba e conta UMA vez por análise (Codex #6) — o polling do front não infla a métrica. */
-    private void registrarPrimeiraVisualizacao(AnaliseWorkout analise) {
+    private void registrarPrimeiraVisualizacao(AnaliseWorkout analise, WorkoutPlanVerdict veredito) {
         if (analise.getAtletaPrimeiraVisualizacaoEm() != null) {
             return;
         }
@@ -97,14 +103,24 @@ public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisSe
                 .description("Análises pós-treino abertas pelo atleta (primeira visualização por análise)")
                 .register(meterRegistry)
                 .increment();
+        Counter.builder("atleta_treino_veredito_total")
+                .description("Veredito de aderência ao plano (add-athlete-workout-verdict-chip), por primeira visualização")
+                .tag("veredito", veredito != null ? veredito.name() : SEM_VEREDITO)
+                .register(meterRegistry)
+                .increment();
     }
 
     private AthleteWorkoutAnalysisOutputDto dtoPendente(TreinoRealizado treino) {
+        AthleteWorkoutAnalysisOutputDto.Executado executado = executado(treino);
+        AthleteWorkoutAnalysisOutputDto.Planejado planejado = planejado(treino);
         return new AthleteWorkoutAnalysisOutputDto(AnaliseStatus.PENDING, null,
-                null, null, null, null, executado(treino), planejado(treino));
+                null, null, null, null, executado, planejado,
+                verdictCalculator.calcular(executado, planejado));
     }
 
     private AthleteWorkoutAnalysisOutputDto dtoCompleto(TreinoRealizado treino, AnaliseWorkout analise) {
+        AthleteWorkoutAnalysisOutputDto.Executado executado = executado(treino);
+        AthleteWorkoutAnalysisOutputDto.Planejado planejado = planejado(treino);
         return new AthleteWorkoutAnalysisOutputDto(
                 AnaliseStatus.COMPLETED,
                 analise.getAnalyzedAt(),
@@ -112,8 +128,9 @@ public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisSe
                 analise.getAtletaComoFoi(),
                 analise.getAtletaEsforco(),
                 analise.getAtletaProximoTreino(),
-                executado(treino),
-                planejado(treino));
+                executado,
+                planejado,
+                verdictCalculator.calcular(executado, planejado));
     }
 
     private static AthleteWorkoutAnalysisOutputDto.Executado executado(TreinoRealizado treino) {

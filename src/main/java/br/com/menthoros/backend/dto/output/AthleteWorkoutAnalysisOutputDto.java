@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.dto.output;
 
 import br.com.menthoros.backend.enums.AnaliseStatus;
+import br.com.menthoros.backend.enums.WorkoutPlanVerdict;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -38,7 +39,10 @@ public record AthleteWorkoutAnalysisOutputDto(
         Executado executado,
 
         @Schema(description = "Números do treino planejado vinculado; ausente quando o realizado não tem planejado", nullable = true)
-        Planejado planejado
+        Planejado planejado,
+
+        @Schema(description = "Veredito determinístico de aderência ao plano, sem LLM; ausente sem planejado vinculado ou sem dimensão comparável", nullable = true)
+        WorkoutPlanVerdict veredito
 ) {
 
     @Schema(description = "Números do treino realizado")
