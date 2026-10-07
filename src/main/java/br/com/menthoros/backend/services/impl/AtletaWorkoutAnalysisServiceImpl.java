@@ -37,6 +37,16 @@ import java.util.UUID;
  * registro a linha de {@code AnaliseWorkout} ainda não existe. Realizado elegível (mesma regra
  * do listener, via {@link WorkoutAnalysisEligibility}) sem linha ou com linha {@code PENDING}
  * devolve {@code 200 PENDING} — senão o card do atleta sumiria exatamente no fluxo de registro.
+ *
+ * <p><b>{@code veredito} é "live" (add-athlete-workout-verdict-chip, Codex #importante):</b>
+ * diferente dos quatro textos da IA — escritos uma única vez em {@code tb_analise_workout} e
+ * congelados a partir daí —, o veredito é recalculado em toda chamada a partir dos números
+ * <em>atuais</em> de {@code TreinoRealizado}. Se o atleta editar duração/distância/RPE depois de
+ * a análise já estar {@code COMPLETED} (edição manual ou re-sync do Strava), ou se o planejado
+ * vinculado mudar, o veredito pode divergir do texto já escrito pela IA — nenhum dos dois
+ * fluxos de edição invalida ou reprocessa a análise. Aceito nesta versão (fora de escopo
+ * reprocessar a IA); se a divergência se mostrar incômoda em produção, considerar invalidar
+ * {@code AnaliseWorkout} quando os campos relevantes de {@code TreinoRealizado} mudarem.</p>
  */
 @Slf4j
 @Service
