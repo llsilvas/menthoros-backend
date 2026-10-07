@@ -94,12 +94,12 @@ public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisSe
         }
 
         AthleteWorkoutAnalysisOutputDto dto = dtoCompleto(treino, pronta);
-        registrarPrimeiraVisualizacao(pronta, dto.veredito());
+        registrarPrimeiraVisualizacao(pronta, dto.veredito(), tenantId);
         return Optional.of(dto);
     }
 
     /** Carimba e conta UMA vez por análise (Codex #6) — o polling do front não infla a métrica. */
-    private void registrarPrimeiraVisualizacao(AnaliseWorkout analise, WorkoutPlanVerdict veredito) {
+    private void registrarPrimeiraVisualizacao(AnaliseWorkout analise, WorkoutPlanVerdict veredito, UUID tenantId) {
         if (analise.getAtletaPrimeiraVisualizacaoEm() != null) {
             return;
         }
@@ -113,9 +113,12 @@ public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisSe
                 .description("Análises pós-treino abertas pelo atleta (primeira visualização por análise)")
                 .register(meterRegistry)
                 .increment();
+        // Tag "tenant" (achado Codex NO-GO): sem ela, assessorias distintas somam na mesma série
+        // e a distribuição por assessoria prometida no proposal.md fica impossível de calcular.
         Counter.builder("atleta_treino_veredito_total")
                 .description("Veredito de aderência ao plano (add-athlete-workout-verdict-chip), por primeira visualização")
                 .tag("veredito", veredito != null ? veredito.name() : SEM_VEREDITO)
+                .tag("tenant", tenantId.toString())
                 .register(meterRegistry)
                 .increment();
     }

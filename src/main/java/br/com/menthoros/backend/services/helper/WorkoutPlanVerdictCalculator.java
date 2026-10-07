@@ -31,22 +31,29 @@ import java.util.Objects;
  *
  * <p>Idempotent: YES — mesma entrada sempre produz a mesma saída. Side Effects: NONE.
  * Tenant-aware: NO — pura transformação de DTOs, sem acesso a dados persistidos.</p>
+ *
+ * <p><b>Identificadores em PT-BR (desvio intencional da ADR-0007):</b> {@code veredito} convive
+ * com {@code comoFoi}/{@code reconhecimento}/{@code esforco}, todos PT-BR legado, no mesmo
+ * {@code AthleteWorkoutAnalysisOutputDto} — decisão registrada em design.md D0 da
+ * add-athlete-workout-verdict-chip.</p>
  */
 @Component
 public class WorkoutPlanVerdictCalculator {
 
-    private static final double DEFAULT_TOLERANCIA_PCT = 15.0;
-    private static final int DEFAULT_DELTA_RPE = 2;
-
-    private final double toleranciaPct;
+    private final BigDecimal limiteInferiorFator;
+    private final BigDecimal limiteSuperiorFator;
     private final int deltaRpe;
 
-    public WorkoutPlanVerdictCalculator() {
-        this(DEFAULT_TOLERANCIA_PCT, DEFAULT_DELTA_RPE);
-    }
-
+    /**
+     * Construtor de teste — valores explícitos, sem default implícito. A única fonte de verdade
+     * para o default de produção é {@link WorkoutAnalysisProperties.Verdict} (achado do
+     * code-reviewer: dois defaults hardcoded em lugares diferentes divergem silenciosamente se
+     * alguém recalibrar um e esquecer o outro).
+     */
     public WorkoutPlanVerdictCalculator(double toleranciaPct, int deltaRpe) {
-        this.toleranciaPct = toleranciaPct;
+        BigDecimal fracao = BigDecimal.valueOf(toleranciaPct).divide(BigDecimal.valueOf(100));
+        this.limiteInferiorFator = BigDecimal.ONE.subtract(fracao);
+        this.limiteSuperiorFator = BigDecimal.ONE.add(fracao);
         this.deltaRpe = deltaRpe;
     }
 
@@ -64,8 +71,8 @@ public class WorkoutPlanVerdictCalculator {
             return WorkoutPlanVerdict.ESFORCO_ACIMA_DO_ESPERADO;
         }
 
-        Desvio duracao = classificar(toDouble(executado.duracaoMin()), toDouble(planejado.duracaoMin()));
-        Desvio distancia = classificar(toDouble(executado.distanciaKm()), toDouble(planejado.distanciaKm()));
+        Desvio duracao = classificar(toBigDecimal(executado.duracaoMin()), toBigDecimal(planejado.duracaoMin()));
+        Desvio distancia = classificar(executado.distanciaKm(), planejado.distanciaKm());
 
         boolean algumaAbaixo = duracao == Desvio.ABAIXO || distancia == Desvio.ABAIXO;
         boolean algumaAcima = duracao == Desvio.ACIMA || distancia == Desvio.ACIMA;
@@ -80,25 +87,26 @@ public class WorkoutPlanVerdictCalculator {
         return null;
     }
 
-    private Desvio classificar(Double executado, Double planejado) {
-        if (planejado == null || planejado <= 0) return Desvio.NAO_APLICAVEL;
+    /**
+     * Compara por multiplicação (planejado × fator), nunca por divisão (executado / planejado) —
+     * achado do Codex adversarial review: {@code 6.9 / 6.0} em {@code double} produz
+     * {@code 1.1500000000000001}, cruzando o limite de 115% inclusivo por erro de arredondamento
+     * binário. {@link BigDecimal} com aritmética exata elimina a classe inteira do problema.
+     */
+    private Desvio classificar(BigDecimal executado, BigDecimal planejado) {
+        if (planejado == null || planejado.compareTo(BigDecimal.ZERO) <= 0) return Desvio.NAO_APLICAVEL;
         if (executado == null) return Desvio.NAO_COBERTA;
 
-        double ratio = executado / planejado;
-        double inferior = 1 - toleranciaPct / 100.0;
-        double superior = 1 + toleranciaPct / 100.0;
+        BigDecimal limiteInferior = planejado.multiply(limiteInferiorFator);
+        BigDecimal limiteSuperior = planejado.multiply(limiteSuperiorFator);
 
-        if (ratio < inferior) return Desvio.ABAIXO;
-        if (ratio > superior) return Desvio.ACIMA;
+        if (executado.compareTo(limiteInferior) < 0) return Desvio.ABAIXO;
+        if (executado.compareTo(limiteSuperior) > 0) return Desvio.ACIMA;
         return Desvio.DENTRO;
     }
 
-    private static Double toDouble(Long valor) {
-        return valor == null ? null : valor.doubleValue();
-    }
-
-    private static Double toDouble(BigDecimal valor) {
-        return valor == null ? null : valor.doubleValue();
+    private static BigDecimal toBigDecimal(Long valor) {
+        return valor == null ? null : BigDecimal.valueOf(valor);
     }
 
     private enum Desvio { ABAIXO, DENTRO, ACIMA, NAO_COBERTA, NAO_APLICAVEL }

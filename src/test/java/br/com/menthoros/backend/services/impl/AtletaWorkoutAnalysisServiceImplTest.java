@@ -65,7 +65,7 @@ class AtletaWorkoutAnalysisServiceImplTest {
                 treinoRealizadoRepository, analiseRepository,
                 new WorkoutAnalysisEligibility(properties), properties, meterRegistry,
                 Clock.fixed(Instant.parse("2026-08-30T12:00:00Z"), ZoneOffset.UTC),
-                new WorkoutPlanVerdictCalculator());
+                new WorkoutPlanVerdictCalculator(15.0, 2));
     }
 
     @AfterEach
@@ -126,7 +126,8 @@ class AtletaWorkoutAnalysisServiceImplTest {
         assertThat(dto.veredito()).isEqualTo(WorkoutPlanVerdict.DENTRO_DO_PLANO);
         assertThat(analise.getAtletaPrimeiraVisualizacaoEm()).isEqualTo(Instant.parse("2026-08-30T12:00:00Z"));
         assertThat(meterRegistry.counter("atleta_analise_visualizada_total").count()).isEqualTo(1.0);
-        assertThat(meterRegistry.counter("atleta_treino_veredito_total", "veredito", "DENTRO_DO_PLANO").count())
+        assertThat(meterRegistry.counter("atleta_treino_veredito_total",
+                "veredito", "DENTRO_DO_PLANO", "tenant", tenantId.toString()).count())
                 .isEqualTo(1.0);
     }
 
@@ -142,8 +143,34 @@ class AtletaWorkoutAnalysisServiceImplTest {
         Optional<AthleteWorkoutAnalysisOutputDto> result = service.buscarAnalise(atletaId, treinoId);
 
         assertThat(result).hasValueSatisfying(dto -> assertThat(dto.veredito()).isNull());
-        assertThat(meterRegistry.counter("atleta_treino_veredito_total", "veredito", "sem_planejado").count())
+        assertThat(meterRegistry.counter("atleta_treino_veredito_total",
+                "veredito", "sem_planejado", "tenant", tenantId.toString()).count())
                 .isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("assessorias distintas incrementam séries separadas da métrica (achado Codex: distribuição por assessoria)")
+    void tenantsDistintosGeramSeriesSeparadasNaMetricaDeVeredito() {
+        TreinoRealizado tr = realizado();
+        TreinoPlanejado planejado = new TreinoPlanejado();
+        planejado.setDuracaoMin(Duration.ofMinutes(61));
+        planejado.setDistanciaKm(new BigDecimal("11.0"));
+        planejado.setPercepcaoEsforcoEsperada(6);
+        tr.setTreinoPlanejado(planejado);
+        AnaliseWorkout analise = completa();
+        when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
+                .thenReturn(Optional.of(analise));
+        when(analiseRepository.marcarPrimeiraVisualizacao(eq(analise.getId()), any())).thenReturn(1);
+
+        service.buscarAnalise(atletaId, treinoId);
+
+        UUID outroTenantId = UUID.randomUUID();
+        assertThat(meterRegistry.counter("atleta_treino_veredito_total",
+                "veredito", "DENTRO_DO_PLANO", "tenant", tenantId.toString()).count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.counter("atleta_treino_veredito_total",
+                "veredito", "DENTRO_DO_PLANO", "tenant", outroTenantId.toString()).count())
+                .isEqualTo(0.0);
     }
 
     @Test

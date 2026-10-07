@@ -21,7 +21,9 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 @DisplayName("WorkoutPlanVerdictCalculator")
 class WorkoutPlanVerdictCalculatorTest {
 
-    private final WorkoutPlanVerdictCalculator calculator = new WorkoutPlanVerdictCalculator();
+    /** Valores explícitos (não defaults implícitos) — a fonte de verdade do default de produção
+     * é {@code WorkoutAnalysisProperties.Verdict}, exercitada à parte no nested abaixo. */
+    private final WorkoutPlanVerdictCalculator calculator = new WorkoutPlanVerdictCalculator(15.0, 2);
 
     private static Executado executado(Long duracaoMin, Double distanciaKm, Integer rpe) {
         return new Executado(duracaoMin, bd(distanciaKm), rpe);
@@ -154,6 +156,17 @@ class WorkoutPlanVerdictCalculatorTest {
             var resultado = calculator.calcular(
                     executado(69L, null, 5),
                     planejado(60L, null, 5)
+            );
+            assertThat(resultado).isEqualTo(WorkoutPlanVerdict.DENTRO_DO_PLANO);
+        }
+
+        @Test
+        @DisplayName("distância 6,90 km vs. planejado 6,00 km (exatamente 115%) -> DENTRO_DO_PLANO " +
+                "(achado Codex: 6.9/6.0 em double vira 1.1500000000000001 e cruza o limite)")
+        void exatamente115PorCentoComDistanciaDecimal() {
+            var resultado = calculator.calcular(
+                    executado(null, 6.9, 5),
+                    planejado(null, 6.0, 5)
             );
             assertThat(resultado).isEqualTo(WorkoutPlanVerdict.DENTRO_DO_PLANO);
         }
