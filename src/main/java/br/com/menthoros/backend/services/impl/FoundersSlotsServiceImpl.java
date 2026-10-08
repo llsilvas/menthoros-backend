@@ -43,6 +43,11 @@ public class FoundersSlotsServiceImpl implements FoundersSlotsService {
                 .build();
     }
 
+    /**
+     * Idempotent: YES — leitura, sem mutação de estado.
+     * Side Effects: NONE
+     * Tenant-aware: NO — dado público/global, sem escopo de tenant (ver proposal.md).
+     */
     @Override
     public FoundersSlotsOutputDto obterVagas() {
         return cache.get(CHAVE_UNICA, chave -> calcular());
