@@ -4,6 +4,7 @@ import br.com.menthoros.backend.dto.input.WaitlistInputDto;
 import br.com.menthoros.backend.entity.Waitlist;
 import br.com.menthoros.backend.enums.FaixaAtletas;
 import br.com.menthoros.backend.enums.PerfilWaitlist;
+import br.com.menthoros.backend.events.WaitlistLeadCreatedEvent;
 import br.com.menthoros.backend.repository.WaitlistRepository;
 import br.com.menthoros.backend.services.WaitlistService;
 import org.junit.jupiter.api.DisplayName;
@@ -14,7 +15,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
+
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,6 +32,9 @@ class WaitlistServiceImplTest {
 
     @Mock
     private WaitlistRepository waitlistRepository;
+
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     private WaitlistServiceImpl waitlistService;
@@ -47,6 +54,53 @@ class WaitlistServiceImplTest {
 
             assertThat(resultado).isEqualTo(WaitlistService.Resultado.CRIADO);
             verify(waitlistRepository).saveAndFlush(any(Waitlist.class));
+        }
+
+        @Test
+        @DisplayName("lead criado publica WaitlistLeadCreatedEvent com o id salvo")
+        void criadoPublicaEvento() {
+            UUID id = UUID.randomUUID();
+            when(waitlistRepository.existsByEmailNormalized("maria@exemplo.com")).thenReturn(false);
+            when(waitlistRepository.saveAndFlush(any(Waitlist.class)))
+                    .thenAnswer(inv -> ((Waitlist) inv.getArgument(0)).toBuilder().id(id).build());
+
+            waitlistService.registrar(dto("maria@exemplo.com", PerfilWaitlist.TREINADOR, FaixaAtletas.DE_11_A_30, null));
+
+            ArgumentCaptor<WaitlistLeadCreatedEvent> captor = ArgumentCaptor.forClass(WaitlistLeadCreatedEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue().waitlistId()).isEqualTo(id);
+        }
+
+        @Test
+        @DisplayName("executor de notificação saturado (publishEvent lança) não derruba o cadastro")
+        void falhaAoPublicarEventoNaoDerrubaCadastro() {
+            when(waitlistRepository.existsByEmailNormalized("maria@exemplo.com")).thenReturn(false);
+            when(waitlistRepository.saveAndFlush(any(Waitlist.class))).thenAnswer(inv -> inv.getArgument(0));
+            org.mockito.Mockito.doThrow(new org.springframework.core.task.TaskRejectedException("pool saturado"))
+                    .when(eventPublisher).publishEvent(any());
+
+            WaitlistService.Resultado resultado = waitlistService.registrar(
+                    dto("maria@exemplo.com", PerfilWaitlist.TREINADOR, FaixaAtletas.DE_11_A_30, null));
+
+            assertThat(resultado).isEqualTo(WaitlistService.Resultado.CRIADO);
+        }
+
+        @Test
+        @DisplayName("e-mail já inscrito não publica evento")
+        void jaInscritoNaoPublicaEvento() {
+            when(waitlistRepository.existsByEmailNormalized("maria@exemplo.com")).thenReturn(true);
+
+            waitlistService.registrar(dto("maria@exemplo.com", PerfilWaitlist.TREINADOR, null, null));
+
+            verify(eventPublisher, never()).publishEvent(any());
+        }
+
+        @Test
+        @DisplayName("honeypot não publica evento")
+        void honeypotNaoPublicaEvento() {
+            waitlistService.registrar(dto("bot@exemplo.com", PerfilWaitlist.TREINADOR, null, "http://spam.example"));
+
+            verify(eventPublisher, never()).publishEvent(any());
         }
 
         @Test

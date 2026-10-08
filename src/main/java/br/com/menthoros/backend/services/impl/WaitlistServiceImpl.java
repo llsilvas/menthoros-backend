@@ -3,14 +3,17 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.dto.input.WaitlistInputDto;
 import br.com.menthoros.backend.entity.Waitlist;
 import br.com.menthoros.backend.enums.PerfilWaitlist;
+import br.com.menthoros.backend.events.WaitlistLeadCreatedEvent;
 import br.com.menthoros.backend.repository.WaitlistRepository;
 import br.com.menthoros.backend.services.WaitlistService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.util.Locale;
+import java.util.UUID;
 
 /**
  * Implementação da {@link WaitlistService}.
@@ -28,6 +31,7 @@ public class WaitlistServiceImpl implements WaitlistService {
     private static final String UK_EMAIL_NORMALIZED = "uk_waitlist_email_normalized";
 
     private final WaitlistRepository waitlistRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Override
     public Resultado registrar(WaitlistInputDto dto) {
@@ -75,6 +79,7 @@ public class WaitlistServiceImpl implements WaitlistService {
         try {
             Waitlist salvo = waitlistRepository.saveAndFlush(waitlist);
             log.info("Waitlist: inscrição criada id={}", salvo.getId());
+            publicarEventoDeNotificacao(salvo.getId());
             return Resultado.CRIADO;
         } catch (DataIntegrityViolationException e) {
             // Só trata como duplicata se a violação for do índice único de e-mail (corrida entre
@@ -90,5 +95,21 @@ public class WaitlistServiceImpl implements WaitlistService {
 
     private String normalizarEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * Publica o evento que dispara o e-mail — melhor esforço, nunca derruba um cadastro que já
+     * commitou. {@code fallbackExecution=true} do listener despacha o {@code @Async} de forma
+     * síncrona nesta mesma chamada (ver design.md D2); se o executor dedicado estiver saturado,
+     * {@code publishEvent} pode lançar (ex.: {@code TaskRejectedException}) depois que a linha já
+     * foi gravada — sem este catch, o inscrito veria 500 para uma inscrição que na verdade deu
+     * certo.
+     */
+    private void publicarEventoDeNotificacao(UUID waitlistId) {
+        try {
+            eventPublisher.publishEvent(new WaitlistLeadCreatedEvent(waitlistId));
+        } catch (RuntimeException e) {
+            log.error("Waitlist: falha ao publicar evento de notificação para o lead {}", waitlistId, e);
+        }
     }
 }
