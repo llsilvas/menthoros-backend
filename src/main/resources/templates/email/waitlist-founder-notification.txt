@@ -1,0 +1,10 @@
+Waitlist · Lead qualificado
+
+{{nome}}
+
+E-mail: {{email}}
+Atletas: {{faixaAtletas}}
+WhatsApp: {{telefone}}
+Origem: {{origem}}
+
+Lead treinador recém-criado na waitlist. Responder rápido enquanto o interesse está quente.

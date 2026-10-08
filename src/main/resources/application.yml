@@ -182,6 +182,14 @@ app:
     outbox-dir: ${EMAIL_OUTBOX_DIR:target/outbox}
 
   # ----------------------------------------
+  # NOTIFICAÇÃO AO FOUNDER
+  # ----------------------------------------
+  founder:
+    # Destinatário da notificação de lead qualificado (waitlist). Sem default: vazio = o listener
+    # loga e não tenta enviar, em vez de mandar para um endereço inventado.
+    notification-email: ${FOUNDER_NOTIFICATION_EMAIL:}
+
+  # ----------------------------------------
   # CONVITE DAS ASSESSORIAS FUNDADORAS
   # ----------------------------------------
   founding-invite:
