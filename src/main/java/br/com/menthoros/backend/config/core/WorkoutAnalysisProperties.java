@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.config.core;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import lombok.Getter;
 import lombok.Setter;
@@ -28,6 +29,9 @@ public class WorkoutAnalysisProperties {
 
     private final AthleteMessage athleteMessage = new AthleteMessage();
 
+    @Valid
+    private final Verdict verdict = new Verdict();
+
     /**
      * Kill switch da exposição do bloco do atleta (analise-ia-treino-atleta, D3):
      * {@code app.workout-analysis.athlete-message.enabled=false} faz o endpoint do atleta
@@ -38,5 +42,21 @@ public class WorkoutAnalysisProperties {
     @Setter
     public static class AthleteMessage {
         private boolean enabled = true;
+    }
+
+    /**
+     * Limiares do {@code WorkoutPlanVerdictCalculator} (add-athlete-workout-verdict-chip, D2):
+     * tolerância percentual para duração/distância e delta de RPE para "esforço acima do
+     * esperado". Configuráveis sem deploy de front, para recalibrar a partir da métrica de
+     * distribuição de vereditos por assessoria caso os defaults gerem veredito injusto.
+     */
+    @Getter
+    @Setter
+    public static class Verdict {
+        @Min(value = 0, message = "toleranciaPct deve ser >= 0")
+        private double toleranciaPct = 15.0;
+
+        @Min(value = 0, message = "deltaRpe deve ser >= 0")
+        private int deltaRpe = 2;
     }
 }

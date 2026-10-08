@@ -6,11 +6,13 @@ import br.com.menthoros.backend.entity.AnaliseWorkout;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.AnaliseStatus;
+import br.com.menthoros.backend.enums.WorkoutPlanVerdict;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.AtletaWorkoutAnalysisService;
 import br.com.menthoros.backend.services.WorkoutAnalysisEligibility;
+import br.com.menthoros.backend.services.helper.WorkoutPlanVerdictCalculator;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -35,11 +37,23 @@ import java.util.UUID;
  * registro a linha de {@code AnaliseWorkout} ainda não existe. Realizado elegível (mesma regra
  * do listener, via {@link WorkoutAnalysisEligibility}) sem linha ou com linha {@code PENDING}
  * devolve {@code 200 PENDING} — senão o card do atleta sumiria exatamente no fluxo de registro.
+ *
+ * <p><b>{@code veredito} é "live" (add-athlete-workout-verdict-chip, Codex #importante):</b>
+ * diferente dos quatro textos da IA — escritos uma única vez em {@code tb_analise_workout} e
+ * congelados a partir daí —, o veredito é recalculado em toda chamada a partir dos números
+ * <em>atuais</em> de {@code TreinoRealizado}. Se o atleta editar duração/distância/RPE depois de
+ * a análise já estar {@code COMPLETED} (edição manual ou re-sync do Strava), ou se o planejado
+ * vinculado mudar, o veredito pode divergir do texto já escrito pela IA — nenhum dos dois
+ * fluxos de edição invalida ou reprocessa a análise. Aceito nesta versão (fora de escopo
+ * reprocessar a IA); se a divergência se mostrar incômoda em produção, considerar invalidar
+ * {@code AnaliseWorkout} quando os campos relevantes de {@code TreinoRealizado} mudarem.</p>
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisService {
+
+    private static final String SEM_VEREDITO = "sem_planejado";
 
     private final TreinoRealizadoRepository treinoRealizadoRepository;
     private final AiWorkoutAnalysisRepository analiseRepository;
@@ -47,6 +61,7 @@ public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisSe
     private final WorkoutAnalysisProperties properties;
     private final MeterRegistry meterRegistry;
     private final Clock clock;
+    private final WorkoutPlanVerdictCalculator verdictCalculator;
 
     /**
      * Idempotent: quase — a primeira chamada com COMPLETED carimba a visualização; as demais só leem.
@@ -78,12 +93,13 @@ public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisSe
             return Optional.empty();
         }
 
-        registrarPrimeiraVisualizacao(pronta);
-        return Optional.of(dtoCompleto(treino, pronta));
+        AthleteWorkoutAnalysisOutputDto dto = dtoCompleto(treino, pronta);
+        registrarPrimeiraVisualizacao(pronta, dto.veredito(), tenantId);
+        return Optional.of(dto);
     }
 
     /** Carimba e conta UMA vez por análise (Codex #6) — o polling do front não infla a métrica. */
-    private void registrarPrimeiraVisualizacao(AnaliseWorkout analise) {
+    private void registrarPrimeiraVisualizacao(AnaliseWorkout analise, WorkoutPlanVerdict veredito, UUID tenantId) {
         if (analise.getAtletaPrimeiraVisualizacaoEm() != null) {
             return;
         }
@@ -97,14 +113,27 @@ public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisSe
                 .description("Análises pós-treino abertas pelo atleta (primeira visualização por análise)")
                 .register(meterRegistry)
                 .increment();
+        // Tag "tenant" (achado Codex NO-GO): sem ela, assessorias distintas somam na mesma série
+        // e a distribuição por assessoria prometida no proposal.md fica impossível de calcular.
+        Counter.builder("atleta_treino_veredito_total")
+                .description("Veredito de aderência ao plano (add-athlete-workout-verdict-chip), por primeira visualização")
+                .tag("veredito", veredito != null ? veredito.name() : SEM_VEREDITO)
+                .tag("tenant", tenantId.toString())
+                .register(meterRegistry)
+                .increment();
     }
 
     private AthleteWorkoutAnalysisOutputDto dtoPendente(TreinoRealizado treino) {
+        AthleteWorkoutAnalysisOutputDto.Executado executado = executado(treino);
+        AthleteWorkoutAnalysisOutputDto.Planejado planejado = planejado(treino);
         return new AthleteWorkoutAnalysisOutputDto(AnaliseStatus.PENDING, null,
-                null, null, null, null, executado(treino), planejado(treino));
+                null, null, null, null, executado, planejado,
+                verdictCalculator.calcular(executado, planejado));
     }
 
     private AthleteWorkoutAnalysisOutputDto dtoCompleto(TreinoRealizado treino, AnaliseWorkout analise) {
+        AthleteWorkoutAnalysisOutputDto.Executado executado = executado(treino);
+        AthleteWorkoutAnalysisOutputDto.Planejado planejado = planejado(treino);
         return new AthleteWorkoutAnalysisOutputDto(
                 AnaliseStatus.COMPLETED,
                 analise.getAnalyzedAt(),
@@ -112,8 +141,9 @@ public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisSe
                 analise.getAtletaComoFoi(),
                 analise.getAtletaEsforco(),
                 analise.getAtletaProximoTreino(),
-                executado(treino),
-                planejado(treino));
+                executado,
+                planejado,
+                verdictCalculator.calcular(executado, planejado));
     }
 
     private static AthleteWorkoutAnalysisOutputDto.Executado executado(TreinoRealizado treino) {

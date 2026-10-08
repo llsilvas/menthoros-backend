@@ -11,6 +11,8 @@ import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.WorkoutAnalysisEligibility;
+import br.com.menthoros.backend.services.helper.WorkoutPlanVerdictCalculator;
+import br.com.menthoros.backend.enums.WorkoutPlanVerdict;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
@@ -62,7 +64,8 @@ class AtletaWorkoutAnalysisServiceImplTest {
         service = new AtletaWorkoutAnalysisServiceImpl(
                 treinoRealizadoRepository, analiseRepository,
                 new WorkoutAnalysisEligibility(properties), properties, meterRegistry,
-                Clock.fixed(Instant.parse("2026-08-30T12:00:00Z"), ZoneOffset.UTC));
+                Clock.fixed(Instant.parse("2026-08-30T12:00:00Z"), ZoneOffset.UTC),
+                new WorkoutPlanVerdictCalculator(15.0, 2));
     }
 
     @AfterEach
@@ -120,8 +123,54 @@ class AtletaWorkoutAnalysisServiceImplTest {
         assertThat(dto.executado().duracaoMin()).isEqualTo(58L);
         assertThat(dto.executado().rpe()).isEqualTo(7);
         assertThat(dto.planejado().rpeEsperado()).isEqualTo(6);
+        assertThat(dto.veredito()).isEqualTo(WorkoutPlanVerdict.DENTRO_DO_PLANO);
         assertThat(analise.getAtletaPrimeiraVisualizacaoEm()).isEqualTo(Instant.parse("2026-08-30T12:00:00Z"));
         assertThat(meterRegistry.counter("atleta_analise_visualizada_total").count()).isEqualTo(1.0);
+        assertThat(meterRegistry.counter("atleta_treino_veredito_total",
+                "veredito", "DENTRO_DO_PLANO", "tenant", tenantId.toString()).count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("COMPLETED sem planejado vinculado conta a métrica de veredito com tag sem_planejado")
+    void completedSemPlanejadoContaMetricaComoSemVeredito() {
+        realizado();
+        AnaliseWorkout analise = completa();
+        when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
+                .thenReturn(Optional.of(analise));
+        when(analiseRepository.marcarPrimeiraVisualizacao(eq(analise.getId()), any())).thenReturn(1);
+
+        Optional<AthleteWorkoutAnalysisOutputDto> result = service.buscarAnalise(atletaId, treinoId);
+
+        assertThat(result).hasValueSatisfying(dto -> assertThat(dto.veredito()).isNull());
+        assertThat(meterRegistry.counter("atleta_treino_veredito_total",
+                "veredito", "sem_planejado", "tenant", tenantId.toString()).count())
+                .isEqualTo(1.0);
+    }
+
+    @Test
+    @DisplayName("assessorias distintas incrementam séries separadas da métrica (achado Codex: distribuição por assessoria)")
+    void tenantsDistintosGeramSeriesSeparadasNaMetricaDeVeredito() {
+        TreinoRealizado tr = realizado();
+        TreinoPlanejado planejado = new TreinoPlanejado();
+        planejado.setDuracaoMin(Duration.ofMinutes(61));
+        planejado.setDistanciaKm(new BigDecimal("11.0"));
+        planejado.setPercepcaoEsforcoEsperada(6);
+        tr.setTreinoPlanejado(planejado);
+        AnaliseWorkout analise = completa();
+        when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
+                .thenReturn(Optional.of(analise));
+        when(analiseRepository.marcarPrimeiraVisualizacao(eq(analise.getId()), any())).thenReturn(1);
+
+        service.buscarAnalise(atletaId, treinoId);
+
+        UUID outroTenantId = UUID.randomUUID();
+        assertThat(meterRegistry.counter("atleta_treino_veredito_total",
+                "veredito", "DENTRO_DO_PLANO", "tenant", tenantId.toString()).count())
+                .isEqualTo(1.0);
+        assertThat(meterRegistry.counter("atleta_treino_veredito_total",
+                "veredito", "DENTRO_DO_PLANO", "tenant", outroTenantId.toString()).count())
+                .isEqualTo(0.0);
     }
 
     @Test
@@ -167,6 +216,30 @@ class AtletaWorkoutAnalysisServiceImplTest {
         assertThat(result.get().comoFoi()).isNull();
         assertThat(result.get().executado().duracaoMin()).isEqualTo(58L);
         assertThat(result.get().planejado()).isNull();
+        assertThat(result.get().veredito()).isNull();
+    }
+
+    @Test
+    @DisplayName("PENDING com planejado vinculado já devolve o veredito, antes do texto da IA")
+    void pendingComPlanejadoJaTemVeredito() {
+        TreinoRealizado tr = realizado();
+        TreinoPlanejado planejado = new TreinoPlanejado();
+        planejado.setDuracaoMin(Duration.ofMinutes(45));
+        planejado.setDistanciaKm(new BigDecimal("8.0"));
+        planejado.setPercepcaoEsforcoEsperada(7);
+        tr.setTreinoPlanejado(planejado);
+        tr.setDuracaoMin(Duration.ofMinutes(30));
+        tr.setDistanciaKm(new BigDecimal("8.0"));
+        when(analiseRepository.findByTreinoRealizadoIdAndTenantId(treinoId, tenantId))
+                .thenReturn(Optional.empty());
+
+        Optional<AthleteWorkoutAnalysisOutputDto> result = service.buscarAnalise(atletaId, treinoId);
+
+        assertThat(result).hasValueSatisfying(dto -> {
+            assertThat(dto.status()).isEqualTo(AnaliseStatus.PENDING);
+            assertThat(dto.comoFoi()).isNull();
+            assertThat(dto.veredito()).isEqualTo(WorkoutPlanVerdict.ABAIXO_DO_PLANO);
+        });
     }
 
     @Test
