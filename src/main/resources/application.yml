@@ -190,6 +190,9 @@ app:
     rate-limit:
       # GET publico de consulta do convite, por IP, no PublicEndpointRateLimitFilter.
       per-minute: ${FOUNDING_INVITE_LOOKUP_RATE_PER_MINUTE:10}
+    # Total de vagas da turma fundadora (GET /api/v1/founders/slots). Ajuste aqui ou por env var,
+    # sem precisar editar o front (o texto fixo de "10 vagas" no site deixa de existir).
+    total-slots: ${FOUNDING_INVITE_TOTAL_SLOTS:10}
 
   # ----------------------------------------
   # AUTO-CADASTRO PÚBLICO DE ASSESSORIA
@@ -359,6 +362,7 @@ app:
       - "/actuator/health"
       - "/api/v1/status"
       - "/api/v1/waitlist"
+      - "/api/v1/founders/slots"
     strava-paths:
       - "/api/v1/strava/webhook"
       - "/api/v1/strava/callback"

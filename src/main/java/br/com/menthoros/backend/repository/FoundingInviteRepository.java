@@ -28,4 +28,11 @@ public interface FoundingInviteRepository extends JpaRepository<FoundingInvite, 
     Optional<FoundingInvite> findOpenByWaitlistId(UUID waitlistId);
 
     boolean existsByWaitlistIdAndConvertedAtIsNotNull(UUID waitlistId);
+
+    /**
+     * Vagas ocupadas da turma fundadora: convite aberto (enviado, ainda não convertido) ou já
+     * convertido em assessoria — qualquer um dos dois ocupa uma vaga. Um convite invalidado
+     * (reenvio gerou outro) não conta, para não contar duas vezes o mesmo inscrito.
+     */
+    long countByInvalidatedAtIsNull();
 }
