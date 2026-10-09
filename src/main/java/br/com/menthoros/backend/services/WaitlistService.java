@@ -11,8 +11,11 @@ public interface WaitlistService {
      *
      * <p><b>Idempotent:</b> YES — e-mail duplicado (mesmo após normalização) não cria nova linha;
      * retorna {@code JA_INSCRITO}, inclusive sob corrida (resolvida pelo índice único).
-     * <p><b>Side Effects:</b> Database insert (nova linha em {@code tb_waitlist}) apenas quando o
-     * e-mail é novo. Honeypot acionado não persiste.
+     * <p><b>Side Effects:</b> Database insert quando o e-mail é novo. Quando já existe, faz um
+     * update de contato/atribuição (nome, telefone, qtdAtletas, watchBrand, landingPath,
+     * referrer) — <b>nunca</b> de {@code perfil}, {@code aceiteLgpd}, {@code policyVersion} ou
+     * UTM, que ficam congelados no valor da primeira inscrição (endpoint público, sem
+     * verificação de posse do e-mail). Honeypot acionado não persiste.
      * <p><b>Tenant-aware:</b> NO — cadastro global, pré-signup, não usa {@code TenantContext}.
      *
      * @param dto dados validados da inscrição (honeypot em {@code website})

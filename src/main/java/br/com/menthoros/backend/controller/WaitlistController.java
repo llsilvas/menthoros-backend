@@ -2,6 +2,7 @@ package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.input.WaitlistInputDto;
 import br.com.menthoros.backend.dto.output.WaitlistOutputDto;
+import br.com.menthoros.backend.enums.WaitlistSegment;
 import br.com.menthoros.backend.services.WaitlistService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -36,14 +37,15 @@ public class WaitlistController {
     @PostMapping
     public ResponseEntity<WaitlistOutputDto> inscrever(@Valid @RequestBody WaitlistInputDto dto) {
         WaitlistService.Resultado resultado = waitlistService.registrar(dto);
+        WaitlistSegment segment = WaitlistSegment.derivar(dto.perfil(), dto.watchBrand());
         return switch (resultado) {
             // IGNORADO (honeypot) responde como CRIADO — indistinguível para o bot.
             case CRIADO, IGNORADO -> ResponseEntity.status(HttpStatus.CREATED)
                     .body(new WaitlistOutputDto("CRIADO",
-                            "Você está na lista. Em breve entraremos em contato."));
+                            "Você está na lista. Em breve entraremos em contato.", segment));
             case JA_INSCRITO -> ResponseEntity.ok(
                     new WaitlistOutputDto("JA_INSCRITO",
-                            "Este e-mail já está na nossa lista."));
+                            "Este e-mail já está na nossa lista.", segment));
         };
     }
 }

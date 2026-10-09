@@ -47,11 +47,20 @@ class WaitlistControllerIT extends AbstractIntegrationTest {
 
     private String body(String nome, String email, String perfil, boolean aceite, String website,
                         String qtdAtletas, String utmSource, String utmMedium, String utmCampaign, String utmContent) {
+        return body(nome, email, perfil, aceite, website, qtdAtletas, utmSource, utmMedium, utmCampaign, utmContent,
+                null, null);
+    }
+
+    private String body(String nome, String email, String perfil, boolean aceite, String website,
+                        String qtdAtletas, String utmSource, String utmMedium, String utmCampaign, String utmContent,
+                        String watchBrand, String telefone) {
         StringBuilder sb = new StringBuilder("{");
         if (nome != null) sb.append("\"nome\":\"").append(nome).append("\",");
         if (email != null) sb.append("\"email\":\"").append(email).append("\",");
+        if (telefone != null) sb.append("\"telefone\":\"").append(telefone).append("\",");
         sb.append("\"perfil\":\"").append(perfil).append("\",");
         if (qtdAtletas != null) sb.append("\"qtdAtletas\":\"").append(qtdAtletas).append("\",");
+        if (watchBrand != null) sb.append("\"watchBrand\":\"").append(watchBrand).append("\",");
         if (website != null) sb.append("\"website\":\"").append(website).append("\",");
         if (utmSource != null) sb.append("\"utmSource\":\"").append(utmSource).append("\",");
         if (utmMedium != null) sb.append("\"utmMedium\":\"").append(utmMedium).append("\",");
@@ -169,6 +178,112 @@ class WaitlistControllerIT extends AbstractIntegrationTest {
                 .andExpect(status().isCreated());
 
         assertThat(waitlistRepository.existsByEmailNormalized("bot@exemplo.com")).isFalse();
+    }
+
+    @Test
+    @DisplayName("perfil PROPRIETARIO é aceito, igual a TREINADOR (expand-waitlist-access-contract)")
+    void perfilProprietarioEAceito() throws Exception {
+        mockMvc.perform(post("/api/v1/waitlist")
+                        .header("X-Forwarded-For", "10.0.0.8")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("Ana", "proprietaria@exemplo.com", "PROPRIETARIO", true, null, "DE_11_A_30",
+                                null, null, null, null, "GARMIN", null)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.segment").value("QUALIFIED"));
+
+        Waitlist salvo = waitlistRepository.findAll().stream()
+                .filter(w -> "proprietaria@exemplo.com".equals(w.getEmail()))
+                .findFirst().orElseThrow();
+        assertThat(salvo.getPerfil()).isEqualTo(PerfilWaitlist.PROPRIETARIO);
+        assertThat(salvo.getQtdAtletas()).isEqualTo(FaixaAtletas.DE_11_A_30);
+    }
+
+    @Test
+    @DisplayName("segment: ATLETA retorna ATLETA, treinador sem GARMIN retorna OTHER_BRAND")
+    void segmentNosTresCasos() throws Exception {
+        mockMvc.perform(post("/api/v1/waitlist")
+                        .header("X-Forwarded-For", "10.0.0.9")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("Joao", "atleta-segment@exemplo.com", "ATLETA", true, null, null)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.segment").value("ATLETA"));
+
+        mockMvc.perform(post("/api/v1/waitlist")
+                        .header("X-Forwarded-For", "10.0.0.10")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("Carlos", "coros-segment@exemplo.com", "TREINADOR", true, null, "ATE_10",
+                                null, null, null, null, "COROS", null)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.segment").value("OTHER_BRAND"));
+    }
+
+    @Test
+    @DisplayName("policyVersion é sempre o do servidor, mesmo se o corpo tentar enviar outro valor")
+    void policyVersionVemDoServidor() throws Exception {
+        mockMvc.perform(post("/api/v1/waitlist")
+                        .header("X-Forwarded-For", "10.0.0.11")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"nome\":\"Maria\",\"email\":\"policy@exemplo.com\",\"perfil\":\"ATLETA\","
+                                + "\"aceiteLgpd\":true,\"policyVersion\":\"1999-01-01\"}"))
+                .andExpect(status().isCreated());
+
+        Waitlist salvo = waitlistRepository.findAll().stream()
+                .filter(w -> "policy@exemplo.com".equals(w.getEmail()))
+                .findFirst().orElseThrow();
+        assertThat(salvo.getPolicyVersion()).isEqualTo("2026-08-03");
+    }
+
+    @Test
+    @DisplayName("reenvio atualiza nome/telefone e preserva o UTM original (first-touch)")
+    void reenvioAtualizaEPreservaUtm() throws Exception {
+        String primeiro = body("Maria", "reenvio@exemplo.com", "TREINADOR", true, null, "ATE_10",
+                "instagram", "social", "turma-fundadora", "bio-link", "GARMIN", null);
+        mockMvc.perform(post("/api/v1/waitlist")
+                        .header("X-Forwarded-For", "10.0.0.12")
+                        .contentType(MediaType.APPLICATION_JSON).content(primeiro))
+                .andExpect(status().isCreated());
+
+        String reenvio = body("Maria Treinadora", "reenvio@exemplo.com", "TREINADOR", true, null, "DE_11_A_30",
+                null, null, null, null, "COROS", "+55 11 98888-7777");
+        mockMvc.perform(post("/api/v1/waitlist")
+                        .header("X-Forwarded-For", "10.0.0.12")
+                        .contentType(MediaType.APPLICATION_JSON).content(reenvio))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("JA_INSCRITO"));
+
+        assertThat(waitlistRepository.count()).isEqualTo(1);
+        Waitlist atualizado = waitlistRepository.findAll().get(0);
+        assertThat(atualizado.getNome()).isEqualTo("Maria Treinadora");
+        assertThat(atualizado.getTelefone()).isEqualTo("+55 11 98888-7777");
+        assertThat(atualizado.getQtdAtletas()).isEqualTo(FaixaAtletas.DE_11_A_30);
+        assertThat(atualizado.getWatchBrand()).isEqualTo(br.com.menthoros.backend.enums.WatchBrand.COROS);
+        assertThat(atualizado.getUtmSource()).isEqualTo("instagram");
+        assertThat(atualizado.getUtmContent()).isEqualTo("bio-link");
+    }
+
+    @Test
+    @DisplayName("reenvio NUNCA sobrescreve perfil ou aceiteLgpd de uma linha existente (anti-forjamento)")
+    void reenvioNaoForjaPerfilNemConsentimento() throws Exception {
+        String primeiro = body("Bruna", "anti-forjamento@exemplo.com", "ATLETA", true, null, null);
+        mockMvc.perform(post("/api/v1/waitlist")
+                        .header("X-Forwarded-For", "10.0.0.13")
+                        .contentType(MediaType.APPLICATION_JSON).content(primeiro))
+                .andExpect(status().isCreated());
+
+        // Requisição que só sabe o e-mail tenta virar o perfil dela para TREINADOR.
+        String tentativa = body("Outra Pessoa", "anti-forjamento@exemplo.com", "TREINADOR", true, null,
+                "DE_11_A_30", null, null, null, null, "GARMIN", null);
+        mockMvc.perform(post("/api/v1/waitlist")
+                        .header("X-Forwarded-For", "10.0.0.14")
+                        .contentType(MediaType.APPLICATION_JSON).content(tentativa))
+                .andExpect(status().isOk());
+
+        Waitlist linha = waitlistRepository.findAll().stream()
+                .filter(w -> "anti-forjamento@exemplo.com".equals(w.getEmail()))
+                .findFirst().orElseThrow();
+        assertThat(linha.getPerfil()).isEqualTo(PerfilWaitlist.ATLETA);
+        assertThat(linha.getQtdAtletas()).isNull();
+        assertThat(linha.getWatchBrand()).isNull();
     }
 
     @Test

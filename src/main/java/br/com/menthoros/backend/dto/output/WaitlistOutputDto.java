@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.dto.output;
 
+import br.com.menthoros.backend.enums.WaitlistSegment;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -11,5 +12,8 @@ public record WaitlistOutputDto(
         String status,
 
         @Schema(description = "Mensagem amigável para exibição", example = "Você está na lista.")
-        String mensagem
+        String mensagem,
+
+        @Schema(description = "Segmento derivado do perfil e da marca de relógio", example = "QUALIFIED")
+        WaitlistSegment segment
 ) {}
