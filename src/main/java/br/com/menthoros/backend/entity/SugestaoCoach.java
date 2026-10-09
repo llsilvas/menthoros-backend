@@ -66,6 +66,14 @@ public class SugestaoCoach {
     @Column(name = "reviewed_at")
     private Instant reviewedAt;
 
+    /** Usuario.id do técnico/admin que decidiu — resolvido do security context, nunca do corpo. */
+    @Column(name = "reviewed_by")
+    private UUID reviewedBy;
+
+    /** Texto livre opcional do porquê da rejeição; null em PENDING/APPROVED. */
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
     @Column(name = "expires_at")
     private Instant expiresAt;
 }

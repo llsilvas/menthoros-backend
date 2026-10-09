@@ -30,6 +30,8 @@ public class SugestaoCoachMapper {
                 deserializarReasoning(entity.getReasoningJson()),
                 entity.getCreatedAt(),
                 entity.getReviewedAt(),
+                entity.getReviewedBy(),
+                entity.getRejectionReason(),
                 entity.getExpiresAt()
         );
     }

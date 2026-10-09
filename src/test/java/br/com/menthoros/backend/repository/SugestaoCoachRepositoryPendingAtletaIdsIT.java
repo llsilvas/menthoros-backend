@@ -4,11 +4,13 @@ import br.com.menthoros.backend.AbstractIntegrationTest;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.SugestaoCoach;
+import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.PlanoAssessoria;
 import br.com.menthoros.backend.enums.StatusSugestao;
 import br.com.menthoros.backend.enums.TipoSugestao;
+import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.services.SugestaoCoachService;
 import jakarta.persistence.EntityManager;
@@ -18,10 +20,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -43,6 +50,8 @@ class SugestaoCoachRepositoryPendingAtletaIdsIT extends AbstractIntegrationTest 
     private AtletaRepository atletaRepository;
     @Autowired
     private SugestaoCoachService sugestaoCoachService;
+    @Autowired
+    private UsuarioRepository usuarioRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -50,6 +59,7 @@ class SugestaoCoachRepositoryPendingAtletaIdsIT extends AbstractIntegrationTest 
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+        SecurityContextHolder.clearContext();
     }
 
     @Nested
@@ -210,6 +220,7 @@ class SugestaoCoachRepositoryPendingAtletaIdsIT extends AbstractIntegrationTest 
             assertThat(antes).containsExactly(atleta.getId());
 
             TenantContext.setTenantId(assessoria.getId());
+            autenticarComoTecnico(assessoria);
             sugestaoCoachService.aprovar(sugestao.getId());
             TenantContext.clear();
             entityManager.flush();
@@ -222,6 +233,37 @@ class SugestaoCoachRepositoryPendingAtletaIdsIT extends AbstractIntegrationTest 
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Seeda um {@code Usuario} TECNICO no tenant e autentica o {@code SecurityContextHolder} com
+     * um JWT cujo {@code sub} é o {@code keycloakId} desse usuário — necessário desde
+     * add-coach-suggestion-decision-audit, que resolve {@code reviewedBy} do security context
+     * (nunca do corpo) em {@code aprovar}/{@code rejeitar}.
+     */
+    private void autenticarComoTecnico(Assessoria assessoria) {
+        UUID usuarioId = UUID.randomUUID();
+        Usuario usuario = Usuario.builder()
+                .id(usuarioId)
+                .assessoria(assessoria)
+                .keycloakId(usuarioId.toString())
+                .email("tecnico-" + usuarioId + "@test.com")
+                .nome("Técnico Teste")
+                .role(UserRole.TECNICO)
+                .ativo(true)
+                .build();
+        usuarioRepository.save(usuario);
+
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .subject(usuarioId.toString())
+                .claim("scope", "openid")
+                .issuedAt(Instant.now())
+                .expiresAt(Instant.now().plusSeconds(300))
+                .build();
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(jwt, null,
+                        List.of(new SimpleGrantedAuthority("ROLE_TECNICO"))));
+    }
 
     private Assessoria seedAssessoria() {
         Assessoria assessoria = new Assessoria();

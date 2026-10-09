@@ -42,6 +42,12 @@ public record SugestaoCoachOutputDto(
         @Schema(description = "Momento da revisão (null enquanto PENDING)")
         Instant reviewedAt,
 
+        @Schema(description = "Usuario.id de quem decidiu (null enquanto PENDING)")
+        UUID reviewedBy,
+
+        @Schema(description = "Motivo da rejeição (null se PENDING/APPROVED ou rejeitada sem motivo)")
+        String rejectionReason,
+
         @Schema(description = "Expiração da sugestão (null = sem expiração)")
         Instant expiresAt
 ) {}

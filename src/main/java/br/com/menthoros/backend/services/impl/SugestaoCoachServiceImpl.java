@@ -1,13 +1,18 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.input.RejeitarSugestaoRequestDto;
 import br.com.menthoros.backend.dto.output.SugestaoCoachOutputDto;
 import br.com.menthoros.backend.entity.SugestaoCoach;
+import br.com.menthoros.backend.entity.Usuario;
 import br.com.menthoros.backend.enums.StatusSugestao;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.SugestaoCoachMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.SugestaoCoachRepository;
+import br.com.menthoros.backend.repository.UsuarioRepository;
+import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
 import br.com.menthoros.backend.services.SugestaoCoachService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +30,8 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
 
     private final SugestaoCoachRepository repository;
     private final SugestaoCoachMapper mapper;
+    private final AuthenticatedPrincipalResolver principalResolver;
+    private final UsuarioRepository usuarioRepository;
 
     /**
      * Lista as sugestões mais recentes de um atleta no tenant corrente.
@@ -89,10 +96,19 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
             case REJECTED -> throw new DomainRuleViolationException(
                     "Sugestão " + id + " está REJECTED — transição para APPROVED não permitida");
             case PENDING -> {
+                UUID reviewedBy = resolverReviewedBy(tenantId);
+                Instant agora = Instant.now();
+                int linhas = repository.decidirSePendente(id, tenantId, StatusSugestao.PENDING,
+                        StatusSugestao.APPROVED, agora, reviewedBy, null);
+                if (linhas == 0) {
+                    throw new DomainConflictException(
+                            "Sugestão " + id + " já foi decidida por outra requisição concorrente");
+                }
                 sugestao.setStatus(StatusSugestao.APPROVED);
-                sugestao.setReviewedAt(Instant.now());
-                repository.save(sugestao);
-                log.info("aprovar: sugestão {} aprovada para tenant={}", id, tenantId);
+                sugestao.setReviewedAt(agora);
+                sugestao.setReviewedBy(reviewedBy);
+                sugestao.setRejectionReason(null);
+                log.info("aprovar: sugestão {} aprovada para tenant={}, reviewedBy={}", id, tenantId, reviewedBy);
                 return mapper.toOutputDto(sugestao);
             }
         }
@@ -101,7 +117,7 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
 
     @Override
     @Transactional
-    public SugestaoCoachOutputDto rejeitar(UUID id) {
+    public SugestaoCoachOutputDto rejeitar(UUID id, RejeitarSugestaoRequestDto request) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         log.info("rejeitar: id={}, tenantId={}", id, tenantId);
 
@@ -115,10 +131,20 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
             case APPROVED -> throw new DomainRuleViolationException(
                     "Sugestão " + id + " está APPROVED — transição para REJECTED não permitida");
             case PENDING -> {
+                UUID reviewedBy = resolverReviewedBy(tenantId);
+                String rejectionReason = request == null ? null : request.rejectionReason();
+                Instant agora = Instant.now();
+                int linhas = repository.decidirSePendente(id, tenantId, StatusSugestao.PENDING,
+                        StatusSugestao.REJECTED, agora, reviewedBy, rejectionReason);
+                if (linhas == 0) {
+                    throw new DomainConflictException(
+                            "Sugestão " + id + " já foi decidida por outra requisição concorrente");
+                }
                 sugestao.setStatus(StatusSugestao.REJECTED);
-                sugestao.setReviewedAt(Instant.now());
-                repository.save(sugestao);
-                log.info("rejeitar: sugestão {} rejeitada para tenant={}", id, tenantId);
+                sugestao.setReviewedAt(agora);
+                sugestao.setReviewedBy(reviewedBy);
+                sugestao.setRejectionReason(rejectionReason);
+                log.info("rejeitar: sugestão {} rejeitada para tenant={}, reviewedBy={}", id, tenantId, reviewedBy);
                 return mapper.toOutputDto(sugestao);
             }
         }
@@ -129,5 +155,16 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
         return repository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException(
                         "SugestaoCoach não encontrada: id=" + id + ", tenantId=" + tenantId));
+    }
+
+    /**
+     * Resolve o {@code Usuario.id} do técnico/admin autenticado (nunca o {@code sub} do Keycloak
+     * direto) — mesmo padrão de {@code UsuarioServiceImpl.getCurrentUser} (design D1).
+     */
+    private UUID resolverReviewedBy(UUID tenantId) {
+        String sub = principalResolver.getCurrentSubject();
+        Usuario usuario = usuarioRepository.findByKeycloakIdAndAssessoria_Id(sub, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Usuário autenticado não encontrado no tenant atual"));
+        return usuario.getId();
     }
 }
