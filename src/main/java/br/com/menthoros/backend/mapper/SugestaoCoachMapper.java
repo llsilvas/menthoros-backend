@@ -31,7 +31,7 @@ public class SugestaoCoachMapper {
                 entity.getCreatedAt(),
                 entity.getReviewedAt(),
                 entity.getReviewedBy(),
-                entity.getMotivoRejeicao(),
+                entity.getRejectionReason(),
                 entity.getExpiresAt()
         );
     }

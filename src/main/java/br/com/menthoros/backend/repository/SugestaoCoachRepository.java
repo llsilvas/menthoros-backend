@@ -85,7 +85,7 @@ public interface SugestaoCoachRepository extends JpaRepository<SugestaoCoach, UU
     @Modifying(clearAutomatically = true)
     @Query("""
        UPDATE SugestaoCoach s SET s.status = :novoStatus, s.reviewedAt = :reviewedAt,
-           s.reviewedBy = :reviewedBy, s.motivoRejeicao = :motivoRejeicao
+           s.reviewedBy = :reviewedBy, s.rejectionReason = :rejectionReason
        WHERE s.id = :id AND s.tenantId = :tenantId AND s.status = :statusAtual
        """)
     int decidirSePendente(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
@@ -93,5 +93,5 @@ public interface SugestaoCoachRepository extends JpaRepository<SugestaoCoach, UU
                            @Param("novoStatus") StatusSugestao novoStatus,
                            @Param("reviewedAt") Instant reviewedAt,
                            @Param("reviewedBy") UUID reviewedBy,
-                           @Param("motivoRejeicao") String motivoRejeicao);
+                           @Param("rejectionReason") String rejectionReason);
 }

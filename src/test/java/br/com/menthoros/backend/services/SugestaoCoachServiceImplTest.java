@@ -256,7 +256,7 @@ class SugestaoCoachServiceImplTest {
 
         @Test
         @DisplayName("PENDING → APPROVED: grava reviewedBy do security context (nunca do corpo, CA1/CA4), "
-                + "limpa motivoRejeicao e retorna DTO")
+                + "limpa rejectionReason e retorna DTO")
         void pendingParaApproved() {
             SugestaoCoach s = sugestao(StatusSugestao.PENDING);
             UUID usuarioId = stubReviewedBy();
@@ -272,7 +272,7 @@ class SugestaoCoachServiceImplTest {
             assertThat(s.getStatus()).isEqualTo(StatusSugestao.APPROVED);
             assertThat(s.getReviewedAt()).isNotNull();
             assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
-            assertThat(s.getMotivoRejeicao()).isNull();
+            assertThat(s.getRejectionReason()).isNull();
             verify(repository).decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
                     eq(StatusSugestao.APPROVED), any(), eq(usuarioId), isNull());
         }
@@ -337,7 +337,7 @@ class SugestaoCoachServiceImplTest {
     class Rejeitar {
 
         @Test
-        @DisplayName("PENDING → REJECTED sem corpo: reviewedBy gravado, motivoRejeicao null (CA3)")
+        @DisplayName("PENDING → REJECTED sem corpo: reviewedBy gravado, rejectionReason null (CA3)")
         void pendingParaRejectedSemMotivo() {
             SugestaoCoach s = sugestao(StatusSugestao.PENDING);
             UUID usuarioId = stubReviewedBy();
@@ -353,11 +353,11 @@ class SugestaoCoachServiceImplTest {
             assertThat(s.getStatus()).isEqualTo(StatusSugestao.REJECTED);
             assertThat(s.getReviewedAt()).isNotNull();
             assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
-            assertThat(s.getMotivoRejeicao()).isNull();
+            assertThat(s.getRejectionReason()).isNull();
         }
 
         @Test
-        @DisplayName("PENDING → REJECTED com motivoRejeicao: motivo gravado junto da auditoria (CA2)")
+        @DisplayName("PENDING → REJECTED com rejectionReason: motivo gravado junto da auditoria (CA2)")
         void pendingParaRejectedComMotivo() {
             SugestaoCoach s = sugestao(StatusSugestao.PENDING);
             UUID usuarioId = stubReviewedBy();
@@ -371,7 +371,7 @@ class SugestaoCoachServiceImplTest {
 
             service.rejeitar(sugestaoId, request);
 
-            assertThat(s.getMotivoRejeicao()).isEqualTo("volume alto demais para a semana");
+            assertThat(s.getRejectionReason()).isEqualTo("volume alto demais para a semana");
             assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
         }
 

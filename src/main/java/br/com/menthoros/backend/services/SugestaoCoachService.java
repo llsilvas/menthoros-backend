@@ -42,7 +42,7 @@ public interface SugestaoCoachService {
     /**
      * Aprova uma sugestão PENDING, transicionando para APPROVED. Grava {@code reviewedBy}
      * resolvido do security context (add-coach-suggestion-decision-audit, design D1) e limpa
-     * {@code motivoRejeicao}. Idempotent: YES (aprovar já-APPROVED é no-op). Side Effects: DB
+     * {@code rejectionReason}. Idempotent: YES (aprovar já-APPROVED é no-op). Side Effects: DB
      * update. Tenant-aware: YES.
      *
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException se não encontrada
@@ -54,12 +54,12 @@ public interface SugestaoCoachService {
 
     /**
      * Rejeita uma sugestão PENDING, transicionando para REJECTED. Grava {@code reviewedBy}
-     * resolvido do security context e {@code motivoRejeicao} quando presente em {@code request}
+     * resolvido do security context e {@code rejectionReason} quando presente em {@code request}
      * (add-coach-suggestion-decision-audit, design D1/D2). Idempotent: YES (re-rejeitar
      * já-REJECTED é no-op). Side Effects: DB update. Tenant-aware: YES.
      *
      * @param request corpo opcional com o motivo da rejeição; {@code null} ou
-     *                 {@code motivoRejeicao() == null} são válidos (motivo é opcional)
+     *                 {@code rejectionReason() == null} são válidos (motivo é opcional)
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException se não encontrada
      * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se status == APPROVED (422)
      * @throws br.com.menthoros.backend.exception.DomainConflictException se outra decisão

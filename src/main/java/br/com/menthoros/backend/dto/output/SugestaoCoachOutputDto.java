@@ -46,7 +46,7 @@ public record SugestaoCoachOutputDto(
         UUID reviewedBy,
 
         @Schema(description = "Motivo da rejeição (null se PENDING/APPROVED ou rejeitada sem motivo)")
-        String motivoRejeicao,
+        String rejectionReason,
 
         @Schema(description = "Expiração da sugestão (null = sem expiração)")
         Instant expiresAt

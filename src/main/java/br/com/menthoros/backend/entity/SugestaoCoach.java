@@ -71,8 +71,8 @@ public class SugestaoCoach {
     private UUID reviewedBy;
 
     /** Texto livre opcional do porquê da rejeição; null em PENDING/APPROVED. */
-    @Column(name = "motivo_rejeicao", columnDefinition = "TEXT")
-    private String motivoRejeicao;
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
 
     @Column(name = "expires_at")
     private Instant expiresAt;

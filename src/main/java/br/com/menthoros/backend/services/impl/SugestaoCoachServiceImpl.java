@@ -107,7 +107,7 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
                 sugestao.setStatus(StatusSugestao.APPROVED);
                 sugestao.setReviewedAt(agora);
                 sugestao.setReviewedBy(reviewedBy);
-                sugestao.setMotivoRejeicao(null);
+                sugestao.setRejectionReason(null);
                 log.info("aprovar: sugestão {} aprovada para tenant={}, reviewedBy={}", id, tenantId, reviewedBy);
                 return mapper.toOutputDto(sugestao);
             }
@@ -132,10 +132,10 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
                     "Sugestão " + id + " está APPROVED — transição para REJECTED não permitida");
             case PENDING -> {
                 UUID reviewedBy = resolverReviewedBy(tenantId);
-                String motivoRejeicao = request == null ? null : request.motivoRejeicao();
+                String rejectionReason = request == null ? null : request.rejectionReason();
                 Instant agora = Instant.now();
                 int linhas = repository.decidirSePendente(id, tenantId, StatusSugestao.PENDING,
-                        StatusSugestao.REJECTED, agora, reviewedBy, motivoRejeicao);
+                        StatusSugestao.REJECTED, agora, reviewedBy, rejectionReason);
                 if (linhas == 0) {
                     throw new DomainConflictException(
                             "Sugestão " + id + " já foi decidida por outra requisição concorrente");
@@ -143,7 +143,7 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
                 sugestao.setStatus(StatusSugestao.REJECTED);
                 sugestao.setReviewedAt(agora);
                 sugestao.setReviewedBy(reviewedBy);
-                sugestao.setMotivoRejeicao(motivoRejeicao);
+                sugestao.setRejectionReason(rejectionReason);
                 log.info("rejeitar: sugestão {} rejeitada para tenant={}, reviewedBy={}", id, tenantId, reviewedBy);
                 return mapper.toOutputDto(sugestao);
             }

@@ -150,7 +150,7 @@ class CoachSugestaoControllerTest {
         }
 
         @Test
-        @DisplayName("POST /{id}/rejeitar com motivoRejeicao → 200, service recebe o request (CA2)")
+        @DisplayName("POST /{id}/rejeitar com rejectionReason → 200, service recebe o request (CA2)")
         void rejeitaComMotivo() {
             RejeitarSugestaoRequestDto request = new RejeitarSugestaoRequestDto("volume alto demais");
             SugestaoCoachOutputDto dto = dto(StatusSugestao.REJECTED);
@@ -160,7 +160,7 @@ class CoachSugestaoControllerTest {
             ResponseEntity<SugestaoCoachOutputDto> resp = controller.rejeitar(ID, request);
 
             assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-            assertThat(captor.getValue().motivoRejeicao()).isEqualTo("volume alto demais");
+            assertThat(captor.getValue().rejectionReason()).isEqualTo("volume alto demais");
         }
 
         @Test
