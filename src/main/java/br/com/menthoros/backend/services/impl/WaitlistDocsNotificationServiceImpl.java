@@ -66,8 +66,8 @@ public class WaitlistDocsNotificationServiceImpl implements WaitlistDocsNotifica
      */
     @Override
     public WaitlistDocsNotificationResultDto notificar() {
-        List<Waitlist> elegiveis =
-                waitlistRepository.findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.TREINADOR);
+        List<Waitlist> elegiveis = waitlistRepository.findAllByPerfilInAndDocsNotifiedAtIsNull(
+                List.of(PerfilWaitlist.TREINADOR, PerfilWaitlist.PROPRIETARIO));
         log.info("Disparando aviso da central de ajuda à waitlist: elegiveis={}", elegiveis.size());
 
         int enviados = 0;

@@ -10,13 +10,17 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface WaitlistRepository extends JpaRepository<Waitlist, UUID> {
 
     boolean existsByEmailNormalized(String emailNormalized);
 
-    List<Waitlist> findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist perfil);
+    /** Base do upsert em {@code registrar} — presente = reenvio, atualiza em vez de criar. */
+    Optional<Waitlist> findByEmailNormalized(String emailNormalized);
+
+    List<Waitlist> findAllByPerfilInAndDocsNotifiedAtIsNull(List<PerfilWaitlist> perfis);
 
     /**
      * Reivindicação atômica do aviso da central de ajuda: só a chamada concorrente que ganha a

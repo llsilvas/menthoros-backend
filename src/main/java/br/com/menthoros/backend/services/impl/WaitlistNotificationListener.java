@@ -2,7 +2,6 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.Waitlist;
 import br.com.menthoros.backend.enums.FaixaAtletas;
-import br.com.menthoros.backend.enums.PerfilWaitlist;
 import br.com.menthoros.backend.events.WaitlistLeadCreatedEvent;
 import br.com.menthoros.backend.repository.WaitlistRepository;
 import br.com.menthoros.backend.services.email.EmailMessage;
@@ -71,14 +70,14 @@ public class WaitlistNotificationListener {
         }
 
         enviarConfirmacao(lead);
-        if (lead.getPerfil() == PerfilWaitlist.TREINADOR) {
+        if (lead.isTreinadorOuProprietario()) {
             notificarFounder(lead);
         }
     }
 
     private void enviarConfirmacao(Waitlist lead) {
         try {
-            EmailMessage mensagem = lead.getPerfil() == PerfilWaitlist.TREINADOR
+            EmailMessage mensagem = lead.isTreinadorOuProprietario()
                     ? mensagemTreinador(lead)
                     : mensagemAtleta(lead);
             waitlistEmailSender.enviar(mensagem);

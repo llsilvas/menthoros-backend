@@ -3,7 +3,6 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.dto.output.WaitlistFunnelBucketOutputDto;
 import br.com.menthoros.backend.entity.FoundingInvite;
 import br.com.menthoros.backend.entity.Waitlist;
-import br.com.menthoros.backend.enums.PerfilWaitlist;
 import br.com.menthoros.backend.repository.FoundingInviteRepository;
 import br.com.menthoros.backend.repository.WaitlistRepository;
 import br.com.menthoros.backend.services.WaitlistFunnelService;
@@ -64,7 +63,7 @@ public class WaitlistFunnelServiceImpl implements WaitlistFunnelService {
     private WaitlistFunnelBucketOutputDto bucket(
             ChaveUtm chave, List<Waitlist> leads, Map<UUID, List<FoundingInvite>> convitesPorInscrito) {
         int total = leads.size();
-        int qualified = (int) leads.stream().filter(w -> w.getPerfil() == PerfilWaitlist.TREINADOR).count();
+        int qualified = (int) leads.stream().filter(Waitlist::isTreinadorOuProprietario).count();
         int invited = (int) leads.stream().filter(w -> temConviteNaoInvalidado(w, convitesPorInscrito)).count();
         int active = (int) leads.stream().filter(w -> temConviteConvertido(w, convitesPorInscrito)).count();
         return new WaitlistFunnelBucketOutputDto(chave.utmSource(), chave.utmContent(), total, qualified, invited, active);
