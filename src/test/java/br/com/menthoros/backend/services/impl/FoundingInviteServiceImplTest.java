@@ -279,6 +279,46 @@ class FoundingInviteServiceImplTest {
             verify(inviteRepository, times(1)).save(any());
             assertThat(ultimoConviteSalvo().getSentAt()).isNull();
         }
+
+        @Test
+        @DisplayName("CA1 (add-waitlist-status-lifecycle) — e-mail enviado com sucesso marca invitedAt no lead")
+        void caminhoFelizMarcaInvitedAtNoLead() {
+            stubInscrito(treinadora());
+            when(inviteRepository.save(any())).thenAnswer(i -> comId(i.getArgument(0)));
+
+            service.invite(waitlistId, ADMIN);
+
+            var captor = ArgumentCaptor.forClass(Waitlist.class);
+            verify(waitlistRepository).save(captor.capture());
+            assertThat(captor.getValue().getInvitedAt()).isEqualTo(AGORA);
+        }
+
+        @Test
+        @DisplayName("CA2 (add-waitlist-status-lifecycle) — SMTP recusa não marca invitedAt no lead")
+        void falhaNoEnvioNaoMarcaInvitedAt() {
+            stubInscrito(treinadora());
+            when(inviteRepository.save(any())).thenAnswer(i -> comId(i.getArgument(0)));
+            doThrow(new EmailDeliveryException("recusado", null)).when(emailSender).send(any());
+
+            assertThatThrownBy(() -> service.invite(waitlistId, ADMIN))
+                    .isInstanceOf(EmailDeliveryException.class);
+
+            verify(waitlistRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("falha ao carimbar invitedAt NÃO derruba invite() — convite já foi enviado com sucesso")
+        void falhaAoCarimbarInvitedAtNaoPropaga() {
+            stubInscrito(treinadora());
+            when(inviteRepository.save(any())).thenAnswer(i -> comId(i.getArgument(0)));
+            when(waitlistRepository.save(any(Waitlist.class)))
+                    .thenThrow(new org.springframework.dao.DataIntegrityViolationException("boom"));
+
+            FoundingInviteOutputDto saida = service.invite(waitlistId, ADMIN);
+
+            assertThat(saida.waitlistId()).isEqualTo(waitlistId);
+            assertThat(ultimoConviteSalvo().getSentAt()).isNotNull();
+        }
     }
 
     @Nested

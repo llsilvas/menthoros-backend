@@ -2,6 +2,7 @@ package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.enums.FaixaAtletas;
 import br.com.menthoros.backend.enums.PerfilWaitlist;
+import br.com.menthoros.backend.enums.WaitlistStatus;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -69,4 +70,35 @@ public class Waitlist {
 
     @Column(name = "docs_notified_at")
     private Instant docsNotifiedAt;
+
+    @Column(name = "invited_at")
+    private Instant invitedAt;
+
+    @Column(name = "activated_at")
+    private Instant activatedAt;
+
+    @Column(name = "discarded_at")
+    private Instant discardedAt;
+
+    /** Preenchido quando o lead converte em assessoria. Sem FK, mesmo padrão de {@code FoundingInvite.assessoriaId}. */
+    @Column(name = "assessoria_id")
+    private UUID assessoriaId;
+
+    /**
+     * Etapa do lead no funil, derivada dos timestamps — sem coluna própria, mesmo padrão de
+     * {@code FoundingInvite} ("o estado é derivado das datas, sem enum"). {@code discardedAt}
+     * tem precedência sobre os demais por ser terminal (add-waitlist-status-lifecycle, design D2).
+     */
+    public WaitlistStatus getStatus() {
+        if (discardedAt != null) {
+            return WaitlistStatus.DISCARDED;
+        }
+        if (activatedAt != null) {
+            return WaitlistStatus.ACTIVE;
+        }
+        if (invitedAt != null) {
+            return WaitlistStatus.INVITED;
+        }
+        return WaitlistStatus.NEW;
+    }
 }

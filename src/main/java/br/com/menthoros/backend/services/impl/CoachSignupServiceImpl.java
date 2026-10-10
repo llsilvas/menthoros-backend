@@ -17,6 +17,7 @@ import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.FoundingInviteRepository;
 import br.com.menthoros.backend.repository.SignupProvisioningRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
+import br.com.menthoros.backend.repository.WaitlistRepository;
 import br.com.menthoros.backend.services.CoachSignupService;
 import br.com.menthoros.backend.services.FoundingInviteService;
 import br.com.menthoros.backend.services.KeycloakOrganizationGateway;
@@ -32,6 +33,7 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -79,6 +81,7 @@ public class CoachSignupServiceImpl implements CoachSignupService {
     private final KeycloakOrganizationGateway keycloak;
     private final FoundingInviteService foundingInviteService;
     private final FoundingInviteRepository foundingInviteRepository;
+    private final WaitlistRepository waitlistRepository;
 
     private final MeterRegistry meterRegistry;
     private final int limitePorEmailPorDia;
@@ -91,6 +94,7 @@ public class CoachSignupServiceImpl implements CoachSignupService {
             KeycloakOrganizationGateway keycloak,
             FoundingInviteService foundingInviteService,
             FoundingInviteRepository foundingInviteRepository,
+            WaitlistRepository waitlistRepository,
             MeterRegistry meterRegistry,
             @Value("${app.coach-signup.rate-limit.per-email-per-day:3}") int limitePorEmailPorDia,
             @Value("${app.coach-signup.rate-limit.daily-cap:20}") int tetoDiarioGlobal) {
@@ -100,6 +104,7 @@ public class CoachSignupServiceImpl implements CoachSignupService {
         this.keycloak = keycloak;
         this.foundingInviteService = foundingInviteService;
         this.foundingInviteRepository = foundingInviteRepository;
+        this.waitlistRepository = waitlistRepository;
         this.meterRegistry = meterRegistry;
         this.limitePorEmailPorDia = limitePorEmailPorDia;
         this.tetoDiarioGlobal = tetoDiarioGlobal;
@@ -113,7 +118,8 @@ public class CoachSignupServiceImpl implements CoachSignupService {
      * ignorada e a idempotência é por tentativa ({@code "<token_hash>:<n>"}): rastro {@code ACTIVE}
      * devolve o resultado; só {@code FAILED} abre tentativa nova.
      * <p><strong>Side Effects:</strong> Database insert + External API (Keycloak) — cria
-     * organização e usuário.
+     * organização e usuário. No modo convite, também atualiza {@code FoundingInvite} (consumo) e
+     * o {@code Waitlist} de origem (status {@code ACTIVE}).
      * <p><strong>Tenant-aware:</strong> NO — roda antes de o tenant existir; é ele que o cria.
      *
      * @throws DuplicateResourceException   slug/e-mail em uso, ou chave de idempotência reusada com
@@ -204,8 +210,7 @@ public class CoachSignupServiceImpl implements CoachSignupService {
             // Antes do ACTIVE, e na pilha de compensação: se o consumo falhar, o rastro ainda não diz
             // "concluído" e a compensação desfaz tudo; se o ACTIVE falhar depois, o convite reabre.
             if (modo.porConvite()) {
-                consumirConvite(modo.invite(), assessoria.getId());
-                desfazer.push(() -> reabrirConvite(modo.invite()));
+                consumirConvite(modo.invite(), assessoria.getId(), desfazer);
             }
             avancar(operacao, SignupProvisioningStatus.ACTIVE, op -> op.setResult(serializar(resposta)));
 
@@ -278,12 +283,31 @@ public class CoachSignupServiceImpl implements CoachSignupService {
         return invite.getTokenHash() + ":" + (tentativas.size() + 1);
     }
 
-    /** O convite deixa de valer no último passo antes do ACTIVE; a compensação o reabre. */
-    private void consumirConvite(FoundingInvite invite, UUID assessoriaId) {
+    /**
+     * O convite deixa de valer no último passo antes do ACTIVE; a compensação o reabre.
+     *
+     * <p>A compensação é empilhada <strong>imediatamente após</strong> o save do convite ter
+     * sucesso — antes de tocar o {@code Waitlist} — não depois que este método retorna. Achado do
+     * code review (add-waitlist-status-lifecycle): se o save do {@code Waitlist} abaixo lançasse
+     * e a compensação só fosse empilhada pelo chamador após o retorno, o convite já comitado como
+     * convertido nunca entraria na pilha, ficando permanentemente travado (nem reaberto, nem
+     * sinalizado para reconciliação).
+     */
+    private void consumirConvite(FoundingInvite invite, UUID assessoriaId, Deque<Runnable> desfazer) {
         invite.setConvertedAt(OffsetDateTime.now());
         invite.setAssessoriaId(assessoriaId);
         foundingInviteRepository.save(invite);
         log.info("Convite de fundadora convertido: inviteId={}", invite.getId());
+        desfazer.push(() -> reabrirConvite(invite));
+
+        // INVITED -> ACTIVE (add-waitlist-status-lifecycle, design D4). ifPresent, não
+        // orElseThrow: o Waitlist deveria sempre existir (é de onde o convite nasceu), mas se não
+        // existir mais isso não pode travar o cadastro — só deixa o funil por lead incompleto.
+        waitlistRepository.findById(invite.getWaitlistId()).ifPresent(lead -> {
+            lead.setActivatedAt(Instant.now());
+            lead.setAssessoriaId(assessoriaId);
+            waitlistRepository.save(lead);
+        });
     }
 
     private void reabrirConvite(FoundingInvite invite) {
@@ -291,6 +315,13 @@ public class CoachSignupServiceImpl implements CoachSignupService {
         invite.setAssessoriaId(null);
         foundingInviteRepository.save(invite);
         log.info("Convite de fundadora reaberto pela compensação: inviteId={}", invite.getId());
+
+        // Simétrico a consumirConvite: reverte o lead de volta a INVITED.
+        waitlistRepository.findById(invite.getWaitlistId()).ifPresent(lead -> {
+            lead.setActivatedAt(null);
+            lead.setAssessoriaId(null);
+            waitlistRepository.save(lead);
+        });
     }
 
     /**
