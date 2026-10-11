@@ -32,7 +32,8 @@ import java.util.Map;
 public class WaitlistNotificationListener {
 
     private static final String SUBJECT_TREINADOR = "Recebemos sua solicitação — Menthoros";
-    private static final String SUBJECT_OTHER_BRAND = "Recebemos sua solicitação — Menthoros";
+    // Mesmo assunto do treinador qualificado — o lead não deve notar diferença de segmento no e-mail.
+    private static final String SUBJECT_OTHER_BRAND = SUBJECT_TREINADOR;
     private static final String SUBJECT_ATLETA = "O Menthoros é para assessorias — Menthoros";
     private static final String SUBJECT_FOUNDER = "Novo lead qualificado na waitlist";
 
@@ -79,13 +80,12 @@ public class WaitlistNotificationListener {
 
     private void enviarConfirmacao(Waitlist lead) {
         try {
-            EmailMessage mensagem;
-            if (lead.isTreinadorOuProprietario()) {
-                WaitlistSegment segmento = WaitlistSegment.derivar(lead.getPerfil(), lead.getWatchBrand());
-                mensagem = segmento == WaitlistSegment.OTHER_BRAND ? mensagemOutraMarca(lead) : mensagemTreinador(lead);
-            } else {
-                mensagem = mensagemAtleta(lead);
-            }
+            WaitlistSegment segmento = WaitlistSegment.derivar(lead.getPerfil(), lead.getWatchBrand());
+            EmailMessage mensagem = switch (segmento) {
+                case ATLETA -> mensagemAtleta(lead);
+                case QUALIFIED -> mensagemTreinador(lead);
+                case OTHER_BRAND -> mensagemOutraMarca(lead);
+            };
             waitlistEmailSender.enviar(mensagem);
         } catch (Exception e) {
             log.error("Waitlist: falha ao enviar confirmação ao lead {}", lead.getId(), e);
