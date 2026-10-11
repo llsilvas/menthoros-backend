@@ -207,6 +207,17 @@ class FoundingInviteServiceImplTest {
         }
 
         @Test
+        @DisplayName("perfil PROPRIETARIO é aceito, igual a TREINADOR (expand-waitlist-access-contract)")
+        void perfilProprietario() {
+            stubInscrito(treinadora().toBuilder().perfil(PerfilWaitlist.PROPRIETARIO).build());
+            when(inviteRepository.save(any())).thenAnswer(i -> comId(i.getArgument(0)));
+
+            service.invite(waitlistId, ADMIN);
+
+            verify(emailSender).send(any());
+        }
+
+        @Test
         @DisplayName("e-mail com 101 caracteres → 422; com 100 passa")
         void limiteDoEmail() {
             String local = "a".repeat(101 - "@x.io".length());

@@ -3,6 +3,7 @@ package br.com.menthoros.backend.entity;
 import br.com.menthoros.backend.enums.FaixaAtletas;
 import br.com.menthoros.backend.enums.PerfilWaitlist;
 import br.com.menthoros.backend.enums.WaitlistStatus;
+import br.com.menthoros.backend.enums.WatchBrand;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -84,6 +85,20 @@ public class Waitlist {
     @Column(name = "assessoria_id")
     private UUID assessoriaId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "watch_brand", length = 20)
+    private WatchBrand watchBrand;
+
+    @Column(name = "landing_path", length = 255)
+    private String landingPath;
+
+    @Column(name = "referrer", length = 255)
+    private String referrer;
+
+    /** Versão da Política de Privacidade vigente no aceite — carimbada pelo servidor, nunca pelo cliente. */
+    @Column(name = "policy_version", length = 20)
+    private String policyVersion;
+
     /**
      * Etapa do lead no funil, derivada dos timestamps — sem coluna própria, mesmo padrão de
      * {@code FoundingInvite} ("o estado é derivado das datas, sem enum"). {@code discardedAt}
@@ -100,5 +115,15 @@ public class Waitlist {
             return WaitlistStatus.INVITED;
         }
         return WaitlistStatus.NEW;
+    }
+
+    /**
+     * {@code true} para {@link PerfilWaitlist#TREINADOR} e {@link PerfilWaitlist#PROPRIETARIO} —
+     * os dois papéis que a aplicação trata como "lead parecido com treinador" para notificação,
+     * funil, convite da turma fundadora e faixa de atletas. Centralizado aqui para não repetir a
+     * comparação em cada chamador (expand-waitlist-access-contract, design D2).
+     */
+    public boolean isTreinadorOuProprietario() {
+        return PerfilWaitlist.isTreinadorOuProprietario(perfil);
     }
 }

@@ -87,6 +87,18 @@ class WaitlistFunnelServiceImplTest {
     }
 
     @Test
+    void proprietarioContaComoQualified() {
+        Instant agora = Instant.now();
+        Waitlist lead = waitlist(PerfilWaitlist.PROPRIETARIO, "instagram", "bio-link", agora);
+        when(waitlistRepository.findAll()).thenReturn(List.of(lead));
+        when(foundingInviteRepository.findAll()).thenReturn(List.of());
+
+        List<WaitlistFunnelBucketOutputDto> resultado = service.calcularFunil(null, null);
+
+        assertThat(resultado.get(0).qualified()).isEqualTo(1);
+    }
+
+    @Test
     void conviteNaoInvalidadoContaComoInvited() {
         Waitlist lead = waitlist(PerfilWaitlist.TREINADOR, "instagram", "bio-link", Instant.now());
         when(waitlistRepository.findAll()).thenReturn(List.of(lead));

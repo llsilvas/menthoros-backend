@@ -4,7 +4,6 @@ import br.com.menthoros.backend.dto.output.FoundingInviteLookupOutputDto;
 import br.com.menthoros.backend.dto.output.FoundingInviteOutputDto;
 import br.com.menthoros.backend.entity.FoundingInvite;
 import br.com.menthoros.backend.entity.Waitlist;
-import br.com.menthoros.backend.enums.PerfilWaitlist;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -179,8 +178,8 @@ public class FoundingInviteServiceImpl implements FoundingInviteService {
     }
 
     private void validar(Waitlist inscrito) {
-        if (inscrito.getPerfil() != PerfilWaitlist.TREINADOR) {
-            throw new DomainRuleViolationException("Só inscritos com perfil TREINADOR podem ser convidados");
+        if (!inscrito.isTreinadorOuProprietario()) {
+            throw new DomainRuleViolationException("Só inscritos com perfil TREINADOR ou PROPRIETARIO podem ser convidados");
         }
         if (inscrito.getEmail().length() > MAX_EMAIL_LENGTH_FOR_SIGNUP) {
             // A waitlist aceita 180; o cadastro e tb_usuario, 100. Falhar aqui, na mão do founder,

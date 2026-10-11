@@ -96,6 +96,20 @@ class WaitlistNotificationListenerTest {
         }
 
         @Test
+        @DisplayName("proprietário recebe confirmação de treinador e o founder é notificado (expand-waitlist-access-contract)")
+        void proprietarioTratadoComoTreinador() {
+            stubTemplates();
+            Waitlist lead = lead(PerfilWaitlist.PROPRIETARIO);
+            when(waitlistRepository.findById(lead.getId())).thenReturn(Optional.of(lead));
+
+            listener.aoCriarLead(new WaitlistLeadCreatedEvent(lead.getId()));
+
+            verify(templates).render(eq("waitlist-confirmation-treinador.html"), anyMap());
+            verify(templates).render(eq("waitlist-founder-notification.html"), anyMap());
+            verify(waitlistEmailSender, times(2)).enviar(any());
+        }
+
+        @Test
         @DisplayName("atleta recebe confirmação de atleta e o founder NÃO é notificado")
         void atletaNaoNotificaFounder() {
             stubTemplates();
