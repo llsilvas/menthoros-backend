@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.Waitlist;
 import br.com.menthoros.backend.enums.FaixaAtletas;
+import br.com.menthoros.backend.enums.WaitlistSegment;
 import br.com.menthoros.backend.events.WaitlistLeadCreatedEvent;
 import br.com.menthoros.backend.repository.WaitlistRepository;
 import br.com.menthoros.backend.services.email.EmailMessage;
@@ -31,6 +32,8 @@ import java.util.Map;
 public class WaitlistNotificationListener {
 
     private static final String SUBJECT_TREINADOR = "Recebemos sua solicitação — Menthoros";
+    // Mesmo assunto do treinador qualificado — o lead não deve notar diferença de segmento no e-mail.
+    private static final String SUBJECT_OTHER_BRAND = SUBJECT_TREINADOR;
     private static final String SUBJECT_ATLETA = "O Menthoros é para assessorias — Menthoros";
     private static final String SUBJECT_FOUNDER = "Novo lead qualificado na waitlist";
 
@@ -77,9 +80,12 @@ public class WaitlistNotificationListener {
 
     private void enviarConfirmacao(Waitlist lead) {
         try {
-            EmailMessage mensagem = lead.isTreinadorOuProprietario()
-                    ? mensagemTreinador(lead)
-                    : mensagemAtleta(lead);
+            WaitlistSegment segmento = WaitlistSegment.derivar(lead.getPerfil(), lead.getWatchBrand());
+            EmailMessage mensagem = switch (segmento) {
+                case ATLETA -> mensagemAtleta(lead);
+                case QUALIFIED -> mensagemTreinador(lead);
+                case OTHER_BRAND -> mensagemOutraMarca(lead);
+            };
             waitlistEmailSender.enviar(mensagem);
         } catch (Exception e) {
             log.error("Waitlist: falha ao enviar confirmação ao lead {}", lead.getId(), e);
@@ -103,6 +109,13 @@ public class WaitlistNotificationListener {
         return new EmailMessage(lead.getEmail(), SUBJECT_TREINADOR,
                 templates.render("waitlist-confirmation-treinador.html", valores),
                 templates.render("waitlist-confirmation-treinador.txt", valores));
+    }
+
+    private EmailMessage mensagemOutraMarca(Waitlist lead) {
+        Map<String, String> valores = valoresBase(lead);
+        return new EmailMessage(lead.getEmail(), SUBJECT_OTHER_BRAND,
+                templates.render("waitlist-confirmation-other-brand.html", valores),
+                templates.render("waitlist-confirmation-other-brand.txt", valores));
     }
 
     private EmailMessage mensagemAtleta(Waitlist lead) {
