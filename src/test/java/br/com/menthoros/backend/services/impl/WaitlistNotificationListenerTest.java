@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.entity.Waitlist;
 import br.com.menthoros.backend.enums.FaixaAtletas;
 import br.com.menthoros.backend.enums.PerfilWaitlist;
+import br.com.menthoros.backend.enums.WatchBrand;
 import br.com.menthoros.backend.events.WaitlistLeadCreatedEvent;
 import br.com.menthoros.backend.exception.EmailDeliveryException;
 import br.com.menthoros.backend.repository.WaitlistRepository;
@@ -59,6 +60,10 @@ class WaitlistNotificationListenerTest {
     }
 
     private Waitlist lead(PerfilWaitlist perfil) {
+        return lead(perfil, WatchBrand.GARMIN);
+    }
+
+    private Waitlist lead(PerfilWaitlist perfil, WatchBrand watchBrand) {
         return Waitlist.builder()
                 .id(UUID.randomUUID())
                 .nome("Maria")
@@ -67,6 +72,7 @@ class WaitlistNotificationListenerTest {
                 .telefone("+55 11 99999-9999")
                 .perfil(perfil)
                 .qtdAtletas(perfil == PerfilWaitlist.TREINADOR ? FaixaAtletas.DE_11_A_30 : null)
+                .watchBrand(PerfilWaitlist.isTreinadorOuProprietario(perfil) ? watchBrand : null)
                 .aceiteLgpd(true)
                 .utmSource("instagram")
                 .build();
@@ -107,6 +113,21 @@ class WaitlistNotificationListenerTest {
             verify(templates).render(eq("waitlist-confirmation-treinador.html"), anyMap());
             verify(templates).render(eq("waitlist-founder-notification.html"), anyMap());
             verify(waitlistEmailSender, times(2)).enviar(any());
+        }
+
+        @Test
+        @DisplayName("treinador com outra marca de relógio recebe confirmação de OTHER_BRAND, não a de QUALIFIED")
+        void treinadorComOutraMarcaRecebeTemplateCorreto() {
+            stubTemplates();
+            Waitlist lead = lead(PerfilWaitlist.TREINADOR, WatchBrand.COROS);
+            when(waitlistRepository.findById(lead.getId())).thenReturn(Optional.of(lead));
+
+            listener.aoCriarLead(new WaitlistLeadCreatedEvent(lead.getId()));
+
+            verify(templates).render(eq("waitlist-confirmation-other-brand.html"), anyMap());
+            verify(templates).render(eq("waitlist-confirmation-other-brand.txt"), anyMap());
+            verify(templates, never()).render(eq("waitlist-confirmation-treinador.html"), anyMap());
+            verify(templates).render(eq("waitlist-founder-notification.html"), anyMap());
         }
 
         @Test
