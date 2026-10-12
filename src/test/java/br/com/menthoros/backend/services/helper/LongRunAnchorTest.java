@@ -130,6 +130,76 @@ class LongRunAnchorTest {
         }
     }
 
+    /**
+     * fix-planner-ignora-prova-na-semana (task 3.1): com a PROVA já na lista, ancorar o longo na
+     * véspera, no dia ou no dia seguinte dela desfaz o reparo — o LLM tira o longo de lá e a âncora o
+     * devolve, ou ela troca o longo com a própria PROVA. Na geração real do Leandro o preferido era o
+     * sábado e a prova, o domingo.
+     */
+    @Nested
+    @DisplayName("semana de prova")
+    class SemanaDeProva {
+
+        private final List<DiaSemana> dias = List.of(DiaSemana.SEGUNDA, DiaSemana.TERCA, DiaSemana.QUARTA,
+                DiaSemana.QUINTA, DiaSemana.SABADO, DiaSemana.DOMINGO);
+
+        @Test
+        @DisplayName("CA3: preferido na véspera da prova (sábado, prova no domingo) → nada muda")
+        void preferidoNaVespera() {
+            var plano = plano(List.of(treino("SEGUNDA", "LONGO"), treino("TERCA", "CONTINUO"),
+                    treino("QUINTA", "FACIL"), treino("SABADO", "REGENERATIVO"), treino("DOMINGO", "PROVA")), List.of());
+
+            assertThat(anchor.ancorar(plano, ctxComProva(DiaSemana.SABADO, "DOMINGO"))).isSameAs(plano);
+        }
+
+        @Test
+        @DisplayName("CA3: preferido no dia da prova → nada muda (a PROVA não troca de dia com o longo)")
+        void preferidoNoDiaDaProva() {
+            var plano = plano(List.of(treino("SEGUNDA", "LONGO"), treino("TERCA", "CONTINUO"),
+                    treino("QUINTA", "FACIL"), treino("DOMINGO", "PROVA")), List.of());
+
+            assertThat(anchor.ancorar(plano, ctxComProva(DiaSemana.DOMINGO, "DOMINGO"))).isSameAs(plano);
+        }
+
+        @Test
+        @DisplayName("CA3: preferido no dia seguinte à prova (prova na quarta, preferido quinta) → nada muda")
+        void preferidoNoDiaSeguinte() {
+            var plano = plano(List.of(treino("SEGUNDA", "FACIL"), treino("TERCA", "FACIL"), treino("QUARTA", "PROVA"),
+                    treino("QUINTA", "FACIL"), treino("DOMINGO", "LONGO")), List.of());
+
+            assertThat(anchor.ancorar(plano, ctxComProva(DiaSemana.QUINTA, "QUARTA"))).isSameAs(plano);
+        }
+
+        @Test
+        @DisplayName("CA3: preferido longe da prova (terça, prova no domingo) → ancora como antes")
+        void preferidoLongeDaProva() {
+            var plano = plano(List.of(treino("SEGUNDA", "LONGO"), treino("TERCA", "CONTINUO"),
+                    treino("QUINTA", "FACIL"), treino("DOMINGO", "PROVA")), List.of());
+
+            var resultado = anchor.ancorar(plano, ctxComProva(DiaSemana.TERCA, "DOMINGO"));
+
+            assertThat(diaDoTipo(resultado, "LONGO")).isEqualTo("TERCA");
+            assertThat(diaDoTipo(resultado, "PROVA")).isEqualTo("DOMINGO");
+        }
+
+        @Test
+        @DisplayName("sem PROVA na lista do contexto, a âncora funciona como antes")
+        void semProvaNaListaDoContexto() {
+            var plano = plano(List.of(treino("SEGUNDA", "LONGO"), treino("TERCA", "CONTINUO"),
+                    treino("QUINTA", "FACIL"), treino("SABADO", "REGENERATIVO")), List.of());
+
+            var resultado = anchor.ancorar(plano, ctx(DiaSemana.SABADO));
+
+            assertThat(diaDoTipo(resultado, "LONGO")).isEqualTo("SABADO");
+        }
+
+        private WeeklyCoverageContext ctxComProva(DiaSemana diaPreferidoLongo, String diaDaProva) {
+            var prova = new TreinoPlanejadoLlmDto(diaDaProva, "PROVA", null, null, null, null, null,
+                    null, null, null, null, "Prova", "Zona 3-4", java.util.UUID.randomUUID());
+            return new WeeklyCoverageContext(dias, List.of(), false, diaPreferidoLongo, 7, List.of(prova));
+        }
+    }
+
     // ---------- fixtures ----------
 
     private static WeeklyCoverageContext ctx(DiaSemana diaPreferidoLongo) {

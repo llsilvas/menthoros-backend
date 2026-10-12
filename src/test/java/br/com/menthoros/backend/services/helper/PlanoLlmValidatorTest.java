@@ -402,6 +402,27 @@ class PlanoLlmValidatorTest {
                     .satisfies(t -> assertThat(t.provaId()).isEqualTo(PROVA_ID));
         }
 
+        @Test
+        @DisplayName("task 3.1 / caso real: dia preferido do longo = véspera da prova → a âncora não devolve o longo ao sábado")
+        void ancoraNaoDevolveOLongoAVesperaDaProva() {
+            var dias = List.of(DiaSemana.SEGUNDA, DiaSemana.TERCA, DiaSemana.QUINTA, DiaSemana.SABADO,
+                    DiaSemana.DOMINGO);
+            var ctx = new WeeklyCoverageContext(dias, List.of(), false, DiaSemana.SABADO, 7, List.of(provaDomingo()));
+            var plano = plano(longo("SEGUNDA"), treinoValido("TERCA"), treinoValido("QUINTA"),
+                    treinoValido("SABADO"));
+
+            var resultado = validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, ctx);
+
+            assertThat(resultado.treinosPlanejados())
+                    .filteredOn(t -> "LONGO".equals(t.tipoTreino()))
+                    .singleElement()
+                    .satisfies(t -> assertThat(t.diaSemana()).isEqualTo("SEGUNDA"));
+            assertThat(resultado.treinosPlanejados())
+                    .filteredOn(t -> "DOMINGO".equals(t.diaSemana()))
+                    .singleElement()
+                    .satisfies(t -> assertThat(t.tipoTreino()).isEqualTo("PROVA"));
+        }
+
         private WeeklyCoverageContext contexto(List<DiaSemana> dias) {
             return new WeeklyCoverageContext(dias, List.of(), false, null, 7, List.of(provaDomingo()));
         }

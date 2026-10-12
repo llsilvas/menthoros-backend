@@ -41,6 +41,11 @@ public class LongRunAnchor {
         if (preferido == null || !ctx.effectiveDays().contains(preferido)) {
             return plano;
         }
+        // Véspera, dia ou dia seguinte de uma prova: o longo ali recria a vizinhança que a cobertura
+        // rejeita (o LLM o tira de lá, a âncora o devolve) ou troca de lugar com a própria PROVA.
+        if (colado(preferido, ctx.provasDaSemana())) {
+            return plano;
+        }
         // Descanso está preso ao dia que o sinal libera (o primeiro dia efetivo, ou os dias da
         // sequência longa) — trocá-lo de lugar o invalidaria.
         boolean preferidoTemDescanso = plano.restDays().stream()
@@ -80,5 +85,13 @@ public class LongRunAnchor {
 
         log.info("ÂNCORA DO LONGO: LONGO {} → {} (troca com {})", diaDoLongo, preferido.name(), outro.tipoTreino());
         return plano.toBuilder().treinosPlanejados(ajustados).build();
+    }
+
+    /** A semana do plano é segunda a domingo: não há vizinhança circular (domingo não encosta na segunda). */
+    private static boolean colado(DiaSemana dia, List<TreinoPlanejadoLlmDto> provas) {
+        int ordem = WeeklyCoverageContext.ordemNaSemana(dia);
+        return provas.stream()
+                .map(p -> DiaSemana.valueOf(p.diaSemana()))
+                .anyMatch(diaProva -> Math.abs(WeeklyCoverageContext.ordemNaSemana(diaProva) - ordem) <= 1);
     }
 }
