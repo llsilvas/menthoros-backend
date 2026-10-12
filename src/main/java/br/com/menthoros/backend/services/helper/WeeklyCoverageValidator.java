@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.llm.RestDayLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.TipoTreino;
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
@@ -27,6 +28,7 @@ import java.util.Set;
  * <p>Idempotent: YES — função pura sobre as listas recebidas. Side Effects: NONE.
  * Tenant-aware: NO.</p>
  */
+@Slf4j
 @Component
 public class WeeklyCoverageValidator {
 
@@ -71,8 +73,7 @@ public class WeeklyCoverageValidator {
 
         Map<DiaSemana, Integer> ocupacao = new LinkedHashMap<>();
         Set<DiaSemana> descansosIgnorados = new LinkedHashSet<>();
-        registrarDias(listaTreinos.stream().map(TreinoPlanejadoLlmDto::diaSemana).toList(),
-                ctx, ocupacao, violacoes, "treino", descansosIgnorados);
+        registrarDias(diasDosTreinos(listaTreinos), ctx, ocupacao, violacoes, "treino", descansosIgnorados);
         registrarDias(listaDescansos.stream().map(RestDayLlmDto::dayOfWeek).toList(),
                 ctx, ocupacao, violacoes, "descanso", descansosIgnorados);
 
@@ -102,7 +103,27 @@ public class WeeklyCoverageValidator {
                 .toList();
         violacoes.addAll(validarDescansos(descansosRelevantes, ctx));
         violacoes.addAll(validarIntensosAdjacentes(listaTreinos));
+        violacoes.addAll(validarDiaAposProvaDaSemanaAnterior(listaTreinos, ctx));
         return List.copyOf(violacoes);
+    }
+
+    /**
+     * Dias dos treinos para a contagem de ocupação. Provas são eventos fixos e o cadastro aceita duas
+     * na mesma data: ocupam o dia uma vez só, senão "dia repetido" seria uma violação que o LLM não
+     * tem como reparar. PROVA mais outro treino no mesmo dia continua contando em dobro.
+     */
+    private static List<String> diasDosTreinos(List<TreinoPlanejadoLlmDto> treinos) {
+        Set<String> diasComProva = new LinkedHashSet<>();
+        List<String> dias = new ArrayList<>();
+        for (TreinoPlanejadoLlmDto treino : treinos) {
+            boolean prova = tipo(treino.tipoTreino()) == TipoTreino.PROVA;
+            if (prova && treino.diaSemana() != null
+                    && !diasComProva.add(treino.diaSemana().trim().toUpperCase())) {
+                continue;
+            }
+            dias.add(treino.diaSemana());
+        }
+        return dias;
     }
 
     /** Converte os dias declarados, acusando dia inválido ou fora dos disponíveis. */
@@ -193,6 +214,12 @@ public class WeeklyCoverageValidator {
             var anterior = intensos.get(i - 1);
             var atual = intensos.get(i);
             if (ordem(atual.getKey()) - ordem(anterior.getKey()) == 1) {
+                if (isProva(anterior) && isProva(atual)) {
+                    // Eventos fixos do calendário do atleta: o LLM não pode mover nenhum dos dois.
+                    log.warn("Provas em dias vizinhos: {} e {} — não é violação de plano",
+                            anterior.getKey(), atual.getKey());
+                    continue;
+                }
                 violacoes.add(new Violacao("INTENSOS_ADJACENTES",
                         "Treinos de alta intensidade em dias vizinhos: " + anterior.getValue() + " em "
                                 + anterior.getKey().name() + " e " + atual.getValue() + " em "
@@ -200,6 +227,40 @@ public class WeeklyCoverageValidator {
             }
         }
         return violacoes;
+    }
+
+    /**
+     * Prova no último dia da semana anterior: o primeiro dia deste plano é o dia seguinte a ela. O
+     * plano anterior é outro plano, então só o contexto sabe da prova; a regra é a mesma de
+     * {@link #validarIntensosAdjacentes} (mesma chave, mesmo reparo), com a prova do outro lado da
+     * fronteira. {@code PROVA} nesse dia é evento fixo e fica de fora.
+     */
+    private List<Violacao> validarDiaAposProvaDaSemanaAnterior(List<TreinoPlanejadoLlmDto> treinos,
+                                                               WeeklyCoverageContext ctx) {
+        PosProvaSemanaAnterior posProva = ctx.posProva();
+        if (posProva == null) return List.of();
+
+        List<Violacao> violacoes = new ArrayList<>();
+        for (TreinoPlanejadoLlmDto treino : treinos) {
+            if (converter(treino.diaSemana()) != posProva.diaDoPlano()) continue;
+            TipoTreino tipo = tipo(treino.tipoTreino());
+            if (!exigeDiaLeveAoLado(tipo)) continue;
+
+            violacoes.add(new Violacao("INTENSOS_ADJACENTES",
+                    tipo.name() + " em " + posProva.diaDoPlano().name() + " logo após a prova \""
+                            + posProva.nomeProva() + "\" de " + posProva.dataFormatada()
+                            + " (último dia da semana anterior). Prescreva um regenerativo muito leve nesse dia."));
+        }
+        return violacoes;
+    }
+
+    /** Intenso que o LLM pode mover — PROVA é intensa, mas é evento fixo. */
+    private static boolean exigeDiaLeveAoLado(@Nullable TipoTreino tipo) {
+        return tipo != null && tipo != TipoTreino.PROVA && TIPOS_ALTA_INTENSIDADE.contains(tipo);
+    }
+
+    private static boolean isProva(Map.Entry<DiaSemana, String> intenso) {
+        return TipoTreino.PROVA.name().equals(intenso.getValue());
     }
 
     private static @Nullable DiaSemana converter(@Nullable String dia) {

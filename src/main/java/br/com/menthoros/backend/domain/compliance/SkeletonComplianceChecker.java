@@ -138,8 +138,11 @@ public class SkeletonComplianceChecker {
         if (diasDisponiveis == null) {
             return;
         }
+        // Data real de uma prova da semana e dia de treino mesmo fora da disponibilidade — a isencao
+        // e pela data, nao pelo tipo: PROVA em data errada continua violacao.
+        java.util.Set<LocalDate> datasDeProva = context.datasDeProva();
         plano.sessoes().stream()
-                .filter(s -> !diasDisponiveis.contains(s.data().getDayOfWeek()))
+                .filter(s -> !diasDisponiveis.contains(s.data().getDayOfWeek()) && !datasDeProva.contains(s.data()))
                 .forEach(s -> violacoes.add(new PlannerViolation(PlannerViolationKey.CONSTRAINT_DURA_VIOLADA,
                         "Sessao em " + s.data() + " (" + s.data().getDayOfWeek() + ") fora dos dias disponiveis do atleta")));
     }
@@ -149,8 +152,9 @@ public class SkeletonComplianceChecker {
         if (diasDisponiveis == null) {
             return;
         }
+        java.util.Set<LocalDate> datasDeProva = context.datasDeProva();
         treinosRedistribuidos.sessoes().stream()
-                .filter(s -> !diasDisponiveis.contains(s.data().getDayOfWeek()))
+                .filter(s -> !diasDisponiveis.contains(s.data().getDayOfWeek()) && !datasDeProva.contains(s.data()))
                 .forEach(s -> violacoes.add(new PlannerViolation(PlannerViolationKey.DIA_INDISPONIVEL,
                         "Treino redistribuido para " + s.data() + " (" + s.data().getDayOfWeek()
                                 + "), fora dos dias disponiveis do atleta")));

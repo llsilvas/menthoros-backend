@@ -229,6 +229,110 @@ class PlannerShadowServiceTest {
         }
     }
 
+    /**
+     * fix-planner-ignora-prova-na-semana (task 4.2, CA8): o {@code ComplianceContext} montado aqui
+     * carrega {@code provasDaSemana} do skeleton — nos tres caminhos (shadow, estagio 1, estagio 2).
+     * Caso real: Leandro nao treina aos domingos e a prova e no domingo; o shadow acusava a propria
+     * PROVA como DIA_INDISPONIVEL.
+     */
+    @Nested
+    @DisplayName("provas da semana chegam ao ComplianceContext (CA8)")
+    class ProvasDaSemanaNoContexto {
+
+        private final LocalDate domingo = semanaInicio.plusDays(6);
+
+        @Test
+        @DisplayName("estagio 1: PROVA no domingo da prova, atleta sem domingo -> sem CONSTRAINT_DURA_VIOLADA")
+        void estagio1IsentaODiaDaProva() {
+            var skeleton = skeletonComProvaDeDomingo();
+
+            var violacoes = shadowHabilitado.checkPreRedistribution(
+                    planoComProvaNoDomingo(), skeleton, atletaSemDomingoComProvaNoDomingo(), semanaInicio);
+
+            assertThat(violacoes).noneMatch(v -> v.key() == br.com.menthoros.backend.domain.compliance.PlannerViolationKey.CONSTRAINT_DURA_VIOLADA);
+        }
+
+        @Test
+        @DisplayName("estagio 2: treino PROVA persistido no domingo da prova -> sem DIA_INDISPONIVEL")
+        void estagio2IsentaODiaDaProva() {
+            var skeleton = skeletonComProvaDeDomingo();
+            TreinoPlanejado prova = new TreinoPlanejado();
+            prova.setDataTreino(domingo);
+            prova.setTipoTreino(TipoTreino.PROVA);
+            prova.setTssPlanejado(100);
+
+            var violacoes = shadowHabilitado.checkPostRedistribution(
+                    List.of(prova), skeleton, atletaSemDomingoComProvaNoDomingo(), semanaInicio);
+
+            assertThat(violacoes).noneMatch(v -> v.key() == br.com.menthoros.backend.domain.compliance.PlannerViolationKey.DIA_INDISPONIVEL);
+        }
+
+        @Test
+        @DisplayName("shadow (aplicarShadow): o plano real do caso Leandro nao recebe mais DIA_INDISPONIVEL pela PROVA")
+        void shadowNaoAcusaAProva() {
+            when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("SEMANA DA PROVA");
+            PlanoSemanal plano = planoBase();
+            TreinoPlanejado prova = new TreinoPlanejado();
+            prova.setDataTreino(domingo);
+            prova.setTipoTreino(TipoTreino.PROVA);
+            prova.setTssPlanejado(100);
+            plano.setTreinosPlanejados(List.of(prova));
+
+            shadowHabilitado.aplicarShadow(plano, planoComProvaNoDomingo(), dadosPlano(atletaSemDomingoComProvaNoDomingo()),
+                    decisaoNeutra(), historico(-2.0, 45.0, 0), semanaInicio, false);
+
+            assertThat(plano.getPlannerMetadataJson()).doesNotContain("DIA_INDISPONIVEL").doesNotContain("CONSTRAINT_DURA_VIOLADA");
+        }
+
+        @Test
+        @DisplayName("sem provasDaSemana no skeleton, o mesmo plano continua acusando — e a propagacao que isenta")
+        void semPropagacaoContinuaAcusando() {
+            var skeletonSemProvas = new br.com.menthoros.backend.domain.planner.WeekPlanSkeleton(
+                    br.com.menthoros.backend.domain.planner.TrainingPhase.RACE_WEEK,
+                    new br.com.menthoros.backend.domain.planner.WeeklyLoadTarget(100, 50, 150, "teste"),
+                    List.of(), null, null, false, null, semanaInicio, null, java.util.Optional.empty());
+
+            var violacoes = shadowHabilitado.checkPreRedistribution(
+                    planoComProvaNoDomingo(), skeletonSemProvas, atletaSemDomingoComProvaNoDomingo(), semanaInicio);
+
+            assertThat(violacoes).anyMatch(v -> v.key() == br.com.menthoros.backend.domain.compliance.PlannerViolationKey.CONSTRAINT_DURA_VIOLADA);
+        }
+
+        private br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeletonComProvaDeDomingo() {
+            var provaDomingo = new br.com.menthoros.backend.domain.planner.ProvaSnapshot(domingo, 21.1, false, false);
+            return new br.com.menthoros.backend.domain.planner.WeekPlanSkeleton(
+                    br.com.menthoros.backend.domain.planner.TrainingPhase.PEAK,
+                    new br.com.menthoros.backend.domain.planner.WeeklyLoadTarget(100, 50, 150, "teste"),
+                    List.of(), null, null, false, null, semanaInicio, null, java.util.Optional.empty(), List.of(provaDomingo));
+        }
+
+        private Atleta atletaSemDomingoComProvaNoDomingo() {
+            Prova prova = Prova.builder()
+                    .dataProva(domingo)
+                    .distancia(DistanciaProva.KM_21)
+                    .provaAlvo(false)
+                    .statusProva(ProvaStatus.CONFIRMADA)
+                    .build();
+            return Atleta.builder()
+                    .id(UUID.randomUUID())
+                    .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
+                    .temLesao(false)
+                    .diasDisponiveis(List.of(DiaSemana.SEGUNDA, DiaSemana.TERCA, DiaSemana.QUINTA, DiaSemana.SABADO))
+                    .provas(List.of(prova))
+                    .build();
+        }
+
+        private PlanoSemanalLlmDto planoComProvaNoDomingo() {
+            TreinoPlanejadoLlmDto prova = new TreinoPlanejadoLlmDto(
+                    "DOMINGO", "PROVA", null, 100, 0.9, 8, null, "01:50:00", 21.1, null, List.of());
+            return PlanoSemanalLlmDto.builder()
+                    .volumePlanejadoKm(21.1)
+                    .volumeAlvoKm(21.1)
+                    .treinosPlanejados(List.of(prova))
+                    .build();
+        }
+    }
+
     // --- Fixtures ---
 
     private Atleta atletaBase() {
