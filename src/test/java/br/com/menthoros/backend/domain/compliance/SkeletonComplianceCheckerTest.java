@@ -24,6 +24,73 @@ class SkeletonComplianceCheckerTest {
     private final SkeletonComplianceChecker checker = new SkeletonComplianceChecker();
     private final LocalDate referencia = LocalDate.of(2026, 3, 9); // segunda-feira
 
+    /**
+     * fix-planner-ignora-prova-na-semana (task 4.3, CA8): sessao na data real de uma prova da semana
+     * nao e dia indisponivel — a prova de domingo do atleta que nao treina aos domingos era o 1o
+     * item de violacao do plano real. A isencao e pela data, nao pelo tipo: PROVA em data errada
+     * continua violacao.
+     */
+    @Nested
+    @DisplayName("dia de prova da semana (CA8)")
+    class DiaDeProva {
+
+        private final ProvaSnapshot provaDomingo = new ProvaSnapshot(referencia.plusDays(6), 21.1, false, false);
+        private final AthleteConstraints segundaASabado = new AthleteConstraints(
+                List.of(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY,
+                        DayOfWeek.FRIDAY, DayOfWeek.SATURDAY), null, null, List.of());
+
+        @Test
+        @DisplayName("pre: PROVA no domingo (data da prova) com atleta sem domingo nao e CONSTRAINT_DURA_VIOLADA")
+        void preProvaNaDataIsenta() {
+            var violacoes = checker.checkPreRedistribution(
+                    plano(sessao(0, "FACIL", 40, "Z2"), sessao(6, "PROVA", 100, "Z4")),
+                    skeleton(TrainingPhase.PEAK, 300, 270, 330), contexto(provaDomingo));
+
+            assertThat(violacoes).noneMatch(v -> v.key() == PlannerViolationKey.CONSTRAINT_DURA_VIOLADA);
+        }
+
+        @Test
+        @DisplayName("post: treino no domingo (data da prova) com atleta sem domingo nao e DIA_INDISPONIVEL")
+        void postProvaNaDataIsenta() {
+            var violacoes = checker.checkPostRedistribution(
+                    plano(sessao(0, "FACIL", 40, "Z2"), sessao(6, "PROVA", 100, "Z4")),
+                    skeleton(TrainingPhase.PEAK, 300, 270, 330), contexto(provaDomingo));
+
+            assertThat(violacoes).noneMatch(v -> v.key() == PlannerViolationKey.DIA_INDISPONIVEL);
+        }
+
+        @Test
+        @DisplayName("PROVA em data errada (sabado, prova e domingo) com atleta sem sabado continua violacao")
+        void provaEmDataErradaContinuaViolacao() {
+            AthleteConstraints semSabadoNemDomingo = new AthleteConstraints(
+                    List.of(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY), null, null, List.of());
+
+            var violacoes = checker.checkPreRedistribution(
+                    plano(sessao(0, "FACIL", 40, "Z2"), sessao(5, "PROVA", 100, "Z4")),
+                    skeleton(TrainingPhase.PEAK, 300, 270, 330),
+                    new ComplianceContext(Optional.empty(), semSabadoNemDomingo, referencia, List.of(provaDomingo)));
+
+            assertThat(violacoes).anyMatch(v -> v.key() == PlannerViolationKey.CONSTRAINT_DURA_VIOLADA);
+        }
+
+        @Test
+        @DisplayName("determinante fora da semana (provasDaSemana vazia) nao isenta o domingo")
+        void determinanteForaDaSemanaNaoIsenta() {
+            ProvaSnapshot determinanteLonge = new ProvaSnapshot(referencia.plusDays(70), 42.2, true, false);
+
+            var violacoes = checker.checkPostRedistribution(
+                    plano(sessao(6, "FACIL", 40, "Z2")),
+                    skeleton(TrainingPhase.BUILD, 300, 270, 330),
+                    new ComplianceContext(Optional.of(determinanteLonge), segundaASabado, referencia, List.of()));
+
+            assertThat(violacoes).anyMatch(v -> v.key() == PlannerViolationKey.DIA_INDISPONIVEL);
+        }
+
+        private ComplianceContext contexto(ProvaSnapshot provaDaSemana) {
+            return new ComplianceContext(Optional.empty(), segundaASabado, referencia, List.of(provaDaSemana));
+        }
+    }
+
     @Nested
     @DisplayName("checkPreRedistribution")
     class CheckPreRedistribution {

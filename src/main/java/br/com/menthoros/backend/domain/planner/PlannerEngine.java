@@ -4,9 +4,12 @@ import br.com.menthoros.backend.enums.DiaSemana;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Servico de dominio puro (design.md Decisao 1): sem IO, sem JPA, sem LLM, nunca chama
@@ -78,7 +81,12 @@ public class PlannerEngine {
         // SessionSlot por fase e aloca os dias. Roda sempre (o skeleton alimenta shadow e, com
         // enabled=true, o prompt/compliance).
         List<SessionSlot> sessoes = comporSessoes(snapshot, fase, loadTarget, constraints, periodizacao);
-        ConstraintValidationResult constraintResult = constraintValidator.validate(constraints, sessoes);
+        List<ProvaSnapshot> provasDaSemana = provasDaSemana(periodizacao, snapshot.referenceDate());
+        // O dia de uma prova da semana e dia de treino mesmo fora da disponibilidade do atleta.
+        Set<DayOfWeek> diasDeProva = provasDaSemana.stream()
+                .map(p -> p.dataProva().getDayOfWeek())
+                .collect(Collectors.toSet());
+        ConstraintValidationResult constraintResult = constraintValidator.validate(constraints, sessoes, diasDeProva);
 
         boolean requiresCoachReview = injuryPolicy.requiresCoachReview() || risco.requiresCoachReview();
         // Hierarquia P0: motivo de lesao (passo 1) tem precedencia sobre motivo fisiologico (passo 2).
@@ -98,7 +106,27 @@ public class PlannerEngine {
                 coachReviewReason,
                 snapshot.referenceDate(),
                 plannerScope,
-                periodizacao.provaDeterminante());
+                periodizacao.provaDeterminante(),
+                provasDaSemana);
+    }
+
+    /**
+     * Provas cuja data real cai em {@code [referenceDate, referenceDate+6]}: a determinante so se
+     * estiver na semana (pode estar meses a frente, ou no passado em POST_RACE) mais as preparatorias,
+     * que o {@code PeriodizationPlanner} ja filtra pela janela. Ordem por data; sem duplicata.
+     */
+    private static List<ProvaSnapshot> provasDaSemana(PeriodizationResult periodizacao, LocalDate referenceDate) {
+        LocalDate fim = referenceDate.plusDays(6);
+        List<ProvaSnapshot> provas = new java.util.ArrayList<>();
+        periodizacao.provaDeterminante()
+                .filter(p -> p.dataProva() != null
+                        && !p.dataProva().isBefore(referenceDate) && !p.dataProva().isAfter(fim))
+                .ifPresent(provas::add);
+        periodizacao.provasPreparatoriasNaSemana().stream()
+                .filter(p -> p.dataProva() != null && !provas.contains(p))
+                .forEach(provas::add);
+        provas.sort(java.util.Comparator.comparing(ProvaSnapshot::dataProva));
+        return List.copyOf(provas);
     }
 
     /** Compoe os SessionSlot por fase (ADR-0011) e aloca os dias. Puro/deterministico. */

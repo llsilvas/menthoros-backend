@@ -138,6 +138,65 @@ class PlannerEngineTest {
         }
     }
 
+    /**
+     * fix-planner-ignora-prova-na-semana (task 4.1, CA8): a lista de provas da semana e por data real
+     * dentro de [referenceDate, referenceDate+6] — a determinante pode estar meses a frente e nao
+     * pode virar ancora nem isencao projetando so o DayOfWeek dela na semana corrente.
+     */
+    @Nested
+    @DisplayName("planWeek — provas da semana (por data real)")
+    class ProvasDaSemana {
+
+        private final ProvaSnapshot determinanteLonge = new ProvaSnapshot(referencia.plusDays(90), 42.2, true, false);
+        private final ProvaSnapshot preparatoriaDomingo = new ProvaSnapshot(referencia.plusDays(6), 21.1, false, false);
+
+        @Test
+        @DisplayName("determinante daqui a 3 meses e nenhuma preparatoria: lista vazia")
+        void determinanteForaDaSemana() {
+            WeekPlanSkeleton skeleton = engine.planWeek(snapshotComProvas(List.of(determinanteLonge)));
+
+            assertThat(skeleton.provasDaSemana()).isEmpty();
+            assertThat(skeleton.provaDeterminante()).contains(determinanteLonge);
+        }
+
+        @Test
+        @DisplayName("preparatoria no domingo da semana entra; a determinante longe nao")
+        void preparatoriaNaSemana() {
+            WeekPlanSkeleton skeleton = engine.planWeek(snapshotComProvas(List.of(determinanteLonge, preparatoriaDomingo)));
+
+            assertThat(skeleton.provasDaSemana()).containsExactly(preparatoriaDomingo);
+        }
+
+        @Test
+        @DisplayName("determinante dentro da semana entra na lista")
+        void determinanteNaSemana() {
+            ProvaSnapshot alvoDomingo = new ProvaSnapshot(referencia.plusDays(6), 21.1, true, false);
+
+            WeekPlanSkeleton skeleton = engine.planWeek(snapshotComProvas(List.of(alvoDomingo)));
+
+            assertThat(skeleton.provasDaSemana()).containsExactly(alvoDomingo);
+        }
+
+        @Test
+        @DisplayName("CA8: sessao no dia da prova da semana nao e DIA_INDISPONIVEL mesmo fora dos dias do atleta")
+        void sessaoNoDiaDaProvaNaoEIndisponivel() {
+            // atleta SEGUNDA/QUINTA (snapshot base); prova alvo no domingo -> RACE_WEEK ancora PROVA no domingo
+            ProvaSnapshot alvoDomingo = new ProvaSnapshot(referencia.plusDays(6), 21.1, true, false);
+
+            WeekPlanSkeleton skeleton = engine.planWeek(snapshotComProvas(List.of(alvoDomingo)));
+
+            assertThat(skeleton.sessions()).anyMatch(s -> s.day() == DayOfWeek.SUNDAY);
+            assertThat(skeleton.constraints().violations())
+                    .noneMatch(v -> v.key() == ConstraintViolationKey.DIA_INDISPONIVEL);
+        }
+    }
+
+    private PlannerInputSnapshot snapshotComProvas(List<ProvaSnapshot> provas) {
+        PlannerInputSnapshot base = snapshotBase(Optional.empty(), false, null, null, -2.0, 45.0, 0);
+        return new PlannerInputSnapshot(base.athlete(), base.decisaoProgressao(), base.progressaoHistorico(),
+                provas, base.historico(), base.onboardingContext(), base.referenceDate(), base.injuryRecentWindowDays());
+    }
+
     private PlannerInputSnapshot snapshotBase(Optional<OnboardingContext> onboardingContext,
                                                boolean temLesao,
                                                String descricaoLesao,

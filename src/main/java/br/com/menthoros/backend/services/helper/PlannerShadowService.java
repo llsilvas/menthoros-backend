@@ -151,7 +151,8 @@ public class PlannerShadowService {
         ComplianceContext context = new ComplianceContext(
                 skeleton.provaDeterminante(),
                 resolverConstraints(atleta),
-                semanaInicio);
+                semanaInicio,
+                skeleton.provasDaSemana());
 
         GeneratedPlanSnapshot planoGeradoSnapshot = mapPlanoGerado(planoGeradoPeloLlm, semanaInicio);
         List<PlannerViolation> violacoesPre = complianceChecker.checkPreRedistribution(planoGeradoSnapshot, skeleton, context);
@@ -207,7 +208,8 @@ public class PlannerShadowService {
         ComplianceContext context = new ComplianceContext(
                 skeleton.provaDeterminante(),
                 resolverConstraints(atleta),
-                semanaInicio);
+                semanaInicio,
+                skeleton.provasDaSemana());
         GeneratedPlanSnapshot planoGeradoSnapshot = mapPlanoGerado(planoGeradoPeloLlm, semanaInicio);
         return complianceChecker.checkPreRedistribution(planoGeradoSnapshot, skeleton, context);
     }
@@ -228,7 +230,8 @@ public class PlannerShadowService {
         ComplianceContext context = new ComplianceContext(
                 skeleton.provaDeterminante(),
                 resolverConstraints(atleta),
-                semanaInicio);
+                semanaInicio,
+                skeleton.provasDaSemana());
         GeneratedPlanSnapshot redistribuidoSnapshot = mapTreinosRedistribuidos(treinosRedistribuidos);
         return complianceChecker.checkPostRedistribution(redistribuidoSnapshot, skeleton, context);
     }
