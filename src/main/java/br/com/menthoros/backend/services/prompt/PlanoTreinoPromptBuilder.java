@@ -277,7 +277,7 @@ public class PlanoTreinoPromptBuilder {
                 metaDados != null ? metaDados.getDiaPreferidoLongo() : null,
                 maxDiasConsecutivos,
                 provasDaSemana.stream().map(p -> provaNoPlanoService.construirTreinoProva(p, atleta)).toList(),
-                posProvaSemanaAnterior(atleta, inicioSemana, diasACobrir));
+                resolverPosProva(atleta, inicioSemana, diasACobrir));
         String alertasObrigatorios = alertasPromptFormatter.gerarAlertasObrigatorios(
                 atleta, metaDados, maxDiasConsecutivos, ctx.treinosUltimas4Semanas(), ctx.dataReferencia());
 
@@ -546,8 +546,8 @@ public class PlanoTreinoPromptBuilder {
      * Prova no dia anterior ao início da semana: o primeiro dia do plano é o D+1 dela. Só interessa se
      * esse dia é um dia a cobrir — senão não há o que proteger, e a consulta nem é feita.
      */
-    private @Nullable PosProvaSemanaAnterior posProvaSemanaAnterior(Atleta atleta, LocalDate inicioSemana,
-                                                                    @Nullable List<DiaSemana> diasACobrir) {
+    private @Nullable PosProvaSemanaAnterior resolverPosProva(Atleta atleta, LocalDate inicioSemana,
+                                                             @Nullable List<DiaSemana> diasACobrir) {
         DiaSemana primeiroDia = Utils.converterDayOfWeekParaDiaSemana(inicioSemana.getDayOfWeek());
         if (diasACobrir == null || !diasACobrir.contains(primeiroDia)) {
             return null;

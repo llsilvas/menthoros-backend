@@ -45,9 +45,6 @@ public class WeeklyCoverageValidator {
 
     private static final int MOTIVO_MAX = 200;
 
-    private static final java.time.format.DateTimeFormatter DATA_FMT =
-            java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
-
     /**
      * Dias de descanso que o plano declarou fora dos dias disponíveis do atleta — são descartados
      * antes de persistir (ver {@code registrarDias}).
@@ -247,15 +244,19 @@ public class WeeklyCoverageValidator {
         for (TreinoPlanejadoLlmDto treino : treinos) {
             if (converter(treino.diaSemana()) != posProva.diaDoPlano()) continue;
             TipoTreino tipo = tipo(treino.tipoTreino());
-            if (tipo == null || tipo == TipoTreino.PROVA || !TIPOS_ALTA_INTENSIDADE.contains(tipo)) continue;
+            if (!exigeDiaLeveAoLado(tipo)) continue;
 
             violacoes.add(new Violacao("INTENSOS_ADJACENTES",
                     tipo.name() + " em " + posProva.diaDoPlano().name() + " logo após a prova \""
-                            + posProva.nomeProva().replaceAll("[\\r\\n\"]+", " ").trim() + "\" de "
-                            + posProva.data().format(DATA_FMT) + " (último dia da semana anterior). "
-                            + "Prescreva um regenerativo muito leve nesse dia."));
+                            + posProva.nomeProva() + "\" de " + posProva.dataFormatada()
+                            + " (último dia da semana anterior). Prescreva um regenerativo muito leve nesse dia."));
         }
         return violacoes;
+    }
+
+    /** Intenso que o LLM pode mover — PROVA é intensa, mas é evento fixo. */
+    private static boolean exigeDiaLeveAoLado(@Nullable TipoTreino tipo) {
+        return tipo != null && tipo != TipoTreino.PROVA && TIPOS_ALTA_INTENSIDADE.contains(tipo);
     }
 
     private static boolean isProva(Map.Entry<DiaSemana, String> intenso) {

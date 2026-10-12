@@ -217,6 +217,9 @@ class PlanoTreinoPromptBuilderDiaDeProvaTest {
         var gerado = montar(INICIO_PROXIMA, null, null, List.of(), DIAS_UTEIS, skeleton);
 
         assertThat(gerado.cobertura()).isNull();
+        assertThat(gerado.user()).doesNotContain("DIA APOS PROVA DA SEMANA ANTERIOR");
+        verify(provaRepository, never()).findByAtletaAndDataProvaBetweenOrderByDataProvaAsc(
+                any(), eq(DOMINGO_ANTERIOR), eq(DOMINGO_ANTERIOR));
     }
 
     @Test
