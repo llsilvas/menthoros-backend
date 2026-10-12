@@ -224,6 +224,37 @@ class PlannerEngineTest {
             }
         }
 
+        /**
+         * Achado do /qa (code-reviewer): com duas sessões pesadas órfãs na mesma semana, o motivo
+         * da primeira era perdido (variável simples sobrescrita). Testa o helper direto — forçar
+         * duas órfãs de verdade via composição/alocação end-to-end é frágil (depende da matemática
+         * de polarização); aqui o que importa é a lógica de acumulação em si.
+         */
+        @Test
+        @DisplayName("/qa: duas sessões pesadas órfãs na mesma semana — o motivo acumula as duas, não só a última")
+        void duasOrfasAcumulamOMotivo() {
+            SessionSlot longoOrfao = new SessionSlot(null, "LONGO", 90.0, "Zona 2", true, 90);
+            SessionSlot duraOrfa = new SessionSlot(null, "INTERVALADO", 70.0, "Zona 5", false, 60);
+            SessionSlot leve = new SessionSlot(DayOfWeek.MONDAY, "FACIL", 40.0, "Zona 1", false, 30);
+
+            var resultado = PlannerEngine.removerPesadasSemDia(
+                    List.of(longoOrfao, duraOrfa, leve), List.of(preparatoriaDomingo));
+
+            assertThat(resultado.sessoes()).containsExactly(leve); // as duas órfãs saem, a leve fica
+            assertThat(resultado.motivo()).contains("LONGO").contains("INTERVALADO");
+        }
+
+        @Test
+        @DisplayName("/qa: sem órfãs, motivo é null")
+        void semOrfasMotivoNulo() {
+            SessionSlot leve = new SessionSlot(DayOfWeek.MONDAY, "FACIL", 40.0, "Zona 1", false, 30);
+
+            var resultado = PlannerEngine.removerPesadasSemDia(List.of(leve), List.of());
+
+            assertThat(resultado.sessoes()).containsExactly(leve);
+            assertThat(resultado.motivo()).isNull();
+        }
+
         @Test
         @DisplayName("CA8: sessao no dia da prova da semana nao e DIA_INDISPONIVEL mesmo fora dos dias do atleta")
         void sessaoNoDiaDaProvaNaoEIndisponivel() {

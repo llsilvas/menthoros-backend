@@ -86,19 +86,9 @@ public class PlannerEngine {
         List<SessionSlot> alocado = comporSessoes(snapshot, fase, loadTarget, constraints, periodizacao, provasDaSemana);
 
         // Um LONGO/dura sem dia elegivel (Decisao 6) nao vai ao prompt — removido, nao reciclado.
-        List<SessionSlot> sessoes = new ArrayList<>();
-        String motivoSlotSemDia = null;
-        for (SessionSlot s : alocado) {
-            TipoTreino tipo = TipoTreino.valueOf(s.sessionType());
-            boolean pesada = tipo == TipoTreino.LONGO || SessionDayAllocator.DURAS.contains(tipo);
-            if (s.day() == null && pesada) {
-                LocalDate dataDaProva = provasDaSemana.isEmpty() ? null : provasDaSemana.get(0).dataProva();
-                motivoSlotSemDia = tipo.name() + " sem dia elegivel fora da vespera de uma prova da semana"
-                        + (dataDaProva != null ? " (" + dataDaProva + ")" : "") + ".";
-                continue;
-            }
-            sessoes.add(s);
-        }
+        SlotsSemOrfas resultado = removerPesadasSemDia(alocado, provasDaSemana);
+        List<SessionSlot> sessoes = resultado.sessoes();
+        String motivoSlotSemDia = resultado.motivo();
 
         // O dia de uma prova da semana e dia de treino mesmo fora da disponibilidade do atleta.
         Set<DayOfWeek> diasDeProva = provasDaSemana.stream()
@@ -128,6 +118,34 @@ public class PlannerEngine {
                 plannerScope,
                 periodizacao.provaDeterminante(),
                 provasDaSemana);
+    }
+
+    /** Sessões sem a(s) pesada(s) órfã(s) + motivo acumulado (uma linha por slot removido). */
+    record SlotsSemOrfas(List<SessionSlot> sessoes, @org.jspecify.annotations.Nullable String motivo) {
+    }
+
+    /**
+     * Remove LONGO/dura com {@code day == null} (Decisao 6) — nunca vai ao prompt como "(dia a
+     * definir)". Achado do /qa: duas sessoes orfas na mesma semana perdiam o motivo da primeira
+     * (variavel simples sobrescrita); agora acumula, uma linha por slot removido. Package-private
+     * para teste direto — a matematica de composicao para forcar 2 orfas de verdade e fragil demais
+     * para fixture de integracao.
+     */
+    static SlotsSemOrfas removerPesadasSemDia(List<SessionSlot> alocado, List<ProvaSnapshot> provasDaSemana) {
+        List<SessionSlot> sessoes = new ArrayList<>();
+        List<String> motivos = new ArrayList<>();
+        LocalDate dataDaProva = provasDaSemana.isEmpty() ? null : provasDaSemana.get(0).dataProva();
+        for (SessionSlot s : alocado) {
+            TipoTreino tipo = TipoTreino.valueOf(s.sessionType());
+            boolean pesada = tipo == TipoTreino.LONGO || SessionDayAllocator.DURAS.contains(tipo);
+            if (s.day() == null && pesada) {
+                motivos.add(tipo.name() + " sem dia elegivel fora da vespera de uma prova da semana"
+                        + (dataDaProva != null ? " (" + dataDaProva + ")" : "") + ".");
+                continue;
+            }
+            sessoes.add(s);
+        }
+        return new SlotsSemOrfas(sessoes, motivos.isEmpty() ? null : String.join(" ", motivos));
     }
 
     /**

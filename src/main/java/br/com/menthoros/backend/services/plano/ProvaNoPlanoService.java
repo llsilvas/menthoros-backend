@@ -86,9 +86,10 @@ public class ProvaNoPlanoService {
         for (Prova prova : provasDaSemana) {
             resultado.add(construirTreinoProva(prova, atleta));
 
+            // Achado do /qa: reconvertia o mesmo dia já calculado em diasDasProvas. Reusa o DTO
+            // que acabou de ser adicionado, em vez de recalcular.
             log.info("Prova '{}' garantida no plano: dia={}, provaId={}", prova.getNomeProva(),
-                    Utils.converterDayOfWeekParaDiaSemana(prova.getDataProva().getDayOfWeek()).name(),
-                    prova.getId());
+                    resultado.get(resultado.size() - 1).diaSemana(), prova.getId());
         }
 
         return resultado;
