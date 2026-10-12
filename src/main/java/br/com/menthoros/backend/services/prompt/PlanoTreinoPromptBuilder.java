@@ -14,6 +14,7 @@ import br.com.menthoros.backend.domain.planner.SessionSlot;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import java.time.DayOfWeek;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.services.helper.FatigueSignal;
 import br.com.menthoros.backend.services.helper.FatigueSignalsService;
@@ -27,6 +28,7 @@ import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaCompleta;
 import br.com.menthoros.backend.services.impl.MetricasAlertaService;
 import br.com.menthoros.backend.services.prompt.constraint.Constraint;
+import br.com.menthoros.backend.util.Utils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
@@ -251,8 +253,14 @@ public class PlanoTreinoPromptBuilder {
         // cobertura não roda — então o bloco também não é escrito. Pedir cobertura no prompt e não
         // cobrar na validação foi o que levou a LLM a inventar um descanso não autorizado na geração
         // real de 22/09 16:39 (o ambiente local roda com PLANNER_ENGINE_ENABLED=true).
+        //
+        // O dia de uma prova da semana também é dia a cobrir: a PROVA entra nele mesmo que o atleta não o
+        // tenha configurado como disponível. Sem isso a cobertura rejeita a prova do dia por "dia
+        // indisponível" e o turno de reparo empurra o longo para a véspera.
+        List<DiaSemana> diasDeProva = diasDasProvasDaSemana(
+                provaAlvo, ctx.provasPreparatorias(), inicioSemana, diasEfetivos != null, ctx.dataReferencia());
         WeeklyCoverageContext cobertura = skeleton != null ? null : new WeeklyCoverageContext(
-                diasEfetivos != null ? diasEfetivos : atleta.getDiasDisponiveis(),
+                comDiasDeProva(diasEfetivos != null ? diasEfetivos : atleta.getDiasDisponiveis(), diasDeProva),
                 sinaisFadiga,
                 diasEfetivos != null,
                 metaDados != null ? metaDados.getDiaPreferidoLongo() : null,
@@ -333,7 +341,10 @@ public class PlanoTreinoPromptBuilder {
         }
 
         // ETAPA 4: Disponibilidade e padrões de treino
-        historicoCompleto.append(disponibilidadePromptFormatter.formatarDisponibilidade(atleta, metaDados, inicioSemana, diasEfetivos)).append("\n\n");
+        // SEMANA_ATUAL lista os dias restantes: o dia da prova entra nela; PROXIMA_SEMANA (null) segue null.
+        List<DiaSemana> diasRestantes = diasEfetivos != null ? comDiasDeProva(diasEfetivos, diasDeProva) : null;
+        historicoCompleto.append(disponibilidadePromptFormatter.formatarDisponibilidade(
+                atleta, metaDados, inicioSemana, diasRestantes, diasDeProva)).append("\n\n");
         historicoCompleto.append(coberturaSemanalPromptFormatter.formatar(cobertura)).append("\n\n");
 
         // ETAPA 5: Análise de estímulos recentes
@@ -490,6 +501,40 @@ public class PlanoTreinoPromptBuilder {
         sb.append("\n(Estas regras são determinísticas, baseadas em dados reais do atleta, e ");
         sb.append("SUBSTITUEM qualquer raciocínio independente. Não as viole.)\n\n");
         return sb.toString();
+    }
+
+    /**
+     * Dias da semana das provas não canceladas que ainda cabem na geração. Em SEMANA_ATUAL a janela
+     * começa amanhã: {@code RegraGeracaoTreino.diaSemanaJaPassou} trata hoje como dia passado, então
+     * uma prova de hoje (ou de dia anterior) não é dia a cobrir — o persister ainda a grava.
+     */
+    private static List<DiaSemana> diasDasProvasDaSemana(@Nullable Prova provaAlvo, List<Prova> preparatorias,
+                                                         LocalDate inicioSemana, boolean semanaAtual,
+                                                         LocalDate hoje) {
+        LocalDate inicio = semanaAtual && !hoje.isBefore(inicioSemana) ? hoje.plusDays(1) : inicioSemana;
+        LocalDate fim = inicioSemana.plusDays(6);
+
+        List<Prova> candidatas = new ArrayList<>(preparatorias);
+        if (provaAlvo != null) {
+            candidatas.add(provaAlvo);
+        }
+        return candidatas.stream()
+                .filter(p -> p.getDataProva() != null && p.getStatusProva() != ProvaStatus.CANCELADA)
+                .filter(p -> !p.getDataProva().isBefore(inicio) && !p.getDataProva().isAfter(fim))
+                .map(p -> Utils.converterDayOfWeekParaDiaSemana(p.getDataProva().getDayOfWeek()))
+                .distinct()
+                .toList();
+    }
+
+    /** Dias a cobrir mais os dias de prova que ainda não estão neles; sem prova, devolve a lista como veio. */
+    private static @Nullable List<DiaSemana> comDiasDeProva(@Nullable List<DiaSemana> dias,
+                                                            List<DiaSemana> diasDeProva) {
+        if (diasDeProva.isEmpty()) {
+            return dias;
+        }
+        List<DiaSemana> uniao = new ArrayList<>(dias != null ? dias : List.of());
+        diasDeProva.stream().filter(d -> !uniao.contains(d)).forEach(uniao::add);
+        return uniao;
     }
 
     /**
