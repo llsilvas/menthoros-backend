@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.ProgressaoHistoricoResumo;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.EstadoProgressao;
 import br.com.menthoros.backend.enums.NivelExperiencia;
+import br.com.menthoros.backend.enums.TipoTreino;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -175,6 +176,52 @@ class PlannerEngineTest {
             WeekPlanSkeleton skeleton = engine.planWeek(snapshotComProvas(List.of(alvoDomingo)));
 
             assertThat(skeleton.provasDaSemana()).containsExactly(alvoDomingo);
+        }
+
+        @Test
+        @DisplayName("task 5.1/5.3: preparatória na semana (fase PEAK) ganha slot PROVA ancorado, sem LONGO no D-1")
+        void preparatoriaGanhaSlotAncoradoSemLongoNoD1() {
+            // atleta SEGUNDA/QUINTA/SABADO (prova no domingo NAO e dia configurado); determinante PEAK longe
+            AthleteSnapshot athlete = new AthleteSnapshot(UUID.randomUUID(), NivelExperiencia.INTERMEDIARIO, false, null, null,
+                    List.of(DiaSemana.SEGUNDA, DiaSemana.QUINTA, DiaSemana.SABADO), null);
+            DecisaoProgressao decisao = new DecisaoProgressao(EstadoProgressao.MANTER, 0.0, 0, false, "teste");
+            ProgressaoHistoricoResumo historico = new ProgressaoHistoricoResumo(
+                    0, 0.0, 0.0, 0.0, 0, 0, null, -2.0, 45.0, 0.0, 0, 0, 0, 0, null);
+            ProvaSnapshot determinantePeak = new ProvaSnapshot(referencia.plusDays(30), 10.0, true, false);
+            PlannerInputSnapshot snapshot = new PlannerInputSnapshot(athlete, decisao, historico,
+                    List.of(determinantePeak, preparatoriaDomingo), List.of(), Optional.empty(), referencia, 30);
+
+            WeekPlanSkeleton skeleton = engine.planWeek(snapshot);
+
+            assertThat(skeleton.phase()).isEqualTo(TrainingPhase.PEAK);
+            assertThat(skeleton.sessions()).anyMatch(s -> "PROVA".equals(s.sessionType()) && s.day() == DayOfWeek.SUNDAY);
+            assertThat(skeleton.sessions()).noneMatch(s -> s.day() == DayOfWeek.SATURDAY
+                    && (("LONGO".equals(s.sessionType())) || SessionDayAllocator.DURAS.contains(TipoTreino.valueOf(s.sessionType()))));
+        }
+
+        @Test
+        @DisplayName("CA9/5.3: uma prova da semana nunca deixa sessão com dia nulo — slot pesado inviável some, nunca fica \"a definir\"")
+        void nenhumaSessaoFicaComDiaNulo() {
+            // atleta SEGUNDA/QUARTA/QUINTA/SABADO; prova no domingo (fora dos dias configurados)
+            AthleteSnapshot athlete = new AthleteSnapshot(UUID.randomUUID(), NivelExperiencia.INTERMEDIARIO, false, null, null,
+                    List.of(DiaSemana.SEGUNDA, DiaSemana.QUARTA, DiaSemana.QUINTA, DiaSemana.SABADO), null);
+            DecisaoProgressao decisao = new DecisaoProgressao(EstadoProgressao.MANTER, 0.0, 0, false, "teste");
+            ProgressaoHistoricoResumo historico = new ProgressaoHistoricoResumo(
+                    0, 0.0, 0.0, 0.0, 0, 0, null, -2.0, 45.0, 0.0, 0, 0, 0, 0, null);
+            PlannerInputSnapshot snapshot = new PlannerInputSnapshot(athlete, decisao, historico,
+                    List.of(determinanteLonge, preparatoriaDomingo), List.of(), Optional.empty(), referencia, 30);
+
+            WeekPlanSkeleton skeleton = engine.planWeek(snapshot);
+
+            assertThat(skeleton.phase()).isEqualTo(TrainingPhase.BUILD);
+            // Nenhum slot chega ao prompt sem dia — ou foi alocado, ou o PlannerEngine o removeu (5.3).
+            assertThat(skeleton.sessions()).noneMatch(s -> s.day() == null);
+            // Nenhuma sessão pesada (LONGO/dura) na véspera da prova (sábado).
+            assertThat(skeleton.sessions()).noneMatch(s -> s.day() == DayOfWeek.SATURDAY
+                    && (s.sessionType().equals("LONGO") || SessionDayAllocator.DURAS.contains(TipoTreino.valueOf(s.sessionType()))));
+            if (skeleton.requiresCoachReview()) {
+                assertThat(skeleton.coachReviewReason()).contains("sem dia elegivel");
+            }
         }
 
         @Test
