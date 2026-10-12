@@ -294,6 +294,124 @@ class PlanoLlmValidatorTest {
         }
     }
 
+    /**
+     * fix-planner-ignora-prova-na-semana (tasks 2.2–2.4): a PROVA determinística entra na lista
+     * antes da cobertura, e o treino do LLM no dia da prova é descartado antes de normalizar. Foi o
+     * dia da prova fora dos disponíveis que empurrou o longo para a véspera na geração real.
+     */
+    @Nested
+    @DisplayName("provas da semana")
+    class ProvasDaSemana {
+
+        private static final UUID PROVA_ID = UUID.fromString("00000000-0000-0000-0000-0000000000a1");
+
+        private final List<DiaSemana> diasComDomingo =
+                List.of(DiaSemana.SEGUNDA, DiaSemana.TERCA, DiaSemana.QUINTA, DiaSemana.DOMINGO);
+
+        @Test
+        @DisplayName("treino do LLM no dia da prova vira a PROVA com provaId, sem COBERTURA_DIAS")
+        void treinoNoDiaDaProvaViraProva() {
+            var plano = plano(treinoValido("SEGUNDA"), treinoValido("TERCA"), treinoValido("QUINTA"),
+                    longo("DOMINGO"));
+
+            var resultado = validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, contexto(diasComDomingo));
+
+            assertThat(resultado.treinosPlanejados()).hasSize(4);
+            assertThat(resultado.treinosPlanejados()).filteredOn(t -> "DOMINGO".equals(t.diaSemana()))
+                    .singleElement()
+                    .satisfies(t -> {
+                        assertThat(t.tipoTreino()).isEqualTo("PROVA");
+                        assertThat(t.provaId()).isEqualTo(PROVA_ID);
+                    });
+        }
+
+        @Test
+        @DisplayName("CA4: treino malformado no dia da prova é descartado antes da normalização — não consome o reparo")
+        void treinoMalformadoNoDiaDaProvaEDescartado() {
+            var plano = plano(treinoValido("SEGUNDA"), treinoValido("TERCA"), treinoValido("QUINTA"),
+                    treinoInvalido("DOMINGO"));
+
+            var resultado = validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, contexto(diasComDomingo));
+
+            assertThat(resultado.treinosPlanejados()).filteredOn(t -> "DOMINGO".equals(t.diaSemana()))
+                    .singleElement().satisfies(t -> assertThat(t.tipoTreino()).isEqualTo("PROVA"));
+        }
+
+        @Test
+        @DisplayName("CA4: restDay no dia da prova é descartado sem violação")
+        void restDayNoDiaDaProvaEDescartado() {
+            var plano = new PlanoSemanalLlmDto(30.0, 30.0, null, null, "ATIVO", "base",
+                    List.of(treinoValido("SEGUNDA"), treinoValido("TERCA"), treinoValido("QUINTA")),
+                    List.of(new br.com.menthoros.backend.dto.llm.RestDayLlmDto("DOMINGO", "descanso")));
+
+            var resultado = validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, contexto(diasComDomingo));
+
+            assertThat(resultado.restDays()).isEmpty();
+            assertThat(resultado.treinosPlanejados()).extracting(TreinoPlanejadoLlmDto::tipoTreino).contains("PROVA");
+        }
+
+        @Test
+        @DisplayName("CA1: LONGO na véspera da prova → INTENSOS_ADJACENTES citando PROVA")
+        void longoNaVesperaReprova() {
+            var dias = List.of(DiaSemana.SEGUNDA, DiaSemana.TERCA, DiaSemana.QUINTA, DiaSemana.SABADO, DiaSemana.DOMINGO);
+            var plano = plano(treinoValido("SEGUNDA"), treinoValido("TERCA"), treinoValido("QUINTA"),
+                    longo("SABADO"), treinoValido("DOMINGO"));
+
+            assertThatThrownBy(() -> validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, contexto(dias)))
+                    .isInstanceOf(PlanoNaoConformeException.class)
+                    .satisfies(e -> assertThat(((PlanoNaoConformeException) e).violacoes())
+                            .anySatisfy(v -> {
+                                assertThat(v.key()).isEqualTo("INTENSOS_ADJACENTES");
+                                assertThat(v.mensagem()).contains("PROVA").contains("LONGO");
+                            }));
+        }
+
+        @Test
+        @DisplayName("CA1: treino leve na véspera da prova passa")
+        void leveNaVesperaPassa() {
+            var dias = List.of(DiaSemana.SEGUNDA, DiaSemana.TERCA, DiaSemana.QUINTA, DiaSemana.SABADO, DiaSemana.DOMINGO);
+            var plano = plano(treinoValido("SEGUNDA"), treinoValido("TERCA"), treinoValido("QUINTA"),
+                    treinoValido("SABADO"), treinoValido("DOMINGO"));
+
+            var resultado = validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, contexto(dias));
+
+            assertThat(resultado.treinosPlanejados()).hasSize(5);
+        }
+
+        @Test
+        @DisplayName("sem contexto de cobertura (skeleton ou kill-switch): nada é descartado nem inserido")
+        void semContextoNaoMexe() {
+            var plano = plano(treinoValido("SEGUNDA"), longo("DOMINGO"));
+
+            var resultado = validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, null);
+
+            assertThat(resultado.treinosPlanejados()).extracting(TreinoPlanejadoLlmDto::tipoTreino)
+                    .containsExactly("FACIL", "LONGO");
+        }
+
+        @Test
+        @DisplayName("CA7: v2 sem skeleton, com cobertura — treino malformado no dia da prova é descartado e a PROVA entra")
+        void v2SemSkeletonComCobertura() {
+            var plano = plano(treinoTresEtapasValido("SEGUNDA"), treinoTresEtapasInvalido("DOMINGO"));
+            var dias = List.of(DiaSemana.SEGUNDA, DiaSemana.DOMINGO);
+
+            var resultado = validador().validarPlanoV2(plano, atleta, ATLETA_ID, null, contexto(dias));
+
+            assertThat(resultado.treinosPlanejados()).filteredOn(t -> "DOMINGO".equals(t.diaSemana()))
+                    .singleElement()
+                    .satisfies(t -> assertThat(t.provaId()).isEqualTo(PROVA_ID));
+        }
+
+        private WeeklyCoverageContext contexto(List<DiaSemana> dias) {
+            return new WeeklyCoverageContext(dias, List.of(), false, null, 7, List.of(provaDomingo()));
+        }
+
+        private TreinoPlanejadoLlmDto provaDomingo() {
+            return new TreinoPlanejadoLlmDto("DOMINGO", "PROVA", null, null, null, null, null,
+                    "01:50:00", 21.1, "5:15", null, "Meia de Teste", "Zona 3-4", PROVA_ID);
+        }
+    }
+
     private static TreinoPlanejadoLlmDto longo(String dia) {
         return new TreinoPlanejadoLlmDto(dia, "LONGO", "130-145 bpm", 60, 0.7, 5,
                 "Longo", "60:00", 10.0, "6:00-6:30/km",

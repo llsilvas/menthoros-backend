@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.llm.RestDayLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.TipoTreino;
+import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
@@ -27,6 +28,7 @@ import java.util.Set;
  * <p>Idempotent: YES — função pura sobre as listas recebidas. Side Effects: NONE.
  * Tenant-aware: NO.</p>
  */
+@Slf4j
 @Component
 public class WeeklyCoverageValidator {
 
@@ -71,8 +73,7 @@ public class WeeklyCoverageValidator {
 
         Map<DiaSemana, Integer> ocupacao = new LinkedHashMap<>();
         Set<DiaSemana> descansosIgnorados = new LinkedHashSet<>();
-        registrarDias(listaTreinos.stream().map(TreinoPlanejadoLlmDto::diaSemana).toList(),
-                ctx, ocupacao, violacoes, "treino", descansosIgnorados);
+        registrarDias(diasDosTreinos(listaTreinos), ctx, ocupacao, violacoes, "treino", descansosIgnorados);
         registrarDias(listaDescansos.stream().map(RestDayLlmDto::dayOfWeek).toList(),
                 ctx, ocupacao, violacoes, "descanso", descansosIgnorados);
 
@@ -103,6 +104,25 @@ public class WeeklyCoverageValidator {
         violacoes.addAll(validarDescansos(descansosRelevantes, ctx));
         violacoes.addAll(validarIntensosAdjacentes(listaTreinos));
         return List.copyOf(violacoes);
+    }
+
+    /**
+     * Dias dos treinos para a contagem de ocupação. Provas são eventos fixos e o cadastro aceita duas
+     * na mesma data: ocupam o dia uma vez só, senão "dia repetido" seria uma violação que o LLM não
+     * tem como reparar. PROVA mais outro treino no mesmo dia continua contando em dobro.
+     */
+    private static List<String> diasDosTreinos(List<TreinoPlanejadoLlmDto> treinos) {
+        Set<String> diasComProva = new LinkedHashSet<>();
+        List<String> dias = new ArrayList<>();
+        for (TreinoPlanejadoLlmDto treino : treinos) {
+            boolean prova = tipo(treino.tipoTreino()) == TipoTreino.PROVA;
+            if (prova && treino.diaSemana() != null
+                    && !diasComProva.add(treino.diaSemana().trim().toUpperCase())) {
+                continue;
+            }
+            dias.add(treino.diaSemana());
+        }
+        return dias;
     }
 
     /** Converte os dias declarados, acusando dia inválido ou fora dos disponíveis. */
@@ -193,6 +213,12 @@ public class WeeklyCoverageValidator {
             var anterior = intensos.get(i - 1);
             var atual = intensos.get(i);
             if (ordem(atual.getKey()) - ordem(anterior.getKey()) == 1) {
+                if (isProva(anterior) && isProva(atual)) {
+                    // Eventos fixos do calendário do atleta: o LLM não pode mover nenhum dos dois.
+                    log.warn("Provas em dias vizinhos: {} e {} — não é violação de plano",
+                            anterior.getKey(), atual.getKey());
+                    continue;
+                }
                 violacoes.add(new Violacao("INTENSOS_ADJACENTES",
                         "Treinos de alta intensidade em dias vizinhos: " + anterior.getValue() + " em "
                                 + anterior.getKey().name() + " e " + atual.getValue() + " em "
@@ -200,6 +226,10 @@ public class WeeklyCoverageValidator {
             }
         }
         return violacoes;
+    }
+
+    private static boolean isProva(Map.Entry<DiaSemana, String> intenso) {
+        return TipoTreino.PROVA.name().equals(intenso.getValue());
     }
 
     private static @Nullable DiaSemana converter(@Nullable String dia) {

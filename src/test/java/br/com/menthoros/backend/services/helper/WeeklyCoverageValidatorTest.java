@@ -388,6 +388,60 @@ class WeeklyCoverageValidatorTest {
 
             assertThat(violacoes).anySatisfy(v -> assertThat(v.key()).isEqualTo("INTENSOS_ADJACENTES"));
         }
+
+        @Test
+        @DisplayName("CA5: provas em dias vizinhos são eventos fixos — não são INTENSOS_ADJACENTES")
+        void provasVizinhasNaoSaoViolacao() {
+            var dias = List.of(DiaSemana.SEGUNDA, DiaSemana.SABADO, DiaSemana.DOMINGO);
+
+            var violacoes = validator.validar(
+                    List.of(treino("SEGUNDA"), treino("SABADO", "PROVA"), treino("DOMINGO", "PROVA")),
+                    List.of(), contexto(dias, List.of(), false));
+
+            assertThat(violacoes).isEmpty();
+        }
+
+        @Test
+        @DisplayName("CA1: LONGO colado numa PROVA continua sendo INTENSOS_ADJACENTES")
+        void longoVizinhoDeProvaContinuaViolacao() {
+            var dias = List.of(DiaSemana.SEGUNDA, DiaSemana.SABADO, DiaSemana.DOMINGO);
+
+            var violacoes = validator.validar(
+                    List.of(treino("SEGUNDA"), treino("SABADO", "LONGO"), treino("DOMINGO", "PROVA")),
+                    List.of(), contexto(dias, List.of(), false));
+
+            assertThat(violacoes).singleElement().satisfies(v -> {
+                assertThat(v.key()).isEqualTo("INTENSOS_ADJACENTES");
+                assertThat(v.mensagem()).contains("LONGO").contains("PROVA");
+            });
+        }
+
+        @Test
+        @DisplayName("CA11: duas provas no mesmo dia ocupam o dia uma vez só")
+        void duasProvasNoMesmoDia() {
+            var dias = List.of(DiaSemana.SEGUNDA, DiaSemana.DOMINGO);
+
+            var violacoes = validator.validar(
+                    List.of(treino("SEGUNDA"), treino("DOMINGO", "PROVA"), treino("DOMINGO", "PROVA")),
+                    List.of(), contexto(dias, List.of(), false));
+
+            assertThat(violacoes).isEmpty();
+        }
+
+        @Test
+        @DisplayName("CA11: PROVA e outro treino no mesmo dia continuam sendo dia repetido")
+        void provaEOutroTreinoNoMesmoDia() {
+            var dias = List.of(DiaSemana.SEGUNDA, DiaSemana.DOMINGO);
+
+            var violacoes = validator.validar(
+                    List.of(treino("SEGUNDA"), treino("DOMINGO", "PROVA"), treino("DOMINGO", "FACIL")),
+                    List.of(), contexto(dias, List.of(), false));
+
+            assertThat(violacoes).anySatisfy(v -> {
+                assertThat(v.key()).isEqualTo("COBERTURA_DIAS");
+                assertThat(v.mensagem()).contains("DOMINGO").contains("mais de uma vez");
+            });
+        }
     }
 
     @Nested

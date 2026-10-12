@@ -123,6 +123,31 @@ class PlanoTreinoPromptBuilderDiaDeProvaTest {
         assertThat(gerado.cobertura().effectiveDays()).containsExactlyInAnyOrderElementsOf(DIAS_UTEIS);
     }
 
+    @Test
+    @DisplayName("task 2.1: o contexto carrega a PROVA determinística de cada prova da janela, com provaId")
+    void contextoCarregaOsDtosDaProva() {
+        Prova domingo = prova(DOMINGO_PROXIMA, false);
+        var gerado = montar(INICIO_PROXIMA, null, null, List.of(domingo));
+
+        assertThat(gerado.cobertura().provasDaSemana()).singleElement().satisfies(dto -> {
+            assertThat(dto.diaSemana()).isEqualTo("DOMINGO");
+            assertThat(dto.tipoTreino()).isEqualTo("PROVA");
+            assertThat(dto.provaId()).isEqualTo(domingo.getId());
+        });
+    }
+
+    @Test
+    @DisplayName("task 2.1: prova passada, de hoje, cancelada ou sem prova → lista vazia, nunca null")
+    void foraDaJanelaListaVazia() {
+        Prova cancelada = prova(DOMINGO_PROXIMA, false);
+        cancelada.setStatusProva(ProvaStatus.CANCELADA);
+
+        assertThat(montar(INICIO_PROXIMA, null, null, List.of(cancelada)).cobertura().provasDaSemana()).isEmpty();
+        assertThat(montar(INICIO_PROXIMA, null, null, List.of()).cobertura().provasDaSemana()).isEmpty();
+        assertThat(montar(INICIO_ATUAL, List.of(DiaSemana.SEXTA), null, List.of(prova(HOJE, false)))
+                .cobertura().provasDaSemana()).isEmpty();
+    }
+
     private PlanoTreinoPromptBuilder.PromptGerado montar(LocalDate inicioSemana, List<DiaSemana> diasEfetivos,
                                                          Prova provaAlvo, List<Prova> preparatorias) {
         var arquetipo = PlanoPromptArquetipos.todos().getFirst();
@@ -144,6 +169,7 @@ class PlanoTreinoPromptBuilderDiaDeProvaTest {
 
     private static Prova prova(LocalDate data, boolean alvo) {
         Prova p = new Prova();
+        p.setId(java.util.UUID.randomUUID());
         p.setNomeProva("Prova " + data);
         p.setDataProva(data);
         p.setDistanciaKm(new BigDecimal("21.097"));

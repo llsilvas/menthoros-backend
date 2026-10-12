@@ -107,7 +107,10 @@ final class PlanoPromptArquetipos {
                 new ReadinessPromptFormatter(),
                 // O builder não resolve a revisão — quem chama passa `null` no golden, então o
                 // baseline permanece byte-idêntico ao de antes da injeção.
-                new WeeklyReviewPromptFormatter());
+                new WeeklyReviewPromptFormatter(),
+                // construirTreinoProva só usa o TreinoMapper; os repositórios nunca são tocados aqui.
+                new br.com.menthoros.backend.services.plano.ProvaNoPlanoService(
+                        null, new br.com.menthoros.backend.mapper.TreinoMapperImpl(null, null), null, null));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

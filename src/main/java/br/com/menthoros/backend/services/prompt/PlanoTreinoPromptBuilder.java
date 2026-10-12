@@ -27,6 +27,7 @@ import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.Contexto
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaCompleta;
 import br.com.menthoros.backend.services.impl.MetricasAlertaService;
+import br.com.menthoros.backend.services.plano.ProvaNoPlanoService;
 import br.com.menthoros.backend.services.prompt.constraint.Constraint;
 import br.com.menthoros.backend.util.Utils;
 import org.springframework.beans.factory.annotation.Value;
@@ -66,6 +67,7 @@ public class PlanoTreinoPromptBuilder {
     private final ThresholdConstraintFormatter thresholdConstraintFormatter;
     private final ReadinessPromptFormatter readinessPromptFormatter;
     private final WeeklyReviewPromptFormatter weeklyReviewPromptFormatter;
+    private final ProvaNoPlanoService provaNoPlanoService;
 
     public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource,
                                     PromptTemplateLoader templateLoader,
@@ -85,7 +87,8 @@ public class PlanoTreinoPromptBuilder {
                                     PaceZoneCalculator paceZoneCalculator,
                                     ThresholdConstraintFormatter thresholdConstraintFormatter,
                                     ReadinessPromptFormatter readinessPromptFormatter,
-                                    WeeklyReviewPromptFormatter weeklyReviewPromptFormatter) {
+                                    WeeklyReviewPromptFormatter weeklyReviewPromptFormatter,
+                                    ProvaNoPlanoService provaNoPlanoService) {
         this.templateLoader = templateLoader;
         this.metricasAlertaService = metricasAlertaService;
         this.zonaTreinoService = zonaTreinoService;
@@ -104,6 +107,7 @@ public class PlanoTreinoPromptBuilder {
         this.thresholdConstraintFormatter = thresholdConstraintFormatter;
         this.readinessPromptFormatter = readinessPromptFormatter;
         this.weeklyReviewPromptFormatter = weeklyReviewPromptFormatter;
+        this.provaNoPlanoService = provaNoPlanoService;
         try {
             this.promptTemplate = new String(promptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -257,14 +261,19 @@ public class PlanoTreinoPromptBuilder {
         // O dia de uma prova da semana também é dia a cobrir: a PROVA entra nele mesmo que o atleta não o
         // tenha configurado como disponível. Sem isso a cobertura rejeita a prova do dia por "dia
         // indisponível" e o turno de reparo empurra o longo para a véspera.
-        List<DiaSemana> diasDeProva = diasDasProvasDaSemana(
+        List<Prova> provasDaSemana = provasNaJanelaEfetiva(
                 provaAlvo, ctx.provasPreparatorias(), inicioSemana, diasEfetivos != null, ctx.dataReferencia());
+        List<DiaSemana> diasDeProva = provasDaSemana.stream()
+                .map(p -> Utils.converterDayOfWeekParaDiaSemana(p.getDataProva().getDayOfWeek()))
+                .distinct()
+                .toList();
         WeeklyCoverageContext cobertura = skeleton != null ? null : new WeeklyCoverageContext(
                 comDiasDeProva(diasEfetivos != null ? diasEfetivos : atleta.getDiasDisponiveis(), diasDeProva),
                 sinaisFadiga,
                 diasEfetivos != null,
                 metaDados != null ? metaDados.getDiaPreferidoLongo() : null,
-                maxDiasConsecutivos);
+                maxDiasConsecutivos,
+                provasDaSemana.stream().map(p -> provaNoPlanoService.construirTreinoProva(p, atleta)).toList());
         String alertasObrigatorios = alertasPromptFormatter.gerarAlertasObrigatorios(
                 atleta, metaDados, maxDiasConsecutivos, ctx.treinosUltimas4Semanas(), ctx.dataReferencia());
 
@@ -508,9 +517,9 @@ public class PlanoTreinoPromptBuilder {
      * começa amanhã: {@code RegraGeracaoTreino.diaSemanaJaPassou} trata hoje como dia passado, então
      * uma prova de hoje (ou de dia anterior) não é dia a cobrir — o persister ainda a grava.
      */
-    private static List<DiaSemana> diasDasProvasDaSemana(@Nullable Prova provaAlvo, List<Prova> preparatorias,
-                                                         LocalDate inicioSemana, boolean semanaAtual,
-                                                         LocalDate hoje) {
+    private static List<Prova> provasNaJanelaEfetiva(@Nullable Prova provaAlvo, List<Prova> preparatorias,
+                                                     LocalDate inicioSemana, boolean semanaAtual,
+                                                     LocalDate hoje) {
         LocalDate inicio = semanaAtual && !hoje.isBefore(inicioSemana) ? hoje.plusDays(1) : inicioSemana;
         LocalDate fim = inicioSemana.plusDays(6);
 
@@ -521,8 +530,8 @@ public class PlanoTreinoPromptBuilder {
         return candidatas.stream()
                 .filter(p -> p.getDataProva() != null && p.getStatusProva() != ProvaStatus.CANCELADA)
                 .filter(p -> !p.getDataProva().isBefore(inicio) && !p.getDataProva().isAfter(fim))
-                .map(p -> Utils.converterDayOfWeekParaDiaSemana(p.getDataProva().getDayOfWeek()))
                 .distinct()
+                .sorted(java.util.Comparator.comparing(Prova::getDataProva))
                 .toList();
     }
 
