@@ -45,6 +45,9 @@ public class WeeklyCoverageValidator {
 
     private static final int MOTIVO_MAX = 200;
 
+    private static final java.time.format.DateTimeFormatter DATA_FMT =
+            java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy");
+
     /**
      * Dias de descanso que o plano declarou fora dos dias disponíveis do atleta — são descartados
      * antes de persistir (ver {@code registrarDias}).
@@ -103,6 +106,7 @@ public class WeeklyCoverageValidator {
                 .toList();
         violacoes.addAll(validarDescansos(descansosRelevantes, ctx));
         violacoes.addAll(validarIntensosAdjacentes(listaTreinos));
+        violacoes.addAll(validarDiaAposProvaDaSemanaAnterior(listaTreinos, ctx));
         return List.copyOf(violacoes);
     }
 
@@ -224,6 +228,32 @@ public class WeeklyCoverageValidator {
                                 + anterior.getKey().name() + " e " + atual.getValue() + " em "
                                 + atual.getKey().name() + ". Separe-os com um dia leve."));
             }
+        }
+        return violacoes;
+    }
+
+    /**
+     * Prova no último dia da semana anterior: o primeiro dia deste plano é o dia seguinte a ela. O
+     * plano anterior é outro plano, então só o contexto sabe da prova; a regra é a mesma de
+     * {@link #validarIntensosAdjacentes} (mesma chave, mesmo reparo), com a prova do outro lado da
+     * fronteira. {@code PROVA} nesse dia é evento fixo e fica de fora.
+     */
+    private List<Violacao> validarDiaAposProvaDaSemanaAnterior(List<TreinoPlanejadoLlmDto> treinos,
+                                                               WeeklyCoverageContext ctx) {
+        PosProvaSemanaAnterior posProva = ctx.posProva();
+        if (posProva == null) return List.of();
+
+        List<Violacao> violacoes = new ArrayList<>();
+        for (TreinoPlanejadoLlmDto treino : treinos) {
+            if (converter(treino.diaSemana()) != posProva.diaDoPlano()) continue;
+            TipoTreino tipo = tipo(treino.tipoTreino());
+            if (tipo == null || tipo == TipoTreino.PROVA || !TIPOS_ALTA_INTENSIDADE.contains(tipo)) continue;
+
+            violacoes.add(new Violacao("INTENSOS_ADJACENTES",
+                    tipo.name() + " em " + posProva.diaDoPlano().name() + " logo após a prova \""
+                            + posProva.nomeProva().replaceAll("[\\r\\n\"]+", " ").trim() + "\" de "
+                            + posProva.data().format(DATA_FMT) + " (último dia da semana anterior). "
+                            + "Prescreva um regenerativo muito leve nesse dia."));
         }
         return violacoes;
     }

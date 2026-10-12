@@ -43,7 +43,8 @@ public class LongRunAnchor {
         }
         // Véspera, dia ou dia seguinte de uma prova: o longo ali recria a vizinhança que a cobertura
         // rejeita (o LLM o tira de lá, a âncora o devolve) ou troca de lugar com a própria PROVA.
-        if (colado(preferido, ctx.provasDaSemana())) {
+        if (colado(preferido, ctx.provasDaSemana())
+                || (ctx.posProva() != null && ctx.posProva().diaDoPlano() == preferido)) {
             return plano;
         }
         // Descanso está preso ao dia que o sinal libera (o primeiro dia efetivo, ou os dias da

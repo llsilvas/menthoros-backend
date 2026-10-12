@@ -183,6 +183,31 @@ class LongRunAnchorTest {
         }
 
         @Test
+        @DisplayName("CA13: preferido = dia seguinte à prova da semana anterior (segunda) → nada muda")
+        void preferidoNoDiaAposProvaDaSemanaAnterior() {
+            var plano = plano(List.of(treino("TERCA", "LONGO"), treino("SEGUNDA", "REGENERATIVO"),
+                    treino("QUINTA", "FACIL"), treino("SABADO", "CONTINUO")), List.of());
+
+            assertThat(anchor.ancorar(plano, ctxComPosProva(DiaSemana.SEGUNDA))).isSameAs(plano);
+        }
+
+        @Test
+        @DisplayName("CA13: preferido dois dias depois da prova anterior (terça) → ancora como antes")
+        void preferidoDoisDiasDepois() {
+            var plano = plano(List.of(treino("SEGUNDA", "LONGO"), treino("TERCA", "CONTINUO"),
+                    treino("QUINTA", "FACIL"), treino("SABADO", "REGENERATIVO")), List.of());
+
+            var resultado = anchor.ancorar(plano, ctxComPosProva(DiaSemana.TERCA));
+
+            assertThat(diaDoTipo(resultado, "LONGO")).isEqualTo("TERCA");
+        }
+
+        private WeeklyCoverageContext ctxComPosProva(DiaSemana diaPreferidoLongo) {
+            return new WeeklyCoverageContext(dias, List.of(), false, diaPreferidoLongo, 7, List.of(),
+                    new PosProvaSemanaAnterior(DiaSemana.SEGUNDA, "Meia", java.time.LocalDate.of(2026, 10, 18)));
+        }
+
+        @Test
         @DisplayName("sem PROVA na lista do contexto, a âncora funciona como antes")
         void semProvaNaListaDoContexto() {
             var plano = plano(List.of(treino("SEGUNDA", "LONGO"), treino("TERCA", "CONTINUO"),

@@ -423,6 +423,36 @@ class PlanoLlmValidatorTest {
                     .satisfies(t -> assertThat(t.tipoTreino()).isEqualTo("PROVA"));
         }
 
+        @Test
+        @DisplayName("CA13: LONGO na segunda logo após prova do domingo anterior → reprova com INTENSOS_ADJACENTES citando a prova")
+        void longoNoDiaAposProvaDaSemanaAnteriorReprova() {
+            var plano = plano(longo("SEGUNDA"), treinoValido("QUARTA"), treinoValido("SEXTA"));
+
+            assertThatThrownBy(() -> validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, ctxPosProva()))
+                    .isInstanceOf(PlanoNaoConformeException.class)
+                    .satisfies(e -> assertThat(((PlanoNaoConformeException) e).violacoes())
+                            .anySatisfy(v -> {
+                                assertThat(v.key()).isEqualTo("INTENSOS_ADJACENTES");
+                                assertThat(v.mensagem()).contains("LONGO").contains("Meia de Domingo");
+                            }));
+        }
+
+        @Test
+        @DisplayName("CA13: treino leve na segunda logo após a prova → passa")
+        void leveNoDiaAposProvaDaSemanaAnteriorPassa() {
+            var plano = plano(treinoValido("SEGUNDA"), treinoValido("QUARTA"), treinoValido("SEXTA"));
+
+            var resultado = validador().validarENormalizarPlano(plano, atleta, ATLETA_ID, ctxPosProva());
+
+            assertThat(resultado.treinosPlanejados()).hasSize(3);
+        }
+
+        private WeeklyCoverageContext ctxPosProva() {
+            return new WeeklyCoverageContext(List.of(DiaSemana.SEGUNDA, DiaSemana.QUARTA, DiaSemana.SEXTA),
+                    List.of(), false, null, 7, List.of(),
+                    new PosProvaSemanaAnterior(DiaSemana.SEGUNDA, "Meia de Domingo", LocalDate.of(2026, 10, 18)));
+        }
+
         private WeeklyCoverageContext contexto(List<DiaSemana> dias) {
             return new WeeklyCoverageContext(dias, List.of(), false, null, 7, List.of(provaDomingo()));
         }

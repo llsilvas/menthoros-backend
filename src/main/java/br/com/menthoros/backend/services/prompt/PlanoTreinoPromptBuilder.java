@@ -18,6 +18,7 @@ import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.services.helper.FatigueSignal;
 import br.com.menthoros.backend.services.helper.FatigueSignalsService;
+import br.com.menthoros.backend.services.helper.PosProvaSemanaAnterior;
 import br.com.menthoros.backend.services.helper.WeeklyCoverageContext;
 import br.com.menthoros.backend.services.helper.IntervaladoElegibilidadeService;
 import br.com.menthoros.backend.services.helper.PaceZoneCalculator;
@@ -267,13 +268,16 @@ public class PlanoTreinoPromptBuilder {
                 .map(p -> Utils.converterDayOfWeekParaDiaSemana(p.getDataProva().getDayOfWeek()))
                 .distinct()
                 .toList();
+        List<DiaSemana> diasACobrir =
+                comDiasDeProva(diasEfetivos != null ? diasEfetivos : atleta.getDiasDisponiveis(), diasDeProva);
         WeeklyCoverageContext cobertura = skeleton != null ? null : new WeeklyCoverageContext(
-                comDiasDeProva(diasEfetivos != null ? diasEfetivos : atleta.getDiasDisponiveis(), diasDeProva),
+                diasACobrir,
                 sinaisFadiga,
                 diasEfetivos != null,
                 metaDados != null ? metaDados.getDiaPreferidoLongo() : null,
                 maxDiasConsecutivos,
-                provasDaSemana.stream().map(p -> provaNoPlanoService.construirTreinoProva(p, atleta)).toList());
+                provasDaSemana.stream().map(p -> provaNoPlanoService.construirTreinoProva(p, atleta)).toList(),
+                posProvaSemanaAnterior(atleta, inicioSemana, diasACobrir));
         String alertasObrigatorios = alertasPromptFormatter.gerarAlertasObrigatorios(
                 atleta, metaDados, maxDiasConsecutivos, ctx.treinosUltimas4Semanas(), ctx.dataReferencia());
 
@@ -282,7 +286,10 @@ public class PlanoTreinoPromptBuilder {
 
         // 4. EVENTO COMPETITIVO NA SEMANA (regra mandatória baseada na semana planejada)
         String eventoCompetitivoSemana = periodizacaoPromptFormatter.formatarEventoCompetitivoSemana(
-                provaAlvo, ctx.provasPreparatorias(), inicioSemana);
+                provaAlvo, ctx.provasPreparatorias(), inicioSemana)
+                // Sem cobertura (skeleton) o planner é dono da semana: nada de restrição de texto.
+                + periodizacaoPromptFormatter.formatarPosProvaSemanaAnterior(
+                        cobertura != null ? cobertura.posProva() : null);
 
         // 5. RESTRIÇÕES E LESÕES
         String restricoesLesoes = alertasPromptFormatter.formatarRestricoesLesoes(atleta, ctx.dataReferencia());
@@ -533,6 +540,21 @@ public class PlanoTreinoPromptBuilder {
                 .distinct()
                 .sorted(java.util.Comparator.comparing(Prova::getDataProva))
                 .toList();
+    }
+
+    /**
+     * Prova no dia anterior ao início da semana: o primeiro dia do plano é o D+1 dela. Só interessa se
+     * esse dia é um dia a cobrir — senão não há o que proteger, e a consulta nem é feita.
+     */
+    private @Nullable PosProvaSemanaAnterior posProvaSemanaAnterior(Atleta atleta, LocalDate inicioSemana,
+                                                                    @Nullable List<DiaSemana> diasACobrir) {
+        DiaSemana primeiroDia = Utils.converterDayOfWeekParaDiaSemana(inicioSemana.getDayOfWeek());
+        if (diasACobrir == null || !diasACobrir.contains(primeiroDia)) {
+            return null;
+        }
+        return provaNoPlanoService.provaNoDiaAnteriorAoInicio(atleta, inicioSemana)
+                .map(p -> new PosProvaSemanaAnterior(primeiroDia, p.getNomeProva(), p.getDataProva()))
+                .orElse(null);
     }
 
     /** Dias a cobrir mais os dias de prova que ainda não estão neles; sem prova, devolve a lista como veio. */

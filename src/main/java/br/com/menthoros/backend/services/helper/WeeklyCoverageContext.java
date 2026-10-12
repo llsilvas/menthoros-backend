@@ -24,13 +24,17 @@ import java.util.Set;
  * @param provasDaSemana     treinos PROVA determinísticos das provas que ainda cabem na geração
  *                           (fix-planner-ignora-prova-na-semana): entram na lista antes da validação,
  *                           para a regra de vizinhança enxergá-los
+ * @param posProva           prova no dia anterior ao início da semana, quando o primeiro dia do plano é
+ *                           um dia a cobrir — o D+1 dela atravessa planos. Nada é inserido no plano:
+ *                           é só uma restrição (nenhum LONGO nem sessão intensa nesse dia)
  */
 public record WeeklyCoverageContext(List<DiaSemana> effectiveDays,
                                     List<FatigueSignal> fatigueSignals,
                                     boolean semanaAtual,
                                     @Nullable DiaSemana diaPreferidoLongo,
                                     int maxDiasConsecutivos,
-                                    List<TreinoPlanejadoLlmDto> provasDaSemana) {
+                                    List<TreinoPlanejadoLlmDto> provasDaSemana,
+                                    @Nullable PosProvaSemanaAnterior posProva) {
 
     /** Limite de dias efetivos abaixo do qual só o check-in do atleta libera descanso. */
     private static final int MINIMO_DIAS_PARA_DESCANSO = 4;
@@ -41,13 +45,25 @@ public record WeeklyCoverageContext(List<DiaSemana> effectiveDays,
         provasDaSemana = provasDaSemana == null ? List.of() : List.copyOf(provasDaSemana);
     }
 
+    /** Semana com provas, sem prova no dia anterior ao início. */
+    public WeeklyCoverageContext(List<DiaSemana> effectiveDays,
+                                 List<FatigueSignal> fatigueSignals,
+                                 boolean semanaAtual,
+                                 @Nullable DiaSemana diaPreferidoLongo,
+                                 int maxDiasConsecutivos,
+                                 List<TreinoPlanejadoLlmDto> provasDaSemana) {
+        this(effectiveDays, fatigueSignals, semanaAtual, diaPreferidoLongo, maxDiasConsecutivos,
+                provasDaSemana, null);
+    }
+
     /** Semana sem prova: o contexto de antes da change. */
     public WeeklyCoverageContext(List<DiaSemana> effectiveDays,
                                  List<FatigueSignal> fatigueSignals,
                                  boolean semanaAtual,
                                  @Nullable DiaSemana diaPreferidoLongo,
                                  int maxDiasConsecutivos) {
-        this(effectiveDays, fatigueSignals, semanaAtual, diaPreferidoLongo, maxDiasConsecutivos, List.of());
+        this(effectiveDays, fatigueSignals, semanaAtual, diaPreferidoLongo, maxDiasConsecutivos,
+                List.of(), null);
     }
 
     /**

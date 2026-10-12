@@ -95,6 +95,22 @@ public class ProvaNoPlanoService {
     }
 
     /**
+     * Idempotent: YES — leitura pura. Side Effects: NONE (só {@code provaRepository}).
+     * Tenant-aware: N/A — {@code atleta} já resolvido pelo chamador dentro do tenant corrente.
+     *
+     * <p>Prova não cancelada no dia anterior ao início da semana: o D+1 dela é o primeiro dia deste
+     * plano, que não a enxerga (a janela do prompt começa na segunda). Com duas provas no mesmo dia,
+     * a primeira — o caso raro que o design aceita.
+     */
+    public Optional<Prova> provaNoDiaAnteriorAoInicio(Atleta atleta, LocalDate inicioSemana) {
+        LocalDate diaAnterior = inicioSemana.minusDays(1);
+        return provaRepository
+                .findByAtletaAndDataProvaBetweenOrderByDataProvaAsc(atleta, diaAnterior, diaAnterior)
+                .stream()
+                .findFirst();
+    }
+
+    /**
      * Idempotent: YES — determinístico para a mesma prova/atleta.
      * Side Effects: NONE.
      * Tenant-aware: N/A.

@@ -4,8 +4,10 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.ProvaStatus;
+import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.ContextoTreino;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -16,9 +18,12 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -36,6 +41,13 @@ class PlanoTreinoPromptBuilderDiaDeProvaTest {
 
     private static final List<DiaSemana> DIAS_UTEIS =
             List.of(DiaSemana.SEGUNDA, DiaSemana.QUARTA, DiaSemana.SEXTA, DiaSemana.SABADO);
+
+    private ProvaRepository provaRepository;
+
+    @BeforeEach
+    void setUp() {
+        provaRepository = mock(ProvaRepository.class);
+    }
 
     @Test
     @DisplayName("PROXIMA_SEMANA: prova preparatória no domingo entra nos dias efetivos; semanaAtual segue false")
@@ -148,22 +160,112 @@ class PlanoTreinoPromptBuilderDiaDeProvaTest {
                 .cobertura().provasDaSemana()).isEmpty();
     }
 
+    // ── task 3.3: dia seguinte à prova do último dia da semana anterior ──────────────────────────
+
+    private static final LocalDate DOMINGO_ANTERIOR = INICIO_PROXIMA.minusDays(1);       // 18/01/2026
+
+    @Test
+    @DisplayName("CA13: prova no domingo anterior e segunda entre os dias a cobrir → posProva preenchido")
+    void posProvaPreenchido() {
+        quandoHaProvaEm(DOMINGO_ANTERIOR, "Meia de Domingo");
+
+        var gerado = montar(INICIO_PROXIMA, null, null, List.of());
+
+        assertThat(gerado.cobertura().posProva()).isNotNull().satisfies(pos -> {
+            assertThat(pos.diaDoPlano()).isEqualTo(DiaSemana.SEGUNDA);
+            assertThat(pos.nomeProva()).isEqualTo("Meia de Domingo");
+            assertThat(pos.data()).isEqualTo(DOMINGO_ANTERIOR);
+        });
+    }
+
+    @Test
+    @DisplayName("CA13: sem prova no dia anterior → posProva nulo")
+    void semProvaNoDiaAnterior() {
+        var gerado = montar(INICIO_PROXIMA, null, null, List.of());
+
+        assertThat(gerado.cobertura().posProva()).isNull();
+    }
+
+    @Test
+    @DisplayName("CA13: segunda fora dos dias a cobrir → posProva nulo e a consulta nem é feita")
+    void segundaForaDosDias() {
+        quandoHaProvaEm(DOMINGO_ANTERIOR, "Meia de Domingo");
+
+        var gerado = montar(INICIO_PROXIMA, null, null, List.of(), List.of(DiaSemana.TERCA, DiaSemana.QUINTA));
+
+        assertThat(gerado.cobertura().posProva()).isNull();
+        verify(provaRepository, never()).findByAtletaAndDataProvaBetweenOrderByDataProvaAsc(
+                any(), eq(DOMINGO_ANTERIOR), eq(DOMINGO_ANTERIOR));
+    }
+
+    @Test
+    @DisplayName("CA13: SEMANA_ATUAL com a segunda já passada → posProva nulo")
+    void semanaAtualComSegundaPassada() {
+        quandoHaProvaEm(INICIO_ATUAL.minusDays(1), "Meia de Domingo");
+
+        var gerado = montar(INICIO_ATUAL, List.of(DiaSemana.SEXTA, DiaSemana.SABADO), null, List.of());
+
+        assertThat(gerado.cobertura().posProva()).isNull();
+    }
+
+    @Test
+    @DisplayName("CA13: com skeleton não há cobertura, logo nem posProva")
+    void comSkeletonNaoHaCobertura() {
+        quandoHaProvaEm(DOMINGO_ANTERIOR, "Meia de Domingo");
+
+        var skeleton = org.mockito.Mockito.mock(br.com.menthoros.backend.domain.planner.WeekPlanSkeleton.class);
+        var gerado = montar(INICIO_PROXIMA, null, null, List.of(), DIAS_UTEIS, skeleton);
+
+        assertThat(gerado.cobertura()).isNull();
+    }
+
+    @Test
+    @DisplayName("task 3.4: com posProva, o prompt traz o bloco do dia após a prova; sem ele, não")
+    void blocoAparecePeloPosProva() {
+        quandoHaProvaEm(DOMINGO_ANTERIOR, "Meia de Domingo");
+
+        assertThat(montar(INICIO_PROXIMA, null, null, List.of()).user())
+                .contains("DIA APOS PROVA DA SEMANA ANTERIOR").contains("Meia de Domingo");
+        assertThat(montar(INICIO_PROXIMA, null, null, List.of(), List.of(DiaSemana.TERCA)).user())
+                .doesNotContain("DIA APOS PROVA DA SEMANA ANTERIOR");
+    }
+
+    private void quandoHaProvaEm(LocalDate data, String nome) {
+        Prova p = prova(data, false);
+        p.setNomeProva(nome);
+        when(provaRepository.findByAtletaAndDataProvaBetweenOrderByDataProvaAsc(any(), eq(data), eq(data)))
+                .thenReturn(List.of(p));
+    }
+
     private PlanoTreinoPromptBuilder.PromptGerado montar(LocalDate inicioSemana, List<DiaSemana> diasEfetivos,
                                                          Prova provaAlvo, List<Prova> preparatorias) {
+        return montar(inicioSemana, diasEfetivos, provaAlvo, preparatorias, DIAS_UTEIS);
+    }
+
+    private PlanoTreinoPromptBuilder.PromptGerado montar(LocalDate inicioSemana, List<DiaSemana> diasEfetivos,
+                                                         Prova provaAlvo, List<Prova> preparatorias,
+                                                         List<DiaSemana> diasDoAtleta) {
+        return montar(inicioSemana, diasEfetivos, provaAlvo, preparatorias, diasDoAtleta, null);
+    }
+
+    private PlanoTreinoPromptBuilder.PromptGerado montar(LocalDate inicioSemana, List<DiaSemana> diasEfetivos,
+                                                         Prova provaAlvo, List<Prova> preparatorias,
+                                                         List<DiaSemana> diasDoAtleta,
+                                                         br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeleton) {
         var arquetipo = PlanoPromptArquetipos.todos().getFirst();
-        Atleta atleta = arquetipo.atleta().toBuilder().diasDisponiveis(DIAS_UTEIS).build();
+        Atleta atleta = arquetipo.atleta().toBuilder().diasDisponiveis(diasDoAtleta).build();
         ContextoTreino base = arquetipo.contexto();
         ContextoTreino contexto = new ContextoTreino(HOJE, base.treinosUltimas4Semanas(), preparatorias,
                 base.checkinsUltimos7Dias());
 
         TreinoHistoricoProvider provider = mock(TreinoHistoricoProvider.class);
         when(provider.prepararContexto(any())).thenReturn(contexto);
-        PlanoTreinoPromptBuilder builder = PlanoPromptArquetipos.builder(provider);
+        PlanoTreinoPromptBuilder builder = PlanoPromptArquetipos.builder(provider, provaRepository);
 
         try (MockedStatic<LocalDate> now = mockStatic(LocalDate.class, CALLS_REAL_METHODS)) {
             now.when(LocalDate::now).thenReturn(HOJE);
             return builder.buildOptimizedPrompt(atleta, arquetipo.meta(), provaAlvo, inicioSemana,
-                    diasEfetivos, null, null, null, false);
+                    diasEfetivos, null, null, skeleton, false);
         }
     }
 
