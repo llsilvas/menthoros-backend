@@ -72,6 +72,16 @@ class SessionDayAllocatorTest {
                     List.of(MONDAY, WEDNESDAY, FRIDAY), FRIDAY, List.of(SATURDAY));
             assertThat(diaDe(s, "LONGO")).isEqualTo(WEDNESDAY);
         }
+
+        @Test
+        @DisplayName("prova na segunda: a véspera está no plano anterior, o domingo seguinte continua elegível")
+        void provaNaSegundaNaoProibeODomingoSeguinte() {
+            // A semana é segunda→domingo: MONDAY.minus(1) é o domingo de 6 dias DEPOIS da prova, não o D-1.
+            var s = allocator.allocate(List.of(slot("PROVA", true), slot("LONGO", false), slot("INTERVALADO", false)),
+                    List.of(SATURDAY, SUNDAY), null, List.of(MONDAY));
+            assertThat(diaDe(s, "LONGO")).isEqualTo(SUNDAY);
+            assertThat(diaDe(s, "INTERVALADO")).isEqualTo(SATURDAY);
+        }
     }
 
     @Nested
