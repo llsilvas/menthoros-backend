@@ -179,6 +179,22 @@ class PlannerEngineTest {
         }
 
         @Test
+        @DisplayName("tasks.md 7.3: POST_RACE com preparatória na semana — ela entra na lista e ganha slot PROVA")
+        void postRaceComPreparatoriaNaSemana() {
+            ProvaSnapshot alvoRecemRealizada = new ProvaSnapshot(referencia.minusDays(1), 21.1, true, false);
+            ProvaSnapshot preparatoriaSabado = new ProvaSnapshot(referencia.plusDays(5), 5.0, false, false);
+
+            WeekPlanSkeleton skeleton = engine.planWeek(snapshotComProvas(List.of(alvoRecemRealizada, preparatoriaSabado)));
+
+            assertThat(skeleton.phase()).isEqualTo(TrainingPhase.POST_RACE);
+            assertThat(skeleton.provasDaSemana()).containsExactly(preparatoriaSabado);
+            assertThat(skeleton.sessions())
+                    .filteredOn(s -> "PROVA".equals(s.sessionType()))
+                    .extracting(SessionSlot::day)
+                    .containsExactly(referencia.plusDays(5).getDayOfWeek());
+        }
+
+        @Test
         @DisplayName("task 5.1/5.3: preparatória na semana (fase PEAK) ganha slot PROVA ancorado, sem LONGO no D-1")
         void preparatoriaGanhaSlotAncoradoSemLongoNoD1() {
             // atleta SEGUNDA/QUINTA/SABADO (prova no domingo NAO e dia configurado); determinante PEAK longe
