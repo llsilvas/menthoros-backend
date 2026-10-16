@@ -70,8 +70,13 @@ public final class SessionDayAllocator {
         }
 
         // D-1 de cada prova da semana — proibido para LONGO/duras (não so as ancoradas acima; a
-        // lista completa, pre-mortem 2: "preferir longe" nao e "proibir adjacente").
-        Set<DayOfWeek> proibidos = provas.stream().map(d -> d.minus(1)).collect(Collectors.toSet());
+        // lista completa, pre-mortem 2: "preferir longe" nao e "proibir adjacente"). A semana e
+        // segunda→domingo: a vespera de uma prova na segunda esta no plano anterior, e
+        // MONDAY.minus(1) seria o domingo 6 dias DEPOIS da prova (tasks.md 7.1).
+        Set<DayOfWeek> proibidos = provas.stream()
+                .filter(d -> d != DayOfWeek.MONDAY)
+                .map(d -> d.minus(1))
+                .collect(Collectors.toSet());
 
         // 2. Todo LONGO (chave primeiro, depois os demais — TAPER compoe LONGO sem chave).
         for (boolean somenteChave : new boolean[]{true, false}) {
