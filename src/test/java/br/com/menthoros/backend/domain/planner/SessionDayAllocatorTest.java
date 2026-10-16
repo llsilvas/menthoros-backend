@@ -88,6 +88,18 @@ class SessionDayAllocatorTest {
         }
 
         @Test
+        @DisplayName("tasks.md 7.2: o LONGO é âncora de intensidade — a dura não cai vizinha dele")
+        void duraNaoViraVizinhaDoLongo() {
+            // Semana cheia, sem preferido: LONGO vai ao domingo. Sem o LONGO em diasComDura a dura cairia
+            // na segunda (vizinha circular); com ele, o dia de maior distância é a quarta.
+            var s = allocator.allocate(
+                    List.of(slot("LONGO", true), slot("INTERVALADO", false)),
+                    SEMANA_TODA, null, List.of());
+            assertThat(diaDe(s, "LONGO")).isEqualTo(SUNDAY);
+            assertThat(diaDe(s, "INTERVALADO")).isEqualTo(WEDNESDAY);
+        }
+
+        @Test
         @DisplayName("dura nunca cai no D-1 de uma prova da semana")
         void duraNuncaNoDMenosUmDaProva() {
             var s = allocator.allocate(
