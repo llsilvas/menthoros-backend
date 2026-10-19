@@ -185,6 +185,9 @@ public class OnboardingServiceImpl implements OnboardingService {
         if (atletaId == null || tenantId == null || input == null) {
             throw new IllegalArgumentException("atletaId, tenantId e input nao podem ser nulos");
         }
+        if (input.dispositivoMarca() == null) {
+            throw new IllegalArgumentException("dispositivoMarca e obrigatorio");
+        }
         validarPosseOuCoach(atletaId, chamadorEhCoach);
         atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta nao encontrado: " + atletaId));

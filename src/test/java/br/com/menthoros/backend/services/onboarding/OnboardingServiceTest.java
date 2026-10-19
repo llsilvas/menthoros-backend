@@ -462,6 +462,23 @@ class OnboardingServiceTest {
         }
 
         @Test
+        @DisplayName("rejeita rascunho sem dispositivoMarca e nao persiste (D7)")
+        void rejeitaMarcaNula() {
+            OnboardingDraftInput base = draftInput();
+            OnboardingDraftInput semMarca = new OnboardingDraftInput(
+                    base.objetivo(), base.nivelExperiencia(), base.diasDisponiveis(), base.volumeSemanalMax(),
+                    base.temLesao(), base.descricaoLesao(), base.dataUltimaLesao(), base.historicoLesoes(),
+                    base.maiorTreinoRecenteKm(), base.duracaoDisponivelMin(), base.restricoes(), base.modalidade(),
+                    base.percepcaoCondicionamento(), base.preenchidoPorCoach(), base.canalIntegracao(), null,
+                    base.dispositivoModelo());
+
+            assertThatThrownBy(() -> service.salvarRascunho(atletaId, tenantId, semMarca, true))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("dispositivoMarca");
+            verify(perfilOnboardingAtletaRepository, org.mockito.Mockito.never()).save(any());
+        }
+
+        @Test
         @DisplayName("lanca IllegalArgumentException quando algum argumento e nulo")
         void lancaExcecaoParaArgumentosNulos() {
             assertThatThrownBy(() -> service.salvarRascunho(null, tenantId, draftInput(), true))
