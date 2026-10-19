@@ -8,6 +8,7 @@ import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.Sensacao;
 import br.com.menthoros.backend.enums.Severidade;
 import br.com.menthoros.backend.enums.AthleteBillingStatus;
+import br.com.menthoros.backend.enums.DispositivoMarca;
 import br.com.menthoros.backend.enums.StatusSugestao;
 import br.com.menthoros.backend.enums.TipoSugestao;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -87,8 +88,22 @@ public record AtletaPerfilCoachOutputDto(
         boolean melhoresEsforcosIntegracaoConectada,
 
         @Schema(description = "Km realizados por semana (mesmas 8 semanas de aderenciaSemanal, contínuas) e nos últimos 7 dias vs. os 7 anteriores; ausente quando a consulta falha (ver avisos)")
-        DistanceSummaryDto distanceSummary
+        DistanceSummaryDto distanceSummary,
+
+        @Schema(description = "Relógio informado no onboarding (marca informada, não confirmada); ausente sem perfil de onboarding, sem marca, ou quando a consulta falha (ver avisos)")
+        RelogioDto relogio
 ) {
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Relógio do atleta conforme o onboarding")
+    public record RelogioDto(
+
+            @Schema(description = "Marca do relógio", example = "APPLE")
+            DispositivoMarca marca,
+
+            @Schema(description = "Modelo em texto livre; ausente quando não informado", example = "Watch Ultra 2")
+            String modelo
+    ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @Schema(description = "Plano semanal mais recente com semanaFim >= hoje")
