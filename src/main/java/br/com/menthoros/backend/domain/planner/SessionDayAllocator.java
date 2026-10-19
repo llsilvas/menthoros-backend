@@ -20,8 +20,8 @@ import java.util.stream.Collectors;
  * disponibilidade — ordem de {@code composed} casada com a ordem de {@code diasDeProva}); (2) todo
  * LONGO (chave ou nao — TAPER compoe LONGO sem chave) vai para o dia preferido, senao o ultimo dia
  * disponivel, {@code nunca no D-1 de uma prova}, e o dia dele vira ancora de intensidade; (3) sessoes
- * duras nunca em dias consecutivos entre si, com o LONGO ou com uma prova (nem no D-1 de uma prova),
- * maximizando o espacamento — o legado ja trata LONGO como intenso em {@code INTENSOS_ADJACENTES}
+ * duras nunca no D-1 de uma prova e, entre si, com o LONGO e com as provas, maximizam o espacamento
+ * (preferencia, nao proibicao: sem outro dia livre uma dura cai vizinha) — o legado ja trata LONGO como intenso em {@code INTENSOS_ADJACENTES}
  * (decisao 2026-10-16, tasks.md 7.2); (4) as demais (nunca LONGO/duras) preenchem os
  * dias livres em ordem canonica — podem cair no D-1, so sessao leve. LONGO/dura que nao coube nos
  * passos 2-3 fica com {@code day == null}: o chamador decide (remove do skeleton, marca para
