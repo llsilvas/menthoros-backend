@@ -110,6 +110,16 @@ class SessionDayAllocatorTest {
         }
 
         @Test
+        @DisplayName("espaçamento é preferência: sem outro dia livre, a dura cai vizinha do LONGO")
+        void duraCaiVizinhaDoLongoQuandoNaoHaAlternativa() {
+            var s = allocator.allocate(
+                    List.of(slot("LONGO", true), slot("INTERVALADO", false)),
+                    List.of(SATURDAY, SUNDAY), null, List.of());
+            assertThat(diaDe(s, "LONGO")).isEqualTo(SUNDAY);
+            assertThat(diaDe(s, "INTERVALADO")).isEqualTo(SATURDAY);
+        }
+
+        @Test
         @DisplayName("dura nunca cai no D-1 de uma prova da semana")
         void duraNuncaNoDMenosUmDaProva() {
             var s = allocator.allocate(
