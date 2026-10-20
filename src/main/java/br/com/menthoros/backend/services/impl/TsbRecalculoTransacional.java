@@ -33,6 +33,15 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class TsbRecalculoTransacional {
 
+    /**
+     * Teto de linhas <b>novas</b> (dias além da última métrica) por execução. Um atleta parado há
+     * anos não vira uma transação de milhares de dias: cada execução materializa até este tanto e a
+     * seguinte (job horário) continua do primeiro buraco. Reescrever linhas que já existem não conta
+     * — cortar um recálculo retroativo no meio deixaria as linhas seguintes com seed desatualizado,
+     * e uma série densa não é detectada como pendente.
+     */
+    static final int MAX_DIAS_NOVOS_POR_EXECUCAO = 400;
+
     private final MetricasDiariasRepository metricasDiariasRepository;
     private final TsbDiaPersister tsbDiaPersister;
 
@@ -57,6 +66,17 @@ public class TsbRecalculoTransacional {
         if (inicioEfetivo.isBefore(inicio)) {
             log.info("Fechando buraco do atleta {}: {} até {} (última métrica em {})",
                     atletaId, inicioEfetivo, inicio.minusDays(1), ultimoDia);
+        }
+
+        LocalDate ultimoDiaExistente = ultimoDia != null ? ultimoDia : inicioEfetivo.minusDays(1);
+        LocalDate limite = ultimoDiaExistente.plusDays(MAX_DIAS_NOVOS_POR_EXECUCAO);
+        if (fim.isAfter(limite)) {
+            log.warn("Atleta {}: {} dias a materializar excedem o teto de {} por execução — processando "
+                            + "até {}; o restante fica para a próxima execução do job",
+                    atletaId, java.time.temporal.ChronoUnit.DAYS.between(ultimoDiaExistente, fim),
+                    MAX_DIAS_NOVOS_POR_EXECUCAO, limite);
+            fim = limite;
+            gravaMetadados = false;
         }
 
         for (LocalDate dia = inicioEfetivo; !dia.isAfter(fim); dia = dia.plusDays(1)) {

@@ -115,6 +115,68 @@ class TsbRecalculoTransacionalTest {
         }
     }
 
+
+    @Nested
+    @DisplayName("teto de 400 dias de linhas novas por execução (R7/R9)")
+    class TetoDeLinhasNovas {
+
+        @Test
+        @DisplayName("buraco de 900 dias: cria só os 400 primeiros dias, sem metadados")
+        void buracoLongoViraBloco() {
+            when(metricasDiariasRepository.findDataUltimaMetrica(ATLETA_ID)).thenReturn(D0);
+
+            bean().recalcularIntervalo(ATLETA_ID, D0.plusDays(900), D0.plusDays(900), true, null);
+
+            verify(tsbDiaPersister, times(400)).atualizarDiaTransacional(eq(ATLETA_ID), any(), eq(false), any());
+            verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, D0.plusDays(1), false, null);
+            verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, D0.plusDays(400), false, null);
+            verify(tsbDiaPersister, never()).atualizarDiaTransacional(any(), any(), eq(true), any());
+        }
+
+        @Test
+        @DisplayName("exatamente 400 dias novos cabem: último dia grava metadados")
+        void quatrocentosCabem() {
+            when(metricasDiariasRepository.findDataUltimaMetrica(ATLETA_ID)).thenReturn(D0);
+
+            bean().recalcularIntervalo(ATLETA_ID, D0.plusDays(400), D0.plusDays(400), true, null);
+
+            verify(tsbDiaPersister, times(400)).atualizarDiaTransacional(eq(ATLETA_ID), any(), any(Boolean.class), any());
+            verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, D0.plusDays(400), true, null);
+        }
+
+        @Test
+        @DisplayName("401 dias novos: o último não entra e os metadados ficam para a próxima execução")
+        void quatrocentosEUmNaoCabe() {
+            when(metricasDiariasRepository.findDataUltimaMetrica(ATLETA_ID)).thenReturn(D0);
+
+            bean().recalcularIntervalo(ATLETA_ID, D0.plusDays(401), D0.plusDays(401), true, null);
+
+            verify(tsbDiaPersister, times(400)).atualizarDiaTransacional(eq(ATLETA_ID), any(), eq(false), any());
+            verify(tsbDiaPersister, never()).atualizarDiaTransacional(eq(ATLETA_ID), eq(D0.plusDays(401)), any(Boolean.class), any());
+        }
+
+        @Test
+        @DisplayName("retroativo longo sobre linhas existentes não é cortado (reescrever linhas existentes não cria dia novo)")
+        void retroativoSobreLinhasExistentesNaoCorta() {
+            when(metricasDiariasRepository.findDataUltimaMetrica(ATLETA_ID)).thenReturn(D0.plusDays(600));
+
+            bean().recalcularIntervalo(ATLETA_ID, D0, D0.plusDays(600), true, null);
+
+            verify(tsbDiaPersister, times(601)).atualizarDiaTransacional(eq(ATLETA_ID), any(), any(Boolean.class), any());
+            verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, D0.plusDays(600), true, null);
+        }
+
+        @Test
+        @DisplayName("atleta sem métrica: o teto conta a partir de inicio")
+        void semMetricaContaDeInicio() {
+            when(metricasDiariasRepository.findDataUltimaMetrica(ATLETA_ID)).thenReturn(null);
+
+            bean().recalcularIntervalo(ATLETA_ID, D0, D0.plusDays(999), true, null);
+
+            verify(tsbDiaPersister, times(400)).atualizarDiaTransacional(eq(ATLETA_ID), any(), eq(false), any());
+        }
+    }
+
     @Test
     @DisplayName("gravaMetadados=false (bloco intermediário): nenhum dia grava metadados")
     void semMetadados() {

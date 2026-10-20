@@ -16,6 +16,7 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.MetricasDiariasRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.repository.projection.SerieMetricasAtleta;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.TssCalculatorService;
 import org.junit.jupiter.api.DisplayName;
@@ -159,6 +160,84 @@ class TsbRecalculoTransacionalIT extends AbstractIntegrationTest {
         assertThat(ctlD4).isGreaterThan(ctlD3);
         assertThat(ctlD3).isGreaterThan(ctlD2);
         assertThat(ctlD1).as("o treino de D-1 volta a subir o CTL").isGreaterThan(ctlD2);
+    }
+
+    @Test
+    @DisplayName("findSeriePorAtleta: buraco no meio da série devolve o primeiro dia ausente")
+    void serieComBuraco() {
+        LocalDate d0 = LocalDate.now(SP).minusDays(10);
+        Atleta atleta = criarAtleta("SerieBuraco");
+        tsbService.atualizarTsbDia(atleta.getId(), d0);
+        tsbService.atualizarTsbDia(atleta.getId(), d0.plusDays(1));
+        tsbService.atualizarTsbDia(atleta.getId(), d0.plusDays(3));
+
+        SerieMetricasAtleta serie = serieDe(atleta);
+
+        assertThat(serie.getPrimeiroBuraco()).isEqualTo(d0.plusDays(2));
+        assertThat(serie.getUltimaData()).isEqualTo(d0.plusDays(3));
+    }
+
+    @Test
+    @DisplayName("findSeriePorAtleta: série densa e atrasada não tem buraco; pendente é ultima+1")
+    void serieDensaAtrasada() {
+        LocalDate hoje = LocalDate.now(SP);
+        Atleta atleta = seedAtletaComRepouso("SerieAtrasada", hoje.minusDays(6), hoje.minusDays(3));
+
+        SerieMetricasAtleta serie = serieDe(atleta);
+
+        assertThat(serie.getPrimeiroBuraco()).isNull();
+        assertThat(serie.primeiroDiaPendente(hoje)).contains(hoje.minusDays(2));
+    }
+
+    @Test
+    @DisplayName("findSeriePorAtleta: série densa e em dia não tem nada pendente")
+    void serieEmDia() {
+        LocalDate hoje = LocalDate.now(SP);
+        Atleta atleta = seedAtletaComRepouso("SerieEmDia", hoje.minusDays(2), hoje);
+
+        SerieMetricasAtleta serie = serieDe(atleta);
+
+        assertThat(serie.getPrimeiroBuraco()).isNull();
+        assertThat(serie.primeiroDiaPendente(hoje)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("ingestão após buraco acima do teto: grava 400 dias, não falha, e a execução seguinte converge (R7/R9)")
+    void ingestaoComBuracoAcimaDoTeto() {
+        LocalDate hoje = LocalDate.now(SP);
+        LocalDate ultima = hoje.minusDays(450);
+        Atleta atleta = criarAtleta("BuracoLongo");
+        salvarTreinoComEsforco(atleta, ultima);
+        tsbService.atualizarTsbDia(atleta.getId(), ultima);
+        salvarTreinoComEsforco(atleta, hoje);
+
+        long inicio = System.nanoTime();
+        tsbService.recalcularDesde(atleta.getId(), hoje);
+        long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - inicio);
+
+        // Medido em 2026-10-20: o cenário inteiro (400 dias numa transação + convergência) leva ~1,6 s
+        // em Postgres/Testcontainers. 30 s é folga para CI lento, não a expectativa.
+        assertThat(ms).as("latência do registrar com buraco no teto").isLessThan(30_000);
+        SerieMetricasAtleta aposPrimeira = serieDe(atleta);
+        assertThat(aposPrimeira.getUltimaData()).isEqualTo(ultima.plusDays(400));
+        assertThat(aposPrimeira.getPrimeiroBuraco()).as("a série criada é densa").isNull();
+
+        // O que o job horário fará: continua do primeiro dia pendente até hoje.
+        LocalDate proximo = aposPrimeira.primeiroDiaPendente(hoje).orElseThrow();
+        assertThat(proximo).isEqualTo(ultima.plusDays(401));
+        tsbService.recalcularDesde(atleta.getId(), proximo, hoje);
+
+        SerieMetricasAtleta aposSegunda = serieDe(atleta);
+        assertThat(aposSegunda.getUltimaData()).isEqualTo(hoje);
+        assertThat(aposSegunda.primeiroDiaPendente(hoje)).isEmpty();
+        assertThat(buscar(atleta, hoje.minusDays(1)).getCtl()).as("nunca reiniciou em zero").isGreaterThan(0.0);
+    }
+
+    private SerieMetricasAtleta serieDe(Atleta atleta) {
+        return metricasDiariasRepository.findSeriePorAtleta().stream()
+                .filter(x -> x.getAtletaId().equals(atleta.getId()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("atleta sem série: " + atleta.getId()));
     }
 
     private void esperarAteHaverAdvisoryLockPendente() throws InterruptedException {
