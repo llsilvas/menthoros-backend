@@ -56,7 +56,8 @@ class TsbServiceImplRecalculoHistoricoTest {
                 // determinarIntervaloRecalculo chamado direto via reflection — nunca passa por
                 // resolverPaceSeNecessario/buscarMelhorEsforcoSeguro.
                 null,
-                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone())
+                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone()),
+                null
         );
 
         Method m = TsbServiceImpl.class.getDeclaredMethod("determinarIntervaloRecalculo", UUID.class);
@@ -106,7 +107,8 @@ class TsbServiceImplRecalculoHistoricoTest {
                 // recalcularHistoricoCompleto (caminho legado) nunca passa por
                 // buscarMelhorEsforcoSeguro.
                 null,
-                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone())
+                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone()),
+                null
         );
 
         service.recalcularHistoricoCompleto(atletaId);

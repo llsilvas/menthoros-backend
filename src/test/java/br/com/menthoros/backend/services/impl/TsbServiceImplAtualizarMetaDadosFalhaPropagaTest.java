@@ -76,6 +76,7 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
                 (proxy, method, args) -> {
                     String name = method.getName();
                     if ("findDataUltimaMetrica".equals(name)) return null; // fim = hoje
+                    if ("lockAtleta".equals(name)) return null;
                     if ("findByAtletaIdAndData".equals(name)) return Optional.empty();
                     if ("save".equals(name)) return args[0];
                     if ("toString".equals(name)) return "MetricasDiariasRepositoryStub";
@@ -160,7 +161,8 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
                 // curto-circuita antes de buscarMelhorEsforcoSeguro, então melhorEsforcoService nunca
                 // é chamado neste teste.
                 null,
-                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone())
+                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone()),
+                new TsbRecalculoTransacional(metricasRepo, tsbDiaPersister)
         );
 
         RuntimeException propagada = assertThrows(RuntimeException.class,

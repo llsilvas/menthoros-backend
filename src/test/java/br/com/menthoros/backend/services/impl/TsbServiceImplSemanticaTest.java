@@ -399,6 +399,7 @@ class TsbServiceImplSemanticaTest {
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
                 athleteThresholdUpdater, thresholdInferenceService,
                 new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null,
-                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone()));
+                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone()),
+                new TsbRecalculoTransacional(metricasRepo, tsbDiaPersister));
     }
 }

@@ -85,7 +85,8 @@ class TsbServiceImplOrquestracaoTest {
                 metricasDiariasRepository, atletaRepository, metricasAlertaService,
                 athleteThresholdUpdater, thresholdInferenceService, tsbRecalculoExecutor,
                 planoMetadadosService, tsbDiaPersister, melhorEsforcoService,
-                new AtletaHojeResolver(RELOGIO));
+                new AtletaHojeResolver(RELOGIO),
+                new TsbRecalculoTransacional(metricasDiariasRepository, tsbDiaPersister));
     }
 
     // =========================================================================

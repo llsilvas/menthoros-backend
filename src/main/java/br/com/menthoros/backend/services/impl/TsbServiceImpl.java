@@ -47,6 +47,7 @@ public class TsbServiceImpl implements TsbService {
     private final TsbDiaPersister tsbDiaPersister;
     private final MelhorEsforcoService melhorEsforcoService;
     private final AtletaHojeResolver atletaHojeResolver;
+    private final TsbRecalculoTransacional tsbRecalculoTransacional;
 
     /** Tamanho do bloco transacional do recálculo histórico. */
     static final int DIAS_POR_BLOCO = 30;
@@ -157,11 +158,7 @@ public class TsbServiceImpl implements TsbService {
         // atraso longo não pode carimbar limiares/CTL atual com um dia que não é o atual.
         boolean gravaMetadados = !fim.isBefore(hoje);
         PaceLimiarResolvido paceResolvido = gravaMetadados ? resolverPaceSeNecessario(atletaId, fim) : null;
-        for (LocalDate dia = inicio; !dia.isAfter(fim); dia = dia.plusDays(1)) {
-            boolean ultimoDiaDoLaco = gravaMetadados && dia.equals(fim);
-            tsbDiaPersister.atualizarDiaTransacional(
-                    atletaId, dia, ultimoDiaDoLaco, ultimoDiaDoLaco ? paceResolvido : null);
-        }
+        tsbRecalculoTransacional.recalcularIntervalo(atletaId, inicio, fim, gravaMetadados, paceResolvido);
     }
 
     /** "Hoje" no fuso do atleta; atleta inexistente cai no fuso padrão e o persister rejeita depois. */

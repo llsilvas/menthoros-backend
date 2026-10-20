@@ -4,6 +4,8 @@ import br.com.menthoros.backend.entity.MetricasDiarias;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -82,4 +84,24 @@ public interface MetricasDiariasRepository extends JpaRepository<MetricasDiarias
      */
     @Query("SELECT MAX(m.data) FROM MetricasDiarias m WHERE m.atleta.id = :atletaId")
     LocalDate findDataUltimaMetrica(UUID atletaId);
+
+    /**
+     * Serializa os recálculos de um atleta (ingestão, job de decaimento e reparo) com um advisory
+     * lock de transação. O lock é liberado no commit/rollback da transação que o adquiriu, então
+     * quem espera só lê treinos e métricas depois que a ingestão concorrente confirmou
+     * (fix-tsb-rest-days-materialization, design.md R2).
+     *
+     * <p>{@code MANDATORY}: fora de uma transação o lock seria solto na hora e a serialização
+     * seria falsa — melhor falhar alto. {@code hashtext} colidindo entre dois atletas só serializa
+     * a mais, nunca de menos. O retorno em texto existe só porque {@code pg_advisory_xact_lock}
+     * devolve {@code void}, que o mapeamento nativo não sabe ler.</p>
+     *
+     * Idempotent: YES — adquirir um lock que a transação já tem é no-op.
+     * Side Effects: bloqueia outras transações que peçam o mesmo lock até o commit desta.
+     * Tenant-aware: NO
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    @Query(value = "SELECT CAST(pg_advisory_xact_lock(hashtext(CAST(:atletaId AS text))) AS text)",
+            nativeQuery = true)
+    String lockAtleta(UUID atletaId);
 }
