@@ -159,7 +159,8 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
                 // findLimiarPaceStatusById estuba "não desatualizado" acima — resolverPaceSeNecessario
                 // curto-circuita antes de buscarMelhorEsforcoSeguro, então melhorEsforcoService nunca
                 // é chamado neste teste.
-                null
+                null,
+                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone())
         );
 
         RuntimeException propagada = assertThrows(RuntimeException.class,

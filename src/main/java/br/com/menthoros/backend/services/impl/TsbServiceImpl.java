@@ -15,6 +15,7 @@ import br.com.menthoros.backend.services.MelhorEsforcoService;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.PaceLimiarResolvido;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.services.helper.TsbRecalculoExecutor;
@@ -45,6 +46,7 @@ public class TsbServiceImpl implements TsbService {
     private final PlanoMetadadosService planoMetadadosService;
     private final TsbDiaPersister tsbDiaPersister;
     private final MelhorEsforcoService melhorEsforcoService;
+    private final AtletaHojeResolver atletaHojeResolver;
 
     /** Tamanho do bloco transacional do recálculo histórico. */
     static final int DIAS_POR_BLOCO = 30;
@@ -93,6 +95,8 @@ public class TsbServiceImpl implements TsbService {
      * Tenant-aware: NO
      */
     public void atualizarTsbDia(UUID atletaId, LocalDate data) {
+        validarEntrada(atletaId, data);
+        validarNaoFuturo(atletaId, data);
         PaceLimiarResolvido paceResolvido = resolverPaceSeNecessario(atletaId, data);
         tsbDiaPersister.atualizarDiaTransacional(atletaId, data, true, paceResolvido);
     }
@@ -110,19 +114,68 @@ public class TsbServiceImpl implements TsbService {
     @Override
     public void recalcularDesde(UUID atletaId, LocalDate data) {
         validarEntrada(atletaId, data);
+        LocalDate hoje = hojeDo(atletaId);
+        validarNaoFuturo(data, hoje);
 
         LocalDate ultimoDia = metricasDiariasRepository.findDataUltimaMetrica(atletaId);
-        LocalDate fim = (ultimoDia == null || ultimoDia.isBefore(LocalDate.now()))
-                ? LocalDate.now()
-                : ultimoDia;
+        LocalDate fim = (ultimoDia == null || ultimoDia.isBefore(hoje)) ? hoje : ultimoDia;
 
-        log.info("Recalculando TSB de {} para atleta {} até {}", data, atletaId, fim);
+        recalcularIntervalo(atletaId, data, fim, hoje);
+    }
 
-        PaceLimiarResolvido paceResolvido = resolverPaceSeNecessario(atletaId, fim);
-        for (LocalDate dia = data; !dia.isAfter(fim); dia = dia.plusDays(1)) {
-            boolean ultimoDiaDoLaco = dia.equals(fim);
+    /**
+     * Mesma semântica de {@link #recalcularDesde(UUID, LocalDate)}, mas com {@code fim} decidido
+     * pelo chamador (job de decaimento e reparo resolvem o "hoje" do atleta uma única vez).
+     * Metadados só são gravados quando {@code fim} alcança o hoje do atleta.
+     *
+     * Sem {@code @Transactional}, pelo mesmo motivo do método de dois argumentos.
+     *
+     * Idempotent: YES — recalcular o mesmo intervalo produz o mesmo resultado.
+     * Side Effects: Database insert/update das métricas de cada dia do intervalo e, quando
+     * {@code fim} é o hoje do atleta, do PlanoMetaDados.
+     * Tenant-aware: NO
+     */
+    @Override
+    public void recalcularDesde(UUID atletaId, LocalDate inicio, LocalDate fim) {
+        validarEntrada(atletaId, inicio);
+        if (fim == null) {
+            throw new IllegalArgumentException("fim não pode ser nulo");
+        }
+        if (inicio.isAfter(fim)) {
+            throw new IllegalArgumentException("inicio (" + inicio + ") não pode ser posterior a fim (" + fim + ")");
+        }
+        LocalDate hoje = hojeDo(atletaId);
+        validarNaoFuturo(fim, hoje);
+
+        recalcularIntervalo(atletaId, inicio, fim, hoje);
+    }
+
+    private void recalcularIntervalo(UUID atletaId, LocalDate inicio, LocalDate fim, LocalDate hoje) {
+        log.info("Recalculando TSB de {} para atleta {} até {}", inicio, atletaId, fim);
+
+        // Metadados só quando o intervalo alcança o hoje do atleta: bloco intermediário de um
+        // atraso longo não pode carimbar limiares/CTL atual com um dia que não é o atual.
+        boolean gravaMetadados = !fim.isBefore(hoje);
+        PaceLimiarResolvido paceResolvido = gravaMetadados ? resolverPaceSeNecessario(atletaId, fim) : null;
+        for (LocalDate dia = inicio; !dia.isAfter(fim); dia = dia.plusDays(1)) {
+            boolean ultimoDiaDoLaco = gravaMetadados && dia.equals(fim);
             tsbDiaPersister.atualizarDiaTransacional(
                     atletaId, dia, ultimoDiaDoLaco, ultimoDiaDoLaco ? paceResolvido : null);
+        }
+    }
+
+    /** "Hoje" no fuso do atleta; atleta inexistente cai no fuso padrão e o persister rejeita depois. */
+    private LocalDate hojeDo(UUID atletaId) {
+        return atletaHojeResolver.hojeDe(atletaRepository.findById(atletaId).orElse(null));
+    }
+
+    private void validarNaoFuturo(UUID atletaId, LocalDate data) {
+        validarNaoFuturo(data, hojeDo(atletaId));
+    }
+
+    private void validarNaoFuturo(LocalDate data, LocalDate hoje) {
+        if (data.isAfter(hoje)) {
+            throw new IllegalArgumentException("data não pode ser futura: " + data);
         }
     }
 
@@ -206,9 +259,6 @@ public class TsbServiceImpl implements TsbService {
         }
         if (data == null) {
             throw new IllegalArgumentException("data não pode ser nula");
-        }
-        if (data.isAfter(LocalDate.now())) {
-            throw new IllegalArgumentException("data não pode ser futura: " + data);
         }
     }
 

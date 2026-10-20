@@ -246,7 +246,8 @@ class TsbServiceImplRecalculoSemanticaTest {
         // buscarMelhorEsforcoSeguro) — melhorEsforcoService nunca é chamado neste teste.
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
                 athleteThresholdUpdater, thresholdInferenceService,
-                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null);
+                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null,
+                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone()));
     }
 
     private TsbServiceImpl construirServiceComPrimeiroTreino(
@@ -370,7 +371,8 @@ class TsbServiceImplRecalculoSemanticaTest {
         // buscarMelhorEsforcoSeguro) — melhorEsforcoService nunca é chamado neste teste.
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, alertaService,
                 athleteThresholdUpdater, thresholdInferenceService,
-                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null);
+                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null,
+                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone()));
     }
 
     private static AtletaRepository atletaRepoStub(Atleta atleta) {

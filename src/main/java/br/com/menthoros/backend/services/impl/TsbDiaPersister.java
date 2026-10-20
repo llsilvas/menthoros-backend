@@ -99,9 +99,6 @@ public class TsbDiaPersister {
         if (data == null) {
             throw new IllegalArgumentException("data não pode ser nula");
         }
-        if (data.isAfter(LocalDate.now())) {
-            throw new IllegalArgumentException("data não pode ser futura: " + data);
-        }
     }
 
     private Atleta buscarAtleta(UUID atletaId) {
