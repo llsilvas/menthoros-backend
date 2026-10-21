@@ -31,3 +31,7 @@ app:
     authorization-uri: https://intervals.icu/oauth/authorize
     token-uri: https://intervals.icu/api/oauth/token
     scope: ACTIVITY:READ,CALENDAR:WRITE
+
+menthoros:
+  tsb-decaimento:
+    cron: "-"

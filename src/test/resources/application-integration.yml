@@ -33,3 +33,9 @@ logging:
   level:
     org.flywaydb: WARN
     org.hibernate.SQL: WARN
+
+
+# Cron real das :30 disparava no meio dos ITs do job e convergia a serie por fora do teste.
+menthoros:
+  tsb-decaimento:
+    cron: "-"

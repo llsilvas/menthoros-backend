@@ -55,7 +55,7 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
                 .assessoria(assessoria)
                 .build();
 
-        LocalDate hoje = LocalDate.now();
+        LocalDate hoje = LocalDate.now(java.time.ZoneId.of("America/Sao_Paulo"));
 
         TreinoRealizadoRepository treinoRepo = (TreinoRealizadoRepository) Proxy.newProxyInstance(
                 TreinoRealizadoRepository.class.getClassLoader(),
@@ -76,6 +76,8 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
                 (proxy, method, args) -> {
                     String name = method.getName();
                     if ("findDataUltimaMetrica".equals(name)) return null; // fim = hoje
+                    if ("lockAtleta".equals(name)) return null;
+                    if ("findTopByAtletaIdAndDataBeforeOrderByDataDesc".equals(name)) return Optional.empty();
                     if ("findByAtletaIdAndData".equals(name)) return Optional.empty();
                     if ("save".equals(name)) return args[0];
                     if ("toString".equals(name)) return "MetricasDiariasRepositoryStub";
@@ -159,7 +161,9 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
                 // findLimiarPaceStatusById estuba "não desatualizado" acima — resolverPaceSeNecessario
                 // curto-circuita antes de buscarMelhorEsforcoSeguro, então melhorEsforcoService nunca
                 // é chamado neste teste.
-                null
+                null,
+                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone()),
+                new TsbRecalculoTransacional(metricasRepo, tsbDiaPersister)
         );
 
         RuntimeException propagada = assertThrows(RuntimeException.class,

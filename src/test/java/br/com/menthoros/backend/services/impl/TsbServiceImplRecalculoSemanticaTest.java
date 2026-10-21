@@ -246,7 +246,9 @@ class TsbServiceImplRecalculoSemanticaTest {
         // buscarMelhorEsforcoSeguro) — melhorEsforcoService nunca é chamado neste teste.
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
                 athleteThresholdUpdater, thresholdInferenceService,
-                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null);
+                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null,
+                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone()),
+                new TsbRecalculoTransacional(metricasRepo, tsbDiaPersister));
     }
 
     private TsbServiceImpl construirServiceComPrimeiroTreino(
@@ -285,6 +287,7 @@ class TsbServiceImplRecalculoSemanticaTest {
                     if ("findByAtletaIdOrderByDataAsc".equals(name)) return Collections.emptyList();
                     if ("deleteByAtletaId".equals(name)) return null;
                     if ("flush".equals(name)) return null;
+                    if ("findTopByAtletaIdAndDataBeforeOrderByDataDesc".equals(name)) return Optional.empty();
                     if ("findByAtletaIdAndData".equals(name)) {
                         LocalDate data = (LocalDate) args[1];
                         diasAtualizados.add(data); // registra qual dia foi buscado
@@ -331,6 +334,10 @@ class TsbServiceImplRecalculoSemanticaTest {
                     LocalDate dataOntem = LocalDate.now().minusDays(1);
                     if ("deleteByAtletaId".equals(name)) return null;
                     if ("flush".equals(name)) return null;
+                    if ("findTopByAtletaIdAndDataBeforeOrderByDataDesc".equals(name)) {
+                        LocalDate data = (LocalDate) args[1];
+                        return dataOntem.equals(data.minusDays(1)) ? Optional.of(ultimaMetrica) : Optional.empty();
+                    }
                     if ("findByAtletaIdAndData".equals(name)) {
                         LocalDate data = (LocalDate) args[1];
                         diasAtualizados.add(data);
@@ -370,7 +377,9 @@ class TsbServiceImplRecalculoSemanticaTest {
         // buscarMelhorEsforcoSeguro) — melhorEsforcoService nunca é chamado neste teste.
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepoComUltima, atletaRepo, alertaService,
                 athleteThresholdUpdater, thresholdInferenceService,
-                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null);
+                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null,
+                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone()),
+                new TsbRecalculoTransacional(metricasRepoComUltima, tsbDiaPersister));
     }
 
     private static AtletaRepository atletaRepoStub(Atleta atleta) {

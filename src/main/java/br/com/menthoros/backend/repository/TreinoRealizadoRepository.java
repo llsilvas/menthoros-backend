@@ -122,6 +122,18 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     List<TreinoRealizado> findQueContamByAtletaIdAndDataTreino(
             @Param("atletaId") UUID atletaId, @Param("data") LocalDate data);
 
+    /**
+     * Existe treino que conta na carga em {@code (de, ate)}, extremos excluídos — mesmo critério de
+     * {@link #findQueContamByAtletaIdAndDataTreino} (CANCELADO fora, NULL dentro). Os extremos ficam
+     * de fora porque {@code de} já está refletido na linha de métrica usada como seed e {@code ate}
+     * é o dia que está sendo calculado.
+     */
+    @Query("SELECT COUNT(t) > 0 FROM TreinoRealizado t WHERE t.atleta.id = :atletaId "
+            + "AND t.dataTreino > :de AND t.dataTreino < :ate "
+            + "AND (t.statusSincronizacao IS NULL OR t.statusSincronizacao <> br.com.menthoros.backend.enums.StatusSincronizacao.CANCELADO)")
+    boolean existsQueContamEntre(
+            @Param("atletaId") UUID atletaId, @Param("de") LocalDate de, @Param("ate") LocalDate ate);
+
     @Query("SELECT MIN(t.dataTreino) FROM TreinoRealizado t WHERE t.atleta.id = :atletaId")
     LocalDate findDataPrimeiroTreino(@Param("atletaId") UUID atletaId);
 
