@@ -84,13 +84,6 @@ public class TsbServiceImpl implements TsbService {
      * ({@link #recalcularHistoricoCompleto}); mitigação (`@Version` em `PlanoMetaDados`) fica fora
      * do escopo desta change mecânica.
      *
-     * <p><b>Acoplamento a "hoje" (achado de QA, code-reviewer):</b> a resolução de pace usa a
-     * `data` recebida como referência de staleness/janela, enquanto FC
-     * ({@link TsbDiaPersister#atualizarMetaDados}) sempre usa {@code LocalDate.now()}. Hoje isso
-     * nunca diverge porque o único caller com `data` histórica ({@link #processarDiasDescanso}) é
-     * código morto (sem caller de produção, fora de {@link br.com.menthoros.backend.services.TsbService}).
-     * Se esse método for reativado, FC e pace passam a decidir staleness com "hoje" diferentes.
-     *
      * Idempotent: YES — recalcular o mesmo dia produz o mesmo resultado.
      * Side Effects: Database insert/update da métrica do dia e do PlanoMetaDados.
      * Tenant-aware: NO
@@ -307,27 +300,6 @@ public class TsbServiceImpl implements TsbService {
         // treino real registrado, não só quando recalcularHistoricoCompleto roda — este método já
         // é chamado tanto pelo caminho incremental (recalcularDesde) quanto pelo completo.
         tsbDiaPersister.recalcularSemanasProgressao(atletaId);
-    }
-
-    /**
-     * Processa dias de descanso (ATL e CTL decaem naturalmente)
-     */
-    @Transactional
-    public void processarDiasDescanso(UUID atletaId, LocalDate dataInicio, LocalDate dataFim) {
-        LocalDate dataAtual = dataInicio;
-
-        while (!dataAtual.isAfter(dataFim)) {
-            // Verificar se já tem treino nesse dia
-            List<TreinoRealizado> treinos = treinoRealizadoRepository
-                    .findByAtletaIdAndDataTreino(atletaId, dataAtual);
-
-            if (treinos.isEmpty()) {
-                // Dia de descanso - TSS = 0, mas ATL/CTL decaem
-                atualizarTsbDia(atletaId, dataAtual);
-            }
-
-            dataAtual = dataAtual.plusDays(1);
-        }
     }
 
     /**
