@@ -10,11 +10,12 @@
 -- Roteiro (base do homelab; confirmar antes que a conexao aponta para ela):
 --   1. ANTES do deploy: rodar a consulta 1 e salvar a saida
 --        psql "$DATABASE_URL" -f docs/ops/tsb-rest-days-repair.sql \
---             -o docs/ops/tsb-rest-days-antes.txt
+--             -o ~/tsb-rest-days-antes.txt
 --   2. Deploy da change. Esperar a proxima execucao do job (minuto 30 de cada hora)
 --      e conferir no log "[tsb-decaimento] processados=... falhas=0".
 --      Atraso acima de 400 dias avanca 400 dias por execucao.
---   3. DEPOIS: rodar de novo, salvar em docs/ops/tsb-rest-days-depois.txt.
+--   3. DEPOIS: rodar de novo, salvar em ~/tsb-rest-days-depois.txt
+--      (fora do repositorio: as saidas listam atleta_id e CTL de todos os tenants).
 --      Consulta 1 deve voltar vazia; consulta 2 sem linhas "fora".
 --   4. Conferir o gauge tsb.atletas_defasados = 0 em /actuator/prometheus.
 -- =====================================================================

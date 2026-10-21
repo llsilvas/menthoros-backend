@@ -205,6 +205,20 @@ class TsbDecaimentoDiarioSchedulerTest {
         assertThat(meterRegistry.get("tsb.atletas_defasados").gauge().value()).isEqualTo(1.0);
     }
 
+    @Test
+    @DisplayName("falha ao consultar as séries: gauge vira -1 (indisponível), não 0; execução saudável seguinte volta a medir")
+    void gaugeIndisponivelNaFalha() {
+        when(metricasRepo.findSeriePorAtleta())
+                .thenThrow(new IllegalStateException("banco fora"))
+                .thenReturn(List.of());
+
+        scheduler.executar();
+        assertThat(meterRegistry.get("tsb.atletas_defasados").gauge().value()).isEqualTo(-1.0);
+
+        scheduler.executar();
+        assertThat(meterRegistry.get("tsb.atletas_defasados").gauge().value()).isEqualTo(0.0);
+    }
+
     private void series(SerieMetricasAtleta... series) {
         when(metricasRepo.findSeriePorAtleta()).thenReturn(List.of(series));
     }

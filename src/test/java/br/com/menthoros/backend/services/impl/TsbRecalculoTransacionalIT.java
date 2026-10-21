@@ -133,6 +133,52 @@ class TsbRecalculoTransacionalIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("TSS alterado por transação concorrente enquanto a ingestão espera o lock não é sobrescrito com o valor antigo (R2)")
+    void ingestaoNaoGravaTssAntigoDepoisDoLock() throws Exception {
+        LocalDate hoje = LocalDate.now(SP);
+        LocalDate dia = hoje.minusDays(2);
+        Atleta atleta = criarAtleta("TssAntigo");
+        salvarTreinoComEsforco(atleta, dia);
+        tsbService.recalcularDesde(atleta.getId(), dia);
+        TreinoRealizado treino = treinoRealizadoRepository.findByAtletaIdAndDataTreino(atleta.getId(), dia).get(0);
+        int tssNovo = treino.getTssCalculado() + 40;
+
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        CountDownLatch bComLock = new CountDownLatch(1);
+        CountDownLatch liberaB = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            // B: reprocessa o treino com TSS maior e recalcula, sem commitar ainda.
+            Future<?> b = pool.submit(() -> tx.executeWithoutResult(status -> {
+                TreinoRealizado t = treinoRealizadoRepository.findById(treino.getId()).orElseThrow();
+                t.setTssCalculado(tssNovo);
+                treinoRealizadoRepository.save(t);
+                tsbService.recalcularDesde(atleta.getId(), dia);
+                bComLock.countDown();
+                aguardar(liberaB);
+            }));
+            assertThat(bComLock.await(30, TimeUnit.SECONDS)).as("B pegou o lock").isTrue();
+
+            // A: ingestão concorrente do mesmo atleta; o pace está desatualizado, então ela lê os
+            // treinos de 30 dias — antes do lock, esses treinos ficariam com o TSS antigo em memória.
+            Future<?> a = pool.submit(() -> tx.executeWithoutResult(status ->
+                    tsbService.recalcularDesde(atleta.getId(), dia)));
+            esperarAteHaverAdvisoryLockPendente();
+
+            liberaB.countDown();
+            b.get(30, TimeUnit.SECONDS);
+            a.get(30, TimeUnit.SECONDS);
+        } finally {
+            liberaB.countDown();
+            pool.shutdownNow();
+        }
+
+        assertThat(buscar(atleta, dia).getTss())
+                .as("a métrica final reflete o TSS confirmado por B, não o que A leu antes do lock")
+                .isEqualTo(tssNovo);
+    }
+
+    @Test
     @DisplayName("treino após dias sem métrica fecha o buraco com decaimento, sem reiniciar em zero (D1)")
     void treinoAposBuracoMaterializaDiasDeDescanso() {
         LocalDate hoje = LocalDate.now(SP);

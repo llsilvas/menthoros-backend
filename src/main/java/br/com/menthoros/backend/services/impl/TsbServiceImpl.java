@@ -23,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -150,6 +151,13 @@ public class TsbServiceImpl implements TsbService {
         // Metadados só quando o intervalo alcança o hoje do atleta: bloco intermediário de um
         // atraso longo não pode carimbar limiares/CTL atual com um dia que não é o atual.
         boolean gravaMetadados = !fim.isBefore(hoje);
+        // Na ingestão a transação do chamador já existe, e resolverPaceSeNecessario carrega os treinos
+        // dos últimos 30 dias nela. Sem o lock antes, uma ingestão concorrente que confirme enquanto
+        // esta espera deixaria no contexto do Hibernate o TSS antigo, e o recálculo o gravaria por
+        // cima do novo. No job não há transação aqui (o pace resolve fora dela): o lock vem no bean.
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            metricasDiariasRepository.lockAtleta(atletaId);
+        }
         PaceLimiarResolvido paceResolvido = gravaMetadados ? resolverPaceSeNecessario(atletaId, fim) : null;
         tsbRecalculoTransacional.recalcularIntervalo(atletaId, inicio, fim, gravaMetadados, paceResolvido);
     }

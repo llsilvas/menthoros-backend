@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 /**
@@ -73,7 +74,7 @@ public class TsbRecalculoTransacional {
         if (fim.isAfter(limite)) {
             log.warn("Atleta {}: {} dias a materializar excedem o teto de {} por execução — processando "
                             + "até {}; o restante fica para a próxima execução do job",
-                    atletaId, java.time.temporal.ChronoUnit.DAYS.between(ultimoDiaExistente, fim),
+                    atletaId, ChronoUnit.DAYS.between(ultimoDiaExistente, fim),
                     MAX_DIAS_NOVOS_POR_EXECUCAO, limite);
             fim = limite;
             gravaMetadados = false;

@@ -36,6 +36,9 @@ public class TsbDecaimentoDiarioScheduler {
 
     static final ZoneId FUSO_SERVIDOR = ZoneId.of("America/Sao_Paulo");
 
+    /** Valor do gauge quando a última execução não conseguiu medir: zero seria "tudo em dia" por engano. */
+    static final int CONTAGEM_INDISPONIVEL = -1;
+
     private final MetricasDiariasRepository metricasDiariasRepository;
     private final AtletaRepository atletaRepository;
     private final TsbService tsbService;
@@ -79,6 +82,7 @@ public class TsbDecaimentoDiarioScheduler {
             series = metricasDiariasRepository.findSeriePorAtleta();
         } catch (RuntimeException e) {
             log.warn("[tsb-decaimento] falha ao consultar as séries: {}", e.getMessage(), e);
+            atletasDefasados.set(CONTAGEM_INDISPONIVEL);
             return;
         }
 
@@ -111,7 +115,11 @@ public class TsbDecaimentoDiarioScheduler {
                 processados, pulados, falhas, atletasDefasados.get());
     }
 
-    /** Defasado = sem métrica de ontem em diante, medido depois da passada: o sinal de que o job não alcança. */
+    /**
+     * Defasado = sem métrica de ontem em diante, medido depois da passada: o sinal de que o job não
+     * alcança. Usa o dia de São Paulo, não o de cada atleta: quem está à frente de SP (fuso fora do
+     * Brasil) pode aparecer um dia a menos; quem está atrás (Acre/Manaus) nunca é superestimado.
+     */
     private void atualizarGauge() {
         try {
             LocalDate ontem = LocalDate.now(clock.withZone(FUSO_SERVIDOR)).minusDays(1);
@@ -121,6 +129,7 @@ public class TsbDecaimentoDiarioScheduler {
             atletasDefasados.set(defasados);
         } catch (RuntimeException e) {
             log.warn("[tsb-decaimento] falha ao atualizar o gauge tsb.atletas_defasados: {}", e.getMessage());
+            atletasDefasados.set(CONTAGEM_INDISPONIVEL);
         }
     }
 }

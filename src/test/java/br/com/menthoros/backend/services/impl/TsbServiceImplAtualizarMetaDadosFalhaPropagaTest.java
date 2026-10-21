@@ -55,7 +55,7 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
                 .assessoria(assessoria)
                 .build();
 
-        LocalDate hoje = LocalDate.now();
+        LocalDate hoje = LocalDate.now(java.time.ZoneId.of("America/Sao_Paulo"));
 
         TreinoRealizadoRepository treinoRepo = (TreinoRealizadoRepository) Proxy.newProxyInstance(
                 TreinoRealizadoRepository.class.getClassLoader(),
