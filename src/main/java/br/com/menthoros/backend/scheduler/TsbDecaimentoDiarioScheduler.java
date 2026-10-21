@@ -71,7 +71,7 @@ public class TsbDecaimentoDiarioScheduler {
      * <p><b>Side Effects:</b> Database insert/update de métricas diárias; atualiza o gauge.
      * <p><b>Tenant-aware:</b> YES — seta e limpa o tenant por atleta.
      */
-    @Scheduled(cron = "0 30 * * * *", zone = "America/Sao_Paulo")
+    @Scheduled(cron = "${menthoros.tsb-decaimento.cron:0 30 * * * *}", zone = "America/Sao_Paulo")
     public void executar() {
         int processados = 0;
         int pulados = 0;
