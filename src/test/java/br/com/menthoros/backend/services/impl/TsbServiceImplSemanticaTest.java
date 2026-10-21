@@ -311,6 +311,10 @@ class TsbServiceImplSemanticaTest {
                 MetricasDiariasRepository.class.getClassLoader(),
                 new Class<?>[]{MetricasDiariasRepository.class},
                 (proxy, method, args) -> {
+                    if ("findTopByAtletaIdAndDataBeforeOrderByDataDesc".equals(method.getName())) {
+                        LocalDate data = (LocalDate) args[1];
+                        return hoje.equals(data) ? Optional.ofNullable(metricasOntem) : Optional.empty();
+                    }
                     if ("findByAtletaIdAndData".equals(method.getName())) {
                         LocalDate data = (LocalDate) args[1];
                         if (hoje.equals(data)) {

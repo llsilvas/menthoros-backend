@@ -287,6 +287,7 @@ class TsbServiceImplRecalculoSemanticaTest {
                     if ("findByAtletaIdOrderByDataAsc".equals(name)) return Collections.emptyList();
                     if ("deleteByAtletaId".equals(name)) return null;
                     if ("flush".equals(name)) return null;
+                    if ("findTopByAtletaIdAndDataBeforeOrderByDataDesc".equals(name)) return Optional.empty();
                     if ("findByAtletaIdAndData".equals(name)) {
                         LocalDate data = (LocalDate) args[1];
                         diasAtualizados.add(data); // registra qual dia foi buscado
@@ -333,6 +334,10 @@ class TsbServiceImplRecalculoSemanticaTest {
                     LocalDate dataOntem = LocalDate.now().minusDays(1);
                     if ("deleteByAtletaId".equals(name)) return null;
                     if ("flush".equals(name)) return null;
+                    if ("findTopByAtletaIdAndDataBeforeOrderByDataDesc".equals(name)) {
+                        LocalDate data = (LocalDate) args[1];
+                        return dataOntem.equals(data.minusDays(1)) ? Optional.of(ultimaMetrica) : Optional.empty();
+                    }
                     if ("findByAtletaIdAndData".equals(name)) {
                         LocalDate data = (LocalDate) args[1];
                         diasAtualizados.add(data);

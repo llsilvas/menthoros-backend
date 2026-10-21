@@ -10,6 +10,7 @@ import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.PlanoAssessoria;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
@@ -202,6 +203,55 @@ class TsbRecalculoTransacionalIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("existsQueContamEntre: extremos excluídos, CANCELADO não conta, status NULL conta (R6)")
+    void existeTreinoQueContamEntre() {
+        LocalDate hoje = LocalDate.now(SP);
+        LocalDate de = hoje.minusDays(5);
+        Atleta atleta = criarAtleta("ExisteEntre");
+
+        salvarTreinoComEsforco(atleta, de);
+        salvarTreinoComEsforco(atleta, hoje);
+        salvarTreinoComEsforco(atleta, hoje.minusDays(3), StatusSincronizacao.CANCELADO);
+        assertThat(treinoRealizadoRepository.existsQueContamEntre(atleta.getId(), de, hoje))
+                .as("só treino nos extremos e um CANCELADO dentro: não conta").isFalse();
+
+        salvarTreinoComEsforco(atleta, hoje.minusDays(2), StatusSincronizacao.PENDENTE);
+        assertThat(treinoRealizadoRepository.existsQueContamEntre(atleta.getId(), de, hoje)).isTrue();
+
+        Atleta outro = criarAtleta("ExisteEntreNull");
+        salvarTreinoComEsforco(outro, hoje.minusDays(1));
+        assertThat(treinoRealizadoRepository.existsQueContamEntre(outro.getId(), de, hoje))
+                .as("status NULL (FIT/manual) conta").isTrue();
+        assertThat(treinoRealizadoRepository.existsQueContamEntre(atleta.getId(), hoje.minusDays(1), hoje))
+                .as("intervalo sem dia interior").isFalse();
+    }
+
+    @Test
+    @DisplayName("seed com linha faltando: sem treino no intervalo decai; com treino no intervalo cai para zero (R6)")
+    void seedDefensivoContraPostgres() {
+        LocalDate hoje = LocalDate.now(SP);
+        Atleta semTreino = criarAtleta("SeedSemTreino");
+        salvarTreinoComEsforco(semTreino, hoje.minusDays(5));
+        tsbService.atualizarTsbDia(semTreino.getId(), hoje.minusDays(5));
+        double ctlBase = buscar(semTreino, hoje.minusDays(5)).getCtl();
+
+        tsbService.atualizarTsbDia(semTreino.getId(), hoje.minusDays(1));
+
+        double seed = buscar(semTreino, hoje.minusDays(1)).getCtlInicioDia();
+        assertThat(seed).as("decaiu, não zerou nem manteve").isGreaterThan(0.0).isLessThan(ctlBase);
+
+        Atleta comTreino = criarAtleta("SeedComTreino");
+        salvarTreinoComEsforco(comTreino, hoje.minusDays(5));
+        tsbService.atualizarTsbDia(comTreino.getId(), hoje.minusDays(5));
+        salvarTreinoComEsforco(comTreino, hoje.minusDays(3));
+
+        tsbService.atualizarTsbDia(comTreino.getId(), hoje.minusDays(1));
+
+        assertThat(buscar(comTreino, hoje.minusDays(1)).getCtlInicioDia())
+                .as("treino sem linha no intervalo: não publica valor plausível-mas-errado").isZero();
+    }
+
+    @Test
     @DisplayName("ingestão após buraco acima do teto: grava 400 dias, não falha, e a execução seguinte converge (R7/R9)")
     void ingestaoComBuracoAcimaDoTeto() {
         LocalDate hoje = LocalDate.now(SP);
@@ -301,7 +351,12 @@ class TsbRecalculoTransacionalIT extends AbstractIntegrationTest {
     }
 
     private void salvarTreinoComEsforco(Atleta atleta, LocalDate data) {
+        salvarTreinoComEsforco(atleta, data, null);
+    }
+
+    private void salvarTreinoComEsforco(Atleta atleta, LocalDate data, StatusSincronizacao status) {
         TreinoRealizado treino = new TreinoRealizado();
+        treino.setStatusSincronizacao(status);
         treino.setAtleta(atleta);
         treino.setDataTreino(data);
         treino.setDiaSemana(diaSemanaDe(data));

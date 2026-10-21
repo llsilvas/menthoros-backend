@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -81,8 +82,8 @@ public class TsbDiaPersister {
         MetricasDiarias metricasHoje = obterOuCriarMetricasDia(atleta, data);
         atualizarVolumeDiario(metricasHoje, treinosDoDia);
 
-        MetricasDiarias metricasOntem = buscarMetricasDiaAnterior(atletaId, data);
-        calcularEAtualizarMetricas(metricasHoje, metricasOntem, tssHoje, atletaId, data);
+        SeedAnterior seed = buscarSeedAnterior(atleta, data);
+        calcularEAtualizarMetricas(metricasHoje, seed, tssHoje, atletaId, data);
 
         metricasDiariasRepository.save(metricasHoje);
         if (atualizarMetaDadosHoje) {
@@ -135,17 +136,48 @@ public class TsbDiaPersister {
                         .build());
     }
 
-    private MetricasDiarias buscarMetricasDiaAnterior(UUID atletaId, LocalDate data) {
-        return metricasDiariasRepository
-                .findByAtletaIdAndData(atletaId, data.minusDays(1))
+    /**
+     * Seed de CTL/ATL do dia: a última métrica anterior, decaída com TSS 0 pelos dias sem linha entre
+     * ela e {@code data}. Só decai se não houver treino contabilizável nesses dias — nesse caso a
+     * linha que o registrava sumiu e decair publicaria um valor plausível porém errado, então cai no
+     * seed zero (comportamento anterior) e o WARN sinaliza reparo via recalcularDesde.
+     */
+    private SeedAnterior buscarSeedAnterior(Atleta atleta, LocalDate data) {
+        MetricasDiarias anterior = metricasDiariasRepository
+                .findTopByAtletaIdAndDataBeforeOrderByDataDesc(atleta.getId(), data)
                 .orElse(null);
+        if (anterior == null) {
+            return SeedAnterior.ZERO;
+        }
+        double ctl = anterior.getCtl() != null ? anterior.getCtl() : 0.0;
+        double atl = anterior.getAtl() != null ? anterior.getAtl() : 0.0;
+
+        long k = ChronoUnit.DAYS.between(anterior.getData(), data);
+        if (k <= 1) {
+            return new SeedAnterior(ctl, atl);
+        }
+        if (treinoRealizadoRepository.existsQueContamEntre(atleta.getId(), anterior.getData(), data)) {
+            log.warn("Seed do TSB de {} zerado: atleta {} tem treino entre {} e {} sem linha de métrica; "
+                    + "reparar com recalcularDesde a partir de {}",
+                    data, atleta.getId(), anterior.getData(), data, anterior.getData().plusDays(1));
+            return SeedAnterior.ZERO;
+        }
+        for (long i = 1; i < k; i++) {
+            ctl = calcularCtlCorreto(ctl, 0, atleta);
+            atl = calcularAtlCorreto(atl, 0, atleta);
+        }
+        return new SeedAnterior(ctl, atl);
     }
 
-    private void calcularEAtualizarMetricas(MetricasDiarias metricasHoje, MetricasDiarias metricasOntem,
+    private record SeedAnterior(double ctl, double atl) {
+        static final SeedAnterior ZERO = new SeedAnterior(0.0, 0.0);
+    }
+
+    private void calcularEAtualizarMetricas(MetricasDiarias metricasHoje, SeedAnterior seed,
                                             Integer tssHoje, UUID atletaId, LocalDate data) {
         Atleta atleta = metricasHoje.getAtleta();
-        double ctlAnterior = obterCtlAnterior(metricasOntem);
-        double atlAnterior = obterAtlAnterior(metricasOntem);
+        double ctlAnterior = seed.ctl();
+        double atlAnterior = seed.atl();
 
         double ctlInicio = ctlAnterior;
         double atlInicio = atlAnterior;
@@ -170,18 +202,6 @@ public class TsbDiaPersister {
         metricasHoje.setAtl(round(atlFim, 2));
         metricasHoje.setTsb(round(tsbFim, 2));
         metricasHoje.setRampRate(round(rampRate, 2));
-    }
-
-    private double obterCtlAnterior(MetricasDiarias metricasOntem) {
-        return metricasOntem != null && metricasOntem.getCtl() != null
-                ? metricasOntem.getCtl()
-                : 0.0;
-    }
-
-    private double obterAtlAnterior(MetricasDiarias metricasOntem) {
-        return metricasOntem != null && metricasOntem.getAtl() != null
-                ? metricasOntem.getAtl()
-                : 0.0;
     }
 
     private void logResultado(LocalDate data, MetricasDiarias metricas) {

@@ -17,6 +17,9 @@ public interface MetricasDiariasRepository extends JpaRepository<MetricasDiarias
 
     Optional<MetricasDiarias> findByAtletaIdAndData(UUID atletaId, LocalDate data);
 
+    /** Última métrica estritamente anterior a {@code data}: base do seed quando o dia anterior não tem linha. */
+    Optional<MetricasDiarias> findTopByAtletaIdAndDataBeforeOrderByDataDesc(UUID atletaId, LocalDate data);
+
     /**
      * Variante tenant-aware de {@link #findByAtletaIdAndData}, para callers que ainda não
      * validaram {@code atletaId} contra o tenant antes de chamar este repository (defesa em

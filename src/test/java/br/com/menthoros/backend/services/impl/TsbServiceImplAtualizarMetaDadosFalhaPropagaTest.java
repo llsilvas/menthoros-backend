@@ -77,6 +77,7 @@ class TsbServiceImplAtualizarMetaDadosFalhaPropagaTest {
                     String name = method.getName();
                     if ("findDataUltimaMetrica".equals(name)) return null; // fim = hoje
                     if ("lockAtleta".equals(name)) return null;
+                    if ("findTopByAtletaIdAndDataBeforeOrderByDataDesc".equals(name)) return Optional.empty();
                     if ("findByAtletaIdAndData".equals(name)) return Optional.empty();
                     if ("save".equals(name)) return args[0];
                     if ("toString".equals(name)) return "MetricasDiariasRepositoryStub";
