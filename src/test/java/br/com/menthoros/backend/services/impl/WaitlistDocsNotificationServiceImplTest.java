@@ -57,7 +57,7 @@ class WaitlistDocsNotificationServiceImplTest {
     @DisplayName("CA1 — inscrito elegível reivindicado com sucesso recebe o e-mail com o link da central de ajuda")
     void enviaParaElegivel() {
         var coach = inscrito("Ana", "ana@exemplo.com");
-        when(waitlistRepository.findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.TREINADOR))
+        when(waitlistRepository.findAllByPerfilInAndDocsNotifiedAtIsNull(List.of(PerfilWaitlist.TREINADOR, PerfilWaitlist.PROPRIETARIO)))
                 .thenReturn(List.of(coach));
         when(waitlistRepository.reivindicarAvisoDocs(eq(coach.getId()), any())).thenReturn(1);
 
@@ -75,7 +75,7 @@ class WaitlistDocsNotificationServiceImplTest {
     @Test
     @DisplayName("CA2 — sem elegíveis, nenhum e-mail é (re)enviado — idempotência")
     void semElegiveisNaoReenvia() {
-        when(waitlistRepository.findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.TREINADOR))
+        when(waitlistRepository.findAllByPerfilInAndDocsNotifiedAtIsNull(List.of(PerfilWaitlist.TREINADOR, PerfilWaitlist.PROPRIETARIO)))
                 .thenReturn(List.of());
 
         var resultado = service.notificar();
@@ -85,15 +85,15 @@ class WaitlistDocsNotificationServiceImplTest {
     }
 
     @Test
-    @DisplayName("CA3 — só busca perfil TREINADOR (ATLETA nunca entra na query)")
-    void soConsultaTreinador() {
-        when(waitlistRepository.findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.TREINADOR))
+    @DisplayName("CA3 — só busca TREINADOR/PROPRIETARIO (ATLETA nunca entra na query)")
+    void soConsultaTreinadorOuProprietario() {
+        when(waitlistRepository.findAllByPerfilInAndDocsNotifiedAtIsNull(List.of(PerfilWaitlist.TREINADOR, PerfilWaitlist.PROPRIETARIO)))
                 .thenReturn(List.of());
 
         service.notificar();
 
-        verify(waitlistRepository).findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.TREINADOR);
-        verify(waitlistRepository, never()).findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.ATLETA);
+        verify(waitlistRepository).findAllByPerfilInAndDocsNotifiedAtIsNull(List.of(PerfilWaitlist.TREINADOR, PerfilWaitlist.PROPRIETARIO));
+        verify(waitlistRepository, never()).findAllByPerfilInAndDocsNotifiedAtIsNull(List.of(PerfilWaitlist.ATLETA));
     }
 
     @Test
@@ -101,7 +101,7 @@ class WaitlistDocsNotificationServiceImplTest {
     void falhaParcialNaoInterrompeOLote() {
         var falha = inscrito("Bruno", "bruno@exemplo.com");
         var sucesso = inscrito("Carla", "carla@exemplo.com");
-        when(waitlistRepository.findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.TREINADOR))
+        when(waitlistRepository.findAllByPerfilInAndDocsNotifiedAtIsNull(List.of(PerfilWaitlist.TREINADOR, PerfilWaitlist.PROPRIETARIO)))
                 .thenReturn(List.of(falha, sucesso));
         when(waitlistRepository.reivindicarAvisoDocs(any(), any())).thenReturn(1);
         org.mockito.Mockito.doThrow(new EmailDeliveryException("SMTP recusou", new RuntimeException("535")))
@@ -118,7 +118,7 @@ class WaitlistDocsNotificationServiceImplTest {
     @Test
     @DisplayName("CA5 — nenhum inscrito pendente: contagem zerada, sem efeitos colaterais")
     void nenhumPendente() {
-        when(waitlistRepository.findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.TREINADOR))
+        when(waitlistRepository.findAllByPerfilInAndDocsNotifiedAtIsNull(List.of(PerfilWaitlist.TREINADOR, PerfilWaitlist.PROPRIETARIO)))
                 .thenReturn(List.of());
 
         var resultado = service.notificar();
@@ -133,7 +133,7 @@ class WaitlistDocsNotificationServiceImplTest {
     @DisplayName("CA8 — reivindicação perdida (corrida com outra chamada) é pulada, sem enviar e-mail")
     void reivindicacaoPerdidaEPulada() {
         var disputado = inscrito("Duda", "duda@exemplo.com");
-        when(waitlistRepository.findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.TREINADOR))
+        when(waitlistRepository.findAllByPerfilInAndDocsNotifiedAtIsNull(List.of(PerfilWaitlist.TREINADOR, PerfilWaitlist.PROPRIETARIO)))
                 .thenReturn(List.of(disputado));
         when(waitlistRepository.reivindicarAvisoDocs(eq(disputado.getId()), any())).thenReturn(0);
 

@@ -25,6 +25,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -56,11 +57,12 @@ public class ProvaNoPlanoService {
      * Side Effects: NONE (opera em DTOs em memória; nenhuma leitura fora de `provaRepository`).
      * Tenant-aware: N/A — `atleta` já resolvido pelo chamador dentro do tenant corrente.
      *
-     * <p>Para cada prova não cancelada do atleta com {@code dataProva} em
-     * {@code [semanaInicio, semanaFim]}, remove os DTOs do mesmo {@code diaSemana} e insere o
-     * treino {@code PROVA} construído por {@link #construirTreinoProva}. Prova cancelada não
-     * gera treino. Duas provas no mesmo dia geram dois treinos {@code PROVA} (risco aceito no
-     * design — caso raro, sem regra especial).
+     * <p>Para as provas não canceladas do atleta com {@code dataProva} em
+     * {@code [semanaInicio, semanaFim]}, remove <b>uma vez</b> os DTOs dos dias dessas provas e
+     * insere o treino {@code PROVA} de cada uma, construído por {@link #construirTreinoProva}.
+     * Prova cancelada não gera treino. Duas provas no mesmo dia geram dois treinos {@code PROVA}, um
+     * por {@code provaId} — remover o dia a cada prova apagaria a anterior. Como o dia é limpo antes
+     * de inserir, uma PROVA que já veio na lista (da validação) não é duplicada.
      */
     public List<TreinoPlanejadoLlmDto> garantirProvasNaSemana(List<TreinoPlanejadoLlmDto> treinosLlm,
                                                                Atleta atleta,
@@ -73,23 +75,40 @@ public class ProvaNoPlanoService {
             return treinosLlm;
         }
 
-        List<TreinoPlanejadoLlmDto> resultado = new java.util.ArrayList<>(treinosLlm);
+        Set<String> diasDasProvas = provasDaSemana.stream()
+                .map(p -> Utils.converterDayOfWeekParaDiaSemana(p.getDataProva().getDayOfWeek()).name())
+                .collect(Collectors.toSet());
+
+        List<TreinoPlanejadoLlmDto> resultado = treinosLlm.stream()
+                .filter(t -> !diasDasProvas.contains(t.diaSemana()))
+                .collect(Collectors.toCollection(java.util.ArrayList::new));
 
         for (Prova prova : provasDaSemana) {
-            DiaSemana diaDaProva = Utils.converterDayOfWeekParaDiaSemana(prova.getDataProva().getDayOfWeek());
-            String diaDaProvaNome = diaDaProva.name();
-
-            resultado = resultado.stream()
-                    .filter(t -> !diaDaProvaNome.equals(t.diaSemana()))
-                    .collect(Collectors.toCollection(java.util.ArrayList::new));
-
             resultado.add(construirTreinoProva(prova, atleta));
 
-            log.info("Prova '{}' garantida no plano: dia={}, provaId={}",
-                    prova.getNomeProva(), diaDaProvaNome, prova.getId());
+            // Achado do /qa: reconvertia o mesmo dia já calculado em diasDasProvas. Reusa o DTO
+            // que acabou de ser adicionado, em vez de recalcular.
+            log.info("Prova '{}' garantida no plano: dia={}, provaId={}", prova.getNomeProva(),
+                    resultado.get(resultado.size() - 1).diaSemana(), prova.getId());
         }
 
         return resultado;
+    }
+
+    /**
+     * Idempotent: YES — leitura pura. Side Effects: NONE (só {@code provaRepository}).
+     * Tenant-aware: N/A — {@code atleta} já resolvido pelo chamador dentro do tenant corrente.
+     *
+     * <p>Prova não cancelada no dia anterior ao início da semana: o D+1 dela é o primeiro dia deste
+     * plano, que não a enxerga (a janela do prompt começa na segunda). Com duas provas no mesmo dia,
+     * a primeira — o caso raro que o design aceita.
+     */
+    public Optional<Prova> provaNoDiaAnteriorAoInicio(Atleta atleta, LocalDate inicioSemana) {
+        LocalDate diaAnterior = inicioSemana.minusDays(1);
+        return provaRepository
+                .findByAtletaAndDataProvaBetweenOrderByDataProvaAsc(atleta, diaAnterior, diaAnterior)
+                .stream()
+                .findFirst();
     }
 
     /**

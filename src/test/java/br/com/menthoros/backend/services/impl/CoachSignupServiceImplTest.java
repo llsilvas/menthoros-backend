@@ -5,14 +5,17 @@ import br.com.menthoros.backend.dto.output.CoachSignupOutputDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.SignupProvisioning;
 import br.com.menthoros.backend.entity.Usuario;
+import br.com.menthoros.backend.enums.PerfilWaitlist;
 import br.com.menthoros.backend.enums.SignupProvisioningStatus;
 import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
 import br.com.menthoros.backend.exception.KeycloakIntegrationException;
 import br.com.menthoros.backend.exception.SignupRateLimitException;
+import br.com.menthoros.backend.entity.Waitlist;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.SignupProvisioningRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
+import br.com.menthoros.backend.repository.WaitlistRepository;
 import br.com.menthoros.backend.services.FoundingInviteService;
 import br.com.menthoros.backend.repository.FoundingInviteRepository;
 import br.com.menthoros.backend.entity.FoundingInvite;
@@ -21,6 +24,7 @@ import br.com.menthoros.backend.enums.ProvisioningOrigin;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import br.com.menthoros.backend.services.KeycloakOrganizationGateway;
@@ -68,6 +72,7 @@ class CoachSignupServiceImplTest {
     @Mock private KeycloakOrganizationGateway keycloak;
     @Mock private FoundingInviteService foundingInviteService;
     @Mock private FoundingInviteRepository foundingInviteRepository;
+    @Mock private WaitlistRepository waitlistRepository;
 
     private CoachSignupServiceImpl service;
 
@@ -88,7 +93,7 @@ class CoachSignupServiceImplTest {
         meterRegistry = new SimpleMeterRegistry();
         service = new CoachSignupServiceImpl(assessoriaRepository, usuarioRepository,
                 provisioningRepository, keycloak, foundingInviteService, foundingInviteRepository,
-                meterRegistry, LIMITE_POR_EMAIL_DIA, TETO_DIARIO);
+                waitlistRepository, meterRegistry, LIMITE_POR_EMAIL_DIA, TETO_DIARIO);
     }
 
     /**
@@ -732,6 +737,17 @@ class CoachSignupServiceImplTest {
             when(foundingInviteService.findActive(TOKEN)).thenReturn(Optional.of(convite));
         }
 
+        /** add-waitlist-status-lifecycle: lead correspondente ao convite, para os testes de status. */
+        private void stubLeadDoConvite() {
+            Waitlist lead = Waitlist.builder()
+                    .id(convite.getWaitlistId())
+                    .nome("Maria").email("maria@exemplo.com").emailNormalized("maria@exemplo.com")
+                    .perfil(PerfilWaitlist.TREINADOR).aceiteLgpd(true)
+                    .invitedAt(Instant.now())
+                    .build();
+            when(waitlistRepository.findById(convite.getWaitlistId())).thenReturn(Optional.of(lead));
+        }
+
         @Test
         @DisplayName("token inválido → DomainNotFoundException, nada é criado")
         void tokenInvalido() {
@@ -883,6 +899,69 @@ class CoachSignupServiceImplTest {
             assertThat(convite.getConvertedAt()).isNull();
             assertThat(convite.getAssessoriaId()).isNull();
             verify(foundingInviteRepository, org.mockito.Mockito.times(2)).save(convite);
+        }
+
+        @Test
+        @DisplayName("CA3 (add-waitlist-status-lifecycle) — no sucesso o lead da waitlist recebe activatedAt e assessoriaId")
+        void consomeOConviteAtivaOLead() {
+            stubConviteAtivo();
+            stubLeadDoConvite();
+            stubProvisionamentoFeliz();
+
+            service.cadastrar(entradaComConvite(), CHAVE, CORR);
+
+            var captor = ArgumentCaptor.forClass(Waitlist.class);
+            verify(waitlistRepository).save(captor.capture());
+            assertThat(captor.getValue().getActivatedAt()).isNotNull();
+            assertThat(captor.getValue().getAssessoriaId()).isEqualTo(assessoriaId);
+        }
+
+        @Test
+        @DisplayName("achado do code review (add-waitlist-status-lifecycle) — falha ao salvar o lead "
+                + "dentro de consumirConvite ainda reabre o convite, não trava convertedAt para sempre")
+        void falhaAoAtivarOLeadAindaReabreOConvite() {
+            stubConviteAtivo();
+            stubLeadDoConvite();
+            stubProvisionamentoFeliz();
+            // Falha só na 1a chamada (dentro de consumirConvite); a 2a (dentro da compensação,
+            // reabrirConvite) sucede — isola o que este teste quer provar.
+            when(waitlistRepository.save(any(Waitlist.class)))
+                    .thenThrow(new org.springframework.dao.DataIntegrityViolationException("boom"))
+                    .thenAnswer(i -> i.getArgument(0));
+
+            assertThatThrownBy(() -> service.cadastrar(entradaComConvite(), CHAVE, CORR))
+                    .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+            assertThat(convite.getConvertedAt()).isNull();
+            assertThat(convite.getAssessoriaId()).isNull();
+            verify(foundingInviteRepository, org.mockito.Mockito.times(2)).save(convite);
+        }
+
+        @Test
+        @DisplayName("CA4 (add-waitlist-status-lifecycle) — falha depois do consumo reabre o lead de volta a INVITED")
+        void falhaAposConsumoReabreOLeadTambem() {
+            stubConviteAtivo();
+            stubLeadDoConvite();
+            stubAteOrganizacao();
+            when(keycloak.criarUsuario(any())).thenReturn(usuarioKeycloakId.toString());
+            when(usuarioRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+            when(provisioningRepository.save(any())).thenAnswer(i -> {
+                SignupProvisioning r = i.getArgument(0);
+                if (r.getStatus() == SignupProvisioningStatus.ACTIVE) {
+                    throw new org.springframework.dao.DataIntegrityViolationException("boom");
+                }
+                return r;
+            });
+
+            assertThatThrownBy(() -> service.cadastrar(entradaComConvite(), CHAVE, CORR))
+                    .isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+
+            var captor = ArgumentCaptor.forClass(Waitlist.class);
+            verify(waitlistRepository, org.mockito.Mockito.times(2)).save(captor.capture());
+            Waitlist ultimo = captor.getAllValues().get(captor.getAllValues().size() - 1);
+            assertThat(ultimo.getActivatedAt()).isNull();
+            assertThat(ultimo.getAssessoriaId()).isNull();
+            assertThat(ultimo.getInvitedAt()).isNotNull(); // volta a INVITED, não a NEW
         }
 
         @Test

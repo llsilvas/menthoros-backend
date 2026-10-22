@@ -2,6 +2,7 @@ package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.output.AthleteWorkoutAnalysisOutputDto;
 import br.com.menthoros.backend.enums.AnaliseStatus;
+import br.com.menthoros.backend.enums.WorkoutPlanVerdict;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.security.JwtTenantFilter;
 import br.com.menthoros.backend.security.StructuredLoggingFilter;
@@ -63,7 +64,8 @@ class AtletaWorkoutAnalysisControllerTest {
                         "Você segurou o ritmo.", "Saiu como planejado.", "Pesou mais que o esperado.",
                         "Capriche no sono.",
                         new AthleteWorkoutAnalysisOutputDto.Executado(58L, new BigDecimal("11.2"), 7),
-                        new AthleteWorkoutAnalysisOutputDto.Planejado(61L, new BigDecimal("11.0"), 6))));
+                        new AthleteWorkoutAnalysisOutputDto.Planejado(61L, new BigDecimal("11.0"), 6),
+                        WorkoutPlanVerdict.DENTRO_DO_PLANO)));
 
         mockMvc.perform(get("/api/v1/atletas/me/realizados/{id}/analise", treinoId))
                 .andExpect(status().isOk())
@@ -71,9 +73,25 @@ class AtletaWorkoutAnalysisControllerTest {
                 .andExpect(jsonPath("$.comoFoi").value("Saiu como planejado."))
                 .andExpect(jsonPath("$.executado.duracaoMin").value(58))
                 .andExpect(jsonPath("$.planejado.rpeEsperado").value(6))
+                .andExpect(jsonPath("$.veredito").value("DENTRO_DO_PLANO"))
                 .andExpect(jsonPath("$.technicalInterpretation").doesNotExist())
                 .andExpect(jsonPath("$.executionScore").doesNotExist())
                 .andExpect(jsonPath("$.primaryCause").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("sem planejado vinculado, o campo veredito não aparece no JSON")
+    void semPlanejadoOmiteVeredito() throws Exception {
+        when(atletaWorkoutAnalysisService.buscarAnalise(atletaId, treinoId)).thenReturn(Optional.of(
+                new AthleteWorkoutAnalysisOutputDto(AnaliseStatus.PENDING, null,
+                        null, null, null, null,
+                        new AthleteWorkoutAnalysisOutputDto.Executado(58L, new BigDecimal("11.2"), 7),
+                        null, null)));
+
+        mockMvc.perform(get("/api/v1/atletas/me/realizados/{id}/analise", treinoId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.veredito").doesNotExist());
     }
 
     @Test

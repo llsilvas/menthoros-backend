@@ -14,9 +14,11 @@ import br.com.menthoros.backend.domain.planner.SessionSlot;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import java.time.DayOfWeek;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.services.helper.FatigueSignal;
 import br.com.menthoros.backend.services.helper.FatigueSignalsService;
+import br.com.menthoros.backend.services.helper.PosProvaSemanaAnterior;
 import br.com.menthoros.backend.services.helper.WeeklyCoverageContext;
 import br.com.menthoros.backend.services.helper.IntervaladoElegibilidadeService;
 import br.com.menthoros.backend.services.helper.PaceZoneCalculator;
@@ -26,7 +28,9 @@ import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider.Contexto
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaCompleta;
 import br.com.menthoros.backend.services.impl.MetricasAlertaService;
+import br.com.menthoros.backend.services.plano.ProvaNoPlanoService;
 import br.com.menthoros.backend.services.prompt.constraint.Constraint;
+import br.com.menthoros.backend.util.Utils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
@@ -64,6 +68,7 @@ public class PlanoTreinoPromptBuilder {
     private final ThresholdConstraintFormatter thresholdConstraintFormatter;
     private final ReadinessPromptFormatter readinessPromptFormatter;
     private final WeeklyReviewPromptFormatter weeklyReviewPromptFormatter;
+    private final ProvaNoPlanoService provaNoPlanoService;
 
     public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource,
                                     PromptTemplateLoader templateLoader,
@@ -83,7 +88,8 @@ public class PlanoTreinoPromptBuilder {
                                     PaceZoneCalculator paceZoneCalculator,
                                     ThresholdConstraintFormatter thresholdConstraintFormatter,
                                     ReadinessPromptFormatter readinessPromptFormatter,
-                                    WeeklyReviewPromptFormatter weeklyReviewPromptFormatter) {
+                                    WeeklyReviewPromptFormatter weeklyReviewPromptFormatter,
+                                    ProvaNoPlanoService provaNoPlanoService) {
         this.templateLoader = templateLoader;
         this.metricasAlertaService = metricasAlertaService;
         this.zonaTreinoService = zonaTreinoService;
@@ -102,6 +108,7 @@ public class PlanoTreinoPromptBuilder {
         this.thresholdConstraintFormatter = thresholdConstraintFormatter;
         this.readinessPromptFormatter = readinessPromptFormatter;
         this.weeklyReviewPromptFormatter = weeklyReviewPromptFormatter;
+        this.provaNoPlanoService = provaNoPlanoService;
         try {
             this.promptTemplate = new String(promptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -251,12 +258,26 @@ public class PlanoTreinoPromptBuilder {
         // cobertura não roda — então o bloco também não é escrito. Pedir cobertura no prompt e não
         // cobrar na validação foi o que levou a LLM a inventar um descanso não autorizado na geração
         // real de 22/09 16:39 (o ambiente local roda com PLANNER_ENGINE_ENABLED=true).
+        //
+        // O dia de uma prova da semana também é dia a cobrir: a PROVA entra nele mesmo que o atleta não o
+        // tenha configurado como disponível. Sem isso a cobertura rejeita a prova do dia por "dia
+        // indisponível" e o turno de reparo empurra o longo para a véspera.
+        List<Prova> provasDaSemana = provasNaJanelaEfetiva(
+                provaAlvo, ctx.provasPreparatorias(), inicioSemana, diasEfetivos != null, ctx.dataReferencia());
+        List<DiaSemana> diasDeProva = provasDaSemana.stream()
+                .map(p -> Utils.converterDayOfWeekParaDiaSemana(p.getDataProva().getDayOfWeek()))
+                .distinct()
+                .toList();
+        List<DiaSemana> diasACobrir =
+                comDiasDeProva(diasEfetivos != null ? diasEfetivos : atleta.getDiasDisponiveis(), diasDeProva);
         WeeklyCoverageContext cobertura = skeleton != null ? null : new WeeklyCoverageContext(
-                diasEfetivos != null ? diasEfetivos : atleta.getDiasDisponiveis(),
+                diasACobrir,
                 sinaisFadiga,
                 diasEfetivos != null,
                 metaDados != null ? metaDados.getDiaPreferidoLongo() : null,
-                maxDiasConsecutivos);
+                maxDiasConsecutivos,
+                provasDaSemana.stream().map(p -> provaNoPlanoService.construirTreinoProva(p, atleta)).toList(),
+                resolverPosProva(atleta, inicioSemana, diasACobrir));
         String alertasObrigatorios = alertasPromptFormatter.gerarAlertasObrigatorios(
                 atleta, metaDados, maxDiasConsecutivos, ctx.treinosUltimas4Semanas(), ctx.dataReferencia());
 
@@ -265,7 +286,10 @@ public class PlanoTreinoPromptBuilder {
 
         // 4. EVENTO COMPETITIVO NA SEMANA (regra mandatória baseada na semana planejada)
         String eventoCompetitivoSemana = periodizacaoPromptFormatter.formatarEventoCompetitivoSemana(
-                provaAlvo, ctx.provasPreparatorias(), inicioSemana);
+                provaAlvo, ctx.provasPreparatorias(), inicioSemana)
+                // Sem cobertura (skeleton) o planner é dono da semana: nada de restrição de texto.
+                + periodizacaoPromptFormatter.formatarPosProvaSemanaAnterior(
+                        cobertura != null ? cobertura.posProva() : null);
 
         // 5. RESTRIÇÕES E LESÕES
         String restricoesLesoes = alertasPromptFormatter.formatarRestricoesLesoes(atleta, ctx.dataReferencia());
@@ -333,7 +357,10 @@ public class PlanoTreinoPromptBuilder {
         }
 
         // ETAPA 4: Disponibilidade e padrões de treino
-        historicoCompleto.append(disponibilidadePromptFormatter.formatarDisponibilidade(atleta, metaDados, inicioSemana, diasEfetivos)).append("\n\n");
+        // SEMANA_ATUAL lista os dias restantes: o dia da prova entra nela; PROXIMA_SEMANA (null) segue null.
+        List<DiaSemana> diasRestantes = diasEfetivos != null ? comDiasDeProva(diasEfetivos, diasDeProva) : null;
+        historicoCompleto.append(disponibilidadePromptFormatter.formatarDisponibilidade(
+                atleta, metaDados, inicioSemana, diasRestantes, diasDeProva)).append("\n\n");
         historicoCompleto.append(coberturaSemanalPromptFormatter.formatar(cobertura)).append("\n\n");
 
         // ETAPA 5: Análise de estímulos recentes
@@ -490,6 +517,55 @@ public class PlanoTreinoPromptBuilder {
         sb.append("\n(Estas regras são determinísticas, baseadas em dados reais do atleta, e ");
         sb.append("SUBSTITUEM qualquer raciocínio independente. Não as viole.)\n\n");
         return sb.toString();
+    }
+
+    /**
+     * Dias da semana das provas não canceladas que ainda cabem na geração. Em SEMANA_ATUAL a janela
+     * começa amanhã: {@code RegraGeracaoTreino.diaSemanaJaPassou} trata hoje como dia passado, então
+     * uma prova de hoje (ou de dia anterior) não é dia a cobrir — o persister ainda a grava.
+     */
+    private static List<Prova> provasNaJanelaEfetiva(@Nullable Prova provaAlvo, List<Prova> preparatorias,
+                                                     LocalDate inicioSemana, boolean semanaAtual,
+                                                     LocalDate hoje) {
+        LocalDate inicio = semanaAtual && !hoje.isBefore(inicioSemana) ? hoje.plusDays(1) : inicioSemana;
+        LocalDate fim = inicioSemana.plusDays(6);
+
+        List<Prova> candidatas = new ArrayList<>(preparatorias);
+        if (provaAlvo != null) {
+            candidatas.add(provaAlvo);
+        }
+        return candidatas.stream()
+                .filter(p -> p.getDataProva() != null && p.getStatusProva() != ProvaStatus.CANCELADA)
+                .filter(p -> !p.getDataProva().isBefore(inicio) && !p.getDataProva().isAfter(fim))
+                .distinct()
+                .sorted(java.util.Comparator.comparing(Prova::getDataProva))
+                .toList();
+    }
+
+    /**
+     * Prova no dia anterior ao início da semana: o primeiro dia do plano é o D+1 dela. Só interessa se
+     * esse dia é um dia a cobrir — senão não há o que proteger, e a consulta nem é feita.
+     */
+    private @Nullable PosProvaSemanaAnterior resolverPosProva(Atleta atleta, LocalDate inicioSemana,
+                                                             @Nullable List<DiaSemana> diasACobrir) {
+        DiaSemana primeiroDia = Utils.converterDayOfWeekParaDiaSemana(inicioSemana.getDayOfWeek());
+        if (diasACobrir == null || !diasACobrir.contains(primeiroDia)) {
+            return null;
+        }
+        return provaNoPlanoService.provaNoDiaAnteriorAoInicio(atleta, inicioSemana)
+                .map(p -> new PosProvaSemanaAnterior(primeiroDia, p.getNomeProva(), p.getDataProva()))
+                .orElse(null);
+    }
+
+    /** Dias a cobrir mais os dias de prova que ainda não estão neles; sem prova, devolve a lista como veio. */
+    private static @Nullable List<DiaSemana> comDiasDeProva(@Nullable List<DiaSemana> dias,
+                                                            List<DiaSemana> diasDeProva) {
+        if (diasDeProva.isEmpty()) {
+            return dias;
+        }
+        List<DiaSemana> uniao = new ArrayList<>(dias != null ? dias : List.of());
+        diasDeProva.stream().filter(d -> !uniao.contains(d)).forEach(uniao::add);
+        return uniao;
     }
 
     /**

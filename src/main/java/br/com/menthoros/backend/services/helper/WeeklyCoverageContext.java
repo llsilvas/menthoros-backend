@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FatigueSignalType;
 import org.jspecify.annotations.Nullable;
@@ -20,12 +21,20 @@ import java.util.Set;
  * @param semanaAtual        {@code true} em SEMANA_ATUAL — sinal do dia só vale aqui
  * @param diaPreferidoLongo  dia preferido para o treino longo, quando configurado
  * @param maxDiasConsecutivos máximo de dias consecutivos recomendado ao atleta
+ * @param provasDaSemana     treinos PROVA determinísticos das provas que ainda cabem na geração
+ *                           (fix-planner-ignora-prova-na-semana): entram na lista antes da validação,
+ *                           para a regra de vizinhança enxergá-los
+ * @param posProva           prova no dia anterior ao início da semana, quando o primeiro dia do plano é
+ *                           um dia a cobrir — o D+1 dela atravessa planos. Nada é inserido no plano:
+ *                           é só uma restrição (nenhum LONGO nem sessão intensa nesse dia)
  */
 public record WeeklyCoverageContext(List<DiaSemana> effectiveDays,
                                     List<FatigueSignal> fatigueSignals,
                                     boolean semanaAtual,
                                     @Nullable DiaSemana diaPreferidoLongo,
-                                    int maxDiasConsecutivos) {
+                                    int maxDiasConsecutivos,
+                                    List<TreinoPlanejadoLlmDto> provasDaSemana,
+                                    @Nullable PosProvaSemanaAnterior posProva) {
 
     /** Limite de dias efetivos abaixo do qual só o check-in do atleta libera descanso. */
     private static final int MINIMO_DIAS_PARA_DESCANSO = 4;
@@ -33,6 +42,28 @@ public record WeeklyCoverageContext(List<DiaSemana> effectiveDays,
     public WeeklyCoverageContext {
         effectiveDays = effectiveDays == null ? List.of() : List.copyOf(effectiveDays);
         fatigueSignals = fatigueSignals == null ? List.of() : List.copyOf(fatigueSignals);
+        provasDaSemana = provasDaSemana == null ? List.of() : List.copyOf(provasDaSemana);
+    }
+
+    /** Semana com provas, sem prova no dia anterior ao início. */
+    public WeeklyCoverageContext(List<DiaSemana> effectiveDays,
+                                 List<FatigueSignal> fatigueSignals,
+                                 boolean semanaAtual,
+                                 @Nullable DiaSemana diaPreferidoLongo,
+                                 int maxDiasConsecutivos,
+                                 List<TreinoPlanejadoLlmDto> provasDaSemana) {
+        this(effectiveDays, fatigueSignals, semanaAtual, diaPreferidoLongo, maxDiasConsecutivos,
+                provasDaSemana, null);
+    }
+
+    /** Semana sem prova: o contexto de antes da change. */
+    public WeeklyCoverageContext(List<DiaSemana> effectiveDays,
+                                 List<FatigueSignal> fatigueSignals,
+                                 boolean semanaAtual,
+                                 @Nullable DiaSemana diaPreferidoLongo,
+                                 int maxDiasConsecutivos) {
+        this(effectiveDays, fatigueSignals, semanaAtual, diaPreferidoLongo, maxDiasConsecutivos,
+                List.of(), null);
     }
 
     /**

@@ -127,7 +127,7 @@ public class ConfidenceScorerImpl implements ConfidenceScorer {
             if (dispositivoMarca == null) {
                 return 0;
             }
-            return FontePriority.deDispositivo(dispositivoMarca) <= PRIORIDADE_FONTE_CONFIAVEL_MAXIMA
+            return dispositivoMarca.prior() <= PRIORIDADE_FONTE_CONFIAVEL_MAXIMA
                     ? PESO_FONTE_CONFIAVEL : 0;
         }
         long confiaveis = historico.stream()

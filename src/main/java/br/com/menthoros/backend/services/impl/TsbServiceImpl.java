@@ -15,6 +15,7 @@ import br.com.menthoros.backend.services.MelhorEsforcoService;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
 import br.com.menthoros.backend.services.TsbService;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.PaceLimiarResolvido;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 import br.com.menthoros.backend.services.helper.TsbRecalculoExecutor;
@@ -22,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -45,6 +47,8 @@ public class TsbServiceImpl implements TsbService {
     private final PlanoMetadadosService planoMetadadosService;
     private final TsbDiaPersister tsbDiaPersister;
     private final MelhorEsforcoService melhorEsforcoService;
+    private final AtletaHojeResolver atletaHojeResolver;
+    private final TsbRecalculoTransacional tsbRecalculoTransacional;
 
     /** Tamanho do bloco transacional do recálculo histórico. */
     static final int DIAS_POR_BLOCO = 30;
@@ -81,18 +85,13 @@ public class TsbServiceImpl implements TsbService {
      * ({@link #recalcularHistoricoCompleto}); mitigação (`@Version` em `PlanoMetaDados`) fica fora
      * do escopo desta change mecânica.
      *
-     * <p><b>Acoplamento a "hoje" (achado de QA, code-reviewer):</b> a resolução de pace usa a
-     * `data` recebida como referência de staleness/janela, enquanto FC
-     * ({@link TsbDiaPersister#atualizarMetaDados}) sempre usa {@code LocalDate.now()}. Hoje isso
-     * nunca diverge porque o único caller com `data` histórica ({@link #processarDiasDescanso}) é
-     * código morto (sem caller de produção, fora de {@link br.com.menthoros.backend.services.TsbService}).
-     * Se esse método for reativado, FC e pace passam a decidir staleness com "hoje" diferentes.
-     *
      * Idempotent: YES — recalcular o mesmo dia produz o mesmo resultado.
      * Side Effects: Database insert/update da métrica do dia e do PlanoMetaDados.
      * Tenant-aware: NO
      */
     public void atualizarTsbDia(UUID atletaId, LocalDate data) {
+        validarEntrada(atletaId, data);
+        validarNaoFuturo(atletaId, data);
         PaceLimiarResolvido paceResolvido = resolverPaceSeNecessario(atletaId, data);
         tsbDiaPersister.atualizarDiaTransacional(atletaId, data, true, paceResolvido);
     }
@@ -110,19 +109,71 @@ public class TsbServiceImpl implements TsbService {
     @Override
     public void recalcularDesde(UUID atletaId, LocalDate data) {
         validarEntrada(atletaId, data);
+        LocalDate hoje = hojeDo(atletaId);
+        validarNaoFuturo(data, hoje);
 
         LocalDate ultimoDia = metricasDiariasRepository.findDataUltimaMetrica(atletaId);
-        LocalDate fim = (ultimoDia == null || ultimoDia.isBefore(LocalDate.now()))
-                ? LocalDate.now()
-                : ultimoDia;
+        LocalDate fim = (ultimoDia == null || ultimoDia.isBefore(hoje)) ? hoje : ultimoDia;
 
-        log.info("Recalculando TSB de {} para atleta {} até {}", data, atletaId, fim);
+        recalcularIntervalo(atletaId, data, fim, hoje);
+    }
 
-        PaceLimiarResolvido paceResolvido = resolverPaceSeNecessario(atletaId, fim);
-        for (LocalDate dia = data; !dia.isAfter(fim); dia = dia.plusDays(1)) {
-            boolean ultimoDiaDoLaco = dia.equals(fim);
-            tsbDiaPersister.atualizarDiaTransacional(
-                    atletaId, dia, ultimoDiaDoLaco, ultimoDiaDoLaco ? paceResolvido : null);
+    /**
+     * Mesma semântica de {@link #recalcularDesde(UUID, LocalDate)}, mas com {@code fim} decidido
+     * pelo chamador (job de decaimento e reparo resolvem o "hoje" do atleta uma única vez).
+     * Metadados só são gravados quando {@code fim} alcança o hoje do atleta.
+     *
+     * Sem {@code @Transactional}, pelo mesmo motivo do método de dois argumentos.
+     *
+     * Idempotent: YES — recalcular o mesmo intervalo produz o mesmo resultado.
+     * Side Effects: Database insert/update das métricas de cada dia do intervalo e, quando
+     * {@code fim} é o hoje do atleta, do PlanoMetaDados.
+     * Tenant-aware: NO
+     */
+    @Override
+    public void recalcularDesde(UUID atletaId, LocalDate inicio, LocalDate fim) {
+        validarEntrada(atletaId, inicio);
+        if (fim == null) {
+            throw new IllegalArgumentException("fim não pode ser nulo");
+        }
+        if (inicio.isAfter(fim)) {
+            throw new IllegalArgumentException("inicio (" + inicio + ") não pode ser posterior a fim (" + fim + ")");
+        }
+        LocalDate hoje = hojeDo(atletaId);
+        validarNaoFuturo(fim, hoje);
+
+        recalcularIntervalo(atletaId, inicio, fim, hoje);
+    }
+
+    private void recalcularIntervalo(UUID atletaId, LocalDate inicio, LocalDate fim, LocalDate hoje) {
+        log.info("Recalculando TSB de {} para atleta {} até {}", inicio, atletaId, fim);
+
+        // Metadados só quando o intervalo alcança o hoje do atleta: bloco intermediário de um
+        // atraso longo não pode carimbar limiares/CTL atual com um dia que não é o atual.
+        boolean gravaMetadados = !fim.isBefore(hoje);
+        // Na ingestão a transação do chamador já existe, e resolverPaceSeNecessario carrega os treinos
+        // dos últimos 30 dias nela. Sem o lock antes, uma ingestão concorrente que confirme enquanto
+        // esta espera deixaria no contexto do Hibernate o TSS antigo, e o recálculo o gravaria por
+        // cima do novo. No job não há transação aqui (o pace resolve fora dela): o lock vem no bean.
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            metricasDiariasRepository.lockAtleta(atletaId);
+        }
+        PaceLimiarResolvido paceResolvido = gravaMetadados ? resolverPaceSeNecessario(atletaId, fim) : null;
+        tsbRecalculoTransacional.recalcularIntervalo(atletaId, inicio, fim, gravaMetadados, paceResolvido);
+    }
+
+    /** "Hoje" no fuso do atleta; atleta inexistente cai no fuso padrão e o persister rejeita depois. */
+    private LocalDate hojeDo(UUID atletaId) {
+        return atletaHojeResolver.hojeDe(atletaRepository.findById(atletaId).orElse(null));
+    }
+
+    private void validarNaoFuturo(UUID atletaId, LocalDate data) {
+        validarNaoFuturo(data, hojeDo(atletaId));
+    }
+
+    private void validarNaoFuturo(LocalDate data, LocalDate hoje) {
+        if (data.isAfter(hoje)) {
+            throw new IllegalArgumentException("data não pode ser futura: " + data);
         }
     }
 
@@ -207,9 +258,6 @@ public class TsbServiceImpl implements TsbService {
         if (data == null) {
             throw new IllegalArgumentException("data não pode ser nula");
         }
-        if (data.isAfter(LocalDate.now())) {
-            throw new IllegalArgumentException("data não pode ser futura: " + data);
-        }
     }
 
     /**
@@ -260,27 +308,6 @@ public class TsbServiceImpl implements TsbService {
         // treino real registrado, não só quando recalcularHistoricoCompleto roda — este método já
         // é chamado tanto pelo caminho incremental (recalcularDesde) quanto pelo completo.
         tsbDiaPersister.recalcularSemanasProgressao(atletaId);
-    }
-
-    /**
-     * Processa dias de descanso (ATL e CTL decaem naturalmente)
-     */
-    @Transactional
-    public void processarDiasDescanso(UUID atletaId, LocalDate dataInicio, LocalDate dataFim) {
-        LocalDate dataAtual = dataInicio;
-
-        while (!dataAtual.isAfter(dataFim)) {
-            // Verificar se já tem treino nesse dia
-            List<TreinoRealizado> treinos = treinoRealizadoRepository
-                    .findByAtletaIdAndDataTreino(atletaId, dataAtual);
-
-            if (treinos.isEmpty()) {
-                // Dia de descanso - TSS = 0, mas ATL/CTL decaem
-                atualizarTsbDia(atletaId, dataAtual);
-            }
-
-            dataAtual = dataAtual.plusDays(1);
-        }
     }
 
     /**

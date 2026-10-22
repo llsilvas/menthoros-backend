@@ -125,6 +125,47 @@ class ConstraintValidatorTest {
         }
     }
 
+    /**
+     * fix-planner-ignora-prova-na-semana (task 4.3, CA8): o dia de uma prova da semana e dia de
+     * treino mesmo fora da disponibilidade configurada — a PROVA entra nele.
+     */
+    @Nested
+    @DisplayName("validate — dia de prova da semana")
+    class DiaDeProva {
+
+        private final AthleteConstraints semDomingo = new AthleteConstraints(
+                List.of(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY), 5, 90, List.of());
+
+        @Test
+        @DisplayName("sessao no dia da prova nao e DIA_INDISPONIVEL")
+        void diaDaProvaIsento() {
+            List<SessionSlot> sessoes = List.of(sessao(DayOfWeek.MONDAY), sessao(DayOfWeek.SUNDAY));
+
+            ConstraintValidationResult resultado = validator.validate(semDomingo, sessoes, java.util.Set.of(DayOfWeek.SUNDAY));
+
+            assertThat(resultado.violations()).noneMatch(v -> v.key() == ConstraintViolationKey.DIA_INDISPONIVEL);
+        }
+
+        @Test
+        @DisplayName("prova em outro dia nao isenta: sessao no domingo continua DIA_INDISPONIVEL")
+        void provaEmOutroDiaNaoIsenta() {
+            List<SessionSlot> sessoes = List.of(sessao(DayOfWeek.MONDAY), sessao(DayOfWeek.SUNDAY));
+
+            ConstraintValidationResult resultado = validator.validate(semDomingo, sessoes, java.util.Set.of(DayOfWeek.SATURDAY));
+
+            assertThat(resultado.violations()).anyMatch(v -> v.key() == ConstraintViolationKey.DIA_INDISPONIVEL);
+        }
+
+        @Test
+        @DisplayName("sem dias de prova, a sobrecarga antiga continua valendo")
+        void semDiasDeProvaComoAntes() {
+            List<SessionSlot> sessoes = List.of(sessao(DayOfWeek.MONDAY), sessao(DayOfWeek.SUNDAY));
+
+            assertThat(validator.validate(semDomingo, sessoes).violations())
+                    .anyMatch(v -> v.key() == ConstraintViolationKey.DIA_INDISPONIVEL);
+        }
+    }
+
     private SessionSlot sessao(DayOfWeek dia) {
         return new SessionSlot(dia, "REGENERATIVO", 40.0, "Z1", false, 45);
     }

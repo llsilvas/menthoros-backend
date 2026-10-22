@@ -1,12 +1,17 @@
 package br.com.menthoros.backend.domain.planner;
 
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.TipoTreino;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Servico de dominio puro (design.md Decisao 1): sem IO, sem JPA, sem LLM, nunca chama
@@ -74,17 +79,30 @@ public class PlannerEngine {
 
         AthleteConstraints constraints = resolverConstraints(snapshot);
 
-        // Composicao prescritiva (planner-engine-enforcement, Decisao 4/4b + ADR-0011): compoe os
-        // SessionSlot por fase e aloca os dias. Roda sempre (o skeleton alimenta shadow e, com
-        // enabled=true, o prompt/compliance).
-        List<SessionSlot> sessoes = comporSessoes(snapshot, fase, loadTarget, constraints, periodizacao);
-        ConstraintValidationResult constraintResult = constraintValidator.validate(constraints, sessoes);
+        // Composicao prescritiva (planner-engine-enforcement, Decisao 4/4b + ADR-0011;
+        // fix-planner-ignora-prova-na-semana, Decisao 6/7): compoe os SessionSlot por fase e aloca
+        // os dias. Roda sempre (o skeleton alimenta shadow e, com enabled=true, o prompt/compliance).
+        List<ProvaSnapshot> provasDaSemana = provasDaSemana(periodizacao, snapshot.referenceDate());
+        List<SessionSlot> alocado = comporSessoes(snapshot, fase, loadTarget, constraints, periodizacao, provasDaSemana);
 
-        boolean requiresCoachReview = injuryPolicy.requiresCoachReview() || risco.requiresCoachReview();
-        // Hierarquia P0: motivo de lesao (passo 1) tem precedencia sobre motivo fisiologico (passo 2).
+        // Um LONGO/dura sem dia elegivel (Decisao 6) nao vai ao prompt — removido, nao reciclado.
+        SlotsSemOrfas resultado = removerPesadasSemDia(alocado, provasDaSemana);
+        List<SessionSlot> sessoes = resultado.sessoes();
+        String motivoSlotSemDia = resultado.motivo();
+
+        // O dia de uma prova da semana e dia de treino mesmo fora da disponibilidade do atleta.
+        Set<DayOfWeek> diasDeProva = provasDaSemana.stream()
+                .map(p -> p.dataProva().getDayOfWeek())
+                .collect(Collectors.toSet());
+        ConstraintValidationResult constraintResult = constraintValidator.validate(constraints, sessoes, diasDeProva);
+
+        boolean requiresCoachReview = injuryPolicy.requiresCoachReview() || risco.requiresCoachReview()
+                || motivoSlotSemDia != null;
+        // Hierarquia P0: motivo de lesao (passo 1) tem precedencia sobre motivo fisiologico (passo 2)
+        // e sobre o slot sem dia (achado do pre-mortem, nao fazia parte da hierarquia original).
         String coachReviewReason = injuryPolicy.requiresCoachReview() ? injuryPolicy.reason()
                 : risco.requiresCoachReview() ? risco.reason()
-                : null;
+                : motivoSlotSemDia;
 
         String plannerScope = resolverPlannerScope(snapshot.athlete().modalidade());
 
@@ -98,15 +116,73 @@ public class PlannerEngine {
                 coachReviewReason,
                 snapshot.referenceDate(),
                 plannerScope,
-                periodizacao.provaDeterminante());
+                periodizacao.provaDeterminante(),
+                provasDaSemana);
     }
 
-    /** Compoe os SessionSlot por fase (ADR-0011) e aloca os dias. Puro/deterministico. */
+    /** Sessões sem a(s) pesada(s) órfã(s) + motivo acumulado (uma linha por slot removido). */
+    record SlotsSemOrfas(List<SessionSlot> sessoes, @org.jspecify.annotations.Nullable String motivo) {
+    }
+
+    /**
+     * Remove LONGO/dura com {@code day == null} (Decisao 6) — nunca vai ao prompt como "(dia a
+     * definir)". Achado do /qa: duas sessoes orfas na mesma semana perdiam o motivo da primeira
+     * (variavel simples sobrescrita); agora acumula, uma linha por slot removido. Package-private
+     * para teste direto — a matematica de composicao para forcar 2 orfas de verdade e fragil demais
+     * para fixture de integracao.
+     */
+    static SlotsSemOrfas removerPesadasSemDia(List<SessionSlot> alocado, List<ProvaSnapshot> provasDaSemana) {
+        List<SessionSlot> sessoes = new ArrayList<>();
+        List<String> motivos = new ArrayList<>();
+        LocalDate dataDaProva = provasDaSemana.isEmpty() ? null : provasDaSemana.get(0).dataProva();
+        for (SessionSlot s : alocado) {
+            TipoTreino tipo = TipoTreino.valueOf(s.sessionType());
+            boolean pesada = tipo == TipoTreino.LONGO || SessionDayAllocator.DURAS.contains(tipo);
+            if (s.day() == null && pesada) {
+                motivos.add(tipo.name() + " sem dia elegivel fora da vespera de uma prova da semana"
+                        + (dataDaProva != null ? " (" + dataDaProva + ")" : "") + ".");
+                continue;
+            }
+            sessoes.add(s);
+        }
+        return new SlotsSemOrfas(sessoes, motivos.isEmpty() ? null : String.join(" ", motivos));
+    }
+
+    /**
+     * Provas cuja data real cai em {@code [referenceDate, referenceDate+6]}: a determinante so se
+     * estiver na semana (pode estar meses a frente, ou no passado em POST_RACE) mais as preparatorias,
+     * que o {@code PeriodizationPlanner} ja filtra pela janela. Ordem por data; sem duplicata.
+     */
+    private static List<ProvaSnapshot> provasDaSemana(PeriodizationResult periodizacao, LocalDate referenceDate) {
+        LocalDate fim = referenceDate.plusDays(6);
+        List<ProvaSnapshot> provas = new java.util.ArrayList<>();
+        periodizacao.provaDeterminante()
+                .filter(p -> p.dataProva() != null
+                        && !p.dataProva().isBefore(referenceDate) && !p.dataProva().isAfter(fim))
+                .ifPresent(provas::add);
+        periodizacao.provasPreparatoriasNaSemana().stream()
+                .filter(p -> p.dataProva() != null && !provas.contains(p))
+                .forEach(provas::add);
+        provas.sort(java.util.Comparator.comparing(ProvaSnapshot::dataProva));
+        return List.copyOf(provas);
+    }
+
+    /**
+     * Compoe os SessionSlot por fase (ADR-0011) e aloca os dias. Puro/deterministico.
+     *
+     * <p>{@code provasDaSemana} (Decisao 5) e usada em dois pontos: (a) a determinante gera
+     * {@code provaHoras}/{@code provaDay} so quando {@code fase == RACE_WEEK} (como antes — fase e
+     * taper continuam so da determinante); (b) as preparatorias (todas as de {@code provasDaSemana}
+     * que nao sao a determinante) ganham um slot PROVA proprio, independente da fase (Decisao 7).
+     * {@code diasDeProva} (para o allocator) e a uniao de todas, na mesma ordem dos slots PROVA
+     * produzidos por {@code compose} — determinante primeiro, depois as preparatorias.
+     */
     private List<SessionSlot> comporSessoes(PlannerInputSnapshot snapshot,
                                             TrainingPhase fase,
                                             WeeklyLoadTarget loadTarget,
                                             AthleteConstraints constraints,
-                                            PeriodizationResult periodizacao) {
+                                            PeriodizationResult periodizacao,
+                                            List<ProvaSnapshot> provasDaSemana) {
         List<DayOfWeek> diasDisponiveis = constraints.diasDisponiveis() != null ? constraints.diasDisponiveis() : List.of();
         int longoes21d = snapshot.progressaoHistorico() != null ? snapshot.progressaoHistorico().longoesRealizados21d() : 0;
 
@@ -122,14 +198,31 @@ public class PlannerEngine {
             }
         }
 
+        List<ProvaSnapshot> determinante = periodizacao.provaDeterminante().map(List::of).orElse(List.of());
+        List<ProvaSnapshot> preparatorias = provasDaSemana.stream()
+                .filter(p -> !determinante.contains(p))
+                .toList();
+        List<SessionCompositionResolver.CompositionRequest.ProvaPreparatoriaSlot> preparatoriaSlots = preparatorias.stream()
+                .map(p -> new SessionCompositionResolver.CompositionRequest.ProvaPreparatoriaSlot(
+                        (p.distanciaKm() != null && p.distanciaKm() > 0)
+                                ? p.distanciaKm() * paceDefaultMinPorKm(p.distanciaKm()) / 60.0 : null))
+                .toList();
+
         var req = new SessionCompositionResolver.CompositionRequest(
                 fase, loadTarget.targetTss(), diasDisponiveis.size(),
                 constraints.maxSessoesPorSemana(), constraints.duracaoMaximaMinutos(),
-                longoes21d, provaHoras);
+                longoes21d, provaHoras, preparatoriaSlots);
         List<SessionSlot> composed = compositionResolver.compose(req);
+
+        List<DayOfWeek> diasDeProva = new java.util.ArrayList<>();
+        if (provaDay != null) {
+            diasDeProva.add(provaDay);
+        }
+        preparatorias.forEach(p -> diasDeProva.add(p.dataProva().getDayOfWeek()));
+
         // preferredLongDay nao esta no snapshot do planner (fica na entidade Atleta) — fallback = ultimo
         // dia disponivel. Trazer o campo ao snapshot e follow-up.
-        return dayAllocator.allocate(composed, diasDisponiveis, null, provaDay);
+        return dayAllocator.allocate(composed, diasDisponiveis, null, diasDeProva);
     }
 
     /** Pace default (min/km) por faixa de distancia, quando o pace do atleta nao esta no snapshot (Decisao 4b). */

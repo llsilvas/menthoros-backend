@@ -66,6 +66,29 @@ public class SugestaoCoach {
     @Column(name = "reviewed_at")
     private Instant reviewedAt;
 
+    /** Usuario.id do técnico/admin que decidiu — resolvido do security context, nunca do corpo. */
+    @Column(name = "reviewed_by")
+    private UUID reviewedBy;
+
+    /** Texto livre opcional do porquê da rejeição; null em PENDING/APPROVED. */
+    @Column(name = "rejection_reason", columnDefinition = "TEXT")
+    private String rejectionReason;
+
     @Column(name = "expires_at")
     private Instant expiresAt;
+
+    /** Texto gerado pela IA, fixado na primeira edição do coach; null se nunca editada. */
+    @Column(name = "summary_original", columnDefinition = "TEXT")
+    private String summaryOriginal;
+
+    @Builder.Default
+    @Column(name = "editado_pelo_coach", nullable = false)
+    private boolean editadoPeloCoach = false;
+
+    @Column(name = "edited_at")
+    private Instant editedAt;
+
+    /** Comparado e incrementado nos UPDATEs condicionais do repository — não é {@code @Version}. */
+    @Column(name = "versao", nullable = false)
+    private long versao;
 }

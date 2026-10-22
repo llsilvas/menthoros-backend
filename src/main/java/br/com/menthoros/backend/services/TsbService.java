@@ -39,4 +39,20 @@ public interface TsbService {
      * @param data primeiro dia a recalcular
      */
     void recalcularDesde(UUID atletaId, LocalDate data);
+
+    /**
+     * Recalcula de {@code inicio} até {@code fim} (ambos inclusive), com {@code fim} explícito —
+     * nunca o relógio do servidor. {@code fim} não pode ser posterior ao "hoje" do atleta no fuso
+     * dele. Metadados (limiares, pace) só são gravados quando {@code fim} alcança o hoje do atleta;
+     * um bloco intermediário de um atraso longo não os toca.
+     *
+     * Idempotent: YES — recalcular o mesmo intervalo produz o mesmo resultado.
+     * Side Effects: Database insert/update das métricas de cada dia do intervalo e, quando
+     * {@code fim} é o hoje do atleta, do PlanoMetaDados.
+     * Tenant-aware: NO
+     *
+     * @throws IllegalArgumentException se algum argumento for nulo, {@code inicio > fim} ou
+     *         {@code fim} for posterior ao hoje do atleta
+     */
+    void recalcularDesde(UUID atletaId, LocalDate inicio, LocalDate fim);
 }

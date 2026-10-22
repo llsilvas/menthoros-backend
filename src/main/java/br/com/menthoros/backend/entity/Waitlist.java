@@ -2,6 +2,8 @@ package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.enums.FaixaAtletas;
 import br.com.menthoros.backend.enums.PerfilWaitlist;
+import br.com.menthoros.backend.enums.WaitlistStatus;
+import br.com.menthoros.backend.enums.WatchBrand;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -69,4 +71,59 @@ public class Waitlist {
 
     @Column(name = "docs_notified_at")
     private Instant docsNotifiedAt;
+
+    @Column(name = "invited_at")
+    private Instant invitedAt;
+
+    @Column(name = "activated_at")
+    private Instant activatedAt;
+
+    @Column(name = "discarded_at")
+    private Instant discardedAt;
+
+    /** Preenchido quando o lead converte em assessoria. Sem FK, mesmo padrão de {@code FoundingInvite.assessoriaId}. */
+    @Column(name = "assessoria_id")
+    private UUID assessoriaId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "watch_brand", length = 20)
+    private WatchBrand watchBrand;
+
+    @Column(name = "landing_path", length = 255)
+    private String landingPath;
+
+    @Column(name = "referrer", length = 255)
+    private String referrer;
+
+    /** Versão da Política de Privacidade vigente no aceite — carimbada pelo servidor, nunca pelo cliente. */
+    @Column(name = "policy_version", length = 20)
+    private String policyVersion;
+
+    /**
+     * Etapa do lead no funil, derivada dos timestamps — sem coluna própria, mesmo padrão de
+     * {@code FoundingInvite} ("o estado é derivado das datas, sem enum"). {@code discardedAt}
+     * tem precedência sobre os demais por ser terminal (add-waitlist-status-lifecycle, design D2).
+     */
+    public WaitlistStatus getStatus() {
+        if (discardedAt != null) {
+            return WaitlistStatus.DISCARDED;
+        }
+        if (activatedAt != null) {
+            return WaitlistStatus.ACTIVE;
+        }
+        if (invitedAt != null) {
+            return WaitlistStatus.INVITED;
+        }
+        return WaitlistStatus.NEW;
+    }
+
+    /**
+     * {@code true} para {@link PerfilWaitlist#TREINADOR} e {@link PerfilWaitlist#PROPRIETARIO} —
+     * os dois papéis que a aplicação trata como "lead parecido com treinador" para notificação,
+     * funil, convite da turma fundadora e faixa de atletas. Centralizado aqui para não repetir a
+     * comparação em cada chamador (expand-waitlist-access-contract, design D2).
+     */
+    public boolean isTreinadorOuProprietario() {
+        return PerfilWaitlist.isTreinadorOuProprietario(perfil);
+    }
 }

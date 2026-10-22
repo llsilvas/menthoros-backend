@@ -2,8 +2,10 @@ package br.com.menthoros.backend.domain.planner;
 
 import org.springframework.stereotype.Component;
 
+import java.time.DayOfWeek;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Valida constraints duras do {@link AthleteConstraints} (do {@link OnboardingContext} ou do
@@ -14,11 +16,21 @@ import java.util.List;
 public class ConstraintValidator {
 
     public ConstraintValidationResult validate(AthleteConstraints constraints, List<SessionSlot> sessoes) {
+        return validate(constraints, sessoes, Set.of());
+    }
+
+    /**
+     * {@code diasDeProva}: dias da semana com prova — dia de treino mesmo fora da disponibilidade
+     * configurada, porque a PROVA entra nele (fix-planner-ignora-prova-na-semana). Dentro de uma
+     * semana, o DayOfWeek identifica a data.
+     */
+    public ConstraintValidationResult validate(AthleteConstraints constraints, List<SessionSlot> sessoes,
+                                               Set<DayOfWeek> diasDeProva) {
         List<ConstraintViolation> violations = new ArrayList<>();
 
         if (constraints.diasDisponiveis() != null) {
             for (SessionSlot sessao : sessoes) {
-                if (!constraints.diasDisponiveis().contains(sessao.day())) {
+                if (!constraints.diasDisponiveis().contains(sessao.day()) && !diasDeProva.contains(sessao.day())) {
                     violations.add(new ConstraintViolation(ConstraintViolationKey.DIA_INDISPONIVEL,
                             "Sessao em " + sessao.day() + " fora dos dias disponiveis do atleta"));
                 }

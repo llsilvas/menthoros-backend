@@ -5,6 +5,8 @@ import br.com.menthoros.backend.services.onboarding.impl.ConfidenceScorerImpl;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -187,6 +189,16 @@ class ConfidenceScorerTest {
             ConfidenceScoreResult resultado = scorer.calcular(input);
 
             assertThat(resultado.scoreBruto()).isEqualTo(0);
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = br.com.menthoros.backend.enums.DispositivoMarca.class, names = {"APPLE", "AMAZFIT", "SAMSUNG"})
+        @DisplayName("sem historico, marcas de prior 3 (Apple, Amazfit, Samsung) nao pontuam Fonte confiavel")
+        void dispositivoMarcaPrior3NaoPontua(br.com.menthoros.backend.enums.DispositivoMarca marca) {
+            ConfidenceScorerInput input = new ConfidenceScorerInput(
+                    List.of(), false, null, null, null, false, false, marca);
+
+            assertThat(scorer.calcular(input).scoreBruto()).isEqualTo(0);
         }
 
         @Test

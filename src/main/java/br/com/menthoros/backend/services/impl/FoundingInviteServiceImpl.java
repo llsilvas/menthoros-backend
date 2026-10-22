@@ -4,7 +4,6 @@ import br.com.menthoros.backend.dto.output.FoundingInviteLookupOutputDto;
 import br.com.menthoros.backend.dto.output.FoundingInviteOutputDto;
 import br.com.menthoros.backend.entity.FoundingInvite;
 import br.com.menthoros.backend.entity.Waitlist;
-import br.com.menthoros.backend.enums.PerfilWaitlist;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -22,6 +21,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Map;
 import java.util.Optional;
@@ -34,7 +34,10 @@ import java.util.UUID;
  * e-mail é chamada externa e não pode segurar transação. A ordem das escritas torna a falha parcial
  * inofensiva — invalidar o anterior e só então inserir: se o insert falhar, o inscrito fica sem
  * convite aberto e o próximo reenvio conserta; se o e-mail falhar, o convite fica sem
- * {@code sentAt} e o próximo reenvio o invalida.</p>
+ * {@code sentAt} e o próximo reenvio o invalida. O carimbo de {@code Waitlist.invitedAt}
+ * (add-waitlist-status-lifecycle) é a última escrita do método e é melhor-esforço: uma falha ali
+ * só é logada, nunca relançada — o convite já foi enviado com sucesso nesse ponto, e relançar
+ * faria o chamador reemitir, invalidando um convite válido e enviando um segundo e-mail.</p>
  */
 @Slf4j
 @Service
@@ -78,7 +81,8 @@ public class FoundingInviteServiceImpl implements FoundingInviteService {
      *
      * <p><strong>Idempotent:</strong> NO — cada chamada gera token novo, invalida o anterior e envia
      * outro e-mail.
-     * <p><strong>Side Effects:</strong> Database insert/update + External API (SMTP).
+     * <p><strong>Side Effects:</strong> Database insert/update (inclusive {@code Waitlist.invitedAt},
+     * melhor-esforço) + External API (SMTP).
      * <p><strong>Tenant-aware:</strong> NO — roda antes de o tenant existir.
      */
     @Override
@@ -120,6 +124,21 @@ public class FoundingInviteServiceImpl implements FoundingInviteService {
         convite.setSentAt(OffsetDateTime.now(clock));
         inviteRepository.save(convite);
 
+        // NEW -> INVITED (add-waitlist-status-lifecycle, design D3): só chega aqui se o e-mail
+        // saiu com sucesso — se emailSender.send(...) lançar, a exceção já propagou antes deste
+        // ponto e o lead permanece NEW. Capturado e só logado (nunca relançado): o convite já
+        // está gravado com sentAt e o e-mail já saiu — deixar essa exceção subir faria o
+        // chamador tratar invite() como falho e reemitir, o que invalidaria este convite válido e
+        // mandaria um segundo e-mail ao mesmo lead (achado do code review). invitedAt é um
+        // carimbo secundário; a fonte de verdade do envio continua em FoundingInvite.sentAt.
+        try {
+            inscrito.setInvitedAt(Instant.now(clock));
+            waitlistRepository.save(inscrito);
+        } catch (RuntimeException e) {
+            log.error("Waitlist: falha ao carimbar invitedAt para o lead {} (convite {} já enviado)",
+                    waitlistId, convite.getId(), e);
+        }
+
         log.info("Convite de fundadora enviado: inviteId={}, waitlistId={}, expiresAt={}",
                 convite.getId(), waitlistId, convite.getExpiresAt());
         return new FoundingInviteOutputDto(convite.getId(), waitlistId, convite.getExpiresAt());
@@ -159,8 +178,8 @@ public class FoundingInviteServiceImpl implements FoundingInviteService {
     }
 
     private void validar(Waitlist inscrito) {
-        if (inscrito.getPerfil() != PerfilWaitlist.TREINADOR) {
-            throw new DomainRuleViolationException("Só inscritos com perfil TREINADOR podem ser convidados");
+        if (!inscrito.isTreinadorOuProprietario()) {
+            throw new DomainRuleViolationException("Só inscritos com perfil TREINADOR ou PROPRIETARIO podem ser convidados");
         }
         if (inscrito.getEmail().length() > MAX_EMAIL_LENGTH_FOR_SIGNUP) {
             // A waitlist aceita 180; o cadastro e tb_usuario, 100. Falhar aqui, na mão do founder,

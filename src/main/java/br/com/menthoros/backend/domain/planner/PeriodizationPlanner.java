@@ -27,15 +27,19 @@ public class PeriodizationPlanner {
     private static final int JANELA_POS_PROVA_DIAS = 7;
 
     public PeriodizationResult resolvePhase(List<ProvaSnapshot> provas, LocalDate referenceDate) {
-        Optional<ProvaSnapshot> provaPosSemana = provaRecemRealizada(provas, referenceDate);
-        if (provaPosSemana.isPresent()) {
-            return new PeriodizationResult(TrainingPhase.POST_RACE, provaPosSemana, List.of());
-        }
-
         List<ProvaSnapshot> futurasValidas = provas.stream()
                 .filter(p -> !p.cancelada())
                 .filter(p -> !p.dataProva().isBefore(referenceDate))
                 .toList();
+
+        Optional<ProvaSnapshot> provaPosSemana = provaRecemRealizada(provas, referenceDate);
+        if (provaPosSemana.isPresent()) {
+            // A fase e POST_RACE, mas uma prova cadastrada nesta semana continua sendo evento fixo:
+            // sem ela em provasPreparatoriasNaSemana, o skeleton nao a ancora e o compliance acusa o
+            // dia dela como indisponivel (tasks.md 7.3, revisao do PR #180).
+            return new PeriodizationResult(TrainingPhase.POST_RACE, provaPosSemana,
+                    preparatoriasNaSemana(futurasValidas, Optional.empty(), referenceDate));
+        }
 
         Optional<ProvaSnapshot> provaDeterminante = selecionarProvaDeterminante(futurasValidas);
 
@@ -43,12 +47,18 @@ public class PeriodizationPlanner {
                 .map(p -> phaseFromDiasFaltando(ChronoUnit.DAYS.between(referenceDate, p.dataProva())))
                 .orElse(TrainingPhase.BASE);
 
-        List<ProvaSnapshot> preparatoriasNaSemana = futurasValidas.stream()
+        return new PeriodizationResult(phase, provaDeterminante,
+                preparatoriasNaSemana(futurasValidas, provaDeterminante, referenceDate));
+    }
+
+    /** Provas futuras em {@code [referenceDate, referenceDate+6]}, exceto a determinante. */
+    private static List<ProvaSnapshot> preparatoriasNaSemana(List<ProvaSnapshot> futurasValidas,
+                                                            Optional<ProvaSnapshot> provaDeterminante,
+                                                            LocalDate referenceDate) {
+        return futurasValidas.stream()
                 .filter(p -> provaDeterminante.isEmpty() || !p.equals(provaDeterminante.get()))
                 .filter(p -> !p.dataProva().isAfter(referenceDate.plusDays(6)))
                 .toList();
-
-        return new PeriodizationResult(phase, provaDeterminante, preparatoriasNaSemana);
     }
 
     private Optional<ProvaSnapshot> provaRecemRealizada(List<ProvaSnapshot> provas, LocalDate referenceDate) {

@@ -100,6 +100,22 @@ class PeriodizationPlannerTest {
 
             assertThat(resultado.provasPreparatoriasNaSemana()).isEmpty();
         }
+
+        @Test
+        @DisplayName("tasks.md 7.3: em POST_RACE a prova da semana seguinte continua como preparatoria")
+        void postRaceMantemPreparatoriaDaSemana() {
+            // Prova alvo no domingo anterior (referencia-1), 5k no sabado desta semana (referencia+5).
+            ProvaSnapshot recemRealizada = new ProvaSnapshot(referencia.minusDays(1), 21.0975, true, false);
+            ProvaSnapshot preparatoria = new ProvaSnapshot(referencia.plusDays(5), 5.0, false, false);
+            ProvaSnapshot foraDaSemana = new ProvaSnapshot(referencia.plusDays(20), 10.0, false, false);
+
+            PeriodizationResult resultado = planner.resolvePhase(
+                    List.of(recemRealizada, preparatoria, foraDaSemana), referencia);
+
+            assertThat(resultado.phase()).isEqualTo(TrainingPhase.POST_RACE);
+            assertThat(resultado.provaDeterminante()).contains(recemRealizada);
+            assertThat(resultado.provasPreparatoriasNaSemana()).containsExactly(preparatoria);
+        }
     }
 
     @Nested

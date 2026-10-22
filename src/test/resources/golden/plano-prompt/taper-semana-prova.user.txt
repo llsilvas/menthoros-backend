@@ -180,12 +180,14 @@ Nenhuma prova preparatória cadastrada.
 
 ### ⚠️ SEMANA EM ANDAMENTO
 **Dias já passados não podem receber treinos.**
-**Dias restantes disponíveis para treino nesta semana:** Terça-feira, Quinta-feira, Sábado
-**Total de dias restantes:** 3
+**Dias restantes disponíveis para treino nesta semana:** Terça-feira, Quinta-feira, Sábado, Domingo (prova)
+**Total de dias restantes:** 4
 
 ### Disponibilidade Semanal
 **Dias disponíveis para treinar (configuração do atleta):** Segunda-feira, Quarta-feira, Sexta-feira, Sábado
 **Total:** 4 dias/semana
+
+**Dia de prova na semana:** Domingo (prova)
 
 **Dia preferido para treino longo:** Sábado
 
@@ -203,7 +205,7 @@ Nenhuma prova preparatória cadastrada.
 
 ## 📆 COBERTURA DA SEMANA (obrigatório)
 
-**Dias a cobrir:** TERCA, QUINTA, SABADO
+**Dias a cobrir:** TERCA, QUINTA, SABADO, DOMINGO
 Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDays`. Não deixe nenhum dia de fora e não repita dia.
 `restDays` é só para dias **desta lista** que deixam de ter treino. Os outros dias da semana já são folga do atleta: não os declare em `restDays` nem em `treinosPlanejados`.
 

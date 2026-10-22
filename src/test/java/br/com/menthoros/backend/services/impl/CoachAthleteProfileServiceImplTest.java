@@ -9,6 +9,9 @@ import br.com.menthoros.backend.dto.output.RecordeDto;
 import br.com.menthoros.backend.dto.output.SugestaoCoachOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
+import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
+import br.com.menthoros.backend.enums.DispositivoMarca;
+import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
@@ -80,6 +83,7 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private SugestaoCoachService sugestaoCoachService;
     @Mock private PlanoService planoService;
     @Mock private PlanoMetadadosRepository planoMetadadosRepository;
+    @Mock private PerfilOnboardingAtletaRepository perfilOnboardingAtletaRepository;
     @Mock private ProvaRepository provaRepository;
     @Mock private ProvaMapper provaMapper;
     @Mock private IntervalsIcuConnectionService intervalsIcuConnectionService;
@@ -120,7 +124,7 @@ class CoachAthleteProfileServiceImplTest {
         meterRegistry = new SimpleMeterRegistry();
         service = new CoachAthleteProfileServiceImpl(
                 atletaRepository, atletaProgressService, coachAttentionQueueService, sugestaoCoachService,
-                planoService, planoMetadadosRepository, provaRepository, provaMapper, treinoRealizadoRepository,
+                planoService, planoMetadadosRepository, perfilOnboardingAtletaRepository, provaRepository, provaMapper, treinoRealizadoRepository,
                 intervalsIcuConnectionService, thresholdInferenceService, melhorEsforcoService, meterRegistry,
                 athleteContractService, transactionManager);
         // Default: sem cobrança (os testes de cobrança sobrescrevem)
@@ -587,6 +591,64 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(perfil.avisos()).contains("cobranca");
         }
 
+        @Test
+        @DisplayName("relogio vem do perfil de onboarding: marca e modelo")
+        void relogioDoPerfilDeOnboarding() {
+            stubPerfilMinimo();
+            PerfilOnboardingAtleta onboarding = new PerfilOnboardingAtleta();
+            onboarding.setDispositivoMarca(DispositivoMarca.APPLE);
+            onboarding.setDispositivoModelo("Watch Ultra 2");
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(onboarding));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.relogio()).isEqualTo(
+                    new AtletaPerfilCoachOutputDto.RelogioDto(DispositivoMarca.APPLE, "Watch Ultra 2"));
+            assertThat(perfil.avisos()).isNull();
+        }
+
+        @Test
+        @DisplayName("sem perfil de onboarding: relogio nulo e sem aviso")
+        void relogioSemPerfil() {
+            stubPerfilMinimo();
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.empty());
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.relogio()).isNull();
+            assertThat(perfil.avisos()).isNull();
+        }
+
+        @Test
+        @DisplayName("perfil anterior à marca obrigatória (dispositivo_marca nulo): relogio nulo, modelo não vaza, sem aviso")
+        void relogioComMarcaNula() {
+            stubPerfilMinimo();
+            PerfilOnboardingAtleta onboarding = new PerfilOnboardingAtleta();
+            onboarding.setDispositivoModelo("Forerunner 265");
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenReturn(Optional.of(onboarding));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.relogio()).isNull();
+            assertThat(perfil.avisos()).isNull();
+        }
+
+        @Test
+        @DisplayName("falha ao ler o onboarding degrada com aviso \"relogio\", sem derrubar o perfil")
+        void relogioFalhaParcial() {
+            stubPerfilMinimo();
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                    .thenThrow(new RuntimeException("timeout"));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.relogio()).isNull();
+            assertThat(perfil.avisos()).containsExactly("relogio");
+        }
+
         private void stubPerfilMinimo() {
             stubAtleta();
             when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
@@ -813,7 +875,7 @@ class CoachAthleteProfileServiceImplTest {
 
     private SugestaoCoachOutputDto sugestao(TipoSugestao tipo) {
         return new SugestaoCoachOutputDto(UUID.randomUUID(), atletaId, "Ana", tipo,
-                StatusSugestao.PENDING, "HIGH", "Recuperar", null, Instant.now(), null, null);
+                StatusSugestao.PENDING, "HIGH", "Recuperar", null, Instant.now(), null, null, null, null, null, false, null, 0L);
     }
 
     private ProvaOutputDto provaDto(String nome, LocalDate data, boolean provaAlvo) {

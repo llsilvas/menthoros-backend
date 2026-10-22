@@ -42,6 +42,24 @@ public record SugestaoCoachOutputDto(
         @Schema(description = "Momento da revisão (null enquanto PENDING)")
         Instant reviewedAt,
 
+        @Schema(description = "Usuario.id de quem decidiu (null enquanto PENDING)")
+        UUID reviewedBy,
+
+        @Schema(description = "Motivo da rejeição (null se PENDING/APPROVED ou rejeitada sem motivo)")
+        String rejectionReason,
+
         @Schema(description = "Expiração da sugestão (null = sem expiração)")
-        Instant expiresAt
+        Instant expiresAt,
+
+        @Schema(description = "Texto gerado pela IA, fixado na primeira edição (null se nunca editada)")
+        String summaryOriginal,
+
+        @Schema(description = "true se o coach editou o summary")
+        boolean editadoPeloCoach,
+
+        @Schema(description = "Momento da última edição (null se nunca editada)")
+        Instant editedAt,
+
+        @Schema(description = "Versão da sugestão; enviar como versaoEsperada em editar/aprovar/rejeitar")
+        long versao
 ) {}

@@ -36,7 +36,7 @@ class SessionDayAllocatorTest {
         @Test
         @DisplayName("ancora no dia preferido quando disponível")
         void diaPreferido() {
-            var s = allocator.allocate(List.of(slot("LONGO", true), slot("FACIL", false)), SEMANA_TODA, SATURDAY, null);
+            var s = allocator.allocate(List.of(slot("LONGO", true), slot("FACIL", false)), SEMANA_TODA, SATURDAY, List.of());
             assertThat(diaDe(s, "LONGO")).isEqualTo(SATURDAY);
         }
 
@@ -44,8 +44,43 @@ class SessionDayAllocatorTest {
         @DisplayName("sem dia preferido, vai para o último dia disponível")
         void ultimoDia() {
             var s = allocator.allocate(List.of(slot("LONGO", true), slot("FACIL", false)),
-                    List.of(MONDAY, WEDNESDAY, FRIDAY), null, null);
+                    List.of(MONDAY, WEDNESDAY, FRIDAY), null, List.of());
             assertThat(diaDe(s, "LONGO")).isEqualTo(FRIDAY);
+        }
+
+        @Test
+        @DisplayName("CA12: LONGO sem chave (TAPER) também ganha dia normalmente, sem prova na semana")
+        void longoSemChaveGanhaDia() {
+            var s = allocator.allocate(List.of(slot("LONGO", false), slot("FACIL", false), slot("REGENERATIVO", false)),
+                    List.of(MONDAY, WEDNESDAY, FRIDAY), null, List.of());
+            assertThat(diaDe(s, "LONGO")).isEqualTo(FRIDAY);
+        }
+
+        @Test
+        @DisplayName("CA12: LONGO sem chave não cai na véspera de uma prova da semana")
+        void longoSemChaveNaoCaiNaVesperaDaProva() {
+            // SEG/QUA/SEX disponíveis, prova no sábado -> proibido = sexta (D-1). LONGO deve ir pra quarta.
+            var s = allocator.allocate(List.of(slot("LONGO", false), slot("FACIL", false), slot("REGENERATIVO", false)),
+                    List.of(MONDAY, WEDNESDAY, FRIDAY), null, List.of(SATURDAY));
+            assertThat(diaDe(s, "LONGO")).isEqualTo(WEDNESDAY);
+        }
+
+        @Test
+        @DisplayName("preferido cai no D-1 de uma prova: o LONGO não vai para lá, usa o último dia livre restante")
+        void preferidoNoDMenosUmDaProva() {
+            var s = allocator.allocate(List.of(slot("LONGO", true), slot("FACIL", false)),
+                    List.of(MONDAY, WEDNESDAY, FRIDAY), FRIDAY, List.of(SATURDAY));
+            assertThat(diaDe(s, "LONGO")).isEqualTo(WEDNESDAY);
+        }
+
+        @Test
+        @DisplayName("prova na segunda: a véspera está no plano anterior, o domingo seguinte continua elegível")
+        void provaNaSegundaNaoProibeODomingoSeguinte() {
+            // A semana é segunda→domingo: MONDAY.minus(1) é o domingo de 6 dias DEPOIS da prova, não o D-1.
+            var s = allocator.allocate(List.of(slot("PROVA", true), slot("LONGO", false), slot("INTERVALADO", false)),
+                    List.of(SATURDAY, SUNDAY), null, List.of(MONDAY));
+            assertThat(diaDe(s, "LONGO")).isEqualTo(SUNDAY);
+            assertThat(diaDe(s, "INTERVALADO")).isEqualTo(SATURDAY);
         }
     }
 
@@ -58,8 +93,39 @@ class SessionDayAllocatorTest {
         void naoAdjacentes() {
             var s = allocator.allocate(
                     List.of(slot("LONGO", true), slot("INTERVALADO", false), slot("TEMPO_RUN", false)),
-                    SEMANA_TODA, SATURDAY, null);
+                    SEMANA_TODA, SATURDAY, List.of());
             assertThat(distanciaCircular(diaDe(s, "INTERVALADO"), diaDe(s, "TEMPO_RUN"))).isGreaterThanOrEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("tasks.md 7.2: o LONGO é âncora de intensidade — a dura não cai vizinha dele")
+        void duraNaoViraVizinhaDoLongo() {
+            // Semana cheia, sem preferido: LONGO vai ao domingo. Sem o LONGO em diasComDura a dura cairia
+            // na segunda (vizinha circular); com ele, o dia de maior distância é a quarta.
+            var s = allocator.allocate(
+                    List.of(slot("LONGO", true), slot("INTERVALADO", false)),
+                    SEMANA_TODA, null, List.of());
+            assertThat(diaDe(s, "LONGO")).isEqualTo(SUNDAY);
+            assertThat(diaDe(s, "INTERVALADO")).isEqualTo(WEDNESDAY);
+        }
+
+        @Test
+        @DisplayName("espaçamento é preferência: sem outro dia livre, a dura cai vizinha do LONGO")
+        void duraCaiVizinhaDoLongoQuandoNaoHaAlternativa() {
+            var s = allocator.allocate(
+                    List.of(slot("LONGO", true), slot("INTERVALADO", false)),
+                    List.of(SATURDAY, SUNDAY), null, List.of());
+            assertThat(diaDe(s, "LONGO")).isEqualTo(SUNDAY);
+            assertThat(diaDe(s, "INTERVALADO")).isEqualTo(SATURDAY);
+        }
+
+        @Test
+        @DisplayName("dura nunca cai no D-1 de uma prova da semana")
+        void duraNuncaNoDMenosUmDaProva() {
+            var s = allocator.allocate(
+                    List.of(slot("LONGO", true), slot("INTERVALADO", false)),
+                    List.of(MONDAY, WEDNESDAY, FRIDAY, SATURDAY), MONDAY, List.of(SUNDAY));
+            assertThat(diaDe(s, "INTERVALADO")).isNotEqualTo(SATURDAY);
         }
     }
 
@@ -72,9 +138,48 @@ class SessionDayAllocatorTest {
         void diaRealDaProva() {
             var s = allocator.allocate(
                     List.of(slot("PROVA", true), slot("REGENERATIVO", false), slot("FACIL", false)),
-                    List.of(MONDAY, TUESDAY, WEDNESDAY), null, SUNDAY);
+                    List.of(MONDAY, TUESDAY, WEDNESDAY), null, List.of(SUNDAY));
             assertThat(diaDe(s, "PROVA")).isEqualTo(SUNDAY);
             assertThat(s).allSatisfy(x -> assertThat(x.day()).isNotNull());
+        }
+
+        @Test
+        @DisplayName("duas provas na semana: cada slot PROVA recebe um dia, na ordem")
+        void duasProvasNaSemana() {
+            var s = allocator.allocate(
+                    List.of(slot("PROVA", true), slot("PROVA", false), slot("FACIL", false)),
+                    List.of(MONDAY, TUESDAY, WEDNESDAY), null, List.of(SATURDAY, SUNDAY));
+            var diasDeProva = s.stream().filter(x -> x.sessionType().equals("PROVA")).map(SessionSlot::day).toList();
+            assertThat(diasDeProva).containsExactlyInAnyOrder(SATURDAY, SUNDAY);
+        }
+    }
+
+    @Nested
+    @DisplayName("fixture do caso real (CA9) — QUI/SÁB/DOM, prova no domingo, PROVA + LONGO + dura + leve")
+    class FixtureCA9 {
+
+        @Test
+        @DisplayName("LONGO ocupa a quinta (passo 2 roda antes); a dura fica sem dia; nada pesado no sábado")
+        void longoNaQuintaDuraSemDia() {
+            var s = allocator.allocate(
+                    List.of(slot("PROVA", true), slot("LONGO", false), slot("INTERVALADO", false), slot("REGENERATIVO", false)),
+                    List.of(THURSDAY, SATURDAY, SUNDAY), null, List.of(SUNDAY));
+
+            assertThat(diaDe(s, "PROVA")).isEqualTo(SUNDAY);
+            assertThat(diaDe(s, "LONGO")).isEqualTo(THURSDAY);
+            SessionSlot dura = s.stream().filter(x -> x.sessionType().equals("INTERVALADO")).findFirst().orElseThrow();
+            assertThat(dura.day()).isNull();
+            assertThat(s).noneMatch(x -> x.day() == SATURDAY && !x.sessionType().equals("REGENERATIVO"));
+        }
+
+        @Test
+        @DisplayName("a leve pode cair no sábado (D-1), já que o passo 4 usa a lista inteira de dias livres")
+        void leveCaiNoSabado() {
+            var s = allocator.allocate(
+                    List.of(slot("PROVA", true), slot("LONGO", false), slot("INTERVALADO", false), slot("REGENERATIVO", false)),
+                    List.of(THURSDAY, SATURDAY, SUNDAY), null, List.of(SUNDAY));
+
+            assertThat(diaDe(s, "REGENERATIVO")).isEqualTo(SATURDAY);
         }
     }
 
@@ -82,7 +187,7 @@ class SessionDayAllocatorTest {
     @DisplayName("todos os slots recebem um dia (slots ≤ dias)")
     void todosComDia() {
         var s = allocator.allocate(List.of(slot("LONGO", true), slot("FACIL", false), slot("REGENERATIVO", false)),
-                SEMANA_TODA, SUNDAY, null);
+                SEMANA_TODA, SUNDAY, List.of());
         assertThat(s).allSatisfy(x -> assertThat(x.day()).isNotNull());
         assertThat(s.stream().map(SessionSlot::day).distinct().count()).isEqualTo(3); // dias distintos
     }

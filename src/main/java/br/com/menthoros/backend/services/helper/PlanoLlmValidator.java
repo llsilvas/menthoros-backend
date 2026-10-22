@@ -66,6 +66,54 @@ public class PlanoLlmValidator {
     }
 
     /**
+     * O treino do LLM no dia de uma prova da semana é descartado <b>antes</b> de normalizar: a PROVA
+     * determinística o substitui de qualquer jeito, e um treino malformado ali consumiria o turno de
+     * reparo por algo que nunca chegaria ao atleta (fix-planner-ignora-prova-na-semana). O mesmo vale
+     * para o descanso declarado nesse dia — prova vence descanso. Sem contexto de cobertura (skeleton
+     * ou kill-switch) o plano passa intacto.
+     */
+    private PlanoSemanalLlmDto descartarDiasDeProva(PlanoSemanalLlmDto plano,
+                                                    @Nullable WeeklyCoverageContext cobertura) {
+        if (cobertura == null || cobertura.provasDaSemana().isEmpty()) return plano;
+
+        Set<String> diasDeProva = diasDeProva(cobertura);
+        return plano.toBuilder()
+                .treinosPlanejados(plano.treinosPlanejados().stream()
+                        .filter(t -> !diasDeProva.contains(maiusculo(t.diaSemana())))
+                        .toList())
+                .restDays(plano.restDays() == null ? null : plano.restDays().stream()
+                        .filter(d -> !diasDeProva.contains(maiusculo(d.dayOfWeek())))
+                        .toList())
+                .build();
+    }
+
+    /**
+     * Insere a PROVA determinística de cada prova da semana, depois da normalização — ela nunca
+     * passa por {@code normalizar} nem pelo TSS do slot (não há slot sem skeleton). Substitui o que
+     * houver no mesmo dia, então reaplicar é no-op.
+     */
+    private PlanoSemanalLlmDto inserirProvasDaSemana(PlanoSemanalLlmDto plano, WeeklyCoverageContext cobertura) {
+        if (cobertura.provasDaSemana().isEmpty()) return plano;
+
+        Set<String> diasDeProva = diasDeProva(cobertura);
+        List<TreinoPlanejadoLlmDto> treinos = new ArrayList<>(plano.treinosPlanejados().stream()
+                .filter(t -> !diasDeProva.contains(maiusculo(t.diaSemana())))
+                .toList());
+        treinos.addAll(cobertura.provasDaSemana());
+        return plano.toBuilder().treinosPlanejados(treinos).build();
+    }
+
+    private static Set<String> diasDeProva(WeeklyCoverageContext cobertura) {
+        return cobertura.provasDaSemana().stream()
+                .map(p -> maiusculo(p.diaSemana()))
+                .collect(Collectors.toSet());
+    }
+
+    private static String maiusculo(@Nullable String dia) {
+        return dia == null ? "" : dia.trim().toUpperCase();
+    }
+
+    /**
      * Cobertura da semana (add-descanso-explicito-por-fadiga): ancora o longo no dia preferido e
      * valida que todo dia disponível tem treino ou descanso legítimo. Com {@code cobertura == null}
      * (kill-switch desligado, ou planner no comando) devolve o plano intacto — comportamento de antes
@@ -75,7 +123,7 @@ public class PlanoLlmValidator {
                                                 @Nullable WeeklyCoverageContext cobertura) {
         if (cobertura == null) return plano;
 
-        PlanoSemanalLlmDto ancorado = longRunAnchor.ancorar(plano, cobertura);
+        PlanoSemanalLlmDto ancorado = longRunAnchor.ancorar(inserirProvasDaSemana(plano, cobertura), cobertura);
 
         // A LLM lê "restDays" como "os dias de folga da semana" e declara também os dias em que o
         // atleta nunca treina (geração real de 22/09 17:08). Esses são descartados — derrubar o plano
@@ -113,6 +161,8 @@ public class PlanoLlmValidator {
         if (plano == null || plano.treinosPlanejados() == null) {
             throw new LLMException("Plano gerado está nulo ou sem treinos");
         }
+
+        plano = descartarDiasDeProva(plano, cobertura);
 
         // Antes de normalizar: descanso que a regra não aceita vira treino leve (ou cai, se o dia já
         // tem treino). Aqui, e não no aplicarCobertura, para o treino sintetizado passar pelo mesmo
@@ -178,6 +228,8 @@ public class PlanoLlmValidator {
         if (plano == null || plano.treinosPlanejados() == null) {
             throw new LLMException("Plano gerado está nulo ou sem treinos");
         }
+
+        plano = descartarDiasDeProva(plano, cobertura);
 
         ContextoNormalizacao ctx = contexto(atleta, atletaId);
         List<Violacao> violacoesEstruturais = new ArrayList<>();

@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,7 +51,7 @@ class WaitlistRepositoryTest extends AbstractIntegrationTest {
     }
 
     @Nested
-    @DisplayName("findAllByPerfilAndDocsNotifiedAtIsNull")
+    @DisplayName("findAllByPerfilInAndDocsNotifiedAtIsNull")
     class Elegiveis {
 
         @Test
@@ -60,7 +61,7 @@ class WaitlistRepositoryTest extends AbstractIntegrationTest {
             var ataleta = inserirInscrito(PerfilWaitlist.ATLETA, null); // CA3 — perfil errado, nunca entra
             var jaAvisado = inserirInscrito(PerfilWaitlist.TREINADOR, Instant.now());
 
-            var ids = repository.findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.TREINADOR)
+            var ids = repository.findAllByPerfilInAndDocsNotifiedAtIsNull(List.of(PerfilWaitlist.TREINADOR))
                     .stream().map(Waitlist::getId).toList();
 
             assertThat(ids).contains(pendente.getId())
@@ -72,10 +73,25 @@ class WaitlistRepositoryTest extends AbstractIntegrationTest {
         void jaAvisadoNaoEElegivel() {
             var avisado = inserirInscrito(PerfilWaitlist.TREINADOR, Instant.now());
 
-            var ids = repository.findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.TREINADOR)
+            var ids = repository.findAllByPerfilInAndDocsNotifiedAtIsNull(List.of(PerfilWaitlist.TREINADOR))
                     .stream().map(Waitlist::getId).toList();
 
             assertThat(ids).doesNotContain(avisado.getId());
+        }
+
+        @Test
+        @DisplayName("lista com múltiplos perfis retorna TREINADOR e PROPRIETARIO (expand-waitlist-access-contract)")
+        void aceitaMultiplosPerfis() {
+            var treinador = inserirInscrito(PerfilWaitlist.TREINADOR, null);
+            var proprietario = inserirInscrito(PerfilWaitlist.PROPRIETARIO, null);
+            var atleta = inserirInscrito(PerfilWaitlist.ATLETA, null);
+
+            var ids = repository.findAllByPerfilInAndDocsNotifiedAtIsNull(
+                            List.of(PerfilWaitlist.TREINADOR, PerfilWaitlist.PROPRIETARIO))
+                    .stream().map(Waitlist::getId).toList();
+
+            assertThat(ids).contains(treinador.getId(), proprietario.getId())
+                    .doesNotContain(atleta.getId());
         }
     }
 
@@ -104,7 +120,7 @@ class WaitlistRepositoryTest extends AbstractIntegrationTest {
 
             repository.liberarAvisoDocs(inscrito.getId());
 
-            var ids = repository.findAllByPerfilAndDocsNotifiedAtIsNull(PerfilWaitlist.TREINADOR)
+            var ids = repository.findAllByPerfilInAndDocsNotifiedAtIsNull(List.of(PerfilWaitlist.TREINADOR))
                     .stream().map(Waitlist::getId).toList();
             assertThat(ids).contains(inscrito.getId());
         }

@@ -311,6 +311,10 @@ class TsbServiceImplSemanticaTest {
                 MetricasDiariasRepository.class.getClassLoader(),
                 new Class<?>[]{MetricasDiariasRepository.class},
                 (proxy, method, args) -> {
+                    if ("findTopByAtletaIdAndDataBeforeOrderByDataDesc".equals(method.getName())) {
+                        LocalDate data = (LocalDate) args[1];
+                        return hoje.equals(data) ? Optional.ofNullable(metricasOntem) : Optional.empty();
+                    }
                     if ("findByAtletaIdAndData".equals(method.getName())) {
                         LocalDate data = (LocalDate) args[1];
                         if (hoje.equals(data)) {
@@ -398,6 +402,8 @@ class TsbServiceImplSemanticaTest {
         // chamado nestes testes de semântica de CTL/ATL/TSB.
         return new TsbServiceImpl(treinoRepo, planoRepo, metricasRepo, atletaRepo, alertaService,
                 athleteThresholdUpdater, thresholdInferenceService,
-                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null);
+                new TsbRecalculoExecutorInline(), planoMetadadosService, tsbDiaPersister, null,
+                new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.systemDefaultZone()),
+                new TsbRecalculoTransacional(metricasRepo, tsbDiaPersister));
     }
 }

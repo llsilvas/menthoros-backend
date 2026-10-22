@@ -36,6 +36,16 @@ public class DisponibilidadePromptFormatter {
      */
     public String formatarDisponibilidade(Atleta atleta, PlanoMetaDados metaDados, LocalDate inicioSemana,
                                            List<DiaSemana> diasEfetivos) {
+        return formatarDisponibilidade(atleta, metaDados, inicioSemana, diasEfetivos, List.of());
+    }
+
+    /**
+     * {@code diasDeProva}: dias da semana com prova, que são dia de treino (a PROVA entra neles) mesmo
+     * fora da disponibilidade configurada do atleta. Nomeá-los aqui evita o prompt dizer "PROVA no
+     * domingo" e "disponíveis: seg/qua/sex/sáb" ao mesmo tempo. Vazio, a saída é a de antes.
+     */
+    public String formatarDisponibilidade(Atleta atleta, PlanoMetaDados metaDados, LocalDate inicioSemana,
+                                           List<DiaSemana> diasEfetivos, List<DiaSemana> diasDeProva) {
         if (atleta == null) {
             return "⚠️ Atleta não informado. Não foi possível formatar disponibilidade.";
         }
@@ -63,7 +73,7 @@ public class DisponibilidadePromptFormatter {
                 sb.append("**Dias já passados não podem receber treinos.**\n");
                 sb.append("**Dias restantes disponíveis para treino nesta semana:** ");
                 sb.append(diasEfetivos.stream()
-                        .map(DiaSemana::getLabel)
+                        .map(dia -> diasDeProva.contains(dia) ? dia.getLabel() + " (prova)" : dia.getLabel())
                         .collect(Collectors.joining(", ")));
                 sb.append("\n");
                 sb.append(String.format("**Total de dias restantes:** %d\n\n", diasEfetivos.size()));
@@ -81,6 +91,14 @@ public class DisponibilidadePromptFormatter {
             sb.append(String.format("**Total:** %d dias/semana\n\n", atleta.getDiasDisponiveis().size()));
         } else {
             sb.append("⚠️ **Dias disponíveis não cadastrados** - Assumir disponibilidade total\n\n");
+        }
+
+        if (!diasDeProva.isEmpty()) {
+            sb.append("**Dia de prova na semana:** ");
+            sb.append(diasDeProva.stream()
+                    .map(dia -> dia.getLabel() + " (prova)")
+                    .collect(Collectors.joining(", ")));
+            sb.append("\n\n");
         }
 
         // Dia preferido para treino longo

@@ -13,6 +13,7 @@ import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
@@ -53,6 +54,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final SugestaoCoachService sugestaoCoachService;
     private final PlanoService planoService;
     private final PlanoMetadadosRepository planoMetadadosRepository;
+    private final PerfilOnboardingAtletaRepository perfilOnboardingAtletaRepository;
     private final ProvaRepository provaRepository;
     private final ProvaMapper provaMapper;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
@@ -174,6 +176,10 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 "realizadosRecentes", avisos, () -> buscarRealizadosRecentes(atletaId, tenantId));
         log.debug("[perfil] realizadosRecentes: {}ms", ms(t7));
 
+        // nulo sem aviso quando o atleta nunca preencheu o onboarding ou o perfil é anterior à marca obrigatória
+        AtletaPerfilCoachOutputDto.RelogioDto relogio = buscarNullable("relogio", avisos,
+                () -> resolverRelogio(atletaId, tenantId));
+
         return new AtletaPerfilCoachOutputDto(
                 atletaId,
                 nome,
@@ -196,8 +202,16 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 realizadosRecentes,
                 melhoresEsforcos,
                 melhoresEsforcosIntegracaoConectada,
-                distanceSummary
+                distanceSummary,
+                relogio
         );
+    }
+
+    private AtletaPerfilCoachOutputDto.RelogioDto resolverRelogio(UUID atletaId, UUID tenantId) {
+        return perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)
+                .filter(p -> p.getDispositivoMarca() != null)
+                .map(p -> new AtletaPerfilCoachOutputDto.RelogioDto(p.getDispositivoMarca(), p.getDispositivoModelo()))
+                .orElse(null);
     }
 
     /** Últimos 7 dias (hoje inclusive), mais recente primeiro — mesma janela do design.md D3. */

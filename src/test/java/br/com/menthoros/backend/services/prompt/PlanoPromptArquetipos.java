@@ -82,6 +82,12 @@ final class PlanoPromptArquetipos {
      * exatamente neste construtor.</p>
      */
     static PlanoTreinoPromptBuilder builder(TreinoHistoricoProvider provider) {
+        // Sem prova cadastrada em lugar nenhum: o mock devolve lista vazia, e os goldens não mudam.
+        return builder(provider, org.mockito.Mockito.mock(br.com.menthoros.backend.repository.ProvaRepository.class));
+    }
+
+    static PlanoTreinoPromptBuilder builder(TreinoHistoricoProvider provider,
+                                            br.com.menthoros.backend.repository.ProvaRepository provaRepository) {
         MetricasAlertaService metricas = new MetricasAlertaService();
         ZonaTreinoService zona = new ZonaTreinoService();
         return new PlanoTreinoPromptBuilder(
@@ -107,7 +113,11 @@ final class PlanoPromptArquetipos {
                 new ReadinessPromptFormatter(),
                 // O builder não resolve a revisão — quem chama passa `null` no golden, então o
                 // baseline permanece byte-idêntico ao de antes da injeção.
-                new WeeklyReviewPromptFormatter());
+                new WeeklyReviewPromptFormatter(),
+                // O builder só usa construirTreinoProva (TreinoMapper) e provaNoDiaAnteriorAoInicio
+                // (ProvaRepository); os repositórios de plano e a revisão nunca são tocados aqui.
+                new br.com.menthoros.backend.services.plano.ProvaNoPlanoService(
+                        provaRepository, new br.com.menthoros.backend.mapper.TreinoMapperImpl(null, null), null, null));
     }
 
     // ─────────────────────────────────────────────────────────────────────────

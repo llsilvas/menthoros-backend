@@ -87,6 +87,10 @@ public final class SessionCompositionResolver {
     /**
      * Entrada da composicao. `provaHoras` != null apenas quando a fase coloca um slot PROVA
      * (RACE_WEEK): a duracao estimada da prova em horas (design 4b, item 7).
+     *
+     * <p>`provasPreparatorias` (fix-planner-ignora-prova-na-semana, Decisao 7): um slot PROVA extra
+     * por prova preparatoria da semana, independente da fase — essas provas nao disputam a chave
+     * nem entram na repartição do `targetTss` (TSS proprio, pela distancia/horas estimada).</p>
      */
     public record CompositionRequest(
             TrainingPhase phase,
@@ -95,7 +99,24 @@ public final class SessionCompositionResolver {
             Integer maxSessoesPorSemana,
             Integer duracaoMaximaMinutos,
             int longoesRealizados21d,
-            Double provaHoras) {
+            Double provaHoras,
+            List<ProvaPreparatoriaSlot> provasPreparatorias) {
+
+        /** `horas`: duracao estimada da prova (null — TSS/duracao ficam em zero, nao quebra). */
+        public record ProvaPreparatoriaSlot(Double horas) {
+        }
+
+        public CompositionRequest {
+            provasPreparatorias = provasPreparatorias == null ? List.of() : List.copyOf(provasPreparatorias);
+        }
+
+        /** Semana sem prova preparatoria — contrato de antes da change. */
+        public CompositionRequest(TrainingPhase phase, double targetTss, int diasDisponiveis,
+                                  Integer maxSessoesPorSemana, Integer duracaoMaximaMinutos,
+                                  int longoesRealizados21d, Double provaHoras) {
+            this(phase, targetTss, diasDisponiveis, maxSessoesPorSemana, duracaoMaximaMinutos,
+                    longoesRealizados21d, provaHoras, List.of());
+        }
     }
 
     /** Idempotente/puro. Retorna slots com {@code day == null} (o dia e atribuido na alocacao). */
@@ -135,7 +156,28 @@ public final class SessionCompositionResolver {
         }
 
         List<TipoTreino> tipos = montarTipos(prioridade, chave, sessionCount, melhorDuras);
-        return repartir(tipos, chave, req);
+        List<SessionSlot> slots = repartir(tipos, chave, req);
+        if (req.provasPreparatorias().isEmpty()) {
+            return slots;
+        }
+        List<SessionSlot> comPreparatorias = new ArrayList<>(slots);
+        for (CompositionRequest.ProvaPreparatoriaSlot prep : req.provasPreparatorias()) {
+            comPreparatorias.add(slotProvaPreparatoria(prep, req.duracaoMaximaMinutos()));
+        }
+        return List.copyOf(comPreparatorias);
+    }
+
+    /**
+     * Slot PROVA de uma preparatoria: nunca e chave (quem e chave e a determinante, se a fase for
+     * RACE_WEEK), e seu TSS/duracao sao proprios — nao entram em {@code repartir} nem no
+     * {@code targetTss} da semana (Decisao 7, "sem somar ao loadTarget").
+     */
+    private SessionSlot slotProvaPreparatoria(CompositionRequest.ProvaPreparatoriaSlot prep,
+                                              Integer duracaoMaximaMinutos) {
+        double horas = prep.horas() != null ? prep.horas() : 0;
+        double tss = TipoTreino.PROVA.getFatorImpacto() * TAXA_BASE * horas;
+        int dur = clamp(TipoTreino.PROVA, arredondar(horas * 60), duracaoMaximaMinutos);
+        return new SessionSlot(null, TipoTreino.PROVA.name(), round1(tss), TipoTreino.PROVA.getZonaFcAlvo(), false, dur);
     }
 
     private int resolverSessionCount(CompositionRequest req, int piso) {

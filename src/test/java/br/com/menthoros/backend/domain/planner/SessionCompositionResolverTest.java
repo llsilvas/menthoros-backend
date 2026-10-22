@@ -119,6 +119,74 @@ class SessionCompositionResolverTest {
         }
     }
 
+    /**
+     * fix-planner-ignora-prova-na-semana (task 5.1, CA8/CA9): slot PROVA por prova preparatória,
+     * independente da fase — hoje só RACE_WEEK compõe prova. TSS pela distância (fórmula do
+     * determinante), sem entrar na repartição do loadTarget da semana.
+     */
+    @Nested
+    @DisplayName("provas preparatórias (independente da fase)")
+    class ProvasPreparatorias {
+
+        @Test
+        @DisplayName("fase PEAK + 1 preparatória: slot PROVA adicional, loadTarget inalterado")
+        void peakComPreparatoria() {
+            var semPrep = resolver.compose(req(TrainingPhase.PEAK, 400, 5));
+            var comPrep = resolver.compose(new CompositionRequest(TrainingPhase.PEAK, 400, 5, null, null, 3, null,
+                    List.of(new CompositionRequest.ProvaPreparatoriaSlot(1.5))));
+
+            assertThat(tipos(comPrep)).containsAll(tipos(semPrep));
+            assertThat(comPrep).hasSize(semPrep.size() + 1);
+            SessionSlot prova = comPrep.stream().filter(s -> s.sessionType().equals("PROVA")).findFirst().orElseThrow();
+            // TSS = fatorImpacto(1.3) * TAXA_BASE(50) * 1.5h = 97.5 — igual à fórmula do determinante (RACE_WEEK)
+            assertThat(prova.targetTss()).isEqualTo(97.5);
+            // loadTarget da semana (targetTss do request) não mudou: a soma dos slots "normais" é a mesma
+            double tssNormal = comPrep.stream().filter(s -> !s.sessionType().equals("PROVA")).mapToDouble(SessionSlot::targetTss).sum();
+            double tssNormalSemPrep = semPrep.stream().mapToDouble(SessionSlot::targetTss).sum();
+            assertThat(tssNormal).isEqualTo(tssNormalSemPrep);
+        }
+
+        @Test
+        @DisplayName("preparatória não é chave e não disputa a chave da fase (LONGO continua chave)")
+        void preparatoriaNaoERoubaChave() {
+            var s = resolver.compose(new CompositionRequest(TrainingPhase.BUILD, 450, 6, null, null, 3, null,
+                    List.of(new CompositionRequest.ProvaPreparatoriaSlot(1.0))));
+
+            SessionSlot prova = s.stream().filter(x -> x.sessionType().equals("PROVA")).findFirst().orElseThrow();
+            assertThat(prova.chave()).isFalse();
+            assertThat(s.stream().filter(x -> x.sessionType().equals("LONGO")).findFirst().orElseThrow().chave()).isTrue();
+        }
+
+        @Test
+        @DisplayName("duas preparatórias na semana: dois slots PROVA")
+        void duasPreparatorias() {
+            var s = resolver.compose(new CompositionRequest(TrainingPhase.BASE, 300, 5, null, null, 3, null,
+                    List.of(new CompositionRequest.ProvaPreparatoriaSlot(1.0),
+                            new CompositionRequest.ProvaPreparatoriaSlot(0.5))));
+
+            assertThat(s.stream().filter(x -> x.sessionType().equals("PROVA")).count()).isEqualTo(2);
+        }
+
+        @Test
+        @DisplayName("preparatória com horas nulo: TSS zero, não quebra")
+        void semHoras() {
+            var s = resolver.compose(new CompositionRequest(TrainingPhase.BASE, 300, 5, null, null, 3, null,
+                    List.of(new CompositionRequest.ProvaPreparatoriaSlot(null))));
+
+            SessionSlot prova = s.stream().filter(x -> x.sessionType().equals("PROVA")).findFirst().orElseThrow();
+            assertThat(prova.targetTss()).isEqualTo(0.0);
+        }
+
+        @Test
+        @DisplayName("sem preparatórias (lista vazia), comportamento idêntico ao de antes")
+        void semPreparatorias() {
+            var comListaVazia = resolver.compose(new CompositionRequest(TrainingPhase.PEAK, 400, 5, null, null, 3, null, List.of()));
+            var comConstrutorAntigo = resolver.compose(req(TrainingPhase.PEAK, 400, 5));
+
+            assertThat(tipos(comListaVazia)).isEqualTo(tipos(comConstrutorAntigo));
+        }
+    }
+
     @Nested
     @DisplayName("carga e duração")
     class CargaDuracao {

@@ -60,7 +60,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(controllers = OnboardingController.class, excludeFilters = @ComponentScan.Filter(
+// problemdetails desligado no slice: o advice padrao do Spring precede o GlobalExceptionHandler e some com "fields"
+@WebMvcTest(controllers = OnboardingController.class, properties = "spring.mvc.problemdetails.enabled=false", excludeFilters = @ComponentScan.Filter(
         type = FilterType.ASSIGNABLE_TYPE,
         classes = {JwtTenantFilter.class, StructuredLoggingFilter.class}))
 @AutoConfigureMockMvc(addFilters = false)
@@ -109,6 +110,18 @@ class OnboardingControllerTest {
                     .andExpect(jsonPath("$.status").value("RASCUNHO"));
 
             verify(onboardingService).salvarRascunho(eq(atletaId), eq(tenantId), any(), eq(false));
+        }
+
+        @Test
+        @DisplayName("400 com o campo dispositivoMarca na resposta quando a marca nao e enviada")
+        void retorna400QuandoSemMarca() throws Exception {
+            mockMvc.perform(post("/api/v1/atletas/{atletaId}/onboarding", atletaId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(Map.of("objetivo", "Correr uma maratona"))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.fields.dispositivoMarca").value("Marca do dispositivo é obrigatória"));
+
+            org.mockito.Mockito.verifyNoInteractions(onboardingService);
         }
 
         @Test
@@ -255,7 +268,8 @@ class OnboardingControllerTest {
     private String bodyValido() throws Exception {
         return mapper.writeValueAsString(Map.of(
                 "objetivo", "Correr uma maratona",
-                "nivelExperiencia", "INTERMEDIARIO"
+                "nivelExperiencia", "INTERMEDIARIO",
+                "dispositivoMarca", "GARMIN"
         ));
     }
 

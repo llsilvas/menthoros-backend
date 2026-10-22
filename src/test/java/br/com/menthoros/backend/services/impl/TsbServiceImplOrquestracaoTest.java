@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
+import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.FonteLimiarInferencia;
 import br.com.menthoros.backend.exception.IntervalsIcuApiException;
 import br.com.menthoros.backend.repository.AtletaRepository;
@@ -10,6 +11,7 @@ import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.projection.LimiarPaceStatusProjection;
 import br.com.menthoros.backend.services.MelhorEsforcoService;
 import br.com.menthoros.backend.services.PlanoMetadadosService;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.AthleteThresholdUpdater;
 import br.com.menthoros.backend.services.helper.PaceLimiarResolvido;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
@@ -26,12 +28,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
@@ -71,12 +77,16 @@ class TsbServiceImplOrquestracaoTest {
     private static final UUID ATLETA_ID = UUID.randomUUID();
     private static final UUID TENANT_ID = UUID.randomUUID();
     private static final LocalDate HOJE = LocalDate.of(2026, 6, 22);
+    // 15:00 UTC: 12:00 em São Paulo (dia 22), 03:00 do dia 23 em Auckland (UTC+12).
+    private static final Clock RELOGIO = Clock.fixed(Instant.parse("2026-06-22T15:00:00Z"), ZoneOffset.UTC);
 
     private void construirService() {
         service = new TsbServiceImpl(treinoRealizadoRepository, planoMetaDadosRepository,
                 metricasDiariasRepository, atletaRepository, metricasAlertaService,
                 athleteThresholdUpdater, thresholdInferenceService, tsbRecalculoExecutor,
-                planoMetadadosService, tsbDiaPersister, melhorEsforcoService);
+                planoMetadadosService, tsbDiaPersister, melhorEsforcoService,
+                new AtletaHojeResolver(RELOGIO),
+                new TsbRecalculoTransacional(metricasDiariasRepository, tsbDiaPersister));
     }
 
     // =========================================================================
@@ -299,13 +309,11 @@ class TsbServiceImplOrquestracaoTest {
     @DisplayName("4.3: recalcularDesde resolve a fonte de pace 1 vez (hoje=fim), não por dia")
     void recalcularDesde_resolveFonteUmaVezPorIntervalo() {
         construirService();
-        // recalcularDesde resolve `fim` via LocalDate.now() quando não há métrica futura
-        // materializada (comportamento real, não mockável sem um clock injetado) — o intervalo
-        // precisa ser ancorado em "agora", não em HOJE (data fixa usada nos outros testes).
-        LocalDate inicio = LocalDate.now().minusDays(4);
+        // `fim` = hoje do atleta, vindo do relógio fixo RELOGIO (HOJE) quando não há métrica futura.
+        LocalDate inicio = HOJE.minusDays(4);
         when(metricasDiariasRepository.findDataUltimaMetrica(ATLETA_ID)).thenReturn(null); // fim = hoje (now)
         LimiarPaceStatusProjection status = LimiarPaceStatusProjectionTestStub
-                .projection(TENANT_ID, new BigDecimal("5.0000"), LocalDate.now().minusDays(91));
+                .projection(TENANT_ID, new BigDecimal("5.0000"), HOJE.minusDays(91));
         when(atletaRepository.findLimiarPaceStatusById(ATLETA_ID)).thenReturn(Optional.of(status));
         when(thresholdInferenceService.isPaceLimiarDesatualizado(any(), any(), any())).thenReturn(true);
         when(athleteThresholdUpdater.buscarTreinos30d(any(), any(), any())).thenReturn(List.of());
@@ -319,6 +327,94 @@ class TsbServiceImplOrquestracaoTest {
         verify(atletaRepository, times(1)).findLimiarPaceStatusById(ATLETA_ID);
         verify(athleteThresholdUpdater, times(1)).resolverFontePace(any(), any(), any(), any(), any(), any());
         verify(tsbDiaPersister, times(5)).atualizarDiaTransacional(eq(ATLETA_ID), any(), anyBoolean(), any());
+    }
+
+
+    // =========================================================================
+    // fix-tsb-rest-days-materialization 1.x — fim explícito e "hoje" do atleta (R4)
+    // =========================================================================
+
+    @Nested
+    @DisplayName("recalcularDesde(atletaId, inicio, fim)")
+    class RecalcularDesdeComFim {
+
+        @Test
+        @DisplayName("percorre inicio..fim e grava metadados só no último dia quando fim é o hoje do atleta")
+        void metadadosSoNoUltimoDiaQuandoFimEHoje() {
+            construirService();
+            when(atletaRepository.findById(ATLETA_ID)).thenReturn(Optional.of(new Atleta()));
+
+            service.recalcularDesde(ATLETA_ID, HOJE.minusDays(2), HOJE);
+
+            InOrder ordem = inOrder(tsbDiaPersister);
+            ordem.verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, HOJE.minusDays(2), false, null);
+            ordem.verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, HOJE.minusDays(1), false, null);
+            ordem.verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, HOJE, true, null);
+        }
+
+        @Test
+        @DisplayName("bloco intermediário (fim anterior ao hoje do atleta) não grava metadados")
+        void blocoIntermediarioNaoGravaMetadados() {
+            construirService();
+            when(atletaRepository.findById(ATLETA_ID)).thenReturn(Optional.of(new Atleta()));
+
+            service.recalcularDesde(ATLETA_ID, HOJE.minusDays(10), HOJE.minusDays(8));
+
+            verify(tsbDiaPersister, times(3)).atualizarDiaTransacional(eq(ATLETA_ID), any(), eq(false), isNull());
+            verify(tsbDiaPersister, never()).atualizarDiaTransacional(any(), any(), eq(true), any());
+        }
+
+        @Test
+        @DisplayName("rejeita fim posterior ao hoje do atleta, sem tocar o persister")
+        void rejeitaFimFuturo() {
+            construirService();
+            when(atletaRepository.findById(ATLETA_ID)).thenReturn(Optional.of(new Atleta()));
+
+            assertThatThrownBy(() -> service.recalcularDesde(ATLETA_ID, HOJE, HOJE.plusDays(1)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("futura");
+
+            verifyNoInteractions(tsbDiaPersister);
+        }
+
+        @Test
+        @DisplayName("atleta em fuso à frente do servidor aceita fim = hoje dele")
+        void aceitaFimDoFusoAdiantado() {
+            construirService();
+            Atleta auckland = new Atleta();
+            auckland.setTimezone("Pacific/Auckland");
+            when(atletaRepository.findById(ATLETA_ID)).thenReturn(Optional.of(auckland));
+
+            service.recalcularDesde(ATLETA_ID, HOJE, HOJE.plusDays(1));
+
+            verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, HOJE.plusDays(1), true, null);
+        }
+
+        @Test
+        @DisplayName("rejeita inicio posterior a fim")
+        void rejeitaInicioDepoisDoFim() {
+            construirService();
+
+            assertThatThrownBy(() -> service.recalcularDesde(ATLETA_ID, HOJE, HOJE.minusDays(1)))
+                    .isInstanceOf(IllegalArgumentException.class);
+
+            verifyNoInteractions(tsbDiaPersister);
+        }
+    }
+
+    @Test
+    @DisplayName("recalcularDesde(atletaId, data) termina no hoje do atleta, não no do servidor")
+    void doisArgumentosUsaHojeDoAtleta() {
+        construirService();
+        Atleta auckland = new Atleta();
+        auckland.setTimezone("Pacific/Auckland");
+        when(atletaRepository.findById(ATLETA_ID)).thenReturn(Optional.of(auckland));
+        when(metricasDiariasRepository.findDataUltimaMetrica(ATLETA_ID)).thenReturn(null);
+
+        service.recalcularDesde(ATLETA_ID, HOJE);
+
+        verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, HOJE, false, null);
+        verify(tsbDiaPersister).atualizarDiaTransacional(ATLETA_ID, HOJE.plusDays(1), true, null);
     }
 
     // =========================================================================
