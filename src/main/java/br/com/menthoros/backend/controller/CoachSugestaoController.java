@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.input.RejeitarSugestaoRequestDto;
+import br.com.menthoros.backend.dto.input.SugestaoCoachEditInputDto;
 import br.com.menthoros.backend.dto.output.SugestaoCoachOutputDto;
 import br.com.menthoros.backend.enums.StatusSugestao;
 import br.com.menthoros.backend.security.RequireTenant;
@@ -20,6 +21,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -84,11 +86,12 @@ public class CoachSugestaoController {
                     content = @Content(schema = @Schema(implementation = SugestaoCoachOutputDto.class))),
             @ApiResponse(responseCode = "403", description = "Sem permissão ou recurso de outro tenant"),
             @ApiResponse(responseCode = "404", description = "Sugestão não encontrada"),
-            @ApiResponse(responseCode = "409", description = "Outra decisão concorrente já transicionou a sugestão"),
+            @ApiResponse(responseCode = "409", description = "Outra decisão concorrente já transicionou a sugestão, ou versaoEsperada divergente"),
             @ApiResponse(responseCode = "422", description = "Transição ilegal: REJECTED → APPROVED")
     })
-    public ResponseEntity<SugestaoCoachOutputDto> aprovar(@PathVariable UUID id) {
-        return ResponseEntity.ok(sugestaoCoachService.aprovar(id));
+    public ResponseEntity<SugestaoCoachOutputDto> aprovar(@PathVariable UUID id,
+            @RequestParam(required = false) Long versaoEsperada) {
+        return ResponseEntity.ok(sugestaoCoachService.aprovar(id, versaoEsperada));
     }
 
     @PostMapping("/{id}/rejeitar")
@@ -102,11 +105,31 @@ public class CoachSugestaoController {
                     content = @Content(schema = @Schema(implementation = SugestaoCoachOutputDto.class))),
             @ApiResponse(responseCode = "403", description = "Sem permissão ou recurso de outro tenant"),
             @ApiResponse(responseCode = "404", description = "Sugestão não encontrada"),
-            @ApiResponse(responseCode = "409", description = "Outra decisão concorrente já transicionou a sugestão"),
+            @ApiResponse(responseCode = "409", description = "Outra decisão concorrente já transicionou a sugestão, ou versaoEsperada divergente"),
             @ApiResponse(responseCode = "422", description = "Transição ilegal: APPROVED → REJECTED")
     })
     public ResponseEntity<SugestaoCoachOutputDto> rejeitar(@PathVariable UUID id,
-            @RequestBody(required = false) @Valid RejeitarSugestaoRequestDto request) {
-        return ResponseEntity.ok(sugestaoCoachService.rejeitar(id, request));
+            @RequestBody(required = false) @Valid RejeitarSugestaoRequestDto request,
+            @RequestParam(required = false) Long versaoEsperada) {
+        return ResponseEntity.ok(sugestaoCoachService.rejeitar(id, request, versaoEsperada));
+    }
+
+    @PutMapping("/{id}")
+    @RequireTenant(resourceParamIndex = 0)
+    @Operation(summary = "Edita o resumo de uma sugestão PENDING",
+            description = "Só o summary é editável. A primeira edição preserva o texto da IA em "
+                    + "summaryOriginal. versaoEsperada (a versao lida pelo cliente) é obrigatória.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Sugestão editada",
+                    content = @Content(schema = @Schema(implementation = SugestaoCoachOutputDto.class))),
+            @ApiResponse(responseCode = "400", description = "summary vazio, acima de 500 caracteres ou versaoEsperada ausente"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão ou recurso de outro tenant"),
+            @ApiResponse(responseCode = "404", description = "Sugestão não encontrada"),
+            @ApiResponse(responseCode = "409", description = "A sugestão mudou desde que o cliente a leu (versaoEsperada divergente)"),
+            @ApiResponse(responseCode = "422", description = "Sugestão não está PENDING")
+    })
+    public ResponseEntity<SugestaoCoachOutputDto> editar(@PathVariable UUID id,
+            @RequestBody @Valid SugestaoCoachEditInputDto request) {
+        return ResponseEntity.ok(sugestaoCoachService.editar(id, request.summary(), request.versaoEsperada()));
     }
 }

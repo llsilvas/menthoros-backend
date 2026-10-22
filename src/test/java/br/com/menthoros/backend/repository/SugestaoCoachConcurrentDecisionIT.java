@@ -73,14 +73,14 @@ class SugestaoCoachConcurrentDecisionIT extends AbstractIntegrationTest {
                 largada.await();
                 return transactionTemplate.execute(status -> sugestaoCoachRepository.decidirSePendente(
                         sugestao.getId(), assessoria.getId(), StatusSugestao.PENDING,
-                        StatusSugestao.APPROVED, Instant.now(), reviewerAprova, null));
+                        StatusSugestao.APPROVED, Instant.now(), reviewerAprova, null, null));
             };
             Callable<Integer> tentarRejeitar = () -> {
                 prontos.countDown();
                 largada.await();
                 return transactionTemplate.execute(status -> sugestaoCoachRepository.decidirSePendente(
                         sugestao.getId(), assessoria.getId(), StatusSugestao.PENDING,
-                        StatusSugestao.REJECTED, Instant.now(), reviewerRejeita, "motivo da corrida"));
+                        StatusSugestao.REJECTED, Instant.now(), reviewerRejeita, "motivo da corrida", null));
             };
 
             Future<Integer> aprovacao = pool.submit(tentarAprovar);

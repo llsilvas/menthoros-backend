@@ -40,7 +40,7 @@ class CoachSugestaoControllerTest {
     private SugestaoCoachOutputDto dto(StatusSugestao status) {
         return new SugestaoCoachOutputDto(ID, UUID.randomUUID(), "Ana Silva",
                 TipoSugestao.RECOVERY, status, "HIGH", "Revisar carga",
-                null, Instant.now(), null, null, null, null);
+                null, Instant.now(), null, null, null, null, null, false, null, 0L);
     }
 
     @Nested
@@ -105,9 +105,9 @@ class CoachSugestaoControllerTest {
         @DisplayName("POST /{id}/aprovar → 200 com DTO atualizado")
         void aprovaCom200() {
             SugestaoCoachOutputDto dto = dto(StatusSugestao.APPROVED);
-            when(service.aprovar(ID)).thenReturn(dto);
+            when(service.aprovar(ID, null)).thenReturn(dto);
 
-            ResponseEntity<SugestaoCoachOutputDto> resp = controller.aprovar(ID);
+            ResponseEntity<SugestaoCoachOutputDto> resp = controller.aprovar(ID, null);
 
             assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(resp.getBody()).isEqualTo(dto);
@@ -116,9 +116,9 @@ class CoachSugestaoControllerTest {
         @Test
         @DisplayName("POST /{id}/aprovar → DomainRuleViolationException propagada (GlobalExceptionHandler → 422)")
         void propagaViolacao422() {
-            when(service.aprovar(ID)).thenThrow(new DomainRuleViolationException("transição ilegal"));
+            when(service.aprovar(ID, null)).thenThrow(new DomainRuleViolationException("transição ilegal"));
 
-            assertThatThrownBy(() -> controller.aprovar(ID))
+            assertThatThrownBy(() -> controller.aprovar(ID, null))
                     .isInstanceOf(DomainRuleViolationException.class)
                     .hasMessageContaining("transição ilegal");
         }
@@ -126,9 +126,9 @@ class CoachSugestaoControllerTest {
         @Test
         @DisplayName("POST /{id}/aprovar → DomainConflictException propagada (GlobalExceptionHandler → 409, CA6)")
         void propagaConflito409() {
-            when(service.aprovar(ID)).thenThrow(new DomainConflictException("decisão concorrente"));
+            when(service.aprovar(ID, null)).thenThrow(new DomainConflictException("decisão concorrente"));
 
-            assertThatThrownBy(() -> controller.aprovar(ID))
+            assertThatThrownBy(() -> controller.aprovar(ID, null))
                     .isInstanceOf(DomainConflictException.class);
         }
     }
@@ -141,9 +141,9 @@ class CoachSugestaoControllerTest {
         @DisplayName("POST /{id}/rejeitar sem corpo → 200, service recebe request null (CA3)")
         void rejeitaSemCorpo() {
             SugestaoCoachOutputDto dto = dto(StatusSugestao.REJECTED);
-            when(service.rejeitar(ID, null)).thenReturn(dto);
+            when(service.rejeitar(ID, null, null)).thenReturn(dto);
 
-            ResponseEntity<SugestaoCoachOutputDto> resp = controller.rejeitar(ID, null);
+            ResponseEntity<SugestaoCoachOutputDto> resp = controller.rejeitar(ID, null, null);
 
             assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(resp.getBody()).isEqualTo(dto);
@@ -155,9 +155,9 @@ class CoachSugestaoControllerTest {
             RejeitarSugestaoRequestDto request = new RejeitarSugestaoRequestDto("volume alto demais");
             SugestaoCoachOutputDto dto = dto(StatusSugestao.REJECTED);
             ArgumentCaptor<RejeitarSugestaoRequestDto> captor = ArgumentCaptor.forClass(RejeitarSugestaoRequestDto.class);
-            when(service.rejeitar(any(), captor.capture())).thenReturn(dto);
+            when(service.rejeitar(any(), captor.capture(), any())).thenReturn(dto);
 
-            ResponseEntity<SugestaoCoachOutputDto> resp = controller.rejeitar(ID, request);
+            ResponseEntity<SugestaoCoachOutputDto> resp = controller.rejeitar(ID, request, null);
 
             assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
             assertThat(captor.getValue().rejectionReason()).isEqualTo("volume alto demais");
@@ -166,18 +166,18 @@ class CoachSugestaoControllerTest {
         @Test
         @DisplayName("POST /{id}/rejeitar → DomainRuleViolationException propagada (GlobalExceptionHandler → 422)")
         void propagaViolacao422() {
-            when(service.rejeitar(ID, null)).thenThrow(new DomainRuleViolationException("transição ilegal"));
+            when(service.rejeitar(ID, null, null)).thenThrow(new DomainRuleViolationException("transição ilegal"));
 
-            assertThatThrownBy(() -> controller.rejeitar(ID, null))
+            assertThatThrownBy(() -> controller.rejeitar(ID, null, null))
                     .isInstanceOf(DomainRuleViolationException.class);
         }
 
         @Test
         @DisplayName("POST /{id}/rejeitar → DomainConflictException propagada (GlobalExceptionHandler → 409, CA6)")
         void propagaConflito409() {
-            when(service.rejeitar(ID, null)).thenThrow(new DomainConflictException("decisão concorrente"));
+            when(service.rejeitar(ID, null, null)).thenThrow(new DomainConflictException("decisão concorrente"));
 
-            assertThatThrownBy(() -> controller.rejeitar(ID, null))
+            assertThatThrownBy(() -> controller.rejeitar(ID, null, null))
                     .isInstanceOf(DomainConflictException.class);
         }
     }

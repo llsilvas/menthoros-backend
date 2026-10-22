@@ -85,13 +85,35 @@ public interface SugestaoCoachRepository extends JpaRepository<SugestaoCoach, UU
     @Modifying(clearAutomatically = true)
     @Query("""
        UPDATE SugestaoCoach s SET s.status = :novoStatus, s.reviewedAt = :reviewedAt,
-           s.reviewedBy = :reviewedBy, s.rejectionReason = :rejectionReason
+           s.reviewedBy = :reviewedBy, s.rejectionReason = :rejectionReason, s.versao = s.versao + 1
        WHERE s.id = :id AND s.tenantId = :tenantId AND s.status = :statusAtual
+         AND (:versaoEsperada IS NULL OR s.versao = :versaoEsperada)
        """)
     int decidirSePendente(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
                            @Param("statusAtual") StatusSugestao statusAtual,
                            @Param("novoStatus") StatusSugestao novoStatus,
                            @Param("reviewedAt") Instant reviewedAt,
                            @Param("reviewedBy") UUID reviewedBy,
-                           @Param("rejectionReason") String rejectionReason);
+                           @Param("rejectionReason") String rejectionReason,
+                           @Param("versaoEsperada") Long versaoEsperada);
+
+    /**
+     * Edição atômica do {@code summary} (add-coach-suggestion-edit-delta, design D4): a guarda de
+     * estado e a de versão ficam no {@code WHERE}, então não há janela entre ler e gravar — nem
+     * contra outra edição, nem contra {@link #decidirSePendente} (que também incrementa
+     * {@code versao}). {@code summaryOriginal} só recebe o texto da IA na primeira edição.
+     * Retorna 0 quando a sugestão não é PENDING ou a versão divergiu; o chamador distingue.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("""
+       UPDATE SugestaoCoach s SET s.summaryOriginal = COALESCE(s.summaryOriginal, s.summary),
+           s.summary = :summary, s.editadoPeloCoach = true, s.editedAt = :editedAt,
+           s.versao = s.versao + 1
+       WHERE s.id = :id AND s.tenantId = :tenantId AND s.status = :statusAtual
+         AND s.versao = :versaoEsperada
+       """)
+    int editarSePendente(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
+                         @Param("statusAtual") StatusSugestao statusAtual,
+                         @Param("summary") String summary, @Param("editedAt") Instant editedAt,
+                         @Param("versaoEsperada") long versaoEsperada);
 }

@@ -875,7 +875,7 @@ class CoachAthleteProfileServiceImplTest {
 
     private SugestaoCoachOutputDto sugestao(TipoSugestao tipo) {
         return new SugestaoCoachOutputDto(UUID.randomUUID(), atletaId, "Ana", tipo,
-                StatusSugestao.PENDING, "HIGH", "Recuperar", null, Instant.now(), null, null, null, null);
+                StatusSugestao.PENDING, "HIGH", "Recuperar", null, Instant.now(), null, null, null, null, null, false, null, 0L);
     }
 
     private ProvaOutputDto provaDto(String nome, LocalDate data, boolean provaAlvo) {
