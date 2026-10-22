@@ -17,6 +17,11 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.UUID;
 
@@ -119,6 +124,65 @@ class SugestaoCoachEditDeltaIT extends AbstractIntegrationTest {
         assertThat(inTx(tx, () -> sugestaoCoachRepository.decidirSePendente(
                 s.getId(), s.getTenantId(), StatusSugestao.PENDING, StatusSugestao.APPROVED,
                 Instant.now(), UUID.randomUUID(), null, null))).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("tenant diferente: editar e decidir não afetam nem gravam nada")
+    void outroTenantNaoAfeta() {
+        SugestaoCoach s = sugestaoCoachRepository.saveAndFlush(seedSugestaoPendente());
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        UUID outroTenant = UUID.randomUUID();
+
+        assertThat(inTx(tx, () -> sugestaoCoachRepository.editarSePendente(
+                s.getId(), outroTenant, StatusSugestao.PENDING, "invasor", Instant.now(), 0L))).isZero();
+        assertThat(inTx(tx, () -> sugestaoCoachRepository.decidirSePendente(
+                s.getId(), outroTenant, StatusSugestao.PENDING, StatusSugestao.APPROVED,
+                Instant.now(), UUID.randomUUID(), null, null))).isZero();
+
+        SugestaoCoach lida = sugestaoCoachRepository.findById(s.getId()).orElseThrow();
+        assertThat(lida.getSummary()).isEqualTo("Reduzir volume em 20%");
+        assertThat(lida.getStatus()).isEqualTo(StatusSugestao.PENDING);
+    }
+
+    @Test
+    @DisplayName("editar x editar e editar x aprovar em paralelo, mesma versao: exatamente uma vence")
+    void corridaEmParaleloSoUmaVence() throws Exception {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        for (boolean contraDecisao : new boolean[] {false, true}) {
+            SugestaoCoach s = sugestaoCoachRepository.saveAndFlush(seedSugestaoPendente());
+            CountDownLatch prontos = new CountDownLatch(2);
+            CountDownLatch largada = new CountDownLatch(1);
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            try {
+                Callable<Integer> editar = () -> {
+                    prontos.countDown();
+                    largada.await();
+                    return inTx(tx, () -> sugestaoCoachRepository.editarSePendente(
+                            s.getId(), s.getTenantId(), StatusSugestao.PENDING, "edicao A", Instant.now(), 0L));
+                };
+                Callable<Integer> concorrente = () -> {
+                    prontos.countDown();
+                    largada.await();
+                    return inTx(tx, () -> contraDecisao
+                            ? sugestaoCoachRepository.decidirSePendente(s.getId(), s.getTenantId(),
+                                    StatusSugestao.PENDING, StatusSugestao.APPROVED, Instant.now(),
+                                    UUID.randomUUID(), null, 0L)
+                            : sugestaoCoachRepository.editarSePendente(s.getId(), s.getTenantId(),
+                                    StatusSugestao.PENDING, "edicao B", Instant.now(), 0L));
+                };
+                var a = pool.submit(editar);
+                var b = pool.submit(concorrente);
+                assertThat(prontos.await(5, TimeUnit.SECONDS)).isTrue();
+                largada.countDown();
+
+                assertThat(a.get(10, TimeUnit.SECONDS) + b.get(10, TimeUnit.SECONDS))
+                        .as("exatamente uma das duas escritas afeta linha (contraDecisao=%s)", contraDecisao)
+                        .isEqualTo(1);
+                assertThat(sugestaoCoachRepository.findById(s.getId()).orElseThrow().getVersao()).isEqualTo(1L);
+            } finally {
+                pool.shutdownNow();
+            }
+        }
     }
 
     /** int primitivo evita a ambiguidade de assertThat(Integer) com lambdas de TransactionTemplate. */

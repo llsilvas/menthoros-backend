@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.input.RejeitarSugestaoRequestDto;
+import br.com.menthoros.backend.dto.input.SugestaoCoachEditInputDto;
 import br.com.menthoros.backend.dto.output.SugestaoCoachOutputDto;
 import br.com.menthoros.backend.enums.StatusSugestao;
 import br.com.menthoros.backend.enums.TipoSugestao;
@@ -179,6 +180,40 @@ class CoachSugestaoControllerTest {
 
             assertThatThrownBy(() -> controller.rejeitar(ID, null, null))
                     .isInstanceOf(DomainConflictException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("editar")
+    class Editar {
+
+        @Test
+        @DisplayName("PUT /{id} → 200 delegando summary e versaoEsperada do corpo")
+        void editaCom200() {
+            SugestaoCoachOutputDto dto = dto(StatusSugestao.PENDING);
+            when(service.editar(ID, "novo texto", 4L)).thenReturn(dto);
+
+            ResponseEntity<SugestaoCoachOutputDto> resp =
+                    controller.editar(ID, new SugestaoCoachEditInputDto("novo texto", 4L));
+
+            assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
+            assertThat(resp.getBody()).isEqualTo(dto);
+        }
+
+        @Test
+        @DisplayName("PUT /{id} → 422, 409 e 404 do service propagam (GlobalExceptionHandler mapeia)")
+        void propagaErros() {
+            when(service.editar(ID, "x", 0L)).thenThrow(new DomainRuleViolationException("não PENDING"));
+            assertThatThrownBy(() -> controller.editar(ID, new SugestaoCoachEditInputDto("x", 0L)))
+                    .isInstanceOf(DomainRuleViolationException.class);
+
+            when(service.editar(ID, "x", 1L)).thenThrow(new DomainConflictException("versão"));
+            assertThatThrownBy(() -> controller.editar(ID, new SugestaoCoachEditInputDto("x", 1L)))
+                    .isInstanceOf(DomainConflictException.class);
+
+            when(service.editar(ID, "x", 2L)).thenThrow(new DomainNotFoundException("não achou"));
+            assertThatThrownBy(() -> controller.editar(ID, new SugestaoCoachEditInputDto("x", 2L)))
+                    .isInstanceOf(DomainNotFoundException.class);
         }
     }
 }

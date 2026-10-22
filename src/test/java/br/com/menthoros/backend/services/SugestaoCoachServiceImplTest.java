@@ -269,12 +269,9 @@ class SugestaoCoachServiceImplTest {
             SugestaoCoachOutputDto result = service.aprovar(sugestaoId, null);
 
             assertThat(result).isEqualTo(dto);
-            assertThat(s.getStatus()).isEqualTo(StatusSugestao.APPROVED);
-            assertThat(s.getReviewedAt()).isNotNull();
-            assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
-            assertThat(s.getRejectionReason()).isNull();
             verify(repository).decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
                     eq(StatusSugestao.APPROVED), any(), eq(usuarioId), isNull(), isNull());
+            verify(repository, times(2)).findByIdAndTenantId(sugestaoId, tenantId); // recarrega após o UPDATE
         }
 
         @Test
@@ -350,10 +347,7 @@ class SugestaoCoachServiceImplTest {
             SugestaoCoachOutputDto result = service.rejeitar(sugestaoId, null, null);
 
             assertThat(result).isEqualTo(dto);
-            assertThat(s.getStatus()).isEqualTo(StatusSugestao.REJECTED);
-            assertThat(s.getReviewedAt()).isNotNull();
-            assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
-            assertThat(s.getRejectionReason()).isNull();
+            verify(repository, times(2)).findByIdAndTenantId(sugestaoId, tenantId); // recarrega após o UPDATE
         }
 
         @Test
@@ -371,8 +365,8 @@ class SugestaoCoachServiceImplTest {
 
             service.rejeitar(sugestaoId, request, null);
 
-            assertThat(s.getRejectionReason()).isEqualTo("volume alto demais para a semana");
-            assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
+            verify(repository).decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
+                    eq(StatusSugestao.REJECTED), any(), eq(usuarioId), eq("volume alto demais para a semana"), isNull());
         }
 
         @Test

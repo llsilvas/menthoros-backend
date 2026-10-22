@@ -104,13 +104,10 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
                     throw new DomainConflictException(
                             "Sugestão " + id + " mudou ou já foi decidida por outra requisição");
                 }
-                sugestao.setVersao(sugestao.getVersao() + 1);
-                sugestao.setStatus(StatusSugestao.APPROVED);
-                sugestao.setReviewedAt(agora);
-                sugestao.setReviewedBy(reviewedBy);
-                sugestao.setRejectionReason(null);
                 log.info("aprovar: sugestão {} aprovada para tenant={}, reviewedBy={}", id, tenantId, reviewedBy);
-                return mapper.toOutputDto(sugestao);
+                // Recarrega: sem versaoEsperada um editar pode ter comitado entre o SELECT e o UPDATE, e o
+                // snapshot em memória teria summary e versao velhos (o UPDATE em massa limpa o contexto).
+                return mapper.toOutputDto(buscarOuLancar(id, tenantId));
             }
         }
         throw new IllegalStateException("Status desconhecido: " + sugestao.getStatus());
@@ -141,13 +138,8 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
                     throw new DomainConflictException(
                             "Sugestão " + id + " mudou ou já foi decidida por outra requisição");
                 }
-                sugestao.setVersao(sugestao.getVersao() + 1);
-                sugestao.setStatus(StatusSugestao.REJECTED);
-                sugestao.setReviewedAt(agora);
-                sugestao.setReviewedBy(reviewedBy);
-                sugestao.setRejectionReason(rejectionReason);
                 log.info("rejeitar: sugestão {} rejeitada para tenant={}, reviewedBy={}", id, tenantId, reviewedBy);
-                return mapper.toOutputDto(sugestao);
+                return mapper.toOutputDto(buscarOuLancar(id, tenantId));
             }
         }
         throw new IllegalStateException("Status desconhecido: " + sugestao.getStatus());
