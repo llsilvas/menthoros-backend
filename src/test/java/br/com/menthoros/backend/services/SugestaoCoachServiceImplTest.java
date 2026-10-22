@@ -98,7 +98,7 @@ class SugestaoCoachServiceImplTest {
     private SugestaoCoachOutputDto outputDto(UUID id) {
         return new SugestaoCoachOutputDto(id, UUID.randomUUID(), "Ana", TipoSugestao.RECOVERY,
                 StatusSugestao.PENDING, "HIGH", "Revisar carga", null,
-                Instant.now(), null, null, null, null);
+                Instant.now(), null, null, null, null, null, false, null, 0L);
     }
 
     // ── listar ───────────────────────────────────────────────────────────────
@@ -263,18 +263,15 @@ class SugestaoCoachServiceImplTest {
             SugestaoCoachOutputDto dto = outputDto(sugestaoId);
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
             when(repository.decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
-                    eq(StatusSugestao.APPROVED), any(), eq(usuarioId), isNull())).thenReturn(1);
+                    eq(StatusSugestao.APPROVED), any(), eq(usuarioId), isNull(), isNull())).thenReturn(1);
             when(mapper.toOutputDto(s)).thenReturn(dto);
 
-            SugestaoCoachOutputDto result = service.aprovar(sugestaoId);
+            SugestaoCoachOutputDto result = service.aprovar(sugestaoId, null);
 
             assertThat(result).isEqualTo(dto);
-            assertThat(s.getStatus()).isEqualTo(StatusSugestao.APPROVED);
-            assertThat(s.getReviewedAt()).isNotNull();
-            assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
-            assertThat(s.getRejectionReason()).isNull();
             verify(repository).decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
-                    eq(StatusSugestao.APPROVED), any(), eq(usuarioId), isNull());
+                    eq(StatusSugestao.APPROVED), any(), eq(usuarioId), isNull(), isNull());
+            verify(repository, times(2)).findByIdAndTenantId(sugestaoId, tenantId); // recarrega após o UPDATE
         }
 
         @Test
@@ -285,9 +282,9 @@ class SugestaoCoachServiceImplTest {
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
             when(mapper.toOutputDto(s)).thenReturn(dto);
 
-            service.aprovar(sugestaoId);
+            service.aprovar(sugestaoId, null);
 
-            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any());
+            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any(), any());
             verifyNoInteractions(principalResolver);
         }
 
@@ -297,11 +294,11 @@ class SugestaoCoachServiceImplTest {
             SugestaoCoach s = sugestao(StatusSugestao.REJECTED);
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
 
-            assertThatThrownBy(() -> service.aprovar(sugestaoId))
+            assertThatThrownBy(() -> service.aprovar(sugestaoId, null))
                     .isInstanceOf(DomainRuleViolationException.class)
                     .hasMessageContaining("REJECTED");
 
-            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any());
+            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any(), any());
         }
 
         @Test
@@ -309,7 +306,7 @@ class SugestaoCoachServiceImplTest {
         void lançaNotFound() {
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.aprovar(sugestaoId))
+            assertThatThrownBy(() -> service.aprovar(sugestaoId, null))
                     .isInstanceOf(DomainNotFoundException.class);
         }
 
@@ -320,9 +317,9 @@ class SugestaoCoachServiceImplTest {
             SugestaoCoach s = sugestao(StatusSugestao.PENDING);
             stubReviewedBy();
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
-            when(repository.decidirSePendente(any(), any(), any(), any(), any(), any(), any())).thenReturn(0);
+            when(repository.decidirSePendente(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(0);
 
-            assertThatThrownBy(() -> service.aprovar(sugestaoId))
+            assertThatThrownBy(() -> service.aprovar(sugestaoId, null))
                     .isInstanceOf(DomainConflictException.class);
 
             assertThat(s.getStatus()).isEqualTo(StatusSugestao.PENDING);
@@ -344,16 +341,13 @@ class SugestaoCoachServiceImplTest {
             SugestaoCoachOutputDto dto = outputDto(sugestaoId);
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
             when(repository.decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
-                    eq(StatusSugestao.REJECTED), any(), eq(usuarioId), isNull())).thenReturn(1);
+                    eq(StatusSugestao.REJECTED), any(), eq(usuarioId), isNull(), isNull())).thenReturn(1);
             when(mapper.toOutputDto(s)).thenReturn(dto);
 
-            SugestaoCoachOutputDto result = service.rejeitar(sugestaoId, null);
+            SugestaoCoachOutputDto result = service.rejeitar(sugestaoId, null, null);
 
             assertThat(result).isEqualTo(dto);
-            assertThat(s.getStatus()).isEqualTo(StatusSugestao.REJECTED);
-            assertThat(s.getReviewedAt()).isNotNull();
-            assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
-            assertThat(s.getRejectionReason()).isNull();
+            verify(repository, times(2)).findByIdAndTenantId(sugestaoId, tenantId); // recarrega após o UPDATE
         }
 
         @Test
@@ -365,14 +359,14 @@ class SugestaoCoachServiceImplTest {
             RejeitarSugestaoRequestDto request = new RejeitarSugestaoRequestDto("volume alto demais para a semana");
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
             when(repository.decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
-                    eq(StatusSugestao.REJECTED), any(), eq(usuarioId), eq("volume alto demais para a semana")))
+                    eq(StatusSugestao.REJECTED), any(), eq(usuarioId), eq("volume alto demais para a semana"), isNull()))
                     .thenReturn(1);
             when(mapper.toOutputDto(s)).thenReturn(dto);
 
-            service.rejeitar(sugestaoId, request);
+            service.rejeitar(sugestaoId, request, null);
 
-            assertThat(s.getRejectionReason()).isEqualTo("volume alto demais para a semana");
-            assertThat(s.getReviewedBy()).isEqualTo(usuarioId);
+            verify(repository).decidirSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
+                    eq(StatusSugestao.REJECTED), any(), eq(usuarioId), eq("volume alto demais para a semana"), isNull());
         }
 
         @Test
@@ -383,9 +377,9 @@ class SugestaoCoachServiceImplTest {
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
             when(mapper.toOutputDto(s)).thenReturn(dto);
 
-            service.rejeitar(sugestaoId, null);
+            service.rejeitar(sugestaoId, null, null);
 
-            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any());
+            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any(), any());
             verifyNoInteractions(principalResolver);
         }
 
@@ -395,11 +389,11 @@ class SugestaoCoachServiceImplTest {
             SugestaoCoach s = sugestao(StatusSugestao.APPROVED);
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
 
-            assertThatThrownBy(() -> service.rejeitar(sugestaoId, null))
+            assertThatThrownBy(() -> service.rejeitar(sugestaoId, null, null))
                     .isInstanceOf(DomainRuleViolationException.class)
                     .hasMessageContaining("APPROVED");
 
-            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any());
+            verify(repository, never()).decidirSePendente(any(), any(), any(), any(), any(), any(), any(), any());
         }
 
         @Test
@@ -407,7 +401,7 @@ class SugestaoCoachServiceImplTest {
         void lançaNotFound() {
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.rejeitar(sugestaoId, null))
+            assertThatThrownBy(() -> service.rejeitar(sugestaoId, null, null))
                     .isInstanceOf(DomainNotFoundException.class);
         }
 
@@ -417,13 +411,96 @@ class SugestaoCoachServiceImplTest {
             SugestaoCoach s = sugestao(StatusSugestao.PENDING);
             stubReviewedBy();
             when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
-            when(repository.decidirSePendente(any(), any(), any(), any(), any(), any(), any())).thenReturn(0);
+            when(repository.decidirSePendente(any(), any(), any(), any(), any(), any(), any(), any())).thenReturn(0);
 
-            assertThatThrownBy(() -> service.rejeitar(sugestaoId, null))
+            assertThatThrownBy(() -> service.rejeitar(sugestaoId, null, null))
                     .isInstanceOf(DomainConflictException.class);
 
             assertThat(s.getStatus()).isEqualTo(StatusSugestao.PENDING);
             verifyNoInteractions(mapper);
+        }
+    }
+
+    // ── editar (add-coach-suggestion-edit-delta) ─────────────────────────────
+
+    @Nested
+    @DisplayName("editar")
+    class Editar {
+
+        @Test
+        @DisplayName("PENDING com versão correta: UPDATE afeta 1 linha e devolve a sugestão recarregada (CA1)")
+        void editaComSucesso() {
+            SugestaoCoach s = sugestao(StatusSugestao.PENDING);
+            SugestaoCoachOutputDto dto = outputDto(sugestaoId);
+            when(repository.editarSePendente(eq(sugestaoId), eq(tenantId), eq(StatusSugestao.PENDING),
+                    eq("novo texto"), any(), eq(0L))).thenReturn(1);
+            when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.of(s));
+            when(mapper.toOutputDto(s)).thenReturn(dto);
+
+            assertThat(service.editar(sugestaoId, "novo texto", 0L)).isSameAs(dto);
+        }
+
+        @Test
+        @DisplayName("0 linhas e status APPROVED: 422, mesmo com versão divergente (CA3, CA11)")
+        void estadoTerminalVenceVersao() {
+            when(repository.editarSePendente(any(), any(), any(), any(), any(), eq(7L))).thenReturn(0);
+            when(repository.findByIdAndTenantId(sugestaoId, tenantId))
+                    .thenReturn(Optional.of(sugestao(StatusSugestao.APPROVED)));
+
+            assertThatThrownBy(() -> service.editar(sugestaoId, "x", 7L))
+                    .isInstanceOf(DomainRuleViolationException.class);
+        }
+
+        @Test
+        @DisplayName("0 linhas e ainda PENDING: versão divergente → 409 (CA8)")
+        void versaoDivergenteLancaConflito() {
+            when(repository.editarSePendente(any(), any(), any(), any(), any(), eq(0L))).thenReturn(0);
+            when(repository.findByIdAndTenantId(sugestaoId, tenantId))
+                    .thenReturn(Optional.of(sugestao(StatusSugestao.PENDING)));
+
+            assertThatThrownBy(() -> service.editar(sugestaoId, "x", 0L))
+                    .isInstanceOf(DomainConflictException.class);
+        }
+
+        @Test
+        @DisplayName("sugestão inexistente no tenant: 404")
+        void inexistenteLanca404() {
+            when(repository.editarSePendente(any(), any(), any(), any(), any(), anyLong())).thenReturn(0);
+            when(repository.findByIdAndTenantId(sugestaoId, tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.editar(sugestaoId, "x", 0L))
+                    .isInstanceOf(DomainNotFoundException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("aprovar/rejeitar com versaoEsperada")
+    class VersaoEsperada {
+
+        @Test
+        @DisplayName("aprovar repassa versaoEsperada ao UPDATE; 0 linhas → 409 (CA9)")
+        void aprovarComVersaoDesatualizadaLancaConflito() {
+            stubReviewedBy();
+            when(repository.findByIdAndTenantId(sugestaoId, tenantId))
+                    .thenReturn(Optional.of(sugestao(StatusSugestao.PENDING)));
+            when(repository.decidirSePendente(any(), any(), any(), any(), any(), any(), any(), eq(3L)))
+                    .thenReturn(0);
+
+            assertThatThrownBy(() -> service.aprovar(sugestaoId, 3L))
+                    .isInstanceOf(DomainConflictException.class);
+        }
+
+        @Test
+        @DisplayName("rejeitar repassa versaoEsperada ao UPDATE; 0 linhas → 409 (CA9)")
+        void rejeitarComVersaoDesatualizadaLancaConflito() {
+            stubReviewedBy();
+            when(repository.findByIdAndTenantId(sugestaoId, tenantId))
+                    .thenReturn(Optional.of(sugestao(StatusSugestao.PENDING)));
+            when(repository.decidirSePendente(any(), any(), any(), any(), any(), any(), any(), eq(3L)))
+                    .thenReturn(0);
+
+            assertThatThrownBy(() -> service.rejeitar(sugestaoId, null, 3L))
+                    .isInstanceOf(DomainConflictException.class);
         }
     }
 }

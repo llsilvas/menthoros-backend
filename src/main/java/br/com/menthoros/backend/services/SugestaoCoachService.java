@@ -46,11 +46,22 @@ public interface SugestaoCoachService {
      * update. Tenant-aware: YES.
      *
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException se não encontrada
+     * @param versaoEsperada opcional; quando presente, divergência da {@code versao} atual → 409
      * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se status == REJECTED (422)
      * @throws br.com.menthoros.backend.exception.DomainConflictException se outra decisão
      *         concorrente já transicionou a sugestão (design D4, 409)
      */
-    SugestaoCoachOutputDto aprovar(UUID id);
+    SugestaoCoachOutputDto aprovar(UUID id, Long versaoEsperada);
+
+    /**
+     * Edita o {@code summary} de uma sugestão PENDING preservando o texto original da IA na primeira
+     * edição (add-coach-suggestion-edit-delta). Idempotent: NO. Side Effects: DB write
+     * ({@code summaryOriginal}, {@code editadoPeloCoach}, {@code editedAt}, {@code versao}).
+     *
+     * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se não está PENDING (422, vence 409)
+     * @throws br.com.menthoros.backend.exception.DomainConflictException se {@code versaoEsperada} divergiu (409)
+     */
+    SugestaoCoachOutputDto editar(UUID id, String summary, long versaoEsperada);
 
     /**
      * Rejeita uma sugestão PENDING, transicionando para REJECTED. Grava {@code reviewedBy}
@@ -65,5 +76,5 @@ public interface SugestaoCoachService {
      * @throws br.com.menthoros.backend.exception.DomainConflictException se outra decisão
      *         concorrente já transicionou a sugestão (design D4, 409)
      */
-    SugestaoCoachOutputDto rejeitar(UUID id, RejeitarSugestaoRequestDto request);
+    SugestaoCoachOutputDto rejeitar(UUID id, RejeitarSugestaoRequestDto request, Long versaoEsperada);
 }

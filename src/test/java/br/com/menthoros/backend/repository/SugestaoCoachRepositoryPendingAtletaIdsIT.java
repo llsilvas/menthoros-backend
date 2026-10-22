@@ -221,7 +221,7 @@ class SugestaoCoachRepositoryPendingAtletaIdsIT extends AbstractIntegrationTest 
 
             TenantContext.setTenantId(assessoria.getId());
             autenticarComoTecnico(assessoria);
-            sugestaoCoachService.aprovar(sugestao.getId());
+            sugestaoCoachService.aprovar(sugestao.getId(), null);
             TenantContext.clear();
             entityManager.flush();
             entityManager.clear();

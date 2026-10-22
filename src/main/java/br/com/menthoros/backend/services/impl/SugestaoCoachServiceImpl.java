@@ -82,7 +82,7 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
 
     @Override
     @Transactional
-    public SugestaoCoachOutputDto aprovar(UUID id) {
+    public SugestaoCoachOutputDto aprovar(UUID id, Long versaoEsperada) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         log.info("aprovar: id={}, tenantId={}", id, tenantId);
 
@@ -99,17 +99,15 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
                 UUID reviewedBy = resolverReviewedBy(tenantId);
                 Instant agora = Instant.now();
                 int linhas = repository.decidirSePendente(id, tenantId, StatusSugestao.PENDING,
-                        StatusSugestao.APPROVED, agora, reviewedBy, null);
+                        StatusSugestao.APPROVED, agora, reviewedBy, null, versaoEsperada);
                 if (linhas == 0) {
                     throw new DomainConflictException(
-                            "Sugestão " + id + " já foi decidida por outra requisição concorrente");
+                            "Sugestão " + id + " mudou ou já foi decidida por outra requisição");
                 }
-                sugestao.setStatus(StatusSugestao.APPROVED);
-                sugestao.setReviewedAt(agora);
-                sugestao.setReviewedBy(reviewedBy);
-                sugestao.setRejectionReason(null);
                 log.info("aprovar: sugestão {} aprovada para tenant={}, reviewedBy={}", id, tenantId, reviewedBy);
-                return mapper.toOutputDto(sugestao);
+                // Recarrega: sem versaoEsperada um editar pode ter comitado entre o SELECT e o UPDATE, e o
+                // snapshot em memória teria summary e versao velhos (o UPDATE em massa limpa o contexto).
+                return mapper.toOutputDto(buscarOuLancar(id, tenantId));
             }
         }
         throw new IllegalStateException("Status desconhecido: " + sugestao.getStatus());
@@ -117,7 +115,7 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
 
     @Override
     @Transactional
-    public SugestaoCoachOutputDto rejeitar(UUID id, RejeitarSugestaoRequestDto request) {
+    public SugestaoCoachOutputDto rejeitar(UUID id, RejeitarSugestaoRequestDto request, Long versaoEsperada) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         log.info("rejeitar: id={}, tenantId={}", id, tenantId);
 
@@ -135,20 +133,38 @@ public class SugestaoCoachServiceImpl implements SugestaoCoachService {
                 String rejectionReason = request == null ? null : request.rejectionReason();
                 Instant agora = Instant.now();
                 int linhas = repository.decidirSePendente(id, tenantId, StatusSugestao.PENDING,
-                        StatusSugestao.REJECTED, agora, reviewedBy, rejectionReason);
+                        StatusSugestao.REJECTED, agora, reviewedBy, rejectionReason, versaoEsperada);
                 if (linhas == 0) {
                     throw new DomainConflictException(
-                            "Sugestão " + id + " já foi decidida por outra requisição concorrente");
+                            "Sugestão " + id + " mudou ou já foi decidida por outra requisição");
                 }
-                sugestao.setStatus(StatusSugestao.REJECTED);
-                sugestao.setReviewedAt(agora);
-                sugestao.setReviewedBy(reviewedBy);
-                sugestao.setRejectionReason(rejectionReason);
                 log.info("rejeitar: sugestão {} rejeitada para tenant={}, reviewedBy={}", id, tenantId, reviewedBy);
-                return mapper.toOutputDto(sugestao);
+                return mapper.toOutputDto(buscarOuLancar(id, tenantId));
             }
         }
         throw new IllegalStateException("Status desconhecido: " + sugestao.getStatus());
+    }
+
+    @Override
+    @Transactional
+    public SugestaoCoachOutputDto editar(UUID id, String summary, long versaoEsperada) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        log.info("editar: id={}, tenantId={}", id, tenantId);
+
+        int linhas = repository.editarSePendente(id, tenantId, StatusSugestao.PENDING,
+                summary, Instant.now(), versaoEsperada);
+        // Recarrega do banco (o UPDATE em massa limpa o contexto): é a fonte de verdade tanto para
+        // o retorno quanto para distinguir 404, 422 e 409 quando nenhuma linha foi afetada.
+        SugestaoCoach atual = buscarOuLancar(id, tenantId);
+        if (linhas == 0) {
+            if (atual.getStatus() != StatusSugestao.PENDING) {
+                throw new DomainRuleViolationException(
+                        "Sugestão " + id + " está " + atual.getStatus() + " — só PENDING pode ser editada");
+            }
+            throw new DomainConflictException(
+                    "Sugestão " + id + " mudou desde que foi lida (versão " + atual.getVersao() + ")");
+        }
+        return mapper.toOutputDto(atual);
     }
 
     private SugestaoCoach buscarOuLancar(UUID id, UUID tenantId) {
