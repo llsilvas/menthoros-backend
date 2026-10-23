@@ -19,6 +19,7 @@ import br.com.menthoros.backend.enums.TipoProva;
 import br.com.menthoros.backend.exception.AccessDeniedException;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.repository.AthleteBaselineHistoryRepository;
 import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
@@ -281,7 +282,16 @@ public class OnboardingServiceImpl implements OnboardingService {
         perfil.setStatus("COMPLETO");
         PerfilOnboardingAtleta perfilConcluido = perfilOnboardingAtletaRepository.save(perfil);
 
-        Prova provaAlvo = criarOuAtualizarProvaAlvo(atletaId, tenantId, dataProva, tipoProva, distancia, distanciaKm, nomeProva);
+        // Prova alvo opcional (improve-athlete-onboarding-usability): sem dataProva, conclui sem
+        // prova — o atleta cadastra depois em Provas. Com dataProva, a prova tem de vir inteira.
+        Prova provaAlvo = null;
+        if (dataProva != null) {
+            if (tipoProva == null || distancia == null) {
+                throw new DomainRuleViolationException(
+                        "Para registrar a prova alvo no onboarding, informe tipoProva e distancia junto com dataProva");
+            }
+            provaAlvo = criarOuAtualizarProvaAlvo(atletaId, tenantId, dataProva, tipoProva, distancia, distanciaKm, nomeProva);
+        }
         OnboardingContext context = montarContexto(atletaId, tenantId);
         ConfidenceTier tier = athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)
                 .map(AthleteBaselineState::getConfidenceTier)
