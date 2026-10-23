@@ -110,6 +110,10 @@ public interface OnboardingService {
      * (CA13, Decisao 8) e calcula o {@code OnboardingContext} inicial (baseline + score + tier,
      * via {@link #montarContexto}).
      *
+     * <p>Prova alvo OPCIONAL (improve-athlete-onboarding-usability): com {@code dataProva} nulo,
+     * conclui sem prova ({@code provaAlvo} nulo no resultado) — o atleta cadastra depois em Provas.
+     * Com {@code dataProva} informado, {@code tipoProva} e {@code distancia} sao obrigatorios.
+     *
      * <p>Checagem de conflito: se {@code Atleta.updatedAt} for posterior ao {@code atualizadoEm} do
      * rascunho, alguem editou o atleta diretamente (ex.: coach via CRUD generico) depois da ultima
      * vez que o rascunho foi salvo — lanca {@code DomainConflictException} em vez de sobrescrever a
@@ -137,6 +141,7 @@ public interface OnboardingService {
      *
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o atleta ou o rascunho nao existirem no tenant
      * @throws br.com.menthoros.backend.exception.DomainConflictException se {@code Atleta} foi editado depois do inicio do rascunho
+     * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se {@code dataProva} vier sem {@code tipoProva} ou {@code distancia}
      * @throws br.com.menthoros.backend.exception.AccessDeniedException se o chamador (atleta) tentar concluir o onboarding de outro atleta
      */
     OnboardingConclusionResult concluirOnboarding(UUID atletaId, UUID tenantId, boolean chamadorEhCoach,
