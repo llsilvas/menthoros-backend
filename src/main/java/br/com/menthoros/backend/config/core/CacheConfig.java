@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 
+import java.time.Duration;
 import java.util.List;
 
 @Configuration
@@ -41,6 +42,15 @@ public class CacheConfig {
                 "melhores-esforcos-atleta"
         ));
 
+        // PKCE verifier do Garmin vive só até o callback: TTL próprio, igual ao do state (D2).
+        cacheManager.registerCustomCache(GARMIN_PKCE, Caffeine.newBuilder()
+                .maximumSize(cacheProperties.getMaximumSize())
+                .expireAfterWrite(GARMIN_PKCE_TTL)
+                .build());
+
         return cacheManager;
     }
+
+    public static final String GARMIN_PKCE = "garmin-pkce";
+    public static final Duration GARMIN_PKCE_TTL = Duration.ofMinutes(10);
 }

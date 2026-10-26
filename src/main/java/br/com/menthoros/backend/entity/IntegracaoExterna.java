@@ -56,6 +56,14 @@ public class IntegracaoExterna {
     @Column(name = "token_expira_em")
     private Instant tokenExpiraEm;
 
+    /**
+     * Expiração do refresh token no provedor (só o Garmin rotaciona refresh com prazo). Muda
+     * apenas no refresh — por isso o job diário de renovação lê esta coluna, e não
+     * {@link #atualizadoEm}, que qualquer {@code save} altera.
+     */
+    @Column(name = "refresh_token_expira_em")
+    private Instant refreshTokenExpiraEm;
+
     @Column(name = "scopes", length = 500)
     private String scopes;
 
