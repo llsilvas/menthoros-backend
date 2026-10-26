@@ -551,6 +551,45 @@ class OnboardingServiceTest {
             assertThat(captor.getValue().getVolumeSemanalMax()).isEqualTo(40);
         }
 
+        /**
+         * Prova alvo opcional (improve-athlete-onboarding-usability): o iniciante cujo objetivo e
+         * "correr 10 km sem parar" nao tem prova para informar — e nao pode ficar preso no formulario.
+         */
+        @Test
+        @DisplayName("sem dataProva, conclui sem criar Prova alvo e o resultado vem com provaAlvo nula")
+        void concluiSemProvaQuandoDataProvaAusente() {
+            atleta.setUpdatedAt(LocalDateTime.now().minusDays(2));
+            PerfilOnboardingAtleta perfil = rascunhoPreenchido(Instant.now().minusSeconds(3600));
+            stubFluxoDeConclusaoSemProva(perfil);
+
+            OnboardingConclusionResult resultado = service.concluirOnboarding(
+                    atletaId, tenantId, true, null, null, null, null, null);
+
+            assertThat(resultado.perfil().getStatus()).isEqualTo("COMPLETO");
+            assertThat(resultado.provaAlvo()).isNull();
+            assertThat(resultado.context()).isNotNull();
+            verify(provaRepository, org.mockito.Mockito.never()).save(any(Prova.class));
+            verify(atletaRepository).save(any());
+        }
+
+        @Test
+        @DisplayName("dataProva sem distancia -> DomainRuleViolationException, e nada e persistido")
+        void rejeitaProvaIncompleta() {
+            atleta.setUpdatedAt(LocalDateTime.now().minusDays(2));
+            PerfilOnboardingAtleta perfil = rascunhoPreenchido(Instant.now().minusSeconds(3600));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
+            when(atletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            assertThatThrownBy(() -> service.concluirOnboarding(
+                    atletaId, tenantId, true, LocalDate.now().plusMonths(3),
+                    TipoProva.CORRIDA_RUA, null, null, null))
+                    .isInstanceOf(br.com.menthoros.backend.exception.DomainRuleViolationException.class)
+                    .hasMessageContaining("distancia");
+            verify(provaRepository, org.mockito.Mockito.never()).save(any(Prova.class));
+        }
+
         @Test
         @DisplayName("lanca DomainConflictException quando Atleta foi editado depois da ultima atualizacao do rascunho")
         void lancaConflitoQuandoAtletaEditadoDepoisDoRascunho() {
@@ -612,10 +651,7 @@ class OnboardingServiceTest {
         }
 
         private void stubFluxoDeConclusao(PerfilOnboardingAtleta perfil) {
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
-            when(atletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            stubFluxoDeConclusaoSemProva(perfil);
             // criarOuAtualizarProvaAlvo
             when(provaRepository.findByAtletaAndProvaAlvoTrue(atleta)).thenReturn(List.of());
             when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> {
@@ -623,6 +659,14 @@ class OnboardingServiceTest {
                 if (p.getId() == null) p.setId(UUID.randomUUID());
                 return p;
             });
+        }
+
+        /** Stubs do fluxo sem prova alvo — strict stubbing acusaria os stubs de Prova como mortos. */
+        private void stubFluxoDeConclusaoSemProva(PerfilOnboardingAtleta perfil) {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
+            when(atletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             // montarContexto
             when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(List.of());
             when(activityDedupService.deduplicar(List.of(), tenantId)).thenReturn(List.of());

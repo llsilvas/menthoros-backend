@@ -91,7 +91,8 @@ public class OnboardingController {
     @RequireTenant(resourceParamIndex = 0)
     @Operation(summary = "Concluir onboarding",
             description = "Migra os campos do rascunho para Atleta, cria/atualiza a Prova alvo a partir de "
-                    + "dataProva (CA13) e calcula o baseline/score iniciais, tudo numa única transação. "
+                    + "dataProva (CA13, opcional — corpo vazio conclui sem prova) e calcula o baseline/score "
+                    + "iniciais, tudo numa única transação. "
                     + "Retorna 409 se Atleta foi editado diretamente após o início do rascunho (conflito).")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Onboarding concluído com sucesso",

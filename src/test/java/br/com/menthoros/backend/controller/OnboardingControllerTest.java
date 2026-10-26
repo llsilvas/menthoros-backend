@@ -53,6 +53,7 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -201,16 +202,25 @@ class OnboardingControllerTest {
                     .andExpect(jsonPath("$.status").value("COMPLETO"));
         }
 
+        /**
+         * Prova alvo opcional (improve-athlete-onboarding-usability): corpo vazio conclui sem prova.
+         * A regra "se informar a prova, informar inteira" vive no serviço (coberta em
+         * {@code OnboardingServiceTest}), não em Bean Validation.
+         */
         @Test
-        @DisplayName("400 quando dataProva está ausente")
-        void retorna400QuandoCampoObrigatorioAusente() throws Exception {
-            var bodySemDataProva = mapper.writeValueAsString(Map.of(
-                    "tipoProva", "CORRIDA_RUA", "distancia", "KM_21"));
+        @DisplayName("200 com corpo vazio — conclui sem prova alvo")
+        void retorna200SemProva() throws Exception {
+            OnboardingConclusionResult resultado = conclusionResult();
+            when(onboardingService.concluirOnboarding(
+                    eq(atletaId), eq(tenantId), eq(false), isNull(), isNull(), isNull(), isNull(), isNull()))
+                    .thenReturn(resultado);
+            when(onboardingMapper.toConclusaoOutputDto(resultado)).thenReturn(conclusaoOutputDto());
 
             mockMvc.perform(post("/api/v1/atletas/{atletaId}/onboarding/concluir", atletaId)
                             .contentType(MediaType.APPLICATION_JSON)
-                            .content(bodySemDataProva))
-                    .andExpect(status().isBadRequest());
+                            .content("{}"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.status").value("COMPLETO"));
         }
 
         @Test
