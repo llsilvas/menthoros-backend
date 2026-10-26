@@ -91,6 +91,7 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private br.com.menthoros.backend.repository.TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private MelhorEsforcoService melhorEsforcoService;
     @Mock private AthleteContractService athleteContractService;
+    @Mock private br.com.menthoros.backend.repository.IntegracaoExternaRepository integracaoExternaRepository;
     // Mock devolve status nulo: o TransactionTemplate só executa o callback — o isolamento real é
     // provado em CoachAthleteProfileDegradacaoIT.
     @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
@@ -126,7 +127,7 @@ class CoachAthleteProfileServiceImplTest {
                 atletaRepository, atletaProgressService, coachAttentionQueueService, sugestaoCoachService,
                 planoService, planoMetadadosRepository, perfilOnboardingAtletaRepository, provaRepository, provaMapper, treinoRealizadoRepository,
                 intervalsIcuConnectionService, thresholdInferenceService, melhorEsforcoService, meterRegistry,
-                athleteContractService, transactionManager);
+                athleteContractService, transactionManager, integracaoExternaRepository);
         // Default: sem cobrança (os testes de cobrança sobrescrevem)
         lenient().when(athleteContractService.resolveBilling(eq(atletaId), any(LocalDate.class)))
                 .thenReturn(java.util.Optional.empty());
@@ -618,6 +619,76 @@ class CoachAthleteProfileServiceImplTest {
             AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
 
             assertThat(perfil.relogio()).isNull();
+            assertThat(perfil.avisos()).isNull();
+        }
+
+        private void canalMaisRecente(br.com.menthoros.backend.entity.IntegracaoExterna integracao) {
+            when(integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtualizadoEmDesc(
+                    atletaId, List.of(br.com.menthoros.backend.enums.FonteDados.INTERVALS_ICU,
+                            br.com.menthoros.backend.enums.FonteDados.GARMIN), tenantId))
+                    .thenReturn(Optional.ofNullable(integracao));
+        }
+
+        private br.com.menthoros.backend.entity.IntegracaoExterna integracao(
+                br.com.menthoros.backend.enums.FonteDados plataforma, boolean ativo, String scopes, String erro) {
+            var i = new br.com.menthoros.backend.entity.IntegracaoExterna();
+            i.setPlataforma(plataforma);
+            i.setAtivo(ativo);
+            i.setScopes(scopes);
+            i.setLastSyncError(erro);
+            return i;
+        }
+
+        @Test
+        @DisplayName("conexaoCanal: Garmin ativo com as duas permissões")
+        void conexaoCanalGarminAtivo() {
+            stubPerfilMinimo();
+            canalMaisRecente(integracao(br.com.menthoros.backend.enums.FonteDados.GARMIN, true,
+                    "WORKOUT_IMPORT,ACTIVITY_EXPORT", null));
+
+            var canal = service.buscarPerfil(atletaId).conexaoCanal();
+
+            assertThat(canal).isEqualTo(new AtletaPerfilCoachOutputDto.ConexaoCanalDto(
+                    br.com.menthoros.backend.enums.FonteDados.GARMIN, true, true, true, null));
+        }
+
+        @Test
+        @DisplayName("conexaoCanal: Garmin revogado aparece com ativo=false e o motivo")
+        void conexaoCanalGarminRevogado() {
+            stubPerfilMinimo();
+            canalMaisRecente(integracao(br.com.menthoros.backend.enums.FonteDados.GARMIN, false, null,
+                    "Autorização revogada"));
+
+            var canal = service.buscarPerfil(atletaId).conexaoCanal();
+
+            assertThat(canal.ativo()).isFalse();
+            assertThat(canal.workoutImport()).isFalse();
+            assertThat(canal.lastSyncError()).isEqualTo("Autorização revogada");
+        }
+
+        @Test
+        @DisplayName("conexaoCanal: intervals.icu deriva as permissões dos scopes do ICU")
+        void conexaoCanalIntervalsIcu() {
+            stubPerfilMinimo();
+            canalMaisRecente(integracao(br.com.menthoros.backend.enums.FonteDados.INTERVALS_ICU, true,
+                    "ACTIVITY:READ,CALENDAR:WRITE", null));
+
+            var canal = service.buscarPerfil(atletaId).conexaoCanal();
+
+            assertThat(canal.plataforma()).isEqualTo(br.com.menthoros.backend.enums.FonteDados.INTERVALS_ICU);
+            assertThat(canal.workoutImport()).isTrue();
+            assertThat(canal.activityExport()).isTrue();
+        }
+
+        @Test
+        @DisplayName("conexaoCanal: atleta sem canal tem null e nenhum aviso")
+        void conexaoCanalNuncaConectou() {
+            stubPerfilMinimo();
+            canalMaisRecente(null);
+
+            var perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.conexaoCanal()).isNull();
             assertThat(perfil.avisos()).isNull();
         }
 

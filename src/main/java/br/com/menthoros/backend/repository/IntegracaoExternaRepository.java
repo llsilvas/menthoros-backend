@@ -62,6 +62,10 @@ public interface IntegracaoExternaRepository extends JpaRepository<IntegracaoExt
             @Param("tenantId") UUID tenantId
     );
 
+    /** D7 de garmin-connection: canal mais recente, ativo ou não — distingue "revogada" de "nunca conectou". */
+    Optional<IntegracaoExterna> findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtualizadoEmDesc(
+            UUID atletaId, Collection<FonteDados> plataformas, UUID tenantId);
+
     /** D3 de garmin-connection: base do job diário — só olha {@code refresh_token_expira_em}, nunca {@code atualizado_em}. */
     @Query("""
     select i from IntegracaoExterna i

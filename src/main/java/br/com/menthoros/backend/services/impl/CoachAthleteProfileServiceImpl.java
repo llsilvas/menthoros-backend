@@ -12,7 +12,9 @@ import br.com.menthoros.backend.services.AthleteContractService;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
@@ -64,6 +66,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final MeterRegistry meterRegistry;
     private final AthleteContractService athleteContractService;
     private final PlatformTransactionManager transactionManager;
+    private final IntegracaoExternaRepository integracaoExternaRepository;
 
     /**
      * Transação própria para cada bloco degradável do perfil. Participando da transação do perfil,
@@ -180,6 +183,10 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         AtletaPerfilCoachOutputDto.RelogioDto relogio = buscarNullable("relogio", avisos,
                 () -> resolverRelogio(atletaId, tenantId));
 
+        // nulo sem aviso quando o atleta nunca conectou um canal
+        AtletaPerfilCoachOutputDto.ConexaoCanalDto conexaoCanal = buscarNullable("conexaoCanal", avisos,
+                () -> resolverConexaoCanal(atletaId, tenantId));
+
         return new AtletaPerfilCoachOutputDto(
                 atletaId,
                 nome,
@@ -203,8 +210,23 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 melhoresEsforcos,
                 melhoresEsforcosIntegracaoConectada,
                 distanceSummary,
-                relogio
+                relogio,
+                conexaoCanal
         );
+    }
+
+    private AtletaPerfilCoachOutputDto.ConexaoCanalDto resolverConexaoCanal(UUID atletaId, UUID tenantId) {
+        return integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtualizadoEmDesc(
+                        atletaId, List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN), tenantId)
+                .map(i -> {
+                    boolean garmin = i.getPlataforma() == FonteDados.GARMIN;
+                    String scopes = i.getScopes() == null ? "" : i.getScopes();
+                    return new AtletaPerfilCoachOutputDto.ConexaoCanalDto(i.getPlataforma(), i.isAtivo(),
+                            scopes.contains(garmin ? "WORKOUT_IMPORT" : "CALENDAR:WRITE"),
+                            scopes.contains(garmin ? "ACTIVITY_EXPORT" : "ACTIVITY:READ"),
+                            i.getLastSyncError());
+                })
+                .orElse(null);
     }
 
     private AtletaPerfilCoachOutputDto.RelogioDto resolverRelogio(UUID atletaId, UUID tenantId) {
