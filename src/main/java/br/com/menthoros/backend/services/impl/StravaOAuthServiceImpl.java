@@ -25,6 +25,7 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -78,9 +79,11 @@ public class StravaOAuthServiceImpl implements StravaOAuthService {
         // save (não dois): a flag é setada no MESMO objeto antes de persistir. Monotônico — só
         // seta true, nunca reseta para false (uma linha existente com autoSyncPausado=true herdado
         // de pausa manual/automática anterior não é revertida ao reconectar sem intervals.icu ativo).
-        if (integracaoExternaRepository
-                .findActiveByAtletaIdAndPlataformaAndTenantId(atleta.getId(), FonteDados.INTERVALS_ICU, integracao.getTenantId())
-                .isPresent()) {
+        // Garmin direto também é canal exclusivo (D4 de garmin-connection): mesma regra do intervals.icu.
+        if (!integracaoExternaRepository
+                .findActiveByAtletaIdAndPlataformaInAndTenantId(atleta.getId(),
+                        List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN), integracao.getTenantId())
+                .isEmpty()) {
             integracao.setAutoSyncPausado(true);
         }
 
