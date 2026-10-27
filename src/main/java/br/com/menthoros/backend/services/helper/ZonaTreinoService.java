@@ -53,9 +53,9 @@ public class ZonaTreinoService {
     private static final double[][] PACE_FATORES = {
             {1.15, 1.25}, // Z1 (mais lento = mais fácil)
             {1.05, 1.15}, // Z2
-            {0.98, 1.05}, // Z3
+            {1.00, 1.05}, // Z3
             {0.95, 1.00}, // Z4
-            {0.90, 0.97}, // Z5
+            {0.90, 0.95}, // Z5
             {0.82, 0.90}, // Z6 (sprint, mais rápido que VO2max)
     };
 
@@ -103,6 +103,7 @@ public class ZonaTreinoService {
     /**
      * Calcula as 6 zonas de pace baseadas no pace limiar.
      * Z6 (Sprint) = pace abaixo de 90% do limiar (esforço anaeróbico).
+     * Faixas contíguas: paceMin(Zn) == paceMax(Zn+1). {@code 0.00-0.00} é a sentinela "sem limiar".
      */
     public List<ZonaPace> calcularZonasPace(BigDecimal paceLimiar) {
         return List.of(
