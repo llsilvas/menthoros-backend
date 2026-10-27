@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import br.com.menthoros.backend.dto.input.EtapaInputDto;
 import br.com.menthoros.backend.dto.input.TreinoPlanejadoAddDto;
 import br.com.menthoros.backend.dto.input.TreinoPlanejadoPatchDto;
@@ -133,6 +134,23 @@ class TreinoPlanejadoServiceTest {
     @Nested
     @DisplayName("adicionarTreino")
     class AdicionarTreino {
+
+        @Test
+        @DisplayName("zonaAlvo vazia vira null no treino criado, nunca string vazia gravada")
+        void zonaAlvoVaziaViraNull() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            stubPlanoFound(plano);
+            TreinoPlanejado saved = new TreinoPlanejado();
+            when(treinoPlanejadoRepository.save(any())).thenReturn(saved);
+            when(treinoMapper.toOutputDto(saved)).thenReturn(outputStub());
+
+            service.adicionarTreino(planoId, new TreinoPlanejadoAddDto(
+                    "CONTINUO", DATA_SEXTA, null, null, 70, "", null, null, null, null));
+
+            ArgumentCaptor<TreinoPlanejado> captor = ArgumentCaptor.forClass(TreinoPlanejado.class);
+            verify(treinoPlanejadoRepository).save(captor.capture());
+            assertThat(captor.getValue().getZonaAlvo()).isNull();
+        }
 
         @Test
         @DisplayName("treino simples criado com adicionadoPeloCoach=true, PENDENTE e MANUAL")
@@ -633,6 +651,56 @@ class TreinoPlanejadoServiceTest {
             assertThat(treino.getEtapas()).hasSize(1);
             assertThat(treino.getEtapas().get(0).getRitmoAlvo()).isEqualTo("5:00-5:15/km");
             assertThat(treino.getEtapas().get(0).getFcAlvoEtapa()).isEqualTo("140-150 bpm");
+        }
+
+        @Test
+        @DisplayName("alvoPrimario atravessa etapa avulsa, cópias do bloco e a expansão legada por repeticoes")
+        void preservaAlvoPrimario() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setEtapas(new ArrayList<>());
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any(TreinoPlanejado.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> etapaDe(inv.getArgument(0)));
+
+            EtapaInputDto avulsa = new EtapaInputDto("PRINCIPAL", "Base", 20, null, null, null, null, null, null,
+                    AlvoPrimario.NENHUM);
+            EtapaInputDto sub = new EtapaInputDto("INTERVALADO", "Tiro", 1, null, null, "4:00-4:10/km", null, null,
+                    null, AlvoPrimario.PACE);
+            EtapaInputDto bloco = new EtapaInputDto("BLOCO", null, null, null, null, null, null, 2, List.of(sub));
+            EtapaInputDto legado = new EtapaInputDto("INTERVALADO", "Tiro", 2, null, "150-160 bpm", null, 2, null,
+                    null, AlvoPrimario.FC);
+
+            service.editarTreino(planoId, treinoId, new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, List.of(avulsa, bloco, legado)));
+
+            assertThat(treino.getEtapas()).extracting(EtapaTreino::getAlvoPrimario)
+                    .containsExactly(AlvoPrimario.NENHUM, AlvoPrimario.PACE, AlvoPrimario.PACE,
+                            AlvoPrimario.FC, AlvoPrimario.FC);
+        }
+
+        @Test
+        @DisplayName("patch com zonaAlvo vazia limpa o campo; sem o campo, preserva")
+        void zonaAlvoVaziaLimpa() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setZonaAlvo("Z2");
+
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any(TreinoPlanejado.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            service.editarTreino(planoId, treinoId, new TreinoPlanejadoPatchDto(
+                    null, "nova descrição", null, null, null, null, null, null, null));
+            assertThat(treino.getZonaAlvo()).isEqualTo("Z2");
+
+            service.editarTreino(planoId, treinoId, new TreinoPlanejadoPatchDto(
+                    null, null, null, null, "", null, null, null, null));
+            assertThat(treino.getZonaAlvo()).isNull();
         }
 
         @Test
@@ -1393,6 +1461,7 @@ class TreinoPlanejadoServiceTest {
         etapa.setDuracaoMin(dto.duracaoMin());
         etapa.setFcAlvoEtapa(dto.fcAlvoEtapa());
         etapa.setRitmoAlvo(dto.ritmoAlvo());
+        etapa.setAlvoPrimario(dto.alvoPrimario());
         return etapa;
     }
 

@@ -4,7 +4,7 @@ import br.com.menthoros.backend.domain.workout.HrTarget;
 import br.com.menthoros.backend.domain.workout.PaceTarget;
 import br.com.menthoros.backend.domain.workout.StructuredWorkout;
 import br.com.menthoros.backend.dto.output.TreinoHojeDto;
-import br.com.menthoros.backend.dto.output.TreinoHojeDto.AlvoPrimario;
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import br.com.menthoros.backend.dto.output.TreinoHojeDto.EtapaAlvoDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaTreino;
@@ -111,6 +111,76 @@ class EtapaAlvoResolverTest {
         assertThat(dto.descricao()).isEqualTo("Trote");
         assertThat(dto.duracaoMin()).isEqualTo(5);
         assertThat(dto.alvoPrimario()).isEqualTo(AlvoPrimario.NENHUM);
+    }
+
+    @Test
+    @DisplayName("alvoPrimario=PACE explícito: pace é o alvo mesmo com FC resolvível; FC vai para o texto (igual ao push)")
+    void paceExplicitoVenceFcResolvivel() {
+        EtapaTreino etapa = etapa(1, "85-89%", "5:30-5:45");
+        etapa.setAlvoPrimario(AlvoPrimario.PACE);
+
+        EtapaAlvoDto dto = resolver.resolver(etapa, comLimiar);
+
+        assertThat(stepDoConverter(etapa, comLimiar).meta()).isInstanceOf(PaceTarget.class);
+        assertThat(dto.alvoPrimario()).isEqualTo(AlvoPrimario.PACE);
+        assertThat(dto.paceAlvo()).isEqualTo("5:30-5:45");
+        assertThat(dto.fcAlvoMin()).isNull();
+        assertThat(dto.textoSecundario()).isEqualTo("85-89%");
+    }
+
+    @Test
+    @DisplayName("alvoPrimario=NENHUM explícito vence texto presente: nem FC nem pace vão ao relógio")
+    void nenhumExplicitoVenceTexto() {
+        EtapaTreino etapa = etapa(1, "85-89%", "5:30-5:45");
+        etapa.setAlvoPrimario(AlvoPrimario.NENHUM);
+
+        EtapaAlvoDto dto = resolver.resolver(etapa, comLimiar);
+
+        assertThat(stepDoConverter(etapa, comLimiar).meta())
+                .isEqualTo(br.com.menthoros.backend.domain.workout.IntensityTarget.SEM_OBJETIVO);
+        assertThat(dto.alvoPrimario()).isEqualTo(AlvoPrimario.NENHUM);
+        assertThat(dto.fcAlvoMin()).isNull();
+        assertThat(dto.paceAlvo()).isNull();
+    }
+
+    @Test
+    @DisplayName("alvoPrimario=FC explícito com FC descartada: pace NÃO assume — vira NENHUM")
+    void fcExplicitaDescartadaNaoCedeAoPace() {
+        EtapaTreino etapa = etapa(1, "85-90%", "5:00");
+        etapa.setAlvoPrimario(AlvoPrimario.FC);
+
+        EtapaAlvoDto dto = resolver.resolver(etapa, semLimiar);
+
+        assertThat(stepDoConverter(etapa, semLimiar).meta())
+                .isEqualTo(br.com.menthoros.backend.domain.workout.IntensityTarget.SEM_OBJETIVO);
+        assertThat(dto.alvoPrimario()).isEqualTo(AlvoPrimario.NENHUM);
+        assertThat(dto.paceAlvo()).isNull();
+    }
+
+    @Test
+    @DisplayName("alvoPrimario=PACE explícito sem ritmo preenchido: eixo sem valor resolve como NENHUM")
+    void paceExplicitoSemValor() {
+        EtapaTreino etapa = etapa(1, "85-89%", null);
+        etapa.setAlvoPrimario(AlvoPrimario.PACE);
+
+        EtapaAlvoDto dto = resolver.resolver(etapa, comLimiar);
+
+        assertThat(stepDoConverter(etapa, comLimiar).meta())
+                .isEqualTo(br.com.menthoros.backend.domain.workout.IntensityTarget.SEM_OBJETIVO);
+        assertThat(dto.alvoPrimario()).isEqualTo(AlvoPrimario.NENHUM);
+    }
+
+    @Test
+    @DisplayName("alvoPrimario=FC explícito com FC resolvível: igual à derivação (FC alvo, pace texto)")
+    void fcExplicitaResolvivel() {
+        EtapaTreino etapa = etapa(1, "85-89%", "5:30-5:45");
+        etapa.setAlvoPrimario(AlvoPrimario.FC);
+
+        EtapaAlvoDto dto = resolver.resolver(etapa, comLimiar);
+
+        assertThat(stepDoConverter(etapa, comLimiar).meta()).isInstanceOf(HrTarget.class);
+        assertThat(dto.alvoPrimario()).isEqualTo(AlvoPrimario.FC);
+        assertThat(dto.textoSecundario()).isEqualTo("5:30-5:45");
     }
 
     private static EtapaTreino etapa(int ordem, String fcAlvo, String ritmoAlvo) {

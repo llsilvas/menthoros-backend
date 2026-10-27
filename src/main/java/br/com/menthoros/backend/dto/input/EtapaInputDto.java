@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.dto.input;
 
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -56,5 +57,16 @@ public record EtapaInputDto(
         @Schema(description = "Etapas internas do bloco — somente quando tipoEtapa=BLOCO")
         @Valid
         @Size(max = 10, message = "subEtapas não pode ter mais de 10 itens")
-        List<EtapaInputDto> subEtapas
-) {}
+        List<EtapaInputDto> subEtapas,
+
+        @Schema(description = "Eixo que o relógio controla nesta etapa; ausente mantém a derivação por conteúdo (FC vence, pace assume)")
+        AlvoPrimario alvoPrimario
+) {
+
+    public EtapaInputDto(String tipoEtapa, String descricaoEtapa, Integer duracaoMin, Double distanciaKm,
+                         String fcAlvoEtapa, String ritmoAlvo, Integer repeticoes, Integer blocoRepeticoes,
+                         List<EtapaInputDto> subEtapas) {
+        this(tipoEtapa, descricaoEtapa, duracaoMin, distanciaKm, fcAlvoEtapa, ritmoAlvo, repeticoes,
+                blocoRepeticoes, subEtapas, null);
+    }
+}
