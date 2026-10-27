@@ -41,6 +41,17 @@ class PlanoSemanalMapperPlannerTest {
                 status, violacoes.size(), violacoes, "v1"));
     }
 
+    @Test
+    @DisplayName("expõe atletaId do dono do plano, para o painel buscar as zonas do atleta certo")
+    void expoeAtletaId() {
+        PlanoSemanal plano = planoBase();
+        br.com.menthoros.backend.entity.Atleta atleta = new br.com.menthoros.backend.entity.Atleta();
+        atleta.setId(UUID.randomUUID());
+        plano.setAtleta(atleta);
+
+        assertThat(mapper.toOutputDto(plano).atletaId()).isEqualTo(atleta.getId());
+    }
+
     @Nested
     @DisplayName("plano com metadata e violacoes")
     class ComViolacoes {

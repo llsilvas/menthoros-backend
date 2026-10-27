@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import br.com.menthoros.backend.dto.output.TreinoHojeDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.enums.FonteDados;
@@ -253,7 +254,7 @@ class AtletaTreinoControllerTest {
                     LocalDate.of(2026, 8, 27), treinoId, "INTERVALADO", "2x(4' forte)", 45, "Z4", 70, "PENDENTE",
                     null, null,
                     List.of(new TreinoHojeDto.EtapaAlvoDto(1, "INTERVALADO", "Tiro", 4, null, null, null,
-                            TreinoHojeDto.AlvoPrimario.FC, 145, 151, null, "4:30-4:45")))));
+                            AlvoPrimario.FC, 145, 151, null, "4:30-4:45")))));
 
             mockMvc.perform(get("/api/v1/atletas/me/treinos/hoje"))
                     .andExpect(status().isOk())

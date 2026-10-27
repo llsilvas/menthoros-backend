@@ -11,6 +11,7 @@ import lombok.Builder;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 @Schema(description = "Dados de saída de um plano semanal de treino")
 @Builder(toBuilder = true)
@@ -63,6 +64,9 @@ public record PlanoSemanalOutputDto(
 
         @Schema(description = "Nome completo do atleta dono do plano")
         String atletaNome,
+
+        @Schema(description = "ID do atleta dono do plano")
+        UUID atletaId,
 
         @Schema(description = "Nível de confiança do baseline de onboarding do atleta (A/B/C) — " +
                 "B/C indicam que o plano não foi auto-aprovado por baixa confiança (Cenário B/C, " +

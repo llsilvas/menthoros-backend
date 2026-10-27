@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.dto.output;
 
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -36,5 +37,16 @@ public record EtapaTreinoDto(
         UUID blocoId,
 
         @Schema(description = "Total de repetições do bloco ao qual esta etapa pertence", example = "4")
-        Integer blocoRepeticoes
-) {}
+        Integer blocoRepeticoes,
+
+        @Schema(description = "Eixo que o relógio controla nesta etapa; nulo em etapa legada (derivado do conteúdo)")
+        AlvoPrimario alvoPrimario
+) {
+
+    public EtapaTreinoDto(Integer ordem, String tipoEtapa, String descricaoEtapa, Integer duracaoMin,
+                          Double distanciaKm, String fcAlvoEtapa, String ritmoAlvo, Integer repeticoes,
+                          UUID blocoId, Integer blocoRepeticoes) {
+        this(ordem, tipoEtapa, descricaoEtapa, duracaoMin, distanciaKm, fcAlvoEtapa, ritmoAlvo, repeticoes,
+                blocoId, blocoRepeticoes, null);
+    }
+}

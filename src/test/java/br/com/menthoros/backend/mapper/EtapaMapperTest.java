@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.mapper;
 
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import br.com.menthoros.backend.dto.input.EtapaInputDto;
 import br.com.menthoros.backend.entity.EtapaTreino;
 import org.junit.jupiter.api.DisplayName;
@@ -56,6 +57,16 @@ class EtapaMapperTest {
                     "principal", "Tiro", 5, null, null, null, 1, null, null));
 
             assertThat(etapa.getTipoEtapa()).isEqualTo("PRINCIPAL");
+        }
+
+        @Test
+        @DisplayName("alvoPrimario do input chega à entidade; ausente continua nulo (legado)")
+        void carregaAlvoPrimario() {
+            EtapaInputDto comEixo = new EtapaInputDto("PRINCIPAL", "Tiro", 5, null, null, "5:00-5:15/km", 1, null,
+                    null, AlvoPrimario.PACE);
+
+            assertThat(mapper.toEntity(comEixo).getAlvoPrimario()).isEqualTo(AlvoPrimario.PACE);
+            assertThat(mapper.toEntity(etapaInput(null, "5:00-5:15/km")).getAlvoPrimario()).isNull();
         }
 
         @Test

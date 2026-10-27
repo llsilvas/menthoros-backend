@@ -289,7 +289,7 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
         treino.setDescricao(dto.descricao());
         treino.setDistanciaKm(dto.distanciaKm() != null ? BigDecimal.valueOf(dto.distanciaKm()) : null);
         treino.setDuracaoMin(duracaoMin);
-        treino.setZonaAlvo(dto.zonaAlvo());
+        treino.setZonaAlvo(dto.zonaAlvo() != null && dto.zonaAlvo().isBlank() ? null : dto.zonaAlvo());
         treino.setPercepcaoEsforcoEsperada(dto.percepcaoEsforcoEsperada());
         treino.setTssPlanejado(tssPlanejado);
         treino.setObservacao(dto.observacoes());
@@ -362,7 +362,9 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
             treino.setDuracaoMin(patch.duracaoMin());
         }
         if (patch.zonaAlvo() != null) {
-            treino.setZonaAlvo(patch.zonaAlvo());
+            // String vazia é a limpeza explícita: ausente/nulo preserva, e o treino que perdeu a zona
+            // derivável não pode seguir com a anterior.
+            treino.setZonaAlvo(patch.zonaAlvo().isBlank() ? null : patch.zonaAlvo());
         }
         if (patch.percepcaoEsforcoEsperada() != null) {
             treino.setPercepcaoEsforcoEsperada(patch.percepcaoEsforcoEsperada());
@@ -424,7 +426,8 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
                 dto.ritmoAlvo(),
                 repeticoes,
                 dto.blocoRepeticoes(),
-                null
+                null,
+                dto.alvoPrimario()
         );
     }
 

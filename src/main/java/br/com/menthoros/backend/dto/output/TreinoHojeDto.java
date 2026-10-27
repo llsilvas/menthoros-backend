@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.dto.output;
 
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -50,9 +51,6 @@ public record TreinoHojeDto(
         @Schema(description = "Etapas na ordem de execução; omitidas quando o treino não tem etapas")
         List<EtapaAlvoDto> etapas
 ) {
-
-    /** Qual grandeza o relógio vai controlar nesta etapa — a mesma precedência do push. */
-    public enum AlvoPrimario { FC, PACE, NENHUM }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @Schema(description = "Etapa com o alvo efetivo: FC vence pace; pace sem FC assume; sem dado confiável, NENHUM")
