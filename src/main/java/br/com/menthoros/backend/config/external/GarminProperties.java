@@ -39,6 +39,13 @@ public class GarminProperties {
     /** Último segmento do path do webhook; vazio significa webhook desligado (404). */
     private String webhookSecret;
 
+    /** Segredo curto cai em força bruta: menos que isso conta como webhook não configurado (404). */
+    public static final int WEBHOOK_SECRET_MIN = 32;
+
+    public boolean webhookConfigurado() {
+        return webhookSecret != null && webhookSecret.length() >= WEBHOOK_SECRET_MIN;
+    }
+
     public boolean habilitado() {
         return habilitado;
     }

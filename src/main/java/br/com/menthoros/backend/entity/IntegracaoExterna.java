@@ -110,6 +110,21 @@ public class IntegracaoExterna {
     @Column(name = "atualizado_em")
     private LocalDateTime atualizadoEm;
 
+    /**
+     * Revoga a conexão de uma vez: inativa e apaga tokens, expirações e scopes. Único ponto que
+     * zera credencial de canal — um campo novo de credencial entra aqui, não em cada chamador.
+     * {@code externalAthleteId} fica de fora de propósito (a auditoria ainda sabe quem era).
+     */
+    public void revogarCredenciais(String motivo) {
+        this.ativo = false;
+        this.accessToken = null;
+        this.refreshToken = null;
+        this.tokenExpiraEm = null;
+        this.refreshTokenExpiraEm = null;
+        this.scopes = null;
+        this.lastSyncError = motivo;
+    }
+
     @PrePersist
     private void prePersist() {
         this.criadoEm = LocalDateTime.now();

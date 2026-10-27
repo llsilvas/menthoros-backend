@@ -39,12 +39,15 @@ import java.io.IOException;
 public class PublicRequestSizeLimitFilter extends OncePerRequestFilter {
 
     private static final String PREFIXO_PUBLICO = "/api/public/";
+    /** Webhook do Garmin: público como os demais, com o segredo no path. */
+    private static final String PREFIXO_WEBHOOK_GARMIN = "/api/v1/garmin/webhook/";
 
     private final CoachSignupProperties properties;
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith(PREFIXO_PUBLICO);
+        String uri = request.getRequestURI();
+        return !uri.startsWith(PREFIXO_PUBLICO) && !uri.startsWith(PREFIXO_WEBHOOK_GARMIN);
     }
 
     @Override

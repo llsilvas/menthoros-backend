@@ -192,8 +192,8 @@ public class OnboardingServiceImpl implements OnboardingService {
         if (input.dispositivoMarca() == null) {
             throw new IllegalArgumentException("dispositivoMarca e obrigatorio");
         }
-        validarCanalPorMarca(input.canalIntegracao(), input.dispositivoMarca());
         validarPosseOuCoach(atletaId, chamadorEhCoach);
+        validarCanalPorMarca(input.canalIntegracao(), input.dispositivoMarca());
         atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta nao encontrado: " + atletaId));
 

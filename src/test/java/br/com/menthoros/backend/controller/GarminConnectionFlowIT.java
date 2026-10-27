@@ -56,7 +56,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DisplayName("Canal Garmin direto — fluxo ponta a ponta")
 class GarminConnectionFlowIT extends AbstractIntegrationTest {
 
-    private static final String SEGREDO_WEBHOOK = "segredo-do-it-garmin";
+    private static final String SEGREDO_WEBHOOK = "segredo-do-it-garmin-com-32-caracteres-ou-mais";
     private static final String CALLBACK = "/api/v1/integracoes/garmin/callback";
     private static final String ME = "/api/v1/integracoes/me/garmin";
 

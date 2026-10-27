@@ -175,6 +175,17 @@ class GarminOAuthServiceImplTest {
         }
 
         @Test
+        @DisplayName("corrida entre dois callbacks com o mesmo userId: o índice único vira CONTA_JA_VINCULADA")
+        void corridaDeCallbacks() {
+            garminResponde();
+            doThrow(new org.springframework.dao.DataIntegrityViolationException("ux_integracao_garmin_user_ativo"))
+                    .when(connection).ativar(any(), any(), any(), any(), any());
+
+            assertThat(service.concluir(state, "code-1")).isEqualTo(Resultado.CONTA_JA_VINCULADA);
+            assertThat(meters.counter("garmin.oauth.callback", "resultado", "erro").count()).isEqualTo(1);
+        }
+
+        @Test
         @DisplayName("reconexão do mesmo atleta com o mesmo userId é aceita")
         void mesmoUserIdMesmoAtleta() {
             garminResponde();
@@ -339,6 +350,47 @@ class GarminOAuthServiceImplTest {
             }
             verify(integracaoRepository, times(2)).save(any());
             assertThat(meters.counter("garmin.token.refresh", "resultado", "falha").count()).isEqualTo(2);
+        }
+
+        private IntegracaoExterna persistida(UUID id, String access, String refresh) {
+            IntegracaoExterna c = conexao(AGORA.plusSeconds(80000));
+            c.setId(id);
+            c.setAccessToken(access);
+            c.setRefreshToken(refresh);
+            return c;
+        }
+
+        @Test
+        @DisplayName("outro processo já renovou (linha no banco tem outro refresh token): usa o token dele, sem chamar o Garmin")
+        void outroJaRenovouAntes() {
+            UUID id = UUID.randomUUID();
+            IntegracaoExterna velha = conexao(AGORA.minusSeconds(1));
+            velha.setId(id);
+            when(integracaoRepository.findById(id))
+                    .thenReturn(Optional.of(persistida(id, "acc-do-outro", "ref-do-outro")));
+
+            assertThat(service.tokenValido(velha)).isEqualTo("acc-do-outro");
+
+            verifyNoInteractions(client);
+            verify(integracaoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("400 porque outro processo girou o refresh token no meio: não revoga, devolve o token novo")
+        void corridaDeRefresh() {
+            UUID id = UUID.randomUUID();
+            IntegracaoExterna velha = conexao(AGORA.minusSeconds(1));
+            velha.setId(id);
+            // 1ª leitura: ainda o token velho; 2ª (após o 400): o outro processo já gravou o novo.
+            when(integracaoRepository.findById(id)).thenReturn(
+                    Optional.of(velha), Optional.of(persistida(id, "acc-do-outro", "ref-do-outro")));
+            doThrow(new GarminApiException(HttpStatus.BAD_REQUEST, "Garmin retornou")).when(client).renovar("ref-velho");
+
+            assertThat(service.tokenValido(velha)).isEqualTo("acc-do-outro");
+
+            assertThat(velha.isAtivo()).isTrue();
+            verify(integracaoRepository, never()).save(any());
+            assertThat(meters.counter("garmin.token.refresh", "resultado", "falha").count()).isZero();
         }
 
         @Test

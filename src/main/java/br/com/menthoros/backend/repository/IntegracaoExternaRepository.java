@@ -62,8 +62,12 @@ public interface IntegracaoExternaRepository extends JpaRepository<IntegracaoExt
             @Param("tenantId") UUID tenantId
     );
 
-    /** D7 de garmin-connection: canal mais recente, ativo ou não — distingue "revogada" de "nunca conectou". */
-    Optional<IntegracaoExterna> findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtualizadoEmDesc(
+    /**
+     * D7 de garmin-connection: o canal que vale para o treinador — o ativo primeiro e, sem ativo, o mais
+     * recente (distingue "revogada" de "nunca conectou"). Ativo antes de recente porque {@code ativar}
+     * grava a linha do intervals.icu zerada depois da do Garmin, que a faria parecer a mais nova.
+     */
+    Optional<IntegracaoExterna> findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
             UUID atletaId, Collection<FonteDados> plataformas, UUID tenantId);
 
     /** D3 de garmin-connection: base do job diário — só olha {@code refresh_token_expira_em}, nunca {@code atualizado_em}. */

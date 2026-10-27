@@ -85,4 +85,30 @@ class GarminWebhookServiceImplTest {
         verify(repository, never()).save(any());
         assertThat(conexao.isAtivo()).isTrue();
     }
+
+    @Test
+    @DisplayName("item que falha não derruba os outros do lote nem propaga (senão o Garmin reenvia o lote)")
+    void umItemRuimNaoDerrubaOLote() throws Exception {
+        when(repository.findActiveByExternalAthleteIdAndPlataforma("quebra", FonteDados.GARMIN))
+                .thenThrow(new org.springframework.dao.DataIntegrityViolationException("valor-sensivel"));
+
+        service.processar(Map.of("deregistrations", List.of(json("{\"userId\":\"quebra\"}"), json("{\"userId\":\"u1\"}"))));
+
+        assertThat(conexao.isAtivo()).isFalse();
+        verify(repository).save(conexao);
+    }
+
+    @Test
+    @DisplayName("lote acima do teto: processa só os primeiros MAX_ITENS_POR_CHAVE")
+    void tetoDeItens() throws Exception {
+        List<JsonNode> itens = new java.util.ArrayList<>();
+        for (int i = 0; i < GarminWebhookServiceImpl.MAX_ITENS_POR_CHAVE + 5; i++) {
+            itens.add(json("{\"userId\":\"x" + i + "\"}"));
+        }
+
+        service.processar(Map.of("deregistrations", itens));
+
+        verify(repository, org.mockito.Mockito.times(GarminWebhookServiceImpl.MAX_ITENS_POR_CHAVE))
+                .findActiveByExternalAthleteIdAndPlataforma(org.mockito.ArgumentMatchers.startsWith("x"), any());
+    }
 }

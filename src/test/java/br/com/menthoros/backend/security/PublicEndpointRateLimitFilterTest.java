@@ -15,7 +15,7 @@ class PublicEndpointRateLimitFilterTest {
 
     private static final String PATH = "/api/v1/waitlist";
 
-    private final PublicEndpointRateLimitFilter filter = new PublicEndpointRateLimitFilter(3, 3, 2);
+    private final PublicEndpointRateLimitFilter filter = new PublicEndpointRateLimitFilter(3, 3, 2, 2, 4);
 
     @Test
     void permiteAteOLimiteEBloqueiaAcima() throws Exception {
@@ -106,6 +106,26 @@ class PublicEndpointRateLimitFilterTest {
             assertThat(postEm("/api/public/founding-invites/token", "7.7.7.7").getStatus())
                     .isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
         }
+    }
+
+    @Test
+    void limitaOCallbackDoGarmin_porGet() throws Exception {
+        for (int i = 0; i < 2; i++) {
+            assertThat(getEm("/api/v1/integracoes/garmin/callback", "8.8.8.8").getStatus())
+                    .isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+        }
+        assertThat(getEm("/api/v1/integracoes/garmin/callback", "8.8.8.8").getStatus())
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
+
+    @Test
+    void limitaOWebhookDoGarmin_queCasaPorPrefixo_comTetoPropriodoPost() throws Exception {
+        for (int i = 0; i < 4; i++) {
+            assertThat(postEm("/api/v1/garmin/webhook/segredo-" + i, "10.1.1.1").getStatus())
+                    .isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+        }
+        assertThat(postEm("/api/v1/garmin/webhook/outro", "10.1.1.1").getStatus())
+                .isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
     }
 
     private MockHttpServletResponse getEm(String path, String ip) throws ServletException, IOException {

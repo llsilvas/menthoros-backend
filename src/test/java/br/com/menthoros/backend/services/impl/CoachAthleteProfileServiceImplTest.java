@@ -623,7 +623,7 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         private void canalMaisRecente(br.com.menthoros.backend.entity.IntegracaoExterna integracao) {
-            when(integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtualizadoEmDesc(
+            when(integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
                     atletaId, List.of(br.com.menthoros.backend.enums.FonteDados.INTERVALS_ICU,
                             br.com.menthoros.backend.enums.FonteDados.GARMIN), tenantId))
                     .thenReturn(Optional.ofNullable(integracao));

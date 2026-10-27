@@ -68,6 +68,44 @@ class IntegracaoExternaGarminQueriesTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("canal do treinador: o ativo vence a linha inativa mais recente; sem ativo, a mais recente")
+    void canalDoTreinadorPrefereAtivo() throws Exception {
+        Assessoria a = novaAssessoria();
+        IntegracaoExterna garmin = seed(a, FonteDados.GARMIN, true, "g-" + UUID.randomUUID(), null);
+        // ativar() grava a linha do intervals.icu zerada DEPOIS da do Garmin: é a mais recente.
+        Thread.sleep(5);
+        IntegracaoExterna icu = new IntegracaoExterna();
+        icu.setAtleta(garmin.getAtleta());
+        icu.setTenantId(a.getId());
+        icu.setPlataforma(FonteDados.INTERVALS_ICU);
+        icu.setAtivo(false);
+        repository.saveAndFlush(icu);
+        List<FonteDados> canais = List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN);
+        UUID atletaId = garmin.getAtleta().getId();
+
+        assertThat(repository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
+                atletaId, canais, a.getId())).map(IntegracaoExterna::getId).contains(garmin.getId());
+
+        garmin.setAtivo(false);
+        Thread.sleep(5);
+        repository.saveAndFlush(garmin);
+        assertThat(repository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
+                atletaId, canais, a.getId())).map(IntegracaoExterna::getId).contains(garmin.getId());
+    }
+
+    @Test
+    @DisplayName("V105: dois atletas não podem ter o mesmo userId Garmin ativo; inativo não conta")
+    void indiceUnicoDoUserIdAtivo() {
+        String userId = "dup-" + UUID.randomUUID();
+        seed(novaAssessoria(), FonteDados.GARMIN, true, userId, null);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> {
+            seed(novaAssessoria(), FonteDados.GARMIN, true, userId, null);
+            repository.flush();
+        }).isInstanceOf(org.springframework.dao.DataIntegrityViolationException.class);
+    }
+
+    @Test
     @DisplayName("job diário: só ativas com refresh a vencer; salvar lastSyncError não move refreshTokenExpiraEm")
     void refreshExpirandoAntesDe() {
         Instant agora = Instant.now().truncatedTo(ChronoUnit.MILLIS);

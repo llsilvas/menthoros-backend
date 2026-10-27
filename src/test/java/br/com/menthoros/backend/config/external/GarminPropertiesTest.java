@@ -48,4 +48,17 @@ class GarminPropertiesTest {
                     assertThat(props.configurado()).isTrue();
                 });
     }
+
+    @Test
+    @DisplayName("webhookConfigurado() exige segredo de pelo menos 32 caracteres")
+    void webhookExigeSegredoLongo() {
+        GarminProperties props = new GarminProperties();
+        assertThat(props.webhookConfigurado()).isFalse();
+        props.setWebhookSecret("curto");
+        assertThat(props.webhookConfigurado()).isFalse();
+        props.setWebhookSecret("x".repeat(GarminProperties.WEBHOOK_SECRET_MIN - 1));
+        assertThat(props.webhookConfigurado()).isFalse();
+        props.setWebhookSecret("x".repeat(GarminProperties.WEBHOOK_SECRET_MIN));
+        assertThat(props.webhookConfigurado()).isTrue();
+    }
 }

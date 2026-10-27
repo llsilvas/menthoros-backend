@@ -36,7 +36,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import({JacksonConfig.class, AuthWebMvcTestConfig.class})
 class GarminWebhookControllerTest {
 
-    private static final String SEGREDO = "segredo-do-webhook-123";
+    private static final String SEGREDO = "segredo-do-webhook-com-mais-de-32-caracteres";
     private static final String CORPO = "{\"deregistrations\":[{\"userId\":\"u-sensivel-999\"}]}";
 
     @Autowired
@@ -60,6 +60,7 @@ class GarminWebhookControllerTest {
     @BeforeEach
     void setUp() {
         when(properties.getWebhookSecret()).thenReturn(SEGREDO);
+        when(properties.webhookConfigurado()).thenReturn(true);
         logs = new ListAppender<>();
         logs.start();
         ((Logger) LoggerFactory.getLogger("br.com.menthoros.backend")).addAppender(logs);
@@ -93,13 +94,37 @@ class GarminWebhookControllerTest {
     @Test
     @DisplayName("segredo não configurado: 404 mesmo com caminho qualquer")
     void naoConfigurado() throws Exception {
-        when(properties.getWebhookSecret()).thenReturn("");
+        when(properties.webhookConfigurado()).thenReturn(false);
 
         mockMvc.perform(post("/api/v1/garmin/webhook/qualquer")
                         .contentType(MediaType.APPLICATION_JSON).content(CORPO))
                 .andExpect(status().isNotFound());
 
         verifyNoInteractions(webhookService);
+    }
+
+    // Com @RequestBody tipado, corpo malformado dava 400 antes da checagem do segredo e revelava a rota.
+    @Test
+    @DisplayName("segredo errado + corpo malformado ou content-type estranho: 404, igual a qualquer outro")
+    void segredoErradoComCorpoRuim() throws Exception {
+        mockMvc.perform(post("/api/v1/garmin/webhook/errado")
+                        .contentType(MediaType.APPLICATION_JSON).content("{nao e json"))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/v1/garmin/webhook/errado")
+                        .contentType(MediaType.APPLICATION_XML).content("<x/>"))
+                .andExpect(status().isNotFound());
+
+        verifyNoInteractions(webhookService);
+    }
+
+    @Test
+    @DisplayName("segredo certo + corpo malformado: 200 e processa lote vazio (sem 5xx, sem reenvio)")
+    void corpoMalformadoComSegredoCerto() throws Exception {
+        mockMvc.perform(post("/api/v1/garmin/webhook/" + SEGREDO)
+                        .contentType(MediaType.APPLICATION_JSON).content("{nao e json"))
+                .andExpect(status().isOk());
+
+        verify(webhookService).processar(java.util.Map.of());
     }
 
     @Test

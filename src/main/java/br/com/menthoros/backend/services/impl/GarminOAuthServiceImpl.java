@@ -19,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.caffeine.CaffeineCache;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.util.StringUtils;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -30,8 +31,10 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Fluxo OAuth2 PKCE com o Garmin (D2, D3, D4 de garmin-connection).
@@ -61,6 +64,8 @@ public class GarminOAuthServiceImpl implements GarminOAuthService {
     private final MeterRegistry meterRegistry;
     private final Clock clock;
     private final SecureRandom random = new SecureRandom();
+    /** Um lock por conexão: a chave é o id da linha (ou a instância, quando ainda não persistida). */
+    private final ConcurrentHashMap<Object, Object> locksRenovacao = new ConcurrentHashMap<>();
 
     public GarminOAuthServiceImpl(GarminProperties properties, GarminStateSigner stateSigner,
                                   GarminClient garminClient, GarminConnectionService connectionService,
@@ -158,7 +163,15 @@ public class GarminOAuthServiceImpl implements GarminOAuthService {
             return Resultado.CONTA_JA_VINCULADA;
         }
 
-        connectionService.ativar(atleta, tenantId, token, userId, permissoes);
+        try {
+            connectionService.ativar(atleta, tenantId, token, userId, permissoes);
+        } catch (DataIntegrityViolationException e) {
+            // O guard acima é check-then-act; o índice único parcial (V105) fecha a corrida entre dois
+            // callbacks simultâneos com o mesmo userId.
+            log.error("SECURITY: userId Garmin vinculado em paralelo a outro atleta — conexão do atleta {} recusada",
+                    atletaId);
+            return Resultado.CONTA_JA_VINCULADA;
+        }
         return Resultado.SUCESSO;
     }
 
@@ -169,26 +182,51 @@ public class GarminOAuthServiceImpl implements GarminOAuthService {
         return vigente ? conexao.getAccessToken() : renovar(conexao);
     }
 
+    /**
+     * Idempotent: NO — o refresh token é rotativo.
+     * Side Effects: External API call + Database update.
+     * Tenant-aware: NO (a linha já vem resolvida).
+     *
+     * Serializado por conexão dentro do processo e, mesmo assim, defensivo entre instâncias: relê a
+     * linha antes de chamar o Garmin e antes de tratar um 400/401 como revogação. Sem isso, o job das
+     * 03:30 e um uso concorrente refrescam com o mesmo refresh token, a segunda chamada é recusada e
+     * o atleta é desconectado sem ter feito nada.
+     */
     @Override
     public String renovar(IntegracaoExterna conexao) {
+        Object chave = conexao.getId() != null ? conexao.getId() : conexao;
+        synchronized (locksRenovacao.computeIfAbsent(chave, k -> new Object())) {
+            return renovarSerializado(conexao);
+        }
+    }
+
+    private String renovarSerializado(IntegracaoExterna passada) {
+        IntegracaoExterna conexao = recarregar(passada);
+        if (outroJaRenovou(passada, conexao)) {
+            return conexao.getAccessToken();
+        }
+        if (!StringUtils.hasText(conexao.getRefreshToken())) {
+            throw new IllegalStateException("Conexão Garmin expirada. O atleta precisa reconectar.");
+        }
+
         GarminTokenResponse novo;
         try {
             novo = garminClient.renovar(conexao.getRefreshToken());
         } catch (GarminApiException e) {
             int status = e.getStatus() != null ? e.getStatus().value() : 0;
-            meterRegistry.counter("garmin.token.refresh", "resultado", "falha").increment();
             if (status == 400 || status == 401) {
-                conexao.setAtivo(false);
-                conexao.setAccessToken(null);
-                conexao.setRefreshToken(null);
-                conexao.setTokenExpiraEm(null);
-                conexao.setRefreshTokenExpiraEm(null);
-                conexao.setLastSyncError("Autorização Garmin revogada ou expirada; reconecte a conta");
+                IntegracaoExterna atual = recarregar(conexao);
+                if (outroJaRenovou(conexao, atual)) {
+                    return atual.getAccessToken();
+                }
+                meterRegistry.counter("garmin.token.refresh", "resultado", "falha").increment();
+                conexao.revogarCredenciais("Autorização Garmin revogada ou expirada; reconecte a conta");
                 integracaoRepository.save(conexao);
                 log.warn("Refresh Garmin recusado ({}): conexão marcada inativa, atletaId={}", status,
                         conexao.getAtleta().getId());
                 throw new IllegalStateException("Conexão Garmin expirada. O atleta precisa reconectar.");
             }
+            meterRegistry.counter("garmin.token.refresh", "resultado", "falha").increment();
             throw e;
         }
 
@@ -202,6 +240,22 @@ public class GarminOAuthServiceImpl implements GarminOAuthService {
         integracaoRepository.save(conexao);
         meterRegistry.counter("garmin.token.refresh", "resultado", "sucesso").increment();
         return novo.accessToken();
+    }
+
+    /** A linha como está agora no banco; sem id (ou sumida) cai na instância recebida. */
+    private IntegracaoExterna recarregar(IntegracaoExterna conexao) {
+        if (conexao.getId() == null) {
+            return conexao;
+        }
+        return integracaoRepository.findById(conexao.getId()).orElse(conexao);
+    }
+
+    /** Outro processo trocou o refresh token e deixou a conexão ativa e com access token usável. */
+    private static boolean outroJaRenovou(IntegracaoExterna usada, IntegracaoExterna atual) {
+        return atual != usada
+                && atual.isAtivo()
+                && StringUtils.hasText(atual.getAccessToken())
+                && !Objects.equals(atual.getRefreshToken(), usada.getRefreshToken());
     }
 
     private CaffeineCache pkceCache() {

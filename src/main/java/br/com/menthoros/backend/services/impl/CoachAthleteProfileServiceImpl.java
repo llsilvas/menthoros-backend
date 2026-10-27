@@ -42,6 +42,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -216,14 +217,15 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     }
 
     private AtletaPerfilCoachOutputDto.ConexaoCanalDto resolverConexaoCanal(UUID atletaId, UUID tenantId) {
-        return integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtualizadoEmDesc(
+        return integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
                         atletaId, List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN), tenantId)
                 .map(i -> {
                     boolean garmin = i.getPlataforma() == FonteDados.GARMIN;
-                    String scopes = i.getScopes() == null ? "" : i.getScopes();
+                    Set<String> scopes = i.getScopes() == null ? Set.of()
+                            : Set.of(i.getScopes().split(GarminConnectionServiceImpl.SEPARADOR_SCOPES));
                     return new AtletaPerfilCoachOutputDto.ConexaoCanalDto(i.getPlataforma(), i.isAtivo(),
-                            scopes.contains(garmin ? "WORKOUT_IMPORT" : "CALENDAR:WRITE"),
-                            scopes.contains(garmin ? "ACTIVITY_EXPORT" : "ACTIVITY:READ"),
+                            scopes.contains(garmin ? GarminConnectionServiceImpl.WORKOUT_IMPORT : "CALENDAR:WRITE"),
+                            scopes.contains(garmin ? GarminConnectionServiceImpl.ACTIVITY_EXPORT : "ACTIVITY:READ"),
                             i.getLastSyncError());
                 })
                 .orElse(null);

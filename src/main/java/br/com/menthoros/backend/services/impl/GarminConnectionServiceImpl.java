@@ -32,7 +32,7 @@ public class GarminConnectionServiceImpl implements GarminConnectionService {
     private static final FonteDados GARMIN = FonteDados.GARMIN;
     static final String WORKOUT_IMPORT = "WORKOUT_IMPORT";
     static final String ACTIVITY_EXPORT = "ACTIVITY_EXPORT";
-    private static final String SEPARADOR_SCOPES = ",";
+    static final String SEPARADOR_SCOPES = ",";
 
     private final IntegracaoExternaRepository integracaoRepository;
     private final IntervalsIcuConnectionService intervalsIcuConnectionService;
@@ -121,14 +121,8 @@ public class GarminConnectionServiceImpl implements GarminConnectionService {
     }
 
     private static void zerarCredenciais(IntegracaoExterna i) {
-        i.setAtivo(false);
-        i.setAccessToken(null);
-        i.setRefreshToken(null);
-        i.setTokenExpiraEm(null);
-        i.setRefreshTokenExpiraEm(null);
-        i.setScopes(null);
+        i.revogarCredenciais(null);
         i.setExternalAthleteId(null);
-        i.setLastSyncError(null);
     }
 
     private static Set<String> scopesDe(String scopes) {
