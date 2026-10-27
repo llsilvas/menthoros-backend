@@ -91,8 +91,31 @@ public record AtletaPerfilCoachOutputDto(
         DistanceSummaryDto distanceSummary,
 
         @Schema(description = "Relógio informado no onboarding (marca informada, não confirmada); ausente sem perfil de onboarding, sem marca, ou quando a consulta falha (ver avisos)")
-        RelogioDto relogio
+        RelogioDto relogio,
+
+        @Schema(description = "Canal de envio de treinos ao relógio (intervals.icu ou Garmin), ativo ou revogado; ausente quando o atleta nunca conectou ou a consulta falha (ver avisos)")
+        ConexaoCanalDto conexaoCanal
 ) {
+
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @Schema(description = "Conexão de canal mais recente do atleta")
+    public record ConexaoCanalDto(
+
+            @Schema(description = "Plataforma do canal", example = "GARMIN")
+            FonteDados plataforma,
+
+            @Schema(description = "Conexão ativa; false = revogada ou desconectada")
+            boolean ativo,
+
+            @Schema(description = "Atleta autorizou o envio de treinos ao relógio")
+            boolean workoutImport,
+
+            @Schema(description = "Atleta autorizou a leitura das atividades")
+            boolean activityExport,
+
+            @Schema(description = "Último erro de autenticação/sincronização, legível")
+            String lastSyncError
+    ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @Schema(description = "Relógio do atleta conforme o onboarding")

@@ -7,6 +7,7 @@ import br.com.menthoros.backend.exception.ConsentResolutionUnavailableException;
 import br.com.menthoros.backend.exception.ConsentVersionStaleException;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainGoneException;
+import br.com.menthoros.backend.exception.GarminCanalIndisponivelException;
 import br.com.menthoros.backend.exception.LgpdConsentRequiredException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -153,6 +154,19 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleConsentResolutionUnavailable(
             ConsentResolutionUnavailableException ex) {
         log.error("Falha ao resolver usuário para verificação de consentimento: {}", ex.getMessage());
+        Map<String, Object> body = Map.of(
+                "status", 503,
+                "error", "Service Unavailable",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    /** Canal Garmin desligado ou sem credenciais neste ambiente (D11 de garmin-connection). */
+    @ExceptionHandler(GarminCanalIndisponivelException.class)
+    public ResponseEntity<Map<String, Object>> handleGarminCanalIndisponivel(
+            GarminCanalIndisponivelException ex) {
+        log.warn("Canal Garmin indisponível: {}", ex.getMessage());
         Map<String, Object> body = Map.of(
                 "status", 503,
                 "error", "Service Unavailable",

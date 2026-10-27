@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -45,6 +46,40 @@ public interface IntegracaoExternaRepository extends JpaRepository<IntegracaoExt
             @Param("atletaId") UUID atletaId,
             @Param("plataforma") FonteDados plataforma,
             @Param("tenantId") UUID tenantId
+    );
+
+    /** D5 de garmin-connection: conexão de canal (intervals.icu ou Garmin) ativa; um por atleta pela exclusividade. */
+    @Query("""
+    select i from IntegracaoExterna i
+    where i.atleta.id = :atletaId
+      and i.plataforma in :plataformas
+      and i.tenantId = :tenantId
+      and i.ativo = true
+    """)
+    List<IntegracaoExterna> findActiveByAtletaIdAndPlataformaInAndTenantId(
+            @Param("atletaId") UUID atletaId,
+            @Param("plataformas") Collection<FonteDados> plataformas,
+            @Param("tenantId") UUID tenantId
+    );
+
+    /**
+     * D7 de garmin-connection: o canal que vale para o treinador — o ativo primeiro e, sem ativo, o mais
+     * recente (distingue "revogada" de "nunca conectou"). Ativo antes de recente porque {@code ativar}
+     * grava a linha do intervals.icu zerada depois da do Garmin, que a faria parecer a mais nova.
+     */
+    Optional<IntegracaoExterna> findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
+            UUID atletaId, Collection<FonteDados> plataformas, UUID tenantId);
+
+    /** D3 de garmin-connection: base do job diário — só olha {@code refresh_token_expira_em}, nunca {@code atualizado_em}. */
+    @Query("""
+    select i from IntegracaoExterna i
+    where i.plataforma = :plataforma
+      and i.ativo = true
+      and i.refreshTokenExpiraEm < :limite
+    """)
+    List<IntegracaoExterna> findActiveByPlataformaAndRefreshTokenExpiraEmBefore(
+            @Param("plataforma") FonteDados plataforma,
+            @Param("limite") Instant limite
     );
 
     @Query("""

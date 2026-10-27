@@ -56,6 +56,14 @@ public class IntegracaoExterna {
     @Column(name = "token_expira_em")
     private Instant tokenExpiraEm;
 
+    /**
+     * Expiração do refresh token no provedor (só o Garmin rotaciona refresh com prazo). Muda
+     * apenas no refresh — por isso o job diário de renovação lê esta coluna, e não
+     * {@link #atualizadoEm}, que qualquer {@code save} altera.
+     */
+    @Column(name = "refresh_token_expira_em")
+    private Instant refreshTokenExpiraEm;
+
     @Column(name = "scopes", length = 500)
     private String scopes;
 
@@ -101,6 +109,21 @@ public class IntegracaoExterna {
 
     @Column(name = "atualizado_em")
     private LocalDateTime atualizadoEm;
+
+    /**
+     * Revoga a conexão de uma vez: inativa e apaga tokens, expirações e scopes. Único ponto que
+     * zera credencial de canal — um campo novo de credencial entra aqui, não em cada chamador.
+     * {@code externalAthleteId} fica de fora de propósito (a auditoria ainda sabe quem era).
+     */
+    public void revogarCredenciais(String motivo) {
+        this.ativo = false;
+        this.accessToken = null;
+        this.refreshToken = null;
+        this.tokenExpiraEm = null;
+        this.refreshTokenExpiraEm = null;
+        this.scopes = null;
+        this.lastSyncError = motivo;
+    }
 
     @PrePersist
     private void prePersist() {
