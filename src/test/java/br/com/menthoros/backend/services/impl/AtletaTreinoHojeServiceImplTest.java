@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import br.com.menthoros.backend.dto.output.TreinoHojeDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaTreino;
@@ -100,9 +101,26 @@ class AtletaTreinoHojeServiceImplTest {
         assertThat(dto.duracaoMin()).isEqualTo(45);
         assertThat(dto.statusTreino()).isEqualTo("PENDENTE");
         assertThat(dto.etapas()).hasSize(2);
-        assertThat(dto.etapas().get(0).alvoPrimario()).isEqualTo(TreinoHojeDto.AlvoPrimario.NENHUM);
-        assertThat(dto.etapas().get(1).alvoPrimario()).isEqualTo(TreinoHojeDto.AlvoPrimario.FC);
+        assertThat(dto.etapas().get(0).alvoPrimario()).isEqualTo(AlvoPrimario.NENHUM);
+        assertThat(dto.etapas().get(1).alvoPrimario()).isEqualTo(AlvoPrimario.FC);
         assertThat(dto.etapas().get(1).textoSecundario()).isEqualTo("4:30-4:45");
+    }
+
+    @Test
+    @DisplayName("alvoPrimario=PACE explícito chega à tela do atleta mesmo com FC preenchida")
+    void paceExplicitoComFcPreenchida() {
+        when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+        TreinoPlanejado tp = planejado(HOJE_DO_ATLETA);
+        tp.setEtapas(List.of(
+                EtapaTreino.builder().ordem(1).tipoEtapa("INTERVALADO").duracaoMin(4)
+                        .fcAlvoEtapa("85-89%").ritmoAlvo("4:30-4:45").alvoPrimario(AlvoPrimario.PACE).build()));
+        when(treinoPlanejadoRepository.findByAtletaIdAndDataBetween(atletaId, HOJE_DO_ATLETA, HOJE_DO_ATLETA))
+                .thenReturn(List.of(tp));
+
+        TreinoHojeDto dto = service.getTreinoHoje(atletaId).orElseThrow();
+
+        assertThat(dto.etapas().get(0).alvoPrimario()).isEqualTo(AlvoPrimario.PACE);
+        assertThat(dto.etapas().get(0).paceAlvo()).isEqualTo("4:30-4:45");
     }
 
     @Test

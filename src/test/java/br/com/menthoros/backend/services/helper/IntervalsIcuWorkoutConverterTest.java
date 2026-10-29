@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import br.com.menthoros.backend.domain.workout.HrTarget;
 import br.com.menthoros.backend.domain.workout.IntensityTarget;
 import br.com.menthoros.backend.domain.workout.PaceTarget;
@@ -120,6 +121,24 @@ class IntervalsIcuWorkoutConverterTest {
             assertThat(bloco.steps()).hasSize(2);
             assertThat(bloco.steps().get(0).durationSeconds()).isEqualTo(60);
             assertThat(bloco.steps().get(1).durationSeconds()).isEqualTo(120);
+        }
+
+        @Test
+        @DisplayName("etapas iguais com alvoPrimario diferente não viram repetição")
+        void alvoPrimarioDiferenteNaoAgrupa() {
+            EtapaTreino a1 = etapa(1, "INTERVALADO", "Tiro", 1, null, "4:30-4:45", "150-160 bpm", null, null);
+            EtapaTreino r1 = etapa(2, "RECUPERACAO", "Trote", 2, null, null, "120-136 bpm", null, null);
+            EtapaTreino a2 = etapa(3, "INTERVALADO", "Tiro", 1, null, "4:30-4:45", "150-160 bpm", null, null);
+            EtapaTreino r2 = etapa(4, "RECUPERACAO", "Trote", 2, null, null, "120-136 bpm", null, null);
+            a1.setAlvoPrimario(AlvoPrimario.PACE);
+            a2.setAlvoPrimario(AlvoPrimario.FC);
+            TreinoPlanejado treino = treino(TipoTreino.FARTLEK, LocalDate.of(2026, 8, 20),
+                    Duration.ZERO, null, null, null, List.of(a1, r1, a2, r2));
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
+
+            assertThat(resultado.steps()).hasSize(4);
+            assertThat(resultado.steps()).allSatisfy(step -> assertThat(step.reps()).isNull());
         }
 
         @Test

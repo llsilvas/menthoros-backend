@@ -12,6 +12,8 @@ import br.com.menthoros.backend.entity.AthleteBaselineState;
 import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.config.external.GarminProperties;
+import br.com.menthoros.backend.enums.CanalIntegracao;
 import br.com.menthoros.backend.enums.DispositivoMarca;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
@@ -19,6 +21,7 @@ import br.com.menthoros.backend.enums.TipoProva;
 import br.com.menthoros.backend.exception.AccessDeniedException;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.repository.AthleteBaselineHistoryRepository;
 import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
@@ -87,6 +90,7 @@ public class OnboardingServiceImpl implements OnboardingService {
     private final CalibrationService calibrationService;
     private final AtletaProgressService atletaProgressService;
     private final ProvaEnricher provaEnricher;
+    private final GarminProperties garminProperties;
 
     @Override
     @Transactional(readOnly = true)
@@ -189,6 +193,7 @@ public class OnboardingServiceImpl implements OnboardingService {
             throw new IllegalArgumentException("dispositivoMarca e obrigatorio");
         }
         validarPosseOuCoach(atletaId, chamadorEhCoach);
+        validarCanalPorMarca(input.canalIntegracao(), input.dispositivoMarca());
         atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta nao encontrado: " + atletaId));
 
@@ -281,7 +286,16 @@ public class OnboardingServiceImpl implements OnboardingService {
         perfil.setStatus("COMPLETO");
         PerfilOnboardingAtleta perfilConcluido = perfilOnboardingAtletaRepository.save(perfil);
 
-        Prova provaAlvo = criarOuAtualizarProvaAlvo(atletaId, tenantId, dataProva, tipoProva, distancia, distanciaKm, nomeProva);
+        // Prova alvo opcional (improve-athlete-onboarding-usability): sem dataProva, conclui sem
+        // prova — o atleta cadastra depois em Provas. Com dataProva, a prova tem de vir inteira.
+        Prova provaAlvo = null;
+        if (dataProva != null) {
+            if (tipoProva == null || distancia == null) {
+                throw new DomainRuleViolationException(
+                        "Para registrar a prova alvo no onboarding, informe tipoProva e distancia junto com dataProva");
+            }
+            provaAlvo = criarOuAtualizarProvaAlvo(atletaId, tenantId, dataProva, tipoProva, distancia, distanciaKm, nomeProva);
+        }
         OnboardingContext context = montarContexto(atletaId, tenantId);
         ConfidenceTier tier = athleteBaselineStateRepository.findByAtletaIdAndTenantId(atletaId, tenantId)
                 .map(AthleteBaselineState::getConfidenceTier)
@@ -311,6 +325,24 @@ public class OnboardingServiceImpl implements OnboardingService {
 
         return Optional.of(new CalibrationStatusResult(
                 TrainingPhase.CALIBRATION, stage, semanaDesdeInicioCalibracao, estado.getConfidenceScore()));
+    }
+
+    /**
+     * D9 de garmin-connection: o canal GARMIN so vale para relogio Garmin, e com o canal habilitado
+     * o relogio Garmin so vale com canal GARMIN. Canal nulo passa — o rascunho e parcial (CA8).
+     */
+    private void validarCanalPorMarca(CanalIntegracao canal, DispositivoMarca marca) {
+        if (canal == null) {
+            return;
+        }
+        if (canal == CanalIntegracao.GARMIN && marca != DispositivoMarca.GARMIN) {
+            throw new DomainRuleViolationException(
+                    "O canal GARMIN so e valido para relogio Garmin (marca informada: " + marca + ")");
+        }
+        if (garminProperties.habilitado() && marca == DispositivoMarca.GARMIN && canal != CanalIntegracao.GARMIN) {
+            throw new DomainRuleViolationException(
+                    "Para relogio Garmin o canal deve ser GARMIN (canal informado: " + canal + ")");
+        }
     }
 
     /**

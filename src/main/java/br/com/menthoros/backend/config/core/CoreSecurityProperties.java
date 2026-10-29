@@ -53,4 +53,15 @@ public class CoreSecurityProperties {
     private List<String> intervalsIcuPaths = new ArrayList<>(List.of(
         "/api/v1/integracoes/intervals-icu/callback"
     ));
+
+    /**
+     * Callback do OAuth do Garmin (browser do atleta, sem JWT; identidade pelo state assinado) e
+     * webhook (o Garmin só aceita URL, então o segredo vai no caminho e é conferido no controller).
+     * Fora de {@code /api/v1/integracoes/me/**}, que continua inteiramente autenticado.
+     */
+    @NotEmpty(message = "garminPaths cannot be empty")
+    private List<String> garminPaths = new ArrayList<>(List.of(
+        "/api/v1/integracoes/garmin/callback",
+        "/api/v1/garmin/webhook/**"
+    ));
 }

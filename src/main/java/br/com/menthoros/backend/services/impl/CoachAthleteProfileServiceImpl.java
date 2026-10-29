@@ -12,7 +12,9 @@ import br.com.menthoros.backend.services.AthleteContractService;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
@@ -40,6 +42,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -64,6 +67,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final MeterRegistry meterRegistry;
     private final AthleteContractService athleteContractService;
     private final PlatformTransactionManager transactionManager;
+    private final IntegracaoExternaRepository integracaoExternaRepository;
 
     /**
      * Transação própria para cada bloco degradável do perfil. Participando da transação do perfil,
@@ -180,6 +184,10 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         AtletaPerfilCoachOutputDto.RelogioDto relogio = buscarNullable("relogio", avisos,
                 () -> resolverRelogio(atletaId, tenantId));
 
+        // nulo sem aviso quando o atleta nunca conectou um canal
+        AtletaPerfilCoachOutputDto.ConexaoCanalDto conexaoCanal = buscarNullable("conexaoCanal", avisos,
+                () -> resolverConexaoCanal(atletaId, tenantId));
+
         return new AtletaPerfilCoachOutputDto(
                 atletaId,
                 nome,
@@ -203,8 +211,24 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 melhoresEsforcos,
                 melhoresEsforcosIntegracaoConectada,
                 distanceSummary,
-                relogio
+                relogio,
+                conexaoCanal
         );
+    }
+
+    private AtletaPerfilCoachOutputDto.ConexaoCanalDto resolverConexaoCanal(UUID atletaId, UUID tenantId) {
+        return integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
+                        atletaId, List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN), tenantId)
+                .map(i -> {
+                    boolean garmin = i.getPlataforma() == FonteDados.GARMIN;
+                    Set<String> scopes = i.getScopes() == null ? Set.of()
+                            : Set.of(i.getScopes().split(GarminConnectionServiceImpl.SEPARADOR_SCOPES));
+                    return new AtletaPerfilCoachOutputDto.ConexaoCanalDto(i.getPlataforma(), i.isAtivo(),
+                            scopes.contains(garmin ? GarminConnectionServiceImpl.WORKOUT_IMPORT : "CALENDAR:WRITE"),
+                            scopes.contains(garmin ? GarminConnectionServiceImpl.ACTIVITY_EXPORT : "ACTIVITY:READ"),
+                            i.getLastSyncError());
+                })
+                .orElse(null);
     }
 
     private AtletaPerfilCoachOutputDto.RelogioDto resolverRelogio(UUID atletaId, UUID tenantId) {
@@ -324,7 +348,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             e.getDuracaoMin(),
                             e.getDistanciaKm() != null ? e.getDistanciaKm().doubleValue() : null,
                             e.getFcAlvoEtapa(), e.getRitmoAlvo(), e.getRepeticoes(),
-                            e.getBlocoId(), e.getBlocoRepeticoes()))
+                            e.getBlocoId(), e.getBlocoRepeticoes(), e.getAlvoPrimario()))
                     .toList();
         } catch (Exception e) {
             return null;

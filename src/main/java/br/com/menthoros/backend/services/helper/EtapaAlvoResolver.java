@@ -2,7 +2,7 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.domain.workout.HrTarget;
 import br.com.menthoros.backend.domain.workout.PaceTarget;
-import br.com.menthoros.backend.dto.output.TreinoHojeDto.AlvoPrimario;
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import br.com.menthoros.backend.dto.output.TreinoHojeDto.EtapaAlvoDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaTreino;
@@ -31,6 +31,21 @@ public class EtapaAlvoResolver {
                 IntervalsIcuTargetParser.parseFc(etapa.getFcAlvoEtapa()).orElse(null), atleta);
         PaceTarget pace = IntervalsIcuTargetParser.parsePace(etapa.getRitmoAlvo()).orElse(null);
 
+        AlvoPrimario eixo = etapa.getAlvoPrimario();
+        if (eixo == AlvoPrimario.NENHUM) {
+            return dto(etapa, AlvoPrimario.NENHUM, null, null, null, null);
+        }
+        if (eixo == AlvoPrimario.PACE) {
+            boolean fcPrescrita = fc.alvo() != null || fc.descartadoPorFaltaDeDado();
+            return pace != null
+                    ? dto(etapa, AlvoPrimario.PACE, null, null, formatarPace(pace),
+                            fcPrescrita ? etapa.getFcAlvoEtapa().trim() : null)
+                    : dto(etapa, AlvoPrimario.NENHUM, null, null, null, null);
+        }
+        if (eixo == AlvoPrimario.FC && fc.alvo() == null) {
+            pace = null; // FC escolhida e sem valor: o pace não assume
+        }
+
         AlvoPrimario primario;
         Integer fcMin = null;
         Integer fcMax = null;
@@ -57,6 +72,11 @@ public class EtapaAlvoResolver {
             }
         }
 
+        return dto(etapa, primario, fcMin, fcMax, paceAlvo, secundario);
+    }
+
+    private static EtapaAlvoDto dto(EtapaTreino etapa, AlvoPrimario primario, Integer fcMin, Integer fcMax,
+                                    String paceAlvo, String secundario) {
         return new EtapaAlvoDto(
                 etapa.getOrdem(),
                 etapa.getTipoEtapa(),

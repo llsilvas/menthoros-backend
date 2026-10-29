@@ -32,6 +32,7 @@ public interface PlanoSemanalMapper {
     org.slf4j.Logger PLANNER_LOG = org.slf4j.LoggerFactory.getLogger(PlanoSemanalMapper.class);
 
     @Mapping(target = "atletaNome", expression = "java(resolveAtletaNome(entity))")
+    @Mapping(target = "atletaId", source = "atleta.id")
     @Mapping(target = "plannerComplianceStatus", expression = "java(resolvePlannerComplianceStatus(entity))")
     @Mapping(target = "plannerReviewReasons", expression = "java(resolvePlannerReviewReasons(entity))")
     PlanoSemanalOutputDto toOutputDto(PlanoSemanal entity);

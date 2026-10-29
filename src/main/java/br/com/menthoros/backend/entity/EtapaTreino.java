@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.entity;
 
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import jakarta.persistence.*;
 import lombok.*;
 
@@ -53,5 +54,9 @@ public class EtapaTreino {
 
     @Column(name = "bloco_repeticoes")
     private Integer blocoRepeticoes;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "alvo_primario", length = 10)
+    private AlvoPrimario alvoPrimario;
 
 }

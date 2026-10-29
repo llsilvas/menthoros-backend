@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.enums.AlvoPrimario;
 import br.com.menthoros.backend.domain.workout.IntensityTarget;
 import br.com.menthoros.backend.domain.workout.PaceTarget;
 import br.com.menthoros.backend.domain.workout.StructuredWorkout;
@@ -359,7 +360,8 @@ public class IntervalsIcuWorkoutConverter {
                 && Objects.equals(a.getDuracaoMin(), b.getDuracaoMin())
                 && distanciasIguais(a.getDistanciaKm(), b.getDistanciaKm())
                 && Objects.equals(a.getRitmoAlvo(), b.getRitmoAlvo())
-                && Objects.equals(a.getFcAlvoEtapa(), b.getFcAlvoEtapa());
+                && Objects.equals(a.getFcAlvoEtapa(), b.getFcAlvoEtapa())
+                && a.getAlvoPrimario() == b.getAlvoPrimario();
     }
 
     private boolean distanciasIguais(BigDecimal a, BigDecimal b) {
@@ -379,6 +381,22 @@ public class IntervalsIcuWorkoutConverter {
         IntervalsIcuFcAlvoResolver.Resolucao fc = fcAlvoResolver.resolver(
                 IntervalsIcuTargetParser.parseFc(etapa.getFcAlvoEtapa()).orElse(null), ctx.atleta());
         PaceTarget pace = IntervalsIcuTargetParser.parsePace(etapa.getRitmoAlvo()).orElse(null);
+
+        // O eixo escolhido pelo treinador vence a derivação por conteúdo (alvoPrimario nulo = legado).
+        AlvoPrimario eixo = etapa.getAlvoPrimario();
+        if (eixo == AlvoPrimario.NENHUM) {
+            return WorkoutStep.simples(text, durationSeconds, distanceMeters, IntensityTarget.SEM_OBJETIVO);
+        }
+        if (eixo == AlvoPrimario.PACE) {
+            if (fc.alvo() != null || fc.descartadoPorFaltaDeDado()) {
+                text = anexarAoTexto(text, etapa.getFcAlvoEtapa());
+            }
+            return WorkoutStep.simples(text, durationSeconds, distanceMeters,
+                    pace != null ? pace : IntensityTarget.SEM_OBJETIVO);
+        }
+        if (eixo == AlvoPrimario.FC && fc.alvo() == null) {
+            pace = null; // FC escolhida e sem valor: o pace não assume, a etapa vai sem meta
+        }
 
         // A meta é UMA. Quando a etapa traz os dois alvos, a FC é a meta e o ritmo desce para o
         // texto — o inverso do que se fazia aqui, e a inversão é o ponto: a FC é a variável que

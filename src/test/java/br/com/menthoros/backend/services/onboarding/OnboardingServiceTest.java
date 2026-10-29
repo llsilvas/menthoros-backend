@@ -21,6 +21,7 @@ import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.TipoProva;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.repository.AthleteBaselineHistoryRepository;
 import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
@@ -33,6 +34,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -70,6 +73,9 @@ class OnboardingServiceTest {
     @Mock private CalibrationService calibrationService;
     @Mock private br.com.menthoros.backend.services.AtletaProgressService atletaProgressService;
 
+    private final br.com.menthoros.backend.config.external.GarminProperties garminProperties =
+            new br.com.menthoros.backend.config.external.GarminProperties();
+
     private OnboardingServiceImpl service;
 
     private UUID atletaId;
@@ -83,7 +89,7 @@ class OnboardingServiceTest {
                 athleteBaselineStateRepository, athleteBaselineHistoryRepository, provaRepository,
                 activityNormalizer, activityDedupService,
                 baselineCalculator, confidenceScorer, planningPolicyResolver, calibrationService,
-                atletaProgressService, new br.com.menthoros.backend.services.helper.ProvaEnricher());
+                atletaProgressService, new br.com.menthoros.backend.services.helper.ProvaEnricher(), garminProperties);
         atletaId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
         atleta = Atleta.builder().id(atletaId).nome("João").nivelExperiencia(NivelExperiencia.INTERMEDIARIO).build();
@@ -478,6 +484,45 @@ class OnboardingServiceTest {
             verify(perfilOnboardingAtletaRepository, org.mockito.Mockito.never()).save(any());
         }
 
+        @ParameterizedTest(name = "flag={0} marca={1} canal={2} -> rejeita={3}")
+        @DisplayName("canal x marca x flag (D9)")
+        @CsvSource({
+                "true,  GARMIN, INTERVALS_ICU, true",
+                "true,  GARMIN, MANUAL,        true",
+                "true,  GARMIN, GARMIN,        false",
+                "false, GARMIN, INTERVALS_ICU, false",
+                "false, GARMIN, GARMIN,        false",
+                "true,  COROS,  GARMIN,        true",
+                "false, COROS,  GARMIN,        true",
+                "true,  COROS,  INTERVALS_ICU, false",
+                "false, COROS,  INTERVALS_ICU, false"
+        })
+        void validaCanalPorMarca(boolean flag, DispositivoMarca marca, CanalIntegracao canal, boolean rejeita) {
+            garminProperties.setHabilitado(flag);
+            OnboardingDraftInput base = draftInput();
+            OnboardingDraftInput input = new OnboardingDraftInput(
+                    base.objetivo(), base.nivelExperiencia(), base.diasDisponiveis(), base.volumeSemanalMax(),
+                    base.temLesao(), base.descricaoLesao(), base.dataUltimaLesao(), base.historicoLesoes(),
+                    base.maiorTreinoRecenteKm(), base.duracaoDisponivelMin(), base.restricoes(), base.modalidade(),
+                    base.percepcaoCondicionamento(), base.preenchidoPorCoach(), canal, marca,
+                    base.dispositivoModelo());
+
+            if (rejeita) {
+                assertThatThrownBy(() -> service.salvarRascunho(atletaId, tenantId, input, true))
+                        .isInstanceOf(DomainRuleViolationException.class)
+                        .hasMessageContaining("canal");
+                verify(perfilOnboardingAtletaRepository, org.mockito.Mockito.never()).save(any());
+            } else {
+                when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+                when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId))
+                        .thenReturn(Optional.empty());
+                when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+                assertThat(service.salvarRascunho(atletaId, tenantId, input, true).getCanalIntegracao())
+                        .isEqualTo(canal);
+            }
+        }
+
         @Test
         @DisplayName("lanca IllegalArgumentException quando algum argumento e nulo")
         void lancaExcecaoParaArgumentosNulos() {
@@ -551,6 +596,45 @@ class OnboardingServiceTest {
             assertThat(captor.getValue().getVolumeSemanalMax()).isEqualTo(40);
         }
 
+        /**
+         * Prova alvo opcional (improve-athlete-onboarding-usability): o iniciante cujo objetivo e
+         * "correr 10 km sem parar" nao tem prova para informar — e nao pode ficar preso no formulario.
+         */
+        @Test
+        @DisplayName("sem dataProva, conclui sem criar Prova alvo e o resultado vem com provaAlvo nula")
+        void concluiSemProvaQuandoDataProvaAusente() {
+            atleta.setUpdatedAt(LocalDateTime.now().minusDays(2));
+            PerfilOnboardingAtleta perfil = rascunhoPreenchido(Instant.now().minusSeconds(3600));
+            stubFluxoDeConclusaoSemProva(perfil);
+
+            OnboardingConclusionResult resultado = service.concluirOnboarding(
+                    atletaId, tenantId, true, null, null, null, null, null);
+
+            assertThat(resultado.perfil().getStatus()).isEqualTo("COMPLETO");
+            assertThat(resultado.provaAlvo()).isNull();
+            assertThat(resultado.context()).isNotNull();
+            verify(provaRepository, org.mockito.Mockito.never()).save(any(Prova.class));
+            verify(atletaRepository).save(any());
+        }
+
+        @Test
+        @DisplayName("dataProva sem distancia -> DomainRuleViolationException, e nada e persistido")
+        void rejeitaProvaIncompleta() {
+            atleta.setUpdatedAt(LocalDateTime.now().minusDays(2));
+            PerfilOnboardingAtleta perfil = rascunhoPreenchido(Instant.now().minusSeconds(3600));
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
+            when(atletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            assertThatThrownBy(() -> service.concluirOnboarding(
+                    atletaId, tenantId, true, LocalDate.now().plusMonths(3),
+                    TipoProva.CORRIDA_RUA, null, null, null))
+                    .isInstanceOf(br.com.menthoros.backend.exception.DomainRuleViolationException.class)
+                    .hasMessageContaining("distancia");
+            verify(provaRepository, org.mockito.Mockito.never()).save(any(Prova.class));
+        }
+
         @Test
         @DisplayName("lanca DomainConflictException quando Atleta foi editado depois da ultima atualizacao do rascunho")
         void lancaConflitoQuandoAtletaEditadoDepoisDoRascunho() {
@@ -612,10 +696,7 @@ class OnboardingServiceTest {
         }
 
         private void stubFluxoDeConclusao(PerfilOnboardingAtleta perfil) {
-            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
-            when(atletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            stubFluxoDeConclusaoSemProva(perfil);
             // criarOuAtualizarProvaAlvo
             when(provaRepository.findByAtletaAndProvaAlvoTrue(atleta)).thenReturn(List.of());
             when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> {
@@ -623,6 +704,14 @@ class OnboardingServiceTest {
                 if (p.getId() == null) p.setId(UUID.randomUUID());
                 return p;
             });
+        }
+
+        /** Stubs do fluxo sem prova alvo — strict stubbing acusaria os stubs de Prova como mortos. */
+        private void stubFluxoDeConclusaoSemProva(PerfilOnboardingAtleta perfil) {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
+            when(atletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
             // montarContexto
             when(treinoRealizadoRepository.findByAtletaIdOrderByDataTreinoDesc(atletaId)).thenReturn(List.of());
             when(activityDedupService.deduplicar(List.of(), tenantId)).thenReturn(List.of());

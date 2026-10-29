@@ -54,6 +54,11 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     /** Aceite do convite de atleta: cria conta — mesma cautela do coach signup. */
     static final String PATH_ATHLETE_INVITE_ACCEPT = "/api/public/athlete-invites/aceitar";
 
+    /** Callback OAuth do Garmin: GET público, sem JWT. */
+    static final String PATH_GARMIN_CALLBACK = "/api/v1/integracoes/garmin/callback";
+    /** Webhook do Garmin: o segredo vai no path, então é prefixo. Só POST. */
+    static final String PATH_GARMIN_WEBHOOK = "/api/v1/garmin/webhook/";
+
     /** Uma política por rota: limite, janela, e o contador que a materializa. */
     private record Politica(int limite, Duration janela, Cache<String, AtomicInteger> contador) {
 
@@ -69,11 +74,16 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     private final Map<String, Politica> politicas;
     /** Política do GET de consulta do convite, por prefixo. */
     private final Politica consultaConvite;
+    /** Callback e webhook do Garmin. O webhook é folgado: o Garmin envia lotes de poucos IPs. */
+    private final Politica garminCallback;
+    private final Politica garminWebhook;
 
     public PublicEndpointRateLimitFilter(
             @Value("${app.waitlist.rate-limit.per-minute:5}") int waitlistPorMinuto,
             @Value("${app.coach-signup.rate-limit.per-hour:3}") int signupPorHora,
-            @Value("${app.founding-invite.rate-limit.per-minute:10}") int consultaConvitePorMinuto) {
+            @Value("${app.founding-invite.rate-limit.per-minute:10}") int consultaConvitePorMinuto,
+            @Value("${app.garmin.rate-limit.callback-per-minute:30}") int garminCallbackPorMinuto,
+            @Value("${app.garmin.rate-limit.webhook-per-minute:300}") int garminWebhookPorMinuto) {
 
         this.politicas = new LinkedHashMap<>();
         // Propriedade preservada com o nome antigo: renomeá-la faria os ambientes que já a
@@ -88,6 +98,8 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
         // Um GET que devolve nome e e-mail para quem tiver um token: barato de servir, mas é PII e
         // não pode ficar sem teto. Minuto, não hora: a página consulta uma vez ao abrir.
         this.consultaConvite = Politica.de(consultaConvitePorMinuto, Duration.ofMinutes(1));
+        this.garminCallback = Politica.de(garminCallbackPorMinuto, Duration.ofMinutes(1));
+        this.garminWebhook = Politica.de(garminWebhookPorMinuto, Duration.ofMinutes(1));
     }
 
     @Override
@@ -102,7 +114,10 @@ public class PublicEndpointRateLimitFilter extends OncePerRequestFilter {
     private Politica politicaDe(HttpServletRequest request) {
         String uri = request.getRequestURI();
         if (HttpMethod.POST.matches(request.getMethod())) {
-            return politicas.get(uri);
+            return uri.startsWith(PATH_GARMIN_WEBHOOK) ? garminWebhook : politicas.get(uri);
+        }
+        if (HttpMethod.GET.matches(request.getMethod()) && PATH_GARMIN_CALLBACK.equals(uri)) {
+            return garminCallback;
         }
         if (HttpMethod.GET.matches(request.getMethod())
                 && (uri.startsWith(PATH_FOUNDING_INVITE_LOOKUP) || uri.startsWith(PATH_ATHLETE_INVITE_LOOKUP))) {

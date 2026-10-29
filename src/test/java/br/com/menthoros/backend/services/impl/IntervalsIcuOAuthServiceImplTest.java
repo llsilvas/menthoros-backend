@@ -52,6 +52,7 @@ class IntervalsIcuOAuthServiceImplTest {
     private IntervalsIcuConnectionService connectionService;
     private br.com.menthoros.backend.services.IntervalsIcuClient intervalsIcuClient;
 
+    private br.com.menthoros.backend.services.GarminConnectionService garminConnectionService;
     private IntervalsIcuOAuthServiceImpl service;
 
     private UUID tenantId;
@@ -78,12 +79,13 @@ class IntervalsIcuOAuthServiceImplTest {
         atletaProgressService = mock(AtletaProgressService.class);
         connectionService = mock(IntervalsIcuConnectionService.class);
         intervalsIcuClient = mock(br.com.menthoros.backend.services.IntervalsIcuClient.class);
+        garminConnectionService = mock(br.com.menthoros.backend.services.GarminConnectionService.class);
 
         WebClient webClient = WebClient.builder().baseUrl(wireMock.baseUrl()).build();
 
         service = new IntervalsIcuOAuthServiceImpl(
                 properties, signer, webClient, atletaRepository, integracaoRepository,
-                atletaProgressService, connectionService, intervalsIcuClient);
+                atletaProgressService, connectionService, intervalsIcuClient, garminConnectionService);
 
         tenantId = UUID.randomUUID();
         atletaId = UUID.randomUUID();
@@ -271,6 +273,22 @@ class IntervalsIcuOAuthServiceImplTest {
             service.exchangeCodeForToken("code-ok", signer.assinar(atletaId));
 
             verify(connectionService).pausarStravaAutomaticamente(atletaId, tenantId);
+        }
+
+        @Test
+        @DisplayName("exclusividade (D4 de garmin-connection): sucesso desconecta o Garmin do atleta")
+        void sucessoDesconectaGarmin() {
+            stubTokenOk();
+            when(atletaRepository.findByIdBasic(atletaId)).thenReturn(Optional.of(atletaComTenant()));
+            when(integracaoRepository.findOtherActiveByExternalAthleteIdAndPlataformaAndTenantId(
+                    any(), any(), any(), any())).thenReturn(List.of());
+            when(integracaoRepository.findByAtletaIdAndPlataformaAndTenantId(
+                    atletaId, FonteDados.INTERVALS_ICU, tenantId)).thenReturn(Optional.empty());
+            when(integracaoRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.exchangeCodeForToken("code-ok", signer.assinar(atletaId));
+
+            verify(garminConnectionService).desconectar(atletaId, tenantId);
         }
 
         // Origem: investigação do bug de FC alvo elevada no relógio (210/228/210 bpm vs

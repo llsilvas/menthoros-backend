@@ -6,6 +6,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import java.math.BigDecimal;
 
 import java.util.List;
 
@@ -106,6 +110,38 @@ class ZonaTreinoServiceTest {
             List<ZonaTreinoService.ZonaCompleta> zonas = service.calcularZonas(atleta);
 
             assertThat(zonas).hasSize(6);
+        }
+    }
+
+    @Nested
+    @DisplayName("calcularZonasPace — faixas contíguas sobre paceLimiar")
+    class CalcularZonasPace {
+
+        @ParameterizedTest
+        @ValueSource(strings = {"4.00", "5.00", "6.50"})
+        @DisplayName("paceMin(Zn) == paceMax(Zn+1): sem sobreposição e sem buraco")
+        void zonasAdjacentesSaoContiguas(String limiar) {
+            List<ZonaTreinoService.ZonaPace> zonas = service.calcularZonasPace(new BigDecimal(limiar));
+
+            assertThat(zonas).hasSize(6);
+            for (int i = 0; i < 5; i++) {
+                assertThat(zonas.get(i).paceMin())
+                        .as("paceMin(Z%d) == paceMax(Z%d)", i + 1, i + 2)
+                        .isEqualByComparingTo(zonas.get(i + 1).paceMax());
+            }
+        }
+
+        @Test
+        @DisplayName("paceLimiar=5.00: Z3 5.00-5.25, Z4 4.75-5.00, Z5 4.50-4.75")
+        void paceLimiar5_valoresAbsolutos() {
+            List<ZonaTreinoService.ZonaPace> zonas = service.calcularZonasPace(new BigDecimal("5.00"));
+
+            assertThat(zonas.get(2).paceMin()).isEqualByComparingTo("5.00");
+            assertThat(zonas.get(2).paceMax()).isEqualByComparingTo("5.25");
+            assertThat(zonas.get(3).paceMin()).isEqualByComparingTo("4.75");
+            assertThat(zonas.get(3).paceMax()).isEqualByComparingTo("5.00");
+            assertThat(zonas.get(4).paceMin()).isEqualByComparingTo("4.50");
+            assertThat(zonas.get(4).paceMax()).isEqualByComparingTo("4.75");
         }
     }
 }

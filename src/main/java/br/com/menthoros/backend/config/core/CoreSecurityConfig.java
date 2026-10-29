@@ -48,6 +48,8 @@ public class CoreSecurityConfig {
                             .permitAll()
                         .requestMatchers(securityProperties.getIntervalsIcuPaths().toArray(new String[0]))
                             .permitAll()
+                        .requestMatchers(securityProperties.getGarminPaths().toArray(new String[0]))
+                            .permitAll()
                         .anyRequest().authenticated()
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2

@@ -23,6 +23,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.reactive.function.client.WebClient;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -85,8 +86,8 @@ class StravaOAuthServiceImplTest {
         void nasceComAutoSyncPausadoTrue() {
             when(integracaoExternaRepository.findByAtletaIdAndPlataforma(atletaId, FonteDados.STRAVA))
                     .thenReturn(Optional.empty());
-            when(integracaoExternaRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
-                    .thenReturn(Optional.of(new IntegracaoExterna()));
+            when(integracaoExternaRepository.findActiveByAtletaIdAndPlataformaInAndTenantId(atletaId, List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN), tenantId))
+                    .thenReturn(List.of(new IntegracaoExterna()));
             when(integracaoExternaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             IntegracaoExterna resultado = service.exchangeCodeForToken("code-oauth", atleta);
@@ -100,8 +101,8 @@ class StravaOAuthServiceImplTest {
         void semIntervalsIcuMantemDefaultFalse() {
             when(integracaoExternaRepository.findByAtletaIdAndPlataforma(atletaId, FonteDados.STRAVA))
                     .thenReturn(Optional.empty());
-            when(integracaoExternaRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
-                    .thenReturn(Optional.empty());
+            when(integracaoExternaRepository.findActiveByAtletaIdAndPlataformaInAndTenantId(atletaId, List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN), tenantId))
+                    .thenReturn(List.of());
             when(integracaoExternaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             IntegracaoExterna resultado = service.exchangeCodeForToken("code-oauth", atleta);
@@ -117,8 +118,8 @@ class StravaOAuthServiceImplTest {
 
             when(integracaoExternaRepository.findByAtletaIdAndPlataforma(atletaId, FonteDados.STRAVA))
                     .thenReturn(Optional.of(existente));
-            when(integracaoExternaRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
-                    .thenReturn(Optional.empty());
+            when(integracaoExternaRepository.findActiveByAtletaIdAndPlataformaInAndTenantId(atletaId, List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN), tenantId))
+                    .thenReturn(List.of());
             when(integracaoExternaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             IntegracaoExterna resultado = service.exchangeCodeForToken("code-oauth", atleta);
@@ -134,8 +135,8 @@ class StravaOAuthServiceImplTest {
 
             when(integracaoExternaRepository.findByAtletaIdAndPlataforma(atletaId, FonteDados.STRAVA))
                     .thenReturn(Optional.of(existente));
-            when(integracaoExternaRepository.findActiveByAtletaIdAndPlataformaAndTenantId(atletaId, FonteDados.INTERVALS_ICU, tenantId))
-                    .thenReturn(Optional.of(new IntegracaoExterna()));
+            when(integracaoExternaRepository.findActiveByAtletaIdAndPlataformaInAndTenantId(atletaId, List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN), tenantId))
+                    .thenReturn(List.of(new IntegracaoExterna()));
             when(integracaoExternaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
             IntegracaoExterna resultado = service.exchangeCodeForToken("code-oauth", atleta);

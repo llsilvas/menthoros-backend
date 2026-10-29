@@ -9,6 +9,7 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.IntervalsIcuClient;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
 import br.com.menthoros.backend.services.IntervalsIcuOAuthService;
@@ -49,6 +50,7 @@ public class IntervalsIcuOAuthServiceImpl implements IntervalsIcuOAuthService {
     private final AtletaProgressService atletaProgressService;
     private final IntervalsIcuConnectionService connectionService;
     private final IntervalsIcuClient intervalsIcuClient;
+    private final GarminConnectionService garminConnectionService;
 
     public IntervalsIcuOAuthServiceImpl(
             IntervalsIcuProperties properties,
@@ -58,7 +60,8 @@ public class IntervalsIcuOAuthServiceImpl implements IntervalsIcuOAuthService {
             IntegracaoExternaRepository integracaoRepository,
             AtletaProgressService atletaProgressService,
             IntervalsIcuConnectionService connectionService,
-            IntervalsIcuClient intervalsIcuClient) {
+            IntervalsIcuClient intervalsIcuClient,
+            GarminConnectionService garminConnectionService) {
         this.properties = properties;
         this.stateSigner = stateSigner;
         this.intervalsIcuWebClient = intervalsIcuWebClient;
@@ -67,6 +70,7 @@ public class IntervalsIcuOAuthServiceImpl implements IntervalsIcuOAuthService {
         this.atletaProgressService = atletaProgressService;
         this.connectionService = connectionService;
         this.intervalsIcuClient = intervalsIcuClient;
+        this.garminConnectionService = garminConnectionService;
     }
 
     /**
@@ -176,6 +180,9 @@ public class IntervalsIcuOAuthServiceImpl implements IntervalsIcuOAuthService {
 
         // 7. Hook D5.2 — preservado, não reimplementado (D9).
         connectionService.pausarStravaAutomaticamente(atletaId, tenantId);
+
+        // Um canal por atleta (D4 de garmin-connection): o intervals.icu conectado revoga o Garmin.
+        garminConnectionService.desconectar(atletaId, tenantId);
 
         // 8. Sincroniza fcLimiar/fcMaxima pro intervals.icu (best-effort) — origem: investigação
         // do bug de FC alvo elevada no relógio, causada por divergência entre o FC do Menthoros e

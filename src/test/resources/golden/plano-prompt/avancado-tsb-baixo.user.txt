@@ -86,9 +86,9 @@
 **Zonas de Treino Calculadas:**
 - Z1 (Recuperação): 4.03-4.38 min/km | 129-146 bpm
 - Z2 (Aeróbico): 3.68-4.03 min/km | 146-153 bpm
-- Z3 (Tempo): 3.43-3.68 min/km | 153-162 bpm
+- Z3 (Tempo): 3.50-3.68 min/km | 153-162 bpm
 - Z4 (Limiar): 3.33-3.50 min/km | 162-172 bpm
-- Z5 (VO2max): 3.15-3.40 min/km | 172-182 bpm
+- Z5 (VO2max): 3.15-3.33 min/km | 172-182 bpm
 - Z6 (Sprint): 2.87-3.15 min/km | 172-182 bpm
 
 

@@ -49,6 +49,7 @@ public class StructuredLoggingFilter extends OncePerRequestFilter {
     private static final String MDC_METHOD = "request_method";
     private static final String MDC_URI = "request_uri";
     private static final String MDC_DURATION = "duration_ms";
+    private static final String PREFIXO_WEBHOOK_GARMIN = "/api/v1/garmin/webhook/";
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
@@ -61,12 +62,13 @@ public class StructuredLoggingFilter extends OncePerRequestFilter {
         }
 
         long startTime = System.currentTimeMillis();
+        String uri = uriParaLog(request.getRequestURI());
 
         try {
             // Popula MDC para contexto distribuído
             MDC.put(MDC_REQUEST_ID, requestId);
             MDC.put(MDC_METHOD, request.getMethod());
-            MDC.put(MDC_URI, request.getRequestURI());
+            MDC.put(MDC_URI, uri);
 
             // Tenta adicionar tenantId ao MDC
             addTenantToMDC();
@@ -75,7 +77,7 @@ public class StructuredLoggingFilter extends OncePerRequestFilter {
             log.info(
                     "request_started | method={} | uri={}",
                     request.getMethod(),
-                    request.getRequestURI()
+                    uri
             );
 
             // Continua processamento
@@ -92,12 +94,20 @@ public class StructuredLoggingFilter extends OncePerRequestFilter {
                     response.getStatus(),
                     duration,
                     request.getMethod(),
-                    request.getRequestURI()
+                    uri
             );
 
             // Limpa MDC para evitar vazamento entre threads
             MDC.clear();
         }
+    }
+
+    /**
+     * O segredo do webhook do Garmin viaja no último segmento do caminho (D6): sem mascarar, ele
+     * iria para o MDC e para o log a cada ping.
+     */
+    static String uriParaLog(String uri) {
+        return uri != null && uri.startsWith(PREFIXO_WEBHOOK_GARMIN) ? PREFIXO_WEBHOOK_GARMIN + "***" : uri;
     }
 
     /**
