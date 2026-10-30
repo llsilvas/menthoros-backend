@@ -411,7 +411,7 @@ class IntervalsIcuAdapterTest {
             );
             when(client.listarEventos(API_KEY, ATHLETE_ID, inicio, fim)).thenReturn(eventos);
 
-            adapter.removerOrfaos(conexao, inicio, fim, Set.of("menthoros-a"));
+            adapter.removerOrfaos(conexao, inicio, fim, Set.of("menthoros-a"), Set.of());
 
             verify(client).deletarEvento(API_KEY, ATHLETE_ID, 2L);
             verify(client, never()).deletarEvento(API_KEY, ATHLETE_ID, 1L);
@@ -430,7 +430,7 @@ class IntervalsIcuAdapterTest {
             org.mockito.Mockito.doThrow(new IntervalsIcuApiException(HttpStatus.NOT_FOUND, "não encontrado"))
                     .when(client).deletarEvento(API_KEY, ATHLETE_ID, 2L);
 
-            adapter.removerOrfaos(conexao, inicio, fim, Set.of());
+            adapter.removerOrfaos(conexao, inicio, fim, Set.of(), Set.of());
 
             verify(client).deletarEvento(API_KEY, ATHLETE_ID, 2L);
         }

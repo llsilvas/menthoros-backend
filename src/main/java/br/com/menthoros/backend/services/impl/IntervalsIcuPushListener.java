@@ -95,11 +95,12 @@ public class IntervalsIcuPushListener {
         }
 
         Set<String> externalIdsAtuais = new HashSet<>();
+        Set<String> idsArmazenadosAtuais = new HashSet<>();
         ResultadoLote lote = new ResultadoLote();
 
         for (TreinoPlanejado treinoOrigem : treinos) {
             try {
-                processarTreino(treinoOrigem, tenantId, conexao, externalIdsAtuais, lote);
+                processarTreino(treinoOrigem, tenantId, conexao, externalIdsAtuais, idsArmazenadosAtuais, lote);
             } catch (Exception e) {
                 // Regra 6: erro em um treino não pode abortar o processamento dos demais.
                 log.error("Erro inesperado ao processar push do treino {}: {}",
@@ -120,7 +121,8 @@ public class IntervalsIcuPushListener {
             integracaoExternaRepository.save(conexao);
         }
 
-        workoutChannel.removerOrfaos(conexao, plano.getSemanaInicio(), plano.getSemanaFim(), externalIdsAtuais);
+        workoutChannel.removerOrfaos(conexao, plano.getSemanaInicio(), plano.getSemanaFim(),
+                externalIdsAtuais, idsArmazenadosAtuais);
 
         // Nudge anti-debounce (CA2): DEPOIS de removerOrfaos de propósito — é a última palavra do
         // lote. Só dispara com 2+ eventos CRIADOS (rajada), no ÚLTIMO deles; best-effort, nunca
@@ -138,7 +140,8 @@ public class IntervalsIcuPushListener {
     }
 
     private void processarTreino(TreinoPlanejado treinoOrigem, UUID tenantId, IntegracaoExterna conexao,
-                                  Set<String> externalIdsAtuais, ResultadoLote lote) {
+                                  Set<String> externalIdsAtuais, Set<String> idsArmazenadosAtuais,
+                                  ResultadoLote lote) {
         UUID treinoId = treinoOrigem.getId();
 
         // Regra 9: tenant do treino (herdado do plano) deve bater com o tenant do evento.
@@ -174,6 +177,13 @@ public class IntervalsIcuPushListener {
         // e erro no push: o evento antigo dele continua válido e não pode ser reconciliado como
         // órfão.
         externalIdsAtuais.add(StructuredWorkout.externalIdCanonico(treinoId));
+
+        // Id gravado no treino: o novo, se o push o devolveu; senão o anterior (erro/claim perdido).
+        String idArmazenado = resultado.eventId() != null
+                ? String.valueOf(resultado.eventId()) : treinoOrigem.getExternalId();
+        if (idArmazenado != null) {
+            idsArmazenadosAtuais.add(idArmazenado);
+        }
     }
 
     /** Flags e contadores agregados do lote de pushes de um plano, acumulados treino a treino. */

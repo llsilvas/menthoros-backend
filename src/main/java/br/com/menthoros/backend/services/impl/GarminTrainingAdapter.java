@@ -33,6 +33,7 @@ public class GarminTrainingAdapter implements WorkoutChannel {
     // shortcut: a janela onde se procura o schedule de um treino que mudou de data é fixa em ±14 dias,
     // porque o adapter não conhece a janela do plano; ampliar se uma re-aprovação mover treinos além disso.
     private static final int JANELA_BUSCA_DIAS = 14;
+    private static final String ORIGEM_MENTHOROS = GarminWorkoutPayloadMapper.PROVEDOR;
 
     private final GarminClient client;
     private final GarminOAuthService oauth;
@@ -80,9 +81,33 @@ public class GarminTrainingAdapter implements WorkoutChannel {
         }
     }
 
+    /**
+     * Idempotent: YES — apagar duas vezes é seguro (404 tolerado).
+     * Side Effects: External API call (GET schedule; GET workout por schedule fora do conjunto;
+     * DELETE schedule e workout dos órfãos do Menthoros).
+     * Tenant-aware: NO — a credencial é do atleta (conexao).
+     *
+     * <p>Só apaga workout com {@code workoutProvider == "Menthoros"}: treino criado pelo atleta no
+     * Garmin Connect nunca é tocado. Best-effort: falha num órfão é logada e não aborta os demais.
+     */
     @Override
-    public void removerOrfaos(IntegracaoExterna conexao, LocalDate inicio, LocalDate fim, Set<String> externalIdsAtuais) {
-        throw new UnsupportedOperationException("Reconciliação de órfãos do Garmin entra na task 2.3");
+    public void removerOrfaos(IntegracaoExterna conexao, LocalDate inicio, LocalDate fim,
+                               Set<String> externalIdsAtuais, Set<String> idsArmazenadosAtuais) {
+        if (conexao == null) {
+            throw new IllegalArgumentException("conexao não pode ser nula");
+        }
+        Set<String> atuais = idsArmazenadosAtuais == null ? Set.of() : idsArmazenadosAtuais;
+        try {
+            String token = oauth.tokenValido(conexao);
+            for (GarminSchedule schedule : client.listarSchedules(token, inicio, fim)) {
+                if (schedule.workoutId() == null || atuais.contains(String.valueOf(schedule.workoutId()))) {
+                    continue;
+                }
+                removerSeDoMenthoros(token, schedule);
+            }
+        } catch (Exception e) {
+            log.warn("Falha ao reconciliar órfãos do Garmin Connect: {}", e.getMessage());
+        }
     }
 
     /** No-op: sem uploader intermediário não há debounce a contornar (design D7). */
@@ -136,6 +161,31 @@ public class GarminTrainingAdapter implements WorkoutChannel {
             client.atualizarSchedule(token, existente.scheduleId(), workoutId, data);
         } else {
             client.criarSchedule(token, workoutId, data);
+        }
+    }
+
+    private void removerSeDoMenthoros(String token, GarminSchedule schedule) {
+        try {
+            JsonNode workout = client.buscarWorkout(token, schedule.workoutId());
+            if (!ORIGEM_MENTHOROS.equals(workout.path("workoutProvider").asText())) {
+                return;
+            }
+            ignorando404(() -> client.deletarSchedule(token, schedule.scheduleId()));
+            ignorando404(() -> client.deletarWorkout(token, schedule.workoutId()));
+        } catch (GarminApiException e) {
+            if (!temStatus(e, 404)) {
+                log.warn("Falha ao remover órfão {} do Garmin Connect: {}", schedule.workoutId(), e.getMessage());
+            }
+        }
+    }
+
+    private static void ignorando404(Runnable acao) {
+        try {
+            acao.run();
+        } catch (GarminApiException e) {
+            if (!temStatus(e, 404)) {
+                throw e;
+            }
         }
     }
 

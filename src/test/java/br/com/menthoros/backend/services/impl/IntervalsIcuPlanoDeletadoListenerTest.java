@@ -83,7 +83,7 @@ class IntervalsIcuPlanoDeletadoListenerTest {
 
             listener.onPlanoDeletado(event);
 
-            verify(workoutChannel).removerOrfaos(conexao, semanaInicio, semanaFim, Set.of());
+            verify(workoutChannel).removerOrfaos(conexao, semanaInicio, semanaFim, Set.of(), Set.of());
         }
 
         @Test
@@ -112,11 +112,11 @@ class IntervalsIcuPlanoDeletadoListenerTest {
         void erroNoWorkoutChannelNaoPropaga() {
             when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.of(conexao));
             org.mockito.Mockito.doThrow(new RuntimeException("indisponível"))
-                    .when(workoutChannel).removerOrfaos(any(), any(), any(), any());
+                    .when(workoutChannel).removerOrfaos(any(), any(), any(), any(), any());
 
             listener.onPlanoDeletado(event);
 
-            verify(workoutChannel).removerOrfaos(conexao, semanaInicio, semanaFim, Set.of());
+            verify(workoutChannel).removerOrfaos(conexao, semanaInicio, semanaFim, Set.of(), Set.of());
         }
     }
 

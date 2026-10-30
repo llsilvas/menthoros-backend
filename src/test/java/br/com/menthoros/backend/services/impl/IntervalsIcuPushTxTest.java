@@ -146,7 +146,7 @@ class IntervalsIcuPushTxTest extends AbstractIntegrationTest {
         doAnswer(invocation -> {
             loteProcessado.countDown();
             return null;
-        }).when(workoutChannel).removerOrfaos(any(), any(), any(), any());
+        }).when(workoutChannel).removerOrfaos(any(), any(), any(), any(), any());
 
         listener.onPlanoAprovado(new PlanoAprovadoEvent(plano.getId(), atleta.getId(), tenantId));
 

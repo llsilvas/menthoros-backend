@@ -61,7 +61,7 @@ public class IntervalsIcuPlanoDeletadoListener {
                 return;
             }
             IntegracaoExterna conexao = conexaoOpt.get();
-            workoutChannel.removerOrfaos(conexao, event.semanaInicio(), event.semanaFim(), Set.of());
+            workoutChannel.removerOrfaos(conexao, event.semanaInicio(), event.semanaFim(), Set.of(), Set.of());
         } catch (Exception e) {
             // Limpeza é best-effort — a deleção do plano JÁ commitou quando este listener roda,
             // então uma falha aqui nunca pode propagar (não há mais nada a desfazer).

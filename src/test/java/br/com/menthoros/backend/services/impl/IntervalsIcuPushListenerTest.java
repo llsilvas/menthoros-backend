@@ -145,7 +145,7 @@ class IntervalsIcuPushListenerTest {
 
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Set<String>> setCaptor = ArgumentCaptor.forClass(Set.class);
-            verify(workoutChannel).removerOrfaos(eq(conexao), eq(inicio), eq(fim), setCaptor.capture());
+            verify(workoutChannel).removerOrfaos(eq(conexao), eq(inicio), eq(fim), setCaptor.capture(), any());
             assertThat(setCaptor.getValue())
                     .containsExactlyInAnyOrder(canonico(t1.getId()), canonico(t2.getId()));
 
@@ -175,7 +175,7 @@ class IntervalsIcuPushListenerTest {
 
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Set<String>> setCaptor = ArgumentCaptor.forClass(Set.class);
-            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture());
+            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture(), any());
             assertThat(setCaptor.getValue()).isEmpty();
             verify(integracaoExternaRepository, never()).save(any());
         }
@@ -201,7 +201,7 @@ class IntervalsIcuPushListenerTest {
 
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Set<String>> setCaptor = ArgumentCaptor.forClass(Set.class);
-            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture());
+            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture(), any());
             assertThat(setCaptor.getValue()).containsExactlyInAnyOrder(canonico(t1.getId()), canonico(t2.getId()));
         }
 
@@ -266,7 +266,7 @@ class IntervalsIcuPushListenerTest {
 
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Set<String>> setCaptor = ArgumentCaptor.forClass(Set.class);
-            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture());
+            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture(), any());
             assertThat(setCaptor.getValue()).containsExactly(canonico(t2.getId()));
         }
 
@@ -319,7 +319,7 @@ class IntervalsIcuPushListenerTest {
 
             verify(workoutChannel, times(1)).tocarEvento(eq(conexao), eq(300L), eq(canonico(t3.getId())));
             var ordem = inOrder(workoutChannel);
-            ordem.verify(workoutChannel).removerOrfaos(any(), any(), any(), any());
+            ordem.verify(workoutChannel).removerOrfaos(any(), any(), any(), any(), any());
             ordem.verify(workoutChannel).tocarEvento(any(), anyLong(), any());
         }
 
@@ -386,7 +386,7 @@ class IntervalsIcuPushListenerTest {
 
             assertThat(conexao.getUltimaSincronizacao()).isNotNull();
             verify(integracaoExternaRepository).save(conexao);
-            verify(workoutChannel).removerOrfaos(eq(conexao), any(), any(), any());
+            verify(workoutChannel).removerOrfaos(eq(conexao), any(), any(), any(), any());
             verify(workoutChannel).tocarEvento(eq(conexao), eq(200L), eq(canonico(t2.getId())));
         }
     }

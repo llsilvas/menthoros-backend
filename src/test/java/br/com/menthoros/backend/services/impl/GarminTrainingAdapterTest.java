@@ -25,11 +25,13 @@ import org.springframework.http.HttpStatus;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -282,6 +284,84 @@ class GarminTrainingAdapterTest {
             assertThat(r.statusErro()).isEqualTo(StatusSincronizacao.ERRO_AUTENTICACAO);
             assertThat(r.mensagem()).contains("Garmin");
             verifyNoInteractions(client);
+        }
+    }
+
+    @Nested
+    @DisplayName("removerOrfaos")
+    class Orfaos {
+
+        private final LocalDate fim = DATA.plusDays(6);
+
+        private JsonNode workoutDe(String provedor) {
+            return new ObjectMapper().createObjectNode().put("workoutProvider", provedor);
+        }
+
+        @Test
+        @DisplayName("CA4: schedule fora do conjunto, de workout do Menthoros: apaga schedule e workout")
+        void apagaOrfaoDoMenthoros() {
+            when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.listarSchedules(TOKEN, DATA, fim)).thenReturn(List.of(
+                    new GarminSchedule(5L, 1000042L, DATA), new GarminSchedule(6L, 1000043L, DATA)));
+            when(client.buscarWorkout(TOKEN, 1000043L)).thenReturn(workoutDe("Menthoros"));
+
+            adapter.removerOrfaos(conexao, DATA, fim, Set.of(), Set.of("1000042"));
+
+            verify(client).deletarSchedule(TOKEN, 6L);
+            verify(client).deletarWorkout(TOKEN, 1000043L);
+            verify(client, never()).deletarSchedule(TOKEN, 5L);
+            verify(client, never()).buscarWorkout(TOKEN, 1000042L);
+        }
+
+        @Test
+        @DisplayName("workout criado pelo atleta (outro provedor) nunca e apagado")
+        void naoTocaWorkoutDoAtleta() {
+            when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.listarSchedules(TOKEN, DATA, fim)).thenReturn(List.of(new GarminSchedule(6L, 1000043L, DATA)));
+            when(client.buscarWorkout(TOKEN, 1000043L)).thenReturn(workoutDe("Garmin"));
+
+            adapter.removerOrfaos(conexao, DATA, fim, Set.of(), Set.of());
+
+            verify(client, never()).deletarSchedule(any(), anyLong());
+            verify(client, never()).deletarWorkout(any(), anyLong());
+        }
+
+        @Test
+        @DisplayName("404 no delete do schedule e tolerado e o workout ainda e apagado")
+        void toleraNaoEncontrado() {
+            when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.listarSchedules(TOKEN, DATA, fim)).thenReturn(List.of(new GarminSchedule(6L, 1000043L, DATA)));
+            when(client.buscarWorkout(TOKEN, 1000043L)).thenReturn(workoutDe("Menthoros"));
+            doThrow(erro(404)).when(client).deletarSchedule(TOKEN, 6L);
+
+            adapter.removerOrfaos(conexao, DATA, fim, Set.of(), Set.of());
+
+            verify(client).deletarWorkout(TOKEN, 1000043L);
+        }
+
+        @Test
+        @DisplayName("falha num orfao nao aborta os demais")
+        void falhaIsoladaPorOrfao() {
+            when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.listarSchedules(TOKEN, DATA, fim)).thenReturn(List.of(
+                    new GarminSchedule(6L, 1000043L, DATA), new GarminSchedule(7L, 1000044L, DATA)));
+            when(client.buscarWorkout(TOKEN, 1000043L)).thenThrow(erro(500));
+            when(client.buscarWorkout(TOKEN, 1000044L)).thenReturn(workoutDe("Menthoros"));
+
+            adapter.removerOrfaos(conexao, DATA, fim, Set.of(), Set.of());
+
+            verify(client).deletarWorkout(TOKEN, 1000044L);
+        }
+
+        @Test
+        @DisplayName("falha ao listar nao propaga: reconciliacao e best-effort")
+        void naoPropagaFalhaDeListagem() {
+            when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.listarSchedules(TOKEN, DATA, fim)).thenThrow(erro(503));
+
+            adapter.removerOrfaos(conexao, DATA, fim, Set.of(), Set.of());
+
+            verify(client, never()).deletarWorkout(any(), anyLong());
         }
     }
 
