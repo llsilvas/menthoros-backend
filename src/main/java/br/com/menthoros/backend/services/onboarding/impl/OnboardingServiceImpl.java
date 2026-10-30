@@ -189,9 +189,6 @@ public class OnboardingServiceImpl implements OnboardingService {
         if (atletaId == null || tenantId == null || input == null) {
             throw new IllegalArgumentException("atletaId, tenantId e input nao podem ser nulos");
         }
-        if (input.dispositivoMarca() == null) {
-            throw new IllegalArgumentException("dispositivoMarca e obrigatorio");
-        }
         validarPosseOuCoach(atletaId, chamadorEhCoach);
         validarCanalPorMarca(input.canalIntegracao(), input.dispositivoMarca());
         atletaRepository.findByIdAndTenantId(atletaId, tenantId)
@@ -259,6 +256,11 @@ public class OnboardingServiceImpl implements OnboardingService {
         PerfilOnboardingAtleta perfil = perfilOnboardingAtletaRepository
                 .findByAtletaIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Rascunho de onboarding nao encontrado para atleta: " + atletaId));
+
+        // O rascunho aceita marca nula (o relógio é uma etapa tardia do formulário); aqui ela é exigida.
+        if (perfil.getDispositivoMarca() == null) {
+            throw new DomainRuleViolationException("dispositivoMarca e obrigatorio para concluir o onboarding");
+        }
 
         if (atleta.getUpdatedAt() != null) {
             Instant atletaAtualizadoEm = atleta.getUpdatedAt().atZone(ZoneId.systemDefault()).toInstant();

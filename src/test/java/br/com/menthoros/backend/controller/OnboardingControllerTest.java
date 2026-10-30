@@ -114,15 +114,17 @@ class OnboardingControllerTest {
         }
 
         @Test
-        @DisplayName("400 com o campo dispositivoMarca na resposta quando a marca nao e enviada")
-        void retorna400QuandoSemMarca() throws Exception {
+        @DisplayName("200 quando a marca nao e enviada: o rascunho do primeiro passo ainda nao a tem")
+        void retorna200QuandoSemMarca() throws Exception {
+            PerfilOnboardingAtleta perfil = new PerfilOnboardingAtleta();
+            when(onboardingMapper.toDraftInput(any(), eq(false))).thenReturn(draftInput());
+            when(onboardingService.salvarRascunho(eq(atletaId), eq(tenantId), any(), eq(false))).thenReturn(perfil);
+            when(onboardingMapper.toOutputDto(perfil)).thenReturn(stubOutputDto());
+
             mockMvc.perform(post("/api/v1/atletas/{atletaId}/onboarding", atletaId)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(mapper.writeValueAsString(Map.of("objetivo", "Correr uma maratona"))))
-                    .andExpect(status().isBadRequest())
-                    .andExpect(jsonPath("$.fields.dispositivoMarca").value("Marca do dispositivo é obrigatória"));
-
-            org.mockito.Mockito.verifyNoInteractions(onboardingService);
+                    .andExpect(status().isOk());
         }
 
         @Test
