@@ -96,15 +96,13 @@ class OnboardingControllerIT extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("POST do rascunho sem marca devolve 400")
-    void semMarcaDevolve400() throws Exception {
+    @DisplayName("POST do rascunho sem marca devolve 200: o relogio e uma etapa tardia do formulario")
+    void semMarcaAceitaRascunho() throws Exception {
         mockMvc.perform(post("/api/v1/atletas/{atletaId}/onboarding", atletaId)
                         .with(jwtAtleta())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"objetivo\":\"Correr uma maratona\"}"))
-                // Sem asserir o corpo: com spring.mvc.problemdetails.enabled=true o advice padrao do
-                // Spring precede o GlobalExceptionHandler e o corpo nao traz "fields" para este erro.
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isOk());
     }
 
     private RequestPostProcessor jwtAtleta() {

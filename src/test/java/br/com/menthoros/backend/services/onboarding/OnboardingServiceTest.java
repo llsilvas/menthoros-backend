@@ -468,8 +468,8 @@ class OnboardingServiceTest {
         }
 
         @Test
-        @DisplayName("rejeita rascunho sem dispositivoMarca e nao persiste (D7)")
-        void rejeitaMarcaNula() {
+        @DisplayName("aceita rascunho sem dispositivoMarca: o relogio e uma etapa tardia do formulario")
+        void aceitaMarcaNula() {
             OnboardingDraftInput base = draftInput();
             OnboardingDraftInput semMarca = new OnboardingDraftInput(
                     base.objetivo(), base.nivelExperiencia(), base.diasDisponiveis(), base.volumeSemanalMax(),
@@ -478,10 +478,13 @@ class OnboardingServiceTest {
                     base.percepcaoCondicionamento(), base.preenchidoPorCoach(), base.canalIntegracao(), null,
                     base.dispositivoModelo());
 
-            assertThatThrownBy(() -> service.salvarRascunho(atletaId, tenantId, semMarca, true))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("dispositivoMarca");
-            verify(perfilOnboardingAtletaRepository, org.mockito.Mockito.never()).save(any());
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(perfilOnboardingAtletaRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            PerfilOnboardingAtleta salvo = service.salvarRascunho(atletaId, tenantId, semMarca, true);
+
+            assertThat(salvo.getDispositivoMarca()).isNull();
         }
 
         @ParameterizedTest(name = "flag={0} marca={1} canal={2} -> rejeita={3}")
@@ -636,6 +639,23 @@ class OnboardingServiceTest {
         }
 
         @Test
+        @DisplayName("rejeita a conclusao quando o rascunho ainda nao tem dispositivoMarca")
+        void rejeitaConclusaoSemMarca() {
+            atleta.setUpdatedAt(LocalDateTime.now().minusDays(2));
+            PerfilOnboardingAtleta perfil = rascunhoPreenchido(Instant.now().minusSeconds(3600));
+            perfil.setDispositivoMarca(null);
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(perfilOnboardingAtletaRepository.findByAtletaIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(perfil));
+
+            assertThatThrownBy(() -> service.concluirOnboarding(
+                    atletaId, tenantId, true, null, null, null, null, null))
+                    .isInstanceOf(br.com.menthoros.backend.exception.DomainRuleViolationException.class)
+                    .hasMessageContaining("dispositivoMarca");
+            verify(atletaRepository, org.mockito.Mockito.never()).save(any());
+            verify(perfilOnboardingAtletaRepository, org.mockito.Mockito.never()).save(any());
+        }
+
+        @Test
         @DisplayName("lanca DomainConflictException quando Atleta foi editado depois da ultima atualizacao do rascunho")
         void lancaConflitoQuandoAtletaEditadoDepoisDoRascunho() {
             Instant inicioRascunho = Instant.now().minusSeconds(3600);
@@ -741,6 +761,7 @@ class OnboardingServiceTest {
             perfil.setDiasDisponiveis(List.of(DiaSemana.SEGUNDA, DiaSemana.QUARTA));
             perfil.setVolumeSemanalMax(40);
             perfil.setTemLesao(false);
+            perfil.setDispositivoMarca(DispositivoMarca.GARMIN);
             return perfil;
         }
     }
