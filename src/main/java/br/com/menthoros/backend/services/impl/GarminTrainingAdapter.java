@@ -13,6 +13,7 @@ import br.com.menthoros.backend.services.WorkoutChannel;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.util.Set;
@@ -23,10 +24,10 @@ import java.util.Set;
  * (design D3). Nunca lança: erros viram {@link PushResult#erro}, com mensagem curada que não
  * inclui token.
  *
- * <p>Ainda não é bean: um segundo {@link WorkoutChannel} quebraria a injeção do adapter do
- * intervals.icu. Vira {@code @Component} junto do {@code @Primary} composto (task 2.4).
+ * <p>Os chamadores não o injetam: usam {@link WorkoutChannelPorPlataforma}, que é o {@code @Primary}.
  */
 @Slf4j
+@Component
 @RequiredArgsConstructor
 public class GarminTrainingAdapter implements WorkoutChannel {
 
