@@ -5,7 +5,6 @@ import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.DispositivoMarca;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PastOrPresent;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
@@ -15,8 +14,8 @@ import java.time.LocalDate;
 import java.util.List;
 
 @Schema(description = "Rascunho do formulário de onboarding do atleta — quase todos os campos são "
-        + "opcionais neste DTO (exceto dispositivoMarca, D7) (CA8, retomar onboarding interrompido); a conclusão (endpoint "
-        + "/concluir) é quem exige os dados completos.")
+        + "opcionais neste DTO (CA8, retomar onboarding interrompido); a conclusão (endpoint "
+        + "/concluir) é quem exige os dados completos, inclusive dispositivoMarca.")
 public record AtletaOnboardingInputDto(
         @Schema(description = "Objetivo do atleta com o treinamento", example = "Completar maratona em menos de 4 horas")
         @Size(max = 500, message = "Objetivo deve ter no máximo 500 caracteres")
@@ -71,7 +70,6 @@ public record AtletaOnboardingInputDto(
         CanalIntegracao canalIntegracao,
 
         @Schema(description = "Marca do dispositivo/relógio do atleta", example = "GARMIN")
-        @NotNull(message = "Marca do dispositivo é obrigatória")
         DispositivoMarca dispositivoMarca,
 
         @Schema(description = "Modelo do dispositivo (texto livre, opcional)", example = "Forerunner 265")
