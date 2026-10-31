@@ -133,7 +133,7 @@ public class IntervalsIcuPushProcessor {
             log.error("Erro inesperado no push do treino {} (violação de contrato do channel): {}",
                     treinoId, e.getMessage(), e);
             resultado = PushResult.erro(StatusSincronizacao.ERRO_TEMPORARIO,
-                    "Erro inesperado no push intervals.icu: " + e.getMessage());
+                    "Erro inesperado no push " + conexao.getPlataforma().getLabel() + ": " + e.getMessage());
         }
 
         final PushResult resultadoFinal = resultado;

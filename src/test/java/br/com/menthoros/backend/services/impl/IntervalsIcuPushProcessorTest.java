@@ -364,8 +364,24 @@ class IntervalsIcuPushProcessorTest {
             assertThat(t.getStatusSincronizacao())
                     .isEqualTo(StatusSincronizacao.ERRO_TEMPORARIO)
                     .isNotEqualTo(StatusSincronizacao.SINCRONIZANDO);
-            assertThat(t.getErroSincronizacao()).contains("violação de contrato");
+            assertThat(t.getErroSincronizacao()).contains("violação de contrato").contains("intervals.icu");
             verify(treinoPlanejadoRepository).save(t);
+        }
+
+        @Test
+        @DisplayName("channel LANÇA com conexão Garmin: a mensagem persistida cita Garmin Connect, não intervals.icu")
+        void channelLancaCitaGarmin() {
+            conexao.setPlataforma(FonteDados.GARMIN);
+            TreinoPlanejado t = treino(null, StatusSincronizacao.PENDENTE);
+            StructuredWorkout workout = workout();
+            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
+            when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
+            when(workoutChannel.push(eq(conexao), eq(workout), isNull())).thenThrow(new RuntimeException("boom"));
+
+            processor.processar(treinoId, tenantId, conexao);
+
+            assertThat(t.getErroSincronizacao()).contains("Garmin Connect").doesNotContain("intervals.icu");
         }
 
         @Test

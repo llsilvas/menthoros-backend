@@ -76,6 +76,7 @@ class IntervalsIcuPushListenerTest {
         conexao = new IntegracaoExterna();
         conexao.setId(UUID.randomUUID());
         conexao.setTenantId(tenantId);
+        conexao.setPlataforma(br.com.menthoros.backend.enums.FonteDados.INTERVALS_ICU);
     }
 
     @Nested
@@ -254,6 +255,25 @@ class IntervalsIcuPushListenerTest {
             ArgumentCaptor<IntegracaoExterna> captor = ArgumentCaptor.forClass(IntegracaoExterna.class);
             verify(integracaoExternaRepository).save(captor.capture());
             assertThat(captor.getValue().getLastSyncError()).containsIgnoringCase("autenticação");
+        }
+
+        @Test
+        @DisplayName("falha de autenticação com conexão Garmin grava lastSyncError citando Garmin Connect")
+        void erroAutenticacaoGarminCitaGarmin() {
+            conexao.setPlataforma(br.com.menthoros.backend.enums.FonteDados.GARMIN);
+            TreinoPlanejado t = treino(UUID.randomUUID());
+            mocarConexaoEPlano(planoCom(LocalDate.now(), LocalDate.now().plusDays(6)));
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(java.util.List.of(t));
+            when(pushProcessor.processar(t.getId(), tenantId, conexao))
+                    .thenReturn(IntervalsIcuPushProcessor.ResultadoPush.simples(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_ERRO_AUTENTICACAO));
+
+            listener.onPlanoAprovado(event);
+
+            ArgumentCaptor<IntegracaoExterna> captor = ArgumentCaptor.forClass(IntegracaoExterna.class);
+            verify(integracaoExternaRepository).save(captor.capture());
+            assertThat(captor.getValue().getLastSyncError()).contains("Garmin Connect");
         }
 
         @Test

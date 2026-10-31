@@ -114,7 +114,7 @@ public class IntervalsIcuPushListener {
             precisaSalvarConexao = true;
         }
         if (lote.autenticacaoFalhou) {
-            conexao.setLastSyncError("Falha de autenticação intervals.icu ao sincronizar plano " + planoId);
+            conexao.setLastSyncError("Falha de autenticação " + conexao.getPlataforma().getLabel() + " ao sincronizar plano " + planoId);
             precisaSalvarConexao = true;
         }
         if (precisaSalvarConexao) {
