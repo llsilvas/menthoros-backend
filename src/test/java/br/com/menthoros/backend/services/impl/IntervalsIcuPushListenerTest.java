@@ -8,7 +8,7 @@ import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
-import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.WorkoutChannel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -51,7 +51,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class IntervalsIcuPushListenerTest {
 
-    @Mock private IntervalsIcuConnectionService connectionService;
+    @Mock private GarminConnectionService connectionService;
     @Mock private IntervalsIcuPushProcessor pushProcessor;
     @Mock private WorkoutChannel workoutChannel;
     @Mock private PlanoSemanalRepository planoSemanalRepository;
@@ -85,7 +85,7 @@ class IntervalsIcuPushListenerTest {
         @Test
         @DisplayName("sem conexão ativa retorna sem tocar nos treinos nem no processor")
         void semConexaoAtivaNaoTocaTreinos() {
-            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(connectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.empty());
 
             listener.onPlanoAprovado(event);
 
@@ -96,7 +96,7 @@ class IntervalsIcuPushListenerTest {
         @Test
         @DisplayName("plano não encontrado no tenant retorna sem tocar nos treinos nem no processor")
         void planoNaoEncontradoNaoTocaTreinos() {
-            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.of(conexao));
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.empty());
 
             listener.onPlanoAprovado(event);
@@ -443,7 +443,7 @@ class IntervalsIcuPushListenerTest {
     // =========================================================================
 
     private void mocarConexaoEPlano(PlanoSemanal plano) {
-        when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.of(conexao));
+        when(connectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.of(conexao));
         when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
     }
 

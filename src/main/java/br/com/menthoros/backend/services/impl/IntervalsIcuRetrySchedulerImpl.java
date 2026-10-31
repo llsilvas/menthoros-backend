@@ -6,7 +6,7 @@ import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
-import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.impl.IntervalsIcuPushProcessor.ProcessamentoResultado;
 import br.com.menthoros.backend.services.impl.IntervalsIcuPushProcessor.ResultadoPush;
 import lombok.RequiredArgsConstructor;
@@ -46,7 +46,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class IntervalsIcuRetrySchedulerImpl {
 
-    private final IntervalsIcuConnectionService connectionService;
+    private final GarminConnectionService connectionService;
     private final IntervalsIcuPushProcessor pushProcessor;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final IntegracaoExternaRepository integracaoExternaRepository;
@@ -118,7 +118,7 @@ public class IntervalsIcuRetrySchedulerImpl {
         }
         UUID tenantId = treino.getTenantId();
 
-        Optional<IntegracaoExterna> conexaoOpt = connectionService.conexaoAtiva(atletaId, tenantId);
+        Optional<IntegracaoExterna> conexaoOpt = connectionService.conexaoDeCanal(atletaId, tenantId);
         if (conexaoOpt.isEmpty()) {
             log.info("Retry intervals.icu pulado: atleta {} sem conexão ativa. treino={}", atletaId, treinoId);
             return false;

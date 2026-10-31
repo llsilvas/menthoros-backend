@@ -2,7 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.events.PlanoDeletadoEvent;
-import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.WorkoutChannel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,7 +31,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class IntervalsIcuPlanoDeletadoListener {
 
-    private final IntervalsIcuConnectionService connectionService;
+    private final GarminConnectionService connectionService;
     private final WorkoutChannel workoutChannel;
 
     /**
@@ -54,7 +54,7 @@ public class IntervalsIcuPlanoDeletadoListener {
         UUID tenantId = event.tenantId();
 
         try {
-            Optional<IntegracaoExterna> conexaoOpt = connectionService.conexaoAtiva(atletaId, tenantId);
+            Optional<IntegracaoExterna> conexaoOpt = connectionService.conexaoDeCanal(atletaId, tenantId);
             if (conexaoOpt.isEmpty()) {
                 log.info("Limpeza intervals.icu ignorada: sem conexão ativa. planoId={}, atletaId={}",
                         planoId, atletaId);

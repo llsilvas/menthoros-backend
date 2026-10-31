@@ -8,7 +8,7 @@ import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
-import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -40,7 +40,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class IntervalsIcuRetrySchedulerImplTest {
 
-    @Mock private IntervalsIcuConnectionService connectionService;
+    @Mock private GarminConnectionService connectionService;
     @Mock private IntervalsIcuPushProcessor pushProcessor;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock private IntegracaoExternaRepository integracaoExternaRepository;
@@ -86,7 +86,7 @@ class IntervalsIcuRetrySchedulerImplTest {
         void delegaAoProcessorQuandoElegivel() {
             TreinoPlanejado t = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t));
-            when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
 
             scheduler.reprocessarPendentes();
 
@@ -136,7 +136,7 @@ class IntervalsIcuRetrySchedulerImplTest {
         void janelaVencidaLiberaRetry() {
             TreinoPlanejado t = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, LocalDateTime.now().minusMinutes(6));
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t));
-            when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
 
             scheduler.reprocessarPendentes();
 
@@ -148,7 +148,7 @@ class IntervalsIcuRetrySchedulerImplTest {
         void semConexaoAtivaPulaSemTocarEstado() {
             TreinoPlanejado t = treino(StatusSincronizacao.AGUARDANDO_RETRY, 1, null);
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t));
-            when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.empty());
+            when(connectionService.conexaoDeCanal(atleta.getId(), tenantId)).thenReturn(Optional.empty());
 
             scheduler.reprocessarPendentes();
 
@@ -189,7 +189,7 @@ class IntervalsIcuRetrySchedulerImplTest {
             TreinoPlanejado t1 = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
             TreinoPlanejado t2 = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t1, t2));
-            when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
             when(pushProcessor.processar(t1.getId(), tenantId, conexao)).thenThrow(new RuntimeException("boom"));
 
             scheduler.reprocessarPendentes();
@@ -203,7 +203,7 @@ class IntervalsIcuRetrySchedulerImplTest {
             TreinoPlanejado t1 = treino(StatusSincronizacao.AGUARDANDO_RETRY, 1, null);
             TreinoPlanejado t2 = treino(StatusSincronizacao.AGUARDANDO_RETRY, 1, null);
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t1, t2));
-            when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
             when(pushProcessor.processar(t1.getId(), tenantId, conexao))
                     .thenReturn(IntervalsIcuPushProcessor.ResultadoPush.simples(
                             IntervalsIcuPushProcessor.ProcessamentoResultado.CLAIM_PERDIDO));
@@ -224,7 +224,7 @@ class IntervalsIcuRetrySchedulerImplTest {
         void retrySucessoGravaESalvaUmaVez() {
             TreinoPlanejado t = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t));
-            when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
             when(pushProcessor.processar(t.getId(), tenantId, conexao))
                     .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
                             IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, false, 100L));
@@ -243,7 +243,7 @@ class IntervalsIcuRetrySchedulerImplTest {
             TreinoPlanejado t1 = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
             TreinoPlanejado t2 = treino(StatusSincronizacao.AGUARDANDO_RETRY, 1, null);
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t1, t2));
-            when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
             when(pushProcessor.processar(t1.getId(), tenantId, conexao))
                     .thenReturn(IntervalsIcuPushProcessor.ResultadoPush.simples(
                             IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_ERRO));
@@ -263,7 +263,7 @@ class IntervalsIcuRetrySchedulerImplTest {
             TreinoPlanejado t1 = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
             TreinoPlanejado t2 = treino(StatusSincronizacao.ERRO_TEMPORARIO, 1, null);
             when(treinoPlanejadoRepository.findAllAguardandoRetryIntervalsIcu()).thenReturn(List.of(t1, t2));
-            when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
             when(pushProcessor.processar(t1.getId(), tenantId, conexao))
                     .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
                             IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, false, 100L));

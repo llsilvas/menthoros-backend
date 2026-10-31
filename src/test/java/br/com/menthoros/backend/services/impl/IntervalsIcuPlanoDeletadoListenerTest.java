@@ -2,7 +2,7 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.events.PlanoDeletadoEvent;
-import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.WorkoutChannel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -33,7 +33,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class IntervalsIcuPlanoDeletadoListenerTest {
 
-    @Mock private IntervalsIcuConnectionService connectionService;
+    @Mock private GarminConnectionService connectionService;
     @Mock private WorkoutChannel workoutChannel;
 
     private IntervalsIcuPlanoDeletadoListener listener;
@@ -69,7 +69,7 @@ class IntervalsIcuPlanoDeletadoListenerTest {
         @Test
         @DisplayName("regra 3: sem conexão ativa retorna sem tocar no workoutChannel")
         void semConexaoAtivaNaoTocaWorkoutChannel() {
-            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(connectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.empty());
 
             listener.onPlanoDeletado(event);
 
@@ -79,7 +79,7 @@ class IntervalsIcuPlanoDeletadoListenerTest {
         @Test
         @DisplayName("regra 3: com conexão ativa remove os eventos menthoros-* da janela do plano deletado")
         void comConexaoAtivaRemoveOrfaosDaJanela() {
-            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.of(conexao));
 
             listener.onPlanoDeletado(event);
 
@@ -89,17 +89,17 @@ class IntervalsIcuPlanoDeletadoListenerTest {
         @Test
         @DisplayName("regra 3: tenant do evento é usado diretamente, sem depender de TenantContext")
         void usaTenantDoEventoPorParametro() {
-            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.of(conexao));
 
             listener.onPlanoDeletado(event);
 
-            verify(connectionService).conexaoAtiva(atletaId, tenantId);
+            verify(connectionService).conexaoDeCanal(atletaId, tenantId);
         }
 
         @Test
         @DisplayName("regra 3: erro do connectionService é capturado e não propaga — limpeza é best-effort")
         void erroNaConsultaDaConexaoNaoPropaga() {
-            when(connectionService.conexaoAtiva(atletaId, tenantId))
+            when(connectionService.conexaoDeCanal(atletaId, tenantId))
                     .thenThrow(new RuntimeException("timeout"));
 
             listener.onPlanoDeletado(event);
@@ -110,7 +110,7 @@ class IntervalsIcuPlanoDeletadoListenerTest {
         @Test
         @DisplayName("regra 3: erro do workoutChannel é capturado e não propaga — deleção já commitou")
         void erroNoWorkoutChannelNaoPropaga() {
-            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.of(conexao));
             org.mockito.Mockito.doThrow(new RuntimeException("indisponível"))
                     .when(workoutChannel).removerOrfaos(any(), any(), any(), any(), any());
 

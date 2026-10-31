@@ -8,7 +8,7 @@ import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
-import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.WorkoutChannel;
 import br.com.menthoros.backend.services.impl.IntervalsIcuPushProcessor.ProcessamentoResultado;
 import br.com.menthoros.backend.services.impl.IntervalsIcuPushProcessor.ResultadoPush;
@@ -45,7 +45,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class IntervalsIcuPushListener {
 
-    private final IntervalsIcuConnectionService connectionService;
+    private final GarminConnectionService connectionService;
     private final IntervalsIcuPushProcessor pushProcessor;
     private final WorkoutChannel workoutChannel;
     private final PlanoSemanalRepository planoSemanalRepository;
@@ -74,7 +74,7 @@ public class IntervalsIcuPushListener {
         UUID atletaId = event.atletaId();
         UUID tenantId = event.tenantId();
 
-        Optional<IntegracaoExterna> conexaoOpt = connectionService.conexaoAtiva(atletaId, tenantId);
+        Optional<IntegracaoExterna> conexaoOpt = connectionService.conexaoDeCanal(atletaId, tenantId);
         if (conexaoOpt.isEmpty()) {
             log.info("Push intervals.icu ignorado: sem conexão ativa. planoId={}, atletaId={}", planoId, atletaId);
             return;

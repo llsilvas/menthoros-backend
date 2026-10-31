@@ -22,7 +22,7 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
-import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.PushResult;
 import br.com.menthoros.backend.services.WorkoutChannel;
 import br.com.menthoros.backend.services.helper.IntervalsIcuWorkoutConverter;
@@ -86,7 +86,7 @@ class IntervalsIcuPushTxTest extends AbstractIntegrationTest {
     private WorkoutChannel workoutChannel;
 
     @MockitoBean
-    private IntervalsIcuConnectionService connectionService;
+    private GarminConnectionService connectionService;
 
     @MockitoSpyBean
     private IntervalsIcuWorkoutConverter converter;
@@ -126,7 +126,7 @@ class IntervalsIcuPushTxTest extends AbstractIntegrationTest {
         UUID id2 = treino2.getId();
 
         IntegracaoExterna conexao = conexaoFake(atleta, tenantId);
-        when(connectionService.conexaoAtiva(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
+        when(connectionService.conexaoDeCanal(atleta.getId(), tenantId)).thenReturn(Optional.of(conexao));
 
         // Injeção do conflito real: EXATAMENTE quando o claim do treino1 chama o converter (entre
         // o find e o saveAndFlush da mesma TX-A), um UPDATE concorrente via JdbcTemplate (conexão
@@ -244,7 +244,7 @@ class IntervalsIcuPushTxTest extends AbstractIntegrationTest {
         return treinoPlanejadoRepository.save(treino);
     }
 
-    /** Conexão intervals.icu não-persistida, devolvida pelo {@link IntervalsIcuConnectionService}
+    /** Conexão intervals.icu não-persistida, devolvida pelo {@link GarminConnectionService}
      * mockado. O treino2 sincroniza com sucesso, então o listener REALMENTE chama
      * {@code integracaoExternaRepository.save(conexao)} (real, não mockado) ao fim do lote — por
      * isso a entidade precisa de um {@code atleta} válido (FK NOT NULL) mesmo sem ter sido
