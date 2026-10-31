@@ -155,6 +155,37 @@ class IntervalsIcuPushListenerTest {
         }
 
         @Test
+        @DisplayName("CA4/CA5: ids armazenados atuais = id novo do push, ou o anterior em erro; sem id nenhum fica fora")
+        void idsArmazenadosAtuais() {
+            TreinoPlanejado comErro = treino(UUID.randomUUID());
+            comErro.setExternalId("500");
+            TreinoPlanejado criado = treino(UUID.randomUUID());
+            TreinoPlanejado semId = treino(UUID.randomUUID());
+            LocalDate inicio = LocalDate.now();
+            PlanoSemanal plano = planoCom(inicio, inicio.plusDays(6));
+
+            mocarConexaoEPlano(plano);
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(java.util.List.of(comErro, criado, semId));
+            when(pushProcessor.processar(comErro.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_ERRO, false, null));
+            when(pushProcessor.processar(criado.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, true, 222L));
+            when(pushProcessor.processar(semId.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_ERRO, false, null));
+
+            listener.onPlanoAprovado(event);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Set<String>> idsCaptor = ArgumentCaptor.forClass(Set.class);
+            verify(workoutChannel).removerOrfaos(eq(conexao), any(), any(), any(), idsCaptor.capture());
+            assertThat(idsCaptor.getValue()).containsExactlyInAnyOrder("500", "222");
+        }
+
+        @Test
         @DisplayName("NAO_EXPORTAVEL e NAO_ENCONTRADO ficam fora do set de reconciliação de órfãos")
         void naoExportavelENaoEncontradoForaDoSet() {
             TreinoPlanejado t1 = treino(UUID.randomUUID());

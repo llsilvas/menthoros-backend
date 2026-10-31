@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.domain.workout.StructuredWorkout;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
@@ -68,6 +69,7 @@ class IntervalsIcuPushProcessorTest {
         conexao = new IntegracaoExterna();
         conexao.setId(UUID.randomUUID());
         conexao.setTenantId(tenantId);
+        conexao.setPlataforma(FonteDados.INTERVALS_ICU);
 
         processor = new IntervalsIcuPushProcessor(converter, workoutChannel, treinoPlanejadoRepository,
                 transactionManager);
@@ -121,6 +123,24 @@ class IntervalsIcuPushProcessorTest {
             assertThat(t.getExternalId()).isNull();
             verify(treinoPlanejadoRepository).save(t);
             verify(workoutChannel, never()).push(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("CA5: conexão Garmin grava GARMIN como plataforma e o workoutId como externalId")
+        void gravaPlataformaDaConexaoGarmin() {
+            conexao.setPlataforma(FonteDados.GARMIN);
+            TreinoPlanejado t = treino(null, StatusSincronizacao.PENDENTE);
+            StructuredWorkout workout = workout();
+            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
+            when(treinoPlanejadoRepository.saveAndFlush(t)).thenReturn(t);
+            when(workoutChannel.push(eq(conexao), eq(workout), isNull())).thenReturn(PushResult.okCriado(1000042L));
+
+            processor.processar(treinoId, tenantId, conexao);
+
+            assertThat(t.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.SINCRONIZADO);
+            assertThat(t.getExternalId()).isEqualTo("1000042");
+            assertThat(t.getExportadoPara()).isEqualTo("[\"GARMIN\"]");
         }
 
         @Test
