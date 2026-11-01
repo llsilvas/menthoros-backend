@@ -328,12 +328,20 @@ class GarminClientImplTest {
         }
 
         @Test
-        @DisplayName("criarSchedule: POST com workoutId e date, devolve o scheduleId")
+        @DisplayName("criarSchedule: POST com workoutId e date, devolve o scheduleId (número solto, como o Garmin responde)")
         void criaSchedule() {
             wireMock.stubFor(post(urlEqualTo("/training-api/schedule"))
                     .withHeader("Authorization", equalTo("Bearer " + TOKEN))
                     .withRequestBody(equalToJson("{\"workoutId\":1000042,\"date\":\"2026-11-02\"}"))
-                    .willReturn(okJson("{\"scheduleId\":77}")));
+                    .willReturn(okJson("77")));
+
+            assertThat(client.criarSchedule(TOKEN, 1000042L, LocalDate.of(2026, 11, 2))).isEqualTo(77L);
+        }
+
+        @Test
+        @DisplayName("criarSchedule: também aceita o scheduleId dentro de um objeto")
+        void criaScheduleComObjeto() {
+            wireMock.stubFor(post(urlEqualTo("/training-api/schedule")).willReturn(okJson("{\"scheduleId\":77}")));
 
             assertThat(client.criarSchedule(TOKEN, 1000042L, LocalDate.of(2026, 11, 2))).isEqualTo(77L);
         }
