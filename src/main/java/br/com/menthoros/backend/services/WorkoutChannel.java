@@ -31,9 +31,12 @@ public interface WorkoutChannel {
      * @param conexao            credencial e identificador do atleta na plataforma externa
      * @param inicio             início da janela (inclusive)
      * @param fim                fim da janela (inclusive)
-     * @param externalIdsAtuais external_id de todos os treinos atuais do plano nessa janela
+     * @param externalIdsAtuais external_id canônico de todos os treinos atuais do plano nessa janela
+     * @param idsArmazenadosAtuais {@code externalId} já gravado nos treinos atuais (id do workout no
+     *                           canal, quando ele não é derivável do canônico — caso do Garmin)
      */
-    void removerOrfaos(IntegracaoExterna conexao, LocalDate inicio, LocalDate fim, Set<String> externalIdsAtuais);
+    void removerOrfaos(IntegracaoExterna conexao, LocalDate inicio, LocalDate fim,
+                       Set<String> externalIdsAtuais, Set<String> idsArmazenadosAtuais);
 
     /**
      * "Cutuca" (nudge) um evento já criado no canal externo para contornar o debounce do uploader

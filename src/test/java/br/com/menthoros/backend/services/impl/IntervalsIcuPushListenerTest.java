@@ -8,7 +8,7 @@ import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
-import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.WorkoutChannel;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -51,7 +51,7 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class IntervalsIcuPushListenerTest {
 
-    @Mock private IntervalsIcuConnectionService connectionService;
+    @Mock private GarminConnectionService connectionService;
     @Mock private IntervalsIcuPushProcessor pushProcessor;
     @Mock private WorkoutChannel workoutChannel;
     @Mock private PlanoSemanalRepository planoSemanalRepository;
@@ -76,6 +76,7 @@ class IntervalsIcuPushListenerTest {
         conexao = new IntegracaoExterna();
         conexao.setId(UUID.randomUUID());
         conexao.setTenantId(tenantId);
+        conexao.setPlataforma(br.com.menthoros.backend.enums.FonteDados.INTERVALS_ICU);
     }
 
     @Nested
@@ -85,7 +86,7 @@ class IntervalsIcuPushListenerTest {
         @Test
         @DisplayName("sem conexão ativa retorna sem tocar nos treinos nem no processor")
         void semConexaoAtivaNaoTocaTreinos() {
-            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(connectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.empty());
 
             listener.onPlanoAprovado(event);
 
@@ -96,7 +97,7 @@ class IntervalsIcuPushListenerTest {
         @Test
         @DisplayName("plano não encontrado no tenant retorna sem tocar nos treinos nem no processor")
         void planoNaoEncontradoNaoTocaTreinos() {
-            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.of(conexao));
+            when(connectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.of(conexao));
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.empty());
 
             listener.onPlanoAprovado(event);
@@ -145,13 +146,44 @@ class IntervalsIcuPushListenerTest {
 
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Set<String>> setCaptor = ArgumentCaptor.forClass(Set.class);
-            verify(workoutChannel).removerOrfaos(eq(conexao), eq(inicio), eq(fim), setCaptor.capture());
+            verify(workoutChannel).removerOrfaos(eq(conexao), eq(inicio), eq(fim), setCaptor.capture(), any());
             assertThat(setCaptor.getValue())
                     .containsExactlyInAnyOrder(canonico(t1.getId()), canonico(t2.getId()));
 
             ArgumentCaptor<IntegracaoExterna> conexaoCaptor = ArgumentCaptor.forClass(IntegracaoExterna.class);
             verify(integracaoExternaRepository).save(conexaoCaptor.capture());
             assertThat(conexaoCaptor.getValue().getUltimaSincronizacao()).isNotNull();
+        }
+
+        @Test
+        @DisplayName("CA4/CA5: ids armazenados atuais = id novo do push, ou o anterior em erro; sem id nenhum fica fora")
+        void idsArmazenadosAtuais() {
+            TreinoPlanejado comErro = treino(UUID.randomUUID());
+            comErro.setExternalId("500");
+            TreinoPlanejado criado = treino(UUID.randomUUID());
+            TreinoPlanejado semId = treino(UUID.randomUUID());
+            LocalDate inicio = LocalDate.now();
+            PlanoSemanal plano = planoCom(inicio, inicio.plusDays(6));
+
+            mocarConexaoEPlano(plano);
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(java.util.List.of(comErro, criado, semId));
+            when(pushProcessor.processar(comErro.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_ERRO, false, null));
+            when(pushProcessor.processar(criado.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_SUCESSO, true, 222L));
+            when(pushProcessor.processar(semId.getId(), tenantId, conexao))
+                    .thenReturn(new IntervalsIcuPushProcessor.ResultadoPush(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_ERRO, false, null));
+
+            listener.onPlanoAprovado(event);
+
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Set<String>> idsCaptor = ArgumentCaptor.forClass(Set.class);
+            verify(workoutChannel).removerOrfaos(eq(conexao), any(), any(), any(), idsCaptor.capture());
+            assertThat(idsCaptor.getValue()).containsExactlyInAnyOrder("500", "222");
         }
 
         @Test
@@ -175,7 +207,7 @@ class IntervalsIcuPushListenerTest {
 
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Set<String>> setCaptor = ArgumentCaptor.forClass(Set.class);
-            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture());
+            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture(), any());
             assertThat(setCaptor.getValue()).isEmpty();
             verify(integracaoExternaRepository, never()).save(any());
         }
@@ -201,7 +233,7 @@ class IntervalsIcuPushListenerTest {
 
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Set<String>> setCaptor = ArgumentCaptor.forClass(Set.class);
-            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture());
+            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture(), any());
             assertThat(setCaptor.getValue()).containsExactlyInAnyOrder(canonico(t1.getId()), canonico(t2.getId()));
         }
 
@@ -223,6 +255,25 @@ class IntervalsIcuPushListenerTest {
             ArgumentCaptor<IntegracaoExterna> captor = ArgumentCaptor.forClass(IntegracaoExterna.class);
             verify(integracaoExternaRepository).save(captor.capture());
             assertThat(captor.getValue().getLastSyncError()).containsIgnoringCase("autenticação");
+        }
+
+        @Test
+        @DisplayName("falha de autenticação com conexão Garmin grava lastSyncError citando Garmin Connect")
+        void erroAutenticacaoGarminCitaGarmin() {
+            conexao.setPlataforma(br.com.menthoros.backend.enums.FonteDados.GARMIN);
+            TreinoPlanejado t = treino(UUID.randomUUID());
+            mocarConexaoEPlano(planoCom(LocalDate.now(), LocalDate.now().plusDays(6)));
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(java.util.List.of(t));
+            when(pushProcessor.processar(t.getId(), tenantId, conexao))
+                    .thenReturn(IntervalsIcuPushProcessor.ResultadoPush.simples(
+                            IntervalsIcuPushProcessor.ProcessamentoResultado.PROCESSADO_ERRO_AUTENTICACAO));
+
+            listener.onPlanoAprovado(event);
+
+            ArgumentCaptor<IntegracaoExterna> captor = ArgumentCaptor.forClass(IntegracaoExterna.class);
+            verify(integracaoExternaRepository).save(captor.capture());
+            assertThat(captor.getValue().getLastSyncError()).contains("Garmin Connect");
         }
 
         @Test
@@ -266,7 +317,7 @@ class IntervalsIcuPushListenerTest {
 
             @SuppressWarnings("unchecked")
             ArgumentCaptor<Set<String>> setCaptor = ArgumentCaptor.forClass(Set.class);
-            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture());
+            verify(workoutChannel).removerOrfaos(any(), any(), any(), setCaptor.capture(), any());
             assertThat(setCaptor.getValue()).containsExactly(canonico(t2.getId()));
         }
 
@@ -319,7 +370,7 @@ class IntervalsIcuPushListenerTest {
 
             verify(workoutChannel, times(1)).tocarEvento(eq(conexao), eq(300L), eq(canonico(t3.getId())));
             var ordem = inOrder(workoutChannel);
-            ordem.verify(workoutChannel).removerOrfaos(any(), any(), any(), any());
+            ordem.verify(workoutChannel).removerOrfaos(any(), any(), any(), any(), any());
             ordem.verify(workoutChannel).tocarEvento(any(), anyLong(), any());
         }
 
@@ -386,7 +437,7 @@ class IntervalsIcuPushListenerTest {
 
             assertThat(conexao.getUltimaSincronizacao()).isNotNull();
             verify(integracaoExternaRepository).save(conexao);
-            verify(workoutChannel).removerOrfaos(eq(conexao), any(), any(), any());
+            verify(workoutChannel).removerOrfaos(eq(conexao), any(), any(), any(), any());
             verify(workoutChannel).tocarEvento(eq(conexao), eq(200L), eq(canonico(t2.getId())));
         }
     }
@@ -443,7 +494,7 @@ class IntervalsIcuPushListenerTest {
     // =========================================================================
 
     private void mocarConexaoEPlano(PlanoSemanal plano) {
-        when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.of(conexao));
+        when(connectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.of(conexao));
         when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
     }
 

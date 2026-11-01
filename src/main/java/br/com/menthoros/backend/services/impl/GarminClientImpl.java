@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.config.external.GarminProperties;
+import br.com.menthoros.backend.dto.garmin.GarminSchedule;
 import br.com.menthoros.backend.dto.garmin.GarminTokenResponse;
 import br.com.menthoros.backend.exception.GarminApiException;
 import br.com.menthoros.backend.services.GarminClient;
@@ -15,8 +16,10 @@ import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 
 /**
@@ -115,6 +118,156 @@ public class GarminClientImpl implements GarminClient {
                 .retrieve()
                 .toBodilessEntity()
                 .block());
+    }
+
+    private static final String WORKOUT = "/training-api/workout/v2/{id}";
+    private static final String SCHEDULE = "/training-api/schedule";
+    private static final String SCHEDULE_POR_ID = SCHEDULE + "/{id}";
+
+    /**
+     * Idempotent: NO — cada chamada cria um workout novo.
+     * Side Effects: External API call (POST create workout)
+     * Tenant-aware: NO
+     */
+    @Override
+    public Long criarWorkout(String token, JsonNode workout) {
+        JsonNode corpo = executa("criar workout", () -> webClient.post()
+                .uri(properties.getWorkoutCreatePath())
+                .headers(h -> h.setBearerAuth(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(workout)
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .block());
+        return idObrigatorio(corpo, "workoutId", "criar workout");
+    }
+
+    /**
+     * Idempotent: YES — PUT com o mesmo corpo converge para o mesmo workout.
+     * Side Effects: External API call (PUT workout)
+     * Tenant-aware: NO
+     */
+    @Override
+    public void atualizarWorkout(String token, Long workoutId, JsonNode workout) {
+        executa("atualizar workout", () -> webClient.put()
+                .uri(WORKOUT, workoutId)
+                .headers(h -> h.setBearerAuth(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(workout)
+                .retrieve()
+                .toBodilessEntity()
+                .block());
+    }
+
+    /**
+     * Idempotent: YES — a segunda chamada devolve 404, que sobe para o chamador.
+     * Side Effects: External API call (DELETE workout)
+     * Tenant-aware: NO
+     */
+    @Override
+    public void deletarWorkout(String token, Long workoutId) {
+        executa("deletar workout", () -> webClient.delete()
+                .uri(WORKOUT, workoutId)
+                .headers(h -> h.setBearerAuth(token))
+                .retrieve()
+                .toBodilessEntity()
+                .block());
+    }
+
+    /**
+     * Idempotent: YES — leitura pura.
+     * Side Effects: External API call (GET workout)
+     * Tenant-aware: NO
+     */
+    @Override
+    public JsonNode buscarWorkout(String token, Long workoutId) {
+        return executa("buscar workout", () -> webClient.get()
+                .uri(WORKOUT, workoutId)
+                .headers(h -> h.setBearerAuth(token))
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .block());
+    }
+
+    /**
+     * Idempotent: NO — cada chamada cria um schedule novo.
+     * Side Effects: External API call (POST schedule)
+     * Tenant-aware: NO
+     */
+    @Override
+    public Long criarSchedule(String token, Long workoutId, LocalDate data) {
+        JsonNode corpo = executa("criar schedule", () -> webClient.post()
+                .uri(SCHEDULE)
+                .headers(h -> h.setBearerAuth(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("workoutId", workoutId, "date", data.toString()))
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .block());
+        return idObrigatorio(corpo, "scheduleId", "criar schedule");
+    }
+
+    /**
+     * Idempotent: YES — PUT com o mesmo corpo converge para o mesmo schedule.
+     * Side Effects: External API call (PUT schedule)
+     * Tenant-aware: NO
+     */
+    @Override
+    public void atualizarSchedule(String token, Long scheduleId, Long workoutId, LocalDate data) {
+        executa("atualizar schedule", () -> webClient.put()
+                .uri(SCHEDULE_POR_ID, scheduleId)
+                .headers(h -> h.setBearerAuth(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(Map.of("workoutId", workoutId, "date", data.toString()))
+                .retrieve()
+                .toBodilessEntity()
+                .block());
+    }
+
+    /**
+     * Idempotent: YES — a segunda chamada devolve 404, que sobe para o chamador.
+     * Side Effects: External API call (DELETE schedule)
+     * Tenant-aware: NO
+     */
+    @Override
+    public void deletarSchedule(String token, Long scheduleId) {
+        executa("deletar schedule", () -> webClient.delete()
+                .uri(SCHEDULE_POR_ID, scheduleId)
+                .headers(h -> h.setBearerAuth(token))
+                .retrieve()
+                .toBodilessEntity()
+                .block());
+    }
+
+    /**
+     * Idempotent: YES — leitura pura.
+     * Side Effects: External API call (GET schedule)
+     * Tenant-aware: NO
+     */
+    @Override
+    public List<GarminSchedule> listarSchedules(String token, LocalDate inicio, LocalDate fim) {
+        JsonNode corpo = executa("listar schedules", () -> webClient.get()
+                .uri(u -> u.path(SCHEDULE)
+                        .queryParam("startDate", inicio)
+                        .queryParam("endDate", fim)
+                        .build())
+                .headers(h -> h.setBearerAuth(token))
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .block());
+        List<GarminSchedule> schedules = new ArrayList<>();
+        if (corpo != null && corpo.isArray()) {
+            corpo.forEach(n -> schedules.add(new GarminSchedule(
+                    n.path("scheduleId").asLong(), n.path("workoutId").asLong(), LocalDate.parse(n.path("date").asText()))));
+        }
+        return schedules;
+    }
+
+    private Long idObrigatorio(JsonNode corpo, String campo, String operacao) {
+        if (corpo == null || !corpo.hasNonNull(campo)) {
+            throw new GarminApiException(null, "Garmin não devolveu " + campo + " ao " + operacao);
+        }
+        return corpo.get(campo).asLong();
     }
 
     private MultiValueMap<String, String> credenciais() {
