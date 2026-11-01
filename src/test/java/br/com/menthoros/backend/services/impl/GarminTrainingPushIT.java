@@ -122,7 +122,7 @@ class GarminTrainingPushIT extends AbstractIntegrationTest {
         garmin.stubFor(post(urlPathEqualTo(CRIAR_WORKOUT)).inScenario("ids")
                 .whenScenarioStateIs("segundo").willReturn(okJson("{\"workoutId\":1000043}"))
                 .willSetStateTo("fim"));
-        garmin.stubFor(post(urlPathEqualTo(SCHEDULE)).willReturn(okJson("{\"scheduleId\":77}")));
+        garmin.stubFor(post(urlPathEqualTo(SCHEDULE)).willReturn(okJson("77")));
         garmin.stubFor(get(urlPathEqualTo(SCHEDULE)).willReturn(okJson("[]")));
 
         listener.onPlanoAprovado(new PlanoAprovadoEvent(plano.getId(), atleta.getId(), tenantId));
