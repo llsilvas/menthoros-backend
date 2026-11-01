@@ -8,6 +8,7 @@ import br.com.menthoros.backend.services.GarminClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -265,6 +266,9 @@ public class GarminClientImpl implements GarminClient {
 
     private Long idObrigatorio(JsonNode corpo, String campo, String operacao) {
         if (corpo == null || !corpo.hasNonNull(campo)) {
+            // Só nomes de campo: o corpo é de terceiro e não entra no log.
+            log.warn("Garmin respondeu 2xx sem {} ao {} (corpo {}, campos: {})", campo, operacao,
+                    corpo == null ? "vazio" : corpo.getNodeType(), corpo == null ? List.of() : corpo.properties().stream().map(Map.Entry::getKey).toList());
             throw new GarminApiException(null, "Garmin não devolveu " + campo + " ao " + operacao);
         }
         return corpo.get(campo).asLong();
@@ -302,6 +306,10 @@ public class GarminClientImpl implements GarminClient {
         } catch (GarminApiException e) {
             throw e;
         } catch (Exception e) {
+            // Só tipos: a mensagem de decode pode trazer trecho do corpo, e a de request, a URL.
+            Throwable raiz = NestedExceptionUtils.getMostSpecificCause(e);
+            log.warn("Falha de transporte ao {}: {} (causa: {})", operacao,
+                    e.getClass().getSimpleName(), raiz.getClass().getSimpleName());
             throw new GarminApiException("Falha de transporte ao " + operacao, e);
         }
     }
