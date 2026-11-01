@@ -205,6 +205,10 @@ public class GarminClientImpl implements GarminClient {
                 .retrieve()
                 .bodyToMono(JsonNode.class)
                 .block());
+        // Em produção o Garmin responde o id como número solto (ex.: 123456), não como objeto.
+        if (corpo != null && corpo.isIntegralNumber()) {
+            return corpo.asLong();
+        }
         return idObrigatorio(corpo, "scheduleId", "criar schedule");
     }
 
