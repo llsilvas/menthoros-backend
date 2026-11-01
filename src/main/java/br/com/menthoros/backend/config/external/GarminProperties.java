@@ -36,6 +36,12 @@ public class GarminProperties {
 
     private String apiBaseUrl;
 
+    /**
+     * Path do create de workout. O PDF da Training API V2 o põe em {@code /workoutportal} e o resto em
+     * {@code /training-api}; o spike no ambiente de testes confirma, e a correção é só este valor.
+     */
+    private String workoutCreatePath = "/workoutportal/workout/v2";
+
     /** Último segmento do path do webhook; vazio significa webhook desligado (404). */
     private String webhookSecret;
 

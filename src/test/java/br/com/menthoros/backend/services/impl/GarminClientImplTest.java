@@ -16,7 +16,13 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import br.com.menthoros.backend.dto.garmin.GarminSchedule;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.time.Duration;
+import java.time.LocalDate;
+import java.util.List;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.containing;
@@ -24,7 +30,10 @@ import static com.github.tomakehurst.wiremock.client.WireMock.delete;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalToJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.put;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -256,6 +265,149 @@ class GarminClientImplTest {
             assertThatThrownBy(() -> client.removerRegistro(TOKEN))
                     .isInstanceOfSatisfying(GarminApiException.class,
                             e -> assertThat(e.getStatus().value()).isEqualTo(500));
+        }
+    }
+
+    @Nested
+    @DisplayName("Training API V2")
+    class TrainingApi {
+
+        private final ObjectMapper mapper = new ObjectMapper();
+
+        @Test
+        @DisplayName("criarWorkout: POST com Bearer e o JSON do treino, devolve o workoutId")
+        void criaWorkout() throws Exception {
+            JsonNode payload = mapper.readTree("{\"workoutName\":\"Longao\",\"sport\":\"RUNNING\"}");
+            wireMock.stubFor(post(urlEqualTo("/workoutportal/workout/v2"))
+                    .withHeader("Authorization", equalTo("Bearer " + TOKEN))
+                    .withRequestBody(equalToJson("{\"workoutName\":\"Longao\",\"sport\":\"RUNNING\"}"))
+                    .willReturn(okJson("{\"workoutId\":1000042,\"workoutName\":\"Longao\"}")));
+
+            assertThat(client.criarWorkout(TOKEN, payload)).isEqualTo(1000042L);
+        }
+
+        @Test
+        @DisplayName("criarWorkout: 200 sem workoutId e erro, nao id nulo")
+        void criaWorkoutSemId() throws Exception {
+            wireMock.stubFor(post(urlEqualTo("/workoutportal/workout/v2")).willReturn(okJson("{}")));
+
+            assertThatThrownBy(() -> client.criarWorkout(TOKEN, mapper.readTree("{}")))
+                    .isInstanceOf(GarminApiException.class)
+                    .hasMessageContaining("workoutId");
+        }
+
+        @Test
+        @DisplayName("atualizarWorkout: PUT /training-api/workout/v2/{id}")
+        void atualizaWorkout() throws Exception {
+            wireMock.stubFor(put(urlEqualTo("/training-api/workout/v2/1000042"))
+                    .withHeader("Authorization", equalTo("Bearer " + TOKEN))
+                    .willReturn(aResponse().withStatus(200)));
+
+            assertThatCode(() -> client.atualizarWorkout(TOKEN, 1000042L, mapper.readTree("{\"sport\":\"RUNNING\"}")))
+                    .doesNotThrowAnyException();
+            wireMock.verify(1, com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor(
+                    urlEqualTo("/training-api/workout/v2/1000042")));
+        }
+
+        @Test
+        @DisplayName("deletarWorkout: DELETE /training-api/workout/v2/{id}")
+        void deletaWorkout() {
+            wireMock.stubFor(delete(urlEqualTo("/training-api/workout/v2/1000042"))
+                    .willReturn(aResponse().withStatus(204)));
+
+            assertThatCode(() -> client.deletarWorkout(TOKEN, 1000042L)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("buscarWorkout: GET devolve o JSON, com o workoutProvider")
+        void buscaWorkout() {
+            wireMock.stubFor(get(urlEqualTo("/training-api/workout/v2/1000042"))
+                    .willReturn(okJson("{\"workoutId\":1000042,\"workoutProvider\":\"Menthoros\"}")));
+
+            assertThat(client.buscarWorkout(TOKEN, 1000042L).get("workoutProvider").asText()).isEqualTo("Menthoros");
+        }
+
+        @Test
+        @DisplayName("criarSchedule: POST com workoutId e date, devolve o scheduleId")
+        void criaSchedule() {
+            wireMock.stubFor(post(urlEqualTo("/training-api/schedule"))
+                    .withHeader("Authorization", equalTo("Bearer " + TOKEN))
+                    .withRequestBody(equalToJson("{\"workoutId\":1000042,\"date\":\"2026-11-02\"}"))
+                    .willReturn(okJson("{\"scheduleId\":77}")));
+
+            assertThat(client.criarSchedule(TOKEN, 1000042L, LocalDate.of(2026, 11, 2))).isEqualTo(77L);
+        }
+
+        @Test
+        @DisplayName("atualizarSchedule: PUT /training-api/schedule/{id} com workoutId e date")
+        void atualizaSchedule() {
+            wireMock.stubFor(put(urlEqualTo("/training-api/schedule/77"))
+                    .withRequestBody(equalToJson("{\"workoutId\":1000042,\"date\":\"2026-11-03\"}"))
+                    .willReturn(aResponse().withStatus(200)));
+
+            assertThatCode(() -> client.atualizarSchedule(TOKEN, 77L, 1000042L, LocalDate.of(2026, 11, 3)))
+                    .doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("deletarSchedule: DELETE /training-api/schedule/{id}")
+        void deletaSchedule() {
+            wireMock.stubFor(delete(urlEqualTo("/training-api/schedule/77")).willReturn(aResponse().withStatus(204)));
+
+            assertThatCode(() -> client.deletarSchedule(TOKEN, 77L)).doesNotThrowAnyException();
+        }
+
+        @Test
+        @DisplayName("listarSchedules: GET com startDate e endDate, devolve scheduleId, workoutId e data")
+        void listaSchedules() {
+            wireMock.stubFor(get(urlPathEqualTo("/training-api/schedule"))
+                    .withQueryParam("startDate", equalTo("2026-11-02"))
+                    .withQueryParam("endDate", equalTo("2026-11-08"))
+                    .willReturn(okJson("""
+                            [{"scheduleId":77,"workoutId":1000042,"date":"2026-11-02"},
+                             {"scheduleId":78,"workoutId":1000043,"date":"2026-11-04"}]
+                            """)));
+
+            List<GarminSchedule> schedules = client.listarSchedules(TOKEN, LocalDate.of(2026, 11, 2), LocalDate.of(2026, 11, 8));
+
+            assertThat(schedules).containsExactly(
+                    new GarminSchedule(77L, 1000042L, LocalDate.of(2026, 11, 2)),
+                    new GarminSchedule(78L, 1000043L, LocalDate.of(2026, 11, 4)));
+        }
+
+        @Test
+        @DisplayName("listarSchedules: corpo vazio vira lista vazia")
+        void listaSchedulesVazia() {
+            wireMock.stubFor(get(urlPathEqualTo("/training-api/schedule")).willReturn(okJson("[]")));
+
+            assertThat(client.listarSchedules(TOKEN, LocalDate.of(2026, 11, 2), LocalDate.of(2026, 11, 8))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("412 (sem WORKOUT_IMPORT) e 429 (cota) chegam com o status, sem o token na mensagem")
+        void errosCarregamStatus() throws Exception {
+            wireMock.stubFor(post(urlEqualTo("/workoutportal/workout/v2")).willReturn(aResponse().withStatus(412).withBody(TOKEN)));
+            wireMock.stubFor(post(urlEqualTo("/training-api/schedule")).willReturn(aResponse().withStatus(429)));
+
+            assertThatThrownBy(() -> client.criarWorkout(TOKEN, mapper.readTree("{}")))
+                    .isInstanceOfSatisfying(GarminApiException.class, e -> {
+                        assertThat(e.getStatus().value()).isEqualTo(412);
+                        assertThat(e.getMessage()).doesNotContain(TOKEN);
+                    });
+            assertThatThrownBy(() -> client.criarSchedule(TOKEN, 1L, LocalDate.of(2026, 11, 2)))
+                    .isInstanceOfSatisfying(GarminApiException.class,
+                            e -> assertThat(e.getStatus().value()).isEqualTo(429));
+            assertThat(logCapture.list).noneMatch(ev -> ev.getFormattedMessage().contains(TOKEN));
+        }
+
+        @Test
+        @DisplayName("deletar workout inexistente expõe o 404 para o chamador tratar como já apagado")
+        void delete404() {
+            wireMock.stubFor(delete(urlEqualTo("/training-api/workout/v2/9")).willReturn(aResponse().withStatus(404)));
+
+            assertThatThrownBy(() -> client.deletarWorkout(TOKEN, 9L))
+                    .isInstanceOfSatisfying(GarminApiException.class,
+                            e -> assertThat(e.getStatus().value()).isEqualTo(404));
         }
     }
 }

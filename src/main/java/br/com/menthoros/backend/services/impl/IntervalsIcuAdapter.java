@@ -93,7 +93,7 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
      */
     @Override
     public void removerOrfaos(IntegracaoExterna conexao, LocalDate inicio, LocalDate fim,
-                               Set<String> externalIdsAtuais) {
+                               Set<String> externalIdsAtuais, Set<String> idsArmazenadosAtuais) {
         if (conexao == null) {
             throw new IllegalArgumentException("conexao não pode ser nula");
         }

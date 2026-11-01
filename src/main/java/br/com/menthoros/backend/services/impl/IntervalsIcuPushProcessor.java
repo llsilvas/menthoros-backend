@@ -3,7 +3,6 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.domain.workout.StructuredWorkout;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
-import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.services.PushResult;
@@ -43,7 +42,6 @@ import java.util.UUID;
 @Component
 public class IntervalsIcuPushProcessor {
 
-    private static final String PLATAFORMA = FonteDados.INTERVALS_ICU.name();
 
     static final String MOTIVO_FC_SEM_META =
             "Meta de FC não enviada: o atleta não tem FC de limiar medida. "
@@ -135,12 +133,12 @@ public class IntervalsIcuPushProcessor {
             log.error("Erro inesperado no push do treino {} (violação de contrato do channel): {}",
                     treinoId, e.getMessage(), e);
             resultado = PushResult.erro(StatusSincronizacao.ERRO_TEMPORARIO,
-                    "Erro inesperado no push intervals.icu: " + e.getMessage());
+                    "Erro inesperado no push " + conexao.getPlataforma().getLabel() + ": " + e.getMessage());
         }
 
         final PushResult resultadoFinal = resultado;
         Boolean autenticacaoFalhou = txPropria.execute(
-                status -> marcarNaTx(treinoId, tenantId, resultadoFinal, claim.motivoParcial()));
+                status -> marcarNaTx(treinoId, tenantId, conexao.getPlataforma().name(), resultadoFinal, claim.motivoParcial()));
 
         ProcessamentoResultado tipo;
         if (Boolean.TRUE.equals(autenticacaoFalhou)) {
@@ -198,7 +196,7 @@ public class IntervalsIcuPushProcessor {
      *
      * @return true quando o erro marcado foi especificamente de autenticação
      */
-    private boolean marcarNaTx(UUID treinoId, UUID tenantId, PushResult resultado,
+    private boolean marcarNaTx(UUID treinoId, UUID tenantId, String plataforma, PushResult resultado,
                                @Nullable String motivoParcial) {
         TreinoPlanejado treino = treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId).orElse(null);
         if (treino == null) {
@@ -209,7 +207,7 @@ public class IntervalsIcuPushProcessor {
 
         boolean autenticacaoFalhou = false;
         if (resultado.sucesso()) {
-            treino.marcarComoSincronizado(PLATAFORMA);
+            treino.marcarComoSincronizado(plataforma);
             treino.setExternalId(String.valueOf(resultado.eventId()));
             if (motivoParcial != null) {
                 // O push funcionou, mas alguma prescrição de FC não pôde ser honrada. No payload
