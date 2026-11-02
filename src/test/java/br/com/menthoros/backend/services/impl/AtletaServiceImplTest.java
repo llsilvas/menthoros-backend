@@ -137,7 +137,8 @@ class AtletaServiceImplTest {
                 null,
                 null,
                 "teste@teste.com",
-                Sexo.MASCULINO
+                Sexo.MASCULINO,
+                null
         );
 
         // Setup TenantContext

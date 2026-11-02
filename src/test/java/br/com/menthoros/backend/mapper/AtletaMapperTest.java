@@ -109,6 +109,40 @@ class AtletaMapperTest {
         }
     }
 
+    @Nested
+    @DisplayName("toOutputDto — dataNascimento (bug: edição abria o campo vazio porque a data não saía no GET)")
+    class ToOutputDtoDataNascimento {
+
+        @Test
+        @DisplayName("expõe a data de nascimento cadastrada")
+        void expoeDataNascimento() {
+            Atleta atleta = atletaBase().dataNascimento(LocalDate.of(1990, 5, 17)).build();
+
+            AtletaOutputDto dto = mapper.toOutputDto(atleta);
+
+            assertThat(dto.dataNascimento()).isEqualTo(LocalDate.of(1990, 5, 17));
+        }
+
+        @Test
+        @DisplayName("atleta legado sem data → dataNascimento nulo")
+        void legadoSemDataSaiNulo() {
+            AtletaOutputDto dto = mapper.toOutputDto(atletaBase().build());
+
+            assertThat(dto.dataNascimento()).isNull();
+        }
+
+        @Test
+        @DisplayName("withBilling preserva a data de nascimento")
+        void withBillingPreservaData() {
+            AtletaOutputDto dto = mapper.toOutputDto(atletaBase().dataNascimento(LocalDate.of(1990, 5, 17)).build());
+
+            AtletaOutputDto comCobranca = dto.withBilling(
+                    new AthleteBilling(AthleteBillingStatus.UP_TO_DATE, LocalDate.of(2026, 10, 10)));
+
+            assertThat(comCobranca.dataNascimento()).isEqualTo(LocalDate.of(1990, 5, 17));
+        }
+    }
+
     private AtletaInputDto inputCom(String email, Sexo sexo) {
         return new AtletaInputDto(
                 "Atleta Teste",

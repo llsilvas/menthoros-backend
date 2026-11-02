@@ -141,6 +141,6 @@ class AthleteBillingExposureTest {
     private AtletaOutputDto atleta() {
         return new AtletaOutputDto(atletaId, "Ana Silva", 30, new BigDecimal("60.0"), new BigDecimal("165.0"),
                 "Correr 10km", NivelExperiencia.INTERMEDIARIO, Set.of(), null, false, null, List.of(),
-                AthleteBillingStatus.OVERDUE, vencimento, "ana@exemplo.com", null);
+                AthleteBillingStatus.OVERDUE, vencimento, "ana@exemplo.com", null, null);
     }
 }
