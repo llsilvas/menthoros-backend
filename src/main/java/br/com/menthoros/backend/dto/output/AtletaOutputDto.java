@@ -64,7 +64,10 @@ public record AtletaOutputDto(
         String email,
 
         @Schema(description = "Sexo do atleta; ausente quando não cadastrado", example = "MASCULINO")
-        Sexo sexo) {
+        Sexo sexo,
+
+        @Schema(description = "Data de nascimento (yyyy-MM-dd); ausente em atletas legados sem o campo preenchido", example = "1990-05-17")
+        LocalDate dataNascimento) {
 
     /** Cobrança é resolvida pelo serviço, não pelo mapper (evita N+1 na listagem). */
     public AtletaOutputDto withBilling(@Nullable AthleteBilling billing) {
@@ -72,6 +75,6 @@ public record AtletaOutputDto(
                 diaPreferidoLongo, temLesao, descricaoLesao, provas,
                 billing != null ? billing.status() : null,
                 billing != null ? billing.nextDueDate() : null,
-                email, sexo);
+                email, sexo, dataNascimento);
     }
 }
