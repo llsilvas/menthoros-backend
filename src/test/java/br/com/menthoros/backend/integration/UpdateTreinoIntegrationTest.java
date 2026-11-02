@@ -32,6 +32,7 @@ import org.springframework.test.context.event.RecordApplicationEvents;
 
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -58,6 +59,9 @@ class UpdateTreinoIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired
     private ApplicationEvents applicationEvents;
+
+    // O service valida "não futura" no fuso do atleta (padrão São Paulo); LocalDate.now() em UTC adianta o dia entre 00h e 03h UTC.
+    private static final ZoneId FUSO_ATLETA = ZoneId.of("America/Sao_Paulo");
 
     private UUID tenantId;
     private TreinoRealizado treinoExistente;
@@ -90,7 +94,7 @@ class UpdateTreinoIntegrationTest extends AbstractIntegrationTest {
 
         treinoExistente = new TreinoRealizado();
         treinoExistente.setAtleta(atleta);
-        treinoExistente.setDataTreino(LocalDate.now());
+        treinoExistente.setDataTreino(LocalDate.now(FUSO_ATLETA));
         treinoExistente.setDiaSemana(DiaSemana.SEGUNDA);
         treinoExistente.setTipoTreino(TipoTreino.FACIL);
         treinoExistente.setDuracaoMin(Duration.ofMinutes(45));
@@ -222,7 +226,7 @@ class UpdateTreinoIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(result.tipoTreino()).isEqualTo(TipoTreino.FACIL);   // original
         assertThat(result.fonteDados()).isEqualTo(FonteDados.STRAVA);   // original
-        assertThat(result.dataTreino()).isEqualTo(LocalDate.now());     // original
+        assertThat(result.dataTreino()).isEqualTo(LocalDate.now(FUSO_ATLETA));     // original
     }
 
     // -------------------------------------------------------------------------
