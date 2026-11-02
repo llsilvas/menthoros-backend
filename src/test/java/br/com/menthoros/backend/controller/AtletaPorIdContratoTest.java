@@ -2,6 +2,7 @@ package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.config.core.JacksonConfig;
 import br.com.menthoros.backend.dto.output.AtletaOutputDto;
+import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.mapper.AtletaMapper;
 import br.com.menthoros.backend.repository.TenantValidationRepository;
@@ -25,22 +26,26 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import static br.com.menthoros.backend.testsupport.JwtTestSupport.atletaJwt;
 import static br.com.menthoros.backend.testsupport.JwtTestSupport.stubUsuarioAtivo;
 import static br.com.menthoros.backend.testsupport.JwtTestSupport.tecnicoJwt;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * A edição de atleta abria o campo "Data de Nascimento" vazio porque o GET devolvia só a idade.
- * Aqui trava o contrato JSON: a data sai como {@code yyyy-MM-dd} (formato do input type=date),
- * a idade continua presente, e o atleta legado sem data omite a chave (NON_NULL).
+ * Contrato de {@code GET /api/v1/atletas/{id}}. A edição abria o campo "Data de Nascimento" vazio
+ * porque o GET devolvia só a idade: a data sai como {@code yyyy-MM-dd} (formato do input
+ * type=date), a idade continua presente, e o atleta legado sem data omite a chave (NON_NULL).
+ * Como a data de nascimento é dado pessoal, também trava o acesso: o papel ATLETA não lê o
+ * registro por este endpoint e id de outro tenant responde 404.
  */
 @WebMvcTest(controllers = AtletaController.class)
 @Import({JacksonConfig.class, AuthWebMvcTestConfig.class})
-class AtletaDataNascimentoSerializationTest {
+class AtletaPorIdContratoTest {
 
     @Autowired private MockMvc mockMvc;
 
@@ -79,6 +84,25 @@ class AtletaDataNascimentoSerializationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.dataNascimento").doesNotExist())
                 .andExpect(jsonPath("$.idade").value(35));
+    }
+
+    @Test
+    @DisplayName("papel ATLETA não lê atleta por id: 403 e o service nem é consultado")
+    void atletaNaoLePorId() throws Exception {
+        mockMvc.perform(get("/api/v1/atletas/{id}", atletaId).with(atletaJwt()))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(atletaService);
+    }
+
+    @Test
+    @DisplayName("id de outro tenant (service não encontra no tenant) responde 404 sem corpo de atleta")
+    void outroTenantResponde404() throws Exception {
+        when(atletaService.getAtletaById(atletaId)).thenThrow(new ResourceNotFoundException("Atleta não encontrado: " + atletaId));
+
+        mockMvc.perform(get("/api/v1/atletas/{id}", atletaId).with(tecnicoJwt()))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.dataNascimento").doesNotExist());
     }
 
     private AtletaOutputDto atleta(LocalDate dataNascimento) {
