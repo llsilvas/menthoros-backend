@@ -175,6 +175,11 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
                 .orElseThrow(() -> new DomainNotFoundException("Treino não encontrado: " + treinoId));
 
         treinoPlanejadoRepository.delete(treinoPlanejado);
+        // Sem isto, save(plano) faz merge em cascata do filho removido ainda presente na coleção
+        // (ObjectDeletedException: deleted instance passed to merge).
+        if (plano.getTreinosPlanejados() != null) {
+            plano.getTreinosPlanejados().removeIf(t -> treinoId.equals(t.getId()));
+        }
         ajustarVolumePlano(plano, treinoPlanejado.getDistanciaKm(), false);
         avisarSeDiaFicouSemPrescricao(plano, treinoPlanejado, tenantId);
         planoSemanalRepository.save(plano);
