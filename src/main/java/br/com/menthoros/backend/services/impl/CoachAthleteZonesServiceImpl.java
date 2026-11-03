@@ -18,6 +18,7 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.services.CoachAthleteZonesService;
 import br.com.menthoros.backend.services.helper.AncorasZonas;
 import br.com.menthoros.backend.services.helper.AthleteZoneAnchorsValidator;
+import br.com.menthoros.backend.services.helper.IntervalsIcuFcSyncer;
 import br.com.menthoros.backend.services.helper.PaceZoneCalculator;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaCompleta;
@@ -51,6 +52,7 @@ public class CoachAthleteZonesServiceImpl implements CoachAthleteZonesService {
     private final ZonaTreinoService zonaTreinoService;
     private final PaceZoneCalculator paceZoneCalculator;
     private final AthleteZoneAnchorsValidator anchorsValidator;
+    private final IntervalsIcuFcSyncer intervalsIcuFcSyncer;
 
     @Override
     @Transactional(readOnly = true)
@@ -83,6 +85,9 @@ public class CoachAthleteZonesServiceImpl implements CoachAthleteZonesService {
             log.info("Âncora de FC gravada: atletaId={}, origem={}, anteriorEstimado={}",
                     atletaId, fc.origem(), atleta.getFcLimiar() == null);
             log.debug("Âncora de FC: atletaId={}, limiar={}, maxima={}", atletaId, fc.limiar(), fc.maxima());
+            // Depois do commit do UPDATE (o método não é transacional) e antes de responder: falha só gera log.
+            atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                    .ifPresent(salvo -> intervalsIcuFcSyncer.sincronizarSeConectado(salvo, tenantId));
         }
         if (input.pace() != null) {
             var pace = input.pace();

@@ -13,6 +13,7 @@ import br.com.menthoros.backend.dto.input.AthleteZoneAnchorsInputDto;
 import br.com.menthoros.backend.exception.InvalidZoneAnchorsException;
 import br.com.menthoros.backend.services.helper.AthleteZoneAnchorsValidator;
 import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
+import br.com.menthoros.backend.services.helper.IntervalsIcuFcSyncer;
 import br.com.menthoros.backend.services.helper.PaceZoneCalculator;
 import jakarta.validation.Validation;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
@@ -39,7 +40,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -48,6 +51,7 @@ class CoachAthleteZonesServiceImplTest {
 
     @Mock private AtletaRepository atletaRepository;
     @Mock private PlanoMetadadosRepository planoMetadadosRepository;
+    @Mock private IntervalsIcuFcSyncer intervalsIcuFcSyncer;
 
     private CoachAthleteZonesServiceImpl service;
     private UUID tenantId;
@@ -63,7 +67,8 @@ class CoachAthleteZonesServiceImplTest {
                 Clock.fixed(Instant.parse("2026-11-03T15:00:00Z"), ZoneOffset.UTC));
         service = new CoachAthleteZonesServiceImpl(atletaRepository, planoMetadadosRepository,
                 zonaTreinoService, new PaceZoneCalculator(zonaTreinoService),
-                new AthleteZoneAnchorsValidator(Validation.buildDefaultValidatorFactory().getValidator(), hoje));
+                new AthleteZoneAnchorsValidator(Validation.buildDefaultValidatorFactory().getValidator(), hoje),
+                intervalsIcuFcSyncer);
     }
 
     @AfterEach
@@ -284,6 +289,21 @@ class CoachAthleteZonesServiceImplTest {
 
             verify(atletaRepository, never()).atualizarLimiarFcEMaxima(any(), any(), any(), any(), any(), any());
             verify(atletaRepository, never()).atualizarLimiarPace(any(), any(), any(), any(), any());
+            verify(intervalsIcuFcSyncer).sincronizarSeConectado(any(Atleta.class), eq(tenantId));
+        }
+
+        @Test
+        @DisplayName("só pace: não reenvia FC ao intervals.icu")
+        void paceNaoReenviaFc() {
+            atleta(null, 168, 185);
+            semMetadados();
+            when(atletaRepository.atualizarLimiarPace(atletaId, tenantId, new BigDecimal("4.83"), teste, null))
+                    .thenReturn(1);
+
+            service.salvarAncoras(atletaId, new AthleteZoneAnchorsInputDto(null,
+                    new AthleteZoneAnchorsInputDto.Pace(290, teste, null)));
+
+            verifyNoInteractions(intervalsIcuFcSyncer);
         }
 
         @Test
@@ -325,6 +345,7 @@ class CoachAthleteZonesServiceImplTest {
             assertThatThrownBy(() -> service.salvarAncoras(atletaId, new AthleteZoneAnchorsInputDto(
                     new AthleteZoneAnchorsInputDto.Fc(168, 169, teste, null), null)))
                     .isInstanceOf(InvalidZoneAnchorsException.class);
+            verifyNoInteractions(intervalsIcuFcSyncer);
 
             verify(atletaRepository).findByIdAndTenantId(atletaId, tenantId);
             verifyNoMoreInteractions(atletaRepository);
