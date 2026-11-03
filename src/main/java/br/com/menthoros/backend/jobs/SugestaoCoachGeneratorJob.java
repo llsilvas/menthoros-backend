@@ -112,6 +112,15 @@ public class SugestaoCoachGeneratorJob {
                 continue;
             }
 
+            // Checagem prévia evita o INSERT que o índice rejeitaria: o Hibernate loga cada violação
+            // como ERROR (SqlExceptionHelper) mesmo com o catch abaixo, poluindo o alerta diário.
+            // O catch continua para a corrida entre duas execuções.
+            if (sugestaoCoachRepository.existsByAtletaIdAndTipoAndStatus(
+                    item.atletaId(), tipo, StatusSugestao.PENDING)) {
+                ignoradas++;
+                continue;
+            }
+
             try {
                 Instant agora = Instant.now();
                 SugestaoCoach sugestao = SugestaoCoach.builder()

@@ -136,6 +136,36 @@ class SugestaoCoachGeneratorJobTest {
         }
 
         @Test
+        @DisplayName("já existe sugestão PENDING do mesmo tipo — não tenta o INSERT")
+        void naoInsereQuandoJaExistePending() {
+            CoachAttentionItemOutputDto item = itemDto(Severidade.ALTA, MotivoAtencao.SEM_PLANO, null);
+            when(assessoriaRepository.findByAtivoTrue()).thenReturn(List.of(assessoria));
+            when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of(item));
+            when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+            when(sugestaoCoachRepository.existsByAtletaIdAndTipoAndStatus(
+                    atletaId, TipoSugestao.NEW_PLAN, StatusSugestao.PENDING)).thenReturn(true);
+
+            job.gerarSugestoes();
+
+            verify(sugestaoCoachRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("sem PENDING para (atleta, tipo) — insere, checando exatamente esse par")
+        void insereQuandoNaoExistePending() {
+            CoachAttentionItemOutputDto item = itemDto(Severidade.ALTA, MotivoAtencao.SEM_PLANO, null);
+            when(assessoriaRepository.findByAtivoTrue()).thenReturn(List.of(assessoria));
+            when(coachAttentionQueueService.getAttentionQueue()).thenReturn(List.of(item));
+            when(atletaRepository.findById(atletaId)).thenReturn(Optional.of(atleta));
+            when(sugestaoCoachRepository.existsByAtletaIdAndTipoAndStatus(
+                    atletaId, TipoSugestao.NEW_PLAN, StatusSugestao.PENDING)).thenReturn(false);
+
+            job.gerarSugestoes();
+
+            verify(sugestaoCoachRepository).save(any());
+        }
+
+        @Test
         @DisplayName("TenantContext limpo no finally mesmo quando getAttentionQueue lança exceção")
         void tenantContextLimpoNoFinally() {
             when(assessoriaRepository.findByAtivoTrue()).thenReturn(List.of(assessoria));
