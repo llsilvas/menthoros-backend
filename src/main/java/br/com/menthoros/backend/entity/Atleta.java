@@ -3,6 +3,7 @@ package br.com.menthoros.backend.entity;
 import br.com.menthoros.backend.domain.audit.AuditableEntity;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.FonteLimiar;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.Sexo;
 import jakarta.persistence.*;
@@ -74,6 +75,10 @@ public class Atleta extends AuditableEntity {
     @Column(name = "data_ultimo_teste_fc")
     private LocalDate dataUltimoTesteFc;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fonte_limiar_fc", length = 20)
+    private FonteLimiar fonteLimiarFc;
+
     // Pace/Velocidade
     @Column(name = "pace_limiar", precision = 5, scale = 2)
     private BigDecimal paceLimiar; // min/km no limiar (ex: 4.5 min/km)
@@ -83,6 +88,10 @@ public class Atleta extends AuditableEntity {
 
     @Column(name = "data_ultimo_teste_pace")
     private LocalDate dataUltimoTestePace;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fonte_limiar_pace", length = 20)
+    private FonteLimiar fonteLimiarPace;
 
     // VO2max estimado
     @Column(name = "vo2max_estimado", precision = 5, scale = 2)
