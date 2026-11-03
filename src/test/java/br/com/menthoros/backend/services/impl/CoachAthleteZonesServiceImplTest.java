@@ -4,6 +4,7 @@ import br.com.menthoros.backend.dto.output.AthleteTrainingZonesOutputDto;
 import br.com.menthoros.backend.dto.output.AthleteTrainingZonesOutputDto.ZonaDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
+import br.com.menthoros.backend.enums.FonteLimiar;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
@@ -102,6 +103,37 @@ class CoachAthleteZonesServiceImplTest {
             assertThat(dto.ancoras().fcLimiarEstimada()).isFalse();
             assertThat(dto.fcMaxima().bpm()).isEqualTo(185);
             assertThat(dto.fcMaxima().estimada()).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("origem do limiar")
+    class OrigemDoLimiar {
+
+        @Test
+        @DisplayName("expõe fonteLimiarFc e fonteLimiarPace gravadas")
+        void expoeFontes() {
+            Atleta atleta = atleta(new BigDecimal("5.00"), 168, 185);
+            atleta.setFonteLimiarFc(FonteLimiar.TESTE_CAMPO);
+            atleta.setFonteLimiarPace(FonteLimiar.PROVA);
+            tsbProntidao(0.0);
+
+            AthleteTrainingZonesOutputDto dto = service.buscarZonas(atletaId);
+
+            assertThat(dto.ancoras().fonteLimiarFc()).isEqualTo(FonteLimiar.TESTE_CAMPO);
+            assertThat(dto.ancoras().fonteLimiarPace()).isEqualTo(FonteLimiar.PROVA);
+        }
+
+        @Test
+        @DisplayName("atleta sem origem: ambas nulas")
+        void semOrigem() {
+            atleta(new BigDecimal("5.00"), 168, 185);
+            tsbProntidao(0.0);
+
+            AthleteTrainingZonesOutputDto dto = service.buscarZonas(atletaId);
+
+            assertThat(dto.ancoras().fonteLimiarFc()).isNull();
+            assertThat(dto.ancoras().fonteLimiarPace()).isNull();
         }
     }
 

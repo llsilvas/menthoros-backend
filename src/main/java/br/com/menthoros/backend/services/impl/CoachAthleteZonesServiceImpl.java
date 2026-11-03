@@ -15,6 +15,7 @@ import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.services.CoachAthleteZonesService;
+import br.com.menthoros.backend.services.helper.AncorasZonas;
 import br.com.menthoros.backend.services.helper.PaceZoneCalculator;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaCompleta;
@@ -53,27 +54,30 @@ public class CoachAthleteZonesServiceImpl implements CoachAthleteZonesService {
         Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
-        BigDecimal paceLimiar = atleta.getPaceLimiar();
-        boolean temPace = paceLimiar != null && paceLimiar.signum() > 0;
         Double tsb = planoMetadadosRepository.findLatestByAtletaIdAndTenantId(atletaId, tenantId)
                 .map(PlanoMetaDados::getTsbProntidaoAtual).orElse(null);
 
+        return montar(AncorasZonas.de(atleta, tsb));
+    }
+
+    private AthleteTrainingZonesOutputDto montar(AncorasZonas a) {
+        boolean temPace = a.temPace();
         int ajuste = temPace
-                ? paceZoneCalculator.calcularZonasAjustadasPorTsbProntidao(paceLimiar, tsb).ajusteSegundos()
+                ? paceZoneCalculator.calcularZonasAjustadasPorTsbProntidao(a.paceLimiar(), a.tsbProntidao()).ajusteSegundos()
                 : 0;
 
-        List<ZonaDto> zonas = zonaTreinoService.calcularZonas(atleta).stream()
+        List<ZonaDto> zonas = zonaTreinoService
+                .calcularZonas(a.fcMaximaCalculada(), a.fcLimiarCalculada(), a.paceLimiar()).stream()
                 .map(z -> toDto(z, temPace))
                 .toList();
 
-        boolean fcLimiarEstimada = atleta.getFcLimiar() == null;
         return new AthleteTrainingZonesOutputDto(
                 MODELO,
-                new Ancoras(temPace ? paceLimiar : null, atleta.getDataUltimoTestePace(),
-                        atleta.getFcLimiarCalculada(), atleta.getDataUltimoTesteFc(), fcLimiarEstimada),
-                new AjusteFadiga(ajuste, tsb),
-                new FcMaxima(atleta.getFcMaximaComFallback(),
-                        atleta.getFcMaxima() == null || atleta.getFcMaxima() <= 0),
+                new Ancoras(temPace ? a.paceLimiar() : null, a.dataTestePace(),
+                        a.fcLimiarCalculada(), a.dataTesteFc(), a.fcLimiarEstimada(),
+                        a.fontePace(), a.fonteFc()),
+                new AjusteFadiga(ajuste, a.tsbProntidao()),
+                new FcMaxima(a.fcMaximaComFallback(), a.fcMaximaEstimada()),
                 new Disponibilidade(temPace, true, temPace ? null : MOTIVO_SEM_PACE),
                 zonas);
     }

@@ -68,10 +68,11 @@ public class ZonaTreinoService {
      * Z6 (Sprint) tem FC equivalente a Z5 (cardiac lag impede medição precisa).
      */
     public List<ZonaCompleta> calcularZonas(Atleta atleta) {
-        Integer fcMax = atleta.getFcMaximaCalculada();
-        Integer fcLimiar = atleta.getFcLimiarCalculada();
-        BigDecimal paceLimiar = atleta.getPaceLimiar();
+        return calcularZonas(atleta.getFcMaximaCalculada(), atleta.getFcLimiarCalculada(), atleta.getPaceLimiar());
+    }
 
+    /** Mesma montagem de {@link #calcularZonas(Atleta)}, sobre valores — sem depender da entidade. */
+    public List<ZonaCompleta> calcularZonas(Integer fcMax, Integer fcLimiar, BigDecimal paceLimiar) {
         List<ZonaFC> zonasFC = calcularZonasFC(fcMax, fcLimiar);
         List<ZonaPace> zonasPace = calcularZonasPace(paceLimiar);
 
