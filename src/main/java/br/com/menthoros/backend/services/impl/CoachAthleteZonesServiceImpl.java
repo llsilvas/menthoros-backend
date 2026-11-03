@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.input.AthleteZoneAnchorsInputDto;
 import br.com.menthoros.backend.dto.output.AthleteTrainingZonesOutputDto;
 import br.com.menthoros.backend.dto.output.AthleteTrainingZonesOutputDto.AjusteFadiga;
 import br.com.menthoros.backend.dto.output.AthleteTrainingZonesOutputDto.Ancoras;
@@ -16,23 +17,27 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.services.CoachAthleteZonesService;
 import br.com.menthoros.backend.services.helper.AncorasZonas;
+import br.com.menthoros.backend.services.helper.AthleteZoneAnchorsValidator;
 import br.com.menthoros.backend.services.helper.PaceZoneCalculator;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaCompleta;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.UUID;
 
 /**
- * Idempotent: YES — leitura pura. Side Effects: NONE. Tenant-aware: YES.
+ * {@code buscarZonas}: leitura pura, tenant-aware. {@code salvarAncoras}: ver {@link CoachAthleteZonesService}.
  *
  * <p>Não recalcula zona: as faixas vêm de {@link ZonaTreinoService}, as mesmas que o prompt da IA
  * recebe. O ajuste por fadiga é só informado — as faixas ficam na base.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CoachAthleteZonesServiceImpl implements CoachAthleteZonesService {
@@ -46,6 +51,7 @@ public class CoachAthleteZonesServiceImpl implements CoachAthleteZonesService {
     private final PlanoMetadadosRepository planoMetadadosRepository;
     private final ZonaTreinoService zonaTreinoService;
     private final PaceZoneCalculator paceZoneCalculator;
+    private final AthleteZoneAnchorsValidator anchorsValidator;
 
     @Override
     @Transactional(readOnly = true)
@@ -58,6 +64,47 @@ public class CoachAthleteZonesServiceImpl implements CoachAthleteZonesService {
                 .map(PlanoMetaDados::getTsbProntidaoAtual).orElse(null);
 
         return montar(AncorasZonas.de(atleta, tsb));
+    }
+
+    /**
+     * Deliberadamente SEM {@code @Transactional}: cada {@code UPDATE} do repositório commita sozinho, então
+     * a releitura final enxerga o gravado e dois PUTs em eixos diferentes não se sobrescrevem (CA18).
+     */
+    @Override
+    public AthleteTrainingZonesOutputDto salvarAncoras(UUID atletaId, AthleteZoneAnchorsInputDto input) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
+        anchorsValidator.validar(input, atleta);
+
+        if (input.fc() != null) {
+            var fc = input.fc();
+            int linhas = fc.maxima() != null
+                    ? atletaRepository.atualizarLimiarFcEMaxima(atletaId, tenantId, fc.limiar(), fc.maxima(),
+                            fc.dataTeste(), fc.origem())
+                    : atletaRepository.atualizarLimiarFc(atletaId, tenantId, fc.limiar(), fc.dataTeste(), fc.origem());
+            exigirLinha(linhas);
+            log.info("Âncora de FC gravada: atletaId={}, origem={}, anteriorEstimado={}",
+                    atletaId, fc.origem(), atleta.getFcLimiar() == null);
+            log.debug("Âncora de FC: atletaId={}, limiar={}, maxima={}", atletaId, fc.limiar(), fc.maxima());
+        }
+        if (input.pace() != null) {
+            var pace = input.pace();
+            BigDecimal minutos = BigDecimal.valueOf(pace.limiarSegKm())
+                    .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+            exigirLinha(atletaRepository.atualizarLimiarPace(atletaId, tenantId, minutos, pace.dataTeste(),
+                    pace.origem()));
+            log.info("Âncora de pace gravada: atletaId={}, origem={}, anteriorEstimado={}",
+                    atletaId, pace.origem(), atleta.getPaceLimiar() == null);
+            log.debug("Âncora de pace: atletaId={}, limiarSegKm={}", atletaId, pace.limiarSegKm());
+        }
+        return buscarZonas(atletaId);
+    }
+
+    private static void exigirLinha(int linhas) {
+        if (linhas == 0) {
+            throw new DomainNotFoundException("Atleta não encontrado");
+        }
     }
 
     private AthleteTrainingZonesOutputDto montar(AncorasZonas a) {
