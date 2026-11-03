@@ -27,7 +27,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.util.List;
 import java.util.UUID;
 
@@ -60,10 +59,7 @@ public class CoachAthleteZonesServiceImpl implements CoachAthleteZonesService {
         Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
 
-        Double tsb = planoMetadadosRepository.findLatestByAtletaIdAndTenantId(atletaId, tenantId)
-                .map(PlanoMetaDados::getTsbProntidaoAtual).orElse(null);
-
-        return montar(AncorasZonas.de(atleta, tsb));
+        return montar(AncorasZonas.de(atleta, tsbProntidao(atletaId, tenantId)));
     }
 
     /**
@@ -90,15 +86,28 @@ public class CoachAthleteZonesServiceImpl implements CoachAthleteZonesService {
         }
         if (input.pace() != null) {
             var pace = input.pace();
-            BigDecimal minutos = BigDecimal.valueOf(pace.limiarSegKm())
-                    .divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
-            exigirLinha(atletaRepository.atualizarLimiarPace(atletaId, tenantId, minutos, pace.dataTeste(),
-                    pace.origem()));
+            exigirLinha(atletaRepository.atualizarLimiarPace(atletaId, tenantId,
+                    AncorasZonas.paceEmMinutos(pace.limiarSegKm()), pace.dataTeste(), pace.origem()));
             log.info("Âncora de pace gravada: atletaId={}, origem={}, anteriorEstimado={}",
                     atletaId, pace.origem(), atleta.getPaceLimiar() == null);
             log.debug("Âncora de pace: atletaId={}, limiarSegKm={}", atletaId, pace.limiarSegKm());
         }
         return buscarZonas(atletaId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AthleteTrainingZonesOutputDto simular(UUID atletaId, AthleteZoneAnchorsInputDto input) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado"));
+        anchorsValidator.validar(input, atleta);
+        return montar(AncorasZonas.de(atleta, tsbProntidao(atletaId, tenantId)).com(input));
+    }
+
+    private Double tsbProntidao(UUID atletaId, UUID tenantId) {
+        return planoMetadadosRepository.findLatestByAtletaIdAndTenantId(atletaId, tenantId)
+                .map(PlanoMetaDados::getTsbProntidaoAtual).orElse(null);
     }
 
     private static void exigirLinha(int linhas) {

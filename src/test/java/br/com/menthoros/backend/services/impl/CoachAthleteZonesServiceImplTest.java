@@ -355,6 +355,107 @@ class CoachAthleteZonesServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("simular")
+    class Simular {
+
+        private final LocalDate teste = LocalDate.of(2026, 10, 12);
+
+        private AthleteZoneAnchorsInputDto paceInput(int segKm) {
+            return new AthleteZoneAnchorsInputDto(null,
+                    new AthleteZoneAnchorsInputDto.Pace(segKm, teste, FonteLimiar.TESTE_CAMPO));
+        }
+
+        @Test
+        @DisplayName("pace 290 em atleta sem pace: zonas iguais às de um atleta com pace 4.83 gravado")
+        void igualAoQueSeriaGravado() {
+            Atleta semPace = atleta(null, 168, 185);
+            tsbProntidao(0.0);
+            AthleteTrainingZonesOutputDto simulado = service.simular(atletaId, paceInput(290));
+
+            semPace.setPaceLimiar(new BigDecimal("4.83"));
+            semPace.setDataUltimoTestePace(teste);
+            semPace.setFonteLimiarPace(FonteLimiar.TESTE_CAMPO);
+            AthleteTrainingZonesOutputDto gravado = service.buscarZonas(atletaId);
+
+            assertThat(simulado).isEqualTo(gravado);
+            assertThat(simulado.disponibilidade().pace()).isTrue();
+            assertThat(zona(simulado, 2).pace().minSegKm()).isEqualTo(304);
+        }
+
+        @Test
+        @DisplayName("não grava nada")
+        void naoGrava() {
+            atleta(null, 168, 185);
+            tsbProntidao(0.0);
+
+            service.simular(atletaId, paceInput(290));
+
+            verify(atletaRepository).findByIdAndTenantId(atletaId, tenantId);
+            verifyNoMoreInteractions(atletaRepository);
+        }
+
+        @Test
+        @DisplayName("grupo ausente mantém o eixo: simular só pace preserva a FC e sua origem")
+        void mantemOutroEixo() {
+            Atleta a = atleta(null, 168, 185);
+            a.setFonteLimiarFc(FonteLimiar.PROVA);
+            tsbProntidao(0.0);
+
+            AthleteTrainingZonesOutputDto dto = service.simular(atletaId, paceInput(290));
+
+            assertThat(dto.ancoras().fcLimiar()).isEqualTo(168);
+            assertThat(dto.ancoras().fonteLimiarFc()).isEqualTo(FonteLimiar.PROVA);
+            assertThat(dto.fcMaxima().bpm()).isEqualTo(185);
+            assertThat(dto.ancoras().fonteLimiarPace()).isEqualTo(FonteLimiar.TESTE_CAMPO);
+        }
+
+        @Test
+        @DisplayName("FC sem máxima: máxima estimada continua estimada")
+        void maximaEstimadaNaoViraInformada() {
+            atleta(new BigDecimal("5.00"), null, null);
+            tsbProntidao(0.0);
+
+            AthleteTrainingZonesOutputDto dto = service.simular(atletaId, new AthleteZoneAnchorsInputDto(
+                    new AthleteZoneAnchorsInputDto.Fc(168, null, teste, null), null));
+
+            assertThat(dto.ancoras().fcLimiar()).isEqualTo(168);
+            assertThat(dto.ancoras().fcLimiarEstimada()).isFalse();
+            assertThat(dto.fcMaxima().estimada()).isTrue();
+        }
+
+        @Test
+        @DisplayName("FC com máxima: máxima passa a informada")
+        void maximaInformada() {
+            atleta(new BigDecimal("5.00"), null, null);
+            tsbProntidao(0.0);
+
+            AthleteTrainingZonesOutputDto dto = service.simular(atletaId, new AthleteZoneAnchorsInputDto(
+                    new AthleteZoneAnchorsInputDto.Fc(168, 186, teste, null), null));
+
+            assertThat(dto.fcMaxima().bpm()).isEqualTo(186);
+            assertThat(dto.fcMaxima().estimada()).isFalse();
+        }
+
+        @Test
+        @DisplayName("âncora inválida: mesma rejeição do PUT")
+        void invalida() {
+            atleta(null, null, null);
+
+            assertThatThrownBy(() -> service.simular(atletaId, paceInput(100)))
+                    .isInstanceOf(InvalidZoneAnchorsException.class);
+        }
+
+        @Test
+        @DisplayName("atleta de outro tenant: DomainNotFoundException")
+        void outroTenant() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.simular(atletaId, paceInput(290)))
+                    .isInstanceOf(DomainNotFoundException.class);
+        }
+    }
+
     @Test
     @DisplayName("atleta de outro tenant (ou inexistente): DomainNotFoundException")
     void outroTenant() {

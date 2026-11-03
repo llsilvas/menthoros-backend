@@ -33,4 +33,17 @@ public interface CoachAthleteZonesService {
      * @throws br.com.menthoros.backend.exception.InvalidZoneAnchorsException se alguma âncora é inválida
      */
     AthleteTrainingZonesOutputDto salvarAncoras(UUID atletaId, AthleteZoneAnchorsInputDto input);
+
+    /**
+     * Devolve as zonas que {@code input} geraria, sem gravar — a prévia do diálogo. Mesmo validador e
+     * mesma montagem de {@link #buscarZonas} e {@link #salvarAncoras}.
+     *
+     * <p><b>Idempotent:</b> YES — leitura pura.
+     * <b>Side Effects:</b> NONE.
+     * <b>Tenant-aware:</b> YES.
+     *
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o atleta não existe no tenant
+     * @throws br.com.menthoros.backend.exception.InvalidZoneAnchorsException se alguma âncora é inválida
+     */
+    AthleteTrainingZonesOutputDto simular(UUID atletaId, AthleteZoneAnchorsInputDto input);
 }

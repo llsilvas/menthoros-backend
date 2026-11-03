@@ -1,9 +1,11 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.dto.input.AthleteZoneAnchorsInputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.FonteLimiar;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 
 /**
@@ -32,6 +34,36 @@ public record AncorasZonas(
                 atleta.getFcLimiar(), atleta.getFcMaxima(), atleta.getFcMaximaCalculada(),
                 atleta.getFcMaximaComFallback(), atleta.getDataUltimoTesteFc(), atleta.getFonteLimiarFc(),
                 tsbProntidao);
+    }
+
+    /** Conversão única do pace de limiar (s/km do corpo) para a coluna {@code numeric(5,2)} em min/km. */
+    public static BigDecimal paceEmMinutos(int segundosPorKm) {
+        return BigDecimal.valueOf(segundosPorKm).divide(BigDecimal.valueOf(60), 2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * O que {@code Atleta} devolveria depois de gravar {@code input}: grupo ausente mantém o eixo;
+     * máxima vazia mantém a gravada e os fallbacks. Não toca em entidade — é a simulação.
+     */
+    public AncorasZonas com(AthleteZoneAnchorsInputDto input) {
+        AncorasZonas r = this;
+        if (input.fc() != null) {
+            var fc = input.fc();
+            boolean novaMaxima = fc.maxima() != null;
+            r = new AncorasZonas(r.paceLimiar, r.dataTestePace, r.fontePace,
+                    fc.limiar(),
+                    novaMaxima ? fc.maxima() : r.fcMaximaGravada,
+                    novaMaxima ? fc.maxima() : r.fcMaximaCalculada,
+                    novaMaxima ? fc.maxima() : r.fcMaximaComFallback,
+                    fc.dataTeste(), fc.origem(), r.tsbProntidao);
+        }
+        if (input.pace() != null) {
+            var pace = input.pace();
+            r = new AncorasZonas(paceEmMinutos(pace.limiarSegKm()), pace.dataTeste(), pace.origem(),
+                    r.fcLimiar, r.fcMaximaGravada, r.fcMaximaCalculada, r.fcMaximaComFallback,
+                    r.dataTesteFc, r.fonteFc, r.tsbProntidao);
+        }
+        return r;
     }
 
     public boolean temPace() {
