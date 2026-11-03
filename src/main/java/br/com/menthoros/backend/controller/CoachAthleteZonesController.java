@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.controller;
 
+import br.com.menthoros.backend.dto.input.AthleteZoneAnchorsInputDto;
 import br.com.menthoros.backend.dto.output.AthleteTrainingZonesOutputDto;
 import br.com.menthoros.backend.services.CoachAthleteZonesService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -14,6 +15,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -47,5 +51,48 @@ public class CoachAthleteZonesController {
     public ResponseEntity<AthleteTrainingZonesOutputDto> buscarZonas(
             @Parameter(description = "ID do atleta") @PathVariable UUID atletaId) {
         return ResponseEntity.ok(coachAthleteZonesService.buscarZonas(atletaId));
+    }
+
+    @PutMapping("/{atletaId}/zonas/ancoras")
+    // Sem @RequireTenant, pelo mesmo motivo do GET: atleta de outro tenant é 404, não 403.
+    @Operation(
+            summary = "Cadastra os limiares que geram as zonas do atleta",
+            description = "Grava as âncoras de FC (limiar, máxima, data do teste, origem) e/ou de pace "
+                    + "(limiar em s/km, data do teste, origem). Grupo ausente mantém aquele eixo; FC máxima "
+                    + "vazia mantém a vigente. Devolve as zonas recalculadas, como o GET.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Âncoras gravadas; zonas recalculadas",
+                    content = @Content(schema = @Schema(implementation = AthleteTrainingZonesOutputDto.class))),
+            @ApiResponse(responseCode = "400", description = "Âncora inválida (campo e motivo em 'fields')"),
+            @ApiResponse(responseCode = "401", description = "Não autenticado"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão"),
+            @ApiResponse(responseCode = "404", description = "Atleta não encontrado no tenant")
+    })
+    // Sem @Valid de propósito: com problemdetails ligado, o advice padrão do Spring responde ao
+    // MethodArgumentNotValidException antes do GlobalExceptionHandler e some com o caminho do campo. A
+    // validação (Bean Validation + regras cruzadas) é feita pelo AthleteZoneAnchorsValidator no serviço.
+    public ResponseEntity<AthleteTrainingZonesOutputDto> salvarAncoras(
+            @Parameter(description = "ID do atleta") @PathVariable UUID atletaId,
+            @RequestBody AthleteZoneAnchorsInputDto input) {
+        return ResponseEntity.ok(coachAthleteZonesService.salvarAncoras(atletaId, input));
+    }
+
+    @PostMapping("/{atletaId}/zonas/simulacao")
+    @Operation(
+            summary = "Simula as zonas que as âncoras gerariam",
+            description = "Mesmo corpo e mesma resposta do PUT de âncoras, sem gravar nada. POST porque o "
+                    + "corpo é estruturado e o limiar fisiológico não deve ir em query string nem em log de acesso.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Zonas simuladas; nada foi gravado",
+                    content = @Content(schema = @Schema(implementation = AthleteTrainingZonesOutputDto.class))),
+            @ApiResponse(responseCode = "400", description = "Âncora inválida (campo e motivo em 'fields')"),
+            @ApiResponse(responseCode = "401", description = "Não autenticado"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão"),
+            @ApiResponse(responseCode = "404", description = "Atleta não encontrado no tenant")
+    })
+    public ResponseEntity<AthleteTrainingZonesOutputDto> simular(
+            @Parameter(description = "ID do atleta") @PathVariable UUID atletaId,
+            @RequestBody AthleteZoneAnchorsInputDto input) {
+        return ResponseEntity.ok(coachAthleteZonesService.simular(atletaId, input));
     }
 }
