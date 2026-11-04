@@ -764,6 +764,7 @@ public class PlanoTreinoPromptBuilder {
     private String validarEFallbacksDadosFisiologicos(Atleta atleta) {
         StringBuilder fallbacks = new StringBuilder();
         boolean temProblema = false;
+        boolean fcManual = atleta.getModoZonasFc() == ModoZonas.MANUAL;
 
         if (atleta.getModoZonasPace() != ModoZonas.MANUAL
                 && (atleta.getPaceLimiar() == null || atleta.getPaceLimiar().compareTo(BigDecimal.ZERO) == 0)) {
@@ -772,10 +773,13 @@ public class PlanoTreinoPromptBuilder {
             String paceEstimado = estimarPacePorNivel(atleta);
             fallbacks.append("  - Pace estimado: ").append(paceEstimado).append(" min/km\n");
             fallbacks.append("  - **USAR APENAS FC para prescrição, não pace\n");
-            fallbacks.append("⚠️ **Zonas de pace inutilizáveis** → Usar apenas FC (Z1-Z5 por percentual FCmax)\n");
+            fallbacks.append(fcManual
+                    ? "⚠️ **Zonas de pace inutilizáveis** → Usar apenas FC (zonas definidas pelo treinador)\n"
+                    : "⚠️ **Zonas de pace inutilizáveis** → Usar apenas FC (Z1-Z5 por percentual FCmax)\n");
         }
 
-        if (atleta.getFcLimiarCalculada() == null || atleta.getFcLimiarCalculada() <= 0) {
+        // FC manual não depende de limiar: estimar um aqui contradiria as faixas do treinador.
+        if (!fcManual && (atleta.getFcLimiarCalculada() == null || atleta.getFcLimiarCalculada() <= 0)) {
             temProblema = true;
             Integer fcMax = atleta.getFcMaximaCalculada();
             if (fcMax != null && fcMax > 0) {

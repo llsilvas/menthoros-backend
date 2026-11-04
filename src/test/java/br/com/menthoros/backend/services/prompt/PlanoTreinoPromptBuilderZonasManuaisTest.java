@@ -67,6 +67,21 @@ class PlanoTreinoPromptBuilderZonasManuaisTest {
     }
 
     @Test
+    @DisplayName("FC manual sem limiar e sem pace: os fallbacks não mandam estimar FC nem usar % da FCmax")
+    void fcManualSemLimiaresNaoContradizFaixas() {
+        Atleta atleta = base().toBuilder().paceLimiar(null).fcLimiar(null)
+                .modoZonasFc(ModoZonas.MANUAL).zonasManuaisFc(FC).build();
+
+        String user = montar(atleta).user();
+
+        assertThat(user).contains("| 140-150 bpm")
+                .doesNotContain("FC Limiar não disponível")
+                .doesNotContain("FC Limiar e FC Max não disponíveis")
+                .doesNotContain("percentual FCmax")
+                .contains("Usar apenas FC (zonas definidas pelo treinador)");
+    }
+
+    @Test
     @DisplayName("LIMIAR nos dois eixos mantém o cabeçalho de sempre")
     void limiarInalterado() {
         assertThat(montar(base()).user()).contains("**Zonas de Treino Calculadas:**");
