@@ -13,7 +13,10 @@ public record WorkoutStep(
         Integer distanceMeters,
         IntensityTarget meta,
         Integer reps,
-        List<WorkoutStep> steps
+        List<WorkoutStep> steps,
+        // Etapa de recuperação prescrita (trote entre tiros). "Sem meta" não basta para saber isso:
+        // um tiro livre também não tem meta, e o canal só pode pular o que é descanso de fato.
+        boolean recovery
 ) {
     /**
      * Factory para etapa simples: sem repetições nem sub-etapas.
@@ -24,11 +27,16 @@ public record WorkoutStep(
     public static WorkoutStep simples(String text, Integer durationSeconds, Integer distanceMeters,
                                       IntensityTarget meta) {
         return new WorkoutStep(text, durationSeconds, distanceMeters,
-                meta != null ? meta : IntensityTarget.SEM_OBJETIVO, null, null);
+                meta != null ? meta : IntensityTarget.SEM_OBJETIVO, null, null, false);
     }
 
     /** Factory para bloco: grupo de repetições de sub-etapas. */
     public static WorkoutStep bloco(String text, int reps, List<WorkoutStep> steps) {
-        return new WorkoutStep(text, null, null, IntensityTarget.SEM_OBJETIVO, reps, steps);
+        return new WorkoutStep(text, null, null, IntensityTarget.SEM_OBJETIVO, reps, steps, false);
+    }
+
+    /** A mesma etapa marcada como recuperação prescrita. */
+    public WorkoutStep asRecovery() {
+        return new WorkoutStep(text, durationSeconds, distanceMeters, meta, reps, steps, true);
     }
 }

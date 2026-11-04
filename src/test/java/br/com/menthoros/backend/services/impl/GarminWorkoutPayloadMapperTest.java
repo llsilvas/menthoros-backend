@@ -72,17 +72,30 @@ class GarminWorkoutPayloadMapperTest {
     }
 
     @Test
-    @DisplayName("bloco que termina em descanso pula o último descanso: do tiro final vai direto ao passo seguinte")
+    @DisplayName("bloco que termina em recuperação livre pula o último descanso: do tiro final vai direto ao passo seguinte")
     void blocoTerminandoEmDescansoPulaOUltimo() {
         StructuredWorkout workout = treino(null, null, List.of(
                 WorkoutStep.bloco("6x", 6, List.of(
                         WorkoutStep.simples("Tiro", null, 400, new PaceTarget(240, 250)),
-                        WorkoutStep.simples("Trote", 120, null, null))),
+                        WorkoutStep.simples("Trote", 120, null, null).asRecovery())),
                 WorkoutStep.simples("Desaquecimento", 600, null, null)));
 
         JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
 
         assertThat(bloco.get("skipLastRestStep").asBoolean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("bloco misto 3x [1 km no pace + 1 km livre] não pula: o km livre não é recuperação, é esforço")
+    void blocoMistoSemRecuperacaoNaoPula() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.bloco("3x", 3, List.of(
+                        WorkoutStep.simples("Forte", null, 1000, new PaceTarget(240, 250)),
+                        WorkoutStep.simples("Livre", null, 1000, null)))));
+
+        JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(bloco.has("skipLastRestStep")).isFalse();
     }
 
     @Test
@@ -97,25 +110,25 @@ class GarminWorkoutPayloadMapperTest {
     }
 
     @Test
-    @DisplayName("bloco sem nenhuma meta (tiro livre + trote livre) não pula: não dá para distinguir esforço de descanso")
-    void blocoSemMetaNenhumaNaoPula() {
+    @DisplayName("tiro livre seguido de recuperação marcada: pula só a recuperação final")
+    void tiroLivreComRecuperacaoMarcadaPula() {
         StructuredWorkout workout = treino(null, null, List.of(
                 WorkoutStep.bloco("4x", 4, List.of(
                         WorkoutStep.simples("Tiro", null, 1000, null),
-                        WorkoutStep.simples("Trote", 120, null, null)))));
+                        WorkoutStep.simples("Trote", 120, null, null).asRecovery()))));
 
         JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
 
-        assertThat(bloco.has("skipLastRestStep")).isFalse();
+        assertThat(bloco.get("skipLastRestStep").asBoolean()).isTrue();
     }
 
     @Test
-    @DisplayName("bloco que termina em passo com meta (recuperação por FC) não pula nada")
+    @DisplayName("recuperação com meta de FC (fartlek) não é pulada: o relógio controla a FC dela")
     void blocoTerminandoComMetaNaoPula() {
         StructuredWorkout workout = treino(null, null, List.of(
                 WorkoutStep.bloco("4x", 4, List.of(
                         WorkoutStep.simples("Forte", 60, null, new HrTarget(150, 160)),
-                        WorkoutStep.simples("Leve", 120, null, new HrTarget(120, 136))))));
+                        WorkoutStep.simples("Leve", 120, null, new HrTarget(120, 136)).asRecovery()))));
 
         JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
 

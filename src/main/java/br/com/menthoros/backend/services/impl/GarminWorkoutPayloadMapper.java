@@ -83,7 +83,7 @@ public class GarminWorkoutPayloadMapper {
                 filhos.add(montarStep(filho, true, ordem));
             }
             node.set("steps", filhos);
-            if (terminaEmDescansoAposEsforco(filhos)) {
+            if (terminaEmRecuperacaoLivre(sub, filhos)) {
                 // Sem isto o relógio faz o último trote do bloco antes do passo seguinte (o desaquecimento).
                 node.put("skipLastRestStep", true);
             }
@@ -135,21 +135,15 @@ public class GarminWorkoutPayloadMapper {
     }
 
     /**
-     * {@code REST} aqui só significa "sem meta dentro do bloco" — um tiro livre também cai nisso. Só
-     * é seguro pular o último passo quando ele é REST e há antes dele um passo com meta (o esforço):
-     * bloco de passo único ou sem meta nenhuma não diz o que é descanso, e pular cortaria esforço.
+     * Só a recuperação prescrita e sem meta (o trote entre tiros, que vai como REST) é pulada. Passo
+     * sem meta que não é recuperação — tiro livre, km livre de alternado — é esforço e nunca é cortado.
      */
-    private static boolean terminaEmDescansoAposEsforco(ArrayNode filhos) {
-        int ultimo = filhos.size() - 1;
-        if (ultimo < 1 || !"REST".equals(filhos.get(ultimo).path("intensity").asText())) {
+    private static boolean terminaEmRecuperacaoLivre(List<WorkoutStep> sub, ArrayNode filhos) {
+        if (sub.isEmpty()) {
             return false;
         }
-        for (int i = 0; i < ultimo; i++) {
-            if ("ACTIVE".equals(filhos.get(i).path("intensity").asText())) {
-                return true;
-            }
-        }
-        return false;
+        int ultimo = sub.size() - 1;
+        return sub.get(ultimo).recovery() && "REST".equals(filhos.get(ultimo).path("intensity").asText());
     }
 
     private static boolean positivo(Integer valor) {

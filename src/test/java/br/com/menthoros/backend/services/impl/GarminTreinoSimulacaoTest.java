@@ -207,6 +207,22 @@ class GarminTreinoSimulacaoTest {
         }
 
         @Test
+        @DisplayName("3x [1 km a 4:00-4:10 + 1 km livre] sem etapa de recuperação: nenhum km é pulado")
+        void blocoMistoSemRecuperacao() {
+            UUID bloco = UUID.randomUUID();
+            List<EtapaTreino> etapas = new ArrayList<>();
+            for (int i = 0; i < 3; i++) {
+                etapas.add(noBloco(etapa(1 + 2 * i, "INTERVALADO", "Forte", null, km("1"), "4:00-4:10", null), bloco, 3));
+                etapas.add(noBloco(etapa(2 + 2 * i, "PRINCIPAL", "Livre", null, km("1"), null, null), bloco, 3));
+            }
+
+            JsonNode steps = garmin(treino(TipoTreino.INTERVALADO, etapas));
+
+            assertThat(steps.get(0).get("repeatValue").asInt()).isEqualTo(3);
+            assertThat(steps.get(0).has("skipLastRestStep")).isFalse();
+        }
+
+        @Test
         @DisplayName("ondulado 10 min a 85-89% / 5 min a 4:50 sem etapa INTERVALADO: steps soltos, sem bloco inventado")
         void onduladoSemBloco() {
             JsonNode steps = garmin(treino(TipoTreino.CONTINUO, List.of(
