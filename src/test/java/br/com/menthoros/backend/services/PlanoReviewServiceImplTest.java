@@ -8,11 +8,14 @@ import br.com.menthoros.backend.enums.OrigemAprovacao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.events.PlanoAprovadoEvent;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
+import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.services.impl.PlanoReviewServiceImpl;
 import br.com.menthoros.backend.services.onboarding.ConfidenceTier;
 import org.junit.jupiter.api.BeforeEach;
@@ -20,6 +23,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Spy;
@@ -35,6 +40,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -52,6 +58,8 @@ class PlanoReviewServiceImplTest {
     @Mock private PlanoSemanalMapper planoSemanalMapper;
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private AthleteBaselineStateRepository athleteBaselineStateRepository;
+    @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
+    @Mock private br.com.menthoros.backend.services.GarminConnectionService garminConnectionService;
     // Reais, não mocks: o resolver é lógica pura e o registry em memória deixa a métrica
     // observável — mockar aqui esconderia o desfecho em vez de exercitá-lo.
     @Spy private ConsumedReviewOutcomeResolver outcomeResolver = new ConsumedReviewOutcomeResolver();
@@ -552,8 +560,186 @@ class PlanoReviewServiceImplTest {
     }
 
     // =========================================================================
+    // reenviarSincronizacao
+    // =========================================================================
+
+    @Nested
+    @DisplayName("reenviarSincronizacao")
+    class ReenviarSincronizacao {
+
+        @Test
+        @DisplayName("reinicia os treinos em erro, publica o evento e devolve a contagem (CA1)")
+        void reiniciaTreinosEmErroEPublica() {
+            PlanoSemanal plano = planoAprovadoComAtleta();
+            List<TreinoPlanejado> treinos = List.of(
+                    treinoComStatus(StatusSincronizacao.ERRO_PERMANENTE),
+                    treinoComStatus(StatusSincronizacao.ERRO_PERMANENTE));
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId)).thenReturn(treinos);
+
+            stubCanalConectado();
+            int reenviados = service.reenviarSincronizacao(planoId, tenantId);
+
+            assertThat(reenviados).isEqualTo(2);
+            assertThat(treinos).allSatisfy(t -> {
+                assertThat(t.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.AGUARDANDO_RETRY);
+                assertThat(t.getTentativasSincronizacao()).isZero();
+            });
+            verify(treinoPlanejadoRepository).saveAll(treinos);
+            ArgumentCaptor<PlanoAprovadoEvent> captor = ArgumentCaptor.forClass(PlanoAprovadoEvent.class);
+            verify(eventPublisher).publishEvent(captor.capture());
+            assertThat(captor.getValue()).isEqualTo(new PlanoAprovadoEvent(planoId, atletaId, tenantId));
+        }
+
+        @Test
+        @DisplayName("só reinicia os treinos em erro e não toca os sincronizados (CA2)")
+        void soReiniciaOsEmErro() {
+            PlanoSemanal plano = planoAprovadoComAtleta();
+            TreinoPlanejado sincronizado = treinoComStatus(StatusSincronizacao.SINCRONIZADO);
+            sincronizado.setExternalId("123");
+            TreinoPlanejado emErro = treinoComStatus(StatusSincronizacao.ERRO_AUTENTICACAO);
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(List.of(sincronizado, emErro));
+
+            stubCanalConectado();
+            int reenviados = service.reenviarSincronizacao(planoId, tenantId);
+
+            assertThat(reenviados).isEqualTo(1);
+            assertThat(sincronizado.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.SINCRONIZADO);
+            assertThat(sincronizado.getTentativasSincronizacao()).isEqualTo(5);
+            assertThat(sincronizado.getExternalId()).isEqualTo("123");
+            verify(treinoPlanejadoRepository).saveAll(List.of(emErro));
+        }
+
+        @Test
+        @DisplayName("sem treino em erro não publica evento nem grava (CA5)")
+        void semTreinoEmErroNaoPublica() {
+            PlanoSemanal plano = planoAprovadoComAtleta();
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(List.of(treinoComStatus(StatusSincronizacao.SINCRONIZADO)));
+
+            int reenviados = service.reenviarSincronizacao(planoId, tenantId);
+
+            assertThat(reenviados).isZero();
+            verify(treinoPlanejadoRepository, never()).saveAll(any());
+            verifyNoInteractions(eventPublisher);
+        }
+
+        @ParameterizedTest
+        @EnumSource(value = PlanoReviewStatus.class, names = "APROVADO", mode = EnumSource.Mode.EXCLUDE)
+        @DisplayName("plano fora de APROVADO lança DomainRuleViolationException (CA3)")
+        void planoNaoAprovadoRejeita(PlanoReviewStatus status) {
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId))
+                    .thenReturn(Optional.of(planoComStatus(status)));
+
+            assertThatThrownBy(() -> service.reenviarSincronizacao(planoId, tenantId))
+                    .isInstanceOf(DomainRuleViolationException.class);
+            verifyNoInteractions(treinoPlanejadoRepository, eventPublisher);
+        }
+
+        @Test
+        @DisplayName("plano inexistente no tenant lança DomainNotFoundException")
+        void planoInexistente() {
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.reenviarSincronizacao(planoId, tenantId))
+                    .isInstanceOf(DomainNotFoundException.class);
+            verifyNoInteractions(treinoPlanejadoRepository, eventPublisher);
+        }
+
+        @Test
+        @DisplayName("push em andamento lança DomainConflictException sem reiniciar nada (CA11)")
+        void pushEmAndamentoConflita() {
+            PlanoSemanal plano = planoAprovadoComAtleta();
+            TreinoPlanejado emErro = treinoComStatus(StatusSincronizacao.ERRO_PERMANENTE);
+            TreinoPlanejado sincronizando = treinoComStatus(StatusSincronizacao.SINCRONIZANDO);
+            sincronizando.setUltimaTentativaSincronizacao(LocalDateTime.now().minusMinutes(1));
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(List.of(emErro, sincronizando));
+
+            assertThatThrownBy(() -> service.reenviarSincronizacao(planoId, tenantId))
+                    .isInstanceOf(DomainConflictException.class);
+            assertThat(emErro.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.ERRO_PERMANENTE);
+            verify(treinoPlanejadoRepository, never()).saveAll(any());
+            verifyNoInteractions(eventPublisher);
+        }
+
+        @Test
+        @DisplayName("atleta sem canal conectado lança DomainRuleViolationException sem reiniciar (CA10)")
+        void semCanalRejeita() {
+            PlanoSemanal plano = planoAprovadoComAtleta();
+            TreinoPlanejado emErro = treinoComStatus(StatusSincronizacao.ERRO_PERMANENTE);
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(List.of(emErro));
+            when(garminConnectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.reenviarSincronizacao(planoId, tenantId))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("canal");
+            assertThat(emErro.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.ERRO_PERMANENTE);
+            verify(treinoPlanejadoRepository, never()).saveAll(any());
+            verifyNoInteractions(eventPublisher);
+        }
+
+        @Test
+        @DisplayName("AGUARDANDO_RETRY parado há 30 min ou mais não bloqueia o reenvio")
+        void aguardandoRetryParadoNaoBloqueia() {
+            PlanoSemanal plano = planoAprovadoComAtleta();
+            TreinoPlanejado parado = treinoComStatus(StatusSincronizacao.AGUARDANDO_RETRY);
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(List.of(parado, treinoComStatus(StatusSincronizacao.ERRO_PERMANENTE)));
+            stubCanalConectado();
+
+            int reenviados = service.reenviarSincronizacao(planoId, tenantId);
+
+            assertThat(reenviados).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("SINCRONIZANDO preso há mais de 10 min não bloqueia o reenvio")
+        void sincronizandoPresoNaoBloqueia() {
+            PlanoSemanal plano = planoAprovadoComAtleta();
+            TreinoPlanejado preso = treinoComStatus(StatusSincronizacao.SINCRONIZANDO);
+            preso.setUltimaTentativaSincronizacao(LocalDateTime.now().minusMinutes(30));
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(List.of(preso, treinoComStatus(StatusSincronizacao.ERRO_PERMANENTE)));
+
+            stubCanalConectado();
+            int reenviados = service.reenviarSincronizacao(planoId, tenantId);
+
+            assertThat(reenviados).isEqualTo(1);
+            verify(eventPublisher).publishEvent(any(PlanoAprovadoEvent.class));
+        }
+    }
+
+    // =========================================================================
     // Helpers
     // =========================================================================
+
+    private PlanoSemanal planoAprovadoComAtleta() {
+        PlanoSemanal plano = planoComStatus(PlanoReviewStatus.APROVADO);
+        plano.setAtleta(Atleta.builder().id(atletaId).build());
+        return plano;
+    }
+
+    private void stubCanalConectado() {
+        when(garminConnectionService.conexaoDeCanal(atletaId, tenantId))
+                .thenReturn(Optional.of(new br.com.menthoros.backend.entity.IntegracaoExterna()));
+    }
+
+    private TreinoPlanejado treinoComStatus(StatusSincronizacao status) {
+        TreinoPlanejado treino = new TreinoPlanejado();
+        treino.setStatusSincronizacao(status);
+        treino.setTentativasSincronizacao(5);
+        treino.setUltimaTentativaSincronizacao(LocalDateTime.now().minusHours(1));
+        return treino;
+    }
 
     private PlanoSemanal planoAguardando() {
         return planoComStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
