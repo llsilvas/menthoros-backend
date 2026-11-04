@@ -59,6 +59,7 @@ class PlanoReviewServiceImplTest {
     @Mock private ApplicationEventPublisher eventPublisher;
     @Mock private AthleteBaselineStateRepository athleteBaselineStateRepository;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
+    @Mock private br.com.menthoros.backend.services.GarminConnectionService garminConnectionService;
     // Reais, não mocks: o resolver é lógica pura e o registry em memória deixa a métrica
     // observável — mockar aqui esconderia o desfecho em vez de exercitá-lo.
     @Spy private ConsumedReviewOutcomeResolver outcomeResolver = new ConsumedReviewOutcomeResolver();
@@ -576,6 +577,7 @@ class PlanoReviewServiceImplTest {
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
             when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId)).thenReturn(treinos);
 
+            stubCanalConectado();
             int reenviados = service.reenviarSincronizacao(planoId, tenantId);
 
             assertThat(reenviados).isEqualTo(2);
@@ -600,6 +602,7 @@ class PlanoReviewServiceImplTest {
             when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
                     .thenReturn(List.of(sincronizado, emErro));
 
+            stubCanalConectado();
             int reenviados = service.reenviarSincronizacao(planoId, tenantId);
 
             assertThat(reenviados).isEqualTo(1);
@@ -665,6 +668,39 @@ class PlanoReviewServiceImplTest {
         }
 
         @Test
+        @DisplayName("atleta sem canal conectado lança DomainRuleViolationException sem reiniciar (CA10)")
+        void semCanalRejeita() {
+            PlanoSemanal plano = planoAprovadoComAtleta();
+            TreinoPlanejado emErro = treinoComStatus(StatusSincronizacao.ERRO_PERMANENTE);
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(List.of(emErro));
+            when(garminConnectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.reenviarSincronizacao(planoId, tenantId))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("canal");
+            assertThat(emErro.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.ERRO_PERMANENTE);
+            verify(treinoPlanejadoRepository, never()).saveAll(any());
+            verifyNoInteractions(eventPublisher);
+        }
+
+        @Test
+        @DisplayName("AGUARDANDO_RETRY parado há 30 min ou mais não bloqueia o reenvio")
+        void aguardandoRetryParadoNaoBloqueia() {
+            PlanoSemanal plano = planoAprovadoComAtleta();
+            TreinoPlanejado parado = treinoComStatus(StatusSincronizacao.AGUARDANDO_RETRY);
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
+                    .thenReturn(List.of(parado, treinoComStatus(StatusSincronizacao.ERRO_PERMANENTE)));
+            stubCanalConectado();
+
+            int reenviados = service.reenviarSincronizacao(planoId, tenantId);
+
+            assertThat(reenviados).isEqualTo(1);
+        }
+
+        @Test
         @DisplayName("SINCRONIZANDO preso há mais de 10 min não bloqueia o reenvio")
         void sincronizandoPresoNaoBloqueia() {
             PlanoSemanal plano = planoAprovadoComAtleta();
@@ -674,6 +710,7 @@ class PlanoReviewServiceImplTest {
             when(treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId))
                     .thenReturn(List.of(preso, treinoComStatus(StatusSincronizacao.ERRO_PERMANENTE)));
 
+            stubCanalConectado();
             int reenviados = service.reenviarSincronizacao(planoId, tenantId);
 
             assertThat(reenviados).isEqualTo(1);
@@ -689,6 +726,11 @@ class PlanoReviewServiceImplTest {
         PlanoSemanal plano = planoComStatus(PlanoReviewStatus.APROVADO);
         plano.setAtleta(Atleta.builder().id(atletaId).build());
         return plano;
+    }
+
+    private void stubCanalConectado() {
+        when(garminConnectionService.conexaoDeCanal(atletaId, tenantId))
+                .thenReturn(Optional.of(new br.com.menthoros.backend.entity.IntegracaoExterna()));
     }
 
     private TreinoPlanejado treinoComStatus(StatusSincronizacao status) {

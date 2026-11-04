@@ -232,7 +232,10 @@ public record AtletaPerfilCoachOutputDto(
 
             @Schema(description = "Motivo do erro ou do envio parcial, só em ERRO_VALIDACAO e SINCRONIZADO_PARCIAL; "
                     + "ausente nos demais status", example = "Etapa sem duração definida")
-            String syncError
+            String syncError,
+
+            @Schema(description = "Envio ao canal em andamento (o reenvio responderia 409); o front desabilita o botão")
+            Boolean syncInProgress
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

@@ -26,11 +26,11 @@ class TreinoPlanejadoTest {
         void zeraTentativasEVoltaAoRetry(StatusSincronizacao statusErro) {
             TreinoPlanejado treino = emErro(statusErro);
 
-            treino.reiniciarSincronizacao();
+            treino.reiniciarSincronizacao(AGORA);
 
             assertThat(treino.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.AGUARDANDO_RETRY);
             assertThat(treino.getTentativasSincronizacao()).isZero();
-            assertThat(treino.getUltimaTentativaSincronizacao()).isNull();
+            assertThat(treino.getUltimaTentativaSincronizacao()).isEqualTo(AGORA);
             assertThat(treino.getErroSincronizacao()).isNull();
         }
 
@@ -39,7 +39,7 @@ class TreinoPlanejadoTest {
         void preservaVinculoExterno() {
             TreinoPlanejado treino = emErro(StatusSincronizacao.ERRO_PERMANENTE);
 
-            treino.reiniciarSincronizacao();
+            treino.reiniciarSincronizacao(AGORA);
 
             assertThat(treino.getExternalId()).isEqualTo("987654");
             assertThat(treino.getExportadoPara()).isEqualTo("[\"GARMIN\"]");
@@ -51,11 +51,35 @@ class TreinoPlanejadoTest {
     class EnvioEmAndamento {
 
         @Test
-        @DisplayName("AGUARDANDO_RETRY está em andamento")
-        void aguardandoRetry() {
-            TreinoPlanejado treino = comStatus(StatusSincronizacao.AGUARDANDO_RETRY, null);
+        @DisplayName("AGUARDANDO_RETRY com tentativa recente está em andamento")
+        void aguardandoRetryRecente() {
+            TreinoPlanejado treino = comStatus(StatusSincronizacao.AGUARDANDO_RETRY, AGORA.minusMinutes(29));
 
             assertThat(treino.envioEmAndamento(AGORA)).isTrue();
+        }
+
+        @Test
+        @DisplayName("AGUARDANDO_RETRY de 30 min ou mais é tratado como preso (scheduler não está pegando)")
+        void aguardandoRetryPreso() {
+            TreinoPlanejado treino = comStatus(StatusSincronizacao.AGUARDANDO_RETRY, AGORA.minusMinutes(30));
+
+            assertThat(treino.envioEmAndamento(AGORA)).isFalse();
+        }
+
+        @Test
+        @DisplayName("AGUARDANDO_RETRY sem data de tentativa é tratado como preso")
+        void aguardandoRetrySemData() {
+            TreinoPlanejado treino = comStatus(StatusSincronizacao.AGUARDANDO_RETRY, null);
+
+            assertThat(treino.envioEmAndamento(AGORA)).isFalse();
+        }
+
+        @Test
+        @DisplayName("status nulo não está em andamento")
+        void statusNulo() {
+            TreinoPlanejado treino = comStatus(null, AGORA);
+
+            assertThat(treino.envioEmAndamento(AGORA)).isFalse();
         }
 
         @Test

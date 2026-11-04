@@ -29,6 +29,7 @@ import br.com.menthoros.backend.services.SugestaoCoachService;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
@@ -321,6 +322,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 || plano.getReviewStatus() == PlanoReviewStatus.AGUARDANDO_REVISAO) {
             // Separado do flag do intervals.icu, que também alimenta melhoresEsforcosIntegracaoConectada.
             boolean canalConectado = garminConnectionService.conexaoDeCanal(atletaId, tenantId).isPresent();
+            LocalDateTime agora = LocalDateTime.now();
             // conexão intervals.icu já resolvida pelo chamador (anti-N+1) e replicada em cada treino
             treinos = plano.getTreinosPlanejados().stream()
                     .sorted(Comparator.comparing(TreinoPlanejado::getDataTreino))
@@ -340,7 +342,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                                     : StatusSincronizacao.NAO_SINCRONIZADO.name(),
                             atletaConectadoIntervalsIcu,
                             canalConectado,
-                            erroExponivel(tp)))
+                            erroExponivel(tp),
+                            tp.envioEmAndamento(agora)))
                     .toList();
         } else {
             treinos = List.of();

@@ -22,6 +22,7 @@ import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.PlanoReviewService;
 import br.com.menthoros.backend.services.onboarding.ConfidenceTier;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +50,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
     private final ConsumedReviewOutcomeResolver outcomeResolver;
     private final MeterRegistry meterRegistry;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
+    private final GarminConnectionService garminConnectionService;
 
     /**
      * Lista todos os planos do tenant com reviewStatus = AGUARDANDO_REVISAO.
@@ -127,7 +129,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
      * Tenant-aware: YES — plano e treinos buscados por tenantId.
      *
      * @throws DomainNotFoundException      se o plano não existir no tenant
-     * @throws DomainRuleViolationException se reviewStatus != APROVADO
+     * @throws DomainRuleViolationException se reviewStatus != APROVADO ou o atleta não tem canal conectado
      * @throws DomainConflictException      se algum treino do plano tiver push em andamento
      */
     @Override
@@ -138,8 +140,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
 
         PlanoSemanal plano = buscarPlanoDoTenant(planoId, tenantId);
         if (plano.getReviewStatus() != PlanoReviewStatus.APROVADO) {
-            throw new DomainRuleViolationException(
-                    "Só é possível reenviar um plano aprovado (status atual: " + plano.getReviewStatus() + ")");
+            throw new DomainRuleViolationException("Só é possível reenviar ao relógio um plano aprovado.");
         }
 
         List<TreinoPlanejado> treinos = treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId);
@@ -152,10 +153,18 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
                 .filter(t -> t.getStatusSincronizacao() != null && t.getStatusSincronizacao().temErro())
                 .toList();
         if (!emErro.isEmpty()) {
-            emErro.forEach(TreinoPlanejado::reiniciarSincronizacao);
+            // Sem canal o listener e o scheduler pulam sem mutar: o treino reiniciado ficaria
+            // parado em AGUARDANDO_RETRY. Melhor recusar e manter o erro visível ao treinador.
+            UUID atletaId = plano.getAtleta().getId();
+            if (garminConnectionService.conexaoDeCanal(atletaId, tenantId).isEmpty()) {
+                throw new DomainRuleViolationException("O atleta não tem canal de treinos conectado.");
+            }
+            // shortcut: check-then-act sem lock — dois cliques simultâneos publicam dois eventos;
+            // o push é idempotente (claim com @Version), então só custa chamadas. Lock se virar problema.
+            emErro.forEach(t -> t.reiniciarSincronizacao(agora));
             treinoPlanejadoRepository.saveAll(emErro);
             // Publicado dentro da transação: o listener é AFTER_COMMIT e descarta evento sem TX.
-            eventPublisher.publishEvent(new PlanoAprovadoEvent(planoId, plano.getAtleta().getId(), tenantId));
+            eventPublisher.publishEvent(new PlanoAprovadoEvent(planoId, atletaId, tenantId));
         }
 
         log.info("Reenvio de sincronização: planoId={}, tenantId={}, reenviados={}", planoId, tenantId, emErro.size());

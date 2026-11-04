@@ -1,7 +1,9 @@
 package br.com.menthoros.backend.dto.output;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @Schema(description = "Resultado do reenvio manual dos treinos de um plano ao canal (Garmin ou intervals.icu)")
 public record WorkoutResendOutputDto(
 

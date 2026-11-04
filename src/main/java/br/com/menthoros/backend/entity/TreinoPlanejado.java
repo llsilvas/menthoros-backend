@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -253,31 +254,41 @@ public class TreinoPlanejado extends TreinoBase{
         this.ultimaTentativaSincronizacao = LocalDateTime.now();
     }
 
+    /** {@code SINCRONIZANDO} mais antigo que isto é preso: cada chamada HTTP ao canal tem timeout de segundos. */
+    public static final Duration JANELA_SINCRONIZANDO = Duration.ofMinutes(10);
+
+    /** {@code AGUARDANDO_RETRY} mais antigo que isto não está sendo pego: o scheduler roda a cada 15 min. */
+    public static final Duration JANELA_AGUARDANDO_RETRY = Duration.ofMinutes(30);
+
     /**
      * Reinicia a sincronização de um treino em {@code ERRO_*} a pedido do treinador: zera as
      * tentativas e o erro e volta a {@code AGUARDANDO_RETRY}, que o scheduler varre se o evento de
-     * push se perder. Preserva {@code externalId} e {@code exportadoPara} para o push seguinte
-     * atualizar o workout existente em vez de criar outro.
+     * push se perder. Grava {@code agora} como última tentativa para {@link #envioEmAndamento}
+     * medir há quanto tempo o treino espera. Preserva {@code externalId} e {@code exportadoPara}
+     * para o push seguinte atualizar o workout existente em vez de criar outro.
      */
-    public void reiniciarSincronizacao() {
+    public void reiniciarSincronizacao(LocalDateTime agora) {
         this.statusSincronizacao = StatusSincronizacao.AGUARDANDO_RETRY;
         this.tentativasSincronizacao = 0;
-        this.ultimaTentativaSincronizacao = null;
+        this.ultimaTentativaSincronizacao = agora;
         this.erroSincronizacao = null;
     }
 
     /**
-     * Push em andamento: {@code AGUARDANDO_RETRY} (o scheduler vai pegar) ou {@code SINCRONIZANDO}
-     * com tentativa há menos de 10 min. {@code SINCRONIZANDO} mais antigo é tratado como preso: o
-     * scheduler não varre esse status, e cada chamada HTTP ao canal tem timeout de segundos.
+     * Push em andamento: {@code AGUARDANDO_RETRY} ou {@code SINCRONIZANDO} com tentativa dentro da
+     * janela de cada um. Fora da janela o treino é tratado como preso (atleta sem conexão, processo
+     * que caiu no meio do claim) e não bloqueia o reenvio. {@code PENDENTE} fica de fora: é o treino
+     * recém-aprovado que o listener ainda vai pegar, e o reenvio só reinicia {@code ERRO_*}.
      */
     public boolean envioEmAndamento(LocalDateTime agora) {
-        if (statusSincronizacao == StatusSincronizacao.AGUARDANDO_RETRY) {
-            return true;
-        }
-        return statusSincronizacao == StatusSincronizacao.SINCRONIZANDO
+        Duration janela = switch (statusSincronizacao) {
+            case AGUARDANDO_RETRY -> JANELA_AGUARDANDO_RETRY;
+            case SINCRONIZANDO -> JANELA_SINCRONIZANDO;
+            case null, default -> null;
+        };
+        return janela != null
                 && ultimaTentativaSincronizacao != null
-                && ultimaTentativaSincronizacao.isAfter(agora.minusMinutes(10));
+                && ultimaTentativaSincronizacao.isAfter(agora.minus(janela));
     }
 
     /**

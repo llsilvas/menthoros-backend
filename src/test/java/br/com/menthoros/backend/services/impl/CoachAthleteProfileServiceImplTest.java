@@ -525,6 +525,23 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(treinos).allSatisfy(t -> assertThat(t.channelConnected()).isFalse());
         }
 
+        @Test
+        @DisplayName("syncInProgress reflete push em andamento por treino")
+        void syncInProgressPorTreino() {
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            plano.getTreinosPlanejados().get(0).setStatusSincronizacao(StatusSincronizacao.SINCRONIZANDO);
+            plano.getTreinosPlanejados().get(0).setUltimaTentativaSincronizacao(java.time.LocalDateTime.now());
+            plano.getTreinosPlanejados().get(1).setStatusSincronizacao(StatusSincronizacao.ERRO_PERMANENTE);
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).syncInProgress()).isTrue();
+            assertThat(treinos.get(1).syncInProgress()).isFalse();
+        }
+
         @org.junit.jupiter.params.ParameterizedTest
         @org.junit.jupiter.params.provider.EnumSource(value = StatusSincronizacao.class,
                 names = {"ERRO_VALIDACAO", "SINCRONIZADO_PARCIAL"})
