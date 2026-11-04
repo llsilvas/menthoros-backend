@@ -26,6 +26,7 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,6 +38,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * ingestão retroativos recalculavam só o dia do treino — o bug que este teste prova corrigido.
  */
 class TsbServiceRecalcularDesdeIT extends AbstractIntegrationTest {
+
+    // O service valida "não futura" no fuso do atleta (São Paulo); LocalDate.now() em UTC adianta o dia entre 00h e 03h UTC.
+    private static final ZoneId SP = ZoneId.of("America/Sao_Paulo");
 
     private static final int DIAS_HISTORICO = 6; // D-5 .. hoje
 
@@ -58,7 +62,7 @@ class TsbServiceRecalcularDesdeIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("recalcularDesde propaga o TSS de D-3 até hoje — CA6b")
     void recalcularDesdePropagaAteHoje() {
-        LocalDate hoje = LocalDate.now();
+        LocalDate hoje = LocalDate.now(SP);
         LocalDate d3 = hoje.minusDays(3);
 
         Atleta comRecalculoDesde = seedAtletaComHistoricoDeRepouso("RecalculoDesde");
@@ -122,7 +126,7 @@ class TsbServiceRecalcularDesdeIT extends AbstractIntegrationTest {
         planoMetadadosRepository.save(meta);
 
         // Materializa D-5..hoje como dias de repouso (sem treino, TSS=0, CTL/ATL/TSB=0).
-        LocalDate base = LocalDate.now().minusDays(DIAS_HISTORICO - 1L);
+        LocalDate base = LocalDate.now(SP).minusDays(DIAS_HISTORICO - 1L);
         for (int i = 0; i < DIAS_HISTORICO; i++) {
             tsbService.atualizarTsbDia(atleta.getId(), base.plusDays(i));
         }

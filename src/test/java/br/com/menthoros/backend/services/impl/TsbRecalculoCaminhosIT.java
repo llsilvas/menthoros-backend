@@ -30,6 +30,7 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -48,6 +49,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * <p>Automatiza a task 4.2 (que pedia teste manual) e cobre a 4.2b.</p>
  */
 class TsbRecalculoCaminhosIT extends AbstractIntegrationTest {
+
+    // O service valida "não futura" no fuso do atleta (São Paulo); LocalDate.now() em UTC adianta o dia entre 00h e 03h UTC.
+    private static final ZoneId SP = ZoneId.of("America/Sao_Paulo");
 
     private static final int DIAS = 45;
 
@@ -141,7 +145,7 @@ class TsbRecalculoCaminhosIT extends AbstractIntegrationTest {
 
     /** Indexado por offset do dia, para comparar atletas diferentes com o mesmo calendario. */
     private Map<Integer, double[]> snapshotPorDia(UUID atletaId) {
-        LocalDate base = LocalDate.now().minusDays(DIAS - 1L);
+        LocalDate base = LocalDate.now(SP).minusDays(DIAS - 1L);
         Map<Integer, double[]> out = new LinkedHashMap<>();
         for (MetricasDiarias m : metricasDiariasRepository.findByAtletaIdOrderByDataAsc(atletaId)) {
             int offset = (int) (m.getData().toEpochDay() - base.toEpochDay());
@@ -175,7 +179,7 @@ class TsbRecalculoCaminhosIT extends AbstractIntegrationTest {
         planoMetadadosRepository.save(meta);
 
         // Calendario identico para os dois atletas: mesmo TSS nos mesmos offsets.
-        LocalDate base = LocalDate.now().minusDays(DIAS - 1L);
+        LocalDate base = LocalDate.now(SP).minusDays(DIAS - 1L);
         for (int i = 0; i < DIAS; i++) {
             // Primeiro e ultimo dia SEMPRE tem treino: o intervalo de recalculo e delimitado por
             // eles, entao um dia de descanso na borda encurtaria a janela e o teste compararia
