@@ -284,10 +284,8 @@ public class PlanoLlmValidator {
         Map<TipoTreino, BigDecimal> tetoPorTipo = paceHistoricoFormatter.calcularTetoPorTipo(historico.treinosUltimas4Semanas());
         Map<TipoTreino, BigDecimal> pisoPorTipo = paceHistoricoFormatter.calcularPisoPorTipo(historico.treinosUltimas4Semanas());
 
-        // Zonas de FC (LTHR) só com dado fisiológico — null desliga corrigir-fc-zona na receita
-        List<ZonaFC> zonasFC = (atleta.getFcLimiar() != null || atleta.getFcMaxima() != null)
-                ? zonaTreinoService.calcularZonasFC(atleta.getFcMaximaCalculada(), atleta.getFcLimiarCalculada())
-                : null;
+        // Zonas de FC só com dado fisiológico (limiar, máxima ou faixa manual) — null desliga corrigir-fc-zona
+        List<ZonaFC> zonasFC = zonaTreinoService.calcularZonasFCComDado(atleta);
 
         return new ContextoNormalizacao(atleta, atletaId, zonasFC, tetoPorTipo, pisoPorTipo);
     }

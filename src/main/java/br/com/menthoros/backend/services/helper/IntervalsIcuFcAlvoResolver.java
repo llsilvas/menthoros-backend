@@ -2,6 +2,7 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.domain.workout.HrTarget;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.enums.ModoZonas;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -61,6 +62,14 @@ public class IntervalsIcuFcAlvoResolver {
         }
         if (bruto.base() == IntervalsIcuTargetParser.FcAlvoBruto.Base.BPM) {
             return resolverBpmLiteral(bruto.inicio(), bruto.fim(), atleta);
+        }
+
+        // FC manual: a faixa foi escrita pelo treinador, não é estimativa etária — vale sem limiar medido,
+        // mas passa pela mesma barreira de máxima do bpm literal (coach-zonas-manuais, D2).
+        if (bruto.base() == IntervalsIcuTargetParser.FcAlvoBruto.Base.ZONE && atleta != null
+                && atleta.getModoZonasFc() == ModoZonas.MANUAL) {
+            ZonaTreinoService.ZonaFC zona = zonaTreinoService.zonasFC(atleta).get(bruto.inicio() - 1);
+            return resolverBpmLiteral(zona.fcMin(), zona.fcMax(), atleta);
         }
 
         // Deliberadamente getFcLimiar(), não getFcLimiarCalculada(): o getter "calculada" cai em

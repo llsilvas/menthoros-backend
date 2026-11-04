@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.input.AthleteZoneAnchorsInputDto;
+import br.com.menthoros.backend.dto.input.AthleteZonesManualInputDto;
 import br.com.menthoros.backend.dto.output.AthleteTrainingZonesOutputDto;
 
 import java.util.UUID;
@@ -46,4 +47,17 @@ public interface CoachAthleteZonesService {
      * @throws br.com.menthoros.backend.exception.InvalidZoneAnchorsException se alguma âncora é inválida
      */
     AthleteTrainingZonesOutputDto simular(UUID atletaId, AthleteZoneAnchorsInputDto input);
+
+    /**
+     * Grava o modo das zonas por eixo e, em {@code MANUAL}, as faixas; {@code LIMIAR} apaga as faixas daquele
+     * eixo. Grupo ausente não altera o eixo. Devolve as zonas como o GET.
+     *
+     * <p><b>Idempotent:</b> YES — reenviar o mesmo corpo regrava os mesmos valores.
+     * <b>Side Effects:</b> Database update (um {@code UPDATE} por eixo presente).
+     * <b>Tenant-aware:</b> YES.
+     *
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException se o atleta não existe no tenant
+     * @throws br.com.menthoros.backend.exception.InvalidZoneAnchorsException se alguma faixa é inválida
+     */
+    AthleteTrainingZonesOutputDto salvarZonasManuais(UUID atletaId, AthleteZonesManualInputDto input);
 }

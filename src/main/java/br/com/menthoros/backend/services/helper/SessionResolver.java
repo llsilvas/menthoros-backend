@@ -82,8 +82,8 @@ public class SessionResolver {
             int repeticoes = bloco.repeticoes() != null ? bloco.repeticoes() : 1;
             String tipoEtapaPrincipal = tipoEtapaDoBloco(bloco.papel(), repeticoes);
 
-            FaixaFc faixaFc = zoneResolver.bpm(bloco.zona(), zonas.fcMaxima(), zonas.fcLimiar());
-            FaixaPace faixaPace = zoneResolver.pace(bloco.zona(), zonas.paceLimiar());
+            FaixaFc faixaFc = zoneResolver.bpm(bloco.zona(), zonas);
+            FaixaPace faixaPace = zoneResolver.pace(bloco.zona(), zonas);
             faixasFc.add(faixaFc);
             faixasPace.add(faixaPace);
             rpeDominante = Math.max(rpeDominante, RPE_POR_ZONA.get(bloco.zona()));
@@ -94,8 +94,8 @@ public class SessionResolver {
 
                 RecuperacaoDto recuperacao = bloco.recuperacao();
                 if (recuperacao != null) {
-                    FaixaFc faixaFcRecuperacao = zoneResolver.bpm(Zona.Z1, zonas.fcMaxima(), zonas.fcLimiar());
-                    FaixaPace faixaPaceRecuperacao = zoneResolver.pace(Zona.Z1, zonas.paceLimiar());
+                    FaixaFc faixaFcRecuperacao = zoneResolver.bpm(Zona.Z1, zonas);
+                    FaixaPace faixaPaceRecuperacao = zoneResolver.pace(Zona.Z1, zonas);
                     etapas.add(construirEtapa(ordem++, "RECUPERACAO", recuperacao.quantidade(),
                             recuperacao.unidade(), faixaFcRecuperacao, faixaPaceRecuperacao));
                 }

@@ -12,6 +12,7 @@ import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.dto.input.AthleteZoneAnchorsInputDto;
 import br.com.menthoros.backend.exception.InvalidZoneAnchorsException;
 import br.com.menthoros.backend.services.helper.AthleteZoneAnchorsValidator;
+import br.com.menthoros.backend.services.helper.AthleteZoneManualValidator;
 import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.IntervalsIcuFcSyncer;
 import br.com.menthoros.backend.services.helper.PaceZoneCalculator;
@@ -68,7 +69,7 @@ class CoachAthleteZonesServiceImplTest {
         service = new CoachAthleteZonesServiceImpl(atletaRepository, planoMetadadosRepository,
                 zonaTreinoService, new PaceZoneCalculator(zonaTreinoService),
                 new AthleteZoneAnchorsValidator(Validation.buildDefaultValidatorFactory().getValidator(), hoje),
-                intervalsIcuFcSyncer);
+                new AthleteZoneManualValidator(), intervalsIcuFcSyncer);
     }
 
     @AfterEach

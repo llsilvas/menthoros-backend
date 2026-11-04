@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.input.AthleteZoneAnchorsInputDto;
+import br.com.menthoros.backend.dto.input.AthleteZonesManualInputDto;
 import br.com.menthoros.backend.dto.output.AthleteTrainingZonesOutputDto;
 import br.com.menthoros.backend.services.CoachAthleteZonesService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -94,5 +95,28 @@ public class CoachAthleteZonesController {
             @Parameter(description = "ID do atleta") @PathVariable UUID atletaId,
             @RequestBody AthleteZoneAnchorsInputDto input) {
         return ResponseEntity.ok(coachAthleteZonesService.simular(atletaId, input));
+    }
+
+    @PutMapping("/{atletaId}/zonas/manuais")
+    // Sem @RequireTenant e sem @Valid, pelos mesmos motivos do PUT de âncoras: 404 para outro tenant e o
+    // caminho do campo ("fc.faixas[2].min") preservado pelo validador do serviço.
+    @Operation(
+            summary = "Define o modo das zonas por eixo e as faixas manuais",
+            description = "Por eixo (fc, pace): LIMIAR volta ao cálculo pelo limiar e apaga as faixas manuais; "
+                    + "MANUAL grava as faixas De/Até (FC Z1–Z5 em bpm, pace Z1–Z6 em s/km), que passam a valer "
+                    + "para o prompt da IA, o push ao relógio e o editor de etapas. Grupo ausente mantém o eixo. "
+                    + "Devolve as zonas como o GET.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Modo gravado; zonas efetivas devolvidas",
+                    content = @Content(schema = @Schema(implementation = AthleteTrainingZonesOutputDto.class))),
+            @ApiResponse(responseCode = "400", description = "Faixa inválida (campo e motivo em 'fields', ex.: fc.faixas[2].min)"),
+            @ApiResponse(responseCode = "401", description = "Não autenticado"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão"),
+            @ApiResponse(responseCode = "404", description = "Atleta não encontrado no tenant")
+    })
+    public ResponseEntity<AthleteTrainingZonesOutputDto> salvarZonasManuais(
+            @Parameter(description = "ID do atleta") @PathVariable UUID atletaId,
+            @RequestBody AthleteZonesManualInputDto input) {
+        return ResponseEntity.ok(coachAthleteZonesService.salvarZonasManuais(atletaId, input));
     }
 }

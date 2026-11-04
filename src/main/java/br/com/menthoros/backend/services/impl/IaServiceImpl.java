@@ -324,8 +324,7 @@ public class IaServiceImpl implements IaService {
             return new PlanoResilienceService.ChamadaLlm(null, json);
         }
         PlanoSemanalLlmDtoV2 planoV2 = parsearPlanoV2(json);
-        AthleteZones zonas = new AthleteZones(
-                atleta.getFcMaximaCalculada(), atleta.getFcLimiarCalculada(), atleta.getPaceLimiar());
+        AthleteZones zonas = AthleteZones.de(atleta);
         // Defesa em profundidade (achado do /qa, pré-mortem codex): o schema v2 já limita
         // repeticoes/quantidadePorRepeticao (LlmJsonSchemaBuilder.buildSchemaV2) para que a
         // resolução nunca estoure Integer — mas resolverPlano roda dentro de `gerar`, fora do

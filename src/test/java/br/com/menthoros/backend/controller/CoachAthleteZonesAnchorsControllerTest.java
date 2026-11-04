@@ -81,7 +81,7 @@ class CoachAthleteZonesAnchorsControllerTest {
     }
 
     private static AthleteTrainingZonesOutputDto resposta() {
-        return new AthleteTrainingZonesOutputDto("LTHR_FRIEL", null, null, null, null, List.of());
+        return new AthleteTrainingZonesOutputDto("LTHR_FRIEL", null, null, null, null, List.of(), null);
     }
 
     @Nested
