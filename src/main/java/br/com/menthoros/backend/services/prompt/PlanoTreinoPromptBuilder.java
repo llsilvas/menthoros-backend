@@ -14,6 +14,7 @@ import br.com.menthoros.backend.domain.planner.SessionSlot;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import java.time.DayOfWeek;
 import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.ModoZonas;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.services.helper.FatigueSignal;
@@ -662,8 +663,10 @@ public class PlanoTreinoPromptBuilder {
 
     private String formatarDadosFisiologicos(Atleta atleta) {
         List<ZonaCompleta> zonas = zonaTreinoService.calcularZonas(atleta);
+        boolean fcManual = atleta.getModoZonasFc() == ModoZonas.MANUAL;
+        boolean paceManual = atleta.getModoZonasPace() == ModoZonas.MANUAL;
 
-        if (atleta.getFcLimiar() == null && atleta.getPaceLimiar() == null) {
+        if (atleta.getFcLimiar() == null && atleta.getPaceLimiar() == null && !fcManual && !paceManual) {
             // Sem dados testados: calcular zonas pela fórmula etária (220 - idade → 85% FCmáx)
             // e fornecer ao LLM os valores numéricos exatos para evitar alucinação de BPMs.
             StringBuilder sb = new StringBuilder();
@@ -709,7 +712,9 @@ public class PlanoTreinoPromptBuilder {
         ));
 
         BigDecimal paceLimiar = atleta.getPaceLimiar();
-        if (paceLimiar != null) {
+        if (paceManual) {
+            sb.append("\n**Pace/Velocidade:** zonas de pace definidas pelo treinador (abaixo).\n");
+        } else if (paceLimiar != null) {
             sb.append(String.format("""
 
                             **Pace/Velocidade:**
@@ -727,13 +732,13 @@ public class PlanoTreinoPromptBuilder {
             sb.append("\n**Pace/Velocidade:** não cadastrado — sem dados para prescrição de pace.\n");
         }
 
-        sb.append("\n**Zonas de Treino Calculadas:**\n");
+        sb.append(cabecalhoZonas(fcManual, paceManual));
         for (ZonaCompleta zona : zonas) {
             sb.append(String.format("- Z%d (%s): %s-%s min/km | %d-%d bpm\n",
                     zona.numero(),
                     zona.nome(),
-                    zona.pace().paceMin(),
-                    zona.pace().paceMax(),
+                    duasCasas(zona.pace().paceMin()),
+                    duasCasas(zona.pace().paceMax()),
                     zona.fc().fcMin(),
                     zona.fc().fcMax()));
         }
@@ -741,11 +746,27 @@ public class PlanoTreinoPromptBuilder {
         return sb.toString();
     }
 
+    /** Pace manual chega com escala 4 (s/km exato); o prompt mostra 2 casas, como o calculado. */
+    private static BigDecimal duasCasas(BigDecimal minPorKm) {
+        return minPorKm.scale() > 2 ? minPorKm.setScale(2, RoundingMode.HALF_UP) : minPorKm;
+    }
+
+    /** Sem eixo manual, o cabeçalho de sempre; com eixo manual, diz quem definiu cada faixa. */
+    private static String cabecalhoZonas(boolean fcManual, boolean paceManual) {
+        if (!fcManual && !paceManual) {
+            return "\n**Zonas de Treino Calculadas:**\n";
+        }
+        return String.format("\n**Zonas de Treino** (pace: %s; FC: %s — use estes valores):\n",
+                paceManual ? "definidas pelo treinador" : "calculadas pelo limiar",
+                fcManual ? "definidas pelo treinador" : "calculadas pelo limiar");
+    }
+
     private String validarEFallbacksDadosFisiologicos(Atleta atleta) {
         StringBuilder fallbacks = new StringBuilder();
         boolean temProblema = false;
 
-        if (atleta.getPaceLimiar() == null || atleta.getPaceLimiar().compareTo(BigDecimal.ZERO) == 0) {
+        if (atleta.getModoZonasPace() != ModoZonas.MANUAL
+                && (atleta.getPaceLimiar() == null || atleta.getPaceLimiar().compareTo(BigDecimal.ZERO) == 0)) {
             temProblema = true;
             fallbacks.append("⚠️ **Pace Limiar inválido/zerado** → Usar estimativa por nível\n");
             String paceEstimado = estimarPacePorNivel(atleta);

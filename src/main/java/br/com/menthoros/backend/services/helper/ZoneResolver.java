@@ -47,8 +47,8 @@ public class ZoneResolver {
      * retornam {@code null} (sempre têm fallback por idade/percentual), então não há caso de
      * FC ausente aqui, ao contrário de {@code paceLimiar}.
      */
-    public FaixaFc bpm(Zona zona, Integer fcMaxima, Integer fcLimiar) {
-        List<ZonaFC> zonas = zonaTreinoService.calcularZonasFC(fcMaxima, fcLimiar);
+    public FaixaFc bpm(Zona zona, AthleteZones atleta) {
+        List<ZonaFC> zonas = zonaTreinoService.zonasFC(atleta);
         ZonaFC z = zonas.get(zona.indice() - 1);
         return new FaixaFc(z.fcMin(), z.fcMax());
     }
@@ -59,9 +59,11 @@ public class ZoneResolver {
      * negativo causaria divisão por zero/pace negativo em {@code SessionResolver} — o cadastro
      * inválido não é algo que um retry ao LLM corrige, então cai no mesmo fallback do dado ausente).
      */
-    public FaixaPace pace(Zona zona, @Nullable BigDecimal paceLimiar) {
+    public FaixaPace pace(Zona zona, AthleteZones atleta) {
+        @Nullable BigDecimal paceLimiar = atleta.paceLimiar();
         BigDecimal limiar = (paceLimiar != null && paceLimiar.signum() > 0) ? paceLimiar : PACE_LIMIAR_FALLBACK_MIN_KM;
-        List<ZonaPace> zonas = zonaTreinoService.calcularZonasPace(limiar);
+        List<ZonaPace> zonas = zonaTreinoService.zonasPace(new AthleteZones(
+                atleta.fcMaxima(), atleta.fcLimiar(), limiar, atleta.fcManual(), atleta.paceManual()));
         ZonaPace z = zonas.get(zona.indice() - 1);
         return new FaixaPace(z.paceMin(), z.paceMax());
     }
