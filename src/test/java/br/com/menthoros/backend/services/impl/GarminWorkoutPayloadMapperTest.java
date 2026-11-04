@@ -72,6 +72,33 @@ class GarminWorkoutPayloadMapperTest {
     }
 
     @Test
+    @DisplayName("bloco que termina em descanso pula o último descanso: do tiro final vai direto ao passo seguinte")
+    void blocoTerminandoEmDescansoPulaOUltimo() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.bloco("6x", 6, List.of(
+                        WorkoutStep.simples("Tiro", null, 400, new PaceTarget(240, 250)),
+                        WorkoutStep.simples("Trote", 120, null, null))),
+                WorkoutStep.simples("Desaquecimento", 600, null, null)));
+
+        JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(bloco.get("skipLastRestStep").asBoolean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("bloco que termina em passo com meta (recuperação por FC) não pula nada")
+    void blocoTerminandoComMetaNaoPula() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.bloco("4x", 4, List.of(
+                        WorkoutStep.simples("Forte", 60, null, new HrTarget(150, 160)),
+                        WorkoutStep.simples("Leve", 120, null, new HrTarget(120, 136))))));
+
+        JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(bloco.has("skipLastRestStep")).isFalse();
+    }
+
+    @Test
     @DisplayName("stepOrder e sequencial no treino inteiro, contando o bloco e os filhos")
     void stepOrderGlobal() {
         StructuredWorkout workout = treino(null, null, List.of(

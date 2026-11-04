@@ -83,6 +83,10 @@ public class GarminWorkoutPayloadMapper {
                 filhos.add(montarStep(filho, true, ordem));
             }
             node.set("steps", filhos);
+            // Sem isto o relógio faz o último trote do bloco antes do passo seguinte (o desaquecimento).
+            if (!filhos.isEmpty() && "REST".equals(filhos.get(filhos.size() - 1).path("intensity").asText())) {
+                node.put("skipLastRestStep", true);
+            }
             return node;
         }
 

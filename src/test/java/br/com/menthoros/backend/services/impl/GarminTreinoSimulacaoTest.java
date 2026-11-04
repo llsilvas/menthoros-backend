@@ -155,6 +155,8 @@ class GarminTreinoSimulacaoTest {
             assertStep(trote, "TIME", 120);
             assertThat(trote.get("targetType").asText()).isEqualTo("OPEN");
             assertThat(trote.get("intensity").asText()).isEqualTo("REST");
+            // depois do 6º tiro o relógio vai direto ao desaquecimento, sem o 6º trote
+            assertThat(repeat.get("skipLastRestStep").asBoolean()).isTrue();
             // stepOrder global e sequencial, contando o repeat e os filhos
             assertThat(List.of(steps.get(0), repeat, tiro, trote, steps.get(2)))
                     .extracting(s -> s.get("stepOrder").asInt())
@@ -201,6 +203,7 @@ class GarminTreinoSimulacaoTest {
             assertFc(leve, 120, 136);
             // recuperação com meta não é REST: o relógio controla a FC dela também
             assertThat(leve.get("intensity").asText()).isEqualTo("ACTIVE");
+            assertThat(steps.get(0).has("skipLastRestStep")).isFalse();
         }
 
         @Test
