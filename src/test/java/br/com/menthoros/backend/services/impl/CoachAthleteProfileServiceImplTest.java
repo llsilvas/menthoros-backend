@@ -63,6 +63,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.ZoneId;
+import java.time.Clock;
+import br.com.menthoros.backend.services.helper.ApprovedWorkoutEditPolicy;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -128,7 +132,9 @@ class CoachAthleteProfileServiceImplTest {
                 atletaRepository, atletaProgressService, coachAttentionQueueService, sugestaoCoachService,
                 planoService, planoMetadadosRepository, perfilOnboardingAtletaRepository, provaRepository, provaMapper, treinoRealizadoRepository,
                 intervalsIcuConnectionService, thresholdInferenceService, melhorEsforcoService, meterRegistry,
-                athleteContractService, transactionManager, integracaoExternaRepository, garminConnectionService);
+                athleteContractService, transactionManager, integracaoExternaRepository, garminConnectionService,
+                new AtletaHojeResolver(Clock.fixed(Instant.parse("2026-06-17T15:00:00Z"), ZoneId.of("America/Sao_Paulo"))),
+                new ApprovedWorkoutEditPolicy());
         // Default: sem cobrança (os testes de cobrança sobrescrevem)
         lenient().when(athleteContractService.resolveBilling(eq(atletaId), any(LocalDate.class)))
                 .thenReturn(java.util.Optional.empty());
@@ -540,6 +546,63 @@ class CoachAthleteProfileServiceImplTest {
 
             assertThat(treinos.get(0).syncInProgress()).isTrue();
             assertThat(treinos.get(1).syncInProgress()).isFalse();
+        }
+
+        @Test
+        @DisplayName("plano aprovado: editable segue a regra do PATCH no fuso do atleta e expõe editedAfterApprovalAt")
+        void editableEmPlanoAprovado() {
+            // hoje = 2026-06-17 em São Paulo: tp1 (16/06) é passado, tp2 (18/06) é futuro
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            Instant editadoEm = Instant.parse("2026-06-17T12:00:00Z");
+            plano.getTreinosPlanejados().get(1).setEditedAfterApprovalAt(editadoEm);
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).editable()).isFalse();
+            assertThat(treinos.get(1).editable()).isTrue();
+            assertThat(treinos.get(0).editedAfterApprovalAt()).isNull();
+            assertThat(treinos.get(1).editedAfterApprovalAt()).isEqualTo(editadoEm);
+        }
+
+        @Test
+        @DisplayName("plano aprovado: treino de hoje com conexão revogada não é editável; uma consulta de relógio por perfil")
+        void treinoDeHojeComConexaoRevogada() {
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            plano.getTreinosPlanejados().get(0).setDataTreino(LocalDate.of(2026, 6, 17));
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            IntegracaoExterna revogada = new IntegracaoExterna();
+            revogada.setAtivo(false);
+            revogada.setPlataforma(br.com.menthoros.backend.enums.FonteDados.GARMIN);
+            when(integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
+                    eq(atletaId), any(), eq(tenantId))).thenReturn(Optional.of(revogada));
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).editable()).isFalse();
+            assertThat(treinos.get(1).editable()).isTrue();
+            // uma no editabilidade + uma na conexaoCanal do perfil, independente do número de treinos
+            verify(integracaoExternaRepository, org.mockito.Mockito.times(2))
+                    .findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
+                            eq(atletaId), any(), eq(tenantId));
+        }
+
+        @Test
+        @DisplayName("plano em revisão: todo treino é editável, inclusive de dia passado")
+        void editableEmRevisao() {
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            plano.setReviewStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos).allSatisfy(t -> assertThat(t.editable()).isTrue());
         }
 
         @org.junit.jupiter.params.ParameterizedTest

@@ -235,7 +235,15 @@ public record AtletaPerfilCoachOutputDto(
             String syncError,
 
             @Schema(description = "Envio ao canal em andamento (o reenvio responderia 409); o front desabilita o botão")
-            Boolean syncInProgress
+            Boolean syncInProgress,
+
+            @Schema(description = "Quando o treinador editou o treino depois da aprovação do plano; ausente se nunca editado",
+                    example = "2026-11-04T15:00:00Z")
+            Instant editedAfterApprovalAt,
+
+            @Schema(description = "O treinador pode editar este treino agora: em revisão, sempre; em plano aprovado, só "
+                    + "pendente, de hoje ou futuro no fuso do atleta, e o de hoje só sem relógio. O PATCH segue sendo a autoridade")
+            Boolean editable
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
