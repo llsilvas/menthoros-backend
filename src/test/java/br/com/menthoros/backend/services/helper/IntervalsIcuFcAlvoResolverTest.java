@@ -33,6 +33,15 @@ class IntervalsIcuFcAlvoResolverTest {
             assertThat(resolucao.descartadoPorFaltaDeDado()).isFalse();
         }
 
+        @Test
+        @DisplayName("bpm literal escrito ao contrário (150-140) sai ordenado: Low > High é inválido nos dois canais")
+        void bpmInvertidoSaiOrdenado() {
+            IntervalsIcuFcAlvoResolver.Resolucao resolucao =
+                    resolver.resolver(new FcAlvoBruto(FcAlvoBruto.Base.BPM, 150, 140), semFcMedida());
+
+            assertThat(resolucao.alvo()).isEqualTo(new HrTarget(140, 150));
+        }
+
         @ParameterizedTest
         @CsvSource({
                 // limiar, %inicio, %fim, bpmInicio, bpmFim — inflação medida na task 0.1
