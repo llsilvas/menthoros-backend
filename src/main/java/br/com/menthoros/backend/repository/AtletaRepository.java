@@ -234,7 +234,7 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     @Modifying
     @Query("""
     UPDATE Atleta a
-       SET a.modoZonasFc = :modo, a.zonasManuaisFc = :faixas
+       SET a.modoZonasFc = :modo, a.zonasManuaisFc = :faixas, a.updatedAt = LOCAL DATETIME
      WHERE a.id = :id AND a.assessoria.id = :tenantId
     """)
     int atualizarZonasFc(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
@@ -245,7 +245,7 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     @Modifying
     @Query("""
     UPDATE Atleta a
-       SET a.modoZonasPace = :modo, a.zonasManuaisPace = :faixas
+       SET a.modoZonasPace = :modo, a.zonasManuaisPace = :faixas, a.updatedAt = LOCAL DATETIME
      WHERE a.id = :id AND a.assessoria.id = :tenantId
     """)
     int atualizarZonasPace(@Param("id") UUID id, @Param("tenantId") UUID tenantId,

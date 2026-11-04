@@ -97,23 +97,24 @@ public class Atleta extends AuditableEntity {
     private FonteLimiar fonteLimiarPace;
 
     // Zonas manuais (V108): por eixo, LIMIAR = faixas calculadas; MANUAL = as faixas abaixo.
-    // Gravadas só por AtletaRepository.atualizarZonasFc/Pace — nunca por save da entidade inteira.
+    // Gravadas só por AtletaRepository.atualizarZonasFc/Pace: updatable = false impede que o save de uma
+    // entidade carregada antes restaure modo/faixas antigos (lost update).
     @Enumerated(EnumType.STRING)
-    @Column(name = "modo_zonas_fc", length = 10, nullable = false)
+    @Column(name = "modo_zonas_fc", length = 10, nullable = false, updatable = false)
     @Builder.Default
     private ModoZonas modoZonasFc = ModoZonas.LIMIAR;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "modo_zonas_pace", length = 10, nullable = false)
+    @Column(name = "modo_zonas_pace", length = 10, nullable = false, updatable = false)
     @Builder.Default
     private ModoZonas modoZonasPace = ModoZonas.LIMIAR;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "zonas_manuais_fc", columnDefinition = "jsonb")
+    @Column(name = "zonas_manuais_fc", columnDefinition = "jsonb", updatable = false)
     private List<FaixaZonaManual> zonasManuaisFc;
 
     @JdbcTypeCode(SqlTypes.JSON)
-    @Column(name = "zonas_manuais_pace", columnDefinition = "jsonb")
+    @Column(name = "zonas_manuais_pace", columnDefinition = "jsonb", updatable = false)
     private List<FaixaZonaManual> zonasManuaisPace;
 
     // VO2max estimado

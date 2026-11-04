@@ -105,6 +105,34 @@ class AtletaZonasManuaisIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("save da entidade carregada antes não restaura as zonas antigas (lost update)")
+    void saveDeEntidadeVelhaPreservaZonas() {
+        Atleta velho = reler();
+        atletaRepository.atualizarZonasFc(atleta.getId(), tenant.getId(), ModoZonas.MANUAL, FC);
+
+        velho.setNome("Nome Editado");
+        atletaRepository.save(velho);
+
+        Atleta salvo = reler();
+        assertThat(salvo.getNome()).isEqualTo("Nome Editado");
+        assertThat(salvo.getModoZonasFc()).isEqualTo(ModoZonas.MANUAL);
+        assertThat(salvo.getZonasManuaisFc()).containsExactlyElementsOf(FC);
+    }
+
+    @Test
+    @DisplayName("gravar zonas avança o updated_at do atleta (base da métrica 3.1)")
+    void updateAvancaUpdatedAt() {
+        java.sql.Timestamp antes = java.sql.Timestamp.valueOf("2020-01-01 00:00:00");
+        jdbc.update("UPDATE tb_atleta SET updated_at = ? WHERE id = ?", antes, atleta.getId());
+
+        atletaRepository.atualizarZonasPace(atleta.getId(), tenant.getId(), ModoZonas.MANUAL, PACE);
+
+        java.sql.Timestamp depois = jdbc.queryForObject(
+                "SELECT updated_at FROM tb_atleta WHERE id = ?", java.sql.Timestamp.class, atleta.getId());
+        assertThat(depois).isAfter(antes);
+    }
+
+    @Test
     @DisplayName("UPDATE de outro tenant não toca o atleta")
     void outroTenant() {
         assertThat(atletaRepository.atualizarZonasFc(atleta.getId(), UUID.randomUUID(), ModoZonas.MANUAL, FC)).isZero();
