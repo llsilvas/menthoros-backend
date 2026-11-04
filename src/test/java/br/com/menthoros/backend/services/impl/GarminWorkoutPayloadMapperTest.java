@@ -104,15 +104,28 @@ class GarminWorkoutPayloadMapperTest {
     }
 
     @Test
-    @DisplayName("pace unico: low e high iguais")
-    void paceUnico() {
+    @DisplayName("pace unico vira faixa de +-5 s/km: largura zero faria o relogio alertar o tempo todo")
+    void paceUnicoGanhaTolerancia() {
         StructuredWorkout workout = treino(null, null, List.of(
-                WorkoutStep.simples("Ritmo", 600, null, new PaceTarget(300, 300))));
+                WorkoutStep.simples("Ritmo", 600, null, new PaceTarget(270, 270))));
 
         JsonNode step = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
 
-        assertThat(step.get("targetValueLow").asDouble()).isEqualTo(3.333);
-        assertThat(step.get("targetValueHigh").asDouble()).isEqualTo(3.333);
+        // 4:30/km -> faixa 4:25-4:35/km: 1000/275 e 1000/265 m/s
+        assertThat(step.get("targetValueLow").asDouble()).isEqualTo(3.636);
+        assertThat(step.get("targetValueHigh").asDouble()).isEqualTo(3.774);
+    }
+
+    @Test
+    @DisplayName("faixa de pace explicita nao ganha tolerancia")
+    void faixaDePaceSemTolerancia() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.simples("Ritmo", 600, null, new PaceTarget(270, 280))));
+
+        JsonNode step = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(step.get("targetValueLow").asDouble()).isEqualTo(3.571);
+        assertThat(step.get("targetValueHigh").asDouble()).isEqualTo(3.704);
     }
 
     @Test

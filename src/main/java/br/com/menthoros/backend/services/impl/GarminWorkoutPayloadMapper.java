@@ -27,6 +27,8 @@ public class GarminWorkoutPayloadMapper {
 
     private static final int MAX_STEPS = 100;
     private static final int MAX_DESCRICAO = 1024;
+    // shortcut: tolerância fixa para pace de valor único; trocar por percentual se o founder preferir.
+    private static final int TOLERANCIA_PACE_UNICO_SEGS_KM = 5;
 
     private final ObjectMapper objectMapper;
 
@@ -105,9 +107,17 @@ public class GarminWorkoutPayloadMapper {
     /** Devolve {@code true} quando a etapa tem alvo. Pace nulo ou zero vira OPEN: não há como dividir. */
     private boolean aplicarAlvo(ObjectNode node, WorkoutStep step) {
         if (step.meta() instanceof PaceTarget pace && positivo(pace.startSecsPerKm()) && positivo(pace.endSecsPerKm())) {
+            int rapido = Math.min(pace.startSecsPerKm(), pace.endSecsPerKm());
+            int lento = Math.max(pace.startSecsPerKm(), pace.endSecsPerKm());
+            if (rapido == lento) {
+                // Faixa de largura zero faz o relógio alertar "fora do ritmo" a cada oscilação; o
+                // Garmin só aceita valor único como zona (targetValue 1-5), então vira faixa.
+                rapido -= TOLERANCIA_PACE_UNICO_SEGS_KM;
+                lento += TOLERANCIA_PACE_UNICO_SEGS_KM;
+            }
             node.put("targetType", "PACE");
-            node.put("targetValueLow", metrosPorSegundo(pace.endSecsPerKm()));
-            node.put("targetValueHigh", metrosPorSegundo(pace.startSecsPerKm()));
+            node.put("targetValueLow", metrosPorSegundo(lento));
+            node.put("targetValueHigh", metrosPorSegundo(rapido));
             return true;
         }
         if (step.meta() instanceof HrTarget hr && hr.startBpm() != null && hr.endBpm() != null) {

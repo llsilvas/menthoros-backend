@@ -116,7 +116,7 @@ public class IntervalsIcuFcAlvoResolver {
                     inicio, fim, fcMaximaAtleta);
             return Resolucao.descartado();
         }
-        return Resolucao.resolvido(new HrTarget(inicio, fim));
+        return Resolucao.resolvido(new HrTarget(Math.min(inicio, fim), Math.max(inicio, fim)));
     }
 
     /**
