@@ -17,6 +17,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Objects;
+import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -161,6 +162,15 @@ public class IntervalsIcuPushProcessor {
         if (treino == null) {
             log.warn("Push intervals.icu pulado: treino {} não encontrado no tenant {}", treinoId, tenantId);
             return ClaimResultado.encerrado(ProcessamentoResultado.NAO_ENCONTRADO);
+        }
+
+        // Claim condicional (coach-editar-treino-aprovado, D2): outro push deste treino está no ar.
+        // Reclamar de novo enviaria duas vezes ao mesmo tempo — no Garmin, sem externalId, um
+        // workout duplicado. Fora da janela é claim preso e é retomado.
+        if (treino.getStatusSincronizacao() == StatusSincronizacao.SINCRONIZANDO
+                && treino.envioEmAndamento(LocalDateTime.now())) {
+            log.info("Push do treino {} já em andamento por outro worker; claim não reclamado", treinoId);
+            return ClaimResultado.encerrado(ProcessamentoResultado.CLAIM_PERDIDO);
         }
 
         Optional<IntervalsIcuWorkoutConverter.ResultadoConversao> conversaoOpt = converter.converter(treino);
