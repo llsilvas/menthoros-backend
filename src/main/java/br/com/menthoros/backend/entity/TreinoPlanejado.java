@@ -12,6 +12,7 @@ import lombok.Setter;
 
 import java.time.LocalDate;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -75,6 +76,10 @@ public class TreinoPlanejado extends TreinoBase{
 
     @Column(name = "pulado_em")
     private LocalDateTime puladoEm;
+
+    // Marca da edição depois da aprovação (coach-editar-treino-aprovado, D3); nula = nunca editado.
+    @Column(name = "edited_after_approval_at")
+    private Instant editedAfterApprovalAt;
 
     @OneToMany(mappedBy = "treinoPlanejado", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @OrderBy("ordem ASC")
@@ -261,9 +266,10 @@ public class TreinoPlanejado extends TreinoBase{
     public static final Duration JANELA_AGUARDANDO_RETRY = Duration.ofMinutes(30);
 
     /**
-     * Reinicia a sincronização de um treino em {@code ERRO_*} a pedido do treinador: zera as
-     * tentativas e o erro e volta a {@code AGUARDANDO_RETRY}, que o scheduler varre se o evento de
-     * push se perder. Grava {@code agora} como última tentativa para {@link #envioEmAndamento}
+     * Reinicia a sincronização de um treino a pedido do treinador: zera as tentativas e o erro e
+     * volta a {@code AGUARDANDO_RETRY}, que o scheduler varre se o evento de push se perder. Usado
+     * no reenvio de treino em {@code ERRO_*} e na edição de treino de plano aprovado, com ou sem
+     * vínculo externo (coach-editar-treino-aprovado, D2). Grava {@code agora} como última tentativa para {@link #envioEmAndamento}
      * medir há quanto tempo o treino espera. Preserva {@code externalId} e {@code exportadoPara}
      * para o push seguinte atualizar o workout existente em vez de criar outro.
      */
