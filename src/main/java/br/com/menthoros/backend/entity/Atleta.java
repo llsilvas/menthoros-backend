@@ -4,10 +4,13 @@ import br.com.menthoros.backend.domain.audit.AuditableEntity;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FonteLimiar;
+import br.com.menthoros.backend.enums.ModoZonas;
 import br.com.menthoros.backend.enums.NivelExperiencia;
 import br.com.menthoros.backend.enums.Sexo;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -92,6 +95,26 @@ public class Atleta extends AuditableEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "fonte_limiar_pace", length = 20)
     private FonteLimiar fonteLimiarPace;
+
+    // Zonas manuais (V108): por eixo, LIMIAR = faixas calculadas; MANUAL = as faixas abaixo.
+    // Gravadas só por AtletaRepository.atualizarZonasFc/Pace — nunca por save da entidade inteira.
+    @Enumerated(EnumType.STRING)
+    @Column(name = "modo_zonas_fc", length = 10, nullable = false)
+    @Builder.Default
+    private ModoZonas modoZonasFc = ModoZonas.LIMIAR;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "modo_zonas_pace", length = 10, nullable = false)
+    @Builder.Default
+    private ModoZonas modoZonasPace = ModoZonas.LIMIAR;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "zonas_manuais_fc", columnDefinition = "jsonb")
+    private List<FaixaZonaManual> zonasManuaisFc;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "zonas_manuais_pace", columnDefinition = "jsonb")
+    private List<FaixaZonaManual> zonasManuaisPace;
 
     // VO2max estimado
     @Column(name = "vo2max_estimado", precision = 5, scale = 2)

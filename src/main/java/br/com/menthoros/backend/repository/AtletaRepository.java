@@ -1,7 +1,9 @@
 package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.FaixaZonaManual;
 import br.com.menthoros.backend.enums.FonteLimiar;
+import br.com.menthoros.backend.enums.ModoZonas;
 import br.com.menthoros.backend.repository.custom.AtletaRepositoryCustom;
 import br.com.menthoros.backend.repository.projection.AtletaListProjection;
 import br.com.menthoros.backend.repository.projection.AtletaProjection;
@@ -223,4 +225,29 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
     int atualizarLimiarPace(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
                             @Param("paceLimiar") BigDecimal paceLimiar, @Param("dataTeste") LocalDate dataTeste,
                             @Param("fonte") FonteLimiar fonte);
+
+    /**
+     * Grava modo e faixas de FC juntos, sem tocar o pace (mesmo motivo de {@link #atualizarLimiarFc}).
+     * {@code faixas} nulo com {@code LIMIAR} apaga as faixas manuais do eixo.
+     */
+    @Transactional
+    @Modifying
+    @Query("""
+    UPDATE Atleta a
+       SET a.modoZonasFc = :modo, a.zonasManuaisFc = :faixas
+     WHERE a.id = :id AND a.assessoria.id = :tenantId
+    """)
+    int atualizarZonasFc(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
+                         @Param("modo") ModoZonas modo, @Param("faixas") List<FaixaZonaManual> faixas);
+
+    /** Igual a {@link #atualizarZonasFc}, para o eixo de pace. */
+    @Transactional
+    @Modifying
+    @Query("""
+    UPDATE Atleta a
+       SET a.modoZonasPace = :modo, a.zonasManuaisPace = :faixas
+     WHERE a.id = :id AND a.assessoria.id = :tenantId
+    """)
+    int atualizarZonasPace(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
+                           @Param("modo") ModoZonas modo, @Param("faixas") List<FaixaZonaManual> faixas);
 }
