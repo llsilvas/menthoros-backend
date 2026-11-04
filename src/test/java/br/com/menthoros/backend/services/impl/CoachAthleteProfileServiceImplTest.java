@@ -92,6 +92,7 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private MelhorEsforcoService melhorEsforcoService;
     @Mock private AthleteContractService athleteContractService;
     @Mock private br.com.menthoros.backend.repository.IntegracaoExternaRepository integracaoExternaRepository;
+    @Mock private br.com.menthoros.backend.services.GarminConnectionService garminConnectionService;
     // Mock devolve status nulo: o TransactionTemplate só executa o callback — o isolamento real é
     // provado em CoachAthleteProfileDegradacaoIT.
     @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
@@ -127,7 +128,7 @@ class CoachAthleteProfileServiceImplTest {
                 atletaRepository, atletaProgressService, coachAttentionQueueService, sugestaoCoachService,
                 planoService, planoMetadadosRepository, perfilOnboardingAtletaRepository, provaRepository, provaMapper, treinoRealizadoRepository,
                 intervalsIcuConnectionService, thresholdInferenceService, melhorEsforcoService, meterRegistry,
-                athleteContractService, transactionManager, integracaoExternaRepository);
+                athleteContractService, transactionManager, integracaoExternaRepository, garminConnectionService);
         // Default: sem cobrança (os testes de cobrança sobrescrevem)
         lenient().when(athleteContractService.resolveBilling(eq(atletaId), any(LocalDate.class)))
                 .thenReturn(java.util.Optional.empty());
@@ -490,6 +491,72 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(treinos.get(0).atletaConectadoIntervalsIcu()).isFalse();
             verify(intervalsIcuConnectionService, org.mockito.Mockito.times(1))
                     .conexaoAtiva(atletaId, tenantId);
+        }
+
+        @Test
+        @DisplayName("atleta só-Garmin: channelConnected true sem mudar a flag do intervals.icu nem a dos melhores esforços")
+        void atletaSoGarminTemCanalConectado() {
+            stubPerfilComPlano(planoAprovadoComTreinos());
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(garminConnectionService.conexaoDeCanal(atletaId, tenantId))
+                    .thenReturn(Optional.of(new IntegracaoExterna()));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.planoVigente().treinos())
+                    .allSatisfy(t -> {
+                        assertThat(t.channelConnected()).isTrue();
+                        assertThat(t.atletaConectadoIntervalsIcu()).isFalse();
+                    });
+            assertThat(perfil.melhoresEsforcosIntegracaoConectada()).isFalse();
+            verify(garminConnectionService, org.mockito.Mockito.times(1)).conexaoDeCanal(atletaId, tenantId);
+        }
+
+        @Test
+        @DisplayName("atleta sem canal: channelConnected false")
+        void atletaSemCanal() {
+            stubPerfilComPlano(planoAprovadoComTreinos());
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(garminConnectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos).allSatisfy(t -> assertThat(t.channelConnected()).isFalse());
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.EnumSource(value = StatusSincronizacao.class,
+                names = {"ERRO_VALIDACAO", "SINCRONIZADO_PARCIAL"})
+        @DisplayName("syncError exposto quando a mensagem é nossa (validação e envio parcial)")
+        void syncErrorExpostoEmValidacaoEParcial(StatusSincronizacao status) {
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            plano.getTreinosPlanejados().get(0).setStatusSincronizacao(status);
+            plano.getTreinosPlanejados().get(0).setErroSincronizacao("Etapa sem duração");
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).syncError()).isEqualTo("Etapa sem duração");
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.EnumSource(value = StatusSincronizacao.class,
+                names = {"ERRO_PERMANENTE", "ERRO_TEMPORARIO", "ERRO_AUTENTICACAO", "ERRO_LIMITE_RATE"})
+        @DisplayName("syncError omitido nos demais erros (mensagem pode carregar texto bruto de exceção)")
+        void syncErrorOmitidoNosDemaisErros(StatusSincronizacao status) {
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            plano.getTreinosPlanejados().get(0).setStatusSincronizacao(status);
+            plano.getTreinosPlanejados().get(0).setErroSincronizacao("Erro inesperado no push Garmin: NPE em ...");
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).syncError()).isNull();
         }
 
         @Test
@@ -907,6 +974,16 @@ class CoachAthleteProfileServiceImplTest {
     private void stubRecordes() {
         when(atletaProgressService.getRecordes(atletaId))
                 .thenReturn(List.of(new RecordeDto("5k", 1500L, LocalDate.of(2026, 5, 1), UUID.randomUUID())));
+    }
+
+    private void stubPerfilComPlano(PlanoSemanal plano) {
+        stubAtleta();
+        when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
+        when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
+        when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
+        when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+        when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+        when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.of(plano));
     }
 
     private PlanoSemanal planoAprovadoComTreinos() {

@@ -225,7 +225,14 @@ public record AtletaPerfilCoachOutputDto(
             String statusSincronizacao,
 
             @Schema(description = "Atleta tem conexão intervals.icu ativa")
-            Boolean atletaConectadoIntervalsIcu
+            Boolean atletaConectadoIntervalsIcu,
+
+            @Schema(description = "Atleta tem canal de treinos conectado (Garmin ou intervals.icu)")
+            Boolean channelConnected,
+
+            @Schema(description = "Motivo do erro ou do envio parcial, só em ERRO_VALIDACAO e SINCRONIZADO_PARCIAL; "
+                    + "ausente nos demais status", example = "Etapa sem duração definida")
+            String syncError
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
