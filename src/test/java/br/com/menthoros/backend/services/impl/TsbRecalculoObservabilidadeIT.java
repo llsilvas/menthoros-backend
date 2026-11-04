@@ -34,6 +34,7 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -46,6 +47,9 @@ import static org.mockito.Mockito.doThrow;
  * de recalculos abortados.
  */
 class TsbRecalculoObservabilidadeIT extends AbstractIntegrationTest {
+
+    // O service valida "não futura" no fuso do atleta (São Paulo); LocalDate.now() em UTC adianta o dia entre 00h e 03h UTC.
+    private static final ZoneId SP = ZoneId.of("America/Sao_Paulo");
 
     @Autowired
     private TsbService tsbService;
@@ -104,7 +108,7 @@ class TsbRecalculoObservabilidadeIT extends AbstractIntegrationTest {
         @Test
         @DisplayName("a leitura reflete o estado do banco, sem dado obsoleto (CA9)")
         void leituraRefleteBanco() {
-            salvarTreino(atleta, LocalDate.now().minusDays(3));
+            salvarTreino(atleta, LocalDate.now(SP).minusDays(3));
             planoMetadadosService.buscarOuCriarMetadados(atleta);
 
             tsbService.recalcularHistoricoCompleto(atleta.getId());
@@ -139,7 +143,7 @@ class TsbRecalculoObservabilidadeIT extends AbstractIntegrationTest {
         @Test
         @DisplayName("falha em bloco incrementa o contador com tag fase=blocos")
         void falhaEmBlocoIncrementa() {
-            salvarTreino(atleta, LocalDate.now().minusDays(3));
+            salvarTreino(atleta, LocalDate.now(SP).minusDays(3));
             double antes = contador("blocos");
 
             doThrow(new IllegalStateException("falha injetada no bloco"))

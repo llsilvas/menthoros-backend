@@ -28,6 +28,7 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -48,6 +49,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Este teste e o que prova essa decisao. Sem ele, "aceito o risco" seria implicito.</p>
  */
 class TsbRecalculoJanelaMistaIT extends AbstractIntegrationTest {
+
+    // O service valida "não futura" no fuso do atleta (São Paulo); LocalDate.now() em UTC adianta o dia entre 00h e 03h UTC.
+    private static final ZoneId SP = ZoneId.of("America/Sao_Paulo");
 
     @Autowired
     private TsbService tsbService;
@@ -134,7 +138,7 @@ class TsbRecalculoJanelaMistaIT extends AbstractIntegrationTest {
 
     /** Os cinco leitores reais da janela, conforme mapeado no proposal.md. */
     private List<Runnable> leituras(UUID atletaId) {
-        LocalDate hoje = LocalDate.now();
+        LocalDate hoje = LocalDate.now(SP);
         List<Runnable> l = new ArrayList<>();
         l.add(() -> atletaProgressService.getHistoricoPmc(atletaId, hoje.minusDays(DIAS), hoje));
         l.add(() -> atletaProgressService.getHome(atletaId));
@@ -170,7 +174,7 @@ class TsbRecalculoJanelaMistaIT extends AbstractIntegrationTest {
         meta.setDiaPreferidoLongo(DiaSemana.SABADO);
         planoMetadadosRepository.save(meta);
 
-        LocalDate base = LocalDate.now().minusDays(DIAS - 1L);
+        LocalDate base = LocalDate.now(SP).minusDays(DIAS - 1L);
         for (int i = 0; i < DIAS; i++) {
             if (i % 3 != 2) {
                 salvarTreino(atleta, base.plusDays(i));
