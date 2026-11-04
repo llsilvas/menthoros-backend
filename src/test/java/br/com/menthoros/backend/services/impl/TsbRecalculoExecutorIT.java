@@ -29,6 +29,7 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 
@@ -47,6 +48,9 @@ import static org.mockito.Mockito.verify;
  * está sob teste.</p>
  */
 class TsbRecalculoExecutorIT extends AbstractIntegrationTest {
+
+    // O service valida "não futura" no fuso do atleta (São Paulo); LocalDate.now() em UTC adianta o dia entre 00h e 03h UTC.
+    private static final ZoneId SP = ZoneId.of("America/Sao_Paulo");
 
     @Autowired
     private TsbService tsbService;
@@ -74,7 +78,7 @@ class TsbRecalculoExecutorIT extends AbstractIntegrationTest {
         @DisplayName("bloco comita mesmo quando a transação do chamador reverte (REQUIRES_NEW real)")
         void comitaApesarDoRollbackDoChamador() {
             Atleta atleta = seedAtleta();
-            LocalDate dia = LocalDate.now().minusDays(3);
+            LocalDate dia = LocalDate.now(SP).minusDays(3);
 
             // O chamador abre transação, delega o bloco e então reverte. Se REQUIRES_NEW não
             // estivesse valendo — método privado, auto-invocação, anotação decorativa — o bloco
@@ -95,8 +99,8 @@ class TsbRecalculoExecutorIT extends AbstractIntegrationTest {
         @DisplayName("falha no meio do bloco não deixa o intervalo apagado: o dado antigo permanece")
         void falhaNoBlocoPreservaDadoAntigo() {
             Atleta atleta = seedAtleta();
-            LocalDate inicio = LocalDate.now().minusDays(5);
-            LocalDate fim = LocalDate.now().minusDays(1);
+            LocalDate inicio = LocalDate.now(SP).minusDays(5);
+            LocalDate fim = LocalDate.now(SP).minusDays(1);
 
             // Histórico "antigo" reconhecível, que o bloco vai tentar apagar e reconstruir.
             for (LocalDate d = inicio; !d.isAfter(fim); d = d.plusDays(1)) {
@@ -140,10 +144,10 @@ class TsbRecalculoExecutorIT extends AbstractIntegrationTest {
         @DisplayName("400 dias são processados em 14 blocos de no máximo 30 dias")
         void quatrocentosDiasEmQuatorzeBlocos() {
             Atleta atleta = seedAtleta();
-            LocalDate inicio = LocalDate.now().minusDays(399);
+            LocalDate inicio = LocalDate.now(SP).minusDays(399);
             // O intervalo vem do primeiro e do último treino: dois treinos bastam para 400 dias.
             salvarTreino(atleta, inicio);
-            salvarTreino(atleta, LocalDate.now());
+            salvarTreino(atleta, LocalDate.now(SP));
 
             tsbService.recalcularHistoricoCompleto(atleta.getId());
 
@@ -160,12 +164,12 @@ class TsbRecalculoExecutorIT extends AbstractIntegrationTest {
         @DisplayName("intervalo vai além do último treino quando há métricas materializadas depois")
         void intervaloRespeitaMetricasAlemDoUltimoTreino() {
             Atleta atleta = seedAtleta();
-            LocalDate ultimoTreino = LocalDate.now().minusDays(20);
+            LocalDate ultimoTreino = LocalDate.now(SP).minusDays(20);
             salvarTreino(atleta, ultimoTreino);
 
             // Dia de descanso materializado depois do último treino — o limite superior tem de vir
             // das métricas, não só dos treinos.
-            LocalDate metricaTardia = LocalDate.now().minusDays(5);
+            LocalDate metricaTardia = LocalDate.now(SP).minusDays(5);
             metricasDiariasRepository.save(MetricasDiarias.builder()
                     .atleta(atleta)
                     .tenantId(atleta.getAssessoria().getId())
