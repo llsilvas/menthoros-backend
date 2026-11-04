@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
@@ -61,6 +62,13 @@ class GarminTrainingAdapterTest {
     private static StructuredWorkout treino(LocalDate data) {
         return new StructuredWorkout("menthoros-1", "Longao", null, data, null,
                 List.of(WorkoutStep.simples("Rodagem", 3600, null, null)));
+    }
+
+    private static JsonNode workoutNoGarmin(long workoutId, long ownerId) {
+        return new ObjectMapper().createObjectNode()
+                .put("workoutId", workoutId)
+                .put("ownerId", ownerId)
+                .put("workoutProvider", "Menthoros");
     }
 
     private static GarminApiException erro(int status) {
@@ -136,6 +144,7 @@ class GarminTrainingAdapterTest {
         @DisplayName("CA3: PUT workout; schedule do dia ja aponta para o workout, entao nao mexe nele")
         void atualizaSoOWorkout() {
             when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.buscarWorkout(TOKEN, 1000042L)).thenReturn(workoutNoGarmin(1000042L, 12345L));
             when(client.listarSchedules(TOKEN, DATA, DATA))
                     .thenReturn(List.of(new GarminSchedule(77L, 1000042L, DATA)));
 
@@ -155,6 +164,7 @@ class GarminTrainingAdapterTest {
         void movePeloSchedule() {
             LocalDate antiga = DATA.minusDays(2);
             when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.buscarWorkout(TOKEN, 1000042L)).thenReturn(workoutNoGarmin(1000042L, 12345L));
             when(client.listarSchedules(TOKEN, DATA, DATA)).thenReturn(List.of());
             when(client.listarSchedules(TOKEN, DATA.minusDays(14), DATA.plusDays(14)))
                     .thenReturn(List.of(new GarminSchedule(77L, 1000042L, antiga),
@@ -171,6 +181,7 @@ class GarminTrainingAdapterTest {
         @DisplayName("schedule sumiu do Garmin: recria o schedule, mantem o workout")
         void recriaScheduleAusente() {
             when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.buscarWorkout(TOKEN, 1000042L)).thenReturn(workoutNoGarmin(1000042L, 12345L));
             when(client.listarSchedules(any(), any(), any())).thenReturn(List.of());
             when(client.criarSchedule(TOKEN, 1000042L, DATA)).thenReturn(80L);
 
@@ -185,6 +196,7 @@ class GarminTrainingAdapterTest {
         @DisplayName("workout apagado pelo atleta (PUT 404): cria um novo e devolve o id novo")
         void recriaQuandoWorkoutSumiu() {
             when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.buscarWorkout(TOKEN, 1000042L)).thenReturn(workoutNoGarmin(1000042L, 12345L));
             org.mockito.Mockito.doThrow(erro(404)).when(client)
                     .atualizarWorkout(eq(TOKEN), eq(1000042L), any(JsonNode.class));
             when(client.criarWorkout(eq(TOKEN), any(JsonNode.class))).thenReturn(2000001L);
@@ -195,6 +207,73 @@ class GarminTrainingAdapterTest {
             assertThat(r.sucesso()).isTrue();
             assertThat(r.eventId()).isEqualTo(2000001L);
             assertThat(r.criadoNovo()).isTrue();
+        }
+
+        @Test
+        @DisplayName("CA1: PUT leva ownerId e workoutId do workout lido no Garmin (Training API §3.1)")
+        void putLevaOwnerIdEWorkoutId() {
+            when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.buscarWorkout(TOKEN, 1000042L)).thenReturn(workoutNoGarmin(1000042L, 12345L));
+            when(client.listarSchedules(TOKEN, DATA, DATA))
+                    .thenReturn(List.of(new GarminSchedule(77L, 1000042L, DATA)));
+            ArgumentCaptor<JsonNode> corpo = ArgumentCaptor.forClass(JsonNode.class);
+
+            adapter.push(conexao, treino(DATA), 1000042L);
+
+            verify(client).atualizarWorkout(eq(TOKEN), eq(1000042L), corpo.capture());
+            assertThat(corpo.getValue().path("ownerId").asLong()).isEqualTo(12345L);
+            assertThat(corpo.getValue().path("workoutId").asLong()).isEqualTo(1000042L);
+            assertThat(corpo.getValue().path("workoutName").asText()).isEqualTo("Longao");
+        }
+
+        @Test
+        @DisplayName("CA2: GET 404 (workout apagado pelo atleta): cria de novo sem tentar o PUT")
+        void get404RecriaSemPut() {
+            when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.buscarWorkout(TOKEN, 1000042L)).thenThrow(erro(404));
+            when(client.criarWorkout(eq(TOKEN), any(JsonNode.class))).thenReturn(2000001L);
+            when(client.criarSchedule(TOKEN, 2000001L, DATA)).thenReturn(81L);
+
+            PushResult r = adapter.push(conexao, treino(DATA), 1000042L);
+
+            assertThat(r.sucesso()).isTrue();
+            assertThat(r.eventId()).isEqualTo(2000001L);
+            assertThat(r.criadoNovo()).isTrue();
+            verify(client, never()).atualizarWorkout(any(), anyLong(), any());
+        }
+
+        @ParameterizedTest(name = "GET {0} -> {1}, sem PUT")
+        @CsvSource({
+                "403, ERRO_AUTENTICACAO",
+                "412, ERRO_AUTENTICACAO",
+                "429, ERRO_LIMITE_RATE",
+                "500, ERRO_TEMPORARIO"
+        })
+        @DisplayName("CA3: erro no GET segue o mapeamento do push e nao faz PUT")
+        void erroNoGetNaoFazPut(int http, StatusSincronizacao esperado) {
+            when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(client.buscarWorkout(TOKEN, 1000042L)).thenThrow(erro(http));
+
+            PushResult r = adapter.push(conexao, treino(DATA), 1000042L);
+
+            assertThat(r.statusErro()).isEqualTo(esperado);
+            verify(client, never()).atualizarWorkout(any(), anyLong(), any());
+            verify(client, never()).criarWorkout(any(), any());
+        }
+
+        @Test
+        @DisplayName("CA3: GET 401 renova o token e repete; 401 de novo vira ERRO_AUTENTICACAO sem PUT")
+        void get401RenovaERepete() {
+            when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+            when(oauth.renovar(conexao)).thenReturn(TOKEN_NOVO);
+            when(client.buscarWorkout(TOKEN, 1000042L)).thenThrow(erro(401));
+            when(client.buscarWorkout(TOKEN_NOVO, 1000042L)).thenThrow(erro(401));
+
+            PushResult r = adapter.push(conexao, treino(DATA), 1000042L);
+
+            assertThat(r.statusErro()).isEqualTo(StatusSincronizacao.ERRO_AUTENTICACAO);
+            verify(client).buscarWorkout(TOKEN_NOVO, 1000042L);
+            verify(client, never()).atualizarWorkout(any(), anyLong(), any());
         }
     }
 

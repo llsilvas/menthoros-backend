@@ -49,6 +49,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
+import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.delete;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -141,7 +144,14 @@ class GarminTrainingPushIT extends AbstractIntegrationTest {
         treinoPlanejadoRepository.deleteById(removido.getId());
 
         garmin.resetAll();
-        garmin.stubFor(put(urlEqualTo(WORKOUT + "1000042")).willReturn(aResponse().withStatus(200)));
+        // O PUT só casa com ownerId e workoutId no corpo (Training API §3.1); sem eles o WireMock
+        // responde 404 e o adapter recriaria o workout — o verify abaixo pega.
+        garmin.stubFor(get(urlEqualTo(WORKOUT + "1000042")).willReturn(okJson(
+                "{\"workoutId\":1000042,\"ownerId\":12345,\"workoutProvider\":\"Menthoros\"}")));
+        garmin.stubFor(put(urlEqualTo(WORKOUT + "1000042"))
+                .withRequestBody(matchingJsonPath("$.ownerId", equalTo("12345")))
+                .withRequestBody(matchingJsonPath("$.workoutId", equalTo("1000042")))
+                .willReturn(aResponse().withStatus(200)));
         garmin.stubFor(get(urlPathEqualTo(SCHEDULE)).willReturn(okJson(
                 "[{\"scheduleId\":77,\"workoutId\":1000042,\"date\":\"" + LocalDate.now() + "\"},"
                         + "{\"scheduleId\":78,\"workoutId\":1000043,\"date\":\"" + LocalDate.now() + "\"}]")));
@@ -154,6 +164,9 @@ class GarminTrainingPushIT extends AbstractIntegrationTest {
         esperar(() -> !garmin.findAll(deleteRequestedFor(urlEqualTo(WORKOUT + "1000043"))).isEmpty());
         garmin.verify(1, deleteRequestedFor(urlEqualTo(SCHEDULE + "/78")));
         garmin.verify(0, deleteRequestedFor(urlEqualTo(WORKOUT + "1000042")));
+        garmin.verify(1, putRequestedFor(urlEqualTo(WORKOUT + "1000042"))
+                .withRequestBody(matchingJsonPath("$.ownerId", equalTo("12345"))));
+        garmin.verify(0, postRequestedFor(urlPathEqualTo(CRIAR_WORKOUT)));
         garmin.verify(0, deleteRequestedFor(urlEqualTo(SCHEDULE + "/77")));
         assertThat(treinoPlanejadoRepository.findById(mantido.getId()).orElseThrow().getExternalId())
                 .isEqualTo("1000042");

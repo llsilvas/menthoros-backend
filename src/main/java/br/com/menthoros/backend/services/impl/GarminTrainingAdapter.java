@@ -11,6 +11,7 @@ import br.com.menthoros.backend.services.GarminOAuthService;
 import br.com.menthoros.backend.services.PushResult;
 import br.com.menthoros.backend.services.WorkoutChannel;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -42,7 +43,7 @@ public class GarminTrainingAdapter implements WorkoutChannel {
 
     /**
      * Idempotent: NO — sem id armazenado cria workout e schedule novos; com id atualiza.
-     * Side Effects: External API call (POST/PUT workout, POST/PUT/GET schedule); renova o token em 401.
+     * Side Effects: External API call (POST/GET/PUT workout, POST/PUT/GET schedule); renova o token em 401.
      * Tenant-aware: NO — a credencial é do atleta (conexao).
      */
     @Override
@@ -122,7 +123,16 @@ public class GarminTrainingAdapter implements WorkoutChannel {
             return criar(token, data, payload);
         }
         try {
-            client.atualizarWorkout(token, workoutIdArmazenado, payload);
+            // O PUT exige ownerId (Training API §3.1), que o Menthoros não guarda: vem do workout atual.
+            JsonNode atual = client.buscarWorkout(token, workoutIdArmazenado);
+            ObjectNode corpo = payload.deepCopy();
+            corpo.put("workoutId", workoutIdArmazenado);
+            if (atual.hasNonNull("ownerId")) {
+                corpo.set("ownerId", atual.get("ownerId"));
+            } else {
+                log.warn("Workout {} veio do Garmin sem ownerId; o PUT tende a ser recusado", workoutIdArmazenado);
+            }
+            client.atualizarWorkout(token, workoutIdArmazenado, corpo);
         } catch (GarminApiException e) {
             if (!temStatus(e, 404)) {
                 throw e;
