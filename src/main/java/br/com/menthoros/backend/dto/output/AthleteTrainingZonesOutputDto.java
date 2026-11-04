@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.dto.output;
 
+import br.com.menthoros.backend.enums.FonteLimiar;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -38,7 +39,11 @@ public record AthleteTrainingZonesOutputDto(
             Integer fcLimiar,
             LocalDate dataUltimoTesteFc,
             @Schema(description = "true quando o limiar de FC veio do fallback etário, não de teste")
-            boolean fcLimiarEstimada
+            boolean fcLimiarEstimada,
+            @Schema(description = "Origem do pace de limiar; ausente quando não registrada")
+            FonteLimiar fonteLimiarPace,
+            @Schema(description = "Origem do limiar de FC; ausente quando não registrada")
+            FonteLimiar fonteLimiarFc
     ) {}
 
     public record AjusteFadiga(
