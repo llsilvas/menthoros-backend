@@ -108,5 +108,13 @@ public interface PlanoReviewService {
      * @throws br.com.menthoros.backend.exception.DomainRuleViolationException se o plano não
      *         estava {@code APROVADO} ou a semana já está encerrada
      */
+    /**
+     * Reenvia ao canal de treinos (Garmin ou intervals.icu) os treinos em {@code ERRO_*} de um plano
+     * aprovado: zera as tentativas e republica o {@link br.com.menthoros.backend.events.PlanoAprovadoEvent}.
+     *
+     * @return quantidade de treinos reiniciados ({@code 0} quando nada está em erro)
+     */
+    int reenviarSincronizacao(UUID planoId, UUID tenantId);
+
     PlanoSemanal reabrirRevisao(PlanoSemanal plano, MotivoReaberturaRevisao motivo, UUID tenantId);
 }

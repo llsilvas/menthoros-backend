@@ -254,6 +254,33 @@ public class TreinoPlanejado extends TreinoBase{
     }
 
     /**
+     * Reinicia a sincronização de um treino em {@code ERRO_*} a pedido do treinador: zera as
+     * tentativas e o erro e volta a {@code AGUARDANDO_RETRY}, que o scheduler varre se o evento de
+     * push se perder. Preserva {@code externalId} e {@code exportadoPara} para o push seguinte
+     * atualizar o workout existente em vez de criar outro.
+     */
+    public void reiniciarSincronizacao() {
+        this.statusSincronizacao = StatusSincronizacao.AGUARDANDO_RETRY;
+        this.tentativasSincronizacao = 0;
+        this.ultimaTentativaSincronizacao = null;
+        this.erroSincronizacao = null;
+    }
+
+    /**
+     * Push em andamento: {@code AGUARDANDO_RETRY} (o scheduler vai pegar) ou {@code SINCRONIZANDO}
+     * com tentativa há menos de 10 min. {@code SINCRONIZANDO} mais antigo é tratado como preso: o
+     * scheduler não varre esse status, e cada chamada HTTP ao canal tem timeout de segundos.
+     */
+    public boolean envioEmAndamento(LocalDateTime agora) {
+        if (statusSincronizacao == StatusSincronizacao.AGUARDANDO_RETRY) {
+            return true;
+        }
+        return statusSincronizacao == StatusSincronizacao.SINCRONIZANDO
+                && ultimaTentativaSincronizacao != null
+                && ultimaTentativaSincronizacao.isAfter(agora.minusMinutes(10));
+    }
+
+    /**
      * Reseta a sincronização por completo: volta a {@code NAO_SINCRONIZADO} e limpa o vínculo
      * externo ({@code externalId}) — usado quando o evento externo deixa de existir (ex.: treino
      * sincronizado que virou não-exportável e foi reconciliado como órfão).

@@ -2,6 +2,7 @@ package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.input.PlanoRejectionInputDto;
 import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
+import br.com.menthoros.backend.dto.output.WorkoutResendOutputDto;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.security.RequireTenant;
@@ -97,6 +98,27 @@ public class CoachPlanoReviewController {
             @PathVariable UUID id) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         return ResponseEntity.ok(planoReviewService.aprovarPlano(id, tenantId));
+    }
+
+    @PostMapping("/{id}/reenviar-sincronizacao")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
+    @Operation(summary = "Reenvia ao relógio os treinos em erro de um plano aprovado",
+            description = "Zera as tentativas dos treinos em ERRO_* e dispara de novo o push ao canal do "
+                    + "atleta (Garmin ou intervals.icu). O push é assíncrono: a resposta só confirma o reenvio.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Reenvio solicitado (resent = 0 quando nada estava em erro)",
+                    content = @Content(schema = @Schema(implementation = WorkoutResendOutputDto.class))),
+            @ApiResponse(responseCode = "403", description = "Sem permissão ou recurso de outro tenant"),
+            @ApiResponse(responseCode = "404", description = "Plano não encontrado no tenant"),
+            @ApiResponse(responseCode = "409", description = "Envio em andamento em algum treino do plano"),
+            @ApiResponse(responseCode = "422", description = "Plano não está APROVADO")
+    })
+    public ResponseEntity<WorkoutResendOutputDto> reenviarSincronizacao(
+            @Parameter(description = "ID do PlanoSemanal a reenviar")
+            @PathVariable UUID id) {
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        return ResponseEntity.ok(new WorkoutResendOutputDto(planoReviewService.reenviarSincronizacao(id, tenantId)));
     }
 
     @PostMapping("/{id}/rejeitar")

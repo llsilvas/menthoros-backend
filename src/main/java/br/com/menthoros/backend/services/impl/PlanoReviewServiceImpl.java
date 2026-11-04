@@ -14,11 +14,14 @@ import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.events.PlanoReabertoEvent;
 import br.com.menthoros.backend.services.helper.ConsumedReviewOutcomeResolver;
 import io.micrometer.core.instrument.MeterRegistry;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
+import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.services.PlanoReviewService;
 import br.com.menthoros.backend.services.onboarding.ConfidenceTier;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +48,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
     private final AthleteBaselineStateRepository athleteBaselineStateRepository;
     private final ConsumedReviewOutcomeResolver outcomeResolver;
     private final MeterRegistry meterRegistry;
+    private final TreinoPlanejadoRepository treinoPlanejadoRepository;
 
     /**
      * Lista todos os planos do tenant com reviewStatus = AGUARDANDO_REVISAO.
@@ -110,6 +114,52 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         eventPublisher.publishEvent(new PlanoAprovadoEvent(salvo.getId(), salvo.getAtleta().getId(), tenantId));
 
         return salvo;
+    }
+
+    /**
+     * Reenvia ao canal os treinos em {@code ERRO_*} de um plano aprovado. O listener de push
+     * reprocessa o plano inteiro (idempotente): os treinos já sincronizados são atualizados, não
+     * duplicados.
+     *
+     * Idempotent: NO — cada chamada com treinos em erro zera as tentativas e dispara um novo push.
+     * Side Effects: Database update (sincronização dos treinos em erro) + publica
+     * {@link PlanoAprovadoEvent} quando há treino reiniciado (push assíncrono após o commit).
+     * Tenant-aware: YES — plano e treinos buscados por tenantId.
+     *
+     * @throws DomainNotFoundException      se o plano não existir no tenant
+     * @throws DomainRuleViolationException se reviewStatus != APROVADO
+     * @throws DomainConflictException      se algum treino do plano tiver push em andamento
+     */
+    @Override
+    @Transactional
+    public int reenviarSincronizacao(UUID planoId, UUID tenantId) {
+        if (planoId == null) throw new IllegalArgumentException("planoId não pode ser nulo");
+        if (tenantId == null) throw new IllegalArgumentException("tenantId não pode ser nulo");
+
+        PlanoSemanal plano = buscarPlanoDoTenant(planoId, tenantId);
+        if (plano.getReviewStatus() != PlanoReviewStatus.APROVADO) {
+            throw new DomainRuleViolationException(
+                    "Só é possível reenviar um plano aprovado (status atual: " + plano.getReviewStatus() + ")");
+        }
+
+        List<TreinoPlanejado> treinos = treinoPlanejadoRepository.findAllByPlanoSemanalIdAndTenantId(planoId, tenantId);
+        LocalDateTime agora = LocalDateTime.now();
+        if (treinos.stream().anyMatch(t -> t.envioEmAndamento(agora))) {
+            throw new DomainConflictException("Envio em andamento. Aguarde alguns minutos e tente de novo.");
+        }
+
+        List<TreinoPlanejado> emErro = treinos.stream()
+                .filter(t -> t.getStatusSincronizacao() != null && t.getStatusSincronizacao().temErro())
+                .toList();
+        if (!emErro.isEmpty()) {
+            emErro.forEach(TreinoPlanejado::reiniciarSincronizacao);
+            treinoPlanejadoRepository.saveAll(emErro);
+            // Publicado dentro da transação: o listener é AFTER_COMMIT e descarta evento sem TX.
+            eventPublisher.publishEvent(new PlanoAprovadoEvent(planoId, plano.getAtleta().getId(), tenantId));
+        }
+
+        log.info("Reenvio de sincronização: planoId={}, tenantId={}, reenviados={}", planoId, tenantId, emErro.size());
+        return emErro.size();
     }
 
     /**
