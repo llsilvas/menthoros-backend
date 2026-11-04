@@ -123,16 +123,7 @@ public class GarminTrainingAdapter implements WorkoutChannel {
             return criar(token, data, payload);
         }
         try {
-            // O PUT exige ownerId (Training API §3.1), que o Menthoros não guarda: vem do workout atual.
-            JsonNode atual = client.buscarWorkout(token, workoutIdArmazenado);
-            ObjectNode corpo = payload.deepCopy();
-            corpo.put("workoutId", workoutIdArmazenado);
-            if (atual.hasNonNull("ownerId")) {
-                corpo.set("ownerId", atual.get("ownerId"));
-            } else {
-                log.warn("Workout {} veio do Garmin sem ownerId; o PUT tende a ser recusado", workoutIdArmazenado);
-            }
-            client.atualizarWorkout(token, workoutIdArmazenado, corpo);
+            client.atualizarWorkout(token, workoutIdArmazenado, corpoDeAtualizacao(token, workoutIdArmazenado, payload));
         } catch (GarminApiException e) {
             if (!temStatus(e, 404)) {
                 throw e;
@@ -142,6 +133,23 @@ public class GarminTrainingAdapter implements WorkoutChannel {
         }
         garantirSchedule(token, workoutIdArmazenado, data);
         return PushResult.okAtualizado(workoutIdArmazenado);
+    }
+
+    /**
+     * O PUT exige {@code ownerId} (Training API §3.1), que o Menthoros não guarda: vem do workout
+     * atual. Sem um {@code ownerId} escalar o PUT seria recusado de qualquer jeito, então falha antes
+     * (sem status: vira erro temporário e entra no retry).
+     */
+    private ObjectNode corpoDeAtualizacao(String token, Long workoutId, JsonNode payload) {
+        JsonNode atual = client.buscarWorkout(token, workoutId);
+        JsonNode ownerId = atual == null ? null : atual.get("ownerId");
+        if (ownerId == null || !ownerId.isValueNode() || ownerId.isNull()) {
+            throw new GarminApiException(null, "Workout " + workoutId + " veio do Garmin sem ownerId");
+        }
+        ObjectNode corpo = payload.deepCopy();
+        corpo.put("workoutId", workoutId);
+        corpo.set("ownerId", ownerId);
+        return corpo;
     }
 
     private PushResult criar(String token, LocalDate data, JsonNode payload) {

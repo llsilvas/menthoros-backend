@@ -86,6 +86,30 @@ class GarminWorkoutPayloadMapperTest {
     }
 
     @Test
+    @DisplayName("bloco de um passo só, sem meta (3x 1 km livre), não pula: o passo é o próprio esforço")
+    void blocoDeEsforcoUnicoSemMetaNaoPula() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.bloco("3x", 3, List.of(WorkoutStep.simples("Tiro", null, 1000, null)))));
+
+        JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(bloco.has("skipLastRestStep")).isFalse();
+    }
+
+    @Test
+    @DisplayName("bloco sem nenhuma meta (tiro livre + trote livre) não pula: não dá para distinguir esforço de descanso")
+    void blocoSemMetaNenhumaNaoPula() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.bloco("4x", 4, List.of(
+                        WorkoutStep.simples("Tiro", null, 1000, null),
+                        WorkoutStep.simples("Trote", 120, null, null)))));
+
+        JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(bloco.has("skipLastRestStep")).isFalse();
+    }
+
+    @Test
     @DisplayName("bloco que termina em passo com meta (recuperação por FC) não pula nada")
     void blocoTerminandoComMetaNaoPula() {
         StructuredWorkout workout = treino(null, null, List.of(

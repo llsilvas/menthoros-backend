@@ -262,6 +262,25 @@ class GarminTrainingAdapterTest {
         }
 
         @Test
+        @DisplayName("GET sem ownerId utilizável (ausente, objeto ou corpo vazio): não faz o PUT condenado, erro temporário")
+        void getSemOwnerIdNaoFazPut() {
+            JsonNode ownerObjeto = new ObjectMapper().createObjectNode().put("workoutId", 1000042L)
+                    .set("ownerId", new ObjectMapper().createObjectNode());
+            for (JsonNode resposta : java.util.Arrays.asList(
+                    new ObjectMapper().createObjectNode().put("workoutId", 1000042L), ownerObjeto, null)) {
+                org.mockito.Mockito.reset(client, oauth);
+                when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
+                when(client.buscarWorkout(TOKEN, 1000042L)).thenReturn(resposta);
+
+                PushResult r = adapter.push(conexao, treino(DATA), 1000042L);
+
+                assertThat(r.statusErro()).isEqualTo(StatusSincronizacao.ERRO_TEMPORARIO);
+                verify(client, never()).atualizarWorkout(any(), anyLong(), any());
+                verify(client, never()).criarWorkout(any(), any());
+            }
+        }
+
+        @Test
         @DisplayName("CA3: GET 401 renova o token e repete; 401 de novo vira ERRO_AUTENTICACAO sem PUT")
         void get401RenovaERepete() {
             when(oauth.tokenValido(conexao)).thenReturn(TOKEN);
