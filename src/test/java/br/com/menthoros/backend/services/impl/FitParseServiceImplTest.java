@@ -7,6 +7,7 @@ import com.garmin.fit.File;
 import com.garmin.fit.FileEncoder;
 import com.garmin.fit.FileIdMesg;
 import com.garmin.fit.LapMesg;
+import com.garmin.fit.RecordMesg;
 import com.garmin.fit.SessionMesg;
 import com.garmin.fit.Sport;
 import org.junit.jupiter.api.AfterEach;
@@ -442,6 +443,67 @@ class FitParseServiceImplTest {
                 assertThat(dados.temperaturaMinC()).isEqualByComparingTo("19.0");
                 assertThat(dados.temperaturaMaxC()).isEqualByComparingTo("27.0");
             }
+        }
+    }
+
+    @Nested
+    @DisplayName("amostras de FC para o tempo em zonas (coach-ver-treino-realizado, D2/D6)")
+    class AmostrasFc {
+
+        @Test
+        @DisplayName("fixture real: 5.619 amostras e soma das zonas = 5.639 s pelas regras do D6 (task 0.1)")
+        void fixtureRealSomaPelasRegras() throws IOException {
+            try (InputStream in = getClass().getResourceAsStream("/fit/corrida-15km-16laps.fit")) {
+                FitSessionData dados = service.parse(in);
+
+                assertThat(dados.amostrasFc()).hasSize(5619).allSatisfy(a -> assertThat(a.fc()).isNotNull());
+                var zonas = new br.com.menthoros.backend.services.helper.ZonaTreinoService().calcularZonasFC(185, 165);
+                var tempo = br.com.menthoros.backend.services.helper.TempoEmZonasCalculator.calcular(
+                        dados.amostrasFc(), zonas, dados.tempoMovimento().toSeconds());
+                assertThat(tempo.zonas().stream().mapToInt(z -> z.segundos()).sum()).isEqualTo(5639);
+            }
+        }
+
+        @Test
+        @DisplayName("record sem FC vira amostra com fc nula, sem quebrar o import")
+        void recordSemFc() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                builder.mesgs.add(record(0, (short) 140));
+                builder.mesgs.add(record(1, null));
+                builder.mesgs.add(sessaoMinima());
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.amostrasFc()).extracting(a -> a.fc()).containsExactly(140, null);
+        }
+
+        @Test
+        @DisplayName("acima do limite de amostras o import segue, sem amostras (não recusa ultra legítimo)")
+        void acimaDoLimiteDescartaAmostras() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                for (int i = 0; i <= FitParseServiceImpl.MAX_AMOSTRAS; i++) builder.mesgs.add(record(i, (short) 140));
+                builder.mesgs.add(sessaoMinima());
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.amostrasFc()).isEmpty();
+        }
+
+        private RecordMesg record(long segundos, Short fc) {
+            RecordMesg r = new RecordMesg();
+            r.setTimestamp(new DateTime(Instant.parse("2026-07-01T10:00:00Z").plusSeconds(segundos)));
+            if (fc != null) r.setHeartRate(fc);
+            return r;
+        }
+
+        private SessionMesg sessaoMinima() {
+            SessionMesg session = new SessionMesg();
+            session.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+            session.setSport(Sport.RUNNING);
+            session.setTotalElapsedTime(60f);
+            return session;
         }
     }
 

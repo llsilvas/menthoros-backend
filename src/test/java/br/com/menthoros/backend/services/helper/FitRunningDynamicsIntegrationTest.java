@@ -60,7 +60,8 @@ class FitRunningDynamicsIntegrationTest {
         tenantId = UUID.randomUUID();
         atletaId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
-        service = new FitTreinoPersister(atletaRepository, treinoMapper, ingestaoTreinoRealizadoService);
+        service = new FitTreinoPersister(atletaRepository, treinoMapper, ingestaoTreinoRealizadoService,
+                new ZonaTreinoService());
 
         Atleta atleta = mock(Atleta.class);
         lenient().when(atleta.getId()).thenReturn(atletaId);

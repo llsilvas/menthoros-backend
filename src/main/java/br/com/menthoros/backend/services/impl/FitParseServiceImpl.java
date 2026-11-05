@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.dto.fit.FitAmostraFc;
 import br.com.menthoros.backend.dto.fit.FitLapData;
 import br.com.menthoros.backend.dto.fit.FitSessionData;
 import br.com.menthoros.backend.exception.FitParseException;
@@ -8,6 +9,7 @@ import com.garmin.fit.Decode;
 import com.garmin.fit.FileIdMesgListener;
 import com.garmin.fit.LapMesgListener;
 import com.garmin.fit.MesgBroadcaster;
+import com.garmin.fit.RecordMesgListener;
 import com.garmin.fit.SessionMesgListener;
 import com.garmin.fit.Sport;
 import lombok.extern.slf4j.Slf4j;
@@ -21,6 +23,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -35,6 +38,12 @@ public class FitParseServiceImpl implements FitParseService {
      * consumir memória/DB desproporcionalmente.
      */
     private static final int MAX_LAPS = 1000;
+
+    /**
+     * ~55 h a 1 Hz. Acima disso o arquivo não vira erro — um ultra legítimo não pode ser recusado
+     * por isso —, só deixa de ter tempo em zonas: as amostras são descartadas.
+     */
+    static final int MAX_AMOSTRAS = 200_000;
 
     /**
      * Lap cru, ainda sem interpretação dependente do esporte: a conversão de cadência
@@ -78,6 +87,8 @@ public class FitParseServiceImpl implements FitParseService {
         AtomicInteger lapOrdem = new AtomicInteger(1);
         AtomicInteger sessionCount = new AtomicInteger(0);
         AtomicReference<SessaoBruta> sessao = new AtomicReference<>();
+        List<FitAmostraFc> amostras = new ArrayList<>();
+        AtomicBoolean amostrasExcedidas = new AtomicBoolean(false);
 
         MesgBroadcaster broadcaster = new MesgBroadcaster();
 
@@ -85,6 +96,17 @@ public class FitParseServiceImpl implements FitParseService {
             if (mesg.getSerialNumber() != null) {
                 serialNumber.set(mesg.getSerialNumber());
             }
+        });
+
+        broadcaster.addListener((RecordMesgListener) mesg -> {
+            if (mesg.getTimestamp() == null || amostrasExcedidas.get()) return;
+            if (amostras.size() >= MAX_AMOSTRAS) {
+                amostrasExcedidas.set(true);
+                amostras.clear();
+                return;
+            }
+            Short fc = mesg.getHeartRate();
+            amostras.add(new FitAmostraFc(mesg.getTimestamp().getTimestamp(), fc != null ? fc.intValue() : null));
         });
 
         broadcaster.addListener((LapMesgListener) mesg -> {
@@ -164,7 +186,7 @@ public class FitParseServiceImpl implements FitParseService {
             // binário adversarial podem carregar NaN/Infinity — sentinelas que o SDK não
             // resolve para null e que BigDecimal.valueOf() rejeita com NumberFormatException.
             // Tratar como .fit inválido (mesmo path do catch abaixo) em vez de vazar um 500.
-            return montarResultado(s, lapsBrutos, serialNumber.get());
+            return montarResultado(s, lapsBrutos, serialNumber.get(), amostras);
         } catch (FitParseException e) {
             // Já é a exceção/mensagem certa (lançada pelos nossos próprios listeners) — não reenvelopar.
             throw e;
@@ -205,7 +227,8 @@ public class FitParseServiceImpl implements FitParseService {
             Byte maxTemperature
     ) {}
 
-    private static FitSessionData montarResultado(SessaoBruta s, List<LapBruto> lapsBrutos, long serialNumber) {
+    private static FitSessionData montarResultado(SessaoBruta s, List<LapBruto> lapsBrutos, long serialNumber,
+                                                  List<FitAmostraFc> amostras) {
         // Cadência só existe no domínio como passos/min de corrida — para outros esportes o
         // campo bruto é RPM (pedal, braçada) e dobrá-lo fabricaria um valor fantasma; fica null.
         boolean corrida = s.corrida();
@@ -257,7 +280,8 @@ public class FitParseServiceImpl implements FitParseService {
                 velocidadeMediaKmh(s.totalDistance(), s.totalTimerTime()),
                 kmhDeMetrosPorSegundo(s.maxSpeed()),
                 celsiusDeByte(s.minTemperature()),
-                celsiusDeByte(s.maxTemperature())
+                celsiusDeByte(s.maxTemperature()),
+                List.copyOf(amostras)
         );
     }
 

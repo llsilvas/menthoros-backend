@@ -5,8 +5,10 @@ import br.com.menthoros.backend.dto.fit.FitLapData;
 import br.com.menthoros.backend.dto.fit.FitSessionData;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaRealizada;
+import br.com.menthoros.backend.entity.TempoEmZonas;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.enums.ModoZonas;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -67,6 +69,7 @@ public class FitTreinoPersister {
     private final AtletaRepository atletaRepository;
     private final TreinoMapper treinoMapper;
     private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
+    private final ZonaTreinoService zonaTreinoService;
 
     /**
      * Persiste o treino a partir dos dados já extraídos de um .fit, com dedup idempotente por
@@ -154,6 +157,7 @@ public class FitTreinoPersister {
                 && sanitizarVelocidade(dados.velocidadeMaxKmh().doubleValue()) != null ? dados.velocidadeMaxKmh() : null);
         treino.setTemperaturaMinC(dados.temperaturaMinC());
         treino.setTemperaturaMaxC(dados.temperaturaMaxC());
+        treino.setTempoEmZonas(tempoEmZonas(dados, atleta));
 
         if (dados.tssCalculado() != null) {
             treino.setTssCalculado(dados.tssCalculado());
@@ -191,6 +195,25 @@ public class FitTreinoPersister {
         }
 
         return treino;
+    }
+
+    /**
+     * Só com zonas confiáveis (D6, A9): faixas manuais ou FC de limiar informada. Zona derivada de FC
+     * máxima estimada pela idade erraria a faixa do treino inteiro, e a tela a mostraria como dado.
+     * Cobertura sobre o tempo em movimento, porque no .fit {@code duracao} inclui as pausas.
+     */
+    private TempoEmZonas tempoEmZonas(FitSessionData dados, Atleta atleta) {
+        if (dados.amostrasFc().isEmpty()) {
+            return null;
+        }
+        boolean zonasConfiaveis = (atleta.getModoZonasFc() == ModoZonas.MANUAL && atleta.getZonasManuaisFc() != null)
+                || (atleta.getFcLimiar() != null && atleta.getFcLimiar() > 0);
+        if (!zonasConfiaveis) {
+            return null;
+        }
+        Duration referencia = dados.tempoMovimento() != null ? dados.tempoMovimento() : dados.duracao();
+        return TempoEmZonasCalculator.calcular(dados.amostrasFc(), zonaTreinoService.zonasFC(atleta),
+                referencia.toSeconds());
     }
 
     private String descricaoParaEsporte(FitSessionData dados) {

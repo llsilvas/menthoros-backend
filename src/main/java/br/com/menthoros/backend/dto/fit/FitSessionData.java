@@ -29,6 +29,8 @@ import java.util.List;
  * @param velocidadeMaxKmh     {@code enhanced_max_speed} (fallback {@code max_speed}), em km/h.
  * @param temperaturaMinC      temperatura mínima, em °C.
  * @param temperaturaMaxC      temperatura máxima, em °C.
+ * @param amostrasFc           mensagens {@code record} em ordem de arquivo, para o tempo em zonas;
+ *                             vazia quando o arquivo passa do limite de amostras. Não é persistida.
  */
 public record FitSessionData(
         Long serialNumber,
@@ -57,7 +59,8 @@ public record FitSessionData(
         Double velocidadeMediaKmh,
         BigDecimal velocidadeMaxKmh,
         BigDecimal temperaturaMinC,
-        BigDecimal temperaturaMaxC
+        BigDecimal temperaturaMaxC,
+        List<FitAmostraFc> amostrasFc
 ) {
 
     /** Sem os campos de execução (coach-ver-treino-realizado) — usado pelos testes anteriores a eles. */
@@ -71,6 +74,6 @@ public record FitSessionData(
         this(serialNumber, dataTreino, startTimeEpochSeconds, duracao, distanciaKm, fcMedia, fcMax, tssCalculado,
                 corrida, esporteDetectado, subidaMetros, descidaMetros, potenciaMediaWatts, cadenciaMediaPpm,
                 tempoMovimento, calorias, gctMedioMs, gctEquilibrioPct, passadaMediaM, oscilacaoVerticalCm,
-                proporcaoVerticalPct, temperaturaMediaC, laps, null, null, null, null);
+                proporcaoVerticalPct, temperaturaMediaC, laps, null, null, null, null, List.of());
     }
 }
