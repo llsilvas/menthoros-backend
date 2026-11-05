@@ -110,6 +110,6 @@ class PostApprovalEditRecorderTest {
                 treino.getId(), null, null, null, TipoTreino.CONTINUO, descricao, null, "60:00", 10.0,
                 null, null, null, null, null, null, 55, null, null, false,
                 false, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null,
-                null, null, false, null);
+                null, null, null, null, false, null);
     }
 }
