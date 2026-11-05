@@ -22,6 +22,7 @@ import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.scheduler.GarminPingProcessorScheduler;
 import br.com.menthoros.backend.services.FitParseService;
+import br.com.menthoros.backend.services.GarminOAuthService;
 import br.com.menthoros.backend.services.helper.FitTreinoPersister;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
@@ -48,11 +49,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -113,6 +116,7 @@ class GarminActivityIngestionIT extends AbstractIntegrationTest {
     @Autowired private TreinoRealizadoRepository treinoRepository;
     @Autowired @Qualifier("garminWebClient") private WebClient garminWebClient;
     @Autowired private GarminProperties garminProperties;
+    @Autowired private GarminOAuthService garminOAuthService;
     @Autowired private FitParseService fitParseService;
     @Autowired private FitTreinoPersister fitTreinoPersister;
     @Autowired private PlatformTransactionManager transactionManager;
@@ -130,7 +134,7 @@ class GarminActivityIngestionIT extends AbstractIntegrationTest {
         garminUserId = "garmin-uid-" + UUID.randomUUID();
         processador = new GarminPingProcessorScheduler(pingRepository, integracaoRepository,
                 new GarminClientImpl(garminWebClient, garminProperties, URI.create(garmin.baseUrl())),
-                fitParseService, fitTreinoPersister, transactionManager, clock);
+                garminOAuthService, fitParseService, fitTreinoPersister, transactionManager, clock);
 
         assessoria = new Assessoria();
         assessoria.setNome("Assessoria Ingestao Garmin IT");
@@ -167,6 +171,7 @@ class GarminActivityIngestionIT extends AbstractIntegrationTest {
         conexao.setTenantId(assessoria.getId());
         conexao.setExternalAthleteId(garminUserId);
         conexao.setAccessToken("g-access");
+        conexao.setTokenExpiraEm(Instant.now().plus(Duration.ofDays(1)));
         conexao.setAtivo(true);
         integracaoRepository.save(conexao);
     }
@@ -175,7 +180,9 @@ class GarminActivityIngestionIT extends AbstractIntegrationTest {
     @DisplayName("ping → fila → download → treino GARMIN; ping repetido e upload manual não duplicam")
     void pingViraTreinoSemDuplicar() throws Exception {
         String summaryId = "summary-" + UUID.randomUUID();
-        garmin.stubFor(get(urlPathEqualTo(PATH_ARQUIVO)).willReturn(aResponse()
+        garmin.stubFor(get(urlPathEqualTo(PATH_ARQUIVO))
+                .withHeader("Authorization", equalTo("Bearer g-access"))
+                .willReturn(aResponse()
                 .withStatus(200)
                 .withHeader("Content-Type", MediaType.APPLICATION_OCTET_STREAM_VALUE)
                 .withBody(arquivoFit())));
