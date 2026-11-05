@@ -206,6 +206,21 @@ public class TreinoRealizado extends TreinoBase{
     @Column(name = "calorias")
     private Integer calorias;
 
+    // ===== EXECUÇÃO (V111, coach-ver-treino-realizado) =====
+
+    @Column(name = "velocidade_max_kmh", precision = 5, scale = 2)
+    private BigDecimal velocidadeMaxKmh;
+
+    @Column(name = "temperatura_min_c", precision = 4, scale = 1)
+    private BigDecimal temperaturaMinC;
+
+    @Column(name = "temperatura_max_c", precision = 4, scale = 1)
+    private BigDecimal temperaturaMaxC;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "tempo_em_zonas", columnDefinition = "jsonb")
+    private TempoEmZonas tempoEmZonas;
+
     /**
      * Verifica se treino foi mais difícil que esperado
      */
