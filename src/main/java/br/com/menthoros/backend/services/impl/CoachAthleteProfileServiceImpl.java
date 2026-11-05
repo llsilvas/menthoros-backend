@@ -344,8 +344,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             canalConectado,
                             erroExponivel(tp),
                             tp.envioEmAndamento(agora),
-                            // Lado inverso do @OneToOne: o Hibernate já carrega o vínculo junto do
-                            // planejado, então ler aqui não adiciona consulta.
+                            // Vínculo em fetch join no findMostRecentRelevantPlano — sem ele, um SELECT por treino.
                             tp.getTreinoRealizado() != null ? tp.getTreinoRealizado().getId() : null,
                             tp.getRitmoAlvo()))
                     .toList();
