@@ -14,6 +14,7 @@ import br.com.menthoros.backend.repository.GarminPingRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.services.FitParseService;
 import br.com.menthoros.backend.services.GarminClient;
+import br.com.menthoros.backend.services.GarminOAuthService;
 import br.com.menthoros.backend.services.helper.FitTreinoPersister;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,11 +54,13 @@ import static org.mockito.Mockito.when;
 class GarminPingProcessorSchedulerTest {
 
     private static final Instant AGORA = Instant.parse("2026-11-05T12:00:00Z");
+    private static final String TOKEN = "access-do-atleta";
     private static final String CALLBACK = "https://apis.garmin.com/wellness-api/rest/activityFile?id=1&token=t";
 
     @Mock private GarminPingRepository pingRepository;
     @Mock private IntegracaoExternaRepository integracaoRepository;
     @Mock private GarminClient garminClient;
+    @Mock private GarminOAuthService garminOAuthService;
     @Mock private FitParseService fitParseService;
     @Mock private FitTreinoPersister fitTreinoPersister;
     @Mock private PlatformTransactionManager transactionManager;
@@ -68,7 +71,7 @@ class GarminPingProcessorSchedulerTest {
     @BeforeEach
     void setUp() {
         scheduler = new GarminPingProcessorScheduler(pingRepository, integracaoRepository, garminClient,
-                fitParseService, fitTreinoPersister, transactionManager, Clock.fixed(AGORA, ZoneOffset.UTC));
+                garminOAuthService, fitParseService, fitTreinoPersister, transactionManager, Clock.fixed(AGORA, ZoneOffset.UTC));
     }
 
     @AfterEach
@@ -144,7 +147,7 @@ class GarminPingProcessorSchedulerTest {
         void urlInvalida() {
             GarminPing ping = ping(UUID.randomUUID());
             filaCom(ping);
-            when(garminClient.baixarArquivo(CALLBACK)).thenThrow(new IllegalArgumentException("callbackURL inválido"));
+            when(garminClient.baixarArquivo(CALLBACK, TOKEN)).thenThrow(new IllegalArgumentException("callbackURL inválido"));
 
             scheduler.processar();
 
@@ -159,7 +162,7 @@ class GarminPingProcessorSchedulerTest {
         void erroSemRetry(int status, String motivo) {
             GarminPing ping = ping(UUID.randomUUID());
             filaCom(ping);
-            when(garminClient.baixarArquivo(CALLBACK))
+            when(garminClient.baixarArquivo(CALLBACK, TOKEN))
                     .thenThrow(new GarminApiException(HttpStatusCode.valueOf(status), "x"));
 
             scheduler.processar();
@@ -176,7 +179,7 @@ class GarminPingProcessorSchedulerTest {
         void retry(int status) {
             GarminPing ping = ping(UUID.randomUUID());
             filaCom(ping);
-            when(garminClient.baixarArquivo(CALLBACK))
+            when(garminClient.baixarArquivo(CALLBACK, TOKEN))
                     .thenThrow(new GarminApiException(HttpStatusCode.valueOf(status), "x"));
 
             scheduler.processar();
@@ -193,7 +196,7 @@ class GarminPingProcessorSchedulerTest {
         void timeout() {
             GarminPing ping = ping(UUID.randomUUID());
             filaCom(ping);
-            when(garminClient.baixarArquivo(CALLBACK))
+            when(garminClient.baixarArquivo(CALLBACK, TOKEN))
                     .thenThrow(new GarminApiException("Falha de transporte", new RuntimeException()));
 
             scheduler.processar();
@@ -207,7 +210,7 @@ class GarminPingProcessorSchedulerTest {
         void seisFalhasSemErro() {
             GarminPing ping = ping(UUID.randomUUID());
             filaCom(ping);
-            when(garminClient.baixarArquivo(CALLBACK))
+            when(garminClient.baixarArquivo(CALLBACK, TOKEN))
                     .thenThrow(new GarminApiException(HttpStatusCode.valueOf(503), "x"));
 
             List<Long> esperas = new ArrayList<>();
@@ -226,7 +229,7 @@ class GarminPingProcessorSchedulerTest {
         void fitInvalido() {
             GarminPing ping = ping(UUID.randomUUID());
             filaCom(ping);
-            when(garminClient.baixarArquivo(CALLBACK)).thenReturn(new byte[]{1});
+            when(garminClient.baixarArquivo(CALLBACK, TOKEN)).thenReturn(new byte[]{1});
             when(fitParseService.parse(any())).thenThrow(new FitParseException("ruim"));
 
             scheduler.processar();
@@ -282,7 +285,8 @@ class GarminPingProcessorSchedulerTest {
             when(pingRepository.save(any(GarminPing.class))).thenAnswer(inv -> inv.getArgument(0));
             when(integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(any(), eq(FonteDados.GARMIN), any()))
                     .thenAnswer(inv -> Optional.of(conexao(inv.getArgument(2))));
-            when(garminClient.baixarArquivo(CALLBACK)).thenReturn(new byte[]{1});
+            when(garminOAuthService.tokenValido(any())).thenReturn(TOKEN);
+            when(garminClient.baixarArquivo(CALLBACK, TOKEN)).thenReturn(new byte[]{1});
             when(fitParseService.parse(any())).thenReturn(dados);
             List<UUID> tenantsNoPersist = new ArrayList<>();
             when(fitTreinoPersister.persistir(any(), eq(dados), anyString())).thenAnswer(inv -> {
@@ -309,7 +313,8 @@ class GarminPingProcessorSchedulerTest {
             when(pingRepository.save(any(GarminPing.class))).thenAnswer(inv -> inv.getArgument(0));
             when(integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(any(), eq(FonteDados.GARMIN), any()))
                     .thenAnswer(inv -> Optional.of(conexao(inv.getArgument(2))));
-            when(garminClient.baixarArquivo(CALLBACK)).thenReturn(new byte[]{1});
+            when(garminOAuthService.tokenValido(any())).thenReturn(TOKEN);
+            when(garminClient.baixarArquivo(CALLBACK, TOKEN)).thenReturn(new byte[]{1});
             when(fitParseService.parse(any())).thenReturn(dados);
             FitImportResultado ok = resultado(UUID.randomUUID(), true);
             when(fitTreinoPersister.persistir(any(), eq(dados), anyString()))
@@ -324,11 +329,37 @@ class GarminPingProcessorSchedulerTest {
         }
 
         @Test
+        @DisplayName("download leva o access token do atleta (sem ele o Garmin responde 400)")
+        void downloadComTokenDoAtleta() {
+            GarminPing ping = ping(UUID.randomUUID());
+            filaCom(ping);
+            baixaEParseia(ping, true);
+
+            scheduler.processar();
+
+            verify(garminClient).baixarArquivo(CALLBACK, TOKEN);
+        }
+
+        @Test
+        @DisplayName("refresh recusado: ERROR pedindo reconexão, sem download")
+        void refreshRecusado() {
+            GarminPing ping = ping(UUID.randomUUID());
+            IntegracaoExterna conexao = filaCom(ping);
+            when(garminOAuthService.tokenValido(conexao)).thenThrow(new IllegalStateException("revogado"));
+
+            scheduler.processar();
+
+            assertThat(ping.getStatus()).isEqualTo(GarminPingStatus.ERROR);
+            assertThat(ping.getReason()).contains("reconectada");
+            verifyNoInteractions(garminClient);
+        }
+
+        @Test
         @DisplayName("falha ao persistir depois do download vira ERROR com o motivo real, não fica em SYNCING")
         void falhaAoPersistir() {
             GarminPing ping = ping(UUID.randomUUID());
             filaCom(ping);
-            when(garminClient.baixarArquivo(CALLBACK)).thenReturn(new byte[]{1});
+            when(garminClient.baixarArquivo(CALLBACK, TOKEN)).thenReturn(new byte[]{1});
             when(fitParseService.parse(any())).thenReturn(dados);
             when(fitTreinoPersister.persistir(any(), eq(dados), anyString()))
                     .thenThrow(new IllegalStateException("banco caiu"));
@@ -368,6 +399,7 @@ class GarminPingProcessorSchedulerTest {
         when(pingRepository.save(any(GarminPing.class))).thenAnswer(inv -> inv.getArgument(0));
         when(integracaoRepository.findActiveByAtletaIdAndPlataformaAndTenantId(
                 ping.getAthleteId(), FonteDados.GARMIN, ping.getTenantId())).thenReturn(Optional.of(conexao));
+        when(garminOAuthService.tokenValido(conexao)).thenReturn(TOKEN);
         return conexao;
     }
 
@@ -382,7 +414,7 @@ class GarminPingProcessorSchedulerTest {
 
     private UUID baixaEParseia(GarminPing ping, boolean novo) {
         UUID treinoId = UUID.randomUUID();
-        when(garminClient.baixarArquivo(CALLBACK)).thenReturn(new byte[]{1, 2, 3});
+        when(garminClient.baixarArquivo(CALLBACK, TOKEN)).thenReturn(new byte[]{1, 2, 3});
         when(fitParseService.parse(any())).thenReturn(dados);
         FitImportResultado resultado = resultado(treinoId, novo);
         when(fitTreinoPersister.persistir(ping.getAthleteId(), dados, "Forerunner 970")).thenReturn(resultado);

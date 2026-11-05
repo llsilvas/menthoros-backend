@@ -287,10 +287,11 @@ public class GarminClientImpl implements GarminClient {
      * Tenant-aware: NO
      */
     @Override
-    public byte[] baixarArquivo(String callbackUrl) {
+    public byte[] baixarArquivo(String callbackUrl, String token) {
         URI uri = callbackValido(callbackUrl);
         byte[] arquivo = executa("baixar arquivo", () -> webClient.get()
                 .uri(uri)
+                .headers(h -> h.setBearerAuth(token))
                 .accept(MediaType.ALL)
                 .retrieve()
                 .bodyToMono(byte[].class)

@@ -13,6 +13,7 @@ import br.com.menthoros.backend.repository.GarminPingRepository;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.services.FitParseService;
 import br.com.menthoros.backend.services.GarminClient;
+import br.com.menthoros.backend.services.GarminOAuthService;
 import br.com.menthoros.backend.services.helper.FitTreinoPersister;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -62,6 +63,7 @@ public class GarminPingProcessorScheduler {
     private final GarminPingRepository pingRepository;
     private final IntegracaoExternaRepository integracaoRepository;
     private final GarminClient garminClient;
+    private final GarminOAuthService garminOAuthService;
     private final FitParseService fitParseService;
     private final FitTreinoPersister fitTreinoPersister;
     private final TransactionTemplate tx;
@@ -70,6 +72,7 @@ public class GarminPingProcessorScheduler {
     public GarminPingProcessorScheduler(GarminPingRepository pingRepository,
                                         IntegracaoExternaRepository integracaoRepository,
                                         GarminClient garminClient,
+                                        GarminOAuthService garminOAuthService,
                                         FitParseService fitParseService,
                                         FitTreinoPersister fitTreinoPersister,
                                         PlatformTransactionManager transactionManager,
@@ -77,6 +80,7 @@ public class GarminPingProcessorScheduler {
         this.pingRepository = pingRepository;
         this.integracaoRepository = integracaoRepository;
         this.garminClient = garminClient;
+        this.garminOAuthService = garminOAuthService;
         this.fitParseService = fitParseService;
         this.fitTreinoPersister = fitTreinoPersister;
         this.tx = new TransactionTemplate(transactionManager);
@@ -159,7 +163,15 @@ public class GarminPingProcessorScheduler {
 
         FitSessionData dados;
         try {
-            byte[] arquivo = garminClient.baixarArquivo(claimed.getCallbackUrl());
+            String token;
+            try {
+                token = garminOAuthService.tokenValido(conexao.get());
+            } catch (IllegalStateException e) {
+                // Refresh recusado: a conexão já foi marcada inativa e o atleta precisa reconectar.
+                finalizar(claimed, GarminPingStatus.ERROR, "Conexão Garmin precisa ser reconectada", agora);
+                return;
+            }
+            byte[] arquivo = garminClient.baixarArquivo(claimed.getCallbackUrl(), token);
             dados = fitParseService.parse(new ByteArrayInputStream(arquivo));
         } catch (IllegalArgumentException e) {
             finalizar(claimed, GarminPingStatus.ERROR, "callbackURL inválido", agora);
