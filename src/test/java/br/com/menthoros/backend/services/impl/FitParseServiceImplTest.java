@@ -428,6 +428,76 @@ class FitParseServiceImplTest {
                 assertThat(dados.laps().get(13).subidaMetros()).isEqualTo(11);
             }
         }
+
+        @Test
+        @DisplayName("lê velocidade média e máxima e temperaturas mínima e máxima da sessão")
+        void leVelocidadeETemperaturasDaSessao() throws IOException {
+            try (InputStream in = getClass().getResourceAsStream("/fit/corrida-15km-16laps.fit")) {
+                FitSessionData dados = service.parse(in);
+
+                // 3,387 m/s no enhanced_max_speed (sonda da task 0.1)
+                assertThat(dados.velocidadeMaxKmh()).isEqualByComparingTo("12.19");
+                // 15 km / 5.612,6 s de tempo em movimento
+                assertThat(dados.velocidadeMediaKmh()).isCloseTo(9.62, org.assertj.core.data.Offset.offset(0.01));
+                assertThat(dados.temperaturaMinC()).isEqualByComparingTo("19.0");
+                assertThat(dados.temperaturaMaxC()).isEqualByComparingTo("27.0");
+            }
+        }
+    }
+
+    @Nested
+    @DisplayName("velocidade e temperatura da sessão (coach-ver-treino-realizado, D2)")
+    class VelocidadeETemperatura {
+
+        @Test
+        @DisplayName("sem enhanced_max_speed usa max_speed")
+        void usaMaxSpeedSemEnhanced() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg session = sessaoCorrida();
+                session.setMaxSpeed(4.0f);
+                builder.mesgs.add(session);
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.velocidadeMaxKmh()).isEqualByComparingTo("14.40");
+        }
+
+        @Test
+        @DisplayName("velocidade média usa tempo em movimento, não elapsed")
+        void velocidadeMediaUsaTempoEmMovimento() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg session = sessaoCorrida();
+                session.setTotalDistance(10000f);
+                session.setTotalTimerTime(3000f);
+                builder.mesgs.add(session);
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.velocidadeMediaKmh()).isEqualTo(12.0);
+        }
+
+        @Test
+        @DisplayName("Session sem os campos: tudo nulo e a importação não falha")
+        void semCamposFicaNulo() throws IOException {
+            byte[] fit = gerarFit(builder -> builder.mesgs.add(sessaoCorrida()));
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.velocidadeMediaKmh()).isNull();
+            assertThat(dados.velocidadeMaxKmh()).isNull();
+            assertThat(dados.temperaturaMinC()).isNull();
+            assertThat(dados.temperaturaMaxC()).isNull();
+        }
+
+        private SessionMesg sessaoCorrida() {
+            SessionMesg session = new SessionMesg();
+            session.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+            session.setSport(Sport.RUNNING);
+            session.setTotalElapsedTime(3600f);
+            return session;
+        }
     }
 
     // ── Helper: gera um .fit real e mínimo via FileEncoder do próprio SDK ─────────────────────

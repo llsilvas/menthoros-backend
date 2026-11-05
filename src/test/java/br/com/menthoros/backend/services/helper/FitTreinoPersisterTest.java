@@ -393,6 +393,62 @@ class FitTreinoPersisterTest {
         }
 
         @Test
+        @DisplayName("velocidade média e máxima e temperaturas da sessão persistem no treino")
+        void persisteVelocidadeRitmoETemperaturas() {
+            FitSessionData dados = sessaoComExecucao(12.0, "14.40");
+            stubIngestao();
+
+            service.persistir(atletaId, dados);
+
+            TreinoRealizado treino = treinoRegistrado();
+            assertThat(treino.getVelocidadeMedia()).isEqualTo(12.0);
+            assertThat(treino.getPaceMedia()).as("paceMedia alimenta TSS/limiar — não muda nesta change").isNull();
+            assertThat(treino.getVelocidadeMaxKmh()).isEqualByComparingTo("14.40");
+            assertThat(treino.getTemperaturaMinC()).isEqualByComparingTo("19.0");
+            assertThat(treino.getTemperaturaMaxC()).isEqualByComparingTo("27.0");
+        }
+
+        @Test
+        @DisplayName("velocidade ausente, zero ou acima de 150 km/h fica nula — BVA no teto")
+        void velocidadeForaDaFaixaDescartada() {
+            stubIngestao();
+
+            service.persistir(atletaId, sessaoComExecucao(150.0, "150.01"));
+            TreinoRealizado noTeto = treinoRegistrado();
+            assertThat(noTeto.getVelocidadeMedia()).isEqualTo(150.0);
+            assertThat(noTeto.getVelocidadeMaxKmh()).isNull();
+
+            clearInvocations(ingestaoTreinoRealizadoService);
+            service.persistir(atletaId, sessaoComExecucao(0.0, null));
+            TreinoRealizado zerado = treinoRegistrado();
+            assertThat(zerado.getVelocidadeMedia()).isNull();
+            assertThat(zerado.getVelocidadeMaxKmh()).isNull();
+        }
+
+        private FitSessionData sessaoComExecucao(Double velocidadeMediaKmh, String velocidadeMaxKmh) {
+            return new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null,
+                    null, null, null, null, null, null, null, null,
+                    List.of(lapCorrida(1, Duration.ofMinutes(15), 2.5, 148, 160)),
+                    velocidadeMediaKmh,
+                    velocidadeMaxKmh != null ? new java.math.BigDecimal(velocidadeMaxKmh) : null,
+                    new java.math.BigDecimal("19.0"), new java.math.BigDecimal("27.0"));
+        }
+
+        private void stubIngestao() {
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+        }
+
+        private TreinoRealizado treinoRegistrado() {
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
+            return captor.getValue();
+        }
+
+        @Test
         @DisplayName("running dynamics completos (GCT, equilíbrio, passada, oscilação, proporção, temperatura, tempo em movimento, calorias) persistem no treino e na etapa")
         void persisteRunningDynamicsCompletos() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,

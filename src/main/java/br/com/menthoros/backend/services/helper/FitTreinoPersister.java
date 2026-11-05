@@ -44,6 +44,8 @@ public class FitTreinoPersister {
     private static final int CADENCIA_MAX_PPM = 200;
     private static final int ELEVACAO_MAX_METROS = 10_000;
     private static final int POTENCIA_MAX_WATTS = 2_500;
+    /** Acima disso é lixo de firmware em qualquer esporte do .fit — e estouraria o NUMERIC(5,2). */
+    private static final double VELOCIDADE_MAX_KMH = 150.0;
 
     // Running dynamics (design D2 de fit-running-dynamics-ingestion) — mesma lógica de descarte
     // silencioso; temperatura, tempo em movimento e calorias não têm faixa de sanidade própria
@@ -144,6 +146,14 @@ public class FitTreinoPersister {
         treino.setOscilacaoVerticalCm(sanitizarOscilacao(dados.oscilacaoVerticalCm()));
         treino.setProporcaoVerticalPct(sanitizarProporcao(dados.proporcaoVerticalPct()));
         treino.setTemperaturaMediaC(dados.temperaturaMediaC());
+        // paceMedia fica nulo de propósito: ele alimenta TSS, inferência de limiar e projeção de
+        // prova, e preenchê-lo mudaria esses cálculos para todo import .fit. O ritmo da tela de
+        // execução sai da velocidade (coach-ver-treino-realizado, task 1.3).
+        treino.setVelocidadeMedia(sanitizarVelocidade(dados.velocidadeMediaKmh()));
+        treino.setVelocidadeMaxKmh(dados.velocidadeMaxKmh() != null
+                && sanitizarVelocidade(dados.velocidadeMaxKmh().doubleValue()) != null ? dados.velocidadeMaxKmh() : null);
+        treino.setTemperaturaMinC(dados.temperaturaMinC());
+        treino.setTemperaturaMaxC(dados.temperaturaMaxC());
 
         if (dados.tssCalculado() != null) {
             treino.setTssCalculado(dados.tssCalculado());
@@ -233,6 +243,13 @@ public class FitTreinoPersister {
     private static boolean temMetricaDeVelocidade(FitLapData lap) {
         return lap.distanciaKm() != null && lap.distanciaKm() > 0
                 && lap.duracao() != null && !lap.duracao().isZero() && !lap.duracao().isNegative();
+    }
+
+    private static Double sanitizarVelocidade(Double kmh) {
+        if (kmh == null || kmh <= 0 || kmh > VELOCIDADE_MAX_KMH) {
+            return null;
+        }
+        return kmh;
     }
 
     private static Integer sanitizarCadencia(Integer ppm) {

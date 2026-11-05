@@ -146,7 +146,10 @@ public class FitParseServiceImpl implements FitParseService {
                     mesg.getAvgStepLength(),
                     mesg.getAvgVerticalOscillation(),
                     mesg.getAvgVerticalRatio(),
-                    mesg.getAvgTemperature()
+                    mesg.getAvgTemperature(),
+                    primeiroNaoNulo(mesg.getEnhancedMaxSpeed(), mesg.getMaxSpeed()),
+                    mesg.getMinTemperature(),
+                    mesg.getMaxTemperature()
             ));
         });
 
@@ -196,7 +199,10 @@ public class FitParseServiceImpl implements FitParseService {
             Float avgStepLength,
             Float avgVerticalOscillation,
             Float avgVerticalRatio,
-            Byte avgTemperature
+            Byte avgTemperature,
+            Float maxSpeed,
+            Byte minTemperature,
+            Byte maxTemperature
     ) {}
 
     private static FitSessionData montarResultado(SessaoBruta s, List<LapBruto> lapsBrutos, long serialNumber) {
@@ -247,7 +253,11 @@ public class FitParseServiceImpl implements FitParseService {
                 centimetrosDeMilimetros(s.avgVerticalOscillation()),
                 bigDecimal1Casa(s.avgVerticalRatio()),
                 celsiusDeByte(s.avgTemperature()),
-                laps
+                laps,
+                velocidadeMediaKmh(s.totalDistance(), s.totalTimerTime()),
+                kmhDeMetrosPorSegundo(s.maxSpeed()),
+                celsiusDeByte(s.minTemperature()),
+                celsiusDeByte(s.maxTemperature())
         );
     }
 
@@ -293,6 +303,18 @@ public class FitParseServiceImpl implements FitParseService {
         return graus != null ? BigDecimal.valueOf(graus).setScale(1, RoundingMode.HALF_UP) : null;
     }
 
+    /** Distância / tempo em movimento, como o Garmin Connect calcula a média da sessão. */
+    private static Double velocidadeMediaKmh(Float metros, Float segundosEmMovimento) {
+        if (metros == null || segundosEmMovimento == null || segundosEmMovimento <= 0) return null;
+        return BigDecimal.valueOf(metros / segundosEmMovimento * 3.6).setScale(2, RoundingMode.HALF_UP).doubleValue();
+    }
+
+    private static BigDecimal kmhDeMetrosPorSegundo(Float metrosPorSegundo) {
+        return metrosPorSegundo != null
+                ? BigDecimal.valueOf(metrosPorSegundo * 3.6).setScale(2, RoundingMode.HALF_UP)
+                : null;
+    }
+
     private static Double distanciaKmDeMetros(Float metros) {
         return metros != null ? metros / 1000.0 : null;
     }
@@ -307,7 +329,7 @@ public class FitParseServiceImpl implements FitParseService {
      * cadência sumir; o fallback lê o campo bruto (mesmo valor físico). Seguro porque a conversão
      * para ppm só é aplicada quando a Session declara corrida (RPM de outros esportes vira null).
      */
-    private static Short primeiroNaoNulo(Short preferido, Short fallback) {
+    private static <T> T primeiroNaoNulo(T preferido, T fallback) {
         return preferido != null ? preferido : fallback;
     }
 
