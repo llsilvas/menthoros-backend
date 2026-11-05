@@ -47,6 +47,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
+import br.com.menthoros.backend.services.helper.ApprovedWorkoutEditPolicy;
+import br.com.menthoros.backend.services.helper.ApprovedWorkoutEditPolicy.EditRejection;
 import java.util.function.Supplier;
 
 @Slf4j
@@ -72,6 +76,9 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final PlatformTransactionManager transactionManager;
     private final IntegracaoExternaRepository integracaoExternaRepository;
     private final GarminConnectionService garminConnectionService;
+    private final AtletaHojeResolver atletaHojeResolver;
+    private final ApprovedWorkoutEditPolicy approvedWorkoutEditPolicy;
+    private final PostApprovalEditCoordinator postApprovalEditCoordinator;
 
     /**
      * Transação própria para cada bloco degradável do perfil. Participando da transação do perfil,
@@ -146,7 +153,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
         long t4 = System.nanoTime();
         AtletaPerfilCoachOutputDto.PlanoVigenteDto planoVigente = buscarNullable("planoVigente", avisos,
-                () -> resolverPlanoVigente(atletaId, tenantId, melhoresEsforcosIntegracaoConectada));
+                () -> resolverPlanoVigente(atleta, tenantId, melhoresEsforcosIntegracaoConectada));
         log.debug("[perfil] plano: {}ms", ms(t4));
 
         long t5 = System.nanoTime();
@@ -314,7 +321,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     }
 
     private AtletaPerfilCoachOutputDto.PlanoVigenteDto resolverPlanoVigente(
-            UUID atletaId, UUID tenantId, boolean atletaConectadoIntervalsIcu) {
+            Atleta atleta, UUID tenantId, boolean atletaConectadoIntervalsIcu) {
+        UUID atletaId = atleta.getId();
         Optional<PlanoSemanal> planoOpt = planoService.findPlanoVigenteRelevante(atletaId, tenantId);
         if (planoOpt.isEmpty()) return null;
 
@@ -326,6 +334,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
             // Separado do flag do intervals.icu, que também alimenta melhoresEsforcosIntegracaoConectada.
             boolean canalConectado = garminConnectionService.conexaoDeCanal(atletaId, tenantId).isPresent();
             LocalDateTime agora = LocalDateTime.now();
+            Function<TreinoPlanejado, Optional<EditRejection>> recusa = recusaDeEdicao(plano, atleta, tenantId);
             // conexão intervals.icu já resolvida pelo chamador (anti-N+1) e replicada em cada treino
             treinos = plano.getTreinosPlanejados().stream()
                     .sorted(Comparator.comparing(TreinoPlanejado::getDataTreino))
@@ -349,7 +358,10 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             tp.envioEmAndamento(agora),
                             // Vínculo em fetch join no findMostRecentRelevantPlano — sem ele, um SELECT por treino.
                             tp.getTreinoRealizado() != null ? tp.getTreinoRealizado().getId() : null,
-                            tp.getRitmoAlvo()))
+                            tp.getRitmoAlvo(),
+                            tp.getEditedAfterApprovalAt(),
+                            recusa.apply(tp).isEmpty(),
+                            recusa.apply(tp).map(Enum::name).orElse(null)))
                     .toList();
         } else {
             treinos = List.of();
@@ -362,6 +374,21 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 plano.getReviewStatus(),
                 treinos
         );
+    }
+
+    /**
+     * Mesma regra do PATCH (coach-editar-treino-aprovado, D1) para o lápis do front. Em revisão tudo
+     * é editável; em plano aprovado, uma consulta de relógio por perfil, nunca por treino. A recusa
+     * vai ao front para o rótulo do cadeado: ele não deduz o dia, que é o do atleta.
+     */
+    private Function<TreinoPlanejado, Optional<EditRejection>> recusaDeEdicao(
+            PlanoSemanal plano, Atleta atleta, UUID tenantId) {
+        if (plano.getReviewStatus() != PlanoReviewStatus.APROVADO) {
+            return tp -> Optional.empty();
+        }
+        boolean hasWatch = postApprovalEditCoordinator.hasWatch(atleta.getId(), tenantId);
+        LocalDate hoje = atletaHojeResolver.hojeDe(atleta);
+        return tp -> approvedWorkoutEditPolicy.avaliar(tp, hoje, hasWatch);
     }
 
     private List<EtapaTreinoDto> safeGetEtapasResumo(TreinoPlanejado tp) {

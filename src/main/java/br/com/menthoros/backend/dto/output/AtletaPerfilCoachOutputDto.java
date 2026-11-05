@@ -248,7 +248,19 @@ public record AtletaPerfilCoachOutputDto(
             UUID treinoRealizadoId,
 
             @Schema(description = "Ritmo alvo planejado", example = "5:30")
-            String ritmoAlvo
+            String ritmoAlvo,
+
+            @Schema(description = "Quando o treinador editou o treino depois da aprovação do plano; ausente se nunca editado",
+                    example = "2026-11-04T15:00:00Z")
+            Instant editedAfterApprovalAt,
+
+            @Schema(description = "O treinador pode editar este treino agora: em revisão, sempre; em plano aprovado, só "
+                    + "pendente, de hoje ou futuro no fuso do atleta, e o de hoje só sem relógio. O PATCH segue sendo a autoridade")
+            Boolean editable,
+
+            @Schema(description = "Por que o treino não é editável em plano aprovado (NOT_PENDING, PAST_DAY, TODAY_ON_WATCH); "
+                    + "ausente quando editável ou em revisão", example = "TODAY_ON_WATCH")
+            String editRejection
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

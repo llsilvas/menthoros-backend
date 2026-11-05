@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.dto.input;
 
+import br.com.menthoros.backend.enums.WorkoutEditReason;
+
 import br.com.menthoros.backend.enums.TipoTreino;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -49,6 +51,10 @@ public record TreinoPlanejadoPatchDto(
         @Valid
         @Size(max = 20)
         @Schema(description = "Lista de etapas do treino — quando informada, substitui todas as etapas existentes")
-        List<EtapaInputDto> etapas
+        List<EtapaInputDto> etapas,
+
+        @Schema(description = "Motivo opcional da edição de treino em plano já aprovado; ignorado em plano em revisão",
+                example = "LOAD")
+        WorkoutEditReason editReason
 
 ) {}

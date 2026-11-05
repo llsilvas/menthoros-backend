@@ -70,16 +70,22 @@ public class CoachTreinoController {
     @Operation(
             summary = "Edita um treino planejado",
             description = "Aplica patch semântico a um TreinoPlanejado. Campos null são ignorados. "
-                    + "O plano deve estar em status AGUARDANDO_REVISAO. Recalcula TSS automaticamente "
-                    + "quando distanciaKm ou duracaoMin mudam, salvo se tssPlanejado for informado.")
+                    + "O plano deve estar em AGUARDANDO_REVISAO ou APROVADO. Em plano APROVADO, só treino "
+                    + "pendente, de hoje ou futuro no fuso do atleta (o de hoje só se o atleta nunca conectou "
+                    + "relógio), e o resultado precisa continuar exportável ao relógio; com canal conectado, "
+                    + "o treino é reenviado ao relógio depois do commit. editReason (opcional) registra o "
+                    + "motivo da edição pós-aprovação. Recalcula TSS automaticamente quando distanciaKm ou "
+                    + "duracaoMin mudam, salvo se tssPlanejado for informado.")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Treino atualizado",
                     content = @Content(schema = @Schema(implementation = TreinoPlanejadoOutputDto.class))),
             @ApiResponse(responseCode = "400", description = "Campos inválidos"),
             @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)"),
             @ApiResponse(responseCode = "404", description = "Plano ou treino não encontrado"),
-            @ApiResponse(responseCode = "409", description = "Conflito de edição concorrente"),
-            @ApiResponse(responseCode = "422", description = "Plano não está em revisão")
+            @ApiResponse(responseCode = "409", description = "Conflito de edição concorrente, ou envio do treino "
+                    + "ao relógio em andamento"),
+            @ApiResponse(responseCode = "422", description = "Plano rejeitado; em plano aprovado, treino realizado, "
+                    + "perdido, de dia passado ou de hoje com relógio, ou resultado sem duração e sem distância")
     })
     public ResponseEntity<TreinoPlanejadoOutputDto> editarTreino(
             @Parameter(description = "UUID do plano semanal") @PathVariable UUID planoId,
@@ -92,6 +98,17 @@ public class CoachTreinoController {
 
     @DeleteMapping("/{planoId}/treinos/{treinoId}")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
+    @Operation(
+            summary = "Exclui um treino planejado",
+            description = "Remove o treino do plano e ajusta o volume. Plano APROVADO recusa: o treino já foi ao "
+                    + "relógio e a exclusão apagaria o registro da edição pós-aprovação.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Treino excluído"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)"),
+            @ApiResponse(responseCode = "404", description = "Plano ou treino não encontrado"),
+            @ApiResponse(responseCode = "422", description = "Plano aprovado")
+    })
     public ResponseEntity<TreinoPlanejadoOutputDto> excluirTreino(
             @Parameter(description = "UUID do plano semanal") @PathVariable UUID planoId,
             @Parameter(description = "UUID do treino planejado") @PathVariable UUID treinoId){

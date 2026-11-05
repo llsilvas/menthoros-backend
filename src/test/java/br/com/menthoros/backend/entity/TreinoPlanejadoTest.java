@@ -44,6 +44,21 @@ class TreinoPlanejadoTest {
             assertThat(treino.getExternalId()).isEqualTo("987654");
             assertThat(treino.getExportadoPara()).isEqualTo("[\"GARMIN\"]");
         }
+
+        @ParameterizedTest
+        @EnumSource(value = StatusSincronizacao.class, names = {"SINCRONIZADO", "PENDENTE"})
+        @DisplayName("edição pós-aprovação: treino sincronizado ou nunca enviado volta a AGUARDANDO_RETRY")
+        void edicaoPosAprovacao(StatusSincronizacao statusAntes) {
+            TreinoPlanejado treino = new TreinoPlanejado();
+            treino.setStatusSincronizacao(statusAntes);
+            treino.setTentativasSincronizacao(2);
+
+            treino.reiniciarSincronizacao(AGORA);
+
+            assertThat(treino.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.AGUARDANDO_RETRY);
+            assertThat(treino.getTentativasSincronizacao()).isZero();
+            assertThat(treino.getExternalId()).isNull();
+        }
     }
 
     @Nested

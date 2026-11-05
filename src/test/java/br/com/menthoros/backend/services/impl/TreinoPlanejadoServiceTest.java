@@ -13,6 +13,7 @@ import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.enums.WorkoutEditReason;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -30,6 +31,10 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockedStatic;
@@ -60,6 +65,7 @@ class TreinoPlanejadoServiceTest {
     @Mock private TssCalculatorService tssCalculatorService;
     @Mock private TreinoMapper treinoMapper;
     @Mock private EtapaMapper etapaMapper;
+    @Mock private PostApprovalEditCoordinator postApprovalEditCoordinator;
     @org.mockito.Spy private final io.micrometer.core.instrument.MeterRegistry meterRegistry =
             new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
 
@@ -123,6 +129,20 @@ class TreinoPlanejadoServiceTest {
             service.excluirTreino(planoId, treino.getId());
 
             assertThat(contadorDiaEmBranco()).isZero();
+        }
+
+        @Test
+        @DisplayName("plano APROVADO recusa a exclusão: o treino já está no relógio e o registro da edição não pode sumir")
+        void planoAprovadoRecusaExclusao() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.APROVADO, new ArrayList<>());
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+
+            assertThatThrownBy(() -> service.excluirTreino(planoId, treinoId))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("aprovado");
+
+            verify(treinoPlanejadoRepository, never()).delete(any());
+            verify(planoSemanalRepository, never()).save(any());
         }
 
         private double contadorDiaEmBranco() {
@@ -563,7 +583,7 @@ class TreinoPlanejadoServiceTest {
             );
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
-                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 4, subs))
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 4, subs)), null
             );
 
             service.editarTreino(planoId, treinoId, patch);
@@ -605,7 +625,7 @@ class TreinoPlanejadoServiceTest {
                             new EtapaInputDto("BLOCO", null, null, null, null, null, null, 2, List.of(
                                     new EtapaInputDto("INTERVALADO", null, 2, null, null, null, null, null, null),
                                     new EtapaInputDto("RECUPERACAO", null, 3, null, null, null, null, null, null)))
-                    )
+                    ), null
             );
 
             service.editarTreino(planoId, treinoId, patch);
@@ -643,7 +663,7 @@ class TreinoPlanejadoServiceTest {
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
                     List.of(new EtapaInputDto("PRINCIPAL", "Tiro", 5, null,
-                            "140-150 bpm", "5:00-5:15/km", 1, null, null))
+                            "140-150 bpm", "5:00-5:15/km", 1, null, null)), null
             );
 
             service.editarTreino(planoId, treinoId, patch);
@@ -675,7 +695,7 @@ class TreinoPlanejadoServiceTest {
                     null, AlvoPrimario.FC);
 
             service.editarTreino(planoId, treinoId, new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, List.of(avulsa, bloco, legado)));
+                    null, null, null, null, null, null, null, null, List.of(avulsa, bloco, legado), null));
 
             assertThat(treino.getEtapas()).extracting(EtapaTreino::getAlvoPrimario)
                     .containsExactly(AlvoPrimario.NENHUM, AlvoPrimario.PACE, AlvoPrimario.PACE,
@@ -695,11 +715,11 @@ class TreinoPlanejadoServiceTest {
             when(treinoPlanejadoRepository.save(any(TreinoPlanejado.class))).thenAnswer(inv -> inv.getArgument(0));
 
             service.editarTreino(planoId, treinoId, new TreinoPlanejadoPatchDto(
-                    null, "nova descrição", null, null, null, null, null, null, null));
+                    null, "nova descrição", null, null, null, null, null, null, null, null));
             assertThat(treino.getZonaAlvo()).isEqualTo("Z2");
 
             service.editarTreino(planoId, treinoId, new TreinoPlanejadoPatchDto(
-                    null, null, null, null, "", null, null, null, null));
+                    null, null, null, null, "", null, null, null, null, null));
             assertThat(treino.getZonaAlvo()).isNull();
         }
 
@@ -719,7 +739,7 @@ class TreinoPlanejadoServiceTest {
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
                     List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 3, List.of(
-                            new EtapaInputDto("INTERVALADO", "Tiro", 1, null, null, "4:00-4:10/km", null, null, null))))
+                            new EtapaInputDto("INTERVALADO", "Tiro", 1, null, null, "4:00-4:10/km", null, null, null)))), null
             );
 
             service.editarTreino(planoId, treinoId, patch);
@@ -746,7 +766,7 @@ class TreinoPlanejadoServiceTest {
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
-                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 3, List.of()))
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 3, List.of())), null
             );
 
             assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
@@ -769,7 +789,7 @@ class TreinoPlanejadoServiceTest {
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
                     List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 21, List.of(
-                            new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null, null))))
+                            new EtapaInputDto("INTERVALADO", null, 1, null, null, null, null, null, null)))), null
             );
 
             assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
@@ -793,7 +813,7 @@ class TreinoPlanejadoServiceTest {
                     List.of(new EtapaInputDto("RECUPERACAO", null, 1, null, null, null, null, null, null)));
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, null, null, null, null, null, null, null,
-                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 2, List.of(aninhada)))
+                    List.of(new EtapaInputDto("BLOCO", null, null, null, null, null, null, 2, List.of(aninhada))), null
             );
 
             assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
@@ -822,7 +842,7 @@ class TreinoPlanejadoServiceTest {
                             new EtapaInputDto("AQUECIMENTO", null, 10, null, null, null, null, null, null),
                             new EtapaInputDto("PRINCIPAL", null, 30, null, null, null, null, null, null),
                             new EtapaInputDto("DESAQUECIMENTO", null, 5, null, null, null, null, null, null)
-                    )
+                    ), null
             );
 
             service.editarTreino(planoId, treinoId, patch);
@@ -849,7 +869,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputEsperado);
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, BigDecimal.valueOf(18.0), null, null, null, null, "Reduzido após prova", null
+                    null, null, BigDecimal.valueOf(18.0), null, null, null, null, "Reduzido após prova", null, null
             );
 
             TreinoPlanejadoOutputDto result = service.editarTreino(planoId, treinoId, patch);
@@ -882,7 +902,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, BigDecimal.valueOf(18.0), null, null, null, null, null, null);
+                    null, null, BigDecimal.valueOf(18.0), null, null, null, null, null, null, null);
 
             service.editarTreino(planoId, treinoId, patch);
 
@@ -906,7 +926,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, BigDecimal.valueOf(3.0), null, null, null, null, null, null);
+                    null, null, BigDecimal.valueOf(3.0), null, null, null, null, null, null, null);
 
             service.editarTreino(planoId, treinoId, patch);
 
@@ -929,7 +949,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, "Ajuste de texto só", null, null, null, null, null, null, null);
+                    null, "Ajuste de texto só", null, null, null, null, null, null, null, null);
 
             service.editarTreino(planoId, treinoId, patch);
 
@@ -953,7 +973,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, BigDecimal.valueOf(4.0), null, null, null, null, null, null);
+                    null, null, BigDecimal.valueOf(4.0), null, null, null, null, null, null, null);
 
             service.editarTreino(planoId, treinoId, patch);
 
@@ -975,7 +995,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, BigDecimal.valueOf(15.0), null, null, null, null, null, null
+                    null, null, BigDecimal.valueOf(15.0), null, null, null, null, null, null, null
             );
 
             service.editarTreino(planoId, treinoId, patch);
@@ -1008,7 +1028,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, Duration.ofMinutes(90), null, null, null, null, null
+                    null, null, null, Duration.ofMinutes(90), null, null, null, null, null, null
             );
 
             service.editarTreino(planoId, treinoId, patch);
@@ -1025,7 +1045,7 @@ class TreinoPlanejadoServiceTest {
             // asserção não prova escala nenhuma — e escala é exatamente o que o BUG-CONF-001 quebrava.
             TreinoPlanejadoServiceImpl servicoComCalculadorReal = new TreinoPlanejadoServiceImpl(
                     planoSemanalRepository, treinoPlanejadoRepository, new TssCalculatorService(),
-                    treinoMapper, etapaMapper, meterRegistry);
+                    treinoMapper, etapaMapper, meterRegistry, postApprovalEditCoordinator);
 
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
             TreinoPlanejado treino = criarTreino(plano);
@@ -1039,7 +1059,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, Duration.ofMinutes(90), null, null, null, null, null
+                    null, null, null, Duration.ofMinutes(90), null, null, null, null, null, null
             );
 
             servicoComCalculadorReal.editarTreino(planoId, treinoId, patch);
@@ -1075,7 +1095,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, Duration.ofMinutes(90), null, 65, null, null, null
+                    null, null, null, Duration.ofMinutes(90), null, 65, null, null, null, null
             );
 
             service.editarTreino(planoId, treinoId, patch);
@@ -1099,7 +1119,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, "z3", null, null, null, null
+                    null, null, null, null, "z3", null, null, null, null, null
             );
 
             service.editarTreino(planoId, treinoId, patch);
@@ -1111,14 +1131,14 @@ class TreinoPlanejadoServiceTest {
         }
 
         @Test
-        @DisplayName("lança DomainRuleViolationException se plano não está AGUARDANDO_REVISAO")
-        void lancaExcecaoSePlanoNaoEstaAguardandoRevisao() {
-            PlanoSemanal plano = criarPlano(PlanoReviewStatus.APROVADO);
+        @DisplayName("plano REJEITADO lança DomainRuleViolationException (CA4)")
+        void lancaExcecaoSePlanoRejeitado() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.REJEITADO);
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, null
+                    null, null, null, null, null, null, null, null, null, null
             );
 
             assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
@@ -1126,6 +1146,71 @@ class TreinoPlanejadoServiceTest {
                     .hasMessageContaining("revisão");
 
             verify(treinoPlanejadoRepository, never()).save(any());
+            verifyNoInteractions(postApprovalEditCoordinator);
+        }
+
+        @Test
+        @DisplayName("plano APROVADO: passa pelo coordinator antes e depois do patch, sem marcar editadoPeloCoach (CA1)")
+        void planoAprovadoDelegaAoCoordinator() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.APROVADO);
+            TreinoPlanejado treino = criarTreino(plano);
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(treino)).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, false));
+            when(postApprovalEditCoordinator.checkBeforePatch(plano, treino)).thenReturn("{antes}");
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, "Reduzido", null, null, null, null, null, null, null, WorkoutEditReason.LOAD);
+
+            service.editarTreino(planoId, treinoId, patch);
+
+            InOrder ordem = inOrder(postApprovalEditCoordinator, treinoPlanejadoRepository);
+            ordem.verify(postApprovalEditCoordinator).checkBeforePatch(plano, treino);
+            ordem.verify(postApprovalEditCoordinator).applyAfterPatch(plano, treino, "{antes}", WorkoutEditReason.LOAD);
+            ordem.verify(treinoPlanejadoRepository).save(treino);
+            assertThat(treino.getDescricao()).isEqualTo("Reduzido");
+            assertThat(treino.isEditadoPeloCoach()).isFalse();
+        }
+
+        @Test
+        @DisplayName("plano APROVADO com treino não editável: recusa sem aplicar o patch nem salvar (CA2)")
+        void planoAprovadoRecusadoNaoSalva() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.APROVADO);
+            TreinoPlanejado treino = criarTreino(plano);
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            doThrow(new DomainRuleViolationException("Treino já realizado"))
+                    .when(postApprovalEditCoordinator).checkBeforePatch(plano, treino);
+            TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
+                    null, "Reduzido", null, null, null, null, null, null, null, null);
+
+            assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
+                    .isInstanceOf(DomainRuleViolationException.class);
+
+            assertThat(treino.getDescricao()).isNull();
+            verify(postApprovalEditCoordinator, never()).applyAfterPatch(any(), any(), any(), any());
+            verify(treinoPlanejadoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("plano AGUARDANDO_REVISAO não passa pelo coordinator (CA5)")
+        void revisaoNaoUsaCoordinator() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(treino)).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+
+            service.editarTreino(planoId, treinoId, new TreinoPlanejadoPatchDto(
+                    null, "Reduzido", null, null, null, null, null, null, null, null));
+
+            verifyNoInteractions(postApprovalEditCoordinator);
+            assertThat(treino.isEditadoPeloCoach()).isTrue();
+            assertThat(treino.getEditedAfterApprovalAt()).isNull();
         }
 
         @Test
@@ -1134,7 +1219,7 @@ class TreinoPlanejadoServiceTest {
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.empty());
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, null
+                    null, null, null, null, null, null, null, null, null, null
             );
 
             assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
@@ -1153,7 +1238,7 @@ class TreinoPlanejadoServiceTest {
                     .thenReturn(Optional.empty());
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, null
+                    null, null, null, null, null, null, null, null, null, null
             );
 
             assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patch))
@@ -1166,7 +1251,7 @@ class TreinoPlanejadoServiceTest {
         @DisplayName("lança IllegalArgumentException quando planoId é nulo")
         void lancaExcecaoParaPlanoIdNulo() {
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, null
+                    null, null, null, null, null, null, null, null, null, null
             );
             assertThatThrownBy(() -> service.editarTreino(null, treinoId, patch))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -1176,7 +1261,7 @@ class TreinoPlanejadoServiceTest {
         @DisplayName("lança IllegalArgumentException quando treinoId é nulo")
         void lancaExcecaoParaTreinoIdNulo() {
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, null
+                    null, null, null, null, null, null, null, null, null, null
             );
             assertThatThrownBy(() -> service.editarTreino(planoId, null, patch))
                     .isInstanceOf(IllegalArgumentException.class);
@@ -1205,7 +1290,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, BigDecimal.valueOf(20.0), null, null, null, null, null, null
+                    null, null, BigDecimal.valueOf(20.0), null, null, null, null, null, null, null
             );
 
             service.editarTreino(planoId, treinoId, patch);
@@ -1229,7 +1314,7 @@ class TreinoPlanejadoServiceTest {
             EtapaInputDto subEtapa = new EtapaInputDto("INTERVALADO", null, 5, null, null, null, null, null, null);
             EtapaInputDto bloco = new EtapaInputDto("BLOCO", null, null, null, null, null, null, 2, List.of(subEtapa));
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, List.of(bloco)
+                    null, null, null, null, null, null, null, null, List.of(bloco), null
             );
 
             treino.setEtapas(new ArrayList<>());
@@ -1272,7 +1357,7 @@ class TreinoPlanejadoServiceTest {
             );
             EtapaInputDto bloco = new EtapaInputDto("BLOCO", null, null, null, null, null, null, 3, subEtapas);
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, List.of(bloco)
+                    null, null, null, null, null, null, null, null, List.of(bloco), null
             );
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
@@ -1298,7 +1383,7 @@ class TreinoPlanejadoServiceTest {
             EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, null, 3, 3, null);
             EtapaInputDto recuperacao = new EtapaInputDto("RECUPERACAO", null, 2, null, null, null, null, null, null);
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, List.of(intervalado, recuperacao)
+                    null, null, null, null, null, null, null, null, List.of(intervalado, recuperacao), null
             );
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
@@ -1332,7 +1417,7 @@ class TreinoPlanejadoServiceTest {
 
             EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, null, 3, null, null);
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, List.of(intervalado)
+                    null, null, null, null, null, null, null, null, List.of(intervalado), null
             );
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
@@ -1362,7 +1447,7 @@ class TreinoPlanejadoServiceTest {
 
             EtapaInputDto intervalado = new EtapaInputDto("INTERVALADO", null, 4, null, null, null, 1, null, null);
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, List.of(intervalado)
+                    null, null, null, null, null, null, null, null, List.of(intervalado), null
             );
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
@@ -1386,7 +1471,7 @@ class TreinoPlanejadoServiceTest {
             TreinoPlanejado treino = criarTreino(plano);
 
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
-                    null, null, null, null, null, null, null, null, List.of()
+                    null, null, null, null, null, null, null, null, List.of(), null
             );
 
             when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
