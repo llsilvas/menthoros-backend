@@ -38,7 +38,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 class PostApprovalEditCoordinator {
 
-    static final List<FonteDados> CANAIS = List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN);
+    private static final List<FonteDados> CANAIS = List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN);
 
     private final AtletaHojeResolver atletaHojeResolver;
     private final ApprovedWorkoutEditPolicy policy;
@@ -58,11 +58,7 @@ class PostApprovalEditCoordinator {
      * @return o snapshot do treino antes do patch, para o registro da edição (D7)
      */
     String checkBeforePatch(PlanoSemanal plano, TreinoPlanejado treino) {
-        UUID atletaId = plano.getAtleta().getId();
-        boolean hasWatch = integracaoExternaRepository
-                .findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
-                        atletaId, CANAIS, treino.getTenantId())
-                .isPresent();
+        boolean hasWatch = hasWatch(plano.getAtleta().getId(), treino.getTenantId());
         policy.avaliar(treino, atletaHojeResolver.hojeDe(plano.getAtleta()), hasWatch)
                 .ifPresent(recusa -> {
                     throw new DomainRuleViolationException(recusa.message());
@@ -75,6 +71,19 @@ class PostApprovalEditCoordinator {
             throw new DomainConflictException("Envio ao relógio em andamento; tente em alguns segundos.");
         }
         return recorder.snapshot(treino);
+    }
+
+    /**
+     * "Atleta com relógio" da regra D1: existe conexão de canal, ativa ou revogada — conexão caída não
+     * tira o treino antigo do aparelho. Ponto único para o PATCH e para o {@code editable} do perfil.
+     *
+     * <p><b>Idempotente:</b> YES — só leitura. <b>Tenant-aware:</b> YES.
+     */
+    boolean hasWatch(UUID atletaId, UUID tenantId) {
+        return integracaoExternaRepository
+                .findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
+                        atletaId, CANAIS, tenantId)
+                .isPresent();
     }
 
     /**
@@ -103,7 +112,9 @@ class PostApprovalEditCoordinator {
             return;
         }
         treino.reiniciarSincronizacao(LocalDateTime.now(clock));
-        eventPublisher.publishEvent(new WorkoutEditedAfterApprovalEvent(treino.getId(), plano.getId(), atletaId, tenantId));
-        log.info("Treino editado após aprovação, reenvio agendado: treinoId={}, tenantId={}", treino.getId(), tenantId);
+        eventPublisher.publishEvent(
+                new WorkoutEditedAfterApprovalEvent(treino.getId(), plano.getId(), atletaId, tenantId));
+        log.info("Treino editado após aprovação, reenvio agendado: treinoId={}, tenantId={}",
+                treino.getId(), tenantId);
     }
 }

@@ -17,6 +17,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Objects;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
@@ -62,11 +63,14 @@ public class IntervalsIcuPushProcessor {
     private final WorkoutChannel workoutChannel;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final TransactionTemplate txPropria;
+    private final Clock clock;
 
     public IntervalsIcuPushProcessor(IntervalsIcuWorkoutConverter converter,
                                      WorkoutChannel workoutChannel,
                                      TreinoPlanejadoRepository treinoPlanejadoRepository,
-                                     PlatformTransactionManager transactionManager) {
+                                     PlatformTransactionManager transactionManager,
+                                     Clock clock) {
+        this.clock = clock;
         this.converter = converter;
         this.workoutChannel = workoutChannel;
         this.treinoPlanejadoRepository = treinoPlanejadoRepository;
@@ -168,7 +172,7 @@ public class IntervalsIcuPushProcessor {
         // Reclamar de novo enviaria duas vezes ao mesmo tempo — no Garmin, sem externalId, um
         // workout duplicado. Fora da janela é claim preso e é retomado.
         if (treino.getStatusSincronizacao() == StatusSincronizacao.SINCRONIZANDO
-                && treino.envioEmAndamento(LocalDateTime.now())) {
+                && treino.envioEmAndamento(LocalDateTime.now(clock))) {
             log.info("Push do treino {} já em andamento por outro worker; claim não reclamado", treinoId);
             return ClaimResultado.encerrado(ProcessamentoResultado.CLAIM_PERDIDO);
         }

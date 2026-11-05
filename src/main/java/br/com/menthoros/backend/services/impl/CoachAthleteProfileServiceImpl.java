@@ -46,9 +46,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Predicate;
+import java.util.function.Function;
 import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.services.helper.ApprovedWorkoutEditPolicy;
+import br.com.menthoros.backend.services.helper.ApprovedWorkoutEditPolicy.EditRejection;
 import java.util.function.Supplier;
 
 @Slf4j
@@ -76,6 +77,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final GarminConnectionService garminConnectionService;
     private final AtletaHojeResolver atletaHojeResolver;
     private final ApprovedWorkoutEditPolicy approvedWorkoutEditPolicy;
+    private final PostApprovalEditCoordinator postApprovalEditCoordinator;
 
     /**
      * Transação própria para cada bloco degradável do perfil. Participando da transação do perfil,
@@ -329,7 +331,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
             // Separado do flag do intervals.icu, que também alimenta melhoresEsforcosIntegracaoConectada.
             boolean canalConectado = garminConnectionService.conexaoDeCanal(atletaId, tenantId).isPresent();
             LocalDateTime agora = LocalDateTime.now();
-            Predicate<TreinoPlanejado> editavel = editabilidade(plano, atleta, tenantId);
+            Function<TreinoPlanejado, Optional<EditRejection>> recusa = recusaDeEdicao(plano, atleta, tenantId);
             // conexão intervals.icu já resolvida pelo chamador (anti-N+1) e replicada em cada treino
             treinos = plano.getTreinosPlanejados().stream()
                     .sorted(Comparator.comparing(TreinoPlanejado::getDataTreino))
@@ -352,7 +354,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             erroExponivel(tp),
                             tp.envioEmAndamento(agora),
                             tp.getEditedAfterApprovalAt(),
-                            editavel.test(tp)))
+                            recusa.apply(tp).isEmpty(),
+                            recusa.apply(tp).map(Enum::name).orElse(null)))
                     .toList();
         } else {
             treinos = List.of();
@@ -369,18 +372,17 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
     /**
      * Mesma regra do PATCH (coach-editar-treino-aprovado, D1) para o lápis do front. Em revisão tudo
-     * é editável; em plano aprovado, uma consulta de relógio por perfil, nunca por treino.
+     * é editável; em plano aprovado, uma consulta de relógio por perfil, nunca por treino. A recusa
+     * vai ao front para o rótulo do cadeado: ele não deduz o dia, que é o do atleta.
      */
-    private Predicate<TreinoPlanejado> editabilidade(PlanoSemanal plano, Atleta atleta, UUID tenantId) {
+    private Function<TreinoPlanejado, Optional<EditRejection>> recusaDeEdicao(
+            PlanoSemanal plano, Atleta atleta, UUID tenantId) {
         if (plano.getReviewStatus() != PlanoReviewStatus.APROVADO) {
-            return tp -> true;
+            return tp -> Optional.empty();
         }
-        boolean hasWatch = integracaoExternaRepository
-                .findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
-                        atleta.getId(), PostApprovalEditCoordinator.CANAIS, tenantId)
-                .isPresent();
+        boolean hasWatch = postApprovalEditCoordinator.hasWatch(atleta.getId(), tenantId);
         LocalDate hoje = atletaHojeResolver.hojeDe(atleta);
-        return tp -> approvedWorkoutEditPolicy.avaliar(tp, hoje, hasWatch).isEmpty();
+        return tp -> approvedWorkoutEditPolicy.avaliar(tp, hoje, hasWatch);
     }
 
     private List<EtapaTreinoDto> safeGetEtapasResumo(TreinoPlanejado tp) {

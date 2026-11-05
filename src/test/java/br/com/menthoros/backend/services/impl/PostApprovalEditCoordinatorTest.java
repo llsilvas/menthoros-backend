@@ -211,6 +211,26 @@ class PostApprovalEditCoordinatorTest {
         }
 
         @Test
+        @DisplayName("o registro vê o treino antes de reiniciar a sincronização: o 'depois' não mistura mudança de canal")
+        void registraAntesDeReiniciarSincronizacao() {
+            TreinoPlanejado treino = treino(HOJE.plusDays(1));
+            treino.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
+            when(converter.converter(treino)).thenReturn(Optional.of(exportavel()));
+            when(garminConnectionService.conexaoDeCanal(atleta.getId(), tenantId))
+                    .thenReturn(Optional.of(new IntegracaoExterna()));
+            StatusSincronizacao[] statusNoRegistro = new StatusSincronizacao[1];
+            org.mockito.Mockito.doAnswer(inv -> {
+                statusNoRegistro[0] = treino.getStatusSincronizacao();
+                return null;
+            }).when(recorder).record(plano, treino, "{antes}", null, AGORA);
+
+            coordinator.applyAfterPatch(plano, treino, "{antes}", null);
+
+            assertThat(statusNoRegistro[0]).isEqualTo(StatusSincronizacao.SINCRONIZADO);
+            assertThat(treino.getStatusSincronizacao()).isEqualTo(StatusSincronizacao.AGUARDANDO_RETRY);
+        }
+
+        @Test
         @DisplayName("sem canal: marca a edição, não toca na sincronização e não publica (CA8)")
         void semCanal() {
             TreinoPlanejado treino = treino(HOJE.plusDays(1));

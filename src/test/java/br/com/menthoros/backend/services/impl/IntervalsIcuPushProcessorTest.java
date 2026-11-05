@@ -73,7 +73,7 @@ class IntervalsIcuPushProcessorTest {
         conexao.setPlataforma(FonteDados.INTERVALS_ICU);
 
         processor = new IntervalsIcuPushProcessor(converter, workoutChannel, treinoPlanejadoRepository,
-                transactionManager);
+                transactionManager, java.time.Clock.systemDefaultZone());
     }
 
     @Nested

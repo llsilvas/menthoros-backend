@@ -97,6 +97,7 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private AthleteContractService athleteContractService;
     @Mock private br.com.menthoros.backend.repository.IntegracaoExternaRepository integracaoExternaRepository;
     @Mock private br.com.menthoros.backend.services.GarminConnectionService garminConnectionService;
+    @Mock private PostApprovalEditCoordinator postApprovalEditCoordinator;
     // Mock devolve status nulo: o TransactionTemplate só executa o callback — o isolamento real é
     // provado em CoachAthleteProfileDegradacaoIT.
     @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
@@ -134,7 +135,7 @@ class CoachAthleteProfileServiceImplTest {
                 intervalsIcuConnectionService, thresholdInferenceService, melhorEsforcoService, meterRegistry,
                 athleteContractService, transactionManager, integracaoExternaRepository, garminConnectionService,
                 new AtletaHojeResolver(Clock.fixed(Instant.parse("2026-06-17T15:00:00Z"), ZoneId.of("America/Sao_Paulo"))),
-                new ApprovedWorkoutEditPolicy());
+                new ApprovedWorkoutEditPolicy(), postApprovalEditCoordinator);
         // Default: sem cobrança (os testes de cobrança sobrescrevem)
         lenient().when(athleteContractService.resolveBilling(eq(atletaId), any(LocalDate.class)))
                 .thenReturn(java.util.Optional.empty());
@@ -562,33 +563,31 @@ class CoachAthleteProfileServiceImplTest {
                     service.buscarPerfil(atletaId).planoVigente().treinos();
 
             assertThat(treinos.get(0).editable()).isFalse();
+            assertThat(treinos.get(0).editRejection()).isEqualTo("PAST_DAY");
             assertThat(treinos.get(1).editable()).isTrue();
+            assertThat(treinos.get(1).editRejection()).isNull();
             assertThat(treinos.get(0).editedAfterApprovalAt()).isNull();
             assertThat(treinos.get(1).editedAfterApprovalAt()).isEqualTo(editadoEm);
         }
 
         @Test
-        @DisplayName("plano aprovado: treino de hoje com conexão revogada não é editável; uma consulta de relógio por perfil")
+        @DisplayName("plano aprovado: treino de hoje de atleta com relógio não é editável; uma consulta de relógio por perfil")
         void treinoDeHojeComConexaoRevogada() {
             PlanoSemanal plano = planoAprovadoComTreinos();
             plano.getTreinosPlanejados().get(0).setDataTreino(LocalDate.of(2026, 6, 17));
             stubPerfilComPlano(plano);
             when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
-            IntegracaoExterna revogada = new IntegracaoExterna();
-            revogada.setAtivo(false);
-            revogada.setPlataforma(br.com.menthoros.backend.enums.FonteDados.GARMIN);
-            when(integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
-                    eq(atletaId), any(), eq(tenantId))).thenReturn(Optional.of(revogada));
+            // conexão revogada conta como relógio: a regra mora no coordinator (mesma do PATCH)
+            when(postApprovalEditCoordinator.hasWatch(atletaId, tenantId)).thenReturn(true);
 
             List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
                     service.buscarPerfil(atletaId).planoVigente().treinos();
 
             assertThat(treinos.get(0).editable()).isFalse();
+            assertThat(treinos.get(0).editRejection()).isEqualTo("TODAY_ON_WATCH");
             assertThat(treinos.get(1).editable()).isTrue();
-            // uma no editabilidade + uma na conexaoCanal do perfil, independente do número de treinos
-            verify(integracaoExternaRepository, org.mockito.Mockito.times(2))
-                    .findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
-                            eq(atletaId), any(), eq(tenantId));
+            // uma consulta de relógio por perfil, independente do número de treinos
+            verify(postApprovalEditCoordinator, org.mockito.Mockito.times(1)).hasWatch(atletaId, tenantId);
         }
 
         @Test
@@ -602,7 +601,11 @@ class CoachAthleteProfileServiceImplTest {
             List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
                     service.buscarPerfil(atletaId).planoVigente().treinos();
 
-            assertThat(treinos).allSatisfy(t -> assertThat(t.editable()).isTrue());
+            assertThat(treinos).allSatisfy(t -> {
+                assertThat(t.editable()).isTrue();
+                assertThat(t.editRejection()).isNull();
+            });
+            verifyNoInteractions(postApprovalEditCoordinator);
         }
 
         @org.junit.jupiter.params.ParameterizedTest

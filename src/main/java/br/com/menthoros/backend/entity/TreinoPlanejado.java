@@ -269,8 +269,8 @@ public class TreinoPlanejado extends TreinoBase{
      * Reinicia a sincronização de um treino a pedido do treinador: zera as tentativas e o erro e
      * volta a {@code AGUARDANDO_RETRY}, que o scheduler varre se o evento de push se perder. Usado
      * no reenvio de treino em {@code ERRO_*} e na edição de treino de plano aprovado, com ou sem
-     * vínculo externo (coach-editar-treino-aprovado, D2). Grava {@code agora} como última tentativa para {@link #envioEmAndamento}
-     * medir há quanto tempo o treino espera. Preserva {@code externalId} e {@code exportadoPara}
+     * vínculo externo (coach-editar-treino-aprovado, D2). Grava {@code agora} como última tentativa
+     * para {@link #envioEmAndamento} medir há quanto tempo o treino espera. Preserva {@code externalId} e {@code exportadoPara}
      * para o push seguinte atualizar o workout existente em vez de criar outro.
      */
     public void reiniciarSincronizacao(LocalDateTime agora) {
