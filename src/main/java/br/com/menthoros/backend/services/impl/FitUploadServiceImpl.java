@@ -24,6 +24,6 @@ public class FitUploadServiceImpl implements FitUploadService {
         // FitTreinoPersister.persistir (declarativamente @Transactional) precisa segurar uma
         // conexão, e só pelo tempo da persistência.
         FitSessionData dados = fitParseService.parse(in);
-        return fitTreinoPersister.persistir(atletaId, dados);
+        return fitTreinoPersister.persistir(atletaId, dados, null);
     }
 }

@@ -114,7 +114,10 @@ public record AtletaPerfilCoachOutputDto(
             boolean activityExport,
 
             @Schema(description = "Último erro de autenticação/sincronização, legível")
-            String lastSyncError
+            String lastSyncError,
+
+            @Schema(description = "Última atividade recebida pelo canal; ausente se nenhuma chegou ainda")
+            Instant ultimaSincronizacao
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -163,6 +166,9 @@ public record AtletaPerfilCoachOutputDto(
 
             @Schema(description = "Origem do registro", example = "INTERVALS_ICU")
             FonteDados fonteDados,
+
+            @Schema(description = "Modelo do dispositivo; ausente quando desconhecido", example = "Forerunner 970")
+            String deviceName,
 
             @Schema(description = "Duração em minutos inteiros; ausente quando não disponível", example = "50")
             Integer duracaoMin,

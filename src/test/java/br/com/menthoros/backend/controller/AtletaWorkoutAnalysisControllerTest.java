@@ -63,7 +63,7 @@ class AtletaWorkoutAnalysisControllerTest {
                 new AthleteWorkoutAnalysisOutputDto(AnaliseStatus.COMPLETED, null,
                         "Você segurou o ritmo.", "Saiu como planejado.", "Pesou mais que o esperado.",
                         "Capriche no sono.",
-                        new AthleteWorkoutAnalysisOutputDto.Executado(58L, new BigDecimal("11.2"), 7),
+                        new AthleteWorkoutAnalysisOutputDto.Executado(58L, new BigDecimal("11.2"), 7, null, null),
                         new AthleteWorkoutAnalysisOutputDto.Planejado(61L, new BigDecimal("11.0"), 6),
                         WorkoutPlanVerdict.DENTRO_DO_PLANO)));
 
@@ -85,7 +85,7 @@ class AtletaWorkoutAnalysisControllerTest {
         when(atletaWorkoutAnalysisService.buscarAnalise(atletaId, treinoId)).thenReturn(Optional.of(
                 new AthleteWorkoutAnalysisOutputDto(AnaliseStatus.PENDING, null,
                         null, null, null, null,
-                        new AthleteWorkoutAnalysisOutputDto.Executado(58L, new BigDecimal("11.2"), 7),
+                        new AthleteWorkoutAnalysisOutputDto.Executado(58L, new BigDecimal("11.2"), 7, null, null),
                         null, null)));
 
         mockMvc.perform(get("/api/v1/atletas/me/realizados/{id}/analise", treinoId))

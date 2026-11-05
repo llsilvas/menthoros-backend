@@ -553,6 +553,7 @@ class AtletaProgressServiceImplTest {
             TreinoRealizado antigo = realizado(HOJE, FonteDados.MANUAL, 6, LocalDateTime.of(2026, 6, 17, 7, 0));
             TreinoRealizado recente = realizado(HOJE, FonteDados.INTERVALS_ICU, null, LocalDateTime.of(2026, 6, 17, 9, 0));
             recente.setDistanciaKm(new BigDecimal("12.5"));
+            recente.setDeviceName("Forerunner 970");
             when(treinoRealizadoRepository.findByAtletaIdAndDataTreino(atletaId, HOJE))
                     .thenReturn(List.of(antigo, recente));
 
@@ -560,6 +561,7 @@ class AtletaProgressServiceImplTest {
 
             assertThat(hoje.id()).isEqualTo(recente.getId());
             assertThat(hoje.fonteDados()).isEqualTo("INTERVALS_ICU");
+            assertThat(hoje.deviceName()).isEqualTo("Forerunner 970");
             assertThat(hoje.tipoTreino()).isEqualTo("FACIL");
             assertThat(hoje.duracaoMin()).isEqualTo(50);
             assertThat(hoje.distanciaKm()).isEqualByComparingTo("12.5");

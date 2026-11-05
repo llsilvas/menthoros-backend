@@ -26,7 +26,7 @@ class WorkoutPlanVerdictCalculatorTest {
     private final WorkoutPlanVerdictCalculator calculator = new WorkoutPlanVerdictCalculator(15.0, 2);
 
     private static Executado executado(Long duracaoMin, Double distanciaKm, Integer rpe) {
-        return new Executado(duracaoMin, bd(distanciaKm), rpe);
+        return new Executado(duracaoMin, bd(distanciaKm), rpe, null, null);
     }
 
     private static Planejado planejado(Long duracaoMin, Double distanciaKm, Integer rpeEsperado) {

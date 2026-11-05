@@ -148,7 +148,8 @@ public class AtletaWorkoutAnalysisServiceImpl implements AtletaWorkoutAnalysisSe
 
     private static AthleteWorkoutAnalysisOutputDto.Executado executado(TreinoRealizado treino) {
         return new AthleteWorkoutAnalysisOutputDto.Executado(
-                minutos(treino.getDuracaoMin()), treino.getDistanciaKm(), treino.getPercepcaoEsforco());
+                minutos(treino.getDuracaoMin()), treino.getDistanciaKm(), treino.getPercepcaoEsforco(),
+                treino.getFonteDados(), treino.getDeviceName());
     }
 
     private static AthleteWorkoutAnalysisOutputDto.Planejado planejado(TreinoRealizado treino) {

@@ -7,6 +7,7 @@ import br.com.menthoros.backend.exception.GarminApiException;
 import br.com.menthoros.backend.services.GarminClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.http.MediaType;
@@ -17,6 +18,7 @@ import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.net.URI;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -31,12 +33,23 @@ import java.util.function.Supplier;
 @Service
 public class GarminClientImpl implements GarminClient {
 
+    private static final URI ORIGEM_ARQUIVOS = URI.create("https://apis.garmin.com");
+    private static final String PATH_ARQUIVO = "/wellness-api/rest/activityFile";
+
     private final WebClient webClient;
     private final GarminProperties properties;
+    private final URI origemArquivos;
 
+    @Autowired
     public GarminClientImpl(@Qualifier("garminWebClient") WebClient webClient, GarminProperties properties) {
+        this(webClient, properties, ORIGEM_ARQUIVOS);
+    }
+
+    /** Só para teste: a origem aceita no {@code callbackURL} aponta para o WireMock. */
+    GarminClientImpl(WebClient webClient, GarminProperties properties, URI origemArquivos) {
         this.webClient = webClient;
         this.properties = properties;
+        this.origemArquivos = origemArquivos;
     }
 
     /**
@@ -266,6 +279,45 @@ public class GarminClientImpl implements GarminClient {
                     n.path("scheduleId").asLong(), n.path("workoutId").asLong(), LocalDate.parse(n.path("date").asText()))));
         }
         return schedules;
+    }
+
+    /**
+     * Idempotent: NO — o Garmin invalida o link no primeiro download (o segundo dá 410).
+     * Side Effects: External API call (GET callbackURL do ping)
+     * Tenant-aware: NO
+     */
+    @Override
+    public byte[] baixarArquivo(String callbackUrl) {
+        URI uri = callbackValido(callbackUrl);
+        byte[] arquivo = executa("baixar arquivo", () -> webClient.get()
+                .uri(uri)
+                .accept(MediaType.ALL)
+                .retrieve()
+                .bodyToMono(byte[].class)
+                .block());
+        if (arquivo == null || arquivo.length == 0) {
+            throw new GarminApiException(null, "Garmin devolveu arquivo vazio ao baixar arquivo");
+        }
+        return arquivo;
+    }
+
+    private URI callbackValido(String callbackUrl) {
+        URI uri;
+        try {
+            uri = URI.create(callbackUrl);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            throw new IllegalArgumentException("callbackURL inválido");
+        }
+        // Mensagem fixa: a URL carrega o token de download.
+        boolean valido = origemArquivos.getScheme().equalsIgnoreCase(uri.getScheme())
+                && origemArquivos.getHost().equalsIgnoreCase(uri.getHost())
+                && origemArquivos.getPort() == uri.getPort()
+                && uri.getRawUserInfo() == null
+                && PATH_ARQUIVO.equals(uri.getPath());
+        if (!valido) {
+            throw new IllegalArgumentException("callbackURL inválido");
+        }
+        return uri;
     }
 
     private Long idObrigatorio(JsonNode corpo, String campo, String operacao) {

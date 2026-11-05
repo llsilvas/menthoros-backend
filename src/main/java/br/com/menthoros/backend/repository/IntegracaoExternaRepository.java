@@ -21,6 +21,10 @@ public interface IntegracaoExternaRepository extends JpaRepository<IntegracaoExt
 
     Optional<IntegracaoExterna> findByExternalAthleteIdAndPlataforma(String externalAthleteId, FonteDados plataforma);
 
+    /** Conexão mais recente do userId externo, ativa ou não (reconexões deixam linhas inativas). */
+    Optional<IntegracaoExterna> findFirstByExternalAthleteIdAndPlataformaOrderByAtualizadoEmDesc(
+            String externalAthleteId, FonteDados plataforma);
+
     boolean existsByAtletaIdAndPlataforma(UUID atletaId, FonteDados plataforma);
 
     @Query("""
@@ -162,5 +166,21 @@ public interface IntegracaoExternaRepository extends JpaRepository<IntegracaoExt
             @Param("ultima") Instant ultima,
             @Param("count") Integer count,
             @Param("erro") @Nullable String erro
+    );
+
+    /**
+     * Só {@code ultima_sincronizacao}, sem salvar a entidade (mesmo motivo de
+     * {@link #atualizarStatusSync}): usado pela fila de pings do Garmin a cada treino ingerido.
+     */
+    @Transactional
+    @Modifying(flushAutomatically = true)
+    @Query("""
+    update IntegracaoExterna i set i.ultimaSincronizacao = :ultima
+     where i.id = :id and i.tenantId = :tenantId
+    """)
+    int atualizarUltimaSincronizacao(
+            @Param("id") UUID id,
+            @Param("tenantId") UUID tenantId,
+            @Param("ultima") Instant ultima
     );
 }
