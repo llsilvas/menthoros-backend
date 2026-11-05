@@ -530,6 +530,31 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         @Test
+        @DisplayName("resumo expõe treinoRealizadoId e ritmoAlvo; distância ausente sai nula, não 0.0")
+        void resumoExpoeVinculoRitmoEDistanciaNula() {
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            TreinoPlanejado comVinculo = plano.getTreinosPlanejados().get(0);
+            TreinoRealizado realizado = new TreinoRealizado();
+            realizado.setId(UUID.randomUUID());
+            comVinculo.setTreinoRealizado(realizado);
+            comVinculo.setRitmoAlvo("5:30");
+            plano.getTreinosPlanejados().get(1).setDistanciaKm(null);
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(garminConnectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).treinoRealizadoId()).isEqualTo(realizado.getId());
+            assertThat(treinos.get(0).ritmoAlvo()).isEqualTo("5:30");
+            assertThat(treinos.get(0).distanciaKm()).isEqualTo(8.0);
+            assertThat(treinos.get(1).treinoRealizadoId()).isNull();
+            assertThat(treinos.get(1).ritmoAlvo()).isNull();
+            assertThat(treinos.get(1).distanciaKm()).isNull();
+        }
+
+        @Test
         @DisplayName("atleta sem canal: channelConnected false")
         void atletaSemCanal() {
             stubPerfilComPlano(planoAprovadoComTreinos());

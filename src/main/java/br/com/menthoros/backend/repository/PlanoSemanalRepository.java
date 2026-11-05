@@ -259,10 +259,16 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
      * Idempotent: YES — leitura pura.
      * Side Effects: NONE.
      * Tenant-aware: YES — filtra por assessoria.id.
+     *
+     * <p>{@code treinoRealizado} (e as sensações, coleção EAGER dele) vêm em fetch join: o vínculo é o
+     * lado inverso de um {@code @OneToOne}, que o Hibernate resolve com um SELECT por treino
+     * planejado quando não vem na consulta.
      */
     @Query("""
        SELECT DISTINCT ps FROM PlanoSemanal ps
-       LEFT JOIN FETCH ps.treinosPlanejados
+       LEFT JOIN FETCH ps.treinosPlanejados tp
+       LEFT JOIN FETCH tp.treinoRealizado tr
+       LEFT JOIN FETCH tr.sensacoes
        WHERE ps.atleta.id = :atletaId
          AND ps.assessoria.id = :assessoriaId
          AND ps.semanaFim >= CURRENT_DATE

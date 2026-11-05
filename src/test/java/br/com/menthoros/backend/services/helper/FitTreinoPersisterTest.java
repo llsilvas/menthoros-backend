@@ -1,5 +1,8 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.dto.fit.FitAmostraFc;
+import br.com.menthoros.backend.entity.FaixaZonaManual;
+import br.com.menthoros.backend.enums.ModoZonas;
 import br.com.menthoros.backend.dto.fit.FitImportResultado;
 import br.com.menthoros.backend.dto.fit.FitLapData;
 import br.com.menthoros.backend.dto.fit.FitSessionData;
@@ -53,7 +56,8 @@ class FitTreinoPersisterTest {
         atletaId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
 
-        service = new FitTreinoPersister(atletaRepository, treinoMapper, ingestaoTreinoRealizadoService);
+        service = new FitTreinoPersister(atletaRepository, treinoMapper, ingestaoTreinoRealizadoService,
+                new ZonaTreinoService());
 
         atleta = mock(Atleta.class);
         lenient().when(atleta.getId()).thenReturn(atletaId);
@@ -466,6 +470,62 @@ class FitTreinoPersisterTest {
         }
 
         @Test
+        @DisplayName("velocidade média e máxima e temperaturas da sessão persistem no treino")
+        void persisteVelocidadeRitmoETemperaturas() {
+            FitSessionData dados = sessaoComExecucao(12.0, "14.40");
+            stubIngestao();
+
+            service.persistir(atletaId, dados, null);
+
+            TreinoRealizado treino = treinoRegistrado();
+            assertThat(treino.getVelocidadeMedia()).isEqualTo(12.0);
+            assertThat(treino.getPaceMedia()).as("paceMedia alimenta TSS/limiar — não muda nesta change").isNull();
+            assertThat(treino.getVelocidadeMaxKmh()).isEqualByComparingTo("14.40");
+            assertThat(treino.getTemperaturaMinC()).isEqualByComparingTo("19.0");
+            assertThat(treino.getTemperaturaMaxC()).isEqualByComparingTo("27.0");
+        }
+
+        @Test
+        @DisplayName("velocidade ausente, zero ou acima de 150 km/h fica nula — BVA no teto")
+        void velocidadeForaDaFaixaDescartada() {
+            stubIngestao();
+
+            service.persistir(atletaId, sessaoComExecucao(150.0, "150.01"), null);
+            TreinoRealizado noTeto = treinoRegistrado();
+            assertThat(noTeto.getVelocidadeMedia()).isEqualTo(150.0);
+            assertThat(noTeto.getVelocidadeMaxKmh()).isNull();
+
+            clearInvocations(ingestaoTreinoRealizadoService);
+            service.persistir(atletaId, sessaoComExecucao(0.0, null), null);
+            TreinoRealizado zerado = treinoRegistrado();
+            assertThat(zerado.getVelocidadeMedia()).isNull();
+            assertThat(zerado.getVelocidadeMaxKmh()).isNull();
+        }
+
+        private FitSessionData sessaoComExecucao(Double velocidadeMediaKmh, String velocidadeMaxKmh) {
+            return new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null,
+                    null, null, null, null, null, null, null, null,
+                    List.of(lapCorrida(1, Duration.ofMinutes(15), 2.5, 148, 160)),
+                    velocidadeMediaKmh,
+                    velocidadeMaxKmh != null ? new java.math.BigDecimal(velocidadeMaxKmh) : null,
+                    new java.math.BigDecimal("19.0"), new java.math.BigDecimal("27.0"), List.of());
+        }
+
+        private void stubIngestao() {
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+        }
+
+        private TreinoRealizado treinoRegistrado() {
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
+            return captor.getValue();
+        }
+
+        @Test
         @DisplayName("running dynamics completos (GCT, equilíbrio, passada, oscilação, proporção, temperatura, tempo em movimento, calorias) persistem no treino e na etapa")
         void persisteRunningDynamicsCompletos() {
             FitSessionData dados = new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
@@ -772,5 +832,96 @@ class FitTreinoPersisterTest {
         // devolve inserted=false e este persister apenas repassa — a distinção (retry sob conflito
         // de constraint vs. externalId já visto) é responsabilidade do ingestor, coberta em
         // IngestaoTreinoRealizadoServiceRegistrarIT (ingestao-treino-realizado).
+    }
+
+    @Nested
+    @DisplayName("tempo em zonas (coach-ver-treino-realizado, D6)")
+    class TempoEmZonasNoImport {
+
+        /** 30 min de amostras a 1 Hz em 150 bpm, mais o tempo em movimento da sessão. */
+        private FitSessionData sessaoComAmostras() {
+            List<FitAmostraFc> amostras = new java.util.ArrayList<>();
+            for (int i = 0; i < 1800; i++) amostras.add(new FitAmostraFc(1_751_360_400L + i, 150));
+            return new FitSessionData(1L, LocalDate.of(2026, 7, 1), 1751360400L,
+                    Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
+                    null, null, null, null,
+                    Duration.ofMinutes(30), null, null, null, null, null, null, null,
+                    List.of(lapCorrida(1, Duration.ofMinutes(15), 2.5, 148, 160)),
+                    null, null, null, null, amostras);
+        }
+
+        private void stubIngestaoEAtleta() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+            lenient().when(atleta.getModoZonasFc()).thenReturn(ModoZonas.LIMIAR);
+            lenient().when(atleta.getModoZonasPace()).thenReturn(ModoZonas.LIMIAR);
+            lenient().when(atleta.getFcMaximaCalculada()).thenReturn(185);
+        }
+
+        private TreinoRealizado treinoRegistrado() {
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
+            return captor.getValue();
+        }
+
+        @Test
+        @DisplayName("atleta com FC de limiar informada: grava as cinco zonas com os limites usados")
+        void atletaComFcLimiar() {
+            stubIngestaoEAtleta();
+            when(atleta.getFcLimiar()).thenReturn(165);
+            when(atleta.getFcLimiarCalculada()).thenReturn(165);
+
+            service.persistir(atletaId, sessaoComAmostras(), null);
+
+            var tempo = treinoRegistrado().getTempoEmZonas();
+            assertThat(tempo).isNotNull();
+            assertThat(tempo.zonas()).hasSize(5);
+            assertThat(tempo.zonas().stream().mapToInt(z -> z.segundos()).sum()).isEqualTo(1800);
+            // 150 bpm com limiar 165: Z3 vai de 89 % (147) a 94 % (155)
+            assertThat(tempo.zonas().get(2).segundos()).isEqualTo(1800);
+        }
+
+        @Test
+        @DisplayName("atleta com zonas de FC manuais: usa as faixas gravadas")
+        void atletaComZonasManuais() {
+            stubIngestaoEAtleta();
+            when(atleta.getModoZonasFc()).thenReturn(ModoZonas.MANUAL);
+            when(atleta.getZonasManuaisFc()).thenReturn(List.of(
+                    new FaixaZonaManual(1, 100, 120), new FaixaZonaManual(2, 121, 140),
+                    new FaixaZonaManual(3, 141, 145), new FaixaZonaManual(4, 146, 160),
+                    new FaixaZonaManual(5, 161, 190)));
+
+            service.persistir(atletaId, sessaoComAmostras(), null);
+
+            var tempo = treinoRegistrado().getTempoEmZonas();
+            assertThat(tempo.zonas().get(3)).isEqualTo(
+                    new br.com.menthoros.backend.entity.TempoEmZonas.Zona("Z4", 146, 160, 1800));
+        }
+
+        @Test
+        @DisplayName("atleta só com FC estimada (sem limiar informado, zonas por limiar): tempo em zonas nulo")
+        void atletaSoComFcEstimada() {
+            stubIngestaoEAtleta();
+            when(atleta.getFcLimiar()).thenReturn(null);
+            lenient().when(atleta.getFcLimiarCalculada()).thenReturn(157);
+
+            service.persistir(atletaId, sessaoComAmostras(), null);
+
+            assertThat(treinoRegistrado().getTempoEmZonas()).isNull();
+        }
+
+        @Test
+        @DisplayName(".fit sem amostras: tempo em zonas nulo e o import não falha")
+        void semAmostras() {
+            stubIngestaoEAtleta();
+            lenient().when(atleta.getFcLimiar()).thenReturn(165);
+            lenient().when(atleta.getFcLimiarCalculada()).thenReturn(165);
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L), null);
+
+            assertThat(treinoRegistrado().getTempoEmZonas()).isNull();
+        }
     }
 }

@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
+import br.com.menthoros.backend.entity.TempoEmZonas;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.security.JwtTenantFilter;
@@ -18,6 +19,7 @@ import org.springframework.context.annotation.FilterType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.eq;
@@ -55,6 +57,40 @@ class TreinoRealizadoControllerTest {
         }
 
         @Test
+        @DisplayName("200 com os campos de execução no formato do contrato")
+        void retorna200ComCamposDeExecucao() throws Exception {
+            UUID id = UUID.randomUUID();
+            when(treinoService.getTreinoById(eq(id))).thenReturn(stubComExecucao(id));
+
+            mockMvc.perform(get("/api/v1/treinos/realizados/{id}", id))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.velocidadeMaxKmh").value(12.19))
+                    .andExpect(jsonPath("$.temperaturaMinC").value(19.0))
+                    .andExpect(jsonPath("$.temperaturaMaxC").value(27.0))
+                    .andExpect(jsonPath("$.elapsedTimeSeg").value(6032))
+                    .andExpect(jsonPath("$.tempoEmZonas.fonte").value("FIT_RECORDS"))
+                    .andExpect(jsonPath("$.tempoEmZonas.zonas[0].zona").value("Z5"))
+                    .andExpect(jsonPath("$.tempoEmZonas.zonas[0].bpmMin").value(167))
+                    .andExpect(jsonPath("$.tempoEmZonas.zonas[0].segundos").value(15))
+                    .andExpect(jsonPath("$.tempoEmZonas.zonas[0].bpmMax").doesNotExist());
+        }
+
+        @Test
+        @DisplayName("campos de execução ausentes não aparecem no JSON (NON_NULL)")
+        void camposDeExecucaoAusentesFicamForaDoJson() throws Exception {
+            UUID id = UUID.randomUUID();
+            when(treinoService.getTreinoById(eq(id))).thenReturn(stubComDecoupling(id, null));
+
+            mockMvc.perform(get("/api/v1/treinos/realizados/{id}", id))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.velocidadeMaxKmh").doesNotExist())
+                    .andExpect(jsonPath("$.temperaturaMinC").doesNotExist())
+                    .andExpect(jsonPath("$.temperaturaMaxC").doesNotExist())
+                    .andExpect(jsonPath("$.elapsedTimeSeg").doesNotExist())
+                    .andExpect(jsonPath("$.tempoEmZonas").doesNotExist());
+        }
+
+        @Test
         @DisplayName("404 quando o treino não existe no tenant")
         void retorna404QuandoNaoEncontrado() throws Exception {
             UUID id = UUID.randomUUID();
@@ -64,6 +100,18 @@ class TreinoRealizadoControllerTest {
             mockMvc.perform(get("/api/v1/treinos/realizados/{id}", id))
                     .andExpect(status().isNotFound());
         }
+    }
+
+    private static TreinoRealizadoOutputDto stubComExecucao(UUID id) {
+        TempoEmZonas zonas = new TempoEmZonas(TempoEmZonas.FONTE_FIT_RECORDS,
+                List.of(new TempoEmZonas.Zona("Z5", 167, null, 15)));
+        TreinoRealizadoOutputDto base = stubComDecoupling(id, null);
+        return new TreinoRealizadoOutputDto(
+                base.id(), null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, // + deviceName
+                12.19, 19.0, 27.0, 6032, zonas);
     }
 
     private static TreinoRealizadoOutputDto stubComDecoupling(UUID id, Double decoupling) {
@@ -76,6 +124,6 @@ class TreinoRealizadoControllerTest {
                 null, // 23 runningDynamics
                 decoupling, null, null, null, null, null, null, // 24-30 (24=decouplingPercentual, 25=envelope, 26=serie)
                 null, null, null, // 31-33 (nivelDor, nivelFadiga, nivelRecuperacao)
-                null, null, null, null, null, null, null); // 34-37 + deviceName, sensacoes, feedbackRegistradoEm
+                null, null, null, null, null, null, null, null, null, null, null, null); // 34-37 + deviceName, sensacoes, feedbackRegistradoEm
     }
 }

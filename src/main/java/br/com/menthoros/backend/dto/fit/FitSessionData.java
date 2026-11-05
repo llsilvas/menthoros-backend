@@ -25,6 +25,12 @@ import java.util.List;
  * @param oscilacaoVerticalCm  oscilação vertical média, em cm (FIT entrega em mm).
  * @param proporcaoVerticalPct proporção vertical média, em %.
  * @param temperaturaMediaC    temperatura média, em °C.
+ * @param velocidadeMediaKmh   distância / tempo em movimento da sessão, em km/h; nulo sem um dos dois.
+ * @param velocidadeMaxKmh     {@code enhanced_max_speed} (fallback {@code max_speed}), em km/h.
+ * @param temperaturaMinC      temperatura mínima, em °C.
+ * @param temperaturaMaxC      temperatura máxima, em °C.
+ * @param amostrasFc           mensagens {@code record} em ordem de arquivo, para o tempo em zonas;
+ *                             vazia quando o arquivo passa do limite de amostras. Não é persistida.
  */
 public record FitSessionData(
         Long serialNumber,
@@ -49,5 +55,25 @@ public record FitSessionData(
         BigDecimal oscilacaoVerticalCm,
         BigDecimal proporcaoVerticalPct,
         BigDecimal temperaturaMediaC,
-        List<FitLapData> laps
-) {}
+        List<FitLapData> laps,
+        Double velocidadeMediaKmh,
+        BigDecimal velocidadeMaxKmh,
+        BigDecimal temperaturaMinC,
+        BigDecimal temperaturaMaxC,
+        List<FitAmostraFc> amostrasFc
+) {
+
+    /** Sem os campos de execução (coach-ver-treino-realizado) — usado pelos testes anteriores a eles. */
+    public FitSessionData(Long serialNumber, LocalDate dataTreino, long startTimeEpochSeconds, Duration duracao,
+                          Double distanciaKm, Integer fcMedia, Integer fcMax, Integer tssCalculado, boolean corrida,
+                          String esporteDetectado, Integer subidaMetros, Integer descidaMetros,
+                          Integer potenciaMediaWatts, Integer cadenciaMediaPpm, Duration tempoMovimento,
+                          Integer calorias, Integer gctMedioMs, BigDecimal gctEquilibrioPct, BigDecimal passadaMediaM,
+                          BigDecimal oscilacaoVerticalCm, BigDecimal proporcaoVerticalPct,
+                          BigDecimal temperaturaMediaC, List<FitLapData> laps) {
+        this(serialNumber, dataTreino, startTimeEpochSeconds, duracao, distanciaKm, fcMedia, fcMax, tssCalculado,
+                corrida, esporteDetectado, subidaMetros, descidaMetros, potenciaMediaWatts, cadenciaMediaPpm,
+                tempoMovimento, calorias, gctMedioMs, gctEquilibrioPct, passadaMediaM, oscilacaoVerticalCm,
+                proporcaoVerticalPct, temperaturaMediaC, laps, null, null, null, null, List.of());
+    }
+}
