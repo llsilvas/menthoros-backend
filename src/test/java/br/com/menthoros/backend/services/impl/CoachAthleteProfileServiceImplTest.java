@@ -243,7 +243,8 @@ class CoachAthleteProfileServiceImplTest {
             recente.setId(UUID.randomUUID());
             recente.setDataTreino(LocalDate.now());
             recente.setTipoTreino(TipoTreino.INTERVALADO);
-            recente.setFonteDados(br.com.menthoros.backend.enums.FonteDados.MANUAL);
+            recente.setFonteDados(br.com.menthoros.backend.enums.FonteDados.GARMIN);
+            recente.setDeviceName("Forerunner 970");
             recente.setDuracaoMin(java.time.Duration.ofMinutes(45));
             recente.setPercepcaoEsforco(6);
             recente.setSensacoes(java.util.Set.of(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS));
@@ -258,6 +259,8 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(perfil.realizadosRecentes()).hasSize(2);
             assertThat(perfil.realizadosRecentes().get(0).id()).isEqualTo(recente.getId());
             assertThat(perfil.realizadosRecentes().get(0).percepcaoEsforco()).isEqualTo(6);
+            assertThat(perfil.realizadosRecentes().get(0).deviceName()).isEqualTo("Forerunner 970");
+            assertThat(perfil.realizadosRecentes().get(1).deviceName()).isNull();
             assertThat(perfil.realizadosRecentes().get(0).sensacoes()).containsExactly(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS);
             assertThat(perfil.realizadosRecentes().get(0).feedbackRegistradoEm()).isNotNull();
             assertThat(perfil.realizadosRecentes().get(1).id()).isEqualTo(antigo.getId());

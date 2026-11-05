@@ -140,7 +140,7 @@ class FitRunningDynamicsIntegrationTest {
     private TreinoRealizado persistirFixtureReal() throws Exception {
         try (InputStream in = getClass().getResourceAsStream("/fit/corrida-15km-16laps.fit")) {
             FitSessionData dados = new FitParseServiceImpl().parse(in);
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
         }
         ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
         verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());

@@ -253,6 +253,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                         tr.getDataTreino(),
                         tr.getTipoTreino() != null ? tr.getTipoTreino().name() : null,
                         tr.getFonteDados(),
+                        tr.getDeviceName(),
                         tr.getDuracaoMin() != null && !tr.getDuracaoMin().isZero()
                                 ? (int) tr.getDuracaoMin().toMinutes() : null,
                         tr.getDistanciaKm() != null ? tr.getDistanciaKm().doubleValue() : null,

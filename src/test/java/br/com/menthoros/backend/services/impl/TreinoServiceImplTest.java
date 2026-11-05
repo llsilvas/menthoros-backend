@@ -714,7 +714,7 @@ class TreinoServiceImplTest {
                 null, // runningDynamics
                 null, null, null, null, null, null, // decouplingPercentual..nivelEstresse
                 null, null, null, // nivelDor, nivelFadiga, nivelRecuperacao
-                null, null, null, null, null, null, null
+                null, null, null, null, null, null, null, null
         );
     }
 }

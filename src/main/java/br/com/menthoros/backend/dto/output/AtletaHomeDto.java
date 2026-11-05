@@ -41,6 +41,9 @@ public record AtletaHomeDto(
             @Schema(description = "Origem do registro", example = "INTERVALS_ICU")
             String fonteDados,
 
+            @Schema(description = "Modelo do dispositivo; omitido quando desconhecido", example = "Forerunner 970")
+            String deviceName,
+
             @Schema(description = "Tipo do treino", example = "FACIL")
             String tipoTreino,
 

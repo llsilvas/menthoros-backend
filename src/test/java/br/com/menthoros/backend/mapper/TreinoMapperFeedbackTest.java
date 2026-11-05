@@ -45,4 +45,15 @@ class TreinoMapperFeedbackTest {
         assertThat(dto.sensacoes()).isNull();
         assertThat(dto.feedbackRegistradoEm()).isNull();
     }
+
+    @Test
+    @DisplayName("deviceName atravessa para o TreinoRealizadoOutputDto (atribuição do Garmin)")
+    void expoeDeviceName() {
+        TreinoRealizado tr = new TreinoRealizado();
+        tr.setId(UUID.randomUUID());
+        tr.setDeviceName("Forerunner 970");
+
+        assertThat(mapper.toOutputDto(tr).deviceName()).isEqualTo("Forerunner 970");
+        assertThat(mapper.toOutputDto(new TreinoRealizado()).deviceName()).isNull();
+    }
 }

@@ -138,7 +138,7 @@ class FitTreinoPersisterTest {
             TreinoRealizadoOutputDto dtoEsperado = mock(TreinoRealizadoOutputDto.class);
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(dtoEsperado);
 
-            FitImportResultado resultado = service.persistir(atletaId, dados);
+            FitImportResultado resultado = service.persistir(atletaId, dados, null);
 
             assertThat(resultado.novo()).isTrue();
             assertThat(resultado.treino()).isSameAs(dtoEsperado);
@@ -165,10 +165,83 @@ class FitTreinoPersisterTest {
             TreinoRealizadoOutputDto dtoExistente = mock(TreinoRealizadoOutputDto.class);
             when(treinoMapper.toOutputDto(existente)).thenReturn(dtoExistente);
 
-            FitImportResultado resultado = service.persistir(atletaId, dados);
+            FitImportResultado resultado = service.persistir(atletaId, dados, null);
 
             assertThat(resultado.novo()).isFalse();
             assertThat(resultado.treino()).isSameAs(dtoExistente);
+        }
+
+        @Test
+        @DisplayName("deviceName do ping vai para o treino novo")
+        void deviceNameNoTreinoNovo() {
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L), " Forerunner 970 ");
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
+            assertThat(captor.getValue().getDeviceName()).isEqualTo("Forerunner 970");
+        }
+
+        @Test
+        @DisplayName("upload manual (deviceName nulo ou vazio) não grava modelo")
+        void deviceNameNuloNoUpload() {
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L), "  ");
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
+            assertThat(captor.getValue().getDeviceName()).isNull();
+        }
+
+        @Test
+        @DisplayName("deviceName acima de 200 caracteres é cortado no limite da coluna")
+        void deviceNameCortado() {
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L), "x".repeat(300));
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
+            assertThat(captor.getValue().getDeviceName()).hasSize(200);
+        }
+
+        @Test
+        @DisplayName("duplicata sem modelo recebe o deviceName do ping; nada mais muda")
+        void duplicataPreencheDeviceName() {
+            TreinoRealizado existente = new TreinoRealizado();
+            existente.setTssCalculado(55);
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(existente, false));
+            when(treinoMapper.toOutputDto(existente)).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            FitImportResultado resultado = service.persistir(atletaId, sessionCorrida(1L, 1751360400L), "Forerunner 970");
+
+            assertThat(resultado.novo()).isFalse();
+            assertThat(existente.getDeviceName()).isEqualTo("Forerunner 970");
+            assertThat(existente.getTssCalculado()).isEqualTo(55);
+            verify(ingestaoTreinoRealizadoService, times(1)).registrar(any(), anyString());
+        }
+
+        @Test
+        @DisplayName("duplicata que já tem modelo não é sobrescrita")
+        void duplicataMantemDeviceName() {
+            TreinoRealizado existente = new TreinoRealizado();
+            existente.setDeviceName("Fenix 8");
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(existente, false));
+            when(treinoMapper.toOutputDto(existente)).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L), "Forerunner 970");
+
+            assertThat(existente.getDeviceName()).isEqualTo("Fenix 8");
         }
 
         @Test
@@ -181,7 +254,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -199,7 +272,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -217,7 +290,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -235,7 +308,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -259,7 +332,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -283,7 +356,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -308,7 +381,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -340,7 +413,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -370,7 +443,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -409,7 +482,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -441,7 +514,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -471,7 +544,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -497,7 +570,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -523,7 +596,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -549,7 +622,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -575,7 +648,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -599,7 +672,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -618,7 +691,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -640,7 +713,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -665,7 +738,7 @@ class FitTreinoPersisterTest {
                     .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
             when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
 
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
 
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
@@ -689,7 +762,7 @@ class FitTreinoPersisterTest {
         void atletaNaoEncontrado() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.persistir(atletaId, sessionCorrida(1L, 1751360400L)))
+            assertThatThrownBy(() -> service.persistir(atletaId, sessionCorrida(1L, 1751360400L), null))
                     .isInstanceOf(DomainNotFoundException.class);
 
             verifyNoInteractions(ingestaoTreinoRealizadoService);

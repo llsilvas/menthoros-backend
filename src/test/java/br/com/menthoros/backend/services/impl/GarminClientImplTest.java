@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.config.external.GarminProperties;
+import br.com.menthoros.backend.config.external.GarminWebClientConfig;
 import br.com.menthoros.backend.dto.garmin.GarminTokenResponse;
 import br.com.menthoros.backend.exception.GarminApiException;
 import ch.qos.logback.classic.Logger;
@@ -20,6 +21,14 @@ import br.com.menthoros.backend.dto.garmin.GarminSchedule;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import io.netty.channel.ChannelOption;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import reactor.netty.http.client.HttpClient;
+
+import java.io.InputStream;
+import java.net.URI;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
@@ -48,6 +57,7 @@ class GarminClientImplTest {
     private static final String SECRET = "client-secret-secreto";
 
     private WireMockServer wireMock;
+    private GarminProperties props;
     private GarminClientImpl client;
     private ListAppender<ILoggingEvent> logCapture;
 
@@ -56,15 +66,16 @@ class GarminClientImplTest {
         wireMock = new WireMockServer(WireMockConfiguration.options().dynamicPort());
         wireMock.start();
 
-        GarminProperties props = new GarminProperties();
+        props = new GarminProperties();
         props.setClientId("client-id");
         props.setClientSecret(SECRET);
         props.setRedirectUri("http://localhost/callback");
         props.setApiBaseUrl(wireMock.baseUrl());
         props.setTokenUri(wireMock.baseUrl() + "/di-oauth2-service/oauth/token");
 
-        WebClient webClient = WebClient.builder().baseUrl(wireMock.baseUrl()).build();
-        client = new GarminClientImpl(webClient, props);
+        // O bean real: o teste do download depende do maxInMemorySize configurado nele.
+        WebClient webClient = new GarminWebClientConfig(props).garminWebClient();
+        client = new GarminClientImpl(webClient, props, URI.create(wireMock.baseUrl()));
 
         logCapture = new ListAppender<>();
         logCapture.start();
@@ -416,6 +427,106 @@ class GarminClientImplTest {
             assertThatThrownBy(() -> client.deletarWorkout(TOKEN, 9L))
                     .isInstanceOfSatisfying(GarminApiException.class,
                             e -> assertThat(e.getStatus().value()).isEqualTo(404));
+        }
+    }
+
+    @Nested
+    @DisplayName("baixarArquivo")
+    class BaixarArquivo {
+
+        private static final String PATH = "/wellness-api/rest/activityFile";
+        private static final String TOKEN_LINK = "token-do-link-secreto";
+
+        private String callback() {
+            return wireMock.baseUrl() + PATH + "?id=123&token=" + TOKEN_LINK;
+        }
+
+        @Test
+        @DisplayName("baixa a fixture de 584 KB pelo garminWebClient real, sem estourar o buffer")
+        void baixaFixture() throws Exception {
+            byte[] fit;
+            try (InputStream in = getClass().getResourceAsStream("/fit/corrida-15km-16laps.fit")) {
+                fit = in.readAllBytes();
+            }
+            wireMock.stubFor(get(urlPathEqualTo(PATH))
+                    .withQueryParam("token", equalTo(TOKEN_LINK))
+                    .willReturn(aResponse().withStatus(200)
+                            .withHeader("Content-Type", "application/octet-stream").withBody(fit)));
+
+            assertThat(fit.length).isGreaterThan(256 * 1024);
+            assertThat(client.baixarArquivo(callback())).isEqualTo(fit);
+        }
+
+        @ParameterizedTest
+        @ValueSource(ints = {401, 403, 404, 410, 412, 429, 500, 503})
+        @DisplayName("erro HTTP vira GarminApiException com o status, sem o token do link na mensagem nem no log")
+        void erroComStatus(int status) {
+            wireMock.stubFor(get(urlPathEqualTo(PATH)).willReturn(aResponse().withStatus(status).withBody(TOKEN_LINK)));
+
+            assertThatThrownBy(() -> client.baixarArquivo(callback()))
+                    .isInstanceOfSatisfying(GarminApiException.class, e -> {
+                        assertThat(e.getStatus().value()).isEqualTo(status);
+                        assertThat(e.getMessage()).doesNotContain(TOKEN_LINK);
+                    });
+            assertThat(logCapture.list).noneMatch(ev -> ev.getFormattedMessage().contains(TOKEN_LINK));
+        }
+
+        @Test
+        @DisplayName("timeout vira GarminApiException com status nulo, sem o token do link na mensagem")
+        void timeout() {
+            wireMock.stubFor(get(urlPathEqualTo(PATH)).willReturn(aResponse().withStatus(200).withFixedDelay(2000)));
+            HttpClient rapido = HttpClient.create()
+                    .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 1000)
+                    .responseTimeout(Duration.ofMillis(200));
+            GarminClientImpl comTimeoutCurto = new GarminClientImpl(
+                    WebClient.builder().clientConnector(new ReactorClientHttpConnector(rapido)).build(),
+                    props, URI.create(wireMock.baseUrl()));
+
+            assertThatThrownBy(() -> comTimeoutCurto.baixarArquivo(callback()))
+                    .isInstanceOfSatisfying(GarminApiException.class, e -> {
+                        assertThat(e.getStatus()).isNull();
+                        assertThat(e.getMessage()).doesNotContain(TOKEN_LINK);
+                    });
+        }
+
+        @Test
+        @DisplayName("200 sem corpo é erro, não arquivo vazio")
+        void corpoVazio() {
+            wireMock.stubFor(get(urlPathEqualTo(PATH)).willReturn(aResponse().withStatus(200)));
+
+            assertThatThrownBy(() -> client.baixarArquivo(callback())).isInstanceOf(GarminApiException.class);
+        }
+
+        @Test
+        @DisplayName("em produção só aceita https://apis.garmin.com/wellness-api/rest/activityFile")
+        void origemDeProducao() {
+            GarminClientImpl producao = new GarminClientImpl(WebClient.create(), props);
+
+            assertThatThrownBy(() -> producao.baixarArquivo(callback()))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("callbackURL inválido");
+            assertThatThrownBy(() -> producao.baixarArquivo("http://apis.garmin.com" + PATH + "?token=x"))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @ParameterizedTest
+        @ValueSource(strings = {
+                "https://evil.example.com/wellness-api/rest/activityFile?token=x",
+                "http://localhost:1/wellness-api/rest/activityFile?token=x",
+                "{base}/wellness-api/rest/outra?token=x",
+                "{base}/wellness-api/rest/activityFile/../../admin?token=x",
+                "{baseUser}/wellness-api/rest/activityFile?token=x",
+                "nao e url",
+                ""})
+        @DisplayName("URL fora da origem, do path ou malformada é rejeitada sem nenhuma requisição")
+        void urlRejeitada(String modelo) {
+            String url = modelo.replace("{baseUser}", wireMock.baseUrl().replace("://", "://user:pw@"))
+                    .replace("{base}", wireMock.baseUrl());
+
+            assertThatThrownBy(() -> client.baixarArquivo(url))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessage("callbackURL inválido");
+            assertThat(wireMock.getAllServeEvents()).isEmpty();
         }
     }
 }

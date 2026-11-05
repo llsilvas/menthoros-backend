@@ -164,6 +164,9 @@ public record AtletaPerfilCoachOutputDto(
             @Schema(description = "Origem do registro", example = "INTERVALS_ICU")
             FonteDados fonteDados,
 
+            @Schema(description = "Modelo do dispositivo; ausente quando desconhecido", example = "Forerunner 970")
+            String deviceName,
+
             @Schema(description = "Duração em minutos inteiros; ausente quando não disponível", example = "50")
             Integer duracaoMin,
 

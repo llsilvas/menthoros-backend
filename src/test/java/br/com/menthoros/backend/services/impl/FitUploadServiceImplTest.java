@@ -21,6 +21,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -53,12 +54,12 @@ class FitUploadServiceImplTest {
                     null, null, null, null, null, null, null, null, null, null, null, null, List.of());
             when(fitParseService.parse(any())).thenReturn(dados);
             FitImportResultado resultadoEsperado = new FitImportResultado(mock(TreinoRealizadoOutputDto.class), true);
-            when(fitTreinoPersister.persistir(eq(atletaId), eq(dados))).thenReturn(resultadoEsperado);
+            when(fitTreinoPersister.persistir(eq(atletaId), eq(dados), isNull())).thenReturn(resultadoEsperado);
 
             FitImportResultado resultado = service.importar(atletaId, new ByteArrayInputStream(new byte[0]));
 
             assertThat(resultado).isSameAs(resultadoEsperado);
-            verify(fitTreinoPersister).persistir(atletaId, dados);
+            verify(fitTreinoPersister).persistir(atletaId, dados, null);
         }
     }
 }
