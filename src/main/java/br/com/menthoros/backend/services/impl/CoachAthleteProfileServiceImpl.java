@@ -9,6 +9,7 @@ import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.domain.billing.AthleteBilling;
 import br.com.menthoros.backend.services.AthleteContractService;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -129,7 +130,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
         long t3b = System.nanoTime();
         List<MelhorEsforcoDto> melhoresEsforcos = buscarLista("melhoresEsforcos", avisos,
-                () -> melhorEsforcoService.buscar(atletaId, "42d"));
+                () -> melhoresEsforcosOuIndisponivel(atletaId));
         log.debug("[perfil] melhoresEsforcos: {}ms", ms(t3b));
         Counter.builder("melhores_esforcos_perfil_exibido_total")
                 .description("Perfis de atleta abertos pelo coach, por presença de melhoresEsforcos")
@@ -229,7 +230,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                     return new AtletaPerfilCoachOutputDto.ConexaoCanalDto(i.getPlataforma(), i.isAtivo(),
                             scopes.contains(garmin ? GarminConnectionServiceImpl.WORKOUT_IMPORT : "CALENDAR:WRITE"),
                             scopes.contains(garmin ? GarminConnectionServiceImpl.ACTIVITY_EXPORT : "ACTIVITY:READ"),
-                            i.getLastSyncError());
+                            i.getLastSyncError(),
+                            i.getUltimaSincronizacao());
                 })
                 .orElse(null);
     }
@@ -253,6 +255,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                         tr.getDataTreino(),
                         tr.getTipoTreino() != null ? tr.getTipoTreino().name() : null,
                         tr.getFonteDados(),
+                        tr.getDeviceName(),
                         tr.getDuracaoMin() != null && !tr.getDuracaoMin().isZero()
                                 ? (int) tr.getDuracaoMin().toMinutes() : null,
                         tr.getDistanciaKm() != null ? tr.getDistanciaKm().doubleValue() : null,
@@ -375,6 +378,19 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                     .toList();
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /**
+     * Canal Garmin responde 409 (sem curve de pace): é indisponibilidade esperada, não falha
+     * parcial — sem isto todo atleta Garmin abriria o perfil com aviso. O front mostra
+     * "indisponível" pela {@code conexaoCanal}.
+     */
+    private List<MelhorEsforcoDto> melhoresEsforcosOuIndisponivel(UUID atletaId) {
+        try {
+            return melhorEsforcoService.buscar(atletaId, "42d");
+        } catch (DomainConflictException e) {
+            return List.of();
         }
     }
 

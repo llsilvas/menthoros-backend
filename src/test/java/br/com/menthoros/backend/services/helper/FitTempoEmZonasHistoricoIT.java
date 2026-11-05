@@ -50,7 +50,7 @@ class FitTempoEmZonasHistoricoIT extends AbstractIntegrationTest {
 
         FitImportResultado importado;
         try (InputStream in = getClass().getResourceAsStream("/fit/corrida-15km-16laps.fit")) {
-            importado = fitTreinoPersister.persistir(atleta.getId(), new FitParseServiceImpl().parse(in));
+            importado = fitTreinoPersister.persistir(atleta.getId(), new FitParseServiceImpl().parse(in), null);
         }
         UUID treinoId = importado.treino().id();
         TempoEmZonas noImport = treinoService.getTreinoById(treinoId).tempoEmZonas();

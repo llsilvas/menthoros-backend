@@ -103,6 +103,12 @@ public record TreinoPlanejadoOutputDto(
         @Schema(description = "Percepção de esforço real do atleta (1-10)", example = "8")
         Integer percepcaoEsforcoRealizado,
 
+        @Schema(description = "Fonte do treino realizado vinculado — distinta de fonteDados, que é a do plano", example = "GARMIN")
+        FonteDados completedSource,
+
+        @Schema(description = "Modelo do dispositivo do treino realizado vinculado; ausente quando desconhecido", example = "Forerunner 970")
+        String completedDeviceName,
+
         // ===== PULO ("Não vou conseguir hoje") =====
 
         @Schema(description = "Motivo declarado pelo atleta ao pular o treino; só com statusTreino = PERDIDO e pulo explícito",

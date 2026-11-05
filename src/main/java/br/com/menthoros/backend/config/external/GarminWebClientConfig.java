@@ -14,6 +14,8 @@ import java.time.Duration;
 @RequiredArgsConstructor
 public class GarminWebClientConfig {
 
+    static final int MAX_IN_MEMORY_BYTES = 16 * 1024 * 1024;
+
     private final GarminProperties properties;
 
     /**
@@ -31,6 +33,8 @@ public class GarminWebClientConfig {
                 .baseUrl(properties.getApiBaseUrl())
                 .clientConnector(new ReactorClientHttpConnector(httpClient))
                 .defaultHeader("Accept", "application/json")
+                // Padrão de 256 KiB é menor que um FIT de corrida; estourar depois de consumir o link perde o arquivo (410).
+                .codecs(c -> c.defaultCodecs().maxInMemorySize(MAX_IN_MEMORY_BYTES))
                 .build();
     }
 }

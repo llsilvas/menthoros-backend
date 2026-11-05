@@ -129,6 +129,9 @@ public record TreinoRealizadoOutputDto(
         @Schema(description = "Fonte dos dados", example = "GARMIN")
         FonteDados fonteDados,
 
+        @Schema(description = "Modelo do dispositivo informado pela fonte; ausente quando desconhecido", example = "Forerunner 970")
+        String deviceName,
+
         @Schema(description = "Status do treino", example = "CONCLUIDO")
         TreinoExecucaoStatus status,
 

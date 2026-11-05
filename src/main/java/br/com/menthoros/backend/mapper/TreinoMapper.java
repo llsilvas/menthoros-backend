@@ -14,6 +14,7 @@ import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.services.helper.DecouplingCalculatorService;
 import br.com.menthoros.backend.services.helper.LapEfficiencySeriesCalculator;
 import org.mapstruct.InheritConfiguration;
@@ -145,6 +146,8 @@ public interface TreinoMapper {
     @Mapping(target = "distanciaKm", source = "distanciaKm", qualifiedByName = "bigDecimalToDouble")
     @Mapping(target = "treinoRealizadoId", expression = "java(safeGetTreinoRealizadoId(treinoPlanejado))")
     @Mapping(target = "percepcaoEsforcoRealizado", expression = "java(safeGetPercepcaoEsforcoRealizado(treinoPlanejado))")
+    @Mapping(target = "completedSource", expression = "java(safeGetCompletedSource(treinoPlanejado))")
+    @Mapping(target = "completedDeviceName", expression = "java(safeGetCompletedDeviceName(treinoPlanejado))")
     @Mapping(target = "etapas", expression = "java(safeGetEtapas(treinoPlanejado))")
     // analiseAtletaDisponivel é enriquecido no PlanoServiceImpl (consulta às análises), não aqui.
     @Mapping(target = "analiseAtletaDisponivel", ignore = true)
@@ -159,6 +162,24 @@ public interface TreinoMapper {
         try {
             TreinoRealizado tr = tp.getTreinoRealizado();
             return tr != null ? tr.getId() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    default FonteDados safeGetCompletedSource(TreinoPlanejado tp) {
+        try {
+            TreinoRealizado tr = tp.getTreinoRealizado();
+            return tr != null ? tr.getFonteDados() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    default String safeGetCompletedDeviceName(TreinoPlanejado tp) {
+        try {
+            TreinoRealizado tr = tp.getTreinoRealizado();
+            return tr != null ? tr.getDeviceName() : null;
         } catch (Exception e) {
             return null;
         }

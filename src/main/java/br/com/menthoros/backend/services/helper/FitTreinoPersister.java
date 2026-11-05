@@ -18,6 +18,7 @@ import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.util.Utils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -39,6 +40,7 @@ import java.util.UUID;
 public class FitTreinoPersister {
 
     private static final String CRIADO_POR_GARMIN = "GARMIN";
+    private static final int DEVICE_NAME_MAX = 200;
 
     // Faixas de sanidade para dados vindos do .fit (upload não confiável): fora delas → null,
     // nunca persistir lixo de firmware/arquivo adversarial. Cadência espelha a regra do Strava.
@@ -78,19 +80,23 @@ public class FitTreinoPersister {
      * <p><b>Idempotent:</b> YES — reenviar o mesmo .fit retorna o registro já existente
      * ({@link FitImportResultado#novo()} {@code == false}) em vez de duplicar.
      * <p><b>Side Effects:</b> Database insert (treino + etapas) quando ainda não existe e esta
-     * requisição venceu a corrida de concorrência; apenas leitura nos demais casos.
+     * requisição venceu a corrida de concorrência; na duplicata, só o {@code deviceName} quando
+     * o existente não tem um (sem repetir TSS, evento ou carga).
      * <p><b>Tenant-aware:</b> YES — via {@link TenantContext#getRequiredTenantId()}.
      *
+     * @param deviceName modelo informado pelo ping do Garmin; {@code null} no upload manual
      * @throws DomainNotFoundException se o atleta não for encontrado no tenant atual
      */
     @Transactional
-    public FitImportResultado persistir(UUID atletaId, FitSessionData dados) {
+    public FitImportResultado persistir(UUID atletaId, FitSessionData dados, @Nullable String deviceName) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado no tenant atual"));
 
         String externalId = buildExternalId(atletaId, dados);
+        String device = limitarDeviceName(deviceName);
         TreinoRealizado treino = montarTreino(dados, atleta, tenantId, externalId);
+        treino.setDeviceName(device);
 
         // Dedup, tssCalculado (quando ausente), evento de análise e carga do dia são
         // responsabilidade do seam único de ingestão (ingestao-treino-realizado, D1-D13) — este
@@ -101,6 +107,11 @@ public class FitTreinoPersister {
             log.info("Fit importado: treinoId={}, atletaId={}, externalId={}",
                     resultado.treino().getId(), atletaId, externalId);
         } else {
+            // O atleta subiu o FIT antes do ping: o modelo do Garmin não se perde. Entidade
+            // gerenciada nesta TX — o dirty checking grava sem repetir TSS/evento/carga (D4).
+            if (device != null && resultado.treino().getDeviceName() == null) {
+                resultado.treino().setDeviceName(device);
+            }
             log.info("Fit já importado ou corrida de concorrência — registro já existente: treinoId={}, atletaId={}, externalId={}",
                     resultado.treino().getId(), atletaId, externalId);
         }
@@ -211,6 +222,14 @@ public class FitTreinoPersister {
         }
         Duration referencia = dados.tempoMovimento() != null ? dados.tempoMovimento() : dados.duracao();
         return TempoEmZonasCalculator.calcular(dados.amostrasFc(), zonas, referencia.toSeconds());
+    }
+
+    private static @Nullable String limitarDeviceName(@Nullable String deviceName) {
+        if (deviceName == null || deviceName.isBlank()) {
+            return null;
+        }
+        String limpo = deviceName.strip();
+        return limpo.length() > DEVICE_NAME_MAX ? limpo.substring(0, DEVICE_NAME_MAX) : limpo;
     }
 
     private String descricaoParaEsporte(FitSessionData dados) {

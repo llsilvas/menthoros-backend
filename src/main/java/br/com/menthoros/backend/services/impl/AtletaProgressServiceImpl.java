@@ -246,6 +246,7 @@ public class AtletaProgressServiceImpl implements AtletaProgressService {
         return new AtletaHomeDto.RealizadoHoje(
                 tr.getId(),
                 tr.getFonteDados() != null ? tr.getFonteDados().name() : null,
+                tr.getDeviceName(),
                 tr.getTipoTreino() != null ? tr.getTipoTreino().name() : null,
                 duracaoMin,
                 tr.getDistanciaKm(),
