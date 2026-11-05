@@ -450,11 +450,12 @@ class GarminClientImplTest {
             }
             wireMock.stubFor(get(urlPathEqualTo(PATH))
                     .withQueryParam("token", equalTo(TOKEN_LINK))
+                    .withHeader("Authorization", equalTo("Bearer access"))
                     .willReturn(aResponse().withStatus(200)
                             .withHeader("Content-Type", "application/octet-stream").withBody(fit)));
 
             assertThat(fit.length).isGreaterThan(256 * 1024);
-            assertThat(client.baixarArquivo(callback())).isEqualTo(fit);
+            assertThat(client.baixarArquivo(callback(), "access")).isEqualTo(fit);
         }
 
         @ParameterizedTest
@@ -463,7 +464,7 @@ class GarminClientImplTest {
         void erroComStatus(int status) {
             wireMock.stubFor(get(urlPathEqualTo(PATH)).willReturn(aResponse().withStatus(status).withBody(TOKEN_LINK)));
 
-            assertThatThrownBy(() -> client.baixarArquivo(callback()))
+            assertThatThrownBy(() -> client.baixarArquivo(callback(), "access"))
                     .isInstanceOfSatisfying(GarminApiException.class, e -> {
                         assertThat(e.getStatus().value()).isEqualTo(status);
                         assertThat(e.getMessage()).doesNotContain(TOKEN_LINK);
@@ -482,7 +483,7 @@ class GarminClientImplTest {
                     WebClient.builder().clientConnector(new ReactorClientHttpConnector(rapido)).build(),
                     props, URI.create(wireMock.baseUrl()));
 
-            assertThatThrownBy(() -> comTimeoutCurto.baixarArquivo(callback()))
+            assertThatThrownBy(() -> comTimeoutCurto.baixarArquivo(callback(), "access"))
                     .isInstanceOfSatisfying(GarminApiException.class, e -> {
                         assertThat(e.getStatus()).isNull();
                         assertThat(e.getMessage()).doesNotContain(TOKEN_LINK);
@@ -494,7 +495,7 @@ class GarminClientImplTest {
         void corpoVazio() {
             wireMock.stubFor(get(urlPathEqualTo(PATH)).willReturn(aResponse().withStatus(200)));
 
-            assertThatThrownBy(() -> client.baixarArquivo(callback())).isInstanceOf(GarminApiException.class);
+            assertThatThrownBy(() -> client.baixarArquivo(callback(), "access")).isInstanceOf(GarminApiException.class);
         }
 
         @Test
@@ -502,10 +503,10 @@ class GarminClientImplTest {
         void origemDeProducao() {
             GarminClientImpl producao = new GarminClientImpl(WebClient.create(), props);
 
-            assertThatThrownBy(() -> producao.baixarArquivo(callback()))
+            assertThatThrownBy(() -> producao.baixarArquivo(callback(), "access"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("callbackURL inválido");
-            assertThatThrownBy(() -> producao.baixarArquivo("http://apis.garmin.com" + PATH + "?token=x"))
+            assertThatThrownBy(() -> producao.baixarArquivo("http://apis.garmin.com" + PATH + "?token=x", "access"))
                     .isInstanceOf(IllegalArgumentException.class);
         }
 
@@ -523,7 +524,7 @@ class GarminClientImplTest {
             String url = modelo.replace("{baseUser}", wireMock.baseUrl().replace("://", "://user:pw@"))
                     .replace("{base}", wireMock.baseUrl());
 
-            assertThatThrownBy(() -> client.baixarArquivo(url))
+            assertThatThrownBy(() -> client.baixarArquivo(url, "access"))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessage("callbackURL inválido");
             assertThat(wireMock.getAllServeEvents()).isEmpty();

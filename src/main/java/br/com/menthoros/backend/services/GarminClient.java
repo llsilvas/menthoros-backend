@@ -58,10 +58,10 @@ public interface GarminClient {
     List<GarminSchedule> listarSchedules(String token, LocalDate inicio, LocalDate fim);
 
     /**
-     * GET no {@code callbackURL} de um ping {@code activityFiles} — o link traz token próprio e vale
-     * uma vez (segundo download = 410). Antes de qualquer requisição exige {@code https}, host
+     * GET no {@code callbackURL} de um ping {@code activityFiles}, com o access token do atleta no
+     * {@code Authorization} — sem ele o Garmin responde 400. O link vale uma vez (segundo download = 410). Antes de qualquer requisição exige {@code https}, host
      * {@code apis.garmin.com} e path {@code /wellness-api/rest/activityFile}; fora disso lança
      * {@link IllegalArgumentException} sem chamar nada (SSRF: a URL vem de um request externo).
      */
-    byte[] baixarArquivo(String callbackUrl);
+    byte[] baixarArquivo(String callbackUrl, String token);
 }
