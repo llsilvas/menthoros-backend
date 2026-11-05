@@ -67,5 +67,11 @@ public record EtapaRealizadaOutputDto(
         @Schema(description = "Running dynamics da etapa (GCT, equilíbrio, passada, oscilação, proporção "
                         + "vertical, temperatura, tempo em movimento) — calorias sempre ausente aqui, só "
                         + "existe a nível de sessão")
-        RunningDynamicsOutputDto runningDynamics
+        RunningDynamicsOutputDto runningDynamics,
+
+        @Schema(description = "Elevação ganha na etapa, em metros", example = "4")
+        Integer elevacaoGanhoMetros,
+
+        @Schema(description = "Elevação perdida na etapa, em metros", example = "2")
+        Integer elevacaoPerdaMetros
 ) {}

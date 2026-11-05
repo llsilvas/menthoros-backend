@@ -1818,7 +1818,8 @@ class PlanoServiceImplTest {
                 null, // 34 status
                 null, // 35 externalId
                 null, // 36 etapasRealizadas
-                null, null, null  // 37 sugestaoReclassificacao + sensacoes, feedbackRegistradoEm
+                null, null, null, // 37 sugestaoReclassificacao + sensacoes, feedbackRegistradoEm
+                null, null, null, null, null // execução (coach-ver-treino-realizado)
         );
     }
 

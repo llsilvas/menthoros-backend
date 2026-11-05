@@ -102,6 +102,17 @@ public class ZonaTreinoService {
         return zonasFC(AthleteZones.de(atleta));
     }
 
+    /**
+     * Zonas de FC só quando confiáveis (coach-ver-treino-realizado, D6/A9): faixas manuais ou FC de
+     * limiar informada. A derivada de FC máxima estimada pela idade erraria a faixa do treino inteiro,
+     * então volta {@code null} — quem grava histórico (tempo em zonas) não deve usá-la.
+     */
+    public @Nullable List<ZonaFC> zonasFCConfiaveis(Atleta atleta) {
+        boolean manual = atleta.getModoZonasFc() == ModoZonas.MANUAL && atleta.getZonasManuaisFc() != null;
+        boolean limiarInformado = atleta.getFcLimiar() != null && atleta.getFcLimiar() > 0;
+        return manual || limiarInformado ? zonasFC(atleta) : null;
+    }
+
     public List<ZonaFC> zonasFC(AthleteZones zonas) {
         if (zonas.fcManual() != null) {
             return zonas.fcManual().stream()

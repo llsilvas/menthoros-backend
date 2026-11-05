@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.fit.FitLapData;
 import br.com.menthoros.backend.dto.fit.FitSessionData;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaRealizada;
+import br.com.menthoros.backend.entity.TempoEmZonas;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.TipoTreino;
@@ -24,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -46,6 +48,8 @@ public class FitTreinoPersister {
     private static final int CADENCIA_MAX_PPM = 200;
     private static final int ELEVACAO_MAX_METROS = 10_000;
     private static final int POTENCIA_MAX_WATTS = 2_500;
+    /** Acima disso é lixo de firmware em qualquer esporte do .fit — e estouraria o NUMERIC(5,2). */
+    private static final double VELOCIDADE_MAX_KMH = 150.0;
 
     // Running dynamics (design D2 de fit-running-dynamics-ingestion) — mesma lógica de descarte
     // silencioso; temperatura, tempo em movimento e calorias não têm faixa de sanidade própria
@@ -67,6 +71,7 @@ public class FitTreinoPersister {
     private final AtletaRepository atletaRepository;
     private final TreinoMapper treinoMapper;
     private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
+    private final ZonaTreinoService zonaTreinoService;
 
     /**
      * Persiste o treino a partir dos dados já extraídos de um .fit, com dedup idempotente por
@@ -155,6 +160,14 @@ public class FitTreinoPersister {
         treino.setOscilacaoVerticalCm(sanitizarOscilacao(dados.oscilacaoVerticalCm()));
         treino.setProporcaoVerticalPct(sanitizarProporcao(dados.proporcaoVerticalPct()));
         treino.setTemperaturaMediaC(dados.temperaturaMediaC());
+        // paceMedia fica nulo de propósito: ele alimenta TSS, inferência de limiar e projeção de
+        // prova, e preenchê-lo mudaria esses cálculos para todo import .fit. O ritmo da tela de
+        // execução sai da velocidade (coach-ver-treino-realizado, task 1.3).
+        treino.setVelocidadeMedia(sanitizarVelocidade(dados.velocidadeMediaKmh()));
+        treino.setVelocidadeMaxKmh(sanitizarVelocidade(dados.velocidadeMaxKmh()));
+        treino.setTemperaturaMinC(dados.temperaturaMinC());
+        treino.setTemperaturaMaxC(dados.temperaturaMaxC());
+        treino.setTempoEmZonas(tempoEmZonas(dados, atleta));
 
         if (dados.tssCalculado() != null) {
             treino.setTssCalculado(dados.tssCalculado());
@@ -192,6 +205,23 @@ public class FitTreinoPersister {
         }
 
         return treino;
+    }
+
+    /**
+     * Só com zonas confiáveis (D6, A9): faixas manuais ou FC de limiar informada. Zona derivada de FC
+     * máxima estimada pela idade erraria a faixa do treino inteiro, e a tela a mostraria como dado.
+     * Cobertura sobre o tempo em movimento, porque no .fit {@code duracao} inclui as pausas.
+     */
+    private TempoEmZonas tempoEmZonas(FitSessionData dados, Atleta atleta) {
+        if (dados.amostrasFc().isEmpty()) {
+            return null;
+        }
+        List<ZonaTreinoService.ZonaFC> zonas = zonaTreinoService.zonasFCConfiaveis(atleta);
+        if (zonas == null) {
+            return null;
+        }
+        Duration referencia = dados.tempoMovimento() != null ? dados.tempoMovimento() : dados.duracao();
+        return TempoEmZonasCalculator.calcular(dados.amostrasFc(), zonas, referencia.toSeconds());
     }
 
     private static @Nullable String limitarDeviceName(@Nullable String deviceName) {
@@ -252,6 +282,17 @@ public class FitTreinoPersister {
     private static boolean temMetricaDeVelocidade(FitLapData lap) {
         return lap.distanciaKm() != null && lap.distanciaKm() > 0
                 && lap.duracao() != null && !lap.duracao().isZero() && !lap.duracao().isNegative();
+    }
+
+    private static Double sanitizarVelocidade(Double kmh) {
+        if (kmh == null || kmh <= 0 || kmh > VELOCIDADE_MAX_KMH) {
+            return null;
+        }
+        return kmh;
+    }
+
+    private static BigDecimal sanitizarVelocidade(BigDecimal kmh) {
+        return kmh != null && sanitizarVelocidade(kmh.doubleValue()) != null ? kmh : null;
     }
 
     private static Integer sanitizarCadencia(Integer ppm) {
