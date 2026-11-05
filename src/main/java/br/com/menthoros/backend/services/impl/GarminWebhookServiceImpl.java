@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
+import br.com.menthoros.backend.services.GarminPingService;
 import br.com.menthoros.backend.services.GarminWebhookService;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ import java.util.function.Consumer;
 public class GarminWebhookServiceImpl implements GarminWebhookService {
 
     private final IntegracaoExternaRepository integracaoRepository;
+    private final GarminPingService pingService;
 
     /** Teto por chave e por requisição: o Garmin manda lotes pequenos; mais que isso é abuso ou erro. */
     static final int MAX_ITENS_POR_CHAVE = 100;
@@ -32,7 +34,8 @@ public class GarminWebhookServiceImpl implements GarminWebhookService {
      *
      * Deliberadamente SEM @Transactional no lote: cada item grava em transação própria (o
      * {@code save} do repositório), então um item com erro não desfaz os outros nem devolve 500 ao
-     * Garmin, que reenviaria o lote inteiro.
+     * Garmin, que reenviaria o lote inteiro. Exceção: {@code activityFiles}, cuja falha de gravação
+     * propaga (ver {@link GarminPingService#registrar}).
      */
     @Override
     public void processar(Map<String, List<JsonNode>> corpo) {
@@ -41,15 +44,26 @@ public class GarminWebhookServiceImpl implements GarminWebhookService {
         }
         porItem("deregistrations", corpo, this::desregistrar);
         porItem("userPermissionsChange", corpo, this::atualizarPermissoes);
+        // Fora do porItem de propósito: engolir a falha aqui perderia o arquivo para sempre (o link
+        // só vale 24 h e não há outro aviso). Propaga → 500 → o Garmin reenvia; o dedup absorve.
+        List<JsonNode> arquivos = limitar("activityFiles", corpo);
+        if (!arquivos.isEmpty()) {
+            pingService.registrar(arquivos);
+        }
     }
 
-    private void porItem(String chave, Map<String, List<JsonNode>> corpo, Consumer<JsonNode> acao) {
+    private List<JsonNode> limitar(String chave, Map<String, List<JsonNode>> corpo) {
         List<JsonNode> itens = corpo.getOrDefault(chave, List.of());
         if (itens.size() > MAX_ITENS_POR_CHAVE) {
             log.warn("Webhook Garmin com {} itens em '{}'; processando só os {} primeiros", itens.size(), chave,
                     MAX_ITENS_POR_CHAVE);
+            return itens.subList(0, MAX_ITENS_POR_CHAVE);
         }
-        itens.stream().limit(MAX_ITENS_POR_CHAVE).forEach(item -> {
+        return itens;
+    }
+
+    private void porItem(String chave, Map<String, List<JsonNode>> corpo, Consumer<JsonNode> acao) {
+        limitar(chave, corpo).forEach(item -> {
             try {
                 acao.accept(item);
             } catch (RuntimeException e) {

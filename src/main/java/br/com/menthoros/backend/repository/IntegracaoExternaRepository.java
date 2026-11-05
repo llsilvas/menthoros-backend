@@ -21,6 +21,10 @@ public interface IntegracaoExternaRepository extends JpaRepository<IntegracaoExt
 
     Optional<IntegracaoExterna> findByExternalAthleteIdAndPlataforma(String externalAthleteId, FonteDados plataforma);
 
+    /** Conexão mais recente do userId externo, ativa ou não (reconexões deixam linhas inativas). */
+    Optional<IntegracaoExterna> findFirstByExternalAthleteIdAndPlataformaOrderByAtualizadoEmDesc(
+            String externalAthleteId, FonteDados plataforma);
+
     boolean existsByAtletaIdAndPlataforma(UUID atletaId, FonteDados plataforma);
 
     @Query("""
