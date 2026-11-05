@@ -199,8 +199,9 @@ public record AtletaPerfilCoachOutputDto(
             @Schema(description = "Tipo de treino", example = "CORRIDA_LEVE")
             String tipoTreino,
 
-            @Schema(description = "Distância planejada em km", example = "10.5")
-            double distanciaKm,
+            @Schema(description = "Distância planejada em km; ausente quando o treino não prescreve distância",
+                    example = "10.5")
+            Double distanciaKm,
 
             @Schema(description = "Status de execução: PENDENTE, CONCLUIDO, REALIZADO, PERDIDO, PARCIAL, LIVRE",
                     example = "PENDENTE")
@@ -235,7 +236,13 @@ public record AtletaPerfilCoachOutputDto(
             String syncError,
 
             @Schema(description = "Envio ao canal em andamento (o reenvio responderia 409); o front desabilita o botão")
-            Boolean syncInProgress
+            Boolean syncInProgress,
+
+            @Schema(description = "ID do treino realizado vinculado; ausente quando não há vínculo")
+            UUID treinoRealizadoId,
+
+            @Schema(description = "Ritmo alvo planejado", example = "5:30")
+            String ritmoAlvo
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

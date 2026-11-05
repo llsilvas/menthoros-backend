@@ -330,7 +330,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             tp.getId(),
                             tp.getDiaSemana().name(),
                             tp.getTipoTreino().name(),
-                            tp.getDistanciaKm() != null ? tp.getDistanciaKm().doubleValue() : 0.0,
+                            tp.getDistanciaKm() != null ? tp.getDistanciaKm().doubleValue() : null,
                             tp.getStatusTreino().name(),
                             tp.getDuracaoMin() != null ? tp.getDuracaoMin().toString() : null,
                             tp.getZonaAlvo(),
@@ -343,7 +343,11 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             atletaConectadoIntervalsIcu,
                             canalConectado,
                             erroExponivel(tp),
-                            tp.envioEmAndamento(agora)))
+                            tp.envioEmAndamento(agora),
+                            // Lado inverso do @OneToOne: o Hibernate já carrega o vínculo junto do
+                            // planejado, então ler aqui não adiciona consulta.
+                            tp.getTreinoRealizado() != null ? tp.getTreinoRealizado().getId() : null,
+                            tp.getRitmoAlvo()))
                     .toList();
         } else {
             treinos = List.of();
