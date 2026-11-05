@@ -8,7 +8,6 @@ import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.TempoEmZonas;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
-import br.com.menthoros.backend.enums.ModoZonas;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -25,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -153,8 +153,7 @@ public class FitTreinoPersister {
         // prova, e preenchê-lo mudaria esses cálculos para todo import .fit. O ritmo da tela de
         // execução sai da velocidade (coach-ver-treino-realizado, task 1.3).
         treino.setVelocidadeMedia(sanitizarVelocidade(dados.velocidadeMediaKmh()));
-        treino.setVelocidadeMaxKmh(dados.velocidadeMaxKmh() != null
-                && sanitizarVelocidade(dados.velocidadeMaxKmh().doubleValue()) != null ? dados.velocidadeMaxKmh() : null);
+        treino.setVelocidadeMaxKmh(sanitizarVelocidade(dados.velocidadeMaxKmh()));
         treino.setTemperaturaMinC(dados.temperaturaMinC());
         treino.setTemperaturaMaxC(dados.temperaturaMaxC());
         treino.setTempoEmZonas(tempoEmZonas(dados, atleta));
@@ -206,14 +205,12 @@ public class FitTreinoPersister {
         if (dados.amostrasFc().isEmpty()) {
             return null;
         }
-        boolean zonasConfiaveis = (atleta.getModoZonasFc() == ModoZonas.MANUAL && atleta.getZonasManuaisFc() != null)
-                || (atleta.getFcLimiar() != null && atleta.getFcLimiar() > 0);
-        if (!zonasConfiaveis) {
+        List<ZonaTreinoService.ZonaFC> zonas = zonaTreinoService.zonasFCConfiaveis(atleta);
+        if (zonas == null) {
             return null;
         }
         Duration referencia = dados.tempoMovimento() != null ? dados.tempoMovimento() : dados.duracao();
-        return TempoEmZonasCalculator.calcular(dados.amostrasFc(), zonaTreinoService.zonasFC(atleta),
-                referencia.toSeconds());
+        return TempoEmZonasCalculator.calcular(dados.amostrasFc(), zonas, referencia.toSeconds());
     }
 
     private String descricaoParaEsporte(FitSessionData dados) {
@@ -273,6 +270,10 @@ public class FitTreinoPersister {
             return null;
         }
         return kmh;
+    }
+
+    private static BigDecimal sanitizarVelocidade(BigDecimal kmh) {
+        return kmh != null && sanitizarVelocidade(kmh.doubleValue()) != null ? kmh : null;
     }
 
     private static Integer sanitizarCadencia(Integer ppm) {

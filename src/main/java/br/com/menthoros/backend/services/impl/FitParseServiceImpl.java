@@ -329,12 +329,14 @@ public class FitParseServiceImpl implements FitParseService {
 
     /** Distância / tempo em movimento, como o Garmin Connect calcula a média da sessão. */
     private static Double velocidadeMediaKmh(Float metros, Float segundosEmMovimento) {
-        if (metros == null || segundosEmMovimento == null || segundosEmMovimento <= 0) return null;
+        if (metros == null || segundosEmMovimento == null || segundosEmMovimento <= 0
+                || !Float.isFinite(metros) || !Float.isFinite(segundosEmMovimento)) return null;
         return BigDecimal.valueOf(metros / segundosEmMovimento * 3.6).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 
     private static BigDecimal kmhDeMetrosPorSegundo(Float metrosPorSegundo) {
-        return metrosPorSegundo != null
+        // NaN/Infinity de um .fit adversarial descartam só o campo, sem recusar o arquivo.
+        return metrosPorSegundo != null && Float.isFinite(metrosPorSegundo)
                 ? BigDecimal.valueOf(metrosPorSegundo * 3.6).setScale(2, RoundingMode.HALF_UP)
                 : null;
     }
