@@ -322,6 +322,42 @@ class GarminPingProcessorSchedulerTest {
             assertThat(TenantContext.hasTenant()).isFalse();
             verify(integracaoRepository, never()).atualizarUltimaSincronizacao(any(), eq(a.getTenantId()), any());
         }
+
+        @Test
+        @DisplayName("falha ao persistir depois do download vira ERROR com o motivo real, não fica em SYNCING")
+        void falhaAoPersistir() {
+            GarminPing ping = ping(UUID.randomUUID());
+            filaCom(ping);
+            when(garminClient.baixarArquivo(CALLBACK)).thenReturn(new byte[]{1});
+            when(fitParseService.parse(any())).thenReturn(dados);
+            when(fitTreinoPersister.persistir(any(), eq(dados), anyString()))
+                    .thenThrow(new IllegalStateException("banco caiu"));
+
+            scheduler.processar();
+
+            assertThat(ping.getStatus()).isEqualTo(GarminPingStatus.ERROR);
+            assertThat(ping.getReason()).isEqualTo("Falha ao persistir o treino");
+            assertThat(ping.getCompletedWorkoutId()).isNull();
+            assertThat(ping.getSyncingSince()).isNull();
+            verify(integracaoRepository, never()).atualizarUltimaSincronizacao(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("erro ao devolver um ping preso não aborta o resto do ciclo")
+        void falhaNoReclaimNaoAbortaCiclo() {
+            GarminPing preso = ping(UUID.randomUUID());
+            GarminPing velho = ping(UUID.randomUUID());
+            when(pingRepository.findStuckSyncing(any())).thenReturn(List.of(preso));
+            when(pingRepository.findExpired(any())).thenReturn(List.of(velho));
+            when(pingRepository.findPendingOldestFirst(any(), any(), any())).thenReturn(List.of());
+            when(pingRepository.save(preso)).thenThrow(new IllegalStateException("linha travada"));
+            when(pingRepository.save(velho)).thenReturn(velho);
+
+            scheduler.processar();
+
+            assertThat(velho.getStatus()).isEqualTo(GarminPingStatus.ERROR);
+            verify(pingRepository).findPendingOldestFirst(any(), any(), any());
+        }
     }
 
     private IntegracaoExterna filaCom(GarminPing ping) {

@@ -118,18 +118,29 @@ public class GarminPingProcessorScheduler {
 
     private void reclamarPresos(Instant agora) {
         for (GarminPing ping : pingRepository.findStuckSyncing(agora.minus(RECLAIM_APOS))) {
-            ping.setStatus(GarminPingStatus.PENDING);
-            ping.setAttempts(ping.getAttempts() + 1);
-            ping.setNextAttemptAt(agora);
-            ping.setSyncingSince(null);
-            pingRepository.save(ping);
-            log.warn("Ping Garmin {} preso em SYNCING; devolvido à fila", ping.getId());
+            isolado(ping, () -> {
+                ping.setStatus(GarminPingStatus.PENDING);
+                ping.setAttempts(ping.getAttempts() + 1);
+                ping.setNextAttemptAt(agora);
+                ping.setSyncingSince(null);
+                pingRepository.save(ping);
+                log.warn("Ping Garmin {} preso em SYNCING; devolvido à fila", ping.getId());
+            });
         }
     }
 
     private void expirar(Instant agora) {
         for (GarminPing ping : pingRepository.findExpired(agora.minus(JANELA_DOWNLOAD))) {
-            finalizar(ping, GarminPingStatus.ERROR, "Expirado: link de download vale 24 h", agora);
+            isolado(ping, () -> finalizar(ping, GarminPingStatus.ERROR, "Expirado: link de download vale 24 h", agora));
+        }
+    }
+
+    /** Erro num ping da limpeza não pode abortar o ciclo: a mesma consulta o traria de volta a cada minuto. */
+    private static void isolado(GarminPing ping, Runnable acao) {
+        try {
+            acao.run();
+        } catch (RuntimeException e) {
+            log.error("Erro na limpeza do ping Garmin {}: {}", ping.getId(), e.getClass().getSimpleName());
         }
     }
 
@@ -163,14 +174,21 @@ public class GarminPingProcessorScheduler {
 
         // Treino, ping e ultimaSincronizacao na mesma TX: sem PROCESSED sem treino, nem o contrário.
         UUID conexaoId = conexao.get().getId();
-        tx.executeWithoutResult(status -> {
-            FitImportResultado resultado = fitTreinoPersister.persistir(
-                    claimed.getAthleteId(), dados, claimed.getDeviceName());
-            claimed.setCompletedWorkoutId(resultado.treino().id());
-            Instant fim = clock.instant();
-            finalizar(claimed, GarminPingStatus.PROCESSED, null, fim);
-            integracaoRepository.atualizarUltimaSincronizacao(conexaoId, claimed.getTenantId(), fim);
-        });
+        try {
+            tx.executeWithoutResult(status -> {
+                FitImportResultado resultado = fitTreinoPersister.persistir(
+                        claimed.getAthleteId(), dados, claimed.getDeviceName());
+                claimed.setCompletedWorkoutId(resultado.treino().id());
+                Instant fim = clock.instant();
+                finalizar(claimed, GarminPingStatus.PROCESSED, null, fim);
+                integracaoRepository.atualizarUltimaSincronizacao(conexaoId, claimed.getTenantId(), fim);
+            });
+        } catch (RuntimeException e) {
+            // O link já foi consumido: deixar em SYNCING levaria a um 410 no reclaim, com o motivo errado.
+            log.error("Falha ao persistir o treino do ping Garmin {}: {}", claimed.getId(), e.getClass().getSimpleName());
+            claimed.setCompletedWorkoutId(null);
+            finalizar(claimed, GarminPingStatus.ERROR, "Falha ao persistir o treino", agora);
+        }
     }
 
     private void tratarFalhaDownload(GarminPing ping, HttpStatusCode status, Instant agora) {

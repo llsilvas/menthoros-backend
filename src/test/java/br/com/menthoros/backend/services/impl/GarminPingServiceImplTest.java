@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.CsvSource; import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -179,6 +179,31 @@ class GarminPingServiceImplTest {
             service.registrar(List.of(item));
 
             verifyNoInteractions(pingRepository, integracaoRepository);
+        }
+
+        @ParameterizedTest
+        @CsvSource({"userId,101", "summaryId,101", "activityId,101",
+                "activityType,51", "fileType,11", "callbackURL,1001"})
+        @DisplayName("campo acima do tamanho da coluna pula o item sem gravar nem lançar")
+        void campoGrandeDemaisPulado(String campo, int tamanho) {
+            ObjectNode item = item("RUNNING");
+            item.put(campo, "x".repeat(tamanho));
+
+            assertThatCode(() -> service.registrar(List.of(item))).doesNotThrowAnyException();
+
+            verifyNoInteractions(pingRepository, integracaoRepository);
+        }
+
+        @Test
+        @DisplayName("deviceName acima de 255 é cortado, não descarta o ping")
+        void deviceNameCortado() {
+            conexaoAtiva();
+            ObjectNode item = item("RUNNING");
+            item.put("deviceName", "d".repeat(300));
+
+            service.registrar(List.of(item));
+
+            assertThat(capturarSalvo().getDeviceName()).hasSize(255);
         }
 
         @Test

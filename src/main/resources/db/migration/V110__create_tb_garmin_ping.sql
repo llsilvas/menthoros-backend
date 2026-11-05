@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS tb_garmin_ping (
 
 CREATE INDEX IF NOT EXISTS idx_garmin_ping_tenant_status ON tb_garmin_ping(tenant_id, status);
 CREATE INDEX IF NOT EXISTS idx_garmin_ping_status_created_at ON tb_garmin_ping(status, created_at);
+-- FK do cascade: sem índice, apagar um atleta varre a tabela inteira.
+CREATE INDEX IF NOT EXISTS idx_garmin_ping_athlete_id ON tb_garmin_ping(athlete_id);
 
 DO $$
 BEGIN

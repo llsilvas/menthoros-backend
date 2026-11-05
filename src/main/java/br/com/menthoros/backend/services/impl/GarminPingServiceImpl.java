@@ -58,6 +58,13 @@ public class GarminPingServiceImpl implements GarminPingService {
             log.warn("Ping activityFiles do Garmin sem campo obrigatório; ignorado");
             return;
         }
+        // Campo maior que a coluna derrubaria o save com 500, e o Garmin reenviaria o lote inteiro para sempre.
+        if (excede(userId, 100) || excede(summaryId, 100) || excede(callbackUrl, 1000)
+                || excede(texto(item, "activityId"), 100) || excede(texto(item, "activityType"), 50)
+                || excede(texto(item, "fileType"), 10)) {
+            log.warn("Ping activityFiles do Garmin com campo acima do tamanho da coluna; ignorado");
+            return;
+        }
 
         Optional<IntegracaoExterna> ativa = integracaoRepository.findActiveByExternalAthleteIdAndPlataforma(
                 userId, FonteDados.GARMIN);
@@ -88,7 +95,8 @@ public class GarminPingServiceImpl implements GarminPingService {
         ping.setCallbackUrl(callbackUrl);
         ping.setActivityType(texto(item, "activityType"));
         ping.setFileType(texto(item, "fileType"));
-        ping.setDeviceName(texto(item, "deviceName"));
+        String deviceName = texto(item, "deviceName");
+        ping.setDeviceName(excede(deviceName, 255) ? deviceName.substring(0, 255) : deviceName);
         ping.setStartTime(Instant.ofEpochSecond(startTime));
         ping.setManual(item.path("manual").asBoolean(false));
         return ping;
@@ -134,6 +142,10 @@ public class GarminPingServiceImpl implements GarminPingService {
         // Só o tipo: a mensagem do banco pode carregar o callback_url com o token.
         log.error("Falha ao gravar ping activityFiles do Garmin: {}", e.getClass().getSimpleName());
         return new GarminPingRegistroException("Falha ao registrar ping activityFiles do Garmin");
+    }
+
+    private static boolean excede(String valor, int max) {
+        return valor != null && valor.length() > max;
     }
 
     private static String texto(JsonNode item, String campo) {
