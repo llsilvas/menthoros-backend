@@ -3,7 +3,9 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.exception.GarminPingRegistroException;
 import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
+import br.com.menthoros.backend.services.GarminPingService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,6 +19,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -27,13 +30,15 @@ class GarminWebhookServiceImplTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
     private IntegracaoExternaRepository repository;
+    private GarminPingService pingService;
     private GarminWebhookServiceImpl service;
     private IntegracaoExterna conexao;
 
     @BeforeEach
     void setUp() {
         repository = mock(IntegracaoExternaRepository.class);
-        service = new GarminWebhookServiceImpl(repository);
+        pingService = mock(GarminPingService.class);
+        service = new GarminWebhookServiceImpl(repository, pingService);
         conexao = new IntegracaoExterna();
         conexao.setAtleta(Atleta.builder().id(UUID.randomUUID()).build());
         conexao.setAtivo(true);
@@ -110,5 +115,36 @@ class GarminWebhookServiceImplTest {
 
         verify(repository, org.mockito.Mockito.times(GarminWebhookServiceImpl.MAX_ITENS_POR_CHAVE))
                 .findActiveByExternalAthleteIdAndPlataforma(org.mockito.ArgumentMatchers.startsWith("x"), any());
+    }
+
+    @Test
+    @DisplayName("activityFiles: lote vai inteiro ao GarminPingService, até o teto")
+    void activityFilesDelegado() throws Exception {
+        List<JsonNode> itens = new java.util.ArrayList<>();
+        for (int i = 0; i < GarminWebhookServiceImpl.MAX_ITENS_POR_CHAVE + 5; i++) {
+            itens.add(json("{\"summaryId\":\"s" + i + "\"}"));
+        }
+
+        service.processar(Map.of("activityFiles", itens));
+
+        verify(pingService).registrar(itens.subList(0, GarminWebhookServiceImpl.MAX_ITENS_POR_CHAVE));
+    }
+
+    @Test
+    @DisplayName("activityFiles: falha de gravação propaga (o Garmin reenvia) — não é engolida como as outras chaves")
+    void activityFilesFalhaPropaga() throws Exception {
+        List<JsonNode> itens = List.of(json("{\"summaryId\":\"s1\"}"));
+        org.mockito.Mockito.doThrow(new GarminPingRegistroException("falha")).when(pingService).registrar(itens);
+
+        assertThatThrownBy(() -> service.processar(Map.of("activityFiles", itens)))
+                .isInstanceOf(GarminPingRegistroException.class);
+    }
+
+    @Test
+    @DisplayName("sem activityFiles no corpo: GarminPingService não é chamado")
+    void semActivityFiles() throws Exception {
+        service.processar(Map.of("deregistrations", List.of(json("{\"userId\":\"u1\"}"))));
+
+        org.mockito.Mockito.verifyNoInteractions(pingService);
     }
 }

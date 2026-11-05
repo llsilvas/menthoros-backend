@@ -32,7 +32,7 @@ class CoachAthleteZonesControllerTest {
     @DisplayName("GET /{atletaId}/zonas → 200 com o DTO do serviço")
     void retornaZonas() {
         AthleteTrainingZonesOutputDto dto = new AthleteTrainingZonesOutputDto(
-                "LTHR_FRIEL", null, null, null, null, List.of());
+                "LTHR_FRIEL", null, null, null, null, List.of(), null);
         when(service.buscarZonas(atletaId)).thenReturn(dto);
 
         ResponseEntity<AthleteTrainingZonesOutputDto> resp = controller.buscarZonas(atletaId);

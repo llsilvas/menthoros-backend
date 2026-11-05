@@ -1,6 +1,9 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.FaixaZonaManual;
+import br.com.menthoros.backend.enums.ModoZonas;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -30,6 +33,10 @@ import java.util.List;
  * <p>Z6 existe apenas para pace. Em esforços anaeróbicos curtos (&lt;1 min),
  * a FC não estabiliza a tempo (cardiac lag), tornando a medição por FC
  * imprecisa. Para FC, esforços de sprint são classificados como Z5.</p>
+ *
+ * <p><b>Zonas manuais (coach-zonas-manuais, D2):</b> as sobrecargas por {@link Atleta} e por
+ * {@link AthleteZones} devolvem a faixa gravada do eixo em {@code MANUAL}; as por escalar são sempre
+ * "o cálculo pelo limiar". Este é o único ponto de precedência — consumidor de faixa não lê o modo.</p>
  */
 @Component
 public class ZonaTreinoService {
@@ -68,12 +75,18 @@ public class ZonaTreinoService {
      * Z6 (Sprint) tem FC equivalente a Z5 (cardiac lag impede medição precisa).
      */
     public List<ZonaCompleta> calcularZonas(Atleta atleta) {
-        Integer fcMax = atleta.getFcMaximaCalculada();
-        Integer fcLimiar = atleta.getFcLimiarCalculada();
-        BigDecimal paceLimiar = atleta.getPaceLimiar();
+        return calcularZonas(AthleteZones.de(atleta));
+    }
 
-        List<ZonaFC> zonasFC = calcularZonasFC(fcMax, fcLimiar);
-        List<ZonaPace> zonasPace = calcularZonasPace(paceLimiar);
+    /** Cálculo pelo limiar, sobre valores — sem depender da entidade nem do modo. */
+    public List<ZonaCompleta> calcularZonas(Integer fcMax, Integer fcLimiar, BigDecimal paceLimiar) {
+        return calcularZonas(new AthleteZones(fcMax, fcLimiar, paceLimiar));
+    }
+
+    /** Faixa efetiva por eixo: manual quando há, senão o cálculo pelo limiar. */
+    public List<ZonaCompleta> calcularZonas(AthleteZones zonas) {
+        List<ZonaFC> zonasFC = zonasFC(zonas);
+        List<ZonaPace> zonasPace = zonasPace(zonas);
 
         return List.of(
                 new ZonaCompleta(1, NOMES_ZONAS[0], zonasFC.get(0), zonasPace.get(0)),
@@ -83,6 +96,47 @@ public class ZonaTreinoService {
                 new ZonaCompleta(5, NOMES_ZONAS[4], zonasFC.get(4), zonasPace.get(4)),
                 new ZonaCompleta(6, NOMES_ZONAS[5], zonasFC.get(4), zonasPace.get(5)) // Z6 FC = Z5 FC
         );
+    }
+
+    public List<ZonaFC> zonasFC(Atleta atleta) {
+        return zonasFC(AthleteZones.de(atleta));
+    }
+
+    public List<ZonaFC> zonasFC(AthleteZones zonas) {
+        if (zonas.fcManual() != null) {
+            return zonas.fcManual().stream()
+                    .map(f -> new ZonaFC(f.zona(), NOMES_ZONAS[f.zona() - 1], f.min(), f.max()))
+                    .toList();
+        }
+        return calcularZonasFC(zonas.fcMaxima(), zonas.fcLimiar());
+    }
+
+    /**
+     * Zonas de FC só quando há dado fisiológico de FC (limiar, máxima ou faixa manual); {@code null} sem
+     * nenhum — o contexto de normalização da v1 desliga a correção de FC por zona nesse caso.
+     */
+    public @Nullable List<ZonaFC> calcularZonasFCComDado(Atleta atleta) {
+        boolean temDado = atleta.getFcLimiar() != null || atleta.getFcMaxima() != null
+                || atleta.getModoZonasFc() == ModoZonas.MANUAL;
+        return temDado ? zonasFC(atleta) : null;
+    }
+
+    public List<ZonaPace> zonasPace(Atleta atleta) {
+        return zonasPace(AthleteZones.de(atleta));
+    }
+
+    /** Pace manual vem em s/km; vira min/km com escala 4 para o GET devolver o inteiro digitado (D1). */
+    public List<ZonaPace> zonasPace(AthleteZones zonas) {
+        if (zonas.paceManual() != null) {
+            return zonas.paceManual().stream()
+                    .map(f -> new ZonaPace(f.zona(), NOMES_ZONAS[f.zona() - 1], minutos(f.min()), minutos(f.max())))
+                    .toList();
+        }
+        return calcularZonasPace(zonas.paceLimiar());
+    }
+
+    private static BigDecimal minutos(int segundosPorKm) {
+        return BigDecimal.valueOf(segundosPorKm).divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
     }
 
     /**
@@ -123,7 +177,7 @@ public class ZonaTreinoService {
     public int identificarZonaFC(Integer fc, Atleta atleta) {
         if (fc == null) return 0;
 
-        List<ZonaFC> zonas = calcularZonasFC(atleta.getFcMaximaCalculada(), atleta.getFcLimiarCalculada());
+        List<ZonaFC> zonas = zonasFC(atleta);
         for (int i = zonas.size() - 1; i >= 0; i--) {
             if (fc >= zonas.get(i).fcMin()) {
                 return zonas.get(i).numero();
@@ -137,9 +191,9 @@ public class ZonaTreinoService {
      * Pace menor = mais rápido = zona maior.
      */
     public int identificarZonaPace(BigDecimal pace, Atleta atleta) {
-        if (pace == null || atleta.getPaceLimiar() == null) return 0;
+        if (pace == null || (atleta.getPaceLimiar() == null && atleta.getModoZonasPace() != ModoZonas.MANUAL)) return 0;
 
-        List<ZonaPace> zonas = calcularZonasPace(atleta.getPaceLimiar());
+        List<ZonaPace> zonas = zonasPace(atleta);
         for (int i = zonas.size() - 1; i >= 0; i--) {
             if (pace.compareTo(zonas.get(i).paceMax()) <= 0) {
                 return zonas.get(i).numero();

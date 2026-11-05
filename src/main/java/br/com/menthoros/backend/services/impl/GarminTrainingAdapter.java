@@ -11,6 +11,7 @@ import br.com.menthoros.backend.services.GarminOAuthService;
 import br.com.menthoros.backend.services.PushResult;
 import br.com.menthoros.backend.services.WorkoutChannel;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -42,7 +43,7 @@ public class GarminTrainingAdapter implements WorkoutChannel {
 
     /**
      * Idempotent: NO — sem id armazenado cria workout e schedule novos; com id atualiza.
-     * Side Effects: External API call (POST/PUT workout, POST/PUT/GET schedule); renova o token em 401.
+     * Side Effects: External API call (POST/GET/PUT workout, POST/PUT/GET schedule); renova o token em 401.
      * Tenant-aware: NO — a credencial é do atleta (conexao).
      */
     @Override
@@ -122,7 +123,7 @@ public class GarminTrainingAdapter implements WorkoutChannel {
             return criar(token, data, payload);
         }
         try {
-            client.atualizarWorkout(token, workoutIdArmazenado, payload);
+            client.atualizarWorkout(token, workoutIdArmazenado, corpoDeAtualizacao(token, workoutIdArmazenado, payload));
         } catch (GarminApiException e) {
             if (!temStatus(e, 404)) {
                 throw e;
@@ -132,6 +133,23 @@ public class GarminTrainingAdapter implements WorkoutChannel {
         }
         garantirSchedule(token, workoutIdArmazenado, data);
         return PushResult.okAtualizado(workoutIdArmazenado);
+    }
+
+    /**
+     * O PUT exige {@code ownerId} (Training API §3.1), que o Menthoros não guarda: vem do workout
+     * atual. Sem um {@code ownerId} escalar o PUT seria recusado de qualquer jeito, então falha antes
+     * (sem status: vira erro temporário e entra no retry).
+     */
+    private ObjectNode corpoDeAtualizacao(String token, Long workoutId, JsonNode payload) {
+        JsonNode atual = client.buscarWorkout(token, workoutId);
+        JsonNode ownerId = atual == null ? null : atual.get("ownerId");
+        if (ownerId == null || !ownerId.isValueNode() || ownerId.isNull()) {
+            throw new GarminApiException(null, "Workout " + workoutId + " veio do Garmin sem ownerId");
+        }
+        ObjectNode corpo = payload.deepCopy();
+        corpo.put("workoutId", workoutId);
+        corpo.set("ownerId", ownerId);
+        return corpo;
     }
 
     private PushResult criar(String token, LocalDate data, JsonNode payload) {

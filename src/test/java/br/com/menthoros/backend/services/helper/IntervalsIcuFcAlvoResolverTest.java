@@ -33,6 +33,15 @@ class IntervalsIcuFcAlvoResolverTest {
             assertThat(resolucao.descartadoPorFaltaDeDado()).isFalse();
         }
 
+        @Test
+        @DisplayName("bpm literal escrito ao contrário (150-140) sai ordenado: Low > High é inválido nos dois canais")
+        void bpmInvertidoSaiOrdenado() {
+            IntervalsIcuFcAlvoResolver.Resolucao resolucao =
+                    resolver.resolver(new FcAlvoBruto(FcAlvoBruto.Base.BPM, 150, 140), semFcMedida());
+
+            assertThat(resolucao.alvo()).isEqualTo(new HrTarget(140, 150));
+        }
+
         @ParameterizedTest
         @CsvSource({
                 // limiar, %inicio, %fim, bpmInicio, bpmFim — inflação medida na task 0.1
@@ -145,6 +154,72 @@ class IntervalsIcuFcAlvoResolverTest {
 
             assertThat(resolucao.alvo()).isEqualTo(new HrTarget(140, 150));
             assertThat(resolucao.descartadoPorFaltaDeDado()).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("antes e depois de cadastrar o limiar de FC (ponte com coach-cadastro-ancoras-zonas)")
+    class AntesEDepoisDoCadastro {
+
+        private static final int LIMIAR_CADASTRADO = 168;
+        private static final int MAXIMA_CADASTRADA = 186;
+
+        /** Mesmo atleta, mesmo id: só muda o que o PUT de âncoras grava. */
+        private Atleta antes() {
+            return Atleta.builder().id(UUID.randomUUID()).build();
+        }
+
+        private Atleta depois(Atleta antes) {
+            return Atleta.builder().id(antes.getId())
+                    .fcLimiar(LIMIAR_CADASTRADO).fcMaxima(MAXIMA_CADASTRADA).build();
+        }
+
+        private IntervalsIcuFcAlvoResolver.Resolucao resolverZona(String zona, Atleta atleta) {
+            return resolver.resolver(IntervalsIcuTargetParser.parseZona(zona).orElseThrow(), atleta);
+        }
+
+        private IntervalsIcuFcAlvoResolver.Resolucao resolverFc(String fc, Atleta atleta) {
+            return resolver.resolver(IntervalsIcuTargetParser.parseFc(fc).orElseThrow(), atleta);
+        }
+
+        @Test
+        @DisplayName("zona Z2: descartada sem limiar; depois de cadastrar 168, vira 143-150 bpm")
+        void zonaAntesDescartaDepoisResolve() {
+            Atleta atleta = antes();
+
+            assertThat(resolverZona("Z2", atleta).descartadoPorFaltaDeDado()).isTrue();
+            assertThat(resolverZona("Z2", depois(atleta)).alvo()).isEqualTo(new HrTarget(143, 150));
+        }
+
+        @Test
+        @DisplayName("percentual 85-89%: descartado sem limiar; depois de cadastrar 168, vira 143-150 bpm")
+        void percentualAntesDescartaDepoisResolve() {
+            Atleta atleta = antes();
+
+            assertThat(resolverFc("85-89%", atleta).descartadoPorFaltaDeDado()).isTrue();
+            assertThat(resolverFc("85-89%", depois(atleta)).alvo()).isEqualTo(new HrTarget(143, 150));
+        }
+
+        @Test
+        @DisplayName("bpm literal (formato gravado pelo editor): resolve igual antes e depois, sem recalcular")
+        void bpmLiteralNaoMuda() {
+            Atleta atleta = antes();
+
+            IntervalsIcuFcAlvoResolver.Resolucao semLimiar = resolverFc("143-150 bpm", atleta);
+            IntervalsIcuFcAlvoResolver.Resolucao comLimiar = resolverFc("143-150 bpm", depois(atleta));
+
+            assertThat(semLimiar.alvo()).isEqualTo(new HrTarget(143, 150));
+            assertThat(comLimiar).isEqualTo(semLimiar);
+        }
+
+        @Test
+        @DisplayName("bpm literal acima da máxima recém-cadastrada passa a ser descartado (a máxima real vira o teto)")
+        void bpmAcimaDaMaximaNovaDescarta() {
+            Atleta atleta = antes();
+
+            // Antes: máxima estimada (fallback 190) aceita 188. Depois: máxima real 186 é o teto.
+            assertThat(resolverFc("180-188 bpm", atleta).descartadoPorFaltaDeDado()).isFalse();
+            assertThat(resolverFc("180-188 bpm", depois(atleta)).descartadoPorFaltaDeDado()).isTrue();
         }
     }
 

@@ -92,6 +92,7 @@ class CoachAthleteProfileServiceImplTest {
     @Mock private MelhorEsforcoService melhorEsforcoService;
     @Mock private AthleteContractService athleteContractService;
     @Mock private br.com.menthoros.backend.repository.IntegracaoExternaRepository integracaoExternaRepository;
+    @Mock private br.com.menthoros.backend.services.GarminConnectionService garminConnectionService;
     // Mock devolve status nulo: o TransactionTemplate só executa o callback — o isolamento real é
     // provado em CoachAthleteProfileDegradacaoIT.
     @Mock private org.springframework.transaction.PlatformTransactionManager transactionManager;
@@ -127,7 +128,7 @@ class CoachAthleteProfileServiceImplTest {
                 atletaRepository, atletaProgressService, coachAttentionQueueService, sugestaoCoachService,
                 planoService, planoMetadadosRepository, perfilOnboardingAtletaRepository, provaRepository, provaMapper, treinoRealizadoRepository,
                 intervalsIcuConnectionService, thresholdInferenceService, melhorEsforcoService, meterRegistry,
-                athleteContractService, transactionManager, integracaoExternaRepository);
+                athleteContractService, transactionManager, integracaoExternaRepository, garminConnectionService);
         // Default: sem cobrança (os testes de cobrança sobrescrevem)
         lenient().when(athleteContractService.resolveBilling(eq(atletaId), any(LocalDate.class)))
                 .thenReturn(java.util.Optional.empty());
@@ -229,6 +230,20 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         @Test
+        @DisplayName("melhoresEsforcos indisponível no canal Garmin (409): lista vazia sem aviso de falha parcial")
+        void melhoresEsforcosCanalGarminSemAviso() {
+            stubPerfilMinimo();
+            when(melhorEsforcoService.buscar(atletaId, "42d"))
+                    .thenThrow(new br.com.menthoros.backend.exception.DomainConflictException(
+                            "Melhores esforços indisponíveis para o canal Garmin"));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.melhoresEsforcos()).isEmpty();
+            assertThat(perfil.avisos()).isNull();
+        }
+
+        @Test
         @DisplayName("realizadosRecentes — janela de 7 dias, mais recente primeiro, com feedback quando carimbado")
         void realizadosRecentesJanelaEOrdem() {
             stubPerfilMinimo();
@@ -242,7 +257,8 @@ class CoachAthleteProfileServiceImplTest {
             recente.setId(UUID.randomUUID());
             recente.setDataTreino(LocalDate.now());
             recente.setTipoTreino(TipoTreino.INTERVALADO);
-            recente.setFonteDados(br.com.menthoros.backend.enums.FonteDados.MANUAL);
+            recente.setFonteDados(br.com.menthoros.backend.enums.FonteDados.GARMIN);
+            recente.setDeviceName("Forerunner 970");
             recente.setDuracaoMin(java.time.Duration.ofMinutes(45));
             recente.setPercepcaoEsforco(6);
             recente.setSensacoes(java.util.Set.of(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS));
@@ -257,6 +273,8 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(perfil.realizadosRecentes()).hasSize(2);
             assertThat(perfil.realizadosRecentes().get(0).id()).isEqualTo(recente.getId());
             assertThat(perfil.realizadosRecentes().get(0).percepcaoEsforco()).isEqualTo(6);
+            assertThat(perfil.realizadosRecentes().get(0).deviceName()).isEqualTo("Forerunner 970");
+            assertThat(perfil.realizadosRecentes().get(1).deviceName()).isNull();
             assertThat(perfil.realizadosRecentes().get(0).sensacoes()).containsExactly(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS);
             assertThat(perfil.realizadosRecentes().get(0).feedbackRegistradoEm()).isNotNull();
             assertThat(perfil.realizadosRecentes().get(1).id()).isEqualTo(antigo.getId());
@@ -493,6 +511,89 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         @Test
+        @DisplayName("atleta só-Garmin: channelConnected true sem mudar a flag do intervals.icu nem a dos melhores esforços")
+        void atletaSoGarminTemCanalConectado() {
+            stubPerfilComPlano(planoAprovadoComTreinos());
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(garminConnectionService.conexaoDeCanal(atletaId, tenantId))
+                    .thenReturn(Optional.of(new IntegracaoExterna()));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.planoVigente().treinos())
+                    .allSatisfy(t -> {
+                        assertThat(t.channelConnected()).isTrue();
+                        assertThat(t.atletaConectadoIntervalsIcu()).isFalse();
+                    });
+            assertThat(perfil.melhoresEsforcosIntegracaoConectada()).isFalse();
+            verify(garminConnectionService, org.mockito.Mockito.times(1)).conexaoDeCanal(atletaId, tenantId);
+        }
+
+        @Test
+        @DisplayName("atleta sem canal: channelConnected false")
+        void atletaSemCanal() {
+            stubPerfilComPlano(planoAprovadoComTreinos());
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(garminConnectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos).allSatisfy(t -> assertThat(t.channelConnected()).isFalse());
+        }
+
+        @Test
+        @DisplayName("syncInProgress reflete push em andamento por treino")
+        void syncInProgressPorTreino() {
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            plano.getTreinosPlanejados().get(0).setStatusSincronizacao(StatusSincronizacao.SINCRONIZANDO);
+            plano.getTreinosPlanejados().get(0).setUltimaTentativaSincronizacao(java.time.LocalDateTime.now());
+            plano.getTreinosPlanejados().get(1).setStatusSincronizacao(StatusSincronizacao.ERRO_PERMANENTE);
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).syncInProgress()).isTrue();
+            assertThat(treinos.get(1).syncInProgress()).isFalse();
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.EnumSource(value = StatusSincronizacao.class,
+                names = {"ERRO_VALIDACAO", "SINCRONIZADO_PARCIAL"})
+        @DisplayName("syncError exposto quando a mensagem é nossa (validação e envio parcial)")
+        void syncErrorExpostoEmValidacaoEParcial(StatusSincronizacao status) {
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            plano.getTreinosPlanejados().get(0).setStatusSincronizacao(status);
+            plano.getTreinosPlanejados().get(0).setErroSincronizacao("Etapa sem duração");
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).syncError()).isEqualTo("Etapa sem duração");
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.EnumSource(value = StatusSincronizacao.class,
+                names = {"ERRO_PERMANENTE", "ERRO_TEMPORARIO", "ERRO_AUTENTICACAO", "ERRO_LIMITE_RATE"})
+        @DisplayName("syncError omitido nos demais erros (mensagem pode carregar texto bruto de exceção)")
+        void syncErrorOmitidoNosDemaisErros(StatusSincronizacao status) {
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            plano.getTreinosPlanejados().get(0).setStatusSincronizacao(status);
+            plano.getTreinosPlanejados().get(0).setErroSincronizacao("Erro inesperado no push Garmin: NPE em ...");
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).syncError()).isNull();
+        }
+
+        @Test
         @DisplayName("sinais do atleta retornados via getSinaisParaAtleta(atletaId, 3)")
         void sinaisDoAtleta() {
             stubAtleta();
@@ -649,7 +750,20 @@ class CoachAthleteProfileServiceImplTest {
             var canal = service.buscarPerfil(atletaId).conexaoCanal();
 
             assertThat(canal).isEqualTo(new AtletaPerfilCoachOutputDto.ConexaoCanalDto(
-                    br.com.menthoros.backend.enums.FonteDados.GARMIN, true, true, true, null));
+                    br.com.menthoros.backend.enums.FonteDados.GARMIN, true, true, true, null, null));
+        }
+
+        @Test
+        @DisplayName("conexaoCanal: ultimaSincronizacao vem da IntegracaoExterna")
+        void conexaoCanalComUltimaSincronizacao() {
+            stubPerfilMinimo();
+            var garmin = integracao(br.com.menthoros.backend.enums.FonteDados.GARMIN, true,
+                    "WORKOUT_IMPORT,ACTIVITY_EXPORT", null);
+            java.time.Instant ultima = java.time.Instant.parse("2026-11-05T09:30:00Z");
+            garmin.setUltimaSincronizacao(ultima);
+            canalMaisRecente(garmin);
+
+            assertThat(service.buscarPerfil(atletaId).conexaoCanal().ultimaSincronizacao()).isEqualTo(ultima);
         }
 
         @Test
@@ -907,6 +1021,16 @@ class CoachAthleteProfileServiceImplTest {
     private void stubRecordes() {
         when(atletaProgressService.getRecordes(atletaId))
                 .thenReturn(List.of(new RecordeDto("5k", 1500L, LocalDate.of(2026, 5, 1), UUID.randomUUID())));
+    }
+
+    private void stubPerfilComPlano(PlanoSemanal plano) {
+        stubAtleta();
+        when(atletaProgressService.getHistoricoPmc(eq(atletaId), any(), any())).thenReturn(List.of());
+        when(atletaProgressService.getAderenciaSemanal(atletaId, 8)).thenReturn(List.of());
+        when(atletaProgressService.getRecordes(atletaId)).thenReturn(List.of());
+        when(coachAttentionQueueService.getSinaisParaAtleta(atletaId, 3)).thenReturn(List.of());
+        when(sugestaoCoachService.listarPorAtleta(atletaId)).thenReturn(List.of());
+        when(planoService.findPlanoVigenteRelevante(atletaId, tenantId)).thenReturn(Optional.of(plano));
     }
 
     private PlanoSemanal planoAprovadoComTreinos() {

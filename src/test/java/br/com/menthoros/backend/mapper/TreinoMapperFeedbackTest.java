@@ -45,4 +45,42 @@ class TreinoMapperFeedbackTest {
         assertThat(dto.sensacoes()).isNull();
         assertThat(dto.feedbackRegistradoEm()).isNull();
     }
+
+    @Test
+    @DisplayName("deviceName atravessa para o TreinoRealizadoOutputDto (atribuição do Garmin)")
+    void expoeDeviceName() {
+        TreinoRealizado tr = new TreinoRealizado();
+        tr.setId(UUID.randomUUID());
+        tr.setDeviceName("Forerunner 970");
+
+        assertThat(mapper.toOutputDto(tr).deviceName()).isEqualTo("Forerunner 970");
+        assertThat(mapper.toOutputDto(new TreinoRealizado()).deviceName()).isNull();
+    }
+
+    @Test
+    @DisplayName("planejado expõe fonte e modelo do realizado vinculado, separados da fonte do plano")
+    void planejadoExpoeFonteDoRealizado() {
+        br.com.menthoros.backend.entity.TreinoPlanejado tp = new br.com.menthoros.backend.entity.TreinoPlanejado();
+        tp.setFonteDados(br.com.menthoros.backend.enums.FonteDados.IA_GERADO);
+        TreinoRealizado tr = new TreinoRealizado();
+        tr.setId(UUID.randomUUID());
+        tr.setFonteDados(br.com.menthoros.backend.enums.FonteDados.GARMIN);
+        tr.setDeviceName("Forerunner 970");
+        tp.setTreinoRealizado(tr);
+
+        var dto = mapper.toOutputDto(tp);
+
+        assertThat(dto.fonteDados()).isEqualTo(br.com.menthoros.backend.enums.FonteDados.IA_GERADO);
+        assertThat(dto.completedSource()).isEqualTo(br.com.menthoros.backend.enums.FonteDados.GARMIN);
+        assertThat(dto.completedDeviceName()).isEqualTo("Forerunner 970");
+    }
+
+    @Test
+    @DisplayName("planejado sem realizado vinculado: fonte e modelo do realizado ausentes")
+    void planejadoSemRealizado() {
+        var dto = mapper.toOutputDto(new br.com.menthoros.backend.entity.TreinoPlanejado());
+
+        assertThat(dto.completedSource()).isNull();
+        assertThat(dto.completedDeviceName()).isNull();
+    }
 }

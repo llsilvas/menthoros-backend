@@ -28,6 +28,7 @@ import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -53,6 +54,9 @@ import static org.assertj.core.api.Assertions.within;
  * ambiguidade de arredondamento.</p>
  */
 class TsbRecalculoEquivalenciaIT extends AbstractIntegrationTest {
+
+    // O service valida "não futura" no fuso do atleta (São Paulo); LocalDate.now() em UTC adianta o dia entre 00h e 03h UTC.
+    private static final ZoneId SP = ZoneId.of("America/Sao_Paulo");
 
     /**
      * Tolerância das asserções contra o gabarito.
@@ -326,7 +330,7 @@ class TsbRecalculoEquivalenciaIT extends AbstractIntegrationTest {
 
     /** Dia 90 do dataset cai em hoje — {@code atualizarTsbDia} rejeita data futura. */
     private LocalDate dataBase() {
-        return LocalDate.now().minusDays(DIAS - 1L);
+        return LocalDate.now(SP).minusDays(DIAS - 1L);
     }
 
     private Atleta seedAtletaComHistorico(int ctlTau, int atlTau, LocalDate base) {

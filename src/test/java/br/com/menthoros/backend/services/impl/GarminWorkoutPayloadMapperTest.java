@@ -72,6 +72,70 @@ class GarminWorkoutPayloadMapperTest {
     }
 
     @Test
+    @DisplayName("bloco que termina em recuperação livre pula o último descanso: do tiro final vai direto ao passo seguinte")
+    void blocoTerminandoEmDescansoPulaOUltimo() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.bloco("6x", 6, List.of(
+                        WorkoutStep.simples("Tiro", null, 400, new PaceTarget(240, 250)),
+                        WorkoutStep.simples("Trote", 120, null, null).asRecovery())),
+                WorkoutStep.simples("Desaquecimento", 600, null, null)));
+
+        JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(bloco.get("skipLastRestStep").asBoolean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("bloco misto 3x [1 km no pace + 1 km livre] não pula: o km livre não é recuperação, é esforço")
+    void blocoMistoSemRecuperacaoNaoPula() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.bloco("3x", 3, List.of(
+                        WorkoutStep.simples("Forte", null, 1000, new PaceTarget(240, 250)),
+                        WorkoutStep.simples("Livre", null, 1000, null)))));
+
+        JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(bloco.has("skipLastRestStep")).isFalse();
+    }
+
+    @Test
+    @DisplayName("bloco de um passo só, sem meta (3x 1 km livre), não pula: o passo é o próprio esforço")
+    void blocoDeEsforcoUnicoSemMetaNaoPula() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.bloco("3x", 3, List.of(WorkoutStep.simples("Tiro", null, 1000, null)))));
+
+        JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(bloco.has("skipLastRestStep")).isFalse();
+    }
+
+    @Test
+    @DisplayName("tiro livre seguido de recuperação marcada: pula só a recuperação final")
+    void tiroLivreComRecuperacaoMarcadaPula() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.bloco("4x", 4, List.of(
+                        WorkoutStep.simples("Tiro", null, 1000, null),
+                        WorkoutStep.simples("Trote", 120, null, null).asRecovery()))));
+
+        JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(bloco.get("skipLastRestStep").asBoolean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("recuperação com meta de FC (fartlek) não é pulada: o relógio controla a FC dela")
+    void blocoTerminandoComMetaNaoPula() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.bloco("4x", 4, List.of(
+                        WorkoutStep.simples("Forte", 60, null, new HrTarget(150, 160)),
+                        WorkoutStep.simples("Leve", 120, null, new HrTarget(120, 136)).asRecovery()))));
+
+        JsonNode bloco = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(bloco.has("skipLastRestStep")).isFalse();
+    }
+
+    @Test
     @DisplayName("stepOrder e sequencial no treino inteiro, contando o bloco e os filhos")
     void stepOrderGlobal() {
         StructuredWorkout workout = treino(null, null, List.of(
@@ -104,15 +168,28 @@ class GarminWorkoutPayloadMapperTest {
     }
 
     @Test
-    @DisplayName("pace unico: low e high iguais")
-    void paceUnico() {
+    @DisplayName("pace unico vira faixa de +-5 s/km: largura zero faria o relogio alertar o tempo todo")
+    void paceUnicoGanhaTolerancia() {
         StructuredWorkout workout = treino(null, null, List.of(
-                WorkoutStep.simples("Ritmo", 600, null, new PaceTarget(300, 300))));
+                WorkoutStep.simples("Ritmo", 600, null, new PaceTarget(270, 270))));
 
         JsonNode step = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
 
-        assertThat(step.get("targetValueLow").asDouble()).isEqualTo(3.333);
-        assertThat(step.get("targetValueHigh").asDouble()).isEqualTo(3.333);
+        // 4:30/km -> faixa 4:25-4:35/km: 1000/275 e 1000/265 m/s
+        assertThat(step.get("targetValueLow").asDouble()).isEqualTo(3.636);
+        assertThat(step.get("targetValueHigh").asDouble()).isEqualTo(3.774);
+    }
+
+    @Test
+    @DisplayName("faixa de pace explicita nao ganha tolerancia")
+    void faixaDePaceSemTolerancia() {
+        StructuredWorkout workout = treino(null, null, List.of(
+                WorkoutStep.simples("Ritmo", 600, null, new PaceTarget(270, 280))));
+
+        JsonNode step = mapper.montar(workout).get("segments").get(0).get("steps").get(0);
+
+        assertThat(step.get("targetValueLow").asDouble()).isEqualTo(3.571);
+        assertThat(step.get("targetValueHigh").asDouble()).isEqualTo(3.704);
     }
 
     @Test

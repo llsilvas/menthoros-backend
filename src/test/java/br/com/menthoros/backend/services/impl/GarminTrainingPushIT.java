@@ -23,6 +23,7 @@ import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
+import br.com.menthoros.backend.services.PlanoReviewService;
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
 import com.github.tomakehurst.wiremock.stubbing.Scenario;
@@ -49,6 +50,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.okJson;
 import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
 import static com.github.tomakehurst.wiremock.client.WireMock.put;
+import static com.github.tomakehurst.wiremock.client.WireMock.putRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.delete;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
@@ -100,6 +104,7 @@ class GarminTrainingPushIT extends AbstractIntegrationTest {
     @Autowired private PlanoSemanalRepository planoSemanalRepository;
     @Autowired private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Autowired private IntegracaoExternaRepository integracaoRepository;
+    @Autowired private PlanoReviewService planoReviewService;
 
     @BeforeEach
     void limparStubs() {
@@ -141,7 +146,14 @@ class GarminTrainingPushIT extends AbstractIntegrationTest {
         treinoPlanejadoRepository.deleteById(removido.getId());
 
         garmin.resetAll();
-        garmin.stubFor(put(urlEqualTo(WORKOUT + "1000042")).willReturn(aResponse().withStatus(200)));
+        // O PUT só casa com ownerId e workoutId no corpo (Training API §3.1); sem eles o WireMock
+        // responde 404 e o adapter recriaria o workout — o verify abaixo pega.
+        garmin.stubFor(get(urlEqualTo(WORKOUT + "1000042")).willReturn(okJson(
+                "{\"workoutId\":1000042,\"ownerId\":12345,\"workoutProvider\":\"Menthoros\"}")));
+        garmin.stubFor(put(urlEqualTo(WORKOUT + "1000042"))
+                .withRequestBody(matchingJsonPath("$.ownerId", equalTo("12345")))
+                .withRequestBody(matchingJsonPath("$.workoutId", equalTo("1000042")))
+                .willReturn(aResponse().withStatus(200)));
         garmin.stubFor(get(urlPathEqualTo(SCHEDULE)).willReturn(okJson(
                 "[{\"scheduleId\":77,\"workoutId\":1000042,\"date\":\"" + LocalDate.now() + "\"},"
                         + "{\"scheduleId\":78,\"workoutId\":1000043,\"date\":\"" + LocalDate.now() + "\"}]")));
@@ -154,9 +166,62 @@ class GarminTrainingPushIT extends AbstractIntegrationTest {
         esperar(() -> !garmin.findAll(deleteRequestedFor(urlEqualTo(WORKOUT + "1000043"))).isEmpty());
         garmin.verify(1, deleteRequestedFor(urlEqualTo(SCHEDULE + "/78")));
         garmin.verify(0, deleteRequestedFor(urlEqualTo(WORKOUT + "1000042")));
+        garmin.verify(1, putRequestedFor(urlEqualTo(WORKOUT + "1000042"))
+                .withRequestBody(matchingJsonPath("$.ownerId", equalTo("12345"))));
+        garmin.verify(0, postRequestedFor(urlPathEqualTo(CRIAR_WORKOUT)));
         garmin.verify(0, deleteRequestedFor(urlEqualTo(SCHEDULE + "/77")));
         assertThat(treinoPlanejadoRepository.findById(mantido.getId()).orElseThrow().getExternalId())
                 .isEqualTo("1000042");
+    }
+
+    /**
+     * garmin-reenvio-plano (CA1, CA2, CA6): o service real publica o evento dentro da transação e o
+     * listener AFTER_COMMIT o recebe — o caminho que o incidente de 2026-11-01 resolveu com UPDATE
+     * no banco. O treino em ERRO_PERMANENTE volta a SINCRONIZADO; o já sincronizado é atualizado no
+     * mesmo workout, sem POST de criação.
+     */
+    @Test
+    @DisplayName("reenvio: treino em ERRO_PERMANENTE volta a SINCRONIZADO e o sincronizado mantém o workout")
+    void reenvioRecuperaTreinoEmErro() {
+        Atleta atleta = seedAtleta();
+        UUID tenantId = atleta.getAssessoria().getId();
+        PlanoSemanal plano = seedPlano(atleta);
+        TreinoPlanejado emErro = seedTreino(atleta, plano);
+        emErro.setStatusSincronizacao(StatusSincronizacao.ERRO_PERMANENTE);
+        emErro.setTentativasSincronizacao(5);
+        emErro.setExternalId("1000042");
+        emErro.setErroSincronizacao("Tentativas esgotadas");
+        treinoPlanejadoRepository.save(emErro);
+        TreinoPlanejado sincronizado = seedTreino(atleta, plano);
+        sincronizado.setStatusSincronizacao(StatusSincronizacao.SINCRONIZADO);
+        sincronizado.setExternalId("1000043");
+        treinoPlanejadoRepository.save(sincronizado);
+        seedConexaoGarmin(atleta, tenantId);
+
+        for (String id : java.util.List.of("1000042", "1000043")) {
+            garmin.stubFor(get(urlEqualTo(WORKOUT + id)).willReturn(okJson(
+                    "{\"workoutId\":" + id + ",\"ownerId\":12345,\"workoutProvider\":\"Menthoros\"}")));
+            garmin.stubFor(put(urlEqualTo(WORKOUT + id)).willReturn(aResponse().withStatus(200)));
+        }
+        garmin.stubFor(get(urlPathEqualTo(SCHEDULE)).willReturn(okJson(
+                "[{\"scheduleId\":77,\"workoutId\":1000042,\"date\":\"" + LocalDate.now() + "\"},"
+                        + "{\"scheduleId\":78,\"workoutId\":1000043,\"date\":\"" + LocalDate.now() + "\"}]")));
+        garmin.stubFor(post(urlPathEqualTo(SCHEDULE)).willReturn(okJson("79")));
+
+        int reenviados = planoReviewService.reenviarSincronizacao(plano.getId(), tenantId);
+
+        assertThat(reenviados).isEqualTo(1);
+        esperar(() -> sincronizado(emErro));
+        TreinoPlanejado recuperado = treinoPlanejadoRepository.findById(emErro.getId()).orElseThrow();
+        assertThat(recuperado.getExternalId()).isEqualTo("1000042");
+        assertThat(recuperado.getTentativasSincronizacao()).isEqualTo(1);
+        assertThat(recuperado.getErroSincronizacao()).isNull();
+        esperar(() -> !garmin.findAll(putRequestedFor(urlEqualTo(WORKOUT + "1000043"))).isEmpty());
+        assertThat(treinoPlanejadoRepository.findById(sincronizado.getId()).orElseThrow().getExternalId())
+                .isEqualTo("1000043");
+        garmin.verify(0, postRequestedFor(urlPathEqualTo(CRIAR_WORKOUT)));
+        garmin.verify(0, deleteRequestedFor(urlEqualTo(WORKOUT + "1000042")));
+        garmin.verify(0, deleteRequestedFor(urlEqualTo(WORKOUT + "1000043")));
     }
 
     private boolean sincronizado(TreinoPlanejado t) {

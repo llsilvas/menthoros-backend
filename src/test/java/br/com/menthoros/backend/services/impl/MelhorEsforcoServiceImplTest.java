@@ -4,7 +4,10 @@ import br.com.menthoros.backend.dto.intervalsicu.IcuPaceCurveDto;
 import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
 import br.com.menthoros.backend.dto.output.MelhoresEsforcosOutputDto;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
+import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.IntervalsIcuClient;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
 import org.junit.jupiter.api.AfterEach;
@@ -21,10 +24,12 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +39,8 @@ class MelhorEsforcoServiceImplTest {
     private IntervalsIcuConnectionService connectionService;
     @Mock
     private IntervalsIcuClient intervalsIcuClient;
+    @Mock
+    private GarminConnectionService garminConnectionService;
 
     private MelhorEsforcoServiceImpl service;
 
@@ -42,7 +49,7 @@ class MelhorEsforcoServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        service = new MelhorEsforcoServiceImpl(connectionService, intervalsIcuClient);
+        service = new MelhorEsforcoServiceImpl(connectionService, intervalsIcuClient, garminConnectionService);
         tenantId = UUID.randomUUID();
         atletaId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
@@ -172,6 +179,49 @@ class MelhorEsforcoServiceImplTest {
 
             assertThat(resultado.integracaoConectada()).isTrue();
             assertThat(resultado.marcas()).isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("canal Garmin")
+    class CanalGarmin {
+
+        private void canalGarmin() {
+            IntegracaoExterna garmin = new IntegracaoExterna();
+            garmin.setPlataforma(FonteDados.GARMIN);
+            garmin.setAtivo(true);
+            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(garminConnectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.of(garmin));
+        }
+
+        @Test
+        @DisplayName("buscar: 409 indisponível, sem chamar pace-curves (CA9)")
+        void buscarRejeita() {
+            canalGarmin();
+
+            assertThatThrownBy(() -> service.buscar(atletaId, "42d"))
+                    .isInstanceOf(DomainConflictException.class)
+                    .hasMessageContaining("Garmin");
+            verifyNoInteractions(intervalsIcuClient);
+        }
+
+        @Test
+        @DisplayName("buscarParaAtleta: 409 indisponível, sem chamar pace-curves (CA9)")
+        void buscarParaAtletaRejeita() {
+            canalGarmin();
+
+            assertThatThrownBy(() -> service.buscarParaAtleta(atletaId, "42d"))
+                    .isInstanceOf(DomainConflictException.class);
+            verifyNoInteractions(intervalsIcuClient);
+        }
+
+        @Test
+        @DisplayName("sem canal nenhum continua vazio, não 409")
+        void semCanalContinuaVazio() {
+            when(connectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(garminConnectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            assertThat(service.buscarParaAtleta(atletaId, "42d").integracaoConectada()).isFalse();
         }
     }
 }

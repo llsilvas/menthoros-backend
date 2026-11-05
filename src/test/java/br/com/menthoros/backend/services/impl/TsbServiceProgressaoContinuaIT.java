@@ -28,6 +28,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +40,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code TsbService.recalcularHistoricoCompleto}.
  */
 class TsbServiceProgressaoContinuaIT extends AbstractIntegrationTest {
+
+    // O service valida "não futura" no fuso do atleta (São Paulo); LocalDate.now() em UTC adianta o dia entre 00h e 03h UTC.
+    private static final ZoneId SP = ZoneId.of("America/Sao_Paulo");
 
     @Autowired
     private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
@@ -68,13 +72,13 @@ class TsbServiceProgressaoContinuaIT extends AbstractIntegrationTest {
             // 3 semanas de volume crescente (10, 20, 30 km), cada uma numa semana ISO distinta —
             // qualquer dia dentro da semana serve, o agrupamento em recalcularSemanasProgressao
             // ancora pela segunda-feira da semana da data.
-            seedMetricaSemana(atleta, LocalDate.now().minusDays(21), BigDecimal.valueOf(10));
-            seedMetricaSemana(atleta, LocalDate.now().minusDays(14), BigDecimal.valueOf(20));
-            seedMetricaSemana(atleta, LocalDate.now().minusDays(7), BigDecimal.valueOf(30));
+            seedMetricaSemana(atleta, LocalDate.now(SP).minusDays(21), BigDecimal.valueOf(10));
+            seedMetricaSemana(atleta, LocalDate.now(SP).minusDays(14), BigDecimal.valueOf(20));
+            seedMetricaSemana(atleta, LocalDate.now(SP).minusDays(7), BigDecimal.valueOf(30));
 
             // 4ª semana (hoje): treino real registrado pelo caminho de ingestão, com volume maior
             // que a semana anterior — estende o streak para a 4ª semana consecutiva de progressão.
-            LocalDate hoje = LocalDate.now();
+            LocalDate hoje = LocalDate.now(SP);
             TreinoRealizado treino = novoRealizado(atleta, hoje, BigDecimal.valueOf(40));
             ingestaoTreinoRealizadoService.registrar(treino, null);
 
@@ -86,10 +90,10 @@ class TsbServiceProgressaoContinuaIT extends AbstractIntegrationTest {
         @DisplayName("registrar de novo o mesmo treino (idempotência) não muda o streak")
         void idempotenteNaRepeticao() {
             Atleta atleta = seedAtleta("ProgressaoIdempotente");
-            seedMetricaSemana(atleta, LocalDate.now().minusDays(14), BigDecimal.valueOf(10));
-            seedMetricaSemana(atleta, LocalDate.now().minusDays(7), BigDecimal.valueOf(20));
+            seedMetricaSemana(atleta, LocalDate.now(SP).minusDays(14), BigDecimal.valueOf(10));
+            seedMetricaSemana(atleta, LocalDate.now(SP).minusDays(7), BigDecimal.valueOf(20));
 
-            LocalDate hoje = LocalDate.now();
+            LocalDate hoje = LocalDate.now(SP);
             String externalId = "ext-" + UUID.randomUUID();
             TreinoRealizado primeiro = novoRealizado(atleta, hoje, BigDecimal.valueOf(30));
             ingestaoTreinoRealizadoService.registrar(primeiro, externalId);

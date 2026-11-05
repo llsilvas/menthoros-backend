@@ -6,6 +6,7 @@ import br.com.menthoros.backend.exception.AsaasIntegrationException;
 import br.com.menthoros.backend.exception.ConsentResolutionUnavailableException;
 import br.com.menthoros.backend.exception.ConsentVersionStaleException;
 import br.com.menthoros.backend.exception.DomainConflictException;
+import br.com.menthoros.backend.exception.InvalidZoneAnchorsException;
 import br.com.menthoros.backend.exception.DomainGoneException;
 import br.com.menthoros.backend.exception.GarminCanalIndisponivelException;
 import br.com.menthoros.backend.exception.LgpdConsentRequiredException;
@@ -386,6 +387,15 @@ public class GlobalExceptionHandler {
                 "message", ex.getMessage()
         );
         return ResponseEntity.status(HttpStatus.GONE).body(body);
+    }
+
+    @ExceptionHandler(InvalidZoneAnchorsException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidZoneAnchors(InvalidZoneAnchorsException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("status", 400);
+        body.put("error", "Bad Request");
+        body.put("fields", ex.getFields());
+        return ResponseEntity.badRequest().body(body);
     }
 
     @ExceptionHandler(DomainRuleViolationException.class)

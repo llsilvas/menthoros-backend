@@ -10,6 +10,7 @@ import br.com.menthoros.backend.dto.llm.v2.RecuperacaoDto;
 import br.com.menthoros.backend.dto.llm.v2.TreinoPlanejadoLlmDtoV2;
 import br.com.menthoros.backend.dto.llm.v2.UnidadeQuantidade;
 import br.com.menthoros.backend.dto.llm.v2.Zona;
+import br.com.menthoros.backend.entity.FaixaZonaManual;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -183,6 +184,25 @@ class SessionResolverTest {
                     List.of(bloco));
             PlanoSemanalLlmDtoV2 planoV2 = umPlanoCom(treinoV2);
             return resolver.resolverPlano(planoV2, ZONAS).treinosPlanejados().get(0);
+        }
+
+        @Test
+        @DisplayName("CA6: com FC e pace manuais, a etapa da v2 sai com as faixas manuais da zona")
+        void zonasManuaisChegamNaEtapa() {
+            AthleteZones manual = new AthleteZones(190, 160, BigDecimal.valueOf(4.50),
+                    List.of(new FaixaZonaManual(1, 110, 130), new FaixaZonaManual(2, 140, 150),
+                            new FaixaZonaManual(3, 150, 160), new FaixaZonaManual(4, 160, 168),
+                            new FaixaZonaManual(5, 168, 178)),
+                    List.of(new FaixaZonaManual(1, 350, 380), new FaixaZonaManual(2, 320, 350),
+                            new FaixaZonaManual(3, 300, 315), new FaixaZonaManual(4, 285, 300),
+                            new FaixaZonaManual(5, 270, 285), new FaixaZonaManual(6, 240, 270)));
+            BlocoDto bloco = new BlocoDto(Papel.PRINCIPAL, 1, BigDecimal.valueOf(30), UnidadeQuantidade.MIN, Zona.Z2, null);
+            PlanoSemanalLlmDtoV2 planoV2 = umPlanoCom(new TreinoPlanejadoLlmDtoV2("SEGUNDA", "CONTINUO", "j", List.of(bloco)));
+
+            var etapa = resolver.resolverPlano(planoV2, manual).treinosPlanejados().get(0).etapas().get(0);
+
+            assertThat(etapa.fcAlvoEtapa()).isEqualTo("140-150 bpm");
+            assertThat(etapa.ritmoAlvo()).isEqualTo("5:20-5:50/km");
         }
 
         @Test

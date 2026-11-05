@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.dto.output;
 
+import br.com.menthoros.backend.enums.FonteLimiar;
+import br.com.menthoros.backend.enums.ModoZonas;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
@@ -23,12 +25,22 @@ public record AthleteTrainingZonesOutputDto(
         @Schema(description = "FC máxima usada pelo push (o literal acima dela é descartado)")
         FcMaxima fcMaxima,
 
-        @Schema(description = "Quais eixos têm faixa calculável")
+        @Schema(description = "Quais eixos têm faixa (calculável ou manual)")
         Disponibilidade disponibilidade,
 
-        @Schema(description = "Z1 a Z6; faixas de pace são as base (as mesmas do prompt da IA)")
-        List<ZonaDto> zonas
+        @Schema(description = "Z1 a Z6 com a faixa efetiva de cada eixo (manual ou calculada) — a mesma do prompt da IA")
+        List<ZonaDto> zonas,
+
+        @Schema(description = "Origem das faixas de cada eixo")
+        Modos modos
 ) {
+
+    public record Modos(
+            @Schema(description = "LIMIAR = calculadas do limiar; MANUAL = informadas pelo treinador", example = "LIMIAR")
+            ModoZonas fc,
+            @Schema(example = "MANUAL")
+            ModoZonas pace
+    ) {}
 
     public record Ancoras(
             @Schema(description = "Pace de limiar em minutos decimais por km", example = "5.00")
@@ -38,7 +50,11 @@ public record AthleteTrainingZonesOutputDto(
             Integer fcLimiar,
             LocalDate dataUltimoTesteFc,
             @Schema(description = "true quando o limiar de FC veio do fallback etário, não de teste")
-            boolean fcLimiarEstimada
+            boolean fcLimiarEstimada,
+            @Schema(description = "Origem do pace de limiar; ausente quando não registrada")
+            FonteLimiar fonteLimiarPace,
+            @Schema(description = "Origem do limiar de FC; ausente quando não registrada")
+            FonteLimiar fonteLimiarFc
     ) {}
 
     public record AjusteFadiga(
@@ -69,7 +85,11 @@ public record AthleteTrainingZonesOutputDto(
             @Schema(description = "Faixa de FC; ausente em Z6")
             FcFaixa fc,
             @Schema(description = "FC_NAO_ESTABILIZA em Z6", example = "FC_NAO_ESTABILIZA")
-            String motivoFc
+            String motivoFc,
+            @Schema(description = "Só com pace em MANUAL e pace de limiar cadastrado: a faixa que o limiar daria")
+            PaceFaixa pacePeloLimiar,
+            @Schema(description = "Só com FC em MANUAL (exceto Z6): a faixa que o limiar daria")
+            FcFaixa fcPeloLimiar
     ) {}
 
     public record PaceFaixa(

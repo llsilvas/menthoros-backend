@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.dto.output;
 
 import br.com.menthoros.backend.enums.AnaliseStatus;
+import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.WorkoutPlanVerdict;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -49,7 +50,9 @@ public record AthleteWorkoutAnalysisOutputDto(
     public record Executado(
             @Schema(description = "Duração em minutos inteiros", nullable = true) Long duracaoMin,
             @Schema(nullable = true) BigDecimal distanciaKm,
-            @Schema(description = "RPE informado (1–10)", nullable = true) Integer rpe
+            @Schema(description = "RPE informado (1–10)", nullable = true) Integer rpe,
+            @Schema(description = "Fonte do treino — base da atribuição do Garmin", nullable = true) FonteDados fonteDados,
+            @Schema(description = "Modelo do dispositivo; ausente quando desconhecido", nullable = true, example = "Forerunner 970") String deviceName
     ) {}
 
     @Schema(description = "Números do treino planejado")

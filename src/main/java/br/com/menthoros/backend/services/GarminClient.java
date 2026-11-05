@@ -11,7 +11,7 @@ import java.util.List;
  * Client HTTP do canal direto Garmin (D1). Token OAuth2 Bearer é por atleta e vai por chamada.
  * Erro HTTP vira {@link br.com.menthoros.backend.exception.GarminApiException} com status;
  * falha de transporte vira a mesma exceção com status nulo. Nenhuma mensagem carrega token.
- * Workout e schedule (Training API V2) estão aqui; download de arquivo entra na change seguinte.
+ * Workout e schedule (Training API V2) e download do arquivo de atividade (Activity API) estão aqui.
  */
 public interface GarminClient {
 
@@ -56,4 +56,12 @@ public interface GarminClient {
 
     /** GET schedule?startDate&endDate (inclusive nas duas pontas). */
     List<GarminSchedule> listarSchedules(String token, LocalDate inicio, LocalDate fim);
+
+    /**
+     * GET no {@code callbackURL} de um ping {@code activityFiles} — o link traz token próprio e vale
+     * uma vez (segundo download = 410). Antes de qualquer requisição exige {@code https}, host
+     * {@code apis.garmin.com} e path {@code /wellness-api/rest/activityFile}; fora disso lança
+     * {@link IllegalArgumentException} sem chamar nada (SSRF: a URL vem de um request externo).
+     */
+    byte[] baixarArquivo(String callbackUrl);
 }

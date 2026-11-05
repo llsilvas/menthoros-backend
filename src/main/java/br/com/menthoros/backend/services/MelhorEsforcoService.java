@@ -20,6 +20,8 @@ public interface MelhorEsforcoService {
      * @param janela   sintaxe de curva do intervals.icu ("42d", "1y", "all")
      * @return lista de marcas encontradas dentro da tolerância; vazia se o atleta não tem
      *         integração intervals.icu ativa, ou se nenhuma distância-alvo teve dado suficiente
+     * @throws br.com.menthoros.backend.exception.DomainConflictException se o canal do atleta é o
+     *         Garmin — não há curve de pace (409, vale também para {@link #buscarParaAtleta})
      */
     List<MelhorEsforcoDto> buscar(UUID atletaId, String janela);
 

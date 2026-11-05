@@ -1,6 +1,9 @@
 package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.FaixaZonaManual;
+import br.com.menthoros.backend.enums.FonteLimiar;
+import br.com.menthoros.backend.enums.ModoZonas;
 import br.com.menthoros.backend.repository.custom.AtletaRepositoryCustom;
 import br.com.menthoros.backend.repository.projection.AtletaListProjection;
 import br.com.menthoros.backend.repository.projection.AtletaProjection;
@@ -12,6 +15,8 @@ import org.springframework.data.repository.PagingAndSortingRepository;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -181,4 +186,68 @@ public interface AtletaRepository extends PagingAndSortingRepository<Atleta, UUI
       AND a.ativo = br.com.menthoros.backend.enums.AtletaStatus.ATIVO
     """)
     long countAtivosByTenantId(@Param("tenantId") UUID tenantId);
+
+    /**
+     * Grava só as colunas de FC — um {@code save} da entidade inteira restauraria o pace antigo se outro
+     * PUT, de pace, commitasse no meio. {@code fc_maxima} não é tocada: máxima vazia = manter a vigente.
+     */
+    @Transactional
+    @Modifying
+    @Query("""
+    UPDATE Atleta a
+       SET a.fcLimiar = :limiar, a.dataUltimoTesteFc = :dataTeste, a.fonteLimiarFc = :fonte
+     WHERE a.id = :id AND a.assessoria.id = :tenantId
+    """)
+    int atualizarLimiarFc(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
+                          @Param("limiar") Integer limiar, @Param("dataTeste") LocalDate dataTeste,
+                          @Param("fonte") FonteLimiar fonte);
+
+    /** Igual a {@link #atualizarLimiarFc}, mas também grava a FC máxima informada pelo treinador. */
+    @Transactional
+    @Modifying
+    @Query("""
+    UPDATE Atleta a
+       SET a.fcLimiar = :limiar, a.fcMaxima = :maxima, a.dataUltimoTesteFc = :dataTeste, a.fonteLimiarFc = :fonte
+     WHERE a.id = :id AND a.assessoria.id = :tenantId
+    """)
+    int atualizarLimiarFcEMaxima(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
+                                 @Param("limiar") Integer limiar, @Param("maxima") Integer maxima,
+                                 @Param("dataTeste") LocalDate dataTeste, @Param("fonte") FonteLimiar fonte);
+
+    /** Grava só as colunas de pace (ver {@link #atualizarLimiarFc}). {@code paceLimiar} em minutos decimais. */
+    @Transactional
+    @Modifying
+    @Query("""
+    UPDATE Atleta a
+       SET a.paceLimiar = :paceLimiar, a.dataUltimoTestePace = :dataTeste, a.fonteLimiarPace = :fonte
+     WHERE a.id = :id AND a.assessoria.id = :tenantId
+    """)
+    int atualizarLimiarPace(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
+                            @Param("paceLimiar") BigDecimal paceLimiar, @Param("dataTeste") LocalDate dataTeste,
+                            @Param("fonte") FonteLimiar fonte);
+
+    /**
+     * Grava modo e faixas de FC juntos, sem tocar o pace (mesmo motivo de {@link #atualizarLimiarFc}).
+     * {@code faixas} nulo com {@code LIMIAR} apaga as faixas manuais do eixo.
+     */
+    @Transactional
+    @Modifying
+    @Query("""
+    UPDATE Atleta a
+       SET a.modoZonasFc = :modo, a.zonasManuaisFc = :faixas, a.updatedAt = LOCAL DATETIME
+     WHERE a.id = :id AND a.assessoria.id = :tenantId
+    """)
+    int atualizarZonasFc(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
+                         @Param("modo") ModoZonas modo, @Param("faixas") List<FaixaZonaManual> faixas);
+
+    /** Igual a {@link #atualizarZonasFc}, para o eixo de pace. */
+    @Transactional
+    @Modifying
+    @Query("""
+    UPDATE Atleta a
+       SET a.modoZonasPace = :modo, a.zonasManuaisPace = :faixas, a.updatedAt = LOCAL DATETIME
+     WHERE a.id = :id AND a.assessoria.id = :tenantId
+    """)
+    int atualizarZonasPace(@Param("id") UUID id, @Param("tenantId") UUID tenantId,
+                           @Param("modo") ModoZonas modo, @Param("faixas") List<FaixaZonaManual> faixas);
 }

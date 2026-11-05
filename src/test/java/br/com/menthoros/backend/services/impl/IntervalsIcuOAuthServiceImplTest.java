@@ -85,7 +85,8 @@ class IntervalsIcuOAuthServiceImplTest {
 
         service = new IntervalsIcuOAuthServiceImpl(
                 properties, signer, webClient, atletaRepository, integracaoRepository,
-                atletaProgressService, connectionService, intervalsIcuClient, garminConnectionService);
+                atletaProgressService, connectionService, intervalsIcuClient, garminConnectionService,
+                new br.com.menthoros.backend.services.helper.IntervalsIcuFcSyncer(intervalsIcuClient, connectionService));
 
         tenantId = UUID.randomUUID();
         atletaId = UUID.randomUUID();

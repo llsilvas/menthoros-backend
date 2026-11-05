@@ -8,6 +8,7 @@ import br.com.menthoros.backend.domain.workout.WorkoutStep;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaTreino;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.enums.TipoEtapa;
 import br.com.menthoros.backend.enums.TipoTreino;
 import org.springframework.stereotype.Component;
 
@@ -374,6 +375,11 @@ public class IntervalsIcuWorkoutConverter {
     // ===== Mapeamento de uma etapa =====
 
     private WorkoutStep stepDeEtapa(EtapaTreino etapa, Contexto ctx) {
+        WorkoutStep step = stepComMeta(etapa, ctx);
+        return TipoEtapa.RECUPERACAO.name().equalsIgnoreCase(etapa.getTipoEtapa()) ? step.asRecovery() : step;
+    }
+
+    private WorkoutStep stepComMeta(EtapaTreino etapa, Contexto ctx) {
         Integer distanceMeters = distanciaEmMetros(etapa.getDistanciaKm());
         Integer durationSeconds = distanceMeters != null ? null : duracaoEmSegundos(etapa.getDuracaoMin());
 

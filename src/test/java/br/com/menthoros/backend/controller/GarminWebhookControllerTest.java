@@ -2,6 +2,7 @@ package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.config.core.JacksonConfig;
 import br.com.menthoros.backend.config.external.GarminProperties;
+import br.com.menthoros.backend.exception.GarminPingRegistroException;
 import br.com.menthoros.backend.repository.TenantValidationRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.services.GarminWebhookService;
@@ -25,6 +26,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -143,5 +145,19 @@ class GarminWebhookControllerTest {
 
         assertThat(logs.list).noneMatch(e -> e.getFormattedMessage().contains("u-sensivel-999")
                 || e.getFormattedMessage().contains(SEGREDO));
+    }
+
+    @Test
+    @DisplayName("falha ao gravar ping activityFiles: 500 para o Garmin reenviar, sem o corpo no log")
+    void falhaDeGravacaoDevolve500() throws Exception {
+        doThrow(new GarminPingRegistroException("Falha ao registrar ping activityFiles do Garmin"))
+                .when(webhookService).processar(any());
+
+        mockMvc.perform(post("/api/v1/garmin/webhook/" + SEGREDO)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"activityFiles\":[{\"userId\":\"u-sensivel-999\"}]}"))
+                .andExpect(status().isInternalServerError());
+
+        assertThat(logs.list).noneMatch(e -> e.getFormattedMessage().contains("u-sensivel-999"));
     }
 }

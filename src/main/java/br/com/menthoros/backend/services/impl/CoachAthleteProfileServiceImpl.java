@@ -9,6 +9,7 @@ import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
 import br.com.menthoros.backend.domain.billing.AthleteBilling;
 import br.com.menthoros.backend.services.AthleteContractService;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -22,12 +23,14 @@ import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.CoachAthleteProfileService;
 import br.com.menthoros.backend.services.CoachAttentionQueueService;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
 import br.com.menthoros.backend.services.PlanoService;
 import br.com.menthoros.backend.services.SugestaoCoachService;
 import br.com.menthoros.backend.services.helper.ThresholdInferenceService;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
@@ -68,6 +71,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final AthleteContractService athleteContractService;
     private final PlatformTransactionManager transactionManager;
     private final IntegracaoExternaRepository integracaoExternaRepository;
+    private final GarminConnectionService garminConnectionService;
 
     /**
      * Transação própria para cada bloco degradável do perfil. Participando da transação do perfil,
@@ -126,7 +130,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
         long t3b = System.nanoTime();
         List<MelhorEsforcoDto> melhoresEsforcos = buscarLista("melhoresEsforcos", avisos,
-                () -> melhorEsforcoService.buscar(atletaId, "42d"));
+                () -> melhoresEsforcosOuIndisponivel(atletaId));
         log.debug("[perfil] melhoresEsforcos: {}ms", ms(t3b));
         Counter.builder("melhores_esforcos_perfil_exibido_total")
                 .description("Perfis de atleta abertos pelo coach, por presença de melhoresEsforcos")
@@ -226,7 +230,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                     return new AtletaPerfilCoachOutputDto.ConexaoCanalDto(i.getPlataforma(), i.isAtivo(),
                             scopes.contains(garmin ? GarminConnectionServiceImpl.WORKOUT_IMPORT : "CALENDAR:WRITE"),
                             scopes.contains(garmin ? GarminConnectionServiceImpl.ACTIVITY_EXPORT : "ACTIVITY:READ"),
-                            i.getLastSyncError());
+                            i.getLastSyncError(),
+                            i.getUltimaSincronizacao());
                 })
                 .orElse(null);
     }
@@ -250,6 +255,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                         tr.getDataTreino(),
                         tr.getTipoTreino() != null ? tr.getTipoTreino().name() : null,
                         tr.getFonteDados(),
+                        tr.getDeviceName(),
                         tr.getDuracaoMin() != null && !tr.getDuracaoMin().isZero()
                                 ? (int) tr.getDuracaoMin().toMinutes() : null,
                         tr.getDistanciaKm() != null ? tr.getDistanciaKm().doubleValue() : null,
@@ -296,6 +302,17 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         );
     }
 
+    /**
+     * Só expõe a mensagem gravada quando ela é nossa: validação do conversor e motivo do envio
+     * parcial. Nos demais erros o processor pode ter concatenado o texto bruto de uma exceção.
+     */
+    private static String erroExponivel(TreinoPlanejado tp) {
+        StatusSincronizacao status = tp.getStatusSincronizacao();
+        return status == StatusSincronizacao.ERRO_VALIDACAO || status == StatusSincronizacao.SINCRONIZADO_PARCIAL
+                ? tp.getErroSincronizacao()
+                : null;
+    }
+
     private AtletaPerfilCoachOutputDto.PlanoVigenteDto resolverPlanoVigente(
             UUID atletaId, UUID tenantId, boolean atletaConectadoIntervalsIcu) {
         Optional<PlanoSemanal> planoOpt = planoService.findPlanoVigenteRelevante(atletaId, tenantId);
@@ -306,6 +323,9 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
         if (plano.getReviewStatus() == PlanoReviewStatus.APROVADO
                 || plano.getReviewStatus() == PlanoReviewStatus.AGUARDANDO_REVISAO) {
+            // Separado do flag do intervals.icu, que também alimenta melhoresEsforcosIntegracaoConectada.
+            boolean canalConectado = garminConnectionService.conexaoDeCanal(atletaId, tenantId).isPresent();
+            LocalDateTime agora = LocalDateTime.now();
             // conexão intervals.icu já resolvida pelo chamador (anti-N+1) e replicada em cada treino
             treinos = plano.getTreinosPlanejados().stream()
                     .sorted(Comparator.comparing(TreinoPlanejado::getDataTreino))
@@ -323,7 +343,10 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             tp.getStatusSincronizacao() != null
                                     ? tp.getStatusSincronizacao().name()
                                     : StatusSincronizacao.NAO_SINCRONIZADO.name(),
-                            atletaConectadoIntervalsIcu))
+                            atletaConectadoIntervalsIcu,
+                            canalConectado,
+                            erroExponivel(tp),
+                            tp.envioEmAndamento(agora)))
                     .toList();
         } else {
             treinos = List.of();
@@ -352,6 +375,19 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                     .toList();
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    /**
+     * Canal Garmin responde 409 (sem curve de pace): é indisponibilidade esperada, não falha
+     * parcial — sem isto todo atleta Garmin abriria o perfil com aviso. O front mostra
+     * "indisponível" pela {@code conexaoCanal}.
+     */
+    private List<MelhorEsforcoDto> melhoresEsforcosOuIndisponivel(UUID atletaId) {
+        try {
+            return melhorEsforcoService.buscar(atletaId, "42d");
+        } catch (DomainConflictException e) {
+            return List.of();
         }
     }
 

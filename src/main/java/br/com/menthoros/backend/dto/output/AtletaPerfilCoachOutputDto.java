@@ -114,7 +114,10 @@ public record AtletaPerfilCoachOutputDto(
             boolean activityExport,
 
             @Schema(description = "Último erro de autenticação/sincronização, legível")
-            String lastSyncError
+            String lastSyncError,
+
+            @Schema(description = "Última atividade recebida pelo canal; ausente se nenhuma chegou ainda")
+            Instant ultimaSincronizacao
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -163,6 +166,9 @@ public record AtletaPerfilCoachOutputDto(
 
             @Schema(description = "Origem do registro", example = "INTERVALS_ICU")
             FonteDados fonteDados,
+
+            @Schema(description = "Modelo do dispositivo; ausente quando desconhecido", example = "Forerunner 970")
+            String deviceName,
 
             @Schema(description = "Duração em minutos inteiros; ausente quando não disponível", example = "50")
             Integer duracaoMin,
@@ -225,7 +231,17 @@ public record AtletaPerfilCoachOutputDto(
             String statusSincronizacao,
 
             @Schema(description = "Atleta tem conexão intervals.icu ativa")
-            Boolean atletaConectadoIntervalsIcu
+            Boolean atletaConectadoIntervalsIcu,
+
+            @Schema(description = "Atleta tem canal de treinos conectado (Garmin ou intervals.icu)")
+            Boolean channelConnected,
+
+            @Schema(description = "Motivo do erro ou do envio parcial, só em ERRO_VALIDACAO e SINCRONIZADO_PARCIAL; "
+                    + "ausente nos demais status", example = "Etapa sem duração definida")
+            String syncError,
+
+            @Schema(description = "Envio ao canal em andamento (o reenvio responderia 409); o front desabilita o botão")
+            Boolean syncInProgress
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

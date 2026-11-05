@@ -479,6 +479,6 @@ class AtletaTreinoControllerTest {
                 null, // runningDynamics
                 null, null, null, null, null, null, // decouplingPercentual..nivelEstresse
                 null, null, null, // nivelDor, nivelFadiga, nivelRecuperacao
-                FonteDados.MANUAL, TreinoExecucaoStatus.REALIZADO, null, null, null, null, null);
+                FonteDados.MANUAL, null, TreinoExecucaoStatus.REALIZADO, null, null, null, null, null);
     }
 }
