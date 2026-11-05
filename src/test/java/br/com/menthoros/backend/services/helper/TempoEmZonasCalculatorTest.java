@@ -67,6 +67,31 @@ class TempoEmZonasCalculatorTest {
     }
 
     @Test
+    @DisplayName("gravação inteligente (a cada 8 s): cada amostra vale 8 s e a cobertura fecha")
+    void gravacaoInteligente() {
+        List<FitAmostraFc> amostras = new ArrayList<>();
+        for (int i = 0; i < 100; i++) amostras.add(new FitAmostraFc(i * 8L, 130));
+
+        TempoEmZonas r = TempoEmZonasCalculator.calcular(amostras, ZONAS, 800);
+
+        assertThat(r).isNotNull();
+        assertThat(segundos(r, "Z2")).isEqualTo(800);
+    }
+
+    @Test
+    @DisplayName("gravação a cada 8 s: pausa conta no máximo o dobro do intervalo típico (16 s)")
+    void pausaEmGravacaoInteligente() {
+        List<FitAmostraFc> amostras = List.of(
+                new FitAmostraFc(0, 130), new FitAmostraFc(8, 130), new FitAmostraFc(16, 130),
+                new FitAmostraFc(1016, 130), new FitAmostraFc(1024, 130));
+
+        TempoEmZonas r = TempoEmZonasCalculator.calcular(amostras, ZONAS, 48);
+
+        // 8 + 8 + 16 (pausa com teto) + 8 + 8 (última vale o intervalo típico)
+        assertThat(segundos(r, "Z2")).isEqualTo(48);
+    }
+
+    @Test
     @DisplayName("timestamp repetido ou invertido: a amostra não soma tempo")
     void timestampRepetidoOuInvertido() {
         List<FitAmostraFc> amostras = List.of(
