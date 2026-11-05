@@ -131,6 +131,20 @@ class TreinoPlanejadoServiceTest {
             assertThat(contadorDiaEmBranco()).isZero();
         }
 
+        @Test
+        @DisplayName("plano APROVADO recusa a exclusão: o treino já está no relógio e o registro da edição não pode sumir")
+        void planoAprovadoRecusaExclusao() {
+            PlanoSemanal plano = planoStub(PlanoReviewStatus.APROVADO, new ArrayList<>());
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+
+            assertThatThrownBy(() -> service.excluirTreino(planoId, treinoId))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("aprovado");
+
+            verify(treinoPlanejadoRepository, never()).delete(any());
+            verify(planoSemanalRepository, never()).save(any());
+        }
+
         private double contadorDiaEmBranco() {
             var c = meterRegistry.find("plano_dia_sem_prescricao").tag("origem", "coach").counter();
             return c == null ? 0.0 : c.count();

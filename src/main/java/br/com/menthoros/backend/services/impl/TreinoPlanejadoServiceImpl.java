@@ -184,6 +184,11 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
 
         PlanoSemanal plano = planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Plano não encontrado: " + planoId));
+        // Em plano aprovado o treino já foi ao relógio, e a exclusão apagaria em cascata o registro da
+        // edição pós-aprovação (coach-editar-treino-aprovado: excluir em plano aprovado é non-goal).
+        if (plano.getReviewStatus() == PlanoReviewStatus.APROVADO) {
+            throw new DomainRuleViolationException("Treino de plano aprovado não pode ser excluído.");
+        }
 
         log.info("Excluindo treino: planoId={}, treinoId={}", planoId, treinoId);
 

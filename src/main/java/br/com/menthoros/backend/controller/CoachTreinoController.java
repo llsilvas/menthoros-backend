@@ -98,6 +98,17 @@ public class CoachTreinoController {
 
     @DeleteMapping("/{planoId}/treinos/{treinoId}")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
+    @Operation(
+            summary = "Exclui um treino planejado",
+            description = "Remove o treino do plano e ajusta o volume. Plano APROVADO recusa: o treino já foi ao "
+                    + "relógio e a exclusão apagaria o registro da edição pós-aprovação.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "204", description = "Treino excluído"),
+            @ApiResponse(responseCode = "403", description = "Sem permissão (requer TECNICO/ADMIN)"),
+            @ApiResponse(responseCode = "404", description = "Plano ou treino não encontrado"),
+            @ApiResponse(responseCode = "422", description = "Plano aprovado")
+    })
     public ResponseEntity<TreinoPlanejadoOutputDto> excluirTreino(
             @Parameter(description = "UUID do plano semanal") @PathVariable UUID planoId,
             @Parameter(description = "UUID do treino planejado") @PathVariable UUID treinoId){
