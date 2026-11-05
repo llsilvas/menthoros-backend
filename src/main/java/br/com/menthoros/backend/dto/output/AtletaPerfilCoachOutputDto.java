@@ -114,7 +114,10 @@ public record AtletaPerfilCoachOutputDto(
             boolean activityExport,
 
             @Schema(description = "Último erro de autenticação/sincronização, legível")
-            String lastSyncError
+            String lastSyncError,
+
+            @Schema(description = "Última atividade recebida pelo canal; ausente se nenhuma chegou ainda")
+            Instant ultimaSincronizacao
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

@@ -4,7 +4,10 @@ import br.com.menthoros.backend.dto.intervalsicu.IcuPaceCurveDto;
 import br.com.menthoros.backend.dto.output.MelhorEsforcoDto;
 import br.com.menthoros.backend.dto.output.MelhoresEsforcosOutputDto;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
+import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.IntervalsIcuClient;
 import br.com.menthoros.backend.services.IntervalsIcuConnectionService;
 import br.com.menthoros.backend.services.MelhorEsforcoService;
@@ -53,6 +56,7 @@ public class MelhorEsforcoServiceImpl implements MelhorEsforcoService {
 
     private final IntervalsIcuConnectionService connectionService;
     private final IntervalsIcuClient intervalsIcuClient;
+    private final GarminConnectionService garminConnectionService;
 
     /**
      * Cache Caffeine próprio (`CacheConfig`, TTL padrão 30min). <b>Independente</b> do cache de
@@ -78,6 +82,7 @@ public class MelhorEsforcoServiceImpl implements MelhorEsforcoService {
         UUID tenantId = TenantContext.getRequiredTenantId();
         Optional<IntegracaoExterna> conexao = connectionService.conexaoAtiva(atletaId, tenantId);
         if (conexao.isEmpty()) {
+            rejeitarCanalGarmin(atletaId, tenantId);
             return new MelhoresEsforcosOutputDto(List.of(), false);
         }
         return new MelhoresEsforcosOutputDto(buscarMarcasComConexao(conexao.get(), janela), true);
@@ -88,9 +93,23 @@ public class MelhorEsforcoServiceImpl implements MelhorEsforcoService {
         UUID tenantId = TenantContext.getRequiredTenantId();
         Optional<IntegracaoExterna> conexao = connectionService.conexaoAtiva(atletaId, tenantId);
         if (conexao.isEmpty()) {
+            rejeitarCanalGarmin(atletaId, tenantId);
             return List.of();
         }
         return buscarMarcasComConexao(conexao.get(), janela);
+    }
+
+    /**
+     * O curve de pace é do intervals.icu; com o Garmin como canal não há de onde tirar as marcas, e
+     * "indisponível" não pode virar "sem marcas" na tela (garmin-activity-ingestion, CA9).
+     */
+    private void rejeitarCanalGarmin(UUID atletaId, UUID tenantId) {
+        boolean garmin = garminConnectionService.conexaoDeCanal(atletaId, tenantId)
+                .filter(c -> c.getPlataforma() == FonteDados.GARMIN)
+                .isPresent();
+        if (garmin) {
+            throw new DomainConflictException("Melhores esforços indisponíveis para o canal Garmin");
+        }
     }
 
     private List<MelhorEsforcoDto> buscarMarcasComConexao(IntegracaoExterna integracao, String janela) {

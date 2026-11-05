@@ -185,6 +185,7 @@ public class AtletaTreinoController {
                     content = @Content(schema = @Schema(implementation = MelhoresEsforcosOutputDto.class))),
             @ApiResponse(responseCode = "401", description = "Token ausente ou inválido"),
             @ApiResponse(responseCode = "403", description = "Acesso negado — apenas atletas podem usar este endpoint"),
+            @ApiResponse(responseCode = "409", description = "Indisponível para o canal Garmin (sem curve de pace)"),
             @ApiResponse(responseCode = "502", description = "Falha ao consultar o intervals.icu")
     })
     public ResponseEntity<MelhoresEsforcosOutputDto> getMelhoresEsforcos(

@@ -230,6 +230,20 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         @Test
+        @DisplayName("melhoresEsforcos indisponível no canal Garmin (409): lista vazia sem aviso de falha parcial")
+        void melhoresEsforcosCanalGarminSemAviso() {
+            stubPerfilMinimo();
+            when(melhorEsforcoService.buscar(atletaId, "42d"))
+                    .thenThrow(new br.com.menthoros.backend.exception.DomainConflictException(
+                            "Melhores esforços indisponíveis para o canal Garmin"));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.melhoresEsforcos()).isEmpty();
+            assertThat(perfil.avisos()).isNull();
+        }
+
+        @Test
         @DisplayName("realizadosRecentes — janela de 7 dias, mais recente primeiro, com feedback quando carimbado")
         void realizadosRecentesJanelaEOrdem() {
             stubPerfilMinimo();
@@ -736,7 +750,20 @@ class CoachAthleteProfileServiceImplTest {
             var canal = service.buscarPerfil(atletaId).conexaoCanal();
 
             assertThat(canal).isEqualTo(new AtletaPerfilCoachOutputDto.ConexaoCanalDto(
-                    br.com.menthoros.backend.enums.FonteDados.GARMIN, true, true, true, null));
+                    br.com.menthoros.backend.enums.FonteDados.GARMIN, true, true, true, null, null));
+        }
+
+        @Test
+        @DisplayName("conexaoCanal: ultimaSincronizacao vem da IntegracaoExterna")
+        void conexaoCanalComUltimaSincronizacao() {
+            stubPerfilMinimo();
+            var garmin = integracao(br.com.menthoros.backend.enums.FonteDados.GARMIN, true,
+                    "WORKOUT_IMPORT,ACTIVITY_EXPORT", null);
+            java.time.Instant ultima = java.time.Instant.parse("2026-11-05T09:30:00Z");
+            garmin.setUltimaSincronizacao(ultima);
+            canalMaisRecente(garmin);
+
+            assertThat(service.buscarPerfil(atletaId).conexaoCanal().ultimaSincronizacao()).isEqualTo(ultima);
         }
 
         @Test
