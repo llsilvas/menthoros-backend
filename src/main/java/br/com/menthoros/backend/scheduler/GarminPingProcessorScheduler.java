@@ -15,6 +15,7 @@ import br.com.menthoros.backend.services.FitParseService;
 import br.com.menthoros.backend.services.GarminClient;
 import br.com.menthoros.backend.services.helper.FitTreinoPersister;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -41,9 +42,13 @@ import java.util.UUID;
  *
  * <p>shortcut: 20 pings/min por instância e claim sem lock — premissa de uma instância só; com
  * mais de uma réplica, trocar o claim por update condicional antes de escalar.
+ *
+ * <p>{@code menthoros.garmin-ping-processor.enabled=false} desliga o job (ITs: os contextos
+ * cacheados compartilham o Postgres e um scheduler alheio roubaria o ping do teste).
  */
 @Slf4j
 @Component
+@ConditionalOnProperty(name = "menthoros.garmin-ping-processor.enabled", havingValue = "true", matchIfMissing = true)
 public class GarminPingProcessorScheduler {
 
     static final int LOTE = 20;
