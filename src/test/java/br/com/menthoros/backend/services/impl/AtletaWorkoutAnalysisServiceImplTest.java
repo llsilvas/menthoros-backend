@@ -104,6 +104,8 @@ class AtletaWorkoutAnalysisServiceImplTest {
     @DisplayName("COMPLETED devolve os quatro textos, os números e carimba a primeira visualização")
     void completedDevolveDto() {
         TreinoRealizado tr = realizado();
+        tr.setFonteDados(br.com.menthoros.backend.enums.FonteDados.GARMIN);
+        tr.setDeviceName("Forerunner 970");
         TreinoPlanejado planejado = new TreinoPlanejado();
         planejado.setDuracaoMin(Duration.ofMinutes(61));
         planejado.setDistanciaKm(new BigDecimal("11.0"));
@@ -122,6 +124,8 @@ class AtletaWorkoutAnalysisServiceImplTest {
         assertThat(dto.comoFoi()).isEqualTo("Saiu como planejado.");
         assertThat(dto.executado().duracaoMin()).isEqualTo(58L);
         assertThat(dto.executado().rpe()).isEqualTo(7);
+        assertThat(dto.executado().fonteDados()).isEqualTo(br.com.menthoros.backend.enums.FonteDados.GARMIN);
+        assertThat(dto.executado().deviceName()).isEqualTo("Forerunner 970");
         assertThat(dto.planejado().rpeEsperado()).isEqualTo(6);
         assertThat(dto.veredito()).isEqualTo(WorkoutPlanVerdict.DENTRO_DO_PLANO);
         assertThat(analise.getAtletaPrimeiraVisualizacaoEm()).isEqualTo(Instant.parse("2026-08-30T12:00:00Z"));

@@ -237,6 +237,20 @@ class CoachAthleteProfileServiceImplTest {
         }
 
         @Test
+        @DisplayName("melhoresEsforcos indisponível no canal Garmin (409): lista vazia sem aviso de falha parcial")
+        void melhoresEsforcosCanalGarminSemAviso() {
+            stubPerfilMinimo();
+            when(melhorEsforcoService.buscar(atletaId, "42d"))
+                    .thenThrow(new br.com.menthoros.backend.exception.DomainConflictException(
+                            "Melhores esforços indisponíveis para o canal Garmin"));
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.melhoresEsforcos()).isEmpty();
+            assertThat(perfil.avisos()).isNull();
+        }
+
+        @Test
         @DisplayName("realizadosRecentes — janela de 7 dias, mais recente primeiro, com feedback quando carimbado")
         void realizadosRecentesJanelaEOrdem() {
             stubPerfilMinimo();
@@ -250,7 +264,8 @@ class CoachAthleteProfileServiceImplTest {
             recente.setId(UUID.randomUUID());
             recente.setDataTreino(LocalDate.now());
             recente.setTipoTreino(TipoTreino.INTERVALADO);
-            recente.setFonteDados(br.com.menthoros.backend.enums.FonteDados.MANUAL);
+            recente.setFonteDados(br.com.menthoros.backend.enums.FonteDados.GARMIN);
+            recente.setDeviceName("Forerunner 970");
             recente.setDuracaoMin(java.time.Duration.ofMinutes(45));
             recente.setPercepcaoEsforco(6);
             recente.setSensacoes(java.util.Set.of(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS));
@@ -265,6 +280,8 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(perfil.realizadosRecentes()).hasSize(2);
             assertThat(perfil.realizadosRecentes().get(0).id()).isEqualTo(recente.getId());
             assertThat(perfil.realizadosRecentes().get(0).percepcaoEsforco()).isEqualTo(6);
+            assertThat(perfil.realizadosRecentes().get(0).deviceName()).isEqualTo("Forerunner 970");
+            assertThat(perfil.realizadosRecentes().get(1).deviceName()).isNull();
             assertThat(perfil.realizadosRecentes().get(0).sensacoes()).containsExactly(br.com.menthoros.backend.enums.Sensacao.PERNAS_PESADAS);
             assertThat(perfil.realizadosRecentes().get(0).feedbackRegistradoEm()).isNotNull();
             assertThat(perfil.realizadosRecentes().get(1).id()).isEqualTo(antigo.getId());
@@ -517,6 +534,31 @@ class CoachAthleteProfileServiceImplTest {
                     });
             assertThat(perfil.melhoresEsforcosIntegracaoConectada()).isFalse();
             verify(garminConnectionService, org.mockito.Mockito.times(1)).conexaoDeCanal(atletaId, tenantId);
+        }
+
+        @Test
+        @DisplayName("resumo expõe treinoRealizadoId e ritmoAlvo; distância ausente sai nula, não 0.0")
+        void resumoExpoeVinculoRitmoEDistanciaNula() {
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            TreinoPlanejado comVinculo = plano.getTreinosPlanejados().get(0);
+            TreinoRealizado realizado = new TreinoRealizado();
+            realizado.setId(UUID.randomUUID());
+            comVinculo.setTreinoRealizado(realizado);
+            comVinculo.setRitmoAlvo("5:30");
+            plano.getTreinosPlanejados().get(1).setDistanciaKm(null);
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+            when(garminConnectionService.conexaoDeCanal(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).treinoRealizadoId()).isEqualTo(realizado.getId());
+            assertThat(treinos.get(0).ritmoAlvo()).isEqualTo("5:30");
+            assertThat(treinos.get(0).distanciaKm()).isEqualTo(8.0);
+            assertThat(treinos.get(1).treinoRealizadoId()).isNull();
+            assertThat(treinos.get(1).ritmoAlvo()).isNull();
+            assertThat(treinos.get(1).distanciaKm()).isNull();
         }
 
         @Test
@@ -799,7 +841,20 @@ class CoachAthleteProfileServiceImplTest {
             var canal = service.buscarPerfil(atletaId).conexaoCanal();
 
             assertThat(canal).isEqualTo(new AtletaPerfilCoachOutputDto.ConexaoCanalDto(
-                    br.com.menthoros.backend.enums.FonteDados.GARMIN, true, true, true, null));
+                    br.com.menthoros.backend.enums.FonteDados.GARMIN, true, true, true, null, null));
+        }
+
+        @Test
+        @DisplayName("conexaoCanal: ultimaSincronizacao vem da IntegracaoExterna")
+        void conexaoCanalComUltimaSincronizacao() {
+            stubPerfilMinimo();
+            var garmin = integracao(br.com.menthoros.backend.enums.FonteDados.GARMIN, true,
+                    "WORKOUT_IMPORT,ACTIVITY_EXPORT", null);
+            java.time.Instant ultima = java.time.Instant.parse("2026-11-05T09:30:00Z");
+            garmin.setUltimaSincronizacao(ultima);
+            canalMaisRecente(garmin);
+
+            assertThat(service.buscarPerfil(atletaId).conexaoCanal().ultimaSincronizacao()).isEqualTo(ultima);
         }
 
         @Test

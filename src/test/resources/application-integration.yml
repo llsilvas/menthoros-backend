@@ -39,3 +39,7 @@ logging:
 menthoros:
   tsb-decaimento:
     cron: "-"
+  # Todos os contextos de IT compartilham o Postgres: o job de um contexto processaria (e
+  # marcaria ERROR) o ping criado por outro. O IT da fila monta o scheduler à mão.
+  garmin-ping-processor:
+    enabled: false

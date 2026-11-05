@@ -60,7 +60,8 @@ class FitRunningDynamicsIntegrationTest {
         tenantId = UUID.randomUUID();
         atletaId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
-        service = new FitTreinoPersister(atletaRepository, treinoMapper, ingestaoTreinoRealizadoService);
+        service = new FitTreinoPersister(atletaRepository, treinoMapper, ingestaoTreinoRealizadoService,
+                new ZonaTreinoService());
 
         Atleta atleta = mock(Atleta.class);
         lenient().when(atleta.getId()).thenReturn(atletaId);
@@ -140,7 +141,7 @@ class FitRunningDynamicsIntegrationTest {
     private TreinoRealizado persistirFixtureReal() throws Exception {
         try (InputStream in = getClass().getResourceAsStream("/fit/corrida-15km-16laps.fit")) {
             FitSessionData dados = new FitParseServiceImpl().parse(in);
-            service.persistir(atletaId, dados);
+            service.persistir(atletaId, dados, null);
         }
         ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
         verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());

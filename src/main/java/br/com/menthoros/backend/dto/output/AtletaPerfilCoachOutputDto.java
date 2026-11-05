@@ -114,7 +114,10 @@ public record AtletaPerfilCoachOutputDto(
             boolean activityExport,
 
             @Schema(description = "Último erro de autenticação/sincronização, legível")
-            String lastSyncError
+            String lastSyncError,
+
+            @Schema(description = "Última atividade recebida pelo canal; ausente se nenhuma chegou ainda")
+            Instant ultimaSincronizacao
     ) {}
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -164,6 +167,9 @@ public record AtletaPerfilCoachOutputDto(
             @Schema(description = "Origem do registro", example = "INTERVALS_ICU")
             FonteDados fonteDados,
 
+            @Schema(description = "Modelo do dispositivo; ausente quando desconhecido", example = "Forerunner 970")
+            String deviceName,
+
             @Schema(description = "Duração em minutos inteiros; ausente quando não disponível", example = "50")
             Integer duracaoMin,
 
@@ -199,8 +205,9 @@ public record AtletaPerfilCoachOutputDto(
             @Schema(description = "Tipo de treino", example = "CORRIDA_LEVE")
             String tipoTreino,
 
-            @Schema(description = "Distância planejada em km", example = "10.5")
-            double distanciaKm,
+            @Schema(description = "Distância planejada em km; ausente quando o treino não prescreve distância",
+                    example = "10.5")
+            Double distanciaKm,
 
             @Schema(description = "Status de execução: PENDENTE, CONCLUIDO, REALIZADO, PERDIDO, PARCIAL, LIVRE",
                     example = "PENDENTE")
@@ -236,6 +243,12 @@ public record AtletaPerfilCoachOutputDto(
 
             @Schema(description = "Envio ao canal em andamento (o reenvio responderia 409); o front desabilita o botão")
             Boolean syncInProgress,
+
+            @Schema(description = "ID do treino realizado vinculado; ausente quando não há vínculo")
+            UUID treinoRealizadoId,
+
+            @Schema(description = "Ritmo alvo planejado", example = "5:30")
+            String ritmoAlvo,
 
             @Schema(description = "Quando o treinador editou o treino depois da aprovação do plano; ausente se nunca editado",
                     example = "2026-11-04T15:00:00Z")

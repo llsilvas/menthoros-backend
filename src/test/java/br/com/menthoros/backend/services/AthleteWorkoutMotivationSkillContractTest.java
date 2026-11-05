@@ -66,6 +66,13 @@ class AthleteWorkoutMotivationSkillContractTest {
     }
 
     @Test
+    void nao_substitui_nem_fala_pelo_coach() {
+        assertTrue(skill.contains("não substitui o feedback do coach"));
+        assertTrue(skill.contains("Você não é o coach"));
+        assertTrue(skill.contains("Não fale em nome dele"));
+    }
+
+    @Test
     void tem_exemplo_negativo_e_regra_de_dados() {
         assertTrue(skill.contains("Exemplo negativo"));
         assertTrue(skill.contains("cite só números e fatos presentes nos dados"));

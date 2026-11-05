@@ -5,6 +5,7 @@ import br.com.menthoros.backend.dto.fit.FitLapData;
 import br.com.menthoros.backend.dto.fit.FitSessionData;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.EtapaRealizada;
+import br.com.menthoros.backend.entity.TempoEmZonas;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.TipoTreino;
@@ -17,12 +18,14 @@ import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import br.com.menthoros.backend.util.Utils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -37,6 +40,7 @@ import java.util.UUID;
 public class FitTreinoPersister {
 
     private static final String CRIADO_POR_GARMIN = "GARMIN";
+    private static final int DEVICE_NAME_MAX = 200;
 
     // Faixas de sanidade para dados vindos do .fit (upload não confiável): fora delas → null,
     // nunca persistir lixo de firmware/arquivo adversarial. Cadência espelha a regra do Strava.
@@ -44,6 +48,8 @@ public class FitTreinoPersister {
     private static final int CADENCIA_MAX_PPM = 200;
     private static final int ELEVACAO_MAX_METROS = 10_000;
     private static final int POTENCIA_MAX_WATTS = 2_500;
+    /** Acima disso é lixo de firmware em qualquer esporte do .fit — e estouraria o NUMERIC(5,2). */
+    private static final double VELOCIDADE_MAX_KMH = 150.0;
 
     // Running dynamics (design D2 de fit-running-dynamics-ingestion) — mesma lógica de descarte
     // silencioso; temperatura, tempo em movimento e calorias não têm faixa de sanidade própria
@@ -65,6 +71,7 @@ public class FitTreinoPersister {
     private final AtletaRepository atletaRepository;
     private final TreinoMapper treinoMapper;
     private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
+    private final ZonaTreinoService zonaTreinoService;
 
     /**
      * Persiste o treino a partir dos dados já extraídos de um .fit, com dedup idempotente por
@@ -73,19 +80,23 @@ public class FitTreinoPersister {
      * <p><b>Idempotent:</b> YES — reenviar o mesmo .fit retorna o registro já existente
      * ({@link FitImportResultado#novo()} {@code == false}) em vez de duplicar.
      * <p><b>Side Effects:</b> Database insert (treino + etapas) quando ainda não existe e esta
-     * requisição venceu a corrida de concorrência; apenas leitura nos demais casos.
+     * requisição venceu a corrida de concorrência; na duplicata, só o {@code deviceName} quando
+     * o existente não tem um (sem repetir TSS, evento ou carga).
      * <p><b>Tenant-aware:</b> YES — via {@link TenantContext#getRequiredTenantId()}.
      *
+     * @param deviceName modelo informado pelo ping do Garmin; {@code null} no upload manual
      * @throws DomainNotFoundException se o atleta não for encontrado no tenant atual
      */
     @Transactional
-    public FitImportResultado persistir(UUID atletaId, FitSessionData dados) {
+    public FitImportResultado persistir(UUID atletaId, FitSessionData dados, @Nullable String deviceName) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         Atleta atleta = atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado no tenant atual"));
 
         String externalId = buildExternalId(atletaId, dados);
+        String device = limitarDeviceName(deviceName);
         TreinoRealizado treino = montarTreino(dados, atleta, tenantId, externalId);
+        treino.setDeviceName(device);
 
         // Dedup, tssCalculado (quando ausente), evento de análise e carga do dia são
         // responsabilidade do seam único de ingestão (ingestao-treino-realizado, D1-D13) — este
@@ -96,6 +107,11 @@ public class FitTreinoPersister {
             log.info("Fit importado: treinoId={}, atletaId={}, externalId={}",
                     resultado.treino().getId(), atletaId, externalId);
         } else {
+            // O atleta subiu o FIT antes do ping: o modelo do Garmin não se perde. Entidade
+            // gerenciada nesta TX — o dirty checking grava sem repetir TSS/evento/carga (D4).
+            if (device != null && resultado.treino().getDeviceName() == null) {
+                resultado.treino().setDeviceName(device);
+            }
             log.info("Fit já importado ou corrida de concorrência — registro já existente: treinoId={}, atletaId={}, externalId={}",
                     resultado.treino().getId(), atletaId, externalId);
         }
@@ -144,6 +160,14 @@ public class FitTreinoPersister {
         treino.setOscilacaoVerticalCm(sanitizarOscilacao(dados.oscilacaoVerticalCm()));
         treino.setProporcaoVerticalPct(sanitizarProporcao(dados.proporcaoVerticalPct()));
         treino.setTemperaturaMediaC(dados.temperaturaMediaC());
+        // paceMedia fica nulo de propósito: ele alimenta TSS, inferência de limiar e projeção de
+        // prova, e preenchê-lo mudaria esses cálculos para todo import .fit. O ritmo da tela de
+        // execução sai da velocidade (coach-ver-treino-realizado, task 1.3).
+        treino.setVelocidadeMedia(sanitizarVelocidade(dados.velocidadeMediaKmh()));
+        treino.setVelocidadeMaxKmh(sanitizarVelocidade(dados.velocidadeMaxKmh()));
+        treino.setTemperaturaMinC(dados.temperaturaMinC());
+        treino.setTemperaturaMaxC(dados.temperaturaMaxC());
+        treino.setTempoEmZonas(tempoEmZonas(dados, atleta));
 
         if (dados.tssCalculado() != null) {
             treino.setTssCalculado(dados.tssCalculado());
@@ -181,6 +205,31 @@ public class FitTreinoPersister {
         }
 
         return treino;
+    }
+
+    /**
+     * Só com zonas confiáveis (D6, A9): faixas manuais ou FC de limiar informada. Zona derivada de FC
+     * máxima estimada pela idade erraria a faixa do treino inteiro, e a tela a mostraria como dado.
+     * Cobertura sobre o tempo em movimento, porque no .fit {@code duracao} inclui as pausas.
+     */
+    private TempoEmZonas tempoEmZonas(FitSessionData dados, Atleta atleta) {
+        if (dados.amostrasFc().isEmpty()) {
+            return null;
+        }
+        List<ZonaTreinoService.ZonaFC> zonas = zonaTreinoService.zonasFCConfiaveis(atleta);
+        if (zonas == null) {
+            return null;
+        }
+        Duration referencia = dados.tempoMovimento() != null ? dados.tempoMovimento() : dados.duracao();
+        return TempoEmZonasCalculator.calcular(dados.amostrasFc(), zonas, referencia.toSeconds());
+    }
+
+    private static @Nullable String limitarDeviceName(@Nullable String deviceName) {
+        if (deviceName == null || deviceName.isBlank()) {
+            return null;
+        }
+        String limpo = deviceName.strip();
+        return limpo.length() > DEVICE_NAME_MAX ? limpo.substring(0, DEVICE_NAME_MAX) : limpo;
     }
 
     private String descricaoParaEsporte(FitSessionData dados) {
@@ -233,6 +282,17 @@ public class FitTreinoPersister {
     private static boolean temMetricaDeVelocidade(FitLapData lap) {
         return lap.distanciaKm() != null && lap.distanciaKm() > 0
                 && lap.duracao() != null && !lap.duracao().isZero() && !lap.duracao().isNegative();
+    }
+
+    private static Double sanitizarVelocidade(Double kmh) {
+        if (kmh == null || kmh <= 0 || kmh > VELOCIDADE_MAX_KMH) {
+            return null;
+        }
+        return kmh;
+    }
+
+    private static BigDecimal sanitizarVelocidade(BigDecimal kmh) {
+        return kmh != null && sanitizarVelocidade(kmh.doubleValue()) != null ? kmh : null;
     }
 
     private static Integer sanitizarCadencia(Integer ppm) {
