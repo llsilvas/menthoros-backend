@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.dto.output;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import br.com.menthoros.backend.entity.TempoEmZonas;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.Sensacao;
@@ -151,5 +152,23 @@ public record TreinoRealizadoOutputDto(
         List<Sensacao> sensacoes,
 
         @Schema(description = "Quando o feedback foi registrado; ausente = 'Como foi?' ainda não respondido")
-        LocalDateTime feedbackRegistradoEm
+        LocalDateTime feedbackRegistradoEm,
+
+        // ===== EXECUÇÃO (coach-ver-treino-realizado, D3) =====
+
+        @Schema(description = "Velocidade máxima da sessão em km/h", example = "12.19")
+        Double velocidadeMaxKmh,
+
+        @Schema(description = "Temperatura mínima da sessão em °C", example = "19.0")
+        Double temperaturaMinC,
+
+        @Schema(description = "Temperatura máxima da sessão em °C", example = "27.0")
+        Double temperaturaMaxC,
+
+        @Schema(description = "Tempo total decorrido em segundos, incluindo pausas", example = "6032")
+        Integer elapsedTimeSeg,
+
+        @Schema(description = "Tempo em cada zona de FC, com os limites vigentes no import; ausente quando "
+                        + "não há amostras de FC ou o atleta não tem zonas confiáveis")
+        TempoEmZonas tempoEmZonas
 ) {}
