@@ -60,13 +60,24 @@ public record EtapaInputDto(
         List<EtapaInputDto> subEtapas,
 
         @Schema(description = "Eixo que o relógio controla nesta etapa; ausente mantém a derivação por conteúdo (FC vence, pace assume)")
-        AlvoPrimario alvoPrimario
+        AlvoPrimario alvoPrimario,
+
+        @Schema(description = "Duração da etapa em segundos; quando presente, duracaoMin é derivado dele", example = "250")
+        @Positive
+        Integer duracaoSeg
 ) {
 
     public EtapaInputDto(String tipoEtapa, String descricaoEtapa, Integer duracaoMin, Double distanciaKm,
                          String fcAlvoEtapa, String ritmoAlvo, Integer repeticoes, Integer blocoRepeticoes,
                          List<EtapaInputDto> subEtapas) {
         this(tipoEtapa, descricaoEtapa, duracaoMin, distanciaKm, fcAlvoEtapa, ritmoAlvo, repeticoes,
-                blocoRepeticoes, subEtapas, null);
+                blocoRepeticoes, subEtapas, null, null);
+    }
+
+    public EtapaInputDto(String tipoEtapa, String descricaoEtapa, Integer duracaoMin, Double distanciaKm,
+                         String fcAlvoEtapa, String ritmoAlvo, Integer repeticoes, Integer blocoRepeticoes,
+                         List<EtapaInputDto> subEtapas, AlvoPrimario alvoPrimario) {
+        this(tipoEtapa, descricaoEtapa, duracaoMin, distanciaKm, fcAlvoEtapa, ritmoAlvo, repeticoes,
+                blocoRepeticoes, subEtapas, alvoPrimario, null);
     }
 }

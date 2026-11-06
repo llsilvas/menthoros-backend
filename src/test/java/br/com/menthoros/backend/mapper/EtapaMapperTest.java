@@ -76,6 +76,34 @@ class EtapaMapperTest {
 
             assertThat(etapa.getBlocoId()).isNull();
         }
+
+        @Test
+        @DisplayName("duracaoSeg atravessa o mapper: e a fonte da verdade da duracao quando chega")
+        void carregaDuracaoSeg() {
+            EtapaTreino etapa = mapper.toEntity(new EtapaInputDto(
+                    "INTERVALADO", "Tiro", 4, null, null, "4:10/km", 1, null, null, null, 250));
+            assertThat(etapa.getDuracaoSeg()).isEqualTo(250);
+        }
+
+        @Test
+        @DisplayName("sem duracaoSeg a etapa fica em minutos, como antes da V112")
+        void semDuracaoSeg() {
+            EtapaTreino etapa = mapper.toEntity(etapaInput(null, "4:00-4:10/km"));
+            assertThat(etapa.getDuracaoSeg()).isNull();
+            assertThat(etapa.getDuracaoMin()).isEqualTo(5);
+        }
+    }
+
+    @Nested
+    @DisplayName("toDto(EtapaTreino)")
+    class ToDto {
+        @Test
+        @DisplayName("devolve duracaoSeg ao lado de duracaoMin")
+        void devolveDuracaoSeg() {
+            EtapaTreino etapa = EtapaTreino.builder().tipoEtapa("INTERVALADO").duracaoMin(4).duracaoSeg(250).build();
+            assertThat(mapper.toDto(etapa).duracaoSeg()).isEqualTo(250);
+            assertThat(mapper.toDto(etapa).duracaoMin()).isEqualTo(4);
+        }
     }
 
     private EtapaInputDto etapaInput(String fcAlvoEtapa, String ritmoAlvo) {

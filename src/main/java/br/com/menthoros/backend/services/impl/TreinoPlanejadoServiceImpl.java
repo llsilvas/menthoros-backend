@@ -456,7 +456,8 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
                 repeticoes,
                 dto.blocoRepeticoes(),
                 null,
-                dto.alvoPrimario()
+                dto.alvoPrimario(),
+                dto.duracaoSeg()
         );
     }
 
@@ -509,6 +510,11 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
     private EtapaTreino buildEtapaSimples(EtapaInputDto dto, TreinoPlanejado treino,
                                           int ordem, UUID blocoId, Integer blocoRepeticoes) {
         EtapaTreino etapa = etapaMapper.toEntity(dto);
+        // O segundo e a fonte da verdade: o minuto enviado e ignorado. Sem piso de 1 — abaixo de
+        // 30 s fica 0, que os leitores em minutos tratam como ausente; o relogio usa o segundo.
+        if (dto.duracaoSeg() != null) {
+            etapa.setDuracaoMin(Math.round(dto.duracaoSeg() / 60f));
+        }
         etapa.setBlocoId(blocoId);
         etapa.setBlocoRepeticoes(blocoRepeticoes);
         etapa.setOrdem(ordem);
