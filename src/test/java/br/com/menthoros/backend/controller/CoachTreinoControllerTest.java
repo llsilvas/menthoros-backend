@@ -331,6 +331,6 @@ class CoachTreinoControllerTest {
                 editadoPeloCoach, adicionadoPeloCoach, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null, null, null,
                 null, null
         ,
-                false, null);
+                false, null, null, null, null);
     }
 }

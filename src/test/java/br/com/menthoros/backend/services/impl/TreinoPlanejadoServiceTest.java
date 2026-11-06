@@ -1584,7 +1584,7 @@ class TreinoPlanejadoServiceTest {
                 false, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null, null, null,
                 null, null
         ,
-                false, null);
+                false, null, null, null, null);
     }
 
     private TreinoPlanejadoOutputDto outputStub(UUID id, boolean editadoPeloCoach) {
@@ -1594,6 +1594,6 @@ class TreinoPlanejadoServiceTest {
                 false, null, TreinoExecucaoStatus.PENDENTE, null, null, null, null, null, null,
                 null, null
         ,
-                false, null);
+                false, null, null, null, null);
     }
 }
