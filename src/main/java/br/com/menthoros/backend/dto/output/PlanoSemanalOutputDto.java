@@ -92,7 +92,11 @@ public record PlanoSemanalOutputDto(
 
         @Schema(description = "Dias prescritos como descanso, com o motivo; vazio quando a semana é "
                 + "toda de treino ou o plano é anterior à feature")
-        List<RestDayOutputDto> restDays
+        List<RestDayOutputDto> restDays,
+
+        @Schema(description = "Canal do relógio do atleta (mesma resolução do perfil, revogada com ativo=false); "
+                + "só na listagem de semanas do coach, ausente quando o atleta nunca conectou")
+        AtletaPerfilCoachOutputDto.ConexaoCanalDto conexaoCanal
 ) {
 
     /**

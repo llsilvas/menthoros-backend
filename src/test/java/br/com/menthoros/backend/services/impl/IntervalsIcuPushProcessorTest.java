@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -72,7 +73,7 @@ class IntervalsIcuPushProcessorTest {
         conexao.setPlataforma(FonteDados.INTERVALS_ICU);
 
         processor = new IntervalsIcuPushProcessor(converter, workoutChannel, treinoPlanejadoRepository,
-                transactionManager);
+                transactionManager, java.time.Clock.systemDefaultZone());
     }
 
     @Nested
@@ -169,6 +170,36 @@ class IntervalsIcuPushProcessorTest {
             InOrder ordem = inOrder(treinoPlanejadoRepository, workoutChannel);
             ordem.verify(treinoPlanejadoRepository).saveAndFlush(t);
             ordem.verify(workoutChannel).push(eq(conexao), eq(workout), isNull());
+        }
+
+        @Test
+        @DisplayName("treino já SINCRONIZANDO dentro da janela: CLAIM_PERDIDO sem mutação nem push (coach-editar-treino-aprovado)")
+        void sincronizandoRecenteNaoReclama() {
+            TreinoPlanejado t = treino("123", StatusSincronizacao.SINCRONIZANDO);
+            t.setUltimaTentativaSincronizacao(java.time.LocalDateTime.now().minusMinutes(1));
+            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
+
+            IntervalsIcuPushProcessor.ResultadoPush resultado = processor.processar(treinoId, tenantId, conexao);
+
+            assertThat(resultado.tipo()).isEqualTo(IntervalsIcuPushProcessor.ProcessamentoResultado.CLAIM_PERDIDO);
+            verify(treinoPlanejadoRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(converter, workoutChannel);
+        }
+
+        @Test
+        @DisplayName("SINCRONIZANDO preso além da janela é reclamado de novo")
+        void sincronizandoPresoReclama() {
+            TreinoPlanejado t = treino("123", StatusSincronizacao.SINCRONIZANDO);
+            t.setUltimaTentativaSincronizacao(java.time.LocalDateTime.now()
+                    .minus(TreinoPlanejado.JANELA_SINCRONIZANDO).minusMinutes(1));
+            StructuredWorkout workout = workout();
+            when(treinoPlanejadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(t));
+            when(converter.converter(t)).thenReturn(Optional.of(conversao(workout)));
+            when(treinoPlanejadoRepository.saveAndFlush(t)).thenThrow(new OptimisticLockingFailureException("stale"));
+
+            processor.processar(treinoId, tenantId, conexao);
+
+            verify(treinoPlanejadoRepository).saveAndFlush(t);
         }
 
         @Test

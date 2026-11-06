@@ -37,6 +37,13 @@ public class EtapaTreino {
     @Column(name = "duracao_min")
     private Integer duracaoMin;
 
+    /**
+     * Fonte da verdade da duracao quando presente; duracaoMin e derivado dele (round, sem piso).
+     * Nulo em etapa gravada em minutos (IA, clientes antigos).
+     */
+    @Column(name = "duracao_seg")
+    private Integer duracaoSeg;
+
     @Column(name = "distancia_km", precision = 10, scale = 3)
     private BigDecimal distanciaKm;
 

@@ -40,13 +40,23 @@ public record EtapaTreinoDto(
         Integer blocoRepeticoes,
 
         @Schema(description = "Eixo que o relógio controla nesta etapa; nulo em etapa legada (derivado do conteúdo)")
-        AlvoPrimario alvoPrimario
+        AlvoPrimario alvoPrimario,
+
+        @Schema(description = "Duração da etapa em segundos; nula em etapa gravada em minutos", example = "250")
+        Integer duracaoSeg
 ) {
 
     public EtapaTreinoDto(Integer ordem, String tipoEtapa, String descricaoEtapa, Integer duracaoMin,
                           Double distanciaKm, String fcAlvoEtapa, String ritmoAlvo, Integer repeticoes,
                           UUID blocoId, Integer blocoRepeticoes) {
         this(ordem, tipoEtapa, descricaoEtapa, duracaoMin, distanciaKm, fcAlvoEtapa, ritmoAlvo, repeticoes,
-                blocoId, blocoRepeticoes, null);
+                blocoId, blocoRepeticoes, null, null);
+    }
+
+    public EtapaTreinoDto(Integer ordem, String tipoEtapa, String descricaoEtapa, Integer duracaoMin,
+                          Double distanciaKm, String fcAlvoEtapa, String ritmoAlvo, Integer repeticoes,
+                          UUID blocoId, Integer blocoRepeticoes, AlvoPrimario alvoPrimario) {
+        this(ordem, tipoEtapa, descricaoEtapa, duracaoMin, distanciaKm, fcAlvoEtapa, ritmoAlvo, repeticoes,
+                blocoId, blocoRepeticoes, alvoPrimario, null);
     }
 }

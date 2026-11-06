@@ -124,6 +124,40 @@ class IntervalsIcuWorkoutConverterTest {
         }
 
         @Test
+        @DisplayName("duracaoSeg vence o minuto no step; sem ele, minuto vezes 60")
+        void duracaoSegVenceMinuto() {
+            EtapaTreino comSegundos = etapa(1, "INTERVALADO", "Tiro 4:10", 4, null, "4:10/km", null, null, null);
+            comSegundos.setDuracaoSeg(250);
+            EtapaTreino soMinutos = etapa(2, "RECUPERACAO", "Trote", 4, null, null, null, null, null);
+            TreinoPlanejado treino = treino(TipoTreino.INTERVALADO, LocalDate.of(2026, 11, 5),
+                    Duration.ZERO, null, null, null, List.of(comSegundos, soMinutos));
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
+
+            assertThat(resultado.steps().get(0).durationSeconds()).isEqualTo(250);
+            assertThat(resultado.steps().get(1).durationSeconds()).isEqualTo(240);
+        }
+
+        @Test
+        @DisplayName("tiros de 4:10 e 4:20 nao viram a mesma etapa de um bloco so por terem o mesmo minuto")
+        void segundosDiferentesNaoInferemBloco() {
+            EtapaTreino t1 = etapa(1, "INTERVALADO", "Tiro", 4, null, "4:10/km", null, null, null);
+            t1.setDuracaoSeg(250);
+            EtapaTreino r1 = etapa(2, "RECUPERACAO", "Trote", 2, null, null, null, null, null);
+            EtapaTreino t2 = etapa(3, "INTERVALADO", "Tiro", 4, null, "4:10/km", null, null, null);
+            t2.setDuracaoSeg(260);
+            EtapaTreino r2 = etapa(4, "RECUPERACAO", "Trote", 2, null, null, null, null, null);
+            TreinoPlanejado treino = treino(TipoTreino.INTERVALADO, LocalDate.of(2026, 11, 5),
+                    Duration.ZERO, null, null, null, List.of(t1, r1, t2, r2));
+
+            StructuredWorkout resultado = converter.converter(treino).orElseThrow().workout();
+
+            assertThat(resultado.steps()).hasSize(4);
+            assertThat(resultado.steps().get(0).durationSeconds()).isEqualTo(250);
+            assertThat(resultado.steps().get(2).durationSeconds()).isEqualTo(260);
+        }
+
+        @Test
         @DisplayName("etapas iguais com alvoPrimario diferente não viram repetição")
         void alvoPrimarioDiferenteNaoAgrupa() {
             EtapaTreino a1 = etapa(1, "INTERVALADO", "Tiro", 1, null, "4:30-4:45", "150-160 bpm", null, null);

@@ -13,9 +13,7 @@ import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
-import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.repository.AtletaRepository;
-import br.com.menthoros.backend.repository.IntegracaoExternaRepository;
 import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
 import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
@@ -45,8 +43,10 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import br.com.menthoros.backend.services.helper.ApprovedWorkoutEditContext;
+import br.com.menthoros.backend.services.helper.ApprovedWorkoutEditPolicy.EditRejection;
 import java.util.function.Supplier;
 
 @Slf4j
@@ -70,8 +70,9 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     private final MeterRegistry meterRegistry;
     private final AthleteContractService athleteContractService;
     private final PlatformTransactionManager transactionManager;
-    private final IntegracaoExternaRepository integracaoExternaRepository;
     private final GarminConnectionService garminConnectionService;
+    private final PostApprovalEditCoordinator postApprovalEditCoordinator;
+    private final ApprovedWorkoutEditContext approvedWorkoutEditContext;
 
     /**
      * Transação própria para cada bloco degradável do perfil. Participando da transação do perfil,
@@ -146,7 +147,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
         long t4 = System.nanoTime();
         AtletaPerfilCoachOutputDto.PlanoVigenteDto planoVigente = buscarNullable("planoVigente", avisos,
-                () -> resolverPlanoVigente(atletaId, tenantId, melhoresEsforcosIntegracaoConectada));
+                () -> resolverPlanoVigente(atleta, tenantId, melhoresEsforcosIntegracaoConectada));
         log.debug("[perfil] plano: {}ms", ms(t4));
 
         long t5 = System.nanoTime();
@@ -190,7 +191,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
 
         // nulo sem aviso quando o atleta nunca conectou um canal
         AtletaPerfilCoachOutputDto.ConexaoCanalDto conexaoCanal = buscarNullable("conexaoCanal", avisos,
-                () -> resolverConexaoCanal(atletaId, tenantId));
+                () -> approvedWorkoutEditContext.conexaoCanal(atletaId, tenantId));
 
         return new AtletaPerfilCoachOutputDto(
                 atletaId,
@@ -218,22 +219,6 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                 relogio,
                 conexaoCanal
         );
-    }
-
-    private AtletaPerfilCoachOutputDto.ConexaoCanalDto resolverConexaoCanal(UUID atletaId, UUID tenantId) {
-        return integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
-                        atletaId, List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN), tenantId)
-                .map(i -> {
-                    boolean garmin = i.getPlataforma() == FonteDados.GARMIN;
-                    Set<String> scopes = i.getScopes() == null ? Set.of()
-                            : Set.of(i.getScopes().split(GarminConnectionServiceImpl.SEPARADOR_SCOPES));
-                    return new AtletaPerfilCoachOutputDto.ConexaoCanalDto(i.getPlataforma(), i.isAtivo(),
-                            scopes.contains(garmin ? GarminConnectionServiceImpl.WORKOUT_IMPORT : "CALENDAR:WRITE"),
-                            scopes.contains(garmin ? GarminConnectionServiceImpl.ACTIVITY_EXPORT : "ACTIVITY:READ"),
-                            i.getLastSyncError(),
-                            i.getUltimaSincronizacao());
-                })
-                .orElse(null);
     }
 
     private AtletaPerfilCoachOutputDto.RelogioDto resolverRelogio(UUID atletaId, UUID tenantId) {
@@ -314,7 +299,8 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
     }
 
     private AtletaPerfilCoachOutputDto.PlanoVigenteDto resolverPlanoVigente(
-            UUID atletaId, UUID tenantId, boolean atletaConectadoIntervalsIcu) {
+            Atleta atleta, UUID tenantId, boolean atletaConectadoIntervalsIcu) {
+        UUID atletaId = atleta.getId();
         Optional<PlanoSemanal> planoOpt = planoService.findPlanoVigenteRelevante(atletaId, tenantId);
         if (planoOpt.isEmpty()) return null;
 
@@ -326,6 +312,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
             // Separado do flag do intervals.icu, que também alimenta melhoresEsforcosIntegracaoConectada.
             boolean canalConectado = garminConnectionService.conexaoDeCanal(atletaId, tenantId).isPresent();
             LocalDateTime agora = LocalDateTime.now();
+            Function<TreinoPlanejado, Optional<EditRejection>> recusa = recusaDeEdicao(plano, atleta, tenantId);
             // conexão intervals.icu já resolvida pelo chamador (anti-N+1) e replicada em cada treino
             treinos = plano.getTreinosPlanejados().stream()
                     .sorted(Comparator.comparing(TreinoPlanejado::getDataTreino))
@@ -349,7 +336,10 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             tp.envioEmAndamento(agora),
                             // Vínculo em fetch join no findMostRecentRelevantPlano — sem ele, um SELECT por treino.
                             tp.getTreinoRealizado() != null ? tp.getTreinoRealizado().getId() : null,
-                            tp.getRitmoAlvo()))
+                            tp.getRitmoAlvo(),
+                            tp.getEditedAfterApprovalAt(),
+                            recusa.apply(tp).isEmpty(),
+                            recusa.apply(tp).map(Enum::name).orElse(null)))
                     .toList();
         } else {
             treinos = List.of();
@@ -364,6 +354,22 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
         );
     }
 
+    /**
+     * Mesma regra do PATCH (coach-editar-treino-aprovado, D1) para o lápis do front. Em revisão tudo
+     * é editável; em plano aprovado, uma consulta de relógio por perfil, nunca por treino. A recusa
+     * vai ao front para o rótulo do cadeado: ele não deduz o dia, que é o do atleta.
+     */
+    private Function<TreinoPlanejado, Optional<EditRejection>> recusaDeEdicao(
+            PlanoSemanal plano, Atleta atleta, UUID tenantId) {
+        if (plano.getReviewStatus() != PlanoReviewStatus.APROVADO) {
+            return tp -> Optional.empty();
+        }
+        // Sem a guarda de plano CONCLUIDO da listagem (D1): o perfil mantém o comportamento anterior.
+        ApprovedWorkoutEditContext.Resolved ctx = approvedWorkoutEditContext.forHasWatch(
+                atleta, postApprovalEditCoordinator.hasWatch(atleta.getId(), tenantId));
+        return ctx::recusaDaPolicySemGuardaDePlano;
+    }
+
     private List<EtapaTreinoDto> safeGetEtapasResumo(TreinoPlanejado tp) {
         try {
             List<EtapaTreino> etapas = tp.getEtapas();
@@ -374,7 +380,7 @@ public class CoachAthleteProfileServiceImpl implements CoachAthleteProfileServic
                             e.getDuracaoMin(),
                             e.getDistanciaKm() != null ? e.getDistanciaKm().doubleValue() : null,
                             e.getFcAlvoEtapa(), e.getRitmoAlvo(), e.getRepeticoes(),
-                            e.getBlocoId(), e.getBlocoRepeticoes(), e.getAlvoPrimario()))
+                            e.getBlocoId(), e.getBlocoRepeticoes(), e.getAlvoPrimario(), e.getDuracaoSeg()))
                     .toList();
         } catch (Exception e) {
             return null;

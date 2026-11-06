@@ -40,6 +40,22 @@ class LlmJsonSchemaBuilderTest {
     }
 
     @Test
+    @DisplayName("duracaoSeg nunca vai no schema da LLM: a IA prescreve em minutos inteiros")
+    void etapaSemDuracaoSeg() {
+        // add-etapa-duracao-segundos, D3: o schema sai por reflexao do DTO e enforceAllRequired torna
+        // todo campo obrigatorio. Se o campo entrar no EtapaTreinoLlmDto, a IA passa a ser obrigada a
+        // preenche-lo.
+        Map<String, Object> schema = builder.buildSchemaTightInlineOrDefs();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> etapas = (Map<String, Object>) treinoItemProperties(schema).get("etapas");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> etapaItems = (Map<String, Object>) etapas.get("items");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> etapaProps = (Map<String, Object>) etapaItems.get("properties");
+        assertThat(etapaProps).containsKey("duracaoMin").doesNotContainKey("duracaoSeg");
+    }
+
+    @Test
     @DisplayName("campos que a LLM de fato preenche continuam no schema")
     void schemaMantemCamposReaisDaLlm() {
         Map<String, Object> schema = builder.buildSchemaTightInlineOrDefs();

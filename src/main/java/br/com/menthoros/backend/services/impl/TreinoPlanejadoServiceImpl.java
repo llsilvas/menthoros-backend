@@ -12,6 +12,7 @@ import br.com.menthoros.backend.enums.FonteDados;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
+import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.EtapaMapper;
@@ -47,6 +48,7 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
     private final TreinoMapper treinoMapper;
     private final EtapaMapper etapaMapper;
     private final io.micrometer.core.instrument.MeterRegistry meterRegistry;
+    private final PostApprovalEditCoordinator postApprovalEditCoordinator;
 
     /**
      * Adiciona um treino manualmente ao plano durante a revisão do coach.
@@ -93,14 +95,21 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
     }
 
     /**
-     * Edita campos prescritos de um TreinoPlanejado dentro de um plano AGUARDANDO_REVISAO.
-     * Aplica patch semântico: apenas os campos não-nulos do DTO são alterados.
+     * Edita campos prescritos de um TreinoPlanejado de um plano AGUARDANDO_REVISAO ou APROVADO.
+     * Aplica patch semântico: apenas os campos não-nulos do DTO são alterados. Em plano APROVADO
+     * (coach-editar-treino-aprovado) a edição passa pela regra de editabilidade e, com canal
+     * conectado, reenvia só este treino ao relógio depois do commit.
      *
      * Idempotent: NO — altera o estado do treino a cada chamada.
      * Side Effects: Database update (TreinoPlanejado); quando a distância muda, também ajusta e
      * persiste volumePlanejadoKm/volumeAlvoKm do PlanoSemanal (mesmo agregado que
-     * adicionarTreino/excluirTreino mantêm).
+     * adicionarTreino/excluirTreino mantêm). Em plano APROVADO, marca editedAfterApprovalAt e, com
+     * canal, volta a sincronização a AGUARDANDO_RETRY e publica WorkoutEditedAfterApprovalEvent.
      * Tenant-aware: YES
+     *
+     * @throws DomainRuleViolationException plano em outro status, treino não editável ou resultado
+     *                                      não exportável ao relógio (422)
+     * @throws DomainConflictException      envio ao relógio em andamento (409)
      */
     @Override
     @Transactional
@@ -123,10 +132,13 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
                 .orElseThrow(() -> new DomainNotFoundException("Plano não encontrado: " + planoId));
 
         validarEstadoDoPlanoParaEdicao(plano);
+        boolean planoAprovado = plano.getReviewStatus() == PlanoReviewStatus.APROVADO;
 
         TreinoPlanejado treino = treinoPlanejadoRepository
                 .findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Treino não encontrado: " + treinoId));
+
+        String snapshotAntes = planoAprovado ? postApprovalEditCoordinator.checkBeforePatch(plano, treino) : null;
 
         BigDecimal distanciaAnterior = treino.getDistanciaKm();
         Duration duracaoAnterior = treino.getDuracaoMin();
@@ -134,7 +146,12 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
         aplicarPatch(treino, patch);
         recalcularTssSeNecessario(treino, patch, distanciaAnterior, duracaoAnterior);
 
-        treino.setEditadoPeloCoach(true);
+        if (planoAprovado) {
+            // editadoPeloCoach mede a revisão da proposta da IA; ajuste da semana real fica fora dela.
+            postApprovalEditCoordinator.applyAfterPatch(plano, treino, snapshotAntes, patch.editReason());
+        } else {
+            treino.setEditadoPeloCoach(true);
+        }
 
         TreinoPlanejado salvo = treinoPlanejadoRepository.save(treino);
 
@@ -167,6 +184,11 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
 
         PlanoSemanal plano = planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Plano não encontrado: " + planoId));
+        // Em plano aprovado o treino já foi ao relógio, e a exclusão apagaria em cascata o registro da
+        // edição pós-aprovação (coach-editar-treino-aprovado: excluir em plano aprovado é non-goal).
+        if (plano.getReviewStatus() == PlanoReviewStatus.APROVADO) {
+            throw new DomainRuleViolationException("Treino de plano aprovado não pode ser excluído.");
+        }
 
         log.info("Excluindo treino: planoId={}, treinoId={}", planoId, treinoId);
 
@@ -260,8 +282,10 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
     }
 
     private void validarEstadoDoPlanoParaEdicao(PlanoSemanal plano) {
-        if (plano.getReviewStatus() != PlanoReviewStatus.AGUARDANDO_REVISAO) {
-            throw new DomainRuleViolationException("Treino só pode ser editado quando o plano está aguardando revisão.");
+        if (plano.getReviewStatus() != PlanoReviewStatus.AGUARDANDO_REVISAO
+                && plano.getReviewStatus() != PlanoReviewStatus.APROVADO) {
+            throw new DomainRuleViolationException(
+                    "Treino só pode ser editado quando o plano está aguardando revisão ou aprovado.");
         }
     }
 
@@ -432,7 +456,8 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
                 repeticoes,
                 dto.blocoRepeticoes(),
                 null,
-                dto.alvoPrimario()
+                dto.alvoPrimario(),
+                dto.duracaoSeg()
         );
     }
 

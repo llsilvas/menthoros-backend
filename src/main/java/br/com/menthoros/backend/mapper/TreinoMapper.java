@@ -154,6 +154,10 @@ public interface TreinoMapper {
     // provaId: ManyToOne (FK deste lado), o proxy lazy resolve o id sem tocar o banco — mesmo
     // padrão de etapaPlanejadaId (fonte "etapaPlanejada.id") já usado neste mapper.
     @Mapping(target = "provaId", source = "prova.id")
+    // Edição em plano aprovado: só a listagem do coach preenche (ApprovedWorkoutEditContext); o atleta nunca vê.
+    @Mapping(target = "editable", ignore = true)
+    @Mapping(target = "editRejection", ignore = true)
+    @Mapping(target = "editedAfterApprovalAt", ignore = true)
     TreinoPlanejadoOutputDto toOutputDto(TreinoPlanejado treinoPlanejado);
 
     // Hibernate.isInitialized é insuficiente para @OneToOne(mappedBy=...) fora de sessão.
@@ -205,7 +209,7 @@ public interface TreinoMapper {
                             e.getDuracaoMin(),
                             e.getDistanciaKm() != null ? e.getDistanciaKm().doubleValue() : null,
                             e.getFcAlvoEtapa(), e.getRitmoAlvo(), e.getRepeticoes(),
-                            e.getBlocoId(), e.getBlocoRepeticoes(), e.getAlvoPrimario()
+                            e.getBlocoId(), e.getBlocoRepeticoes(), e.getAlvoPrimario(), e.getDuracaoSeg()
                     ))
                     .collect(Collectors.toList());
         } catch (Exception e) {

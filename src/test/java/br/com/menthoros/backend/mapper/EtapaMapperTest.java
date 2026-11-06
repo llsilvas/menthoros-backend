@@ -6,6 +6,8 @@ import br.com.menthoros.backend.entity.EtapaTreino;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -75,6 +77,44 @@ class EtapaMapperTest {
             EtapaTreino etapa = mapper.toEntity(etapaInput("140-150 bpm", "5:00-5:15/km"));
 
             assertThat(etapa.getBlocoId()).isNull();
+        }
+
+        @Test
+        @DisplayName("duracaoSeg e a fonte da verdade: duracaoMin e derivado e o minuto enviado e ignorado")
+        void carregaDuracaoSeg() {
+            EtapaTreino etapa = mapper.toEntity(new EtapaInputDto(
+                    "INTERVALADO", "Tiro", 7, null, null, "4:10/km", 1, null, null, null, 250));
+            assertThat(etapa.getDuracaoSeg()).isEqualTo(250);
+            assertThat(etapa.getDuracaoMin()).isEqualTo(4);
+        }
+
+        @ParameterizedTest(name = "{0} s -> duracaoMin {1}")
+        @CsvSource({"10, 0", "29, 0", "30, 1", "89, 1", "90, 2", "250, 4", "3600, 60"})
+        @DisplayName("round inteiro, sem piso: abaixo de 30 s fica 0")
+        void derivaMinutoSemPiso(int seg, int minEsperado) {
+            EtapaTreino etapa = mapper.toEntity(new EtapaInputDto(
+                    "INTERVALADO", "Tiro", null, null, null, null, 1, null, null, null, seg));
+            assertThat(etapa.getDuracaoMin()).isEqualTo(minEsperado);
+        }
+
+        @Test
+        @DisplayName("sem duracaoSeg a etapa fica em minutos, como antes da V112")
+        void semDuracaoSeg() {
+            EtapaTreino etapa = mapper.toEntity(etapaInput(null, "4:00-4:10/km"));
+            assertThat(etapa.getDuracaoSeg()).isNull();
+            assertThat(etapa.getDuracaoMin()).isEqualTo(5);
+        }
+    }
+
+    @Nested
+    @DisplayName("toDto(EtapaTreino)")
+    class ToDto {
+        @Test
+        @DisplayName("devolve duracaoSeg ao lado de duracaoMin")
+        void devolveDuracaoSeg() {
+            EtapaTreino etapa = EtapaTreino.builder().tipoEtapa("INTERVALADO").duracaoMin(4).duracaoSeg(250).build();
+            assertThat(mapper.toDto(etapa).duracaoSeg()).isEqualTo(250);
+            assertThat(mapper.toDto(etapa).duracaoMin()).isEqualTo(4);
         }
     }
 
