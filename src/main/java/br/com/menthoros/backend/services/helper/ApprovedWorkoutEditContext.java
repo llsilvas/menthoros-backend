@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.dto.output.AtletaPerfilCoachOutputDto.ConexaoCanalDto;
+import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.IntegracaoExterna;
 import br.com.menthoros.backend.entity.PlanoSemanal;
@@ -16,7 +17,9 @@ import org.jspecify.annotations.Nullable;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -40,9 +43,12 @@ public class ApprovedWorkoutEditContext {
     private final ApprovedWorkoutEditPolicy policy;
     private final IntegracaoExternaRepository integracaoExternaRepository;
 
-    /** Uma consulta de integração: dela saem {@code hasWatch} (ativa ou revogada) e a {@code conexaoCanal}. */
-    public Resolved resolve(Atleta atleta, UUID tenantId) {
-        Optional<IntegracaoExterna> integracao = buscarIntegracao(atleta.getId(), tenantId);
+    /**
+     * Uma consulta de integração: dela saem {@code hasWatch} (ativa ou revogada) e a {@code conexaoCanal}.
+     * O {@code atleta} só dá o fuso do "hoje"; nulo cai no fuso padrão.
+     */
+    public Resolved resolve(UUID atletaId, @Nullable Atleta atleta, UUID tenantId) {
+        Optional<IntegracaoExterna> integracao = buscarIntegracao(atletaId, tenantId);
         return new Resolved(atletaHojeResolver.hojeDe(atleta), integracao.isPresent(),
                 integracao.map(ApprovedWorkoutEditContext::toConexaoCanal).orElse(null), policy);
     }
@@ -82,6 +88,34 @@ public class ApprovedWorkoutEditContext {
                 return Evaluation.NOT_APPLICABLE;
             }
             return new Evaluation(true, recusaDaPolicySemGuardaDePlano(treino).orElse(null));
+        }
+
+        /**
+         * Listagem do coach (D3): {@code conexaoCanal} no plano; em plano APROVADO, {@code editedAfterApprovalAt}
+         * e, se não CONCLUIDO, {@code editable}/{@code editRejection} por treino, casado com a entidade pelo id.
+         * Treino do DTO sem par na entidade fica como veio.
+         */
+        public PlanoSemanalOutputDto enrich(PlanoSemanalOutputDto dto, PlanoSemanal plano) {
+            PlanoSemanalOutputDto.PlanoSemanalOutputDtoBuilder builder = dto.toBuilder().conexaoCanal(conexaoCanal);
+            if (plano.getReviewStatus() != PlanoReviewStatus.APROVADO || dto.treinosPlanejados() == null
+                    || plano.getTreinosPlanejados() == null) {
+                return builder.build();
+            }
+            Map<UUID, TreinoPlanejado> porId = new HashMap<>();
+            plano.getTreinosPlanejados().forEach(t -> porId.put(t.getId(), t));
+            return builder.treinosPlanejados(dto.treinosPlanejados().stream()
+                            .map(t -> {
+                                TreinoPlanejado entidade = t.id() != null ? porId.get(t.id()) : null;
+                                if (entidade == null) return t;
+                                Evaluation e = evaluate(plano, entidade);
+                                return t.toBuilder()
+                                        .editable(e.editable())
+                                        .editRejection(e.editRejection())
+                                        .editedAfterApprovalAt(entidade.getEditedAfterApprovalAt())
+                                        .build();
+                            })
+                            .toList())
+                    .build();
         }
 
         /** Só a policy, sem olhar o plano: o perfil decide a guarda de plano por conta própria. */

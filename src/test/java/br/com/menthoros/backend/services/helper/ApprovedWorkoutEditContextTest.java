@@ -67,7 +67,7 @@ class ApprovedWorkoutEditContextTest {
         void semConexao() {
             semCanal();
 
-            ApprovedWorkoutEditContext.Resolved resolved = context.resolve(atleta, tenantId);
+            ApprovedWorkoutEditContext.Resolved resolved = context.resolve(atleta.getId(), atleta, tenantId);
 
             assertThat(resolved.hoje()).isEqualTo(HOJE);
             assertThat(resolved.hasWatch()).isFalse();
@@ -79,7 +79,7 @@ class ApprovedWorkoutEditContextTest {
         void garminAtivo() {
             canal(integracao(FonteDados.GARMIN, true, "WORKOUT_IMPORT,ACTIVITY_EXPORT"));
 
-            ApprovedWorkoutEditContext.Resolved resolved = context.resolve(atleta, tenantId);
+            ApprovedWorkoutEditContext.Resolved resolved = context.resolve(atleta.getId(), atleta, tenantId);
 
             assertThat(resolved.hasWatch()).isTrue();
             assertThat(resolved.conexaoCanal())
@@ -91,7 +91,7 @@ class ApprovedWorkoutEditContextTest {
         void intervalsAtivo() {
             canal(integracao(FonteDados.INTERVALS_ICU, true, "CALENDAR:WRITE"));
 
-            ConexaoCanalDto canal = context.resolve(atleta, tenantId).conexaoCanal();
+            ConexaoCanalDto canal = context.resolve(atleta.getId(), atleta, tenantId).conexaoCanal();
 
             assertThat(canal).isEqualTo(new ConexaoCanalDto(FonteDados.INTERVALS_ICU, true, true, false, null, null));
         }
@@ -101,7 +101,7 @@ class ApprovedWorkoutEditContextTest {
         void revogada() {
             canal(integracao(FonteDados.GARMIN, false, null));
 
-            ApprovedWorkoutEditContext.Resolved resolved = context.resolve(atleta, tenantId);
+            ApprovedWorkoutEditContext.Resolved resolved = context.resolve(atleta.getId(), atleta, tenantId);
 
             assertThat(resolved.hasWatch()).isTrue();
             assertThat(resolved.conexaoCanal().ativo()).isFalse();
@@ -111,7 +111,7 @@ class ApprovedWorkoutEditContextTest {
         @DisplayName("uma consulta de integração para N planos e treinos")
         void umaConsultaParaNTreinos() {
             semCanal();
-            ApprovedWorkoutEditContext.Resolved resolved = context.resolve(atleta, tenantId);
+            ApprovedWorkoutEditContext.Resolved resolved = context.resolve(atleta.getId(), atleta, tenantId);
             PlanoSemanal plano = plano(PlanoReviewStatus.APROVADO, PlanoStatus.EM_ANDAMENTO);
 
             for (int i = 0; i < 5; i++) {
@@ -132,7 +132,7 @@ class ApprovedWorkoutEditContextTest {
         @DisplayName("plano em revisão: não se aplica (campos omitidos)")
         void revisaoNaoSeAplica() {
             semCanal();
-            Evaluation e = context.resolve(atleta, tenantId).evaluate(
+            Evaluation e = context.resolve(atleta.getId(), atleta, tenantId).evaluate(
                     plano(PlanoReviewStatus.AGUARDANDO_REVISAO, PlanoStatus.EM_ANDAMENTO),
                     treino(TreinoExecucaoStatus.PENDENTE, HOJE.plusDays(1)));
 
@@ -145,7 +145,7 @@ class ApprovedWorkoutEditContextTest {
         @DisplayName("plano APROVADO e CONCLUIDO: não se aplica, mesmo com treino futuro pendente")
         void concluidoNaoSeAplica() {
             semCanal();
-            Evaluation e = context.resolve(atleta, tenantId).evaluate(
+            Evaluation e = context.resolve(atleta.getId(), atleta, tenantId).evaluate(
                     plano(PlanoReviewStatus.APROVADO, PlanoStatus.CONCLUIDO),
                     treino(TreinoExecucaoStatus.PENDENTE, HOJE.plusDays(1)));
 
@@ -204,14 +204,14 @@ class ApprovedWorkoutEditContextTest {
         @DisplayName("qualquer review diferente de APROVADO: não se aplica")
         void naoAprovadoNaoSeAplica(PlanoReviewStatus review) {
             semCanal();
-            Evaluation e = context.resolve(atleta, tenantId).evaluate(
+            Evaluation e = context.resolve(atleta.getId(), atleta, tenantId).evaluate(
                     plano(review, PlanoStatus.EM_ANDAMENTO), treino(TreinoExecucaoStatus.PENDENTE, HOJE.minusDays(3)));
 
             assertThat(e).isEqualTo(Evaluation.NOT_APPLICABLE);
         }
 
         private Evaluation aprovado(TreinoPlanejado treino) {
-            return context.resolve(atleta, tenantId)
+            return context.resolve(atleta.getId(), atleta, tenantId)
                     .evaluate(plano(PlanoReviewStatus.APROVADO, PlanoStatus.EM_ANDAMENTO), treino);
         }
     }

@@ -99,7 +99,8 @@ class PlanoServiceTenantTest {
                 treinoRealizadoRepository, planoSemanalMapper, eventPublisher, aiWorkoutAnalysisRepository,
                 workoutAnalysisProperties, plannerShadowService,
                 new io.micrometer.core.instrument.simple.SimpleMeterRegistry(),
-                mock(br.com.menthoros.backend.services.helper.LlmCallLedger.class));
+                mock(br.com.menthoros.backend.services.helper.LlmCallLedger.class),
+                mock(br.com.menthoros.backend.services.helper.ApprovedWorkoutEditContext.class));
     }
 
     private UUID tenantA;

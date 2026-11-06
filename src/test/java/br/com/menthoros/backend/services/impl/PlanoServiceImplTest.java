@@ -136,6 +136,8 @@ class PlanoServiceImplTest {
     private br.com.menthoros.backend.services.helper.PlanGenerationPersister persister;
     @org.mockito.Mock
     private br.com.menthoros.backend.services.plano.ProvaNoPlanoService provaNoPlanoService;
+    @Mock
+    private br.com.menthoros.backend.repository.IntegracaoExternaRepository integracaoExternaRepository;
     private PlanoServiceImpl planoService;
     private io.micrometer.core.instrument.simple.SimpleMeterRegistry meterRegistry;
 
@@ -165,7 +167,13 @@ class PlanoServiceImplTest {
         planoService = new PlanoServiceImpl(iaService, llmConcurrencyLimiter, contextLoader, persister, planoSemanalRepository,
                 treinoRealizadoRepository, planoSemanalMapper, eventPublisher, aiWorkoutAnalysisRepository,
                 workoutAnalysisProperties, plannerShadowService,
-                meterRegistry, llmCallLedger);
+                meterRegistry, llmCallLedger,
+                // Contexto real sobre o repositório mockado; hoje = 2026-11-05 em São Paulo
+                new br.com.menthoros.backend.services.helper.ApprovedWorkoutEditContext(
+                        new br.com.menthoros.backend.services.helper.AtletaHojeResolver(java.time.Clock.fixed(
+                                java.time.Instant.parse("2026-11-05T15:00:00Z"), java.time.ZoneOffset.UTC)),
+                        new br.com.menthoros.backend.services.helper.ApprovedWorkoutEditPolicy(),
+                        integracaoExternaRepository));
 
         tenantId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
@@ -1886,6 +1894,203 @@ class PlanoServiceImplTest {
             assertThat(planoService.listarSemanasDoAtleta(atletaId)).isEmpty();
             verifyNoInteractions(planoSemanalMapper);
         }
+
+        // ===== Edição de treino aprovado (editar-treino-aprovado-planos-dialog, D2/D3) =====
+
+        private final LocalDate hoje = LocalDate.of(2026, 11, 5);
+        private final List<br.com.menthoros.backend.enums.FonteDados> canais = List.of(
+                br.com.menthoros.backend.enums.FonteDados.INTERVALS_ICU, br.com.menthoros.backend.enums.FonteDados.GARMIN);
+
+        private TreinoPlanejado treino(TreinoExecucaoStatus status, LocalDate data) {
+            TreinoPlanejado t = new TreinoPlanejado();
+            t.setId(UUID.randomUUID());
+            t.setStatusTreino(status);
+            t.setDataTreino(data);
+            return t;
+        }
+
+        private PlanoSemanal plano(Atleta atleta, PlanoReviewStatus review, PlanoStatus status, TreinoPlanejado... treinos) {
+            PlanoSemanal p = criarPlanoSemanalMock();
+            p.setAtleta(atleta);
+            p.setReviewStatus(review);
+            p.setStatus(status);
+            p.setTreinosPlanejados(List.of(treinos));
+            when(planoSemanalMapper.toOutputDto(p)).thenReturn(planoSemanalOutputDtoStub(0.0).toBuilder()
+                    .reviewStatus(review)
+                    .treinosPlanejados(java.util.Arrays.stream(treinos)
+                            .map(t -> br.com.menthoros.backend.dto.output.TreinoPlanejadoOutputDto.builder()
+                                    .id(t.getId()).build())
+                            .toList())
+                    .build());
+            return p;
+        }
+
+        private Atleta atleta() {
+            Atleta a = new Atleta();
+            a.setId(UUID.randomUUID());
+            return a;
+        }
+
+        private void semanas(Atleta atleta, List<PlanoSemanal> ativos, List<PlanoSemanal> concluidos) {
+            when(planoSemanalRepository.findAtivosPorAtleta(atleta.getId(), tenantId)).thenReturn(ativos);
+            when(planoSemanalRepository.findConcluidosPorAtleta(
+                    atleta.getId(), tenantId, org.springframework.data.domain.PageRequest.of(0, 4)))
+                    .thenReturn(concluidos);
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    any(), any(), any(), any())).thenReturn(List.of());
+        }
+
+        private void canal(Atleta atleta, br.com.menthoros.backend.entity.IntegracaoExterna integracao) {
+            when(integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
+                    atleta.getId(), canais, tenantId)).thenReturn(Optional.ofNullable(integracao));
+        }
+
+        private br.com.menthoros.backend.entity.IntegracaoExterna garmin(boolean ativo) {
+            var i = new br.com.menthoros.backend.entity.IntegracaoExterna();
+            i.setPlataforma(br.com.menthoros.backend.enums.FonteDados.GARMIN);
+            i.setAtivo(ativo);
+            i.setScopes(ativo ? "WORKOUT_IMPORT,ACTIVITY_EXPORT" : null);
+            return i;
+        }
+
+        @Test
+        @DisplayName("plano APROVADO em andamento: editable e editRejection por treino, editedAfterApprovalAt do treino editado")
+        void aprovadoEmAndamento() {
+            Atleta atleta = atleta();
+            TreinoPlanejado amanha = treino(TreinoExecucaoStatus.PENDENTE, hoje.plusDays(1));
+            TreinoPlanejado ontem = treino(TreinoExecucaoStatus.PENDENTE, hoje.minusDays(1));
+            TreinoPlanejado realizado = treino(TreinoExecucaoStatus.REALIZADO, hoje.plusDays(2));
+            java.time.Instant editadoEm = java.time.Instant.parse("2026-11-04T10:00:00Z");
+            amanha.setEditedAfterApprovalAt(editadoEm);
+            semanas(atleta, List.of(plano(atleta, PlanoReviewStatus.APROVADO, PlanoStatus.EM_ANDAMENTO,
+                    amanha, ontem, realizado)), List.of());
+            canal(atleta, null);
+
+            var treinos = planoService.listarSemanasDoAtleta(atleta.getId()).get(0).treinosPlanejados();
+
+            assertThat(treinos.get(0).editable()).isTrue();
+            assertThat(treinos.get(0).editRejection()).isNull();
+            assertThat(treinos.get(0).editedAfterApprovalAt()).isEqualTo(editadoEm);
+            assertThat(treinos.get(1).editable()).isFalse();
+            assertThat(treinos.get(1).editRejection()).isEqualTo("PAST_DAY");
+            assertThat(treinos.get(1).editedAfterApprovalAt()).isNull();
+            assertThat(treinos.get(2).editable()).isFalse();
+            assertThat(treinos.get(2).editRejection()).isEqualTo("NOT_PENDING");
+        }
+
+        @Test
+        @DisplayName("plano APROVADO e CONCLUIDO: sem editable/editRejection, mas com editedAfterApprovalAt")
+        void aprovadoConcluido() {
+            Atleta atleta = atleta();
+            TreinoPlanejado editado = treino(TreinoExecucaoStatus.PENDENTE, hoje.plusDays(1));
+            java.time.Instant editadoEm = java.time.Instant.parse("2026-11-04T10:00:00Z");
+            editado.setEditedAfterApprovalAt(editadoEm);
+            semanas(atleta, List.of(), List.of(plano(atleta, PlanoReviewStatus.APROVADO, PlanoStatus.CONCLUIDO, editado)));
+            canal(atleta, null);
+
+            var t = planoService.listarSemanasDoAtleta(atleta.getId()).get(0).treinosPlanejados().get(0);
+
+            assertThat(t.editable()).isNull();
+            assertThat(t.editRejection()).isNull();
+            assertThat(t.editedAfterApprovalAt()).isEqualTo(editadoEm);
+        }
+
+        @Test
+        @DisplayName("plano AGUARDANDO_REVISAO: nenhum campo novo no JSON do treino (omitidos, não false)")
+        void emRevisaoOmiteCampos() throws Exception {
+            Atleta atleta = atleta();
+            TreinoPlanejado t = treino(TreinoExecucaoStatus.PENDENTE, hoje.plusDays(1));
+            t.setEditedAfterApprovalAt(java.time.Instant.parse("2026-11-04T10:00:00Z"));
+            semanas(atleta, List.of(plano(atleta, PlanoReviewStatus.AGUARDANDO_REVISAO, PlanoStatus.EM_ANDAMENTO, t)),
+                    List.of());
+            canal(atleta, null);
+
+            var treino = planoService.listarSemanasDoAtleta(atleta.getId()).get(0).treinosPlanejados().get(0);
+            String json = new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()
+                    .writeValueAsString(treino);
+
+            assertThat(json).doesNotContain("editable", "editRejection", "editedAfterApprovalAt");
+        }
+
+        @Test
+        @DisplayName("conexaoCanal Garmin ativa em cada plano, igual à do perfil")
+        void conexaoCanalAtiva() {
+            Atleta atleta = atleta();
+            semanas(atleta, List.of(plano(atleta, PlanoReviewStatus.APROVADO, PlanoStatus.EM_ANDAMENTO)),
+                    List.of(plano(atleta, PlanoReviewStatus.APROVADO, PlanoStatus.CONCLUIDO)));
+            canal(atleta, garmin(true));
+
+            var resultado = planoService.listarSemanasDoAtleta(atleta.getId());
+
+            assertThat(resultado).allSatisfy(p -> assertThat(p.conexaoCanal()).isEqualTo(
+                    new br.com.menthoros.backend.dto.output.AtletaPerfilCoachOutputDto.ConexaoCanalDto(
+                            br.com.menthoros.backend.enums.FonteDados.GARMIN, true, true, true, null, null)));
+        }
+
+        @Test
+        @DisplayName("conexão revogada: conexaoCanal ativo=false e treino de hoje TODAY_ON_WATCH")
+        void conexaoRevogadaComTreinoDeHoje() {
+            Atleta atleta = atleta();
+            semanas(atleta, List.of(plano(atleta, PlanoReviewStatus.APROVADO, PlanoStatus.EM_ANDAMENTO,
+                    treino(TreinoExecucaoStatus.PENDENTE, hoje))), List.of());
+            canal(atleta, garmin(false));
+
+            var plano = planoService.listarSemanasDoAtleta(atleta.getId()).get(0);
+
+            assertThat(plano.conexaoCanal().ativo()).isFalse();
+            assertThat(plano.treinosPlanejados().get(0).editable()).isFalse();
+            assertThat(plano.treinosPlanejados().get(0).editRejection()).isEqualTo("TODAY_ON_WATCH");
+        }
+
+        @Test
+        @DisplayName("sem conexão: conexaoCanal omitido e treino de hoje editável")
+        void semConexao() {
+            Atleta atleta = atleta();
+            semanas(atleta, List.of(plano(atleta, PlanoReviewStatus.APROVADO, PlanoStatus.EM_ANDAMENTO,
+                    treino(TreinoExecucaoStatus.PENDENTE, hoje))), List.of());
+            canal(atleta, null);
+
+            var plano = planoService.listarSemanasDoAtleta(atleta.getId()).get(0);
+
+            assertThat(plano.conexaoCanal()).isNull();
+            assertThat(plano.treinosPlanejados().get(0).editable()).isTrue();
+        }
+
+        @Test
+        @DisplayName("uma consulta de integração por requisição, para três semanas com quantidades diferentes de treinos")
+        void umaConsultaDeIntegracaoPorRequisicao() {
+            Atleta atleta = atleta();
+            semanas(atleta, List.of(
+                    plano(atleta, PlanoReviewStatus.APROVADO, PlanoStatus.EM_ANDAMENTO,
+                            treino(TreinoExecucaoStatus.PENDENTE, hoje.plusDays(1))),
+                    plano(atleta, PlanoReviewStatus.APROVADO, PlanoStatus.EM_ANDAMENTO,
+                            treino(TreinoExecucaoStatus.PENDENTE, hoje.plusDays(2)),
+                            treino(TreinoExecucaoStatus.PENDENTE, hoje.plusDays(3))),
+                    plano(atleta, PlanoReviewStatus.APROVADO, PlanoStatus.EM_ANDAMENTO,
+                            treino(TreinoExecucaoStatus.PENDENTE, hoje.plusDays(4)),
+                            treino(TreinoExecucaoStatus.PENDENTE, hoje.plusDays(5)),
+                            treino(TreinoExecucaoStatus.PENDENTE, hoje.plusDays(6)))), List.of());
+            canal(atleta, garmin(true));
+
+            planoService.listarSemanasDoAtleta(atleta.getId());
+
+            verify(integracaoExternaRepository, times(1))
+                    .findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("atleta sem plano: nenhuma consulta de integração")
+        void semPlanoSemConsultaDeIntegracao() {
+            Atleta atleta = atleta();
+            when(planoSemanalRepository.findAtivosPorAtleta(atleta.getId(), tenantId)).thenReturn(List.of());
+            when(planoSemanalRepository.findConcluidosPorAtleta(
+                    atleta.getId(), tenantId, org.springframework.data.domain.PageRequest.of(0, 4)))
+                    .thenReturn(List.of());
+
+            planoService.listarSemanasDoAtleta(atleta.getId());
+
+            verifyNoInteractions(integracaoExternaRepository);
+        }
     }
 
     @Nested
@@ -1931,6 +2136,27 @@ class PlanoServiceImplTest {
             assertEquals(true, resultado.treinosPlanejados().get(0).analiseAtletaDisponivel());
             assertEquals(false, resultado.treinosPlanejados().get(1).analiseAtletaDisponivel());
             assertEquals(false, resultado.treinosPlanejados().get(2).analiseAtletaDisponivel());
+        }
+
+        @Test
+        @DisplayName("caminho do atleta não usa o contexto de edição nem expõe os campos novos")
+        void naoEnriqueceComEdicao() {
+            UUID atletaId = UUID.randomUUID();
+            PlanoSemanal plano = criarPlanoSemanalMock();
+            plano.setReviewStatus(PlanoReviewStatus.APROVADO);
+            when(planoSemanalRepository.findVisiveisParaAtletaOrderBySemanaInicioDesc(atletaId, tenantId))
+                    .thenReturn(List.of(plano));
+            when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                    any(), any(), any(), any())).thenReturn(List.of());
+            when(planoSemanalMapper.toOutputDto(plano)).thenReturn(planoSemanalOutputDtoStub(0.0).toBuilder()
+                    .treinosPlanejados(List.of(treinoDto(null)))
+                    .build());
+
+            PlanoSemanalOutputDto resultado = planoService.buscarPlanoPorAtleta(atletaId, true);
+
+            assertThat(resultado.conexaoCanal()).isNull();
+            assertThat(resultado.treinosPlanejados().get(0).editable()).isNull();
+            verifyNoInteractions(integracaoExternaRepository);
         }
 
         @Test
