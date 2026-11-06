@@ -234,6 +234,28 @@ class CoachTreinoControllerTest {
         }
 
         @Test
+        @DisplayName("dataTreino no corpo chega ao service como LocalDate (coach-alterar-data-treino)")
+        void desserializaDataTreino() throws Exception {
+            when(treinoPlanejadoService.editarTreino(eq(planoId), eq(treinoId), any()))
+                    .thenReturn(outputStub(treinoId, true, false));
+            stubUsuarioAtivo();
+
+            mockMvc.perform(patch("/api/v1/coach/planos/{planoId}/treinos/{treinoId}", planoId, treinoId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"dataTreino": "2026-07-04"}
+                                    """)
+                            .with(tecnicoJwt()))
+                    .andExpect(status().isOk());
+
+            org.mockito.ArgumentCaptor<br.com.menthoros.backend.dto.input.TreinoPlanejadoPatchDto> captor =
+                    org.mockito.ArgumentCaptor.forClass(br.com.menthoros.backend.dto.input.TreinoPlanejadoPatchDto.class);
+            org.mockito.Mockito.verify(treinoPlanejadoService).editarTreino(eq(planoId), eq(treinoId), captor.capture());
+            org.assertj.core.api.Assertions.assertThat(captor.getValue().dataTreino())
+                    .isEqualTo(java.time.LocalDate.of(2026, 7, 4));
+        }
+
+        @Test
         @DisplayName("propriedade desconhecida no corpo e ignorada: front novo contra backend antigo nao da 400")
         void ignoraPropriedadeDesconhecida() throws Exception {
             // add-etapa-duracao-segundos: o front passa a enviar duracaoSeg por etapa antes de todo

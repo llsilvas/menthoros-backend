@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -138,15 +139,26 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
                 .findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Treino não encontrado: " + treinoId));
 
-        String snapshotAntes = planoAprovado ? postApprovalEditCoordinator.checkBeforePatch(plano, treino) : null;
+        LocalDate novaData = patch.dataTreino() != null && !patch.dataTreino().equals(treino.getDataTreino())
+                ? patch.dataTreino() : null;
+        if (novaData != null) {
+            validarDataDentroDoPlano(plano, novaData);
+        }
+        String snapshotAntes = planoAprovado
+                ? postApprovalEditCoordinator.checkBeforePatch(plano, treino, novaData) : null;
 
         BigDecimal distanciaAnterior = treino.getDistanciaKm();
         Duration duracaoAnterior = treino.getDuracaoMin();
 
+        if (novaData != null) {
+            moverTreinoParaData(plano, treino, novaData, tenantId);
+        }
         aplicarPatch(treino, patch);
         recalcularTssSeNecessario(treino, patch, distanciaAnterior, duracaoAnterior);
 
-        if (planoAprovado) {
+        if (planoAprovado && postApprovalEditCoordinator.inalterado(treino, snapshotAntes)) {
+            log.info("Patch sem mudança em plano aprovado, sem reenvio: treinoId={}, tenantId={}", treinoId, tenantId);
+        } else if (planoAprovado) {
             // editadoPeloCoach mede a revisão da proposta da IA; ajuste da semana real fica fora dela.
             postApprovalEditCoordinator.applyAfterPatch(plano, treino, snapshotAntes, patch.editReason());
         } else {
@@ -203,7 +215,7 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
             plano.getTreinosPlanejados().removeIf(t -> treinoId.equals(t.getId()));
         }
         ajustarVolumePlano(plano, treinoPlanejado.getDistanciaKm(), false);
-        avisarSeDiaFicouSemPrescricao(plano, treinoPlanejado, tenantId);
+        avisarSeDiaFicouSemPrescricao(plano, treinoPlanejado.getDiaSemana(), treinoPlanejado.getId(), tenantId);
         planoSemanalRepository.save(plano);
 
         log.info("Treino excluido com sucesso: planoId={}, treinoId={}", planoId, treinoId);
@@ -228,12 +240,11 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
      * achado do /qa). Aqui é decisão explícita do treinador, não omissão da IA, então o plano não é
      * rejeitado: fica registrado no log e no contador, para a frequência real não cair sem ninguém ver.
      */
-    private void avisarSeDiaFicouSemPrescricao(PlanoSemanal plano, TreinoPlanejado excluido, UUID tenantId) {
-        DiaSemana dia = excluido.getDiaSemana();
+    private void avisarSeDiaFicouSemPrescricao(PlanoSemanal plano, DiaSemana dia, UUID treinoIgnorado, UUID tenantId) {
         if (dia == null) return;
 
         boolean sobrouTreinoNoDia = plano.getTreinosPlanejados() != null && plano.getTreinosPlanejados().stream()
-                .anyMatch(t -> !t.getId().equals(excluido.getId()) && dia.equals(t.getDiaSemana()));
+                .anyMatch(t -> !t.getId().equals(treinoIgnorado) && dia.equals(t.getDiaSemana()));
         boolean temDescansoNoDia = plano.getRestDaysOuVazio().stream()
                 .anyMatch(d -> dia.name().equalsIgnoreCase(d.dayOfWeek()));
 
@@ -268,17 +279,37 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
             throw new DomainRuleViolationException(
                     "Plano não está em revisão. Status atual: " + plano.getReviewStatus());
         }
-        if (dto.dataTreino().isBefore(plano.getSemanaInicio())
-                || dto.dataTreino().isAfter(plano.getSemanaFim())) {
-            throw new DomainRuleViolationException(
-                    "Data do treino fora do intervalo do plano: " + dto.dataTreino()
-                    + " não está entre " + plano.getSemanaInicio() + " e " + plano.getSemanaFim());
-        }
+        validarDataDentroDoPlano(plano, dto.dataTreino());
         long totalTreinos = treinoPlanejadoRepository.countByPlanoSemanalIdAndTenantId(plano.getId(), tenantId);
         if (totalTreinos >= LIMITE_TREINOS_POR_SEMANA) {
             throw new DomainRuleViolationException("Limite de " + LIMITE_TREINOS_POR_SEMANA
                     + " treinos por semana atingido");
         }
+    }
+
+    /** Regra única de semana fechada, para a adição e para a mudança de data na edição. */
+    private void validarDataDentroDoPlano(PlanoSemanal plano, LocalDate data) {
+        if (data.isBefore(plano.getSemanaInicio()) || data.isAfter(plano.getSemanaFim())) {
+            throw new DomainRuleViolationException(
+                    "Data do treino fora do intervalo do plano: " + data
+                    + " não está entre " + plano.getSemanaInicio() + " e " + plano.getSemanaFim());
+        }
+    }
+
+    /**
+     * Mover de dia tem os mesmos efeitos de adicionar no destino e excluir na origem: o descanso do
+     * destino sai (discordância explícita do treinador) e a origem sem prescrição fica registrada.
+     * O volume do plano não muda. A data já foi validada contra a semana do plano.
+     */
+    private void moverTreinoParaData(PlanoSemanal plano, TreinoPlanejado treino, LocalDate novaData, UUID tenantId) {
+        DiaSemana diaOrigem = treino.getDiaSemana();
+        DiaSemana diaDestino = Utils.converterDayOfWeekParaDiaSemana(novaData.getDayOfWeek());
+        log.info("Movendo treino de dia: treinoId={}, de={}, para={}, tenantId={}",
+                treino.getId(), treino.getDataTreino(), novaData, tenantId);
+        treino.setDataTreino(novaData);
+        treino.setDiaSemana(diaDestino);
+        removerDescansoDoDia(plano, diaDestino);
+        avisarSeDiaFicouSemPrescricao(plano, diaOrigem, treino.getId(), tenantId);
     }
 
     private void validarEstadoDoPlanoParaEdicao(PlanoSemanal plano) {
