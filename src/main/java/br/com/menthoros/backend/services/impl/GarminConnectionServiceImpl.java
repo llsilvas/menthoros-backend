@@ -30,9 +30,9 @@ import java.util.stream.Collectors;
 public class GarminConnectionServiceImpl implements GarminConnectionService {
 
     private static final FonteDados GARMIN = FonteDados.GARMIN;
-    static final String WORKOUT_IMPORT = "WORKOUT_IMPORT";
-    static final String ACTIVITY_EXPORT = "ACTIVITY_EXPORT";
-    static final String SEPARADOR_SCOPES = ",";
+    public static final String WORKOUT_IMPORT = "WORKOUT_IMPORT";
+    public static final String ACTIVITY_EXPORT = "ACTIVITY_EXPORT";
+    public static final String SEPARADOR_SCOPES = ",";
 
     private final IntegracaoExternaRepository integracaoRepository;
     private final IntervalsIcuConnectionService intervalsIcuConnectionService;

@@ -65,6 +65,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.time.ZoneId;
 import java.time.Clock;
+import br.com.menthoros.backend.services.helper.ApprovedWorkoutEditContext;
 import br.com.menthoros.backend.services.helper.ApprovedWorkoutEditPolicy;
 import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 
@@ -133,9 +134,10 @@ class CoachAthleteProfileServiceImplTest {
                 atletaRepository, atletaProgressService, coachAttentionQueueService, sugestaoCoachService,
                 planoService, planoMetadadosRepository, perfilOnboardingAtletaRepository, provaRepository, provaMapper, treinoRealizadoRepository,
                 intervalsIcuConnectionService, thresholdInferenceService, melhorEsforcoService, meterRegistry,
-                athleteContractService, transactionManager, integracaoExternaRepository, garminConnectionService,
-                new AtletaHojeResolver(Clock.fixed(Instant.parse("2026-06-17T15:00:00Z"), ZoneId.of("America/Sao_Paulo"))),
-                new ApprovedWorkoutEditPolicy(), postApprovalEditCoordinator);
+                athleteContractService, transactionManager, garminConnectionService, postApprovalEditCoordinator,
+                new ApprovedWorkoutEditContext(
+                        new AtletaHojeResolver(Clock.fixed(Instant.parse("2026-06-17T15:00:00Z"), ZoneId.of("America/Sao_Paulo"))),
+                        new ApprovedWorkoutEditPolicy(), integracaoExternaRepository));
         // Default: sem cobrança (os testes de cobrança sobrescrevem)
         lenient().when(athleteContractService.resolveBilling(eq(atletaId), any(LocalDate.class)))
                 .thenReturn(java.util.Optional.empty());
@@ -648,6 +650,23 @@ class CoachAthleteProfileServiceImplTest {
                 assertThat(t.editRejection()).isNull();
             });
             verifyNoInteractions(postApprovalEditCoordinator);
+        }
+
+        @Test
+        @DisplayName("plano aprovado e concluído: perfil mantém o resultado da policy (sem guarda de plano concluído)")
+        void editableEmPlanoAprovadoConcluido() {
+            PlanoSemanal plano = planoAprovadoComTreinos();
+            plano.setStatus(br.com.menthoros.backend.enums.PlanoStatus.CONCLUIDO);
+            stubPerfilComPlano(plano);
+            when(intervalsIcuConnectionService.conexaoAtiva(atletaId, tenantId)).thenReturn(Optional.empty());
+
+            List<AtletaPerfilCoachOutputDto.TreinoPlanejadoResumoDto> treinos =
+                    service.buscarPerfil(atletaId).planoVigente().treinos();
+
+            assertThat(treinos.get(0).editable()).isFalse();
+            assertThat(treinos.get(0).editRejection()).isEqualTo("PAST_DAY");
+            assertThat(treinos.get(1).editable()).isTrue();
+            assertThat(treinos.get(1).editRejection()).isNull();
         }
 
         @org.junit.jupiter.params.ParameterizedTest
