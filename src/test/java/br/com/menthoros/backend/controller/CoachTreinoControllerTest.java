@@ -23,6 +23,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -250,6 +251,19 @@ class CoachTreinoControllerTest {
                                     """)
                             .with(tecnicoJwt()))
                     .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("duracaoSeg fora do intervalo (0 ou acima de 24 h) e rejeitado com 400")
+        void rejeitaDuracaoSegInvalida() throws Exception {
+            stubUsuarioAtivo();
+            for (String seg : List.of("0", "86401")) {
+                mockMvc.perform(patch("/api/v1/coach/planos/{planoId}/treinos/{treinoId}", planoId, treinoId)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"etapas\": [{\"tipoEtapa\": \"INTERVALADO\", \"duracaoSeg\": " + seg + "}]}")
+                                .with(tecnicoJwt()))
+                        .andExpect(status().isBadRequest());
+            }
         }
 
         @Test

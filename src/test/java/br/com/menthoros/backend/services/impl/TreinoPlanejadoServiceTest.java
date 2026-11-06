@@ -674,8 +674,8 @@ class TreinoPlanejadoServiceTest {
         }
 
         @Test
-        @DisplayName("duracaoSeg e a fonte da verdade: duracaoMin e derivado por round, sem piso, e o minuto enviado e ignorado")
-        void duracaoSegDerivaDuracaoMin() {
+        @DisplayName("duracaoSeg atravessa etapa avulsa, bloco expandido e repeticoes legadas (a derivacao do minuto e do EtapaMapper)")
+        void duracaoSegAtravessaTodosOsCaminhos() {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
             TreinoPlanejado treino = criarTreino(plano);
             treino.setEtapas(new ArrayList<>());
@@ -697,8 +697,6 @@ class TreinoPlanejadoServiceTest {
 
             assertThat(treino.getEtapas()).extracting(EtapaTreino::getDuracaoSeg)
                     .containsExactly(250, 250, 10, null, 250, 250);
-            assertThat(treino.getEtapas()).extracting(EtapaTreino::getDuracaoMin)
-                    .containsExactly(4, 4, 0, 5, 4, 4);
         }
 
         @Test

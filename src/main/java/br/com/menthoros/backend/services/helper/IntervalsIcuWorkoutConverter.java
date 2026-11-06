@@ -382,7 +382,7 @@ public class IntervalsIcuWorkoutConverter {
 
     private WorkoutStep stepComMeta(EtapaTreino etapa, Contexto ctx) {
         Integer distanceMeters = distanciaEmMetros(etapa.getDistanciaKm());
-        Integer durationSeconds = distanceMeters != null ? null : duracaoEmSegundos(etapa);
+        Integer durationSeconds = distanceMeters != null ? null : duracaoDaEtapaEmSegundos(etapa);
 
         String text = normalizaTexto(etapa.getDescricaoEtapa());
         IntervalsIcuFcAlvoResolver.Resolucao fc = fcAlvoResolver.resolver(
@@ -443,7 +443,7 @@ public class IntervalsIcuWorkoutConverter {
     // ===== Normalização numérica =====
 
     /** O segundo gravado vence; sem ele, o minuto vezes 60 (etapas da IA e anteriores a V112). */
-    private Integer duracaoEmSegundos(EtapaTreino etapa) {
+    private Integer duracaoDaEtapaEmSegundos(EtapaTreino etapa) {
         Integer seg = etapa.getDuracaoSeg();
         return seg != null && seg > 0 ? seg : duracaoEmSegundos(etapa.getDuracaoMin());
     }

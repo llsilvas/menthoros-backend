@@ -64,6 +64,7 @@ public record EtapaInputDto(
 
         @Schema(description = "Duração da etapa em segundos; quando presente, duracaoMin é derivado dele", example = "250")
         @Positive
+        @Max(value = 86_400, message = "duracaoSeg não pode exceder 86400 (24 h)")
         Integer duracaoSeg
 ) {
 

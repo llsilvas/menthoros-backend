@@ -6,6 +6,8 @@ import br.com.menthoros.backend.entity.EtapaTreino;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -78,11 +80,21 @@ class EtapaMapperTest {
         }
 
         @Test
-        @DisplayName("duracaoSeg atravessa o mapper: e a fonte da verdade da duracao quando chega")
+        @DisplayName("duracaoSeg e a fonte da verdade: duracaoMin e derivado e o minuto enviado e ignorado")
         void carregaDuracaoSeg() {
             EtapaTreino etapa = mapper.toEntity(new EtapaInputDto(
-                    "INTERVALADO", "Tiro", 4, null, null, "4:10/km", 1, null, null, null, 250));
+                    "INTERVALADO", "Tiro", 7, null, null, "4:10/km", 1, null, null, null, 250));
             assertThat(etapa.getDuracaoSeg()).isEqualTo(250);
+            assertThat(etapa.getDuracaoMin()).isEqualTo(4);
+        }
+
+        @ParameterizedTest(name = "{0} s -> duracaoMin {1}")
+        @CsvSource({"10, 0", "29, 0", "30, 1", "89, 1", "90, 2", "250, 4", "3600, 60"})
+        @DisplayName("round inteiro, sem piso: abaixo de 30 s fica 0")
+        void derivaMinutoSemPiso(int seg, int minEsperado) {
+            EtapaTreino etapa = mapper.toEntity(new EtapaInputDto(
+                    "INTERVALADO", "Tiro", null, null, null, null, 1, null, null, null, seg));
+            assertThat(etapa.getDuracaoMin()).isEqualTo(minEsperado);
         }
 
         @Test
