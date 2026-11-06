@@ -27,6 +27,7 @@ import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.IaService;
 import br.com.menthoros.backend.services.PlanoService;
+import br.com.menthoros.backend.services.helper.ApprovedWorkoutEditContext;
 import br.com.menthoros.backend.services.helper.LlmConcurrencyLimiter;
 import br.com.menthoros.backend.services.helper.PlanGenerationContext;
 import br.com.menthoros.backend.services.helper.PlanGenerationContextLoader;
@@ -75,6 +76,7 @@ public class PlanoServiceImpl implements PlanoService {
     private final PlannerShadowService plannerShadowService;
     private final MeterRegistry meterRegistry;
     private final LlmCallLedger llmCallLedger;
+    private final ApprovedWorkoutEditContext approvedWorkoutEditContext;
 
     // planner-engine-enforcement §3: com enabled=true, o WeekPlanSkeleton é computado ANTES do prompt
     // e injetado como bloco mandatório. Default false — rollout gated (tasks 8.4).
@@ -381,9 +383,15 @@ public class PlanoServiceImpl implements PlanoService {
         List<PlanoSemanal> semanas = new ArrayList<>(planoSemanalRepository.findAtivosPorAtleta(atletaId, tenantId));
         semanas.addAll(planoSemanalRepository.findConcluidosPorAtleta(
                 atletaId, tenantId, PageRequest.of(0, LIMITE_SEMANAS_CONCLUIDAS)));
+        if (semanas.isEmpty()) {
+            return List.of();
+        }
 
+        // Uma consulta de integração por requisição; o atleta já é carregado pelo mapper (atletaNome).
+        ApprovedWorkoutEditContext.Resolved edicao =
+                approvedWorkoutEditContext.resolve(atletaId, semanas.get(0).getAtleta(), tenantId);
         return semanas.stream()
-                .map(plano -> montarOutputDto(plano, atletaId, tenantId))
+                .map(plano -> edicao.enrich(montarOutputDto(plano, atletaId, tenantId), plano))
                 .toList();
     }
 

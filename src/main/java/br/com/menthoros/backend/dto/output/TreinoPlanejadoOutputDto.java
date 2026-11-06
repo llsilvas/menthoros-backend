@@ -8,6 +8,7 @@ import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -126,5 +127,17 @@ public record TreinoPlanejadoOutputDto(
         // ===== PROVA (prova-no-plano-semanal) =====
 
         @Schema(description = "ID da prova vinculada, quando tipoTreino = PROVA", example = "123e4567-e89b-12d3-a456-426614174010")
-        UUID provaId
+        UUID provaId,
+
+        // ===== EDIÇÃO EM PLANO APROVADO (editar-treino-aprovado-planos-dialog) — só na listagem do coach =====
+
+        @Schema(description = "Treino editável pelo coach; só em plano APROVADO não CONCLUIDO, ausente fora disso", example = "true")
+        Boolean editable,
+
+        @Schema(description = "Motivo da recusa quando editable=false", example = "PAST_DAY",
+                allowableValues = {"NOT_PENDING", "PAST_DAY", "TODAY_ON_WATCH"})
+        String editRejection,
+
+        @Schema(description = "Quando o treino foi editado após a aprovação; só em plano APROVADO", example = "2026-11-04T10:00:00Z")
+        Instant editedAfterApprovalAt
 ) {}

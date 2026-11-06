@@ -35,6 +35,8 @@ public interface PlanoSemanalMapper {
     @Mapping(target = "atletaId", source = "atleta.id")
     @Mapping(target = "plannerComplianceStatus", expression = "java(resolvePlannerComplianceStatus(entity))")
     @Mapping(target = "plannerReviewReasons", expression = "java(resolvePlannerReviewReasons(entity))")
+    // Só a listagem de semanas do coach preenche (ApprovedWorkoutEditContext).
+    @Mapping(target = "conexaoCanal", ignore = true)
     PlanoSemanalOutputDto toOutputDto(PlanoSemanal entity);
 
     /** String da coluna -> enum, tolerante a plano legado (null/blank) e a valor desconhecido. */
