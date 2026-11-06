@@ -674,6 +674,32 @@ class TreinoPlanejadoServiceTest {
         }
 
         @Test
+        @DisplayName("duracaoSeg atravessa etapa avulsa, bloco expandido e repeticoes legadas (a derivacao do minuto e do EtapaMapper)")
+        void duracaoSegAtravessaTodosOsCaminhos() {
+            PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            TreinoPlanejado treino = criarTreino(plano);
+            treino.setEtapas(new ArrayList<>());
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+            when(treinoPlanejadoRepository.save(any(TreinoPlanejado.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(etapaMapper.toEntity(any(EtapaInputDto.class))).thenAnswer(inv -> etapaDe(inv.getArgument(0)));
+
+            EtapaInputDto segundos = new EtapaInputDto("INTERVALADO", "Tiro", null, null, null, "4:10/km", null, null, null, null, 250);
+            EtapaInputDto incoerente = new EtapaInputDto("RECUPERACAO", "Trote", 7, null, null, null, null, null, null, null, 250);
+            EtapaInputDto curta = new EtapaInputDto("INTERVALADO", "Sprint", null, null, null, null, null, null, null, null, 10);
+            EtapaInputDto soMinutos = new EtapaInputDto("DESAQUECIMENTO", "Solto", 5, null, null, null, null, null, null);
+            EtapaInputDto sub = new EtapaInputDto("INTERVALADO", "Tiro", null, null, null, "4:10/km", null, null, null, null, 250);
+            EtapaInputDto bloco = new EtapaInputDto("BLOCO", null, null, null, null, null, null, 2, List.of(sub));
+
+            service.editarTreino(planoId, treinoId, new TreinoPlanejadoPatchDto(
+                    null, null, null, null, null, null, null, null, List.of(segundos, incoerente, curta, soMinutos, bloco), null));
+
+            assertThat(treino.getEtapas()).extracting(EtapaTreino::getDuracaoSeg)
+                    .containsExactly(250, 250, 10, null, 250, 250);
+        }
+
+        @Test
         @DisplayName("alvoPrimario atravessa etapa avulsa, cópias do bloco e a expansão legada por repeticoes")
         void preservaAlvoPrimario() {
             PlanoSemanal plano = criarPlano(PlanoReviewStatus.AGUARDANDO_REVISAO);
@@ -1544,6 +1570,7 @@ class TreinoPlanejadoServiceTest {
         etapa.setTipoEtapa(dto.tipoEtapa());
         etapa.setDescricaoEtapa(dto.descricaoEtapa());
         etapa.setDuracaoMin(dto.duracaoMin());
+        etapa.setDuracaoSeg(dto.duracaoSeg());
         etapa.setFcAlvoEtapa(dto.fcAlvoEtapa());
         etapa.setRitmoAlvo(dto.ritmoAlvo());
         etapa.setAlvoPrimario(dto.alvoPrimario());

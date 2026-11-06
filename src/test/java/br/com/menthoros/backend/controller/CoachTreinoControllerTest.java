@@ -23,6 +23,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -230,6 +231,39 @@ class CoachTreinoControllerTest {
                     .andExpect(status().isOk())
                     .andExpect(jsonPath("$.id").value(treinoId.toString()))
                     .andExpect(jsonPath("$.editadoPeloCoach").value(true));
+        }
+
+        @Test
+        @DisplayName("propriedade desconhecida no corpo e ignorada: front novo contra backend antigo nao da 400")
+        void ignoraPropriedadeDesconhecida() throws Exception {
+            // add-etapa-duracao-segundos: o front passa a enviar duracaoSeg por etapa antes de todo
+            // backend conhecer o campo. O Spring Boot ignora propriedade desconhecida por padrao; este
+            // teste prende isso, porque ligar FAIL_ON_UNKNOWN_PROPERTIES derrubaria todo PATCH na janela
+            // de deploy.
+            TreinoPlanejadoOutputDto output = outputStub(treinoId, true, false);
+            when(treinoPlanejadoService.editarTreino(eq(planoId), eq(treinoId), any())).thenReturn(output);
+            stubUsuarioAtivo();
+
+            mockMvc.perform(patch("/api/v1/coach/planos/{planoId}/treinos/{treinoId}", planoId, treinoId)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {"etapas": [{"tipoEtapa": "INTERVALADO", "duracaoMin": 4, "campoQueNaoExiste": 1}]}
+                                    """)
+                            .with(tecnicoJwt()))
+                    .andExpect(status().isOk());
+        }
+
+        @Test
+        @DisplayName("duracaoSeg fora do intervalo (0 ou acima de 24 h) e rejeitado com 400")
+        void rejeitaDuracaoSegInvalida() throws Exception {
+            stubUsuarioAtivo();
+            for (String seg : List.of("0", "86401")) {
+                mockMvc.perform(patch("/api/v1/coach/planos/{planoId}/treinos/{treinoId}", planoId, treinoId)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("{\"etapas\": [{\"tipoEtapa\": \"INTERVALADO\", \"duracaoSeg\": " + seg + "}]}")
+                                .with(tecnicoJwt()))
+                        .andExpect(status().isBadRequest());
+            }
         }
 
         @Test

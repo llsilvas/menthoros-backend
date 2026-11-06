@@ -456,7 +456,8 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
                 repeticoes,
                 dto.blocoRepeticoes(),
                 null,
-                dto.alvoPrimario()
+                dto.alvoPrimario(),
+                dto.duracaoSeg()
         );
     }
 
