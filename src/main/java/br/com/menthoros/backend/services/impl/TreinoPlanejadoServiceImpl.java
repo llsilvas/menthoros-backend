@@ -309,6 +309,7 @@ public class TreinoPlanejadoServiceImpl implements TreinoPlanejadoService {
         treino.setDataTreino(novaData);
         treino.setDiaSemana(diaDestino);
         removerDescansoDoDia(plano, diaDestino);
+        planoSemanalRepository.save(plano);
         avisarSeDiaFicouSemPrescricao(plano, diaOrigem, treino.getId(), tenantId);
     }
 

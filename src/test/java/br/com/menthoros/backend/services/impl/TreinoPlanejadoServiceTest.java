@@ -1582,6 +1582,7 @@ class TreinoPlanejadoServiceTest {
             service.editarTreino(planoId, treinoId, patchData(LocalDate.of(2026, 7, 4)));
 
             assertThat(plano.getRestDaysOuVazio()).isEmpty();
+            verify(planoSemanalRepository).save(plano);
         }
 
         @Test
@@ -1620,6 +1621,21 @@ class TreinoPlanejadoServiceTest {
 
             assertThat(treino.getDataTreino()).isEqualTo(DATA_QUINTA);
             verify(treinoPlanejadoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("CA6: plano aprovado com data movida registra a edição e reenvia")
+        void aprovadoComDataMovidaReenvia() {
+            plano.setReviewStatus(PlanoReviewStatus.APROVADO);
+            stubSave();
+            LocalDate sabado = LocalDate.of(2026, 7, 4);
+            when(postApprovalEditCoordinator.checkBeforePatch(plano, treino, sabado)).thenReturn("{antes}");
+            when(postApprovalEditCoordinator.inalterado(treino, "{antes}")).thenReturn(false);
+
+            service.editarTreino(planoId, treinoId, patchData(sabado));
+
+            assertThat(treino.getDataTreino()).isEqualTo(sabado);
+            verify(postApprovalEditCoordinator).applyAfterPatch(plano, treino, "{antes}", null);
         }
 
         @Test
