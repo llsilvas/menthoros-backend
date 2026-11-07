@@ -266,6 +266,78 @@ class PostApprovalEditCoordinatorTest {
         }
     }
 
+    @Nested
+    @DisplayName("checkBeforePatch com data de destino (coach-alterar-data-treino)")
+    class CheckBeforePatchDestino {
+
+        @BeforeEach
+        void hoje() {
+            when(atletaHojeResolver.hojeDe(atleta)).thenReturn(HOJE);
+        }
+
+        @Test
+        @DisplayName("destino no passado é recusado antes de qualquer mutação")
+        void destinoPassadoRecusa() {
+            stubRelogio(false);
+
+            assertThatThrownBy(() -> coordinator.checkBeforePatch(plano, treino(HOJE.plusDays(2)), HOJE.minusDays(1)))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("Nova data");
+            verify(recorder, never()).snapshot(any());
+        }
+
+        @Test
+        @DisplayName("destino hoje com relógio é recusado como a origem seria")
+        void destinoHojeComRelogioRecusa() {
+            stubRelogio(true);
+
+            assertThatThrownBy(() -> coordinator.checkBeforePatch(plano, treino(HOJE.plusDays(2)), HOJE))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("Nova data");
+        }
+
+        @Test
+        @DisplayName("destino hoje sem relógio passa")
+        void destinoHojeSemRelogioPassa() {
+            stubRelogio(false);
+            when(recorder.snapshot(any())).thenReturn("{antes}");
+
+            assertThat(coordinator.checkBeforePatch(plano, treino(HOJE.plusDays(2)), HOJE)).isEqualTo("{antes}");
+        }
+
+        @Test
+        @DisplayName("destino futuro passa")
+        void destinoFuturoPassa() {
+            stubRelogio(true);
+            when(recorder.snapshot(any())).thenReturn("{antes}");
+
+            assertThat(coordinator.checkBeforePatch(plano, treino(HOJE.plusDays(1)), HOJE.plusDays(3)))
+                    .isEqualTo("{antes}");
+        }
+
+        @Test
+        @DisplayName("hoje é o do atleta, não o do servidor: servidor já em amanhã não recusa o destino de hoje")
+        void hojeDoAtleta() {
+            // AGORA (15:00Z) é 2026-11-05 em UTC+10, mas o atleta está em HOJE = 2026-11-04
+            stubRelogio(false);
+            when(recorder.snapshot(any())).thenReturn("{antes}");
+
+            assertThat(coordinator.checkBeforePatch(plano, treino(HOJE.plusDays(1)), HOJE)).isEqualTo("{antes}");
+        }
+
+    }
+
+    @Test
+    @DisplayName("inalterado: snapshot igual ao anterior (CA7)")
+    void inalterado() {
+        TreinoPlanejado treino = treino(HOJE.plusDays(1));
+        when(recorder.snapshot(treino)).thenReturn("{x}");
+
+        assertThat(coordinator.inalterado(treino, "{x}")).isTrue();
+        assertThat(coordinator.inalterado(treino, "{y}")).isFalse();
+        assertThat(coordinator.inalterado(treino, null)).isFalse();
+    }
+
     private void stubRelogio(boolean temConexao) {
         when(integracaoExternaRepository.findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
                 atleta.getId(), List.of(FonteDados.INTERVALS_ICU, FonteDados.GARMIN), tenantId))

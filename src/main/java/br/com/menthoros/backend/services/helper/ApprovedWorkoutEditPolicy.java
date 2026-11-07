@@ -45,7 +45,16 @@ public class ApprovedWorkoutEditPolicy {
         if (status != null && status != TreinoExecucaoStatus.PENDENTE) {
             return Optional.of(EditRejection.NOT_PENDING);
         }
-        LocalDate data = treino.getDataTreino();
+        return avaliarData(treino.getDataTreino(), hoje, hasWatch);
+    }
+
+    /**
+     * Só a parte de data da regra — vale para a data atual do treino e para a data de destino
+     * quando o treinador o move (coach-alterar-data-treino, D3): o destino nunca pode ser um dia
+     * em que a edição seria recusada.
+     */
+    public Optional<EditRejection> avaliarData(LocalDate data, LocalDate hoje, boolean hasWatch) {
+        if (hoje == null) throw new IllegalArgumentException("hoje não pode ser nulo");
         if (data == null || data.isBefore(hoje)) {
             return Optional.of(EditRejection.PAST_DAY);
         }

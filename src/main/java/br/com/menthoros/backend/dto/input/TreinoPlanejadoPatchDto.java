@@ -12,6 +12,7 @@ import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.List;
 
 @Schema(description = "Campos editáveis de um treino planejado durante revisão de plano. Campos null são ignorados (patch semântico).")
@@ -55,6 +56,20 @@ public record TreinoPlanejadoPatchDto(
 
         @Schema(description = "Motivo opcional da edição de treino em plano já aprovado; ignorado em plano em revisão",
                 example = "LOAD")
-        WorkoutEditReason editReason
+        WorkoutEditReason editReason,
 
-) {}
+        @Schema(description = "Nova data do treino, dentro da semana do plano; o dia da semana é derivado dela. "
+                             + "Em plano aprovado, só hoje ou futura, pela mesma regra do treino editado.",
+                example = "2026-07-04")
+        LocalDate dataTreino
+
+) {
+    /** Construtor sem a data: mantém os chamadores anteriores a coach-alterar-data-treino. */
+    public TreinoPlanejadoPatchDto(TipoTreino tipoTreino, String descricao, BigDecimal distanciaKm,
+                                   Duration duracaoMin, String zonaAlvo, Integer tssPlanejado,
+                                   Integer percepcaoEsforcoEsperada, String observacao,
+                                   List<EtapaInputDto> etapas, WorkoutEditReason editReason) {
+        this(tipoTreino, descricao, distanciaKm, duracaoMin, zonaAlvo, tssPlanejado,
+                percepcaoEsforcoEsperada, observacao, etapas, editReason, null);
+    }
+}
