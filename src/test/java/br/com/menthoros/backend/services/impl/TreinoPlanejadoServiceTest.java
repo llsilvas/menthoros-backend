@@ -1185,14 +1185,14 @@ class TreinoPlanejadoServiceTest {
                     .thenReturn(Optional.of(treino));
             when(treinoPlanejadoRepository.save(treino)).thenReturn(treino);
             when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, false));
-            when(postApprovalEditCoordinator.checkBeforePatch(plano, treino)).thenReturn("{antes}");
+            when(postApprovalEditCoordinator.checkBeforePatch(plano, treino, null)).thenReturn("{antes}");
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, "Reduzido", null, null, null, null, null, null, null, WorkoutEditReason.LOAD);
 
             service.editarTreino(planoId, treinoId, patch);
 
             InOrder ordem = inOrder(postApprovalEditCoordinator, treinoPlanejadoRepository);
-            ordem.verify(postApprovalEditCoordinator).checkBeforePatch(plano, treino);
+            ordem.verify(postApprovalEditCoordinator).checkBeforePatch(plano, treino, null);
             ordem.verify(postApprovalEditCoordinator).applyAfterPatch(plano, treino, "{antes}", WorkoutEditReason.LOAD);
             ordem.verify(treinoPlanejadoRepository).save(treino);
             assertThat(treino.getDescricao()).isEqualTo("Reduzido");
@@ -1208,7 +1208,7 @@ class TreinoPlanejadoServiceTest {
             when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
                     .thenReturn(Optional.of(treino));
             doThrow(new DomainRuleViolationException("Treino já realizado"))
-                    .when(postApprovalEditCoordinator).checkBeforePatch(plano, treino);
+                    .when(postApprovalEditCoordinator).checkBeforePatch(plano, treino, null);
             TreinoPlanejadoPatchDto patch = new TreinoPlanejadoPatchDto(
                     null, "Reduzido", null, null, null, null, null, null, null, null);
 
@@ -1517,6 +1517,139 @@ class TreinoPlanejadoServiceTest {
     private void stubPlanoFound(PlanoSemanal plano) {
         when(planoSemanalRepository.findByIdWithDependenciesAndTenant(planoId, tenantId))
                 .thenReturn(Optional.of(plano));
+    }
+
+    @Nested
+    @DisplayName("editarTreino — dataTreino (coach-alterar-data-treino)")
+    class EditarTreinoData {
+
+        private PlanoSemanal plano;
+        private TreinoPlanejado treino;
+
+        @BeforeEach
+        void prepara() {
+            plano = planoStub(PlanoReviewStatus.AGUARDANDO_REVISAO, new ArrayList<>());
+            plano.setId(planoId);
+            treino = criarTreino(plano);
+            treino.setDataTreino(DATA_QUINTA);
+            treino.setDiaSemana(DiaSemana.QUINTA);
+            plano.getTreinosPlanejados().add(treino);
+            when(planoSemanalRepository.findByIdAndTenantId(planoId, tenantId)).thenReturn(Optional.of(plano));
+            when(treinoPlanejadoRepository.findByIdAndPlanoSemanalIdAndTenantId(treinoId, planoId, tenantId))
+                    .thenReturn(Optional.of(treino));
+        }
+
+        private TreinoPlanejadoPatchDto patchData(LocalDate data) {
+            return new TreinoPlanejadoPatchDto(null, null, null, null, null, null, null, null, null, null, data);
+        }
+
+        private void stubSave() {
+            when(treinoPlanejadoRepository.save(any())).thenReturn(treino);
+            when(treinoMapper.toOutputDto(treino)).thenReturn(outputStub(treinoId, true));
+        }
+
+        @Test
+        @DisplayName("CA1/CA3: grava a nova data e deriva o dia, mesmo fora da disponibilidade do atleta")
+        void gravaDataEDerivaDia() {
+            stubSave();
+            LocalDate sabado = LocalDate.of(2026, 7, 4);
+
+            service.editarTreino(planoId, treinoId, patchData(sabado));
+
+            assertThat(treino.getDataTreino()).isEqualTo(sabado);
+            assertThat(treino.getDiaSemana()).isEqualTo(DiaSemana.SABADO);
+            assertThat(treino.isEditadoPeloCoach()).isTrue();
+        }
+
+        @Test
+        @DisplayName("CA2: data fora da semana do plano é recusada com a mensagem da adição, sem salvar")
+        void foraDaSemanaRecusa() {
+            assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patchData(SEMANA_FIM.plusDays(1))))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageStartingWith("Data do treino fora do intervalo do plano");
+
+            assertThat(treino.getDataTreino()).isEqualTo(DATA_QUINTA);
+            verify(treinoPlanejadoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("CA4: o descanso do dia de destino sai")
+        void removeDescansoDoDestino() {
+            stubSave();
+            plano.setRestDays(new ArrayList<>(List.of(
+                    new br.com.menthoros.backend.domain.plano.RestDay("SABADO", "descanso da IA"))));
+
+            service.editarTreino(planoId, treinoId, patchData(LocalDate.of(2026, 7, 4)));
+
+            assertThat(plano.getRestDaysOuVazio()).isEmpty();
+            verify(planoSemanalRepository).save(plano);
+        }
+
+        @Test
+        @DisplayName("CA5: origem que ficou sem treino e sem descanso conta como dia em branco")
+        void origemSemPrescricaoConta() {
+            stubSave();
+
+            service.editarTreino(planoId, treinoId, patchData(LocalDate.of(2026, 7, 4)));
+
+            var c = meterRegistry.find("plano_dia_sem_prescricao").tag("origem", "coach").counter();
+            assertThat(c == null ? 0.0 : c.count()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("CA7: data igual à atual não muda nada")
+        void dataIgualNaoMuda() {
+            stubSave();
+
+            service.editarTreino(planoId, treinoId, patchData(DATA_QUINTA));
+
+            assertThat(treino.getDiaSemana()).isEqualTo(DiaSemana.QUINTA);
+            var c = meterRegistry.find("plano_dia_sem_prescricao").tag("origem", "coach").counter();
+            assertThat(c == null ? 0.0 : c.count()).isZero();
+        }
+
+        @Test
+        @DisplayName("CA6: plano aprovado passa a data de destino ao coordinator antes de mutar")
+        void aprovadoPassaDestinoAoCoordinator() {
+            plano.setReviewStatus(PlanoReviewStatus.APROVADO);
+            LocalDate sabado = LocalDate.of(2026, 7, 4);
+            doThrow(new DomainRuleViolationException("Nova data: passado"))
+                    .when(postApprovalEditCoordinator).checkBeforePatch(plano, treino, sabado);
+
+            assertThatThrownBy(() -> service.editarTreino(planoId, treinoId, patchData(sabado)))
+                    .isInstanceOf(DomainRuleViolationException.class);
+
+            assertThat(treino.getDataTreino()).isEqualTo(DATA_QUINTA);
+            verify(treinoPlanejadoRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("CA6: plano aprovado com data movida registra a edição e reenvia")
+        void aprovadoComDataMovidaReenvia() {
+            plano.setReviewStatus(PlanoReviewStatus.APROVADO);
+            stubSave();
+            LocalDate sabado = LocalDate.of(2026, 7, 4);
+            when(postApprovalEditCoordinator.checkBeforePatch(plano, treino, sabado)).thenReturn("{antes}");
+            when(postApprovalEditCoordinator.inalterado(treino, "{antes}")).thenReturn(false);
+
+            service.editarTreino(planoId, treinoId, patchData(sabado));
+
+            assertThat(treino.getDataTreino()).isEqualTo(sabado);
+            verify(postApprovalEditCoordinator).applyAfterPatch(plano, treino, "{antes}", null);
+        }
+
+        @Test
+        @DisplayName("CA7: plano aprovado com patch sem mudança não registra edição nem reinicia a sincronização")
+        void aprovadoSemMudancaNaoReenvia() {
+            plano.setReviewStatus(PlanoReviewStatus.APROVADO);
+            stubSave();
+            when(postApprovalEditCoordinator.checkBeforePatch(plano, treino, null)).thenReturn("{antes}");
+            when(postApprovalEditCoordinator.inalterado(treino, "{antes}")).thenReturn(true);
+
+            service.editarTreino(planoId, treinoId, patchData(DATA_QUINTA));
+
+            verify(postApprovalEditCoordinator, never()).applyAfterPatch(any(), any(), any(), any());
+        }
     }
 
     private PlanoSemanal planoStub(PlanoReviewStatus reviewStatus, List<TreinoPlanejado> treinos) {

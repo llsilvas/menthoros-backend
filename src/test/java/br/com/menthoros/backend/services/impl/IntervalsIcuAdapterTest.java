@@ -83,7 +83,7 @@ class IntervalsIcuAdapterTest {
                     "menthoros-1", "CONTINUO 15/07", null, DATA, "Treino continuo de base", steps);
 
             when(client.buscarLthrCorrida(API_KEY, ATHLETE_ID)).thenReturn(Optional.of(LTHR_PROVEDOR));
-            when(client.listarEventos(API_KEY, ATHLETE_ID, DATA, DATA)).thenReturn(List.of());
+            when(client.listarEventos(API_KEY, ATHLETE_ID, DATA.minusDays(7), DATA.plusDays(7))).thenReturn(List.of());
             when(client.criarEvento(eq(API_KEY), eq(ATHLETE_ID), any()))
                     .thenReturn(new IcuEventDto(999L, "menthoros-1", "CONTINUO 15/07", "2026-07-15T00:00:00"));
 
@@ -235,7 +235,7 @@ class IntervalsIcuAdapterTest {
         @DisplayName("primeiro push sem match na janela cria evento novo via POST")
         void primeiroPushSemMatchCriaViaPost() {
             StructuredWorkout workout = workoutSimples("menthoros-2");
-            when(client.listarEventos(API_KEY, ATHLETE_ID, DATA, DATA))
+            when(client.listarEventos(API_KEY, ATHLETE_ID, DATA.minusDays(7), DATA.plusDays(7)))
                     .thenReturn(List.of(new IcuEventDto(1L, "outro-id", "X", "2026-07-15T00:00:00")));
             when(client.criarEvento(eq(API_KEY), eq(ATHLETE_ID), any()))
                     .thenReturn(new IcuEventDto(42L, "menthoros-2", "CONTINUO 15/07", "2026-07-15T00:00:00"));
@@ -251,7 +251,7 @@ class IntervalsIcuAdapterTest {
         @DisplayName("guarda defensiva: janela com o mesmo external_id adota o id e faz PUT, nunca duplica")
         void guardaDefensivaAdotaIdExistente() {
             StructuredWorkout workout = workoutSimples("menthoros-3");
-            when(client.listarEventos(API_KEY, ATHLETE_ID, DATA, DATA))
+            when(client.listarEventos(API_KEY, ATHLETE_ID, DATA.minusDays(7), DATA.plusDays(7)))
                     .thenReturn(List.of(new IcuEventDto(55L, "menthoros-3", "X", "2026-07-15T00:00:00")));
             when(client.atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(55L), any()))
                     .thenReturn(new IcuEventDto(55L, "menthoros-3", "X", "2026-07-15T00:00:00"));
@@ -262,6 +262,22 @@ class IntervalsIcuAdapterTest {
             assertThat(resultado.eventId()).isEqualTo(55L);
             verify(client, never()).criarEvento(any(), any(), any());
             verify(client).atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(55L), any());
+        }
+
+        @Test
+        @DisplayName("CA6b: evento criado em outra data da semana sem eventId gravado é atualizado, não duplicado")
+        void semIdGravadoAchaEventoMovidoNaSemana() {
+            StructuredWorkout workout = workoutSimples("menthoros-9");
+            when(client.listarEventos(API_KEY, ATHLETE_ID, DATA.minusDays(7), DATA.plusDays(7)))
+                    .thenReturn(List.of(new IcuEventDto(66L, "menthoros-9", "X", "2026-07-13T00:00:00")));
+            when(client.atualizarEvento(eq(API_KEY), eq(ATHLETE_ID), eq(66L), any()))
+                    .thenReturn(new IcuEventDto(66L, "menthoros-9", "X", "2026-07-15T00:00:00"));
+
+            PushResult resultado = adapter.push(conexao, workout, null);
+
+            assertThat(resultado.sucesso()).isTrue();
+            assertThat(resultado.eventId()).isEqualTo(66L);
+            verify(client, never()).criarEvento(any(), any(), any());
         }
 
         @Test

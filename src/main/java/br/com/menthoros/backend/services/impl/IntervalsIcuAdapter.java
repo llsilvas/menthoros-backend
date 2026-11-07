@@ -158,9 +158,19 @@ public class IntervalsIcuAdapter implements WorkoutChannel {
         }
     }
 
+    // shortcut: a busca do evento sem eventId gravado cobre ±7 dias da data agendada, porque o adapter
+    // não conhece a semana do plano; basta para mover dentro da semana (coach-alterar-data-treino, D7).
+    private static final int JANELA_BUSCA_DIAS = 7;
+
+    /**
+     * Sem {@code eventId} gravado (resposta perdida no primeiro POST), o evento pode estar em outra
+     * data se o treino foi movido — procurar só na data agendada criaria um segundo evento, e a API
+     * não deduplica por {@code external_id}.
+     */
     private Long buscarIdPorExternalId(String token, String externalAthleteId, StructuredWorkout workout) {
         LocalDate data = workout.scheduledDate();
-        List<IcuEventDto> existentes = client.listarEventos(token, externalAthleteId, data, data);
+        List<IcuEventDto> existentes = client.listarEventos(token, externalAthleteId,
+                data.minusDays(JANELA_BUSCA_DIAS), data.plusDays(JANELA_BUSCA_DIAS));
         Optional<IcuEventDto> match = existentes.stream()
                 .filter(ev -> workout.externalId().equals(ev.externalId()))
                 .findFirst();
