@@ -62,6 +62,7 @@ class AtletaTreinoControllerTest {
     @MockitoBean private AtletaTreinoFeedbackService treinoFeedbackService;
     @MockitoBean private AtletaWorkoutAnalysisService atletaWorkoutAnalysisService;
     @MockitoBean private br.com.menthoros.backend.services.MelhorEsforcoService melhorEsforcoService;
+    @MockitoBean private br.com.menthoros.backend.services.AtletaGpsTraceService atletaGpsTraceService;
 
     private final UUID atletaId = UUID.randomUUID();
     private ObjectMapper mapper;
@@ -380,6 +381,41 @@ class AtletaTreinoControllerTest {
             mockMvc.perform(post("/api/v1/atletas/me/realizados/{id}/feedback", treinoId)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content(mapper.writeValueAsString(Map.of("percepcaoEsforco", 5))))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Nested
+    @DisplayName("GET /api/v1/atletas/me/realizados/{id}/trajeto (add-activity-gps-trace)")
+    class GetTrajeto {
+
+        @Test
+        @DisplayName("200 com polyline, arrays paralelos e deviceName")
+        void retorna200ComTrajeto() throws Exception {
+            UUID treinoId = UUID.randomUUID();
+            when(atletaGpsTraceService.buscarTrajeto(atletaId, treinoId))
+                    .thenReturn(new br.com.menthoros.backend.dto.output.GpsTraceOutputDto(
+                            1, 3, "_p~iF~ps|U_ulLnnqC_mqNvxq`@", List.of(0, 4, 9),
+                            java.util.Arrays.asList(112, null, 118), "Forerunner 265"));
+
+            mockMvc.perform(get("/api/v1/atletas/me/realizados/{id}/trajeto", treinoId))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.v").value(1))
+                    .andExpect(jsonPath("$.n").value(3))
+                    .andExpect(jsonPath("$.polyline").value("_p~iF~ps|U_ulLnnqC_mqNvxq`@"))
+                    .andExpect(jsonPath("$.tSeg[2]").value(9))
+                    .andExpect(jsonPath("$.fc[1]").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$.deviceName").value("Forerunner 265"));
+        }
+
+        @Test
+        @DisplayName("404 quando o serviço não encontra (outro atleta, outro tenant ou sem trajeto)")
+        void retorna404() throws Exception {
+            UUID treinoId = UUID.randomUUID();
+            when(atletaGpsTraceService.buscarTrajeto(atletaId, treinoId))
+                    .thenThrow(new DomainNotFoundException("Trajeto não encontrado para este treino"));
+
+            mockMvc.perform(get("/api/v1/atletas/me/realizados/{id}/trajeto", treinoId))
                     .andExpect(status().isNotFound());
         }
     }

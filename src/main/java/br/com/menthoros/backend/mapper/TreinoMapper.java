@@ -263,6 +263,8 @@ public interface TreinoMapper {
     // aqui para compatibilidade (CA4).
     @Mapping(target = "decoupling", ignore = true)
     @Mapping(target = "serieEficiencia", ignore = true)
+    // Só o booleano vai na listagem; o JSON do trajeto (até 8 KB) fica no endpoint próprio (D4).
+    @Mapping(target = "temTrajeto", expression = "java(treinoRealizado.getGpsTrace() != null)")
     @Named("treinoRealizadoToOutputDto")
     TreinoRealizadoOutputDto toOutputDto(TreinoRealizado treinoRealizado);
 
