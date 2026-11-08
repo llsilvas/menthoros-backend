@@ -150,7 +150,7 @@ class IntervalsIcuFcAlvoAbsolutoTest {
         StructuredWorkout workout = converter.converter(treino).orElseThrow().workout();
 
         when(client.buscarLthrCorrida(TOKEN, ATHLETE_ID)).thenReturn(java.util.Optional.of(LTHR_PROVEDOR));
-        when(client.listarEventos(TOKEN, ATHLETE_ID, DATA, DATA)).thenReturn(List.of());
+        when(client.listarEventos(TOKEN, ATHLETE_ID, DATA.minusDays(7), DATA.plusDays(7))).thenReturn(List.of());
         when(client.criarEvento(eq(TOKEN), eq(ATHLETE_ID), any()))
                 .thenReturn(new IcuEventDto(1L, workout.externalId(), workout.name(), DATA + "T00:00:00"));
 

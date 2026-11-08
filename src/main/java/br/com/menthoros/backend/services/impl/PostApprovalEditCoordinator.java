@@ -21,6 +21,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -58,11 +59,27 @@ class PostApprovalEditCoordinator {
      * @return o snapshot do treino antes do patch, para o registro da edição (D7)
      */
     String checkBeforePatch(PlanoSemanal plano, TreinoPlanejado treino) {
+        return checkBeforePatch(plano, treino, null);
+    }
+
+    /**
+     * Variante com data de destino (coach-alterar-data-treino, D3): o destino passa pela mesma
+     * regra de data da origem, com o mesmo "hoje" do atleta — dia passado ou hoje-com-relógio
+     * são recusados antes de qualquer mutação.
+     */
+    String checkBeforePatch(PlanoSemanal plano, TreinoPlanejado treino, @Nullable LocalDate dataDestino) {
         boolean hasWatch = hasWatch(plano.getAtleta().getId(), treino.getTenantId());
-        policy.avaliar(treino, atletaHojeResolver.hojeDe(plano.getAtleta()), hasWatch)
+        LocalDate hoje = atletaHojeResolver.hojeDe(plano.getAtleta());
+        policy.avaliar(treino, hoje, hasWatch)
                 .ifPresent(recusa -> {
                     throw new DomainRuleViolationException(recusa.message());
                 });
+        if (dataDestino != null) {
+            policy.avaliarData(dataDestino, hoje, hasWatch)
+                    .ifPresent(recusa -> {
+                        throw new DomainRuleViolationException("Nova data: " + recusa.message());
+                    });
+        }
 
         // Só SINCRONIZANDO na janela: AGUARDANDO_RETRY é a própria edição anterior esperando o push,
         // e o próximo claim recarrega o conteúdo novo (D1, regra 3).
@@ -84,6 +101,16 @@ class PostApprovalEditCoordinator {
                 .findFirstByAtletaIdAndPlataformaInAndTenantIdOrderByAtivoDescAtualizadoEmDesc(
                         atletaId, CANAIS, tenantId)
                 .isPresent();
+    }
+
+    /**
+     * Patch que não mudou nada observável (ex.: só {@code dataTreino} igual à atual, CA7): sem
+     * registro de edição e sem reenvio ao relógio.
+     *
+     * <p><b>Idempotente:</b> YES — só leitura. <b>Side Effects:</b> NONE.
+     */
+    boolean inalterado(TreinoPlanejado treino, String snapshotBefore) {
+        return snapshotBefore != null && snapshotBefore.equals(recorder.snapshot(treino));
     }
 
     /**
