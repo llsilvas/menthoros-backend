@@ -54,15 +54,11 @@ public final class GpsSampleCollector {
         }
         double lat = latSemicircles * SEMICIRCLES_TO_DEGREES;
         double lng = lngSemicircles * SEMICIRCLES_TO_DEGREES;
-
-        double distM;
-        if (distanceM != null) {
-            distM = distanceM;
-        } else if (!hasLast) {
-            distM = 0;
-        } else {
-            distM = lastDistM + haversineM(lastLat, lastLng, lat, lng);
+        if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+            return;
         }
+
+        double distM = accumulatedDistanceM(distanceM, lat, lng);
         lastDistM = distM;
         lastLat = lat;
         lastLng = lng;
@@ -73,12 +69,28 @@ public final class GpsSampleCollector {
         }
         if (points.size() >= MAX_POINTS) {
             doubleStepAndRedecimate();
-            if (distM - lastKeptDistM < stepM) {
+            // Teto estrito: se nem a re-decimação abriu espaço (saltos maiores que o passo em
+            // arquivo hostil), o ponto é descartado — o passo já dobrou para as próximas ofertas.
+            if (points.size() >= MAX_POINTS || distM - lastKeptDistM < stepM) {
                 return;
             }
         }
         points.add(new Point(timestampSeg, lat, lng, fc, distM));
         lastKeptDistM = distM;
+    }
+
+    /**
+     * Distância acumulada do record: a do arquivo quando é finita e não anda para trás; senão,
+     * haversine desde o último record oferecido. Um .fit não confiável pode trazer NaN ou saltos.
+     */
+    private double accumulatedDistanceM(@Nullable Float distanceM, double lat, double lng) {
+        if (distanceM != null && Float.isFinite(distanceM) && distanceM >= lastDistM) {
+            return distanceM;
+        }
+        if (!hasLast) {
+            return 0;
+        }
+        return lastDistM + haversineM(lastLat, lastLng, lat, lng);
     }
 
     /** Pontos coletados, em ordem de arquivo. Vazio quando o arquivo não tem GPS válido. */

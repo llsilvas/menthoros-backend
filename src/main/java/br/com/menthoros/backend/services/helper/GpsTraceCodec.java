@@ -3,10 +3,12 @@ package br.com.menthoros.backend.services.helper;
 import br.com.menthoros.backend.dto.fit.FitGpsSample;
 import br.com.menthoros.backend.dto.fit.GpsTracePayload;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -20,7 +22,9 @@ public final class GpsTraceCodec {
 
     private static final double PRECISION = 1e5;
     // O payload é só primitivos e listas: um mapper padrão basta e evita injetar o bean no persister.
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+    // Campos desconhecidos são ignorados para que um payload v2 com campo novo continue legível.
+    private static final ObjectMapper MAPPER = new ObjectMapper()
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private GpsTraceCodec() {}
 
@@ -65,11 +69,12 @@ public final class GpsTraceCodec {
             encodeValue(lng - prevLng, sb);
             prevLat = lat;
             prevLng = lng;
-            tSeg.add((int) (p.timestampSeg() - t0));
+            tSeg.add(Math.toIntExact(p.timestampSeg() - t0));
             fc.add(p.fc());
         }
+        // fc admite null, e List.copyOf rejeita null: por isso unmodifiableList.
         return new GpsTracePayload(GpsTracePayload.CURRENT_VERSION, points.size(), sb.toString(),
-                List.copyOf(tSeg), java.util.Collections.unmodifiableList(fc));
+                List.copyOf(tSeg), Collections.unmodifiableList(fc));
     }
 
     /** Reconstrói os pontos; {@code baseTimestampSeg} é o epoch do primeiro ponto (0 se não importa). */

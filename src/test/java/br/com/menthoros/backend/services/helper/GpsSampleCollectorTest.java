@@ -90,6 +90,39 @@ class GpsSampleCollectorTest {
     }
 
     @Test
+    @DisplayName("distância NaN ou que anda para trás é ignorada: cai no haversine (arquivo hostil)")
+    void ignoresBogusRecordDistance() {
+        GpsSampleCollector c = new GpsSampleCollector();
+        c.offer(0, LAT0, LNG0, null, 0f);
+        c.offer(1, LAT0, LNG0 + 2 * ONE_METER_LNG, null, Float.NaN);   // 2 m reais
+        c.offer(2, LAT0, LNG0 + 4 * ONE_METER_LNG, null, -500f);       // anda para trás
+        c.offer(3, LAT0, LNG0 + 6 * ONE_METER_LNG, null, 1e9f);        // salto absurdo, mas finito e crescente: aceito como está
+
+        // 0 guardado; 1 e 2 ficam a < 5 m pelo haversine; 3 entra pela distância do arquivo.
+        assertThat(c.samples()).extracting(FitGpsSample::timestampSeg).containsExactly(0L, 3L);
+    }
+
+    @Test
+    @DisplayName("lat/lng fora da faixa são descartados")
+    void dropsOutOfRangeCoordinates() {
+        GpsSampleCollector c = new GpsSampleCollector();
+        c.offer(0, Integer.MAX_VALUE - 1, LNG0, null, 0f); // ~180° de latitude
+        c.offer(1, LAT0, LNG0, null, 10f);
+        assertThat(c.samples()).extracting(FitGpsSample::timestampSeg).containsExactly(1L);
+    }
+
+    @Test
+    @DisplayName("saltos maiores que o passo num arquivo hostil nunca passam do teto")
+    void hostileJumpsNeverExceedCap() {
+        GpsSampleCollector c = new GpsSampleCollector();
+        for (int i = 0; i < 60_000; i++) {
+            // 1 km por record: a re-decimação não remove nada até o passo passar de 1 km.
+            c.offer(i, LAT0, LNG0 + (i % 100) * 1000 * ONE_METER_LNG, null, i * 1000f);
+        }
+        assertThat(c.samples()).hasSizeLessThanOrEqualTo(GpsSampleCollector.MAX_POINTS);
+    }
+
+    @Test
     @DisplayName("sem nenhum ponto válido, lista vazia")
     void emptyWhenNoGps() {
         GpsSampleCollector c = new GpsSampleCollector();
