@@ -88,6 +88,15 @@ public record FitSessionData(
                 temperaturaMinC, temperaturaMaxC, amostrasFc, List.of(), null);
     }
 
+    /** Cópia com trajeto e modelo — usada pelos testes do persister sem repetir os 30 campos. */
+    public FitSessionData withGps(List<FitGpsSample> gpsSamples, @Nullable String deviceName) {
+        return new FitSessionData(serialNumber, dataTreino, startTimeEpochSeconds, duracao, distanciaKm, fcMedia,
+                fcMax, tssCalculado, corrida, esporteDetectado, subidaMetros, descidaMetros, potenciaMediaWatts,
+                cadenciaMediaPpm, tempoMovimento, calorias, gctMedioMs, gctEquilibrioPct, passadaMediaM,
+                oscilacaoVerticalCm, proporcaoVerticalPct, temperaturaMediaC, laps, velocidadeMediaKmh,
+                velocidadeMaxKmh, temperaturaMinC, temperaturaMaxC, amostrasFc, gpsSamples, deviceName);
+    }
+
     /** Sem os campos de execução (coach-ver-treino-realizado) — usado pelos testes anteriores a eles. */
     public FitSessionData(Long serialNumber, LocalDate dataTreino, long startTimeEpochSeconds, Duration duracao,
                           Double distanciaKm, Integer fcMedia, Integer fcMax, Integer tssCalculado, boolean corrida,

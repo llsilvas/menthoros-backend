@@ -2,6 +2,9 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.dto.fit.FitGpsSample;
 import br.com.menthoros.backend.dto.fit.GpsTracePayload;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jspecify.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -16,11 +19,37 @@ import java.util.List;
 public final class GpsTraceCodec {
 
     private static final double PRECISION = 1e5;
+    // O payload é só primitivos e listas: um mapper padrão basta e evita injetar o bean no persister.
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private GpsTraceCodec() {}
 
+    /**
+     * Decima → simplifica → codifica → JSON para {@code tb_treino_realizado.gps_trace}.
+     * {@code null} quando não há trajeto (menos de 2 pontos).
+     */
+    public static @Nullable String toJson(List<FitGpsSample> decimatedSamples) {
+        GpsTracePayload payload = encode(GpsTraceSimplifier.simplify(decimatedSamples));
+        if (payload == null) {
+            return null;
+        }
+        try {
+            return MAPPER.writeValueAsString(payload);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("Falha ao serializar gps_trace", e);
+        }
+    }
+
+    public static GpsTracePayload fromJson(String json) {
+        try {
+            return MAPPER.readValue(json, GpsTracePayload.class);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("gps_trace inválido", e);
+        }
+    }
+
     /** Lista vazia → {@code null}: sem trajeto não há payload a persistir. */
-    public static GpsTracePayload encode(List<FitGpsSample> points) {
+    public static @Nullable GpsTracePayload encode(List<FitGpsSample> points) {
         if (points.isEmpty()) {
             return null;
         }

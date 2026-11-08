@@ -235,6 +235,69 @@ class FitTreinoPersisterTest {
         }
 
         @Test
+        @DisplayName("upload manual sem ping usa o productName do .fit como deviceName (D1)")
+        void deviceNameDoFitNoUploadManual() {
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L).withGps(List.of(), "Forerunner 265"), null);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
+            assertThat(captor.getValue().getDeviceName()).isEqualTo("Forerunner 265");
+        }
+
+        @Test
+        @DisplayName("ping e .fit com modelos diferentes: o do ping prevalece (D1)")
+        void pingPrevaleceSobreFit() {
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L).withGps(List.of(), "FR265"), "Forerunner 265");
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
+            assertThat(captor.getValue().getDeviceName()).isEqualTo("Forerunner 265");
+        }
+
+        @Test
+        @DisplayName("duplicata sem modelo recebe o productName do .fit quando o ping não trouxe")
+        void duplicataPreencheDeviceNameDoFit() {
+            TreinoRealizado existente = new TreinoRealizado();
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(existente, false));
+            when(treinoMapper.toOutputDto(existente)).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L).withGps(List.of(), "Forerunner 265"), null);
+
+            assertThat(existente.getDeviceName()).isEqualTo("Forerunner 265");
+        }
+
+        @Test
+        @DisplayName("trajeto GPS vira JSON em gpsTrace; sem GPS fica nulo (D2)")
+        void gpsTracePersistido() {
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+            List<br.com.menthoros.backend.dto.fit.FitGpsSample> gps = List.of(
+                    new br.com.menthoros.backend.dto.fit.FitGpsSample(1751360400L, -23.5500, -46.6300, 140),
+                    new br.com.menthoros.backend.dto.fit.FitGpsSample(1751360460L, -23.5520, -46.6300, 150),
+                    new br.com.menthoros.backend.dto.fit.FitGpsSample(1751360520L, -23.5520, -46.6280, null));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L).withGps(gps, null), null);
+            service.persistir(atletaId, sessionCorrida(2L, 1751360400L), null);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService, times(2)).registrar(captor.capture(), anyString());
+            String json = captor.getAllValues().get(0).getGpsTrace();
+            assertThat(json).contains("\"v\":1").contains("\"n\":3").contains("\"polyline\":");
+            assertThat(GpsTraceCodec.fromJson(json).fc()).containsExactly(140, 150, null);
+            assertThat(captor.getAllValues().get(1).getGpsTrace()).isNull();
+        }
+
+        @Test
         @DisplayName("duplicata que já tem modelo não é sobrescrita")
         void duplicataMantemDeviceName() {
             TreinoRealizado existente = new TreinoRealizado();
