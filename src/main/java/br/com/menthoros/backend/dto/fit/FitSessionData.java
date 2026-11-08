@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.dto.fit;
 
+import org.jspecify.annotations.Nullable;
+
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -31,6 +33,10 @@ import java.util.List;
  * @param temperaturaMaxC      temperatura máxima, em °C.
  * @param amostrasFc           mensagens {@code record} em ordem de arquivo, para o tempo em zonas;
  *                             vazia quando o arquivo passa do limite de amostras. Não é persistida.
+ * @param gpsSamples           pontos GPS já decimados (add-activity-gps-trace, D3); vazia sem GPS.
+ * @param deviceName           {@code DeviceInfoMesg.productName} (fallback {@code FileIdMesg}), ex.
+ *                             {@code "Forerunner 265"}; nulo quando o arquivo não informa. Só é usado
+ *                             como fallback do {@code deviceName} do ping (D1).
  */
 public record FitSessionData(
         Long serialNumber,
@@ -60,8 +66,36 @@ public record FitSessionData(
         BigDecimal velocidadeMaxKmh,
         BigDecimal temperaturaMinC,
         BigDecimal temperaturaMaxC,
-        List<FitAmostraFc> amostrasFc
+        List<FitAmostraFc> amostrasFc,
+        List<FitGpsSample> gpsSamples,
+        @Nullable String deviceName
 ) {
+
+    /** Antes do trajeto GPS (add-activity-gps-trace) — mantém os chamadores e testes anteriores. */
+    public FitSessionData(Long serialNumber, LocalDate dataTreino, long startTimeEpochSeconds, Duration duracao,
+                          Double distanciaKm, Integer fcMedia, Integer fcMax, Integer tssCalculado, boolean corrida,
+                          String esporteDetectado, Integer subidaMetros, Integer descidaMetros,
+                          Integer potenciaMediaWatts, Integer cadenciaMediaPpm, Duration tempoMovimento,
+                          Integer calorias, Integer gctMedioMs, BigDecimal gctEquilibrioPct, BigDecimal passadaMediaM,
+                          BigDecimal oscilacaoVerticalCm, BigDecimal proporcaoVerticalPct,
+                          BigDecimal temperaturaMediaC, List<FitLapData> laps, Double velocidadeMediaKmh,
+                          BigDecimal velocidadeMaxKmh, BigDecimal temperaturaMinC, BigDecimal temperaturaMaxC,
+                          List<FitAmostraFc> amostrasFc) {
+        this(serialNumber, dataTreino, startTimeEpochSeconds, duracao, distanciaKm, fcMedia, fcMax, tssCalculado,
+                corrida, esporteDetectado, subidaMetros, descidaMetros, potenciaMediaWatts, cadenciaMediaPpm,
+                tempoMovimento, calorias, gctMedioMs, gctEquilibrioPct, passadaMediaM, oscilacaoVerticalCm,
+                proporcaoVerticalPct, temperaturaMediaC, laps, velocidadeMediaKmh, velocidadeMaxKmh,
+                temperaturaMinC, temperaturaMaxC, amostrasFc, List.of(), null);
+    }
+
+    /** Cópia com trajeto e modelo — usada pelos testes do persister sem repetir os 30 campos. */
+    public FitSessionData withGps(List<FitGpsSample> gpsSamples, @Nullable String deviceName) {
+        return new FitSessionData(serialNumber, dataTreino, startTimeEpochSeconds, duracao, distanciaKm, fcMedia,
+                fcMax, tssCalculado, corrida, esporteDetectado, subidaMetros, descidaMetros, potenciaMediaWatts,
+                cadenciaMediaPpm, tempoMovimento, calorias, gctMedioMs, gctEquilibrioPct, passadaMediaM,
+                oscilacaoVerticalCm, proporcaoVerticalPct, temperaturaMediaC, laps, velocidadeMediaKmh,
+                velocidadeMaxKmh, temperaturaMinC, temperaturaMaxC, amostrasFc, gpsSamples, deviceName);
+    }
 
     /** Sem os campos de execução (coach-ver-treino-realizado) — usado pelos testes anteriores a eles. */
     public FitSessionData(Long serialNumber, LocalDate dataTreino, long startTimeEpochSeconds, Duration duracao,

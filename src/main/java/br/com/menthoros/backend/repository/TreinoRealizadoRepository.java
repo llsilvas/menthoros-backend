@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.repository.projection.DistanciaDiaProjection;
+import br.com.menthoros.backend.repository.projection.GpsTraceView;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
@@ -28,6 +29,18 @@ public interface TreinoRealizadoRepository extends PagingAndSortingRepository<Tr
     Optional<TreinoRealizado> findById(UUID id);
 
     Optional<TreinoRealizado> findByIdAndTenantId(UUID id, UUID tenantId);
+
+    /**
+     * Trajeto GPS e modelo de um treino do atleta (add-activity-gps-trace, D4): tenant e dono no
+     * WHERE, projeção de duas colunas — não carrega a entidade.
+     */
+    @Query("""
+            select t.gpsTrace as gpsTrace, t.deviceName as deviceName
+            from TreinoRealizado t
+            where t.id = :id and t.tenantId = :tenantId and t.atleta.id = :atletaId
+            """)
+    Optional<GpsTraceView> findGpsTrace(@Param("id") UUID id, @Param("atletaId") UUID atletaId,
+                                        @Param("tenantId") UUID tenantId);
 
     TreinoRealizado save(TreinoRealizado entity);
 

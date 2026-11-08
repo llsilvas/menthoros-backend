@@ -11,7 +11,9 @@ import br.com.menthoros.backend.services.AtletaTreinoFeedbackService;
 import br.com.menthoros.backend.services.AtletaTreinoHojeService;
 import br.com.menthoros.backend.services.AtletaWorkoutAnalysisService;
 import br.com.menthoros.backend.dto.output.AthleteWorkoutAnalysisOutputDto;
+import br.com.menthoros.backend.dto.output.GpsTraceOutputDto;
 import br.com.menthoros.backend.dto.output.MelhoresEsforcosOutputDto;
+import br.com.menthoros.backend.services.AtletaGpsTraceService;
 import br.com.menthoros.backend.services.MelhorEsforcoService;
 import br.com.menthoros.backend.services.TreinoService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -55,6 +57,7 @@ public class AtletaTreinoController {
     private final AtletaTreinoFeedbackService treinoFeedbackService;
     private final AtletaWorkoutAnalysisService atletaWorkoutAnalysisService;
     private final MelhorEsforcoService melhorEsforcoService;
+    private final AtletaGpsTraceService atletaGpsTraceService;
 
     // @RequireTenant não se aplica: endpoints /me/ resolvem o atletaId do JWT via resolverAtletaIdAtual(),
     // sem receber um resource-ID como parâmetro. Isolamento garantido por TenantContext + queries tenant-scoped.
@@ -156,6 +159,24 @@ public class AtletaTreinoController {
         return atletaWorkoutAnalysisService.buscarAnalise(atletaId, id)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
+    }
+
+    @GetMapping("/me/realizados/{id}/trajeto")
+    @PreAuthorize("hasAnyRole('ATLETA','ADMIN')")
+    @Operation(summary = "Trajeto GPS simplificado de um treino realizado do atleta",
+            description = "Polyline codificada (Google, precisão 5) com tempo relativo e FC por ponto, para os "
+                    + "cards de compartilhamento. Dado de dispositivo Garmin: o cliente deve exibir a atribuição "
+                    + "'Garmin [deviceName]'. Use 'temTrajeto' na listagem para saber se vale chamar.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Trajeto do treino",
+                    content = @Content(schema = @Schema(implementation = GpsTraceOutputDto.class))),
+            @ApiResponse(responseCode = "401", description = "Token ausente ou inválido"),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — apenas atletas podem usar este endpoint"),
+            @ApiResponse(responseCode = "404", description = "Realizado inexistente, de outro atleta, de outro tenant ou sem trajeto GPS")
+    })
+    public ResponseEntity<GpsTraceOutputDto> buscarTrajetoDoRealizado(@PathVariable UUID id) {
+        UUID atletaId = atletaProgressService.resolverAtletaIdAtual();
+        return ResponseEntity.ok(atletaGpsTraceService.buscarTrajeto(atletaId, id));
     }
 
     @GetMapping("/me/treinos")

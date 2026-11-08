@@ -508,6 +508,134 @@ class FitParseServiceImplTest {
     }
 
     @Nested
+    @DisplayName("trajeto GPS e modelo do dispositivo (add-activity-gps-trace)")
+    class TrajetoGps {
+
+        private static final double DEG = 180.0 / 2_147_483_648.0;
+        private static final int LAT0 = (int) Math.round(-23.55 / DEG);
+        private static final int LNG0 = (int) Math.round(-46.63 / DEG);
+        private static final int ONE_METER_LNG = 117;
+
+        @Test
+        @DisplayName("records com GPS viram pontos decimados a 5 m, com FC e timestamp")
+        void extraiPontosGpsDecimados() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                for (int i = 0; i <= 10; i++) {
+                    builder.mesgs.add(recordGps(i, LAT0, LNG0 + i * ONE_METER_LNG, (short) (140 + i), (float) i));
+                }
+                builder.mesgs.add(sessaoMinima());
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.gpsSamples()).extracting(p -> p.timestampSeg() - inicioEpoch())
+                    .containsExactly(0L, 5L, 10L);
+            assertThat(dados.gpsSamples().get(0).lat()).isCloseTo(-23.55, org.assertj.core.data.Offset.offset(1e-6));
+            assertThat(dados.gpsSamples().get(1).fc()).isEqualTo(145);
+            // As amostras de FC continuam íntegras (uma por record), independentes da decimação.
+            assertThat(dados.amostrasFc()).hasSize(11);
+        }
+
+        @Test
+        @DisplayName("esteira (records sem posição) → lista vazia, import segue")
+        void semGpsListaVazia() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                builder.mesgs.add(recordGps(0, null, null, (short) 140, 0f));
+                builder.mesgs.add(recordGps(1, null, null, (short) 141, 10f));
+                builder.mesgs.add(sessaoMinima());
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.gpsSamples()).isEmpty();
+            assertThat(dados.amostrasFc()).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("coordenada inválida (0x7FFFFFFF) é pulada sem derrubar a ingestão")
+        void coordenadaInvalidaPulada() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                builder.mesgs.add(recordGps(0, LAT0, LNG0, null, 0f));
+                builder.mesgs.add(recordGps(1, Integer.MAX_VALUE, LNG0, null, 10f));
+                builder.mesgs.add(recordGps(2, LAT0, LNG0 + 20 * ONE_METER_LNG, null, 20f));
+                builder.mesgs.add(sessaoMinima());
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.gpsSamples()).extracting(p -> p.timestampSeg() - inicioEpoch()).containsExactly(0L, 2L);
+        }
+
+        @Test
+        @DisplayName("deviceName vem do DeviceInfo.productName, com prioridade sobre o FileId")
+        void deviceNameDoDeviceInfo() throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                builder.fileId.setProductName("FR265");
+                com.garmin.fit.DeviceInfoMesg info = new com.garmin.fit.DeviceInfoMesg();
+                info.setDeviceIndex((short) 0);
+                info.setManufacturer(1);
+                info.setProductName("Forerunner 265");
+                builder.mesgs.add(info);
+                builder.mesgs.add(sessaoMinima());
+            });
+
+            FitSessionData dados = service.parse(new ByteArrayInputStream(fit));
+
+            assertThat(dados.deviceName()).isEqualTo("Forerunner 265");
+        }
+
+        @Test
+        @DisplayName("sem DeviceInfo, usa o productName do FileId; sem nenhum, fica nulo")
+        void deviceNameFallbackENulo() throws IOException {
+            byte[] comFileId = gerarFit(builder -> {
+                builder.fileId.setProductName("FR265");
+                builder.mesgs.add(sessaoMinima());
+            });
+            byte[] semNada = gerarFit(builder -> builder.mesgs.add(sessaoMinima()));
+
+            assertThat(service.parse(new ByteArrayInputStream(comFileId)).deviceName()).isEqualTo("FR265");
+            assertThat(service.parse(new ByteArrayInputStream(semNada)).deviceName()).isNull();
+        }
+
+        @Test
+        @DisplayName("fixture real de 15 km traz trajeto decimado dentro do teto")
+        void fixtureRealTemTrajeto() throws IOException {
+            try (InputStream in = getClass().getResourceAsStream("/fit/corrida-15km-16laps.fit")) {
+                FitSessionData dados = service.parse(in);
+
+                assertThat(dados.gpsSamples()).isNotEmpty()
+                        .hasSizeLessThanOrEqualTo(br.com.menthoros.backend.services.helper.GpsSampleCollector.MAX_POINTS);
+                assertThat(dados.gpsSamples()).allSatisfy(p -> {
+                    assertThat(p.lat()).isBetween(-90.0, 90.0);
+                    assertThat(p.lng()).isBetween(-180.0, 180.0);
+                });
+            }
+        }
+
+        private long inicioEpoch() {
+            return new DateTime(Instant.parse("2026-07-01T10:00:00Z")).getTimestamp();
+        }
+
+        private RecordMesg recordGps(long segundos, Integer lat, Integer lng, Short fc, Float distanciaM) {
+            RecordMesg r = new RecordMesg();
+            r.setTimestamp(new DateTime(Instant.parse("2026-07-01T10:00:00Z").plusSeconds(segundos)));
+            if (lat != null) r.setPositionLat(lat);
+            if (lng != null) r.setPositionLong(lng);
+            if (fc != null) r.setHeartRate(fc);
+            if (distanciaM != null) r.setDistance(distanciaM);
+            return r;
+        }
+
+        private SessionMesg sessaoMinima() {
+            SessionMesg session = new SessionMesg();
+            session.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+            session.setSport(Sport.RUNNING);
+            session.setTotalElapsedTime(60f);
+            return session;
+        }
+    }
+
+    @Nested
     @DisplayName("velocidade e temperatura da sessão (coach-ver-treino-realizado, D2)")
     class VelocidadeETemperatura {
 

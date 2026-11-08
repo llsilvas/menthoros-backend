@@ -47,6 +47,7 @@ class AtletaWorkoutAnalysisControllerTest {
     @MockitoBean private AtletaTreinoFeedbackService treinoFeedbackService;
     @MockitoBean private AtletaWorkoutAnalysisService atletaWorkoutAnalysisService;
     @MockitoBean private MelhorEsforcoService melhorEsforcoService;
+    @MockitoBean private br.com.menthoros.backend.services.AtletaGpsTraceService atletaGpsTraceService;
 
     private final UUID atletaId = UUID.randomUUID();
     private final UUID treinoId = UUID.randomUUID();
