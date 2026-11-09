@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.events.TreinoRegistradoEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import br.com.menthoros.backend.dto.input.FeedbackTreinoInputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.TreinoRealizado;
@@ -35,10 +37,12 @@ public class AtletaTreinoFeedbackServiceImpl implements AtletaTreinoFeedbackServ
     private final TreinoMapper treinoMapper;
     private final Clock clock;
     private final MeterRegistry meterRegistry;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Idempotent: YES — último envio vence. Side Effects: UPDATE em tb_treino_realizado (e,
-     * via {@code reprocessar}, possível recálculo de tssCalculado e da carga do dia).
+     * via {@code reprocessar}, possível recálculo de tssCalculado e da carga do dia) e publicação de
+     * {@code TreinoRegistradoEvent} (análise pós-treino, após o commit; já analisado é ignorado).
      * Tenant-aware: YES.
      */
     @Override
@@ -58,6 +62,10 @@ public class AtletaTreinoFeedbackServiceImpl implements AtletaTreinoFeedbackServ
         // O RPE pode ser a única fonte de TSS deste treino (sync sem FC/pace) — reprocessar
         // recalcula tssCalculado e a carga do dia com o valor recém-gravado (D9).
         ingestaoTreinoRealizadoService.reprocessar(treinoRealizadoId, null);
+
+        // Treino sincronizado chega sem RPE e o evento do insert não passa na elegibilidade da análise;
+        // é aqui que o RPE aparece. O listener roda AFTER_COMMIT e pula análise COMPLETED.
+        eventPublisher.publishEvent(new TreinoRegistradoEvent(treino.getId(), treino.getTenantId()));
 
         log.info("Feedback registrado: treinoRealizadoId={}, atletaId={}, rpe={}",
                 treinoRealizadoId, atletaId, input.percepcaoEsforco());
