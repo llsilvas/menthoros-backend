@@ -37,6 +37,8 @@ import java.util.List;
  * @param deviceName           {@code DeviceInfoMesg.productName} (fallback {@code FileIdMesg}), ex.
  *                             {@code "Forerunner 265"}; nulo quando o arquivo não informa. Só é usado
  *                             como fallback do {@code deviceName} do ping (D1).
+ * @param esteira              {@code SessionMesg.subSport == TREADMILL} (add-activity-treadmill-flag, D2);
+ *                             {@code INDOOR_RUNNING} e ausente contam como {@code false}.
  */
 public record FitSessionData(
         Long serialNumber,
@@ -68,8 +70,26 @@ public record FitSessionData(
         BigDecimal temperaturaMaxC,
         List<FitAmostraFc> amostrasFc,
         List<FitGpsSample> gpsSamples,
-        @Nullable String deviceName
+        @Nullable String deviceName,
+        boolean esteira
 ) {
+
+    /** Antes do flag de esteira (add-activity-treadmill-flag, D5) — mantém os chamadores e testes anteriores. */
+    public FitSessionData(Long serialNumber, LocalDate dataTreino, long startTimeEpochSeconds, Duration duracao,
+                          Double distanciaKm, Integer fcMedia, Integer fcMax, Integer tssCalculado, boolean corrida,
+                          String esporteDetectado, Integer subidaMetros, Integer descidaMetros,
+                          Integer potenciaMediaWatts, Integer cadenciaMediaPpm, Duration tempoMovimento,
+                          Integer calorias, Integer gctMedioMs, BigDecimal gctEquilibrioPct, BigDecimal passadaMediaM,
+                          BigDecimal oscilacaoVerticalCm, BigDecimal proporcaoVerticalPct,
+                          BigDecimal temperaturaMediaC, List<FitLapData> laps, Double velocidadeMediaKmh,
+                          BigDecimal velocidadeMaxKmh, BigDecimal temperaturaMinC, BigDecimal temperaturaMaxC,
+                          List<FitAmostraFc> amostrasFc, List<FitGpsSample> gpsSamples, @Nullable String deviceName) {
+        this(serialNumber, dataTreino, startTimeEpochSeconds, duracao, distanciaKm, fcMedia, fcMax, tssCalculado,
+                corrida, esporteDetectado, subidaMetros, descidaMetros, potenciaMediaWatts, cadenciaMediaPpm,
+                tempoMovimento, calorias, gctMedioMs, gctEquilibrioPct, passadaMediaM, oscilacaoVerticalCm,
+                proporcaoVerticalPct, temperaturaMediaC, laps, velocidadeMediaKmh, velocidadeMaxKmh,
+                temperaturaMinC, temperaturaMaxC, amostrasFc, gpsSamples, deviceName, false);
+    }
 
     /** Antes do trajeto GPS (add-activity-gps-trace) — mantém os chamadores e testes anteriores. */
     public FitSessionData(Long serialNumber, LocalDate dataTreino, long startTimeEpochSeconds, Duration duracao,
@@ -94,7 +114,16 @@ public record FitSessionData(
                 fcMax, tssCalculado, corrida, esporteDetectado, subidaMetros, descidaMetros, potenciaMediaWatts,
                 cadenciaMediaPpm, tempoMovimento, calorias, gctMedioMs, gctEquilibrioPct, passadaMediaM,
                 oscilacaoVerticalCm, proporcaoVerticalPct, temperaturaMediaC, laps, velocidadeMediaKmh,
-                velocidadeMaxKmh, temperaturaMinC, temperaturaMaxC, amostrasFc, gpsSamples, deviceName);
+                velocidadeMaxKmh, temperaturaMinC, temperaturaMaxC, amostrasFc, gpsSamples, deviceName, esteira);
+    }
+
+    /** Cópia com o flag de esteira — usada pelos testes do persister sem repetir os 31 campos. */
+    public FitSessionData withEsteira(boolean esteira) {
+        return new FitSessionData(serialNumber, dataTreino, startTimeEpochSeconds, duracao, distanciaKm, fcMedia,
+                fcMax, tssCalculado, corrida, esporteDetectado, subidaMetros, descidaMetros, potenciaMediaWatts,
+                cadenciaMediaPpm, tempoMovimento, calorias, gctMedioMs, gctEquilibrioPct, passadaMediaM,
+                oscilacaoVerticalCm, proporcaoVerticalPct, temperaturaMediaC, laps, velocidadeMediaKmh,
+                velocidadeMaxKmh, temperaturaMinC, temperaturaMaxC, amostrasFc, gpsSamples, deviceName, esteira);
     }
 
     /** Sem os campos de execução (coach-ver-treino-realizado) — usado pelos testes anteriores a eles. */

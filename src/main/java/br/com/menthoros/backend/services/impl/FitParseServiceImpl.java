@@ -14,6 +14,7 @@ import com.garmin.fit.MesgBroadcaster;
 import com.garmin.fit.RecordMesgListener;
 import com.garmin.fit.SessionMesgListener;
 import com.garmin.fit.Sport;
+import com.garmin.fit.SubSport;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -180,6 +181,8 @@ public class FitParseServiceImpl implements FitParseService {
                     mesg.getTrainingStressScore(),
                     sport == Sport.RUNNING,
                     sport != null ? sport.name() : "GENERIC",
+                    // Só TREADMILL é evidência de esteira; INDOOR_RUNNING é pista coberta (D2).
+                    mesg.getSubSport() == SubSport.TREADMILL,
                     mesg.getTotalAscent(),
                     mesg.getTotalDescent(),
                     mesg.getAvgPower(),
@@ -235,6 +238,7 @@ public class FitParseServiceImpl implements FitParseService {
             Float trainingStressScore,
             boolean corrida,
             String esporte,
+            boolean esteira,
             Integer totalAscent,
             Integer totalDescent,
             Integer avgPower,
@@ -310,7 +314,8 @@ public class FitParseServiceImpl implements FitParseService {
                 celsiusDeByte(s.maxTemperature()),
                 List.copyOf(amostras),
                 gps.samples(),
-                deviceName
+                deviceName,
+                s.esteira()
         );
     }
 
