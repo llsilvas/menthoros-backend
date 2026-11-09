@@ -9,6 +9,7 @@ import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -47,6 +48,7 @@ class AtletaTreinoFeedbackServiceImplTest {
     @Mock private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     @Mock private TreinoMapper treinoMapper;
     @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private AiWorkoutAnalysisRepository analiseRepository;
 
     private AtletaTreinoFeedbackServiceImpl service;
     private SimpleMeterRegistry meterRegistry;
@@ -65,7 +67,7 @@ class AtletaTreinoFeedbackServiceImplTest {
         Clock clock = Clock.fixed(Instant.parse("2026-08-27T12:00:00Z"), ZoneOffset.UTC);
         meterRegistry = new SimpleMeterRegistry();
         service = new AtletaTreinoFeedbackServiceImpl(treinoRealizadoRepository, ingestaoTreinoRealizadoService, treinoMapper, clock, meterRegistry,
-                eventPublisher);
+                eventPublisher, analiseRepository);
     }
 
     @AfterEach
@@ -122,6 +124,20 @@ class AtletaTreinoFeedbackServiceImplTest {
         service.registrarFeedback(atletaId, treinoId, new FeedbackTreinoInputDto(4, null, null));
 
         verify(eventPublisher).publishEvent(new TreinoRegistradoEvent(treinoId, tenantId));
+    }
+
+    @Test
+    @DisplayName("reenvio com análise já registrada (PENDING, FAILED ou COMPLETED) não dispara LLM de novo")
+    void reenvioComAnaliseNaoPublica() {
+        TreinoRealizado tr = realizado();
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(tr));
+        when(treinoRealizadoRepository.save(tr)).thenReturn(tr);
+        when(treinoMapper.toOutputDto(tr)).thenReturn(mock(TreinoRealizadoOutputDto.class));
+        when(analiseRepository.existsByTreinoRealizadoIdAndTenantId(treinoId, tenantId)).thenReturn(true);
+
+        service.registrarFeedback(atletaId, treinoId, new FeedbackTreinoInputDto(5, null, null));
+
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

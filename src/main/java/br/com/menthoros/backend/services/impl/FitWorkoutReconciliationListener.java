@@ -17,7 +17,9 @@ import org.springframework.transaction.event.TransactionalEventListener;
  * revertê-la nem chegar ao chamador (scheduler de pings ou upload manual).</p>
  *
  * <p>Síncrono: roda na thread de quem commitou. Se {@code persistir} rodar sob uma transação
- * externa, o evento só dispara no commit dela.</p>
+ * externa, o evento só dispara no commit dela. Custo: durante o AFTER_COMMIT a conexão da ingestão
+ * ainda não voltou ao pool, e o {@code REQUIRES_NEW} pega uma segunda — por alguns milissegundos,
+ * duas conexões por ping/upload (o scheduler de pings é uma thread só).</p>
  */
 @Slf4j
 @Component
