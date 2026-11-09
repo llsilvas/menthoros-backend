@@ -164,6 +164,10 @@ public class TreinoRealizado extends TreinoBase{
     @Column(name = "gps_trace", columnDefinition = "jsonb")
     private String gpsTrace;
 
+    /** Corrida na esteira, só com evidência positiva da fonte (add-activity-treadmill-flag, D2). */
+    @Column(name = "esteira", nullable = false)
+    private boolean esteira;
+
     @Column(name = "gear_name", length = 200)
     private String gearName;
 
