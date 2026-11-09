@@ -246,10 +246,10 @@ class FitTreinoPersisterTest {
         }
 
         @Test
-        @DisplayName("reenvio do mesmo .fit de esteira mantém o registro existente (CA5)")
-        void duplicataMantemEsteira() {
+        @DisplayName("duplicata não reescreve o flag do registro existente (CA5, D4)")
+        void duplicataNaoReescreveEsteira() {
+            // Registro anterior à V115 ficou false; o reenvio do .fit de esteira não o corrige (D4).
             TreinoRealizado existente = new TreinoRealizado();
-            existente.setEsteira(true);
             when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
                     .thenReturn(new TreinoDedupHelper.SaveResult(existente, false));
             when(treinoMapper.toOutputDto(existente)).thenReturn(mock(TreinoRealizadoOutputDto.class));
@@ -258,7 +258,7 @@ class FitTreinoPersisterTest {
                     sessionCorrida(1L, 1751360400L).withEsteira(true), null);
 
             assertThat(resultado.novo()).isFalse();
-            assertThat(existente.isEsteira()).isTrue();
+            assertThat(existente.isEsteira()).isFalse();
             verify(ingestaoTreinoRealizadoService, times(1)).registrar(any(), anyString());
         }
 

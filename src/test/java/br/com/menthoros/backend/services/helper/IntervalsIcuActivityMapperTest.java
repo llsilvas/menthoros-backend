@@ -237,7 +237,7 @@ class IntervalsIcuActivityMapperTest {
         }
 
         @ParameterizedTest
-        @org.junit.jupiter.params.provider.CsvSource({"Treadmill,true", "Run,false", "TrailRun,false", "VirtualRun,false"})
+        @CsvSource({"Treadmill,true", "Run,false", "TrailRun,false", "VirtualRun,false"})
         @DisplayName("esteira só para type Treadmill (add-activity-treadmill-flag, CA3)")
         void esteiraSoParaTreadmill(String type, boolean esperado) {
             IcuActivityDto dto = new IcuActivityDto(

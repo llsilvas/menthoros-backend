@@ -16,6 +16,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -703,8 +705,8 @@ class FitParseServiceImplTest {
             assertThat(parseComSubSport(SubSport.TREADMILL).esteira()).isTrue();
         }
 
-        @org.junit.jupiter.params.ParameterizedTest
-        @org.junit.jupiter.params.provider.EnumSource(value = SubSport.class,
+        @ParameterizedTest
+        @EnumSource(value = SubSport.class,
                 names = {"INDOOR_RUNNING", "GENERIC", "STREET", "TRAIL", "TRACK"})
         @DisplayName("outros subSport não marcam esteira")
         void outrosSubSportNaoMarcam(SubSport subSport) throws IOException {
