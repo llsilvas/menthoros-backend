@@ -10,6 +10,7 @@ import com.garmin.fit.LapMesg;
 import com.garmin.fit.RecordMesg;
 import com.garmin.fit.SessionMesg;
 import com.garmin.fit.Sport;
+import com.garmin.fit.SubSport;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -691,6 +692,54 @@ class FitParseServiceImplTest {
     }
 
     // ── Helper: gera um .fit real e mínimo via FileEncoder do próprio SDK ─────────────────────
+
+    @Nested
+    @DisplayName("esteira (add-activity-treadmill-flag)")
+    class Esteira {
+
+        @Test
+        @DisplayName("subSport TREADMILL marca esteira")
+        void treadmillMarcaEsteira() throws IOException {
+            assertThat(parseComSubSport(SubSport.TREADMILL).esteira()).isTrue();
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest
+        @org.junit.jupiter.params.provider.EnumSource(value = SubSport.class,
+                names = {"INDOOR_RUNNING", "GENERIC", "STREET", "TRAIL", "TRACK"})
+        @DisplayName("outros subSport não marcam esteira")
+        void outrosSubSportNaoMarcam(SubSport subSport) throws IOException {
+            assertThat(parseComSubSport(subSport).esteira()).isFalse();
+        }
+
+        @Test
+        @DisplayName("sem subSport não marca esteira")
+        void semSubSportNaoMarca() throws IOException {
+            assertThat(parseComSubSport(null).esteira()).isFalse();
+        }
+
+        @Test
+        @DisplayName("fixture real outdoor não marca esteira")
+        void fixtureOutdoorNaoMarca() throws IOException {
+            try (InputStream in = getClass().getResourceAsStream("/fit/corrida-15km-16laps.fit")) {
+                assertThat(service.parse(in).esteira()).isFalse();
+            }
+        }
+
+        private FitSessionData parseComSubSport(SubSport subSport) throws IOException {
+            byte[] fit = gerarFit(builder -> {
+                SessionMesg session = new SessionMesg();
+                session.setStartTime(new DateTime(Instant.parse("2026-07-01T10:00:00Z")));
+                session.setSport(Sport.RUNNING);
+                if (subSport != null) {
+                    session.setSubSport(subSport);
+                }
+                session.setTotalElapsedTime(1800f);
+                session.setTotalDistance(5000f);
+                builder.mesgs.add(session);
+            });
+            return service.parse(new ByteArrayInputStream(fit));
+        }
+    }
 
     private interface FitBuilderCustomizer {
         void customize(FitBuilder builder) throws IOException;
