@@ -135,6 +135,9 @@ public record TreinoRealizadoOutputDto(
         @Schema(description = "Se o treino tem trajeto GPS disponível em GET /me/realizados/{id}/trajeto", example = "true")
         boolean temTrajeto,
 
+        @Schema(description = "Se o treino foi na esteira, só com evidência positiva da fonte (.fit subSport TREADMILL ou intervals.icu Treadmill)", example = "false")
+        boolean esteira,
+
         @Schema(description = "Status do treino", example = "CONCLUIDO")
         TreinoExecucaoStatus status,
 
@@ -179,6 +182,62 @@ public record TreinoRealizadoOutputDto(
         TempoEmZonas tempoEmZonas
 ) {
 
+    /** Antes de {@code esteira} (add-activity-treadmill-flag, D5) — mantém os testes que constroem o record posicionalmente. */
+    public TreinoRealizadoOutputDto(UUID id,
+                                    LocalDate dataTreino,
+                                    DiaSemana diaSemana,
+                                    TipoTreino tipoTreino,
+                                    String descricao,
+                                    String zonaAlvo,
+                                    String duracaoMin,
+                                    Double distanciaKm,
+                                    String ritmoAlvo,
+                                    String paceMedia,
+                                    Integer elevacaoGanhoMetros,
+                                    Integer elevacaoPerdaMetros,
+                                    String observacao,
+                                    Integer fcMedia,
+                                    Integer fcMax,
+                                    Integer cadenciaMedia,
+                                    Integer potenciaMedia,
+                                    Double velocidadeMedia,
+                                    Integer percepcaoEsforco,
+                                    Integer tssCalculado,
+                                    String metodoCalculoTss,
+                                    Double intensidadeReal,
+                                    RunningDynamicsOutputDto runningDynamics,
+                                    Double decouplingPercentual,
+                                    DecouplingResultadoDto decoupling,
+                                    LapEfficiencySeriesDto serieEficiencia,
+                                    String feedbackAtleta,
+                                    Integer qualidadeSonoNoiteAnterior,
+                                    Integer nivelEstresse,
+                                    Integer nivelDor,
+                                    Integer nivelFadiga,
+                                    Integer nivelRecuperacao,
+                                    FonteDados fonteDados,
+                                    String deviceName,
+                                    boolean temTrajeto,
+                                    TreinoExecucaoStatus status,
+                                    String externalId,
+                                    List<EtapaRealizadaOutputDto> etapasRealizadas,
+                                    SugestaoReclassificacaoDto sugestaoReclassificacao,
+                                    List<Sensacao> sensacoes,
+                                    LocalDateTime feedbackRegistradoEm,
+                                    Double velocidadeMaxKmh,
+                                    Double temperaturaMinC,
+                                    Double temperaturaMaxC,
+                                    Integer elapsedTimeSeg,
+                                    TempoEmZonas tempoEmZonas) {
+        this(id, dataTreino, diaSemana, tipoTreino, descricao, zonaAlvo, duracaoMin, distanciaKm, ritmoAlvo,
+                paceMedia, elevacaoGanhoMetros, elevacaoPerdaMetros, observacao, fcMedia, fcMax, cadenciaMedia,
+                potenciaMedia, velocidadeMedia, percepcaoEsforco, tssCalculado, metodoCalculoTss, intensidadeReal,
+                runningDynamics, decouplingPercentual, decoupling, serieEficiencia, feedbackAtleta,
+                qualidadeSonoNoiteAnterior, nivelEstresse, nivelDor, nivelFadiga, nivelRecuperacao, fonteDados,
+                deviceName, temTrajeto, false, status, externalId, etapasRealizadas, sugestaoReclassificacao, sensacoes,
+                feedbackRegistradoEm, velocidadeMaxKmh, temperaturaMinC, temperaturaMaxC, elapsedTimeSeg, tempoEmZonas);
+    }
+
     /** Antes de {@code temTrajeto} (add-activity-gps-trace) — mantém os testes que constroem o record posicionalmente. */
     public TreinoRealizadoOutputDto(UUID id, LocalDate dataTreino, DiaSemana diaSemana, TipoTreino tipoTreino,
                                     String descricao, String zonaAlvo, String duracaoMin, Double distanciaKm,
@@ -202,7 +261,7 @@ public record TreinoRealizadoOutputDto(
                 potenciaMedia, velocidadeMedia, percepcaoEsforco, tssCalculado, metodoCalculoTss, intensidadeReal,
                 runningDynamics, decouplingPercentual, decoupling, serieEficiencia, feedbackAtleta,
                 qualidadeSonoNoiteAnterior, nivelEstresse, nivelDor, nivelFadiga, nivelRecuperacao, fonteDados,
-                deviceName, false, status, externalId, etapasRealizadas, sugestaoReclassificacao, sensacoes,
+                deviceName, false, false, status, externalId, etapasRealizadas, sugestaoReclassificacao, sensacoes,
                 feedbackRegistradoEm, velocidadeMaxKmh, temperaturaMinC, temperaturaMaxC, elapsedTimeSeg,
                 tempoEmZonas);
     }
