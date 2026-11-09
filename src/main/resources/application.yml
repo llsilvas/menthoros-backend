@@ -239,7 +239,7 @@ app:
     # Datas de vigência dos documentos publicados. Precisam bater com o que a página exibe:
     # divergência = registro apontando para um texto que o coach não viu.
     # Sincronizadas com POLITICA_VERSAO/TERMOS_VERSAO do frontend — mudar aqui exige mudar lá.
-    policy-version: ${LGPD_POLICY_VERSION:2026-08-03}
+    policy-version: ${LGPD_POLICY_VERSION:2026-11-09}
     terms-version: ${LGPD_TERMS_VERSION:2026-08-03}
 
   # ----------------------------------------

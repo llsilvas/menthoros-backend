@@ -230,7 +230,7 @@ class WaitlistControllerIT extends AbstractIntegrationTest {
         Waitlist salvo = waitlistRepository.findAll().stream()
                 .filter(w -> "policy@exemplo.com".equals(w.getEmail()))
                 .findFirst().orElseThrow();
-        assertThat(salvo.getPolicyVersion()).isEqualTo("2026-08-03");
+        assertThat(salvo.getPolicyVersion()).isEqualTo("2026-11-09");
     }
 
     @Test
