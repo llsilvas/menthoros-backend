@@ -218,6 +218,51 @@ class FitTreinoPersisterTest {
         }
 
         @Test
+        @DisplayName("esteira do .fit vai para o treino novo (add-activity-treadmill-flag, CA1)")
+        void esteiraNoTreinoNovo() {
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L).withEsteira(true), null);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
+            assertThat(captor.getValue().isEsteira()).isTrue();
+        }
+
+        @Test
+        @DisplayName("sem evidência de esteira o treino novo fica false (CA2)")
+        void semEsteiraNoTreinoNovo() {
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L), null);
+
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
+            assertThat(captor.getValue().isEsteira()).isFalse();
+        }
+
+        @Test
+        @DisplayName("reenvio do mesmo .fit de esteira mantém o registro existente (CA5)")
+        void duplicataMantemEsteira() {
+            TreinoRealizado existente = new TreinoRealizado();
+            existente.setEsteira(true);
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(existente, false));
+            when(treinoMapper.toOutputDto(existente)).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            FitImportResultado resultado = service.persistir(atletaId,
+                    sessionCorrida(1L, 1751360400L).withEsteira(true), null);
+
+            assertThat(resultado.novo()).isFalse();
+            assertThat(existente.isEsteira()).isTrue();
+            verify(ingestaoTreinoRealizadoService, times(1)).registrar(any(), anyString());
+        }
+
+        @Test
         @DisplayName("duplicata sem modelo recebe o deviceName do ping; nada mais muda")
         void duplicataPreencheDeviceName() {
             TreinoRealizado existente = new TreinoRealizado();

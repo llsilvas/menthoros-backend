@@ -53,6 +53,9 @@ public class IntervalsIcuActivityMapper {
 
     private static final Set<String> MODALIDADES_SUPORTADAS = Set.of("Run", "TrailRun", "VirtualRun", "Treadmill");
 
+    /** Único type que comprova esteira; VirtualRun pode ser outra coisa (add-activity-treadmill-flag, D2). */
+    private static final String TYPE_ESTEIRA = "Treadmill";
+
     public boolean isModalidadeSuportada(String type) {
         return type != null && MODALIDADES_SUPORTADAS.contains(type);
     }
@@ -99,6 +102,7 @@ public class IntervalsIcuActivityMapper {
         treino.setPercepcaoEsforco(dto.icuRpe() != null ? (int) Math.round(dto.icuRpe()) : null);
         treino.setElevacaoGanhoMetros(dto.totalElevationGain() != null ? (int) Math.round(dto.totalElevationGain()) : null);
         treino.setDeviceName(dto.deviceName());
+        treino.setEsteira(TYPE_ESTEIRA.equals(dto.type()));
         treino.setMetadadosSincronizacao(buildMetadadosSincronizacao(dto));
 
         anexarEtapas(treino, dto);

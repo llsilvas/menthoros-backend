@@ -171,6 +171,7 @@ public class FitTreinoPersister {
         treino.setTemperaturaMaxC(dados.temperaturaMaxC());
         treino.setTempoEmZonas(tempoEmZonas(dados, atleta));
         treino.setGpsTrace(GpsTraceCodec.toJson(dados.gpsSamples()));
+        treino.setEsteira(dados.esteira());
 
         if (dados.tssCalculado() != null) {
             treino.setTssCalculado(dados.tssCalculado());

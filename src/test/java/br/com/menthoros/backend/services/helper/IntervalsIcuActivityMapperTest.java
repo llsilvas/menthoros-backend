@@ -236,6 +236,17 @@ class IntervalsIcuActivityMapperTest {
             assertThat(treino.getExternalId()).isEqualTo("i1");
         }
 
+        @ParameterizedTest
+        @org.junit.jupiter.params.provider.CsvSource({"Treadmill,true", "Run,false", "TrailRun,false", "VirtualRun,false"})
+        @DisplayName("esteira só para type Treadmill (add-activity-treadmill-flag, CA3)")
+        void esteiraSoParaTreadmill(String type, boolean esperado) {
+            IcuActivityDto dto = new IcuActivityDto(
+                    "i1", "i641775", type, "Atividade", "2026-07-16T06:00:00", null,
+                    1800, 1850, 5000.0, null, null, null, null, null, null, null, null, null, null, null);
+
+            assertThat(mapper.map(dto, atleta()).isEsteira()).isEqualTo(esperado);
+        }
+
         @Test
         @DisplayName("modalidade não suportada (ex.: Ride) lança DomainRuleViolationException")
         void modalidadeNaoSuportadaLancaExcecao() {
