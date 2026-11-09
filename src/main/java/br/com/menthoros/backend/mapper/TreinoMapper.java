@@ -263,6 +263,10 @@ public interface TreinoMapper {
     // aqui para compatibilidade (CA4).
     @Mapping(target = "decoupling", ignore = true)
     @Mapping(target = "serieEficiencia", ignore = true)
+    // Só o booleano vai no DTO; o JSON do trajeto (até 8 KB) é servido pelo endpoint próprio (D4).
+    // A coluna JSONB ainda é carregada pelo SELECT da entidade — sem bytecode enhancement não há
+    // lazy em coluna básica. Aceito: as listagens são limitadas (≤ 30 dias no atleta).
+    @Mapping(target = "temTrajeto", expression = "java(treinoRealizado.getGpsTrace() != null)")
     @Named("treinoRealizadoToOutputDto")
     TreinoRealizadoOutputDto toOutputDto(TreinoRealizado treinoRealizado);
 

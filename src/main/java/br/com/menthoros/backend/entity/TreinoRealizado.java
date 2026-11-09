@@ -155,6 +155,15 @@ public class TreinoRealizado extends TreinoBase{
     @Column(name = "device_name", length = 200)
     private String deviceName;
 
+    /**
+     * Trajeto GPS simplificado, JSON de {@code GpsTracePayload} (add-activity-gps-trace, D2).
+     * Nulo sem GPS ou em treino anterior à V113. String como em
+     * {@link RaceProjectionSnapshot#getProjectionsJson()}: a entidade não desserializa.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "gps_trace", columnDefinition = "jsonb")
+    private String gpsTrace;
+
     @Column(name = "gear_name", length = 200)
     private String gearName;
 

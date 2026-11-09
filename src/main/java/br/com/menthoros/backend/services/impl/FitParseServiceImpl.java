@@ -5,7 +5,9 @@ import br.com.menthoros.backend.dto.fit.FitLapData;
 import br.com.menthoros.backend.dto.fit.FitSessionData;
 import br.com.menthoros.backend.exception.FitParseException;
 import br.com.menthoros.backend.services.FitParseService;
+import br.com.menthoros.backend.services.helper.GpsSampleCollector;
 import com.garmin.fit.Decode;
+import com.garmin.fit.DeviceInfoMesgListener;
 import com.garmin.fit.FileIdMesgListener;
 import com.garmin.fit.LapMesgListener;
 import com.garmin.fit.MesgBroadcaster;
@@ -89,6 +91,11 @@ public class FitParseServiceImpl implements FitParseService {
         AtomicReference<SessaoBruta> sessao = new AtomicReference<>();
         List<FitAmostraFc> amostras = new ArrayList<>();
         AtomicBoolean amostrasExcedidas = new AtomicBoolean(false);
+        GpsSampleCollector gps = new GpsSampleCollector();
+        // productName do DeviceInfo tem prioridade sobre o do FileId (o FileId de relógios novos
+        // costuma vir sem ele); o primeiro não nulo de cada um vence.
+        AtomicReference<String> deviceInfoProductName = new AtomicReference<>();
+        AtomicReference<String> fileIdProductName = new AtomicReference<>();
 
         MesgBroadcaster broadcaster = new MesgBroadcaster();
 
@@ -96,17 +103,34 @@ public class FitParseServiceImpl implements FitParseService {
             if (mesg.getSerialNumber() != null) {
                 serialNumber.set(mesg.getSerialNumber());
             }
+            if (mesg.getProductName() != null && !mesg.getProductName().isBlank()) {
+                fileIdProductName.compareAndSet(null, mesg.getProductName().strip());
+            }
+        });
+
+        broadcaster.addListener((DeviceInfoMesgListener) mesg -> {
+            if (mesg.getProductName() != null && !mesg.getProductName().isBlank()) {
+                deviceInfoProductName.compareAndSet(null, mesg.getProductName().strip());
+            }
         });
 
         broadcaster.addListener((RecordMesgListener) mesg -> {
-            if (mesg.getTimestamp() == null || amostrasExcedidas.get()) return;
+            if (mesg.getTimestamp() == null) return;
+            long timestampSeg = mesg.getTimestamp().getTimestamp();
+            Short fc = mesg.getHeartRate();
+            Integer fcInt = fc != null ? fc.intValue() : null;
+
+            // O trajeto tem teto próprio no coletor, então não depende de amostrasExcedidas:
+            // um ultra acima de MAX_AMOSTRAS perde o tempo em zonas, não o mapa.
+            gps.offer(timestampSeg, mesg.getPositionLat(), mesg.getPositionLong(), fcInt, mesg.getDistance());
+
+            if (amostrasExcedidas.get()) return;
             if (amostras.size() >= MAX_AMOSTRAS) {
                 amostrasExcedidas.set(true);
                 amostras.clear();
                 return;
             }
-            Short fc = mesg.getHeartRate();
-            amostras.add(new FitAmostraFc(mesg.getTimestamp().getTimestamp(), fc != null ? fc.intValue() : null));
+            amostras.add(new FitAmostraFc(timestampSeg, fcInt));
         });
 
         broadcaster.addListener((LapMesgListener) mesg -> {
@@ -186,7 +210,9 @@ public class FitParseServiceImpl implements FitParseService {
             // binário adversarial podem carregar NaN/Infinity — sentinelas que o SDK não
             // resolve para null e que BigDecimal.valueOf() rejeita com NumberFormatException.
             // Tratar como .fit inválido (mesmo path do catch abaixo) em vez de vazar um 500.
-            return montarResultado(s, lapsBrutos, serialNumber.get(), amostras);
+            String deviceName = deviceInfoProductName.get() != null
+                    ? deviceInfoProductName.get() : fileIdProductName.get();
+            return montarResultado(s, lapsBrutos, serialNumber.get(), amostras, gps, deviceName);
         } catch (FitParseException e) {
             // Já é a exceção/mensagem certa (lançada pelos nossos próprios listeners) — não reenvelopar.
             throw e;
@@ -228,7 +254,8 @@ public class FitParseServiceImpl implements FitParseService {
     ) {}
 
     private static FitSessionData montarResultado(SessaoBruta s, List<LapBruto> lapsBrutos, long serialNumber,
-                                                  List<FitAmostraFc> amostras) {
+                                                  List<FitAmostraFc> amostras, GpsSampleCollector gps,
+                                                  String deviceName) {
         // Cadência só existe no domínio como passos/min de corrida — para outros esportes o
         // campo bruto é RPM (pedal, braçada) e dobrá-lo fabricaria um valor fantasma; fica null.
         boolean corrida = s.corrida();
@@ -281,7 +308,9 @@ public class FitParseServiceImpl implements FitParseService {
                 kmhDeMetrosPorSegundo(s.maxSpeed()),
                 celsiusDeByte(s.minTemperature()),
                 celsiusDeByte(s.maxTemperature()),
-                List.copyOf(amostras)
+                List.copyOf(amostras),
+                gps.samples(),
+                deviceName
         );
     }
 

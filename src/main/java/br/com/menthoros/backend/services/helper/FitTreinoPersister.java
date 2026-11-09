@@ -94,7 +94,9 @@ public class FitTreinoPersister {
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado no tenant atual"));
 
         String externalId = buildExternalId(atletaId, dados);
-        String device = limitarDeviceName(deviceName);
+        // Precedência: nome do ping Garmin → productName do .fit → nulo (add-activity-gps-trace, D1).
+        String device = limitarDeviceName(
+                deviceName != null && !deviceName.isBlank() ? deviceName : dados.deviceName());
         TreinoRealizado treino = montarTreino(dados, atleta, tenantId, externalId);
         treino.setDeviceName(device);
 
@@ -168,6 +170,7 @@ public class FitTreinoPersister {
         treino.setTemperaturaMinC(dados.temperaturaMinC());
         treino.setTemperaturaMaxC(dados.temperaturaMaxC());
         treino.setTempoEmZonas(tempoEmZonas(dados, atleta));
+        treino.setGpsTrace(GpsTraceCodec.toJson(dados.gpsSamples()));
 
         if (dados.tssCalculado() != null) {
             treino.setTssCalculado(dados.tssCalculado());
