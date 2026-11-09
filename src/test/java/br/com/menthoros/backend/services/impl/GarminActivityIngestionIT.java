@@ -2,6 +2,28 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.AbstractIntegrationTest;
 import br.com.menthoros.backend.config.external.GarminProperties;
+import br.com.menthoros.backend.dto.fit.FitSessionData;
+import br.com.menthoros.backend.entity.PlanoMetaDados;
+import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.entity.TreinoPlanejado;
+import br.com.menthoros.backend.entity.TreinoReconciliacao;
+import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.enums.PlanoReviewStatus;
+import br.com.menthoros.backend.enums.PlanoStatus;
+import br.com.menthoros.backend.enums.ReconciliationStatus;
+import br.com.menthoros.backend.enums.StatusSincronizacao;
+import br.com.menthoros.backend.enums.TipoTreino;
+import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
+import br.com.menthoros.backend.repository.PlanoMetadadosRepository;
+import br.com.menthoros.backend.repository.PlanoSemanalRepository;
+import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
+import br.com.menthoros.backend.repository.TreinoReconciliacaoRepository;
+import br.com.menthoros.backend.services.WorkoutAnalysisPromptDataBuilder;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.GarminPing;
@@ -60,6 +82,9 @@ import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -121,6 +146,12 @@ class GarminActivityIngestionIT extends AbstractIntegrationTest {
     @Autowired private FitTreinoPersister fitTreinoPersister;
     @Autowired private PlatformTransactionManager transactionManager;
     @Autowired private Clock clock;
+    @Autowired private PlanoMetadadosRepository planoMetadadosRepository;
+    @Autowired private PlanoSemanalRepository planoSemanalRepository;
+    @Autowired private TreinoPlanejadoRepository treinoPlanejadoRepository;
+    @Autowired private WorkoutAnalysisPromptDataBuilder promptDataBuilder;
+    // Spy (chama o real por padrão): o CA5 faz a auditoria falhar depois das mutações da conciliação.
+    @MockitoSpyBean private TreinoReconciliacaoRepository treinoReconciliacaoRepository;
 
     private GarminPingProcessorScheduler processador;
     private Assessoria assessoria;
@@ -131,6 +162,7 @@ class GarminActivityIngestionIT extends AbstractIntegrationTest {
     @BeforeEach
     void seed() {
         garmin.resetAll();
+        reset(treinoReconciliacaoRepository);
         garminUserId = "garmin-uid-" + UUID.randomUUID();
         processador = new GarminPingProcessorScheduler(pingRepository, integracaoRepository,
                 new GarminClientImpl(garminWebClient, garminProperties, URI.create(garmin.baseUrl())),
@@ -224,6 +256,126 @@ class GarminActivityIngestionIT extends AbstractIntegrationTest {
                         .with(jwtAtleta()))
                 .andExpect(status().isOk());
         assertThat(treinoRepository.findByAtletaIdOrderByDataTreinoAsc(atleta.getId())).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("FIT com planejado inequívoco no dia vincula automaticamente e a análise enxerga o planejado (CA1, CA8)")
+    void fitComPlanejadoVinculaAutomaticamente() throws Exception {
+        TreinoPlanejado planejado = planejadoIgualAoFit();
+
+        UUID treinoId = importarViaPing();
+
+        TreinoRealizado realizado = carregar(treinoId);
+        assertThat(realizado.getReconciliationStatus()).isEqualTo(ReconciliationStatus.VINCULADO_AUTOMATICO);
+        assertThat(realizado.getTreinoPlanejado().getId()).isEqualTo(planejado.getId());
+        assertThat(treinoPlanejadoRepository.findById(planejado.getId()).orElseThrow().getStatusTreino())
+                .isEqualTo(TreinoExecucaoStatus.REALIZADO);
+        assertThat(auditoriaDe(treinoId)).hasSize(1);
+
+        String prompt = new TransactionTemplate(transactionManager).execute(s ->
+                promptDataBuilder.build(treinoRepository.findById(treinoId).orElseThrow()));
+        assertThat(prompt).contains("\"planned\"").contains("\"type\":\"CONTINUO\"").contains("\"duration_min\"");
+    }
+
+    @Test
+    @DisplayName("FIT sem planejado na janela ±1 dia fica NAO_PLANEJADO e entra na fila do treinador (CA2)")
+    void fitSemPlanejadoVaiParaFila() throws Exception {
+        UUID treinoId = importarViaPing();
+
+        assertThat(carregar(treinoId).getReconciliationStatus()).isEqualTo(ReconciliationStatus.NAO_PLANEJADO);
+        assertThat(treinoRepository.findPendentesParaRevisao(assessoria.getId(), atleta.getId(),
+                        List.of(ReconciliationStatus.AMBIGUO, ReconciliationStatus.NAO_PLANEJADO), null, null,
+                        PageRequest.of(0, 10)).getContent())
+                .extracting(TreinoRealizado::getId).containsExactly(treinoId);
+    }
+
+    @Test
+    @DisplayName("falha da conciliação depois das mutações não reverte a ingestão nem deixa vínculo parcial (CA5)")
+    void falhaDaConciliacaoNaoReverteIngestao() throws Exception {
+        TreinoPlanejado planejado = planejadoIgualAoFit();
+        doThrow(new IllegalStateException("falha simulada na auditoria"))
+                .when(treinoReconciliacaoRepository).save(any(TreinoReconciliacao.class));
+
+        UUID treinoId = importarViaPing();
+
+        TreinoRealizado realizado = carregar(treinoId);
+        assertThat(realizado.getReconciliationStatus()).isNull();
+        assertThat(realizado.getTreinoPlanejado()).isNull();
+        assertThat(treinoPlanejadoRepository.findById(planejado.getId()).orElseThrow().getStatusTreino())
+                .isEqualTo(TreinoExecucaoStatus.PENDENTE);
+        assertThat(auditoriaDe(treinoId)).isEmpty();
+    }
+
+    /** Ping → fila → download → treino; devolve o id do realizado e confirma o ping PROCESSED. */
+    private UUID importarViaPing() throws Exception {
+        String summaryId = "summary-" + UUID.randomUUID();
+        garmin.stubFor(get(urlPathEqualTo(PATH_ARQUIVO))
+                .withHeader("Authorization", equalTo("Bearer g-access"))
+                .willReturn(aResponse()
+                .withStatus(200)
+                .withHeader("Content-Type", MediaType.APPLICATION_OCTET_STREAM_VALUE)
+                .withBody(arquivoFit())));
+        webhook(ping(summaryId));
+
+        processador.processar();
+
+        GarminPing processado = pingDo(summaryId);
+        assertThat(processado.getStatus()).isEqualTo(GarminPingStatus.PROCESSED);
+        return processado.getCompletedWorkoutId();
+    }
+
+    /** Planejado CONTINUO no mesmo dia, com a duração e a distância do próprio FIT: match inequívoco. */
+    private TreinoPlanejado planejadoIgualAoFit() throws IOException {
+        FitSessionData sessao = fitParseService.parse(new ByteArrayInputStream(arquivoFit()));
+
+        PlanoMetaDados meta = new PlanoMetaDados();
+        meta.setAtleta(atleta);
+        meta.setAssessoria(assessoria);
+        meta.setDiaPreferidoLongo(DiaSemana.SABADO);
+        meta = planoMetadadosRepository.save(meta);
+
+        PlanoSemanal plano = new PlanoSemanal();
+        plano.setAtleta(atleta);
+        plano.setAssessoria(assessoria);
+        plano.setPlanoMetaDados(meta);
+        plano.setSemanaInicio(sessao.dataTreino().minusDays(3));
+        plano.setSemanaFim(sessao.dataTreino().plusDays(3));
+        plano.setVolumePlanejadoKm(BigDecimal.valueOf(30));
+        plano.setStatus(PlanoStatus.EM_ANDAMENTO);
+        plano.setReviewStatus(PlanoReviewStatus.APROVADO);
+        plano.setObjetivoSemanal("Semana do IT de conciliação");
+        plano = planoSemanalRepository.save(plano);
+
+        TreinoPlanejado planejado = new TreinoPlanejado();
+        planejado.setPlanoSemanal(plano);
+        planejado.setAtleta(atleta);
+        planejado.setTenantId(assessoria.getId());
+        planejado.setDataTreino(sessao.dataTreino());
+        planejado.setDiaSemana(br.com.menthoros.backend.util.Utils.converterDayOfWeekParaDiaSemana(
+                sessao.dataTreino().getDayOfWeek()));
+        planejado.setTipoTreino(TipoTreino.CONTINUO);
+        planejado.setDuracaoMin(sessao.duracao());
+        planejado.setDistanciaKm(BigDecimal.valueOf(sessao.distanciaKm()).setScale(2, RoundingMode.HALF_UP));
+        planejado.setStatusTreino(TreinoExecucaoStatus.PENDENTE);
+        planejado.setStatusSincronizacao(StatusSincronizacao.NAO_SINCRONIZADO);
+        planejado.setTentativasSincronizacao(0);
+        return treinoPlanejadoRepository.save(planejado);
+    }
+
+    private TreinoRealizado carregar(UUID treinoId) {
+        return new TransactionTemplate(transactionManager).execute(s -> {
+            TreinoRealizado t = treinoRepository.findById(treinoId).orElseThrow();
+            if (t.getTreinoPlanejado() != null) {
+                t.getTreinoPlanejado().getId();
+            }
+            return t;
+        });
+    }
+
+    private List<TreinoReconciliacao> auditoriaDe(UUID treinoId) {
+        return treinoReconciliacaoRepository.findAll().stream()
+                .filter(a -> a.getTreinoRealizado() != null && treinoId.equals(a.getTreinoRealizado().getId()))
+                .toList();
     }
 
     private void webhook(String corpo) throws Exception {
