@@ -66,12 +66,12 @@ class TrajetoShareConsentServiceImplTest {
         UsuarioTrajetoShareConsent e = UsuarioTrajetoShareConsent.builder()
                 .usuario(usuario).tenantId(tenantId).policyVersion(versao).evento(evento)
                 .registradoEm(Instant.parse("2026-11-09T10:00:00Z")).build();
-        when(repository.findFirstByUsuario_IdAndTenantIdOrderByRegistradoEmDesc(usuario.getId(), tenantId))
+        when(repository.findFirstByUsuario_IdAndTenantIdOrderBySeqDesc(usuario.getId(), tenantId))
                 .thenReturn(Optional.of(e));
     }
 
     private void semEventos() {
-        when(repository.findFirstByUsuario_IdAndTenantIdOrderByRegistradoEmDesc(usuario.getId(), tenantId))
+        when(repository.findFirstByUsuario_IdAndTenantIdOrderBySeqDesc(usuario.getId(), tenantId))
                 .thenReturn(Optional.empty());
     }
 

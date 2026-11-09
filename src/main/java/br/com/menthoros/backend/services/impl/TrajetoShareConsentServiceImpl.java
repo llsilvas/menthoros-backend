@@ -56,6 +56,9 @@ public class TrajetoShareConsentServiceImpl implements TrajetoShareConsentServic
         return registrar(TrajetoShareConsentEvento.REVOGADO);
     }
 
+    // shortcut: check-then-insert sem lock — dois cliques simultâneos podem gravar dois eventos
+    // iguais. Inofensivo, porque o estado é o último evento por `seq`; trocar por lock no usuário
+    // se algum dia o número de eventos virar métrica.
     private TrajetoShareConsentOutputDto registrar(TrajetoShareConsentEvento evento) {
         UUID tenantId = TenantContext.getRequiredTenantId();
         Usuario usuario = usuarioAtual(tenantId);
@@ -88,7 +91,7 @@ public class TrajetoShareConsentServiceImpl implements TrajetoShareConsentServic
     }
 
     private Optional<UsuarioTrajetoShareConsent> ultimo(Usuario usuario, UUID tenantId) {
-        return repository.findFirstByUsuario_IdAndTenantIdOrderByRegistradoEmDesc(usuario.getId(), tenantId);
+        return repository.findFirstByUsuario_IdAndTenantIdOrderBySeqDesc(usuario.getId(), tenantId);
     }
 
     private Usuario usuarioAtual(UUID tenantId) {

@@ -14,7 +14,7 @@ public interface UsuarioTrajetoShareConsentRepository extends Repository<Usuario
 
     UsuarioTrajetoShareConsent save(UsuarioTrajetoShareConsent evento);
 
-    Optional<UsuarioTrajetoShareConsent> findFirstByUsuario_IdAndTenantIdOrderByRegistradoEmDesc(UUID usuarioId, UUID tenantId);
+    Optional<UsuarioTrajetoShareConsent> findFirstByUsuario_IdAndTenantIdOrderBySeqDesc(UUID usuarioId, UUID tenantId);
 
     long countByUsuario_IdAndTenantId(UUID usuarioId, UUID tenantId);
 }

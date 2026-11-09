@@ -78,6 +78,17 @@ class TrajetoShareConsentIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("revogar logo após conceder: o último evento é a revogação, mesmo no mesmo instante")
+    void ordemPelaSequenciaDoBanco() throws Exception {
+        mockMvc.perform(post(URL).with(atletaJwt(atletaA, assessoriaA)).contentType(MediaType.APPLICATION_JSON).content(VERSAO))
+                .andExpect(status().isCreated());
+        mockMvc.perform(delete(URL).with(atletaJwt(atletaA, assessoriaA))).andExpect(status().isOk());
+
+        mockMvc.perform(get(URL).with(atletaJwt(atletaA, assessoriaA)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.granted").value(false));
+    }
+
+    @Test
     @DisplayName("versão defasada: 409 CONSENT_VERSION_STALE e nenhuma linha (CA6)")
     void versaoDefasada() throws Exception {
         mockMvc.perform(post(URL).with(atletaJwt(atletaA, assessoriaA)).contentType(MediaType.APPLICATION_JSON)

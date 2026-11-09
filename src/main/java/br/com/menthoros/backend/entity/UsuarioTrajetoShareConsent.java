@@ -41,6 +41,10 @@ public class UsuarioTrajetoShareConsent {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    /** Ordem de gravação dada pelo banco — é ela que define o "último evento", não o relógio da JVM. */
+    @Column(name = "seq", insertable = false, updatable = false)
+    private Long seq;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "usuario_id", nullable = false)
     private Usuario usuario;
