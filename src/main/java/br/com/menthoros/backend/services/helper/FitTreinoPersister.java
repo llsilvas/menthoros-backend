@@ -8,6 +8,7 @@ import br.com.menthoros.backend.entity.EtapaRealizada;
 import br.com.menthoros.backend.entity.TempoEmZonas;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.FonteDados;
+import br.com.menthoros.backend.events.FitWorkoutImportedEvent;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.TreinoExecucaoStatus;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -19,6 +20,7 @@ import br.com.menthoros.backend.util.Utils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jspecify.annotations.Nullable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -72,6 +74,7 @@ public class FitTreinoPersister {
     private final TreinoMapper treinoMapper;
     private final IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     private final ZonaTreinoService zonaTreinoService;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Persiste o treino a partir dos dados já extraídos de um .fit, com dedup idempotente por
@@ -81,7 +84,8 @@ public class FitTreinoPersister {
      * ({@link FitImportResultado#novo()} {@code == false}) em vez de duplicar.
      * <p><b>Side Effects:</b> Database insert (treino + etapas) quando ainda não existe e esta
      * requisição venceu a corrida de concorrência; na duplicata, só o {@code deviceName} quando
-     * o existente não tem um (sem repetir TSS, evento ou carga).
+     * o existente não tem um (sem repetir TSS, evento ou carga). Treino novo de corrida publica
+     * {@link FitWorkoutImportedEvent}, consumido depois do commit para conciliar com o planejado.
      * <p><b>Tenant-aware:</b> YES — via {@link TenantContext#getRequiredTenantId()}.
      *
      * @param deviceName modelo informado pelo ping do Garmin; {@code null} no upload manual
@@ -108,6 +112,12 @@ public class FitTreinoPersister {
         if (resultado.inserted()) {
             log.info("Fit importado: treinoId={}, atletaId={}, externalId={}",
                     resultado.treino().getId(), atletaId, externalId);
+            // Conciliação só depois do commit e em transação própria: o link do FIT Garmin vale uma
+            // vez só, e uma falha aqui dentro reverteria um treino que não dá para baixar de novo.
+            // Só corrida: outro esporte vira CONTINUO e seria vinculado a um planejado de corrida.
+            if (dados.corrida()) {
+                eventPublisher.publishEvent(new FitWorkoutImportedEvent(resultado.treino().getId(), tenantId));
+            }
         } else {
             // O atleta subiu o FIT antes do ping: o modelo do Garmin não se perde. Entidade
             // gerenciada nesta TX — o dirty checking grava sem repetir TSS/evento/carga (D4).
