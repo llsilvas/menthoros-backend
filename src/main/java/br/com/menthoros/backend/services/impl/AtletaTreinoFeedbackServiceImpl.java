@@ -3,9 +3,11 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.dto.input.FeedbackTreinoInputDto;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.AtletaTreinoFeedbackService;
 import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
@@ -13,6 +15,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,10 +38,14 @@ public class AtletaTreinoFeedbackServiceImpl implements AtletaTreinoFeedbackServ
     private final TreinoMapper treinoMapper;
     private final Clock clock;
     private final MeterRegistry meterRegistry;
+    private final ApplicationEventPublisher eventPublisher;
+    private final AiWorkoutAnalysisRepository analiseRepository;
 
     /**
      * Idempotent: YES — último envio vence. Side Effects: UPDATE em tb_treino_realizado (e,
-     * via {@code reprocessar}, possível recálculo de tssCalculado e da carga do dia).
+     * via {@code reprocessar}, possível recálculo de tssCalculado e da carga do dia) e publicação de
+     * {@code TreinoRegistradoEvent} quando o treino ainda não tem análise registrada (análise
+     * pós-treino, após o commit).
      * Tenant-aware: YES.
      */
     @Override
@@ -58,6 +65,13 @@ public class AtletaTreinoFeedbackServiceImpl implements AtletaTreinoFeedbackServ
         // O RPE pode ser a única fonte de TSS deste treino (sync sem FC/pace) — reprocessar
         // recalcula tssCalculado e a carga do dia com o valor recém-gravado (D9).
         ingestaoTreinoRealizadoService.reprocessar(treinoRealizadoId, null);
+
+        // Treino sincronizado chega sem RPE e o evento do insert não passa na elegibilidade da análise;
+        // é aqui que o RPE aparece. Só sem análise registrada: o listener pula apenas COMPLETED, e
+        // reenviar o feedback com análise PENDING ou FAILED dispararia LLM de novo a cada envio.
+        if (!analiseRepository.existsByTreinoRealizadoIdAndTenantId(treino.getId(), tenantId)) {
+            eventPublisher.publishEvent(new TreinoRegistradoEvent(treino.getId(), tenantId));
+        }
 
         log.info("Feedback registrado: treinoRealizadoId={}, atletaId={}, rpe={}",
                 treinoRealizadoId, atletaId, input.percepcaoEsforco());

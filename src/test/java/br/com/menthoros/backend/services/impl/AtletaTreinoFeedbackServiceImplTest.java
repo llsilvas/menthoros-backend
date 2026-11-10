@@ -5,9 +5,11 @@ import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.Sensacao;
+import br.com.menthoros.backend.events.TreinoRegistradoEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
+import br.com.menthoros.backend.repository.AiWorkoutAnalysisRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.IngestaoTreinoRealizadoService;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -18,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -44,6 +47,8 @@ class AtletaTreinoFeedbackServiceImplTest {
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
     @Mock private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
     @Mock private TreinoMapper treinoMapper;
+    @Mock private ApplicationEventPublisher eventPublisher;
+    @Mock private AiWorkoutAnalysisRepository analiseRepository;
 
     private AtletaTreinoFeedbackServiceImpl service;
     private SimpleMeterRegistry meterRegistry;
@@ -61,7 +66,8 @@ class AtletaTreinoFeedbackServiceImplTest {
         atleta = Atleta.builder().id(atletaId).build();
         Clock clock = Clock.fixed(Instant.parse("2026-08-27T12:00:00Z"), ZoneOffset.UTC);
         meterRegistry = new SimpleMeterRegistry();
-        service = new AtletaTreinoFeedbackServiceImpl(treinoRealizadoRepository, ingestaoTreinoRealizadoService, treinoMapper, clock, meterRegistry);
+        service = new AtletaTreinoFeedbackServiceImpl(treinoRealizadoRepository, ingestaoTreinoRealizadoService, treinoMapper, clock, meterRegistry,
+                eventPublisher, analiseRepository);
     }
 
     @AfterEach
@@ -108,6 +114,33 @@ class AtletaTreinoFeedbackServiceImplTest {
     }
 
     @Test
+    @DisplayName("publica TreinoRegistradoEvent com id e tenant do realizado — dispara a análise do treino sincronizado (fix-garmin-realizado-pos-ingestao)")
+    void publicaEventoDeAnalise() {
+        TreinoRealizado tr = realizado();
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(tr));
+        when(treinoRealizadoRepository.save(tr)).thenReturn(tr);
+        when(treinoMapper.toOutputDto(tr)).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+        service.registrarFeedback(atletaId, treinoId, new FeedbackTreinoInputDto(4, null, null));
+
+        verify(eventPublisher).publishEvent(new TreinoRegistradoEvent(treinoId, tenantId));
+    }
+
+    @Test
+    @DisplayName("reenvio com análise já registrada (PENDING, FAILED ou COMPLETED) não dispara LLM de novo")
+    void reenvioComAnaliseNaoPublica() {
+        TreinoRealizado tr = realizado();
+        when(treinoRealizadoRepository.findByIdAndTenantId(treinoId, tenantId)).thenReturn(Optional.of(tr));
+        when(treinoRealizadoRepository.save(tr)).thenReturn(tr);
+        when(treinoMapper.toOutputDto(tr)).thenReturn(mock(TreinoRealizadoOutputDto.class));
+        when(analiseRepository.existsByTreinoRealizadoIdAndTenantId(treinoId, tenantId)).thenReturn(true);
+
+        service.registrarFeedback(atletaId, treinoId, new FeedbackTreinoInputDto(5, null, null));
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
     @DisplayName("segundo envio substitui RPE, sensações e comentário (último vence)")
     void segundoEnvioSubstitui() {
         TreinoRealizado tr = realizado();
@@ -134,6 +167,7 @@ class AtletaTreinoFeedbackServiceImplTest {
                 .isInstanceOf(DomainNotFoundException.class);
         verify(treinoRealizadoRepository, never()).save(any());
         verify(ingestaoTreinoRealizadoService, never()).reprocessar(any(), any());
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

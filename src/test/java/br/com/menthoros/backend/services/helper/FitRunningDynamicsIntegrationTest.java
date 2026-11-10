@@ -61,7 +61,7 @@ class FitRunningDynamicsIntegrationTest {
         atletaId = UUID.randomUUID();
         TenantContext.setTenantId(tenantId);
         service = new FitTreinoPersister(atletaRepository, treinoMapper, ingestaoTreinoRealizadoService,
-                new ZonaTreinoService());
+                new ZonaTreinoService(), mock(org.springframework.context.ApplicationEventPublisher.class));
 
         Atleta atleta = mock(Atleta.class);
         lenient().when(atleta.getId()).thenReturn(atletaId);
