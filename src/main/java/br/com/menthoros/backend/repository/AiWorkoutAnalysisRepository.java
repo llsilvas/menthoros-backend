@@ -13,6 +13,8 @@ public interface AiWorkoutAnalysisRepository extends JpaRepository<AnaliseWorkou
 
     boolean existsByTreinoRealizadoIdAndStatus(UUID treinoRealizadoId, AnaliseStatus status);
 
+    boolean existsByTreinoRealizadoIdAndTenantId(UUID treinoRealizadoId, UUID tenantId);
+
     /**
      * Carimbo atômico da primeira visualização (analise-ia-treino-atleta, Codex #6/QA): duas
      * leituras concorrentes do primeiro COMPLETED não podem contar duas vezes — só quem

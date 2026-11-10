@@ -9,6 +9,7 @@ import br.com.menthoros.backend.dto.fit.FitSessionData;
 import br.com.menthoros.backend.dto.output.TreinoRealizadoOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.events.FitWorkoutImportedEvent;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Duration;
 import java.time.LocalDate;
@@ -43,6 +45,7 @@ class FitTreinoPersisterTest {
     @Mock private AtletaRepository atletaRepository;
     @Mock private TreinoMapper treinoMapper;
     @Mock private IngestaoTreinoRealizadoService ingestaoTreinoRealizadoService;
+    @Mock private ApplicationEventPublisher eventPublisher;
 
     private FitTreinoPersister service;
 
@@ -57,7 +60,7 @@ class FitTreinoPersisterTest {
         TenantContext.setTenantId(tenantId);
 
         service = new FitTreinoPersister(atletaRepository, treinoMapper, ingestaoTreinoRealizadoService,
-                new ZonaTreinoService());
+                new ZonaTreinoService(), eventPublisher);
 
         atleta = mock(Atleta.class);
         lenient().when(atleta.getId()).thenReturn(atletaId);
@@ -74,6 +77,14 @@ class FitTreinoPersisterTest {
                 null, null, null, null, // sem subida/descida/potência/cadência
                 null, null, null, null, null, null, null, null, // sem running dynamics/tempo movimento/calorias
                 List.of(lapCorrida(1, Duration.ofMinutes(15), 2.5, 148, 160)));
+    }
+
+    private FitSessionData sessionCiclismo(Long serial, long startEpoch) {
+        return new FitSessionData(serial, LocalDate.of(2026, 7, 1), startEpoch,
+                Duration.ofMinutes(60), 25.0, 140, 165, 70, false, "CYCLING",
+                null, null, null, null,
+                null, null, null, null, null, null, null, null,
+                List.of(lapCorrida(1, Duration.ofMinutes(60), 25.0, 140, 165)));
     }
 
     /** Lap de corrida sem as métricas novas (elevação/potência/cadência/running dynamics) — evita a fila de nulls posicionais. */
@@ -173,6 +184,47 @@ class FitTreinoPersisterTest {
 
             assertThat(resultado.novo()).isFalse();
             assertThat(resultado.treino()).isSameAs(dtoExistente);
+        }
+
+        @Test
+        @DisplayName("FIT novo de corrida publica FitWorkoutImportedEvent com id e tenant do realizado (fix-garmin-realizado-pos-ingestao)")
+        void corridaNovaPublicaEventoDeConciliacao() {
+            UUID treinoId = UUID.randomUUID();
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString())).thenAnswer(inv -> {
+                TreinoRealizado t = inv.getArgument(0);
+                t.setId(treinoId);
+                return new TreinoDedupHelper.SaveResult(t, true);
+            });
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L), null);
+
+            verify(eventPublisher).publishEvent(new FitWorkoutImportedEvent(treinoId, tenantId));
+        }
+
+        @Test
+        @DisplayName("duplicata não publica o evento de conciliação (CA3)")
+        void duplicataNaoPublicaEventoDeConciliacao() {
+            TreinoRealizado existente = new TreinoRealizado();
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenReturn(new TreinoDedupHelper.SaveResult(existente, false));
+            when(treinoMapper.toOutputDto(existente)).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCorrida(1L, 1751360400L), null);
+
+            verifyNoInteractions(eventPublisher);
+        }
+
+        @Test
+        @DisplayName("FIT de outro esporte não publica o evento de conciliação (CA4)")
+        void outroEsporteNaoPublicaEventoDeConciliacao() {
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            when(treinoMapper.toOutputDto(any(TreinoRealizado.class))).thenReturn(mock(TreinoRealizadoOutputDto.class));
+
+            service.persistir(atletaId, sessionCiclismo(1L, 1751360400L), null);
+
+            verifyNoInteractions(eventPublisher);
         }
 
         @Test
