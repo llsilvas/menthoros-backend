@@ -358,9 +358,9 @@
                         <include>**/*Tests.java</include>
                         <include>**/*TestCase.java</include>
                     </includes>
-                    <!-- Testes de eval (@Tag("eval"), plan-generation-eval-set) rodam só sob -Peval,
+                    <!-- Testes de eval (@Tag("eval"), plan-generation-eval-set) rodam só sob -Peval; @Tag("eval-real") (chamadas pagas) só com -Dgroups=eval-real -DexcludedGroups=,
                          nunca no inner loop (./mvnw test) nem no gate de PR (./mvnw verify). -->
-                    <excludedGroups>eval</excludedGroups>
+                    <excludedGroups>eval,eval-real</excludedGroups>
                 </configuration>
             </plugin>
 
