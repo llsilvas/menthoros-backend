@@ -61,7 +61,53 @@ class MultiModelConfigTest {
 
             assertThat(options.getModel()).isEqualTo("gpt-4.1");
             assertThat(options.getTemperature()).isEqualTo(0.2);
-            assertThat(options.getMaxTokens()).isEqualTo(8000);
+            assertThat(options.getMaxCompletionTokens()).isEqualTo(8000);
+        }
+
+        @Test
+        @DisplayName("rota clássica não envia max_tokens nem campos de reasoning")
+        void rotaClassicaSemCamposDeReasoning() {
+            OpenAiChatOptions options = MultiModelConfig.opcoesOpenAi(rota("gpt-4o", 0.2, 8000));
+
+            assertThat(options.getMaxTokens()).isNull();
+            assertThat(options.getReasoningEffort()).isNull();
+            assertThat(options.getVerbosity()).isNull();
+            assertThat(options.getTopP()).isNull();
+        }
+
+        @Test
+        @DisplayName("rota com reasoning não envia temperature, top_p, penalidades nem max_tokens")
+        void rotaComReasoningSoEnviaOQueDefine() {
+            LlmRoutingProperties.RotaLlm rota = new LlmRoutingProperties.RotaLlm();
+            rota.setModel("gpt-6-luna");
+            rota.setMaxTokens(12000);
+            rota.setReasoningEffort("low");
+            rota.setVerbosity("low");
+
+            OpenAiChatOptions options = MultiModelConfig.opcoesOpenAi(rota);
+
+            assertThat(options.getReasoningEffort()).isEqualTo("low");
+            assertThat(options.getVerbosity()).isEqualTo("low");
+            assertThat(options.getMaxCompletionTokens()).isEqualTo(12000);
+            assertThat(options.getMaxTokens()).isNull();
+            assertThat(options.getTemperature()).isNull();
+            assertThat(options.getTopP()).isNull();
+            assertThat(options.getFrequencyPenalty()).isNull();
+            assertThat(options.getPresencePenalty()).isNull();
+        }
+
+        @Test
+        @DisplayName("effort none mantém temperature e top_p da rota")
+        void effortNoneMantemAmostragem() {
+            LlmRoutingProperties.RotaLlm rota = rota("gpt-6-luna", 0.2, 8000);
+            rota.setReasoningEffort("none");
+            rota.setTopP(0.9);
+
+            OpenAiChatOptions options = MultiModelConfig.opcoesOpenAi(rota);
+
+            assertThat(options.getReasoningEffort()).isEqualTo("none");
+            assertThat(options.getTemperature()).isEqualTo(0.2);
+            assertThat(options.getTopP()).isEqualTo(0.9);
         }
     }
 

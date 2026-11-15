@@ -142,6 +142,12 @@ public class MultiModelConfig {
      * Usa {@code mutate()} nos dois níveis para preservar o que o auto-config
      * montou (tool calling, retry template, observação) — só o cliente HTTP é
      * trocado.
+     *
+     * O perfil da rota ({@link #opcoesOpenAi}) também vai nos {@code defaultOptions} do model derivado:
+     * o {@code mutate()} herda os defaults globais do auto-config, e o {@code defaultOptions} do
+     * {@code ChatClient} só vale para chamadas feitas por ele. Hoje o {@code plano} roda com o default
+     * global por coincidência (mesmo modelo); sem isto, uma rota com modelo ou esforço distinto do global
+     * enviaria o perfil errado numa chamada direta ao model.
      */
     static OpenAiChatModel modeloOpenAiComTimeout(OpenAiChatModel base, OpenAiApi api,
                                                   LlmRoutingProperties.RotaLlm rota) {
@@ -149,6 +155,7 @@ public class MultiModelConfig {
                 .openAiApi(api.mutate()
                         .restClientBuilder(restClientComTimeout(rota.getTimeout()))
                         .build())
+                .defaultOptions(opcoesOpenAi(rota))
                 .build();
     }
 
@@ -196,11 +203,19 @@ public class MultiModelConfig {
         return RestClient.builder().requestFactory(factory);
     }
 
+    /**
+     * Só o que a rota define vai ao provider: modelos com reasoning rejeitam {@code temperature},
+     * {@code top_p} e {@code max_tokens} (HTTP 400). {@code max_completion_tokens} é aceito por todos
+     * os modelos da família e é o único teto que vale com reasoning.
+     */
     static OpenAiChatOptions opcoesOpenAi(LlmRoutingProperties.RotaLlm rota) {
         return OpenAiChatOptions.builder()
                 .model(rota.getModel())
                 .temperature(rota.getTemperature())
-                .maxTokens(rota.getMaxTokens())
+                .topP(rota.getTopP())
+                .reasoningEffort(rota.getReasoningEffort())
+                .verbosity(rota.getVerbosity())
+                .maxCompletionTokens(rota.getMaxTokens())
                 .build();
     }
 
