@@ -51,7 +51,10 @@ final class OpenAiSuccessorBakeoff {
         int notasJuiz;
         int somaNotasJuiz;
         long latenciaMs;
-        BigDecimal custoUsd = BigDecimal.ZERO;
+        BigDecimal custoCandidatoUsd = BigDecimal.ZERO;
+        BigDecimal custoJuizUsd = BigDecimal.ZERO;
+        long tokensEntrada;
+        long tokensSaida;
         final Set<String> modelosServidos = new LinkedHashSet<>();
         final List<String> detalhes = new ArrayList<>();
     }
@@ -63,8 +66,9 @@ final class OpenAiSuccessorBakeoff {
         md.append("Juiz: `").append(modeloJuiz).append("` (o mesmo para todos os candidatos)\n\n");
         md.append("Casos por candidato: ").append(casos.size()).append("\n\n");
         md.append("| candidato | modelo servido | violações qualidade | violações compliance "
-                + "| juiz (média) | latência média (s) | custo total (USD) | falhas |\n");
-        md.append("|---|---|---|---|---|---|---|---|\n");
+                + "| juiz (média) | latência média (s) | tokens entrada/plano | tokens saída/plano "
+                + "| custo/plano (USD) | custo do juiz (USD) | falhas |\n");
+        md.append("|---|---|---|---|---|---|---|---|---|---|---|\n");
         StringBuilder detalhes = new StringBuilder();
         for (Candidato candidato : candidatos) {
             Acumulador acc = medir(candidato, casos, juiz, grader);
@@ -102,8 +106,10 @@ final class OpenAiSuccessorBakeoff {
                     .forEach(v -> acc.detalhes.add("compliance — " + caso.nome() + ": " + v));
             resultado.avaliacao().violacoesQualidade()
                     .forEach(v -> acc.detalhes.add("qualidade — " + caso.nome() + ": " + v));
+            acc.tokensEntrada += resultado.tokensEntrada();
+            acc.tokensSaida += resultado.tokensSaida();
             if (resultado.custoUsd() != null) {
-                acc.custoUsd = acc.custoUsd.add(resultado.custoUsd());
+                acc.custoCandidatoUsd = acc.custoCandidatoUsd.add(resultado.custoUsd());
             }
             if (resultado.modeloRetornado() != null) {
                 acc.modelosServidos.add(resultado.modeloRetornado());
@@ -113,7 +119,7 @@ final class OpenAiSuccessorBakeoff {
                 acc.notasJuiz++;
                 acc.somaNotasJuiz += nota.nota().notaGeral();
                 if (nota.custoUsd() != null) {
-                    acc.custoUsd = acc.custoUsd.add(nota.custoUsd());
+                    acc.custoJuizUsd = acc.custoJuizUsd.add(nota.custoUsd());
                 }
             } catch (RuntimeException e) {
                 acc.falhas++;
@@ -135,7 +141,11 @@ final class OpenAiSuccessorBakeoff {
         colunas.add(String.valueOf(acc.violacoesCompliance));
         colunas.add(juiz);
         colunas.add(latencia);
-        colunas.add(acc.custoUsd.toPlainString());
+        colunas.add(String.valueOf(medidos == 0 ? 0 : acc.tokensEntrada / medidos));
+        colunas.add(String.valueOf(medidos == 0 ? 0 : acc.tokensSaida / medidos));
+        colunas.add(medidos == 0 ? "-" : acc.custoCandidatoUsd
+                .divide(BigDecimal.valueOf(medidos), 6, java.math.RoundingMode.HALF_UP).toPlainString());
+        colunas.add(acc.custoJuizUsd.toPlainString());
         colunas.add(String.valueOf(acc.falhas));
         return "| " + String.join(" | ", colunas) + " |\n";
     }

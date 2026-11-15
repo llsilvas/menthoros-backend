@@ -46,7 +46,8 @@ public class EvalCandidateRunner {
 
     public record ResultadoCandidato(String responseJson, EvalDeterministicGrader.Resultado avaliacao,
                                       @Nullable BigDecimal custoUsd,
-                                      @Nullable String modeloRetornado) {
+                                      @Nullable String modeloRetornado,
+                                      long tokensEntrada, long tokensSaida) {
     }
 
     /** Overload v1 (compatibilidade) — equivalente a {@code rodar(..., false)}. */
@@ -84,8 +85,12 @@ public class EvalCandidateRunner {
         BigDecimal custo = custoDaChamada(chatResponse);
         // metadata.model é o snapshot que a OpenAI de fato serviu; o bake-off o anota no relatório.
         String modeloRetornado = chatResponse.getMetadata() != null ? chatResponse.getMetadata().getModel() : null;
+        var usage = chatResponse.getMetadata() != null ? chatResponse.getMetadata().getUsage() : null;
+        long tokensEntrada = usage != null && usage.getPromptTokens() != null ? usage.getPromptTokens() : 0;
+        long tokensSaida = usage != null && usage.getCompletionTokens() != null ? usage.getCompletionTokens() : 0;
         // O JSON devolvido é o do plano normalizado, que é o que o coach recebe (add-etapa-pace-validator).
-        return new ResultadoCandidato(planoAvaliadoJson(avaliacao, responseJson), avaliacao, custo, modeloRetornado);
+        return new ResultadoCandidato(planoAvaliadoJson(avaliacao, responseJson), avaliacao, custo, modeloRetornado,
+                tokensEntrada, tokensSaida);
     }
 
     private String planoAvaliadoJson(EvalDeterministicGrader.Resultado avaliacao, String bruto) {
