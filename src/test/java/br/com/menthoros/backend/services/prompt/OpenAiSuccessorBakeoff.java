@@ -53,6 +53,7 @@ final class OpenAiSuccessorBakeoff {
         long latenciaMs;
         BigDecimal custoUsd = BigDecimal.ZERO;
         final Set<String> modelosServidos = new LinkedHashSet<>();
+        final List<String> detalhes = new ArrayList<>();
     }
 
     static String rodar(List<Candidato> candidatos, List<Caso> casos, EvalLlmJudge juiz, String modeloJuiz,
@@ -64,9 +65,17 @@ final class OpenAiSuccessorBakeoff {
         md.append("| candidato | modelo servido | violações qualidade | violações compliance "
                 + "| juiz (média) | latência média (s) | custo total (USD) | falhas |\n");
         md.append("|---|---|---|---|---|---|---|---|\n");
+        StringBuilder detalhes = new StringBuilder();
         for (Candidato candidato : candidatos) {
             Acumulador acc = medir(candidato, casos, juiz, grader);
             md.append(linha(candidato.nome(), acc));
+            if (!acc.detalhes.isEmpty()) {
+                detalhes.append("\n### ").append(candidato.nome()).append("\n\n");
+                acc.detalhes.forEach(d -> detalhes.append("- ").append(d).append('\n'));
+            }
+        }
+        if (!detalhes.isEmpty()) {
+            md.append("\n## Violações por caso\n").append(detalhes);
         }
         return md.toString();
     }
@@ -89,6 +98,10 @@ final class OpenAiSuccessorBakeoff {
             acc.latenciaMs += Duration.ofNanos(System.nanoTime() - inicio).toMillis();
             acc.violacoesQualidade += resultado.avaliacao().violacoesQualidade().size();
             acc.violacoesCompliance += resultado.avaliacao().violacoesCompliance().size();
+            resultado.avaliacao().violacoesCompliance()
+                    .forEach(v -> acc.detalhes.add("compliance — " + caso.nome() + ": " + v));
+            resultado.avaliacao().violacoesQualidade()
+                    .forEach(v -> acc.detalhes.add("qualidade — " + caso.nome() + ": " + v));
             if (resultado.custoUsd() != null) {
                 acc.custoUsd = acc.custoUsd.add(resultado.custoUsd());
             }
