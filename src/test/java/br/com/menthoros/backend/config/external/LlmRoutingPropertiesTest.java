@@ -159,4 +159,112 @@ class LlmRoutingPropertiesTest {
                     assertThat(ctx).hasFailed());
         }
     }
+
+    @Nested
+    @DisplayName("validação por esforço efetivo (plano)")
+    class ValidacaoPorEsforcoEfetivo {
+
+        private String[] comPlano(String... propriedadesDoPlano) {
+            java.util.List<String> todas = new java.util.ArrayList<>();
+            for (String p : PROPRIEDADES_COMPLETAS) {
+                if (!p.startsWith("app.llm.routing.plano.")) {
+                    todas.add(p);
+                }
+            }
+            todas.add("app.llm.routing.plano.max-tokens=12000");
+            todas.add("app.llm.routing.plano.timeout=120s");
+            todas.addAll(java.util.List.of(propriedadesDoPlano));
+            return todas.toArray(String[]::new);
+        }
+
+        @Test
+        @DisplayName("esforço none permite temperature e top-p (candidato mais próximo do atual)")
+        void noneComAmostragem() {
+            contextRunner.withPropertyValues(comPlano(
+                    "app.llm.routing.plano.model=gpt-6-luna",
+                    "app.llm.routing.plano.reasoning-effort=none",
+                    "app.llm.routing.plano.temperature=0.2",
+                    "app.llm.routing.plano.top-p=0.9")).run(ctx -> {
+                assertThat(ctx).hasNotFailed();
+                LlmRoutingProperties.RotaLlm plano = ctx.getBean(LlmRoutingProperties.class).getPlano();
+                assertThat(plano.getReasoningEffort()).isEqualTo("none");
+                assertThat(plano.getTopP()).isEqualTo(0.9);
+            });
+        }
+
+        @Test
+        @DisplayName("rota com reasoning sem temperature sobe (temperature é opcional)")
+        void reasoningSemTemperature() {
+            contextRunner.withPropertyValues(comPlano(
+                    "app.llm.routing.plano.model=gpt-6-luna",
+                    "app.llm.routing.plano.reasoning-effort=medium",
+                    "app.llm.routing.plano.verbosity=low")).run(ctx -> {
+                assertThat(ctx).hasNotFailed();
+                assertThat(ctx.getBean(LlmRoutingProperties.class).getPlano().getTemperature()).isNull();
+            });
+        }
+
+        @Test
+        @DisplayName("esforço low com top-p falha nomeando a rota e o campo")
+        void lowComTopP() {
+            contextRunner.withPropertyValues(comPlano(
+                    "app.llm.routing.plano.model=gpt-6-luna",
+                    "app.llm.routing.plano.reasoning-effort=low",
+                    "app.llm.routing.plano.top-p=0.9")).run(ctx -> {
+                assertThat(ctx).hasFailed();
+                assertThat(ctx).getFailure().rootCause()
+                        .hasMessageContaining("plano").hasMessageContaining("top-p");
+            });
+        }
+
+        @Test
+        @DisplayName("esforço medium com temperature falha nomeando a rota e o campo")
+        void mediumComTemperature() {
+            contextRunner.withPropertyValues(comPlano(
+                    "app.llm.routing.plano.model=gpt-6-luna",
+                    "app.llm.routing.plano.reasoning-effort=medium",
+                    "app.llm.routing.plano.temperature=0.2")).run(ctx -> {
+                assertThat(ctx).hasFailed();
+                assertThat(ctx).getFailure().rootCause()
+                        .hasMessageContaining("plano").hasMessageContaining("temperature");
+            });
+        }
+
+        @Test
+        @DisplayName("modelo legado com reasoning-effort falha nomeando a rota e o campo")
+        void legadoComReasoning() {
+            contextRunner.withPropertyValues(comPlano(
+                    "app.llm.routing.plano.model=gpt-4o",
+                    "app.llm.routing.plano.reasoning-effort=low")).run(ctx -> {
+                assertThat(ctx).hasFailed();
+                assertThat(ctx).getFailure().rootCause()
+                        .hasMessageContaining("plano").hasMessageContaining("reasoning-effort");
+            });
+        }
+
+        @Test
+        @DisplayName("modelo legado com verbosity falha nomeando a rota e o campo")
+        void legadoComVerbosity() {
+            contextRunner.withPropertyValues(comPlano(
+                    "app.llm.routing.plano.model=gpt-4.1-mini",
+                    "app.llm.routing.plano.temperature=0.2",
+                    "app.llm.routing.plano.verbosity=low")).run(ctx -> {
+                assertThat(ctx).hasFailed();
+                assertThat(ctx).getFailure().rootCause()
+                        .hasMessageContaining("plano").hasMessageContaining("verbosity");
+            });
+        }
+
+        @Test
+        @DisplayName("valor de reasoning-effort desconhecido falha no boot")
+        void esforcoDesconhecido() {
+            contextRunner.withPropertyValues(comPlano(
+                    "app.llm.routing.plano.model=gpt-6-luna",
+                    "app.llm.routing.plano.reasoning-effort=turbo")).run(ctx -> {
+                assertThat(ctx).hasFailed();
+                assertThat(ctx).getFailure().rootCause()
+                        .hasMessageContaining("plano").hasMessageContaining("turbo");
+            });
+        }
+    }
 }
