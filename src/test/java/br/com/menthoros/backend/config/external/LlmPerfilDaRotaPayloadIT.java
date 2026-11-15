@@ -34,9 +34,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
  * {@link EvalJudgeSchemaBuilder}) — todos chamam {@code .options(schema)} sobre o mesmo
  * {@code ChatClient} da rota.
  *
- * <p>TODO (task 4): quando o sucessor tiver preço em {@code llm-pricing.yml}, configurar a rota com
- * {@code reasoning-effort} e assertar também {@code reasoning_effort} e a ausência de {@code temperature}.
- * Hoje o {@code LlmPricingRegistry} recusa subir com modelo sem preço.
+ * <p>O caso com reasoning está em {@link LlmPerfilReasoningPayloadIT}.
  */
 class LlmPerfilDaRotaPayloadIT extends AbstractIntegrationTest {
 
