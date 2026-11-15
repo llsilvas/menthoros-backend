@@ -39,7 +39,8 @@ import java.time.Duration;
  * troca de modelo por ambiente sem recompilação. Preços vivem exclusivamente
  * em {@code llm-pricing.yml}.
  *
- * Nenhum bean aqui tem @Primary — o bean primário está em ChatClientConfig.
+ * Nenhum bean aqui tem @Primary e não há ChatClient padrão: todo consumidor
+ * escolhe a rota por qualifier ou pelo ModelRouter.
  * Injeção: use @Qualifier("gpt4oMiniClient"), ("claudeHaikuClient"),
  *          ("claudeSonnetClient"), ("gpt4oClient") ou ("gpt4oPlanoClient").
  */
@@ -208,7 +209,7 @@ public class MultiModelConfig {
      * {@code top_p} e {@code max_tokens} (HTTP 400). {@code max_completion_tokens} é aceito por todos
      * os modelos da família e é o único teto que vale com reasoning.
      */
-    static OpenAiChatOptions opcoesOpenAi(LlmRoutingProperties.RotaLlm rota) {
+    public static OpenAiChatOptions opcoesOpenAi(LlmRoutingProperties.RotaLlm rota) {
         return OpenAiChatOptions.builder()
                 .model(rota.getModel())
                 .temperature(rota.getTemperature())

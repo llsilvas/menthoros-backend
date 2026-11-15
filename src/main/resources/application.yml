@@ -113,11 +113,7 @@ spring:
       chat:
         options:
           model: gpt-4o
-          temperature: 0.2
-          max-tokens: 12000
-          top-p: 0.9
-          frequency-penalty: 0.1
-          presence-penalty: 0.0
+          max-completion-tokens: 12000
       embedding:
         options:
           model: text-embedding-3-small

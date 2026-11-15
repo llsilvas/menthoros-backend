@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.services.prompt;
 
+import br.com.menthoros.backend.config.external.LlmRoutingProperties;
+import br.com.menthoros.backend.config.external.MultiModelConfig;
 import br.com.menthoros.backend.domain.compliance.SkeletonComplianceChecker;
 import br.com.menthoros.backend.domain.planner.PlannerEngine;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
@@ -22,7 +24,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.openai.OpenAiChatModel;
-import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 
 import java.io.IOException;
@@ -47,6 +48,10 @@ import static org.mockito.Mockito.when;
  * <p><b>Modo candidato chama a LLM real</b> (custo real, `OPENAI_API_KEY` obrigatória) — por
  * design, é isso que fecha o bloqueador original do Codex (ver design.md). Roda só sob
  * {@code -Peval}, nunca no inner loop nem no gate de PR.
+ *
+ * <p>Variáveis de ambiente: {@code EVAL_MODEL} (candidato, default {@code gpt-4o}),
+ * {@code EVAL_JUDGE_MODEL} (juiz, default {@code gpt-4o}) e {@code EVAL_REASONING_EFFORT}
+ * (opcional, aplicado ao cliente montado).
  */
 @Tag("eval")
 @DisplayName("EvalRunner")
@@ -72,7 +77,7 @@ class EvalRunnerTest {
                 new TssCalculatorService());
         var grader = new EvalAgreementGrader(OBJECT_MAPPER, sessionResolver);
         String apiKey = System.getenv("OPENAI_API_KEY");
-        String modelo = System.getenv().getOrDefault("EVAL_MODEL", "gpt-4o");
+        String modelo = System.getenv().getOrDefault("EVAL_JUDGE_MODEL", "gpt-4o");
         EvalLlmJudge judge = apiKey != null && !apiKey.isBlank()
                 ? new EvalLlmJudge(construirChatClientReal(apiKey, modelo),
                         new br.com.menthoros.backend.services.prompt.EvalJudgeSchemaBuilder(), OBJECT_MAPPER)
@@ -215,10 +220,25 @@ class EvalRunnerTest {
         factory.setReadTimeout(120_000);
         var restClientBuilder = org.springframework.web.client.RestClient.builder().requestFactory(factory);
 
+        // Perfil montado pelo mesmo caminho de produção; sem EVAL_REASONING_EFFORT mantém o
+        // comportamento clássico (temperature 0.2), que só vale para modelo sem reasoning ou effort none.
+        var rota = new LlmRoutingProperties.RotaLlm();
+        rota.setModel(modelo);
+        rota.setMaxTokens(12000);
+        String esforco = System.getenv("EVAL_REASONING_EFFORT");
+        if (esforco == null || esforco.isBlank()) {
+            rota.setTemperature(0.2);
+        } else {
+            rota.setReasoningEffort(esforco);
+            if ("none".equals(esforco)) {
+                rota.setTemperature(0.2);
+            }
+        }
+
         OpenAiApi api = OpenAiApi.builder().apiKey(apiKey).restClientBuilder(restClientBuilder).build();
         OpenAiChatModel model = OpenAiChatModel.builder()
                 .openAiApi(api)
-                .defaultOptions(OpenAiChatOptions.builder().model(modelo).temperature(0.2).maxTokens(12000).build())
+                .defaultOptions(MultiModelConfig.opcoesOpenAi(rota))
                 .build();
         return ChatClient.builder(model).build();
     }
