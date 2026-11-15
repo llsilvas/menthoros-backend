@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * OPENAI_API_KEY=... \
  * BAKEOFF_CANDIDATOS='gpt-4o;gpt-6-luna:none;gpt-6-luna:low;gpt-6-luna:medium' \
  * EVAL_JUDGE_MODEL=gpt-4o \
- * ./mvnw test -Dtest=OpenAiSuccessorBakeoffRealTest -Dgroups=eval-real -DexcludedGroups=
+ * ./mvnw test -Peval-real -Dtest=OpenAiSuccessorBakeoffRealTest
  * </pre>
  *
  * <p>{@code BAKEOFF_CANDIDATOS}: lista {@code modelo[:esforço]} separada por {@code ;}. Sem esforço,
