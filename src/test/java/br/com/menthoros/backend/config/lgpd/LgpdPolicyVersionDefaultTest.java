@@ -16,12 +16,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LgpdPolicyVersionDefaultTest {
 
     @Test
-    @DisplayName("default da versão vigente da Política é 2026-11-09")
+    @DisplayName("default da versão vigente da Política é 2026-11-15")
     void defaultBateComOFrontend() {
         YamlPropertiesFactoryBean yaml = new YamlPropertiesFactoryBean();
         yaml.setResources(new ClassPathResource("application.yml"));
 
         assertThat(yaml.getObject().getProperty("app.lgpd.policy-version"))
-                .isEqualTo("${LGPD_POLICY_VERSION:2026-11-09}");
+                .isEqualTo("${LGPD_POLICY_VERSION:2026-11-15}");
     }
 }
