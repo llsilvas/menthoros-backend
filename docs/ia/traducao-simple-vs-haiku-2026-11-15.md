@@ -387,3 +387,33 @@ ou soa artificial para o coach? Anote a pior e a melhor.
 | 10 | A = claude-haiku-4-5 (standard hoje) | B = gpt-4o-mini (simple hoje) | C = gpt-6-luna none (simple candidato) |
 
 </details>
+
+## Veredito do coach-fundador (2026-11-16, task 3.2)
+
+Critério, na ordem: fidelidade semântica; português nativo de treinador de corrida; norma e coesão;
+consistência de glossário, números e unidades. 40 comparações (10 casos × 4 campos), lidas às cegas.
+
+**Placar, abrindo a chave**
+
+| modelo | melhor por campo | pior por campo |
+|---|---|---|
+| gpt-6-luna none | 26/40 | 3/40 |
+| gpt-4o-mini | 9/40 | 15/40 |
+| claude-haiku-4-5 (produção hoje) | 5/40 | 22/40 |
+
+**Decisão:** `gpt-6-luna` com `reasoning-effort: none` na rota `simple`. Vence em qualidade, tem o
+menor pior caso de latência (7,9 s contra 15,5 s do Haiku) e gera menos tokens de saída (3204 contra
+3809). CA2 atendido: o modelo da rota `simple` não perde para o Haiku.
+
+**Problemas que nenhum dos três resolve sozinho** (valem para o Haiku de hoje também):
+
+- Glossário: "o RPE" (masculino; houve feminino), "delta de RPE" na ordem portuguesa, *overreaching*
+  (ora em inglês, ora "sobrecarga"), pace × ritmo, nota/pontuação/score.
+- Rótulos de faixa (ex.: `CONCERNING`) são string de produto e não podem ser traduzidos livremente
+  (caso 2.4 virou "ALERTA").
+- Localização numérica ("+2.5", "800m", "24-48") precisa de pós-processamento determinístico, não de LLM.
+- A verificação automática deste relatório só confere números: não pegou a frase suprimida em 3.3 B
+  ("Nenhum ajuste necessário") nem a palavra perdida em 10.2 B ("progressivo"). Falta checagem de
+  cobertura de frases.
+
+Exemplos por caso (melhor/pior e motivo) estão no registro da revisão, entregue em 2026-11-16.
