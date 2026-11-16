@@ -176,8 +176,11 @@ final class PlanoPromptArquetipos {
     }
 
     private static Arquetipo taperSemanaProva() {
+        // Dias disponíveis iguais aos dias efetivos do prompt, com o domingo da prova: antes o prompt
+        // pedia TERÇA/QUINTA/SÁBADO e o atleta tinha os dias úteis, e quem obedecia ao prompt perdia a prova.
         Atleta atleta = atletaBase()
                 .nome("Diego Taper")
+                .diasDisponiveis(diasTaper())
                 .nivelExperiencia(NivelExperiencia.AVANCADO)
                 .objetivo("PR nos 21k")
                 .fcMaxima(185).fcRepouso(50).fcLimiar(171)
@@ -309,6 +312,6 @@ final class PlanoPromptArquetipos {
     }
 
     private static List<DiaSemana> diasTaper() {
-        return List.of(DiaSemana.TERCA, DiaSemana.QUINTA, DiaSemana.SABADO);
+        return List.of(DiaSemana.TERCA, DiaSemana.QUINTA, DiaSemana.SABADO, DiaSemana.DOMINGO);
     }
 }
