@@ -13,6 +13,7 @@ import br.com.menthoros.backend.dto.llm.v2.Zona;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.DiaSemana;
 import br.com.menthoros.backend.services.prompt.constraint.Constraint;
+import br.com.menthoros.backend.services.prompt.constraint.ConstraintKey;
 import br.com.menthoros.backend.services.quality.PlanQualityChecker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -31,6 +32,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.assertj.core.api.Assertions.within;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -126,5 +128,66 @@ class EvalDeterministicGraderTest {
                             new AthleteZones(190, 160, BigDecimal.valueOf(5.0)), new Atleta(), LocalDate.now())))
                     .isInstanceOf(IllegalArgumentException.class);
         }
+
+        @Test
+        @DisplayName("avalia o plano normalizado — PRINCIPAL de 16:00/km da resposta bruta chega reparada, sem violação")
+        void avaliaPlanoNormalizado() throws Exception {
+            TreinoPlanejadoLlmDto treino = regenerativo(2.5);
+            String json = objectMapper.writeValueAsString(plano(treino));
+
+            var resultado = grader.avaliar(json, SchemaVersion.CURRENT, List.of(), null,
+                    new AthleteZones(190, 160, BigDecimal.valueOf(5.0)), atleta(), LocalDate.now());
+
+            assertThat(resultado.violacoesQualidade()).noneMatch(v -> v.key() == ConstraintKey.PACE_IMPLICITO);
+            var principal = resultado.planoAvaliado().treinosPlanejados().get(0).etapas().get(1);
+            assertThat(principal.distanciaKm()).isCloseTo(5.93, within(0.01)); // 40 ÷ 6.75
+        }
+    }
+
+    @Nested
+    @DisplayName("paceImplicito")
+    class PaceImplicito {
+
+        @Test
+        @DisplayName("etapa a 16:00/km com ritmo 6:30-7:00/km → violação PACE_IMPLICITO")
+        void foraDaFaixa() {
+            var violacoes = grader.paceImplicito(plano(regenerativo(2.5)));
+
+            assertThat(violacoes).singleElement().satisfies(v -> {
+                assertThat(v.key()).isEqualTo(ConstraintKey.PACE_IMPLICITO);
+                assertThat(v.mensagem()).contains("PRINCIPAL").contains("6:30-7:00/km");
+            });
+        }
+
+        @Test
+        @DisplayName("etapa com duração e ritmo mas distância 0 → violação")
+        void semDistancia() {
+            assertThat(grader.paceImplicito(plano(regenerativo(0.0)))).singleElement()
+                    .satisfies(v -> assertThat(v.mensagem()).contains("sem distância"));
+        }
+
+        @Test
+        @DisplayName("pace implícito dentro da faixa ±10% → sem violação")
+        void dentroDaFaixa() {
+            assertThat(grader.paceImplicito(plano(regenerativo(5.9)))).isEmpty();
+        }
+    }
+
+    private static TreinoPlanejadoLlmDto regenerativo(double distanciaPrincipal) {
+        return new TreinoPlanejadoLlmDto("SEGUNDA", "REGENERATIVO", null, 30, 0.5, 2, "justificativa", "60:00",
+                distanciaPrincipal + 3.0, "6:30-7:00/km", List.of(
+                        new EtapaTreinoLlmDto(1, "AQUECIMENTO", "trote", 10, 1.5, null, 1, "6:30-7:00/km"),
+                        new EtapaTreinoLlmDto(2, "PRINCIPAL", "rodagem", 40, distanciaPrincipal, null, 1, "6:30-7:00/km"),
+                        new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "trote", 10, 1.5, null, 1, "6:30-7:00/km")));
+    }
+
+    private static PlanoSemanalLlmDto plano(TreinoPlanejadoLlmDto treino) {
+        return new PlanoSemanalLlmDto(10.0, 10.0, 5.0, 5.0, "PLANEJADO", "objetivo", List.of(treino), List.of());
+    }
+
+    private static Atleta atleta() {
+        Atleta a = new Atleta();
+        a.setPaceLimiar(BigDecimal.valueOf(5.0));
+        return a;
     }
 }

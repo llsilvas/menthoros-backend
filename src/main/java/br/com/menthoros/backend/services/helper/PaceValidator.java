@@ -27,7 +27,7 @@ public class PaceValidator {
     private static final Pattern RITMO_PATTERN =
             Pattern.compile("(\\d{1,2}):(\\d{2})-(\\d{1,2}):(\\d{2})/km");
 
-    private record PaceRange(BigDecimal paceMin, BigDecimal paceMax) {}
+    record PaceRange(BigDecimal paceMin, BigDecimal paceMax) {}
 
     /**
      * Valida o ritmoAlvo contra teto e piso calculados.

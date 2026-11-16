@@ -67,6 +67,23 @@ class TreinoNormalizadorCorrigirDistanciasTest {
         assertThat(resultado.get(0).distanciaKm()).isCloseTo(1.43, within(0.01));
     }
 
+    // add-etapa-pace-validator: o ritmoAlvo declarado é a verdade — 10 ÷ 6.25 = 1.60, não 10 ÷ (3.5 × 1.20)
+    @Test
+    @DisplayName("AQUECIMENTO com ritmoAlvo legível → distância pelo pace médio do ritmo, não pelo paceLimiar")
+    void usaRitmoAlvoDaEtapaQuandoLegivel() {
+        var etapa = new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 10, 2.38, "120-136 bpm", 1, "6:00-6:30/km");
+        var resultado = normalizador.corrigirDistanciasEtapasTemporais(List.of(etapa), new BigDecimal("3.5"));
+        assertThat(resultado.get(0).distanciaKm()).isEqualTo(1.6);
+    }
+
+    @Test
+    @DisplayName("ritmoAlvo ilegível → mantém o fallback por paceLimiar")
+    void ritmoIlegivelUsaFallback() {
+        var etapa = new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote leve", 10, 2.5, "120-136 bpm", 1, "leve");
+        var resultado = normalizador.corrigirDistanciasEtapasTemporais(List.of(etapa), new BigDecimal("4.5"));
+        assertThat(resultado.get(0).distanciaKm()).isCloseTo(1.85, within(0.01));
+    }
+
     @Test
     @DisplayName("INTERVALADO com distanciaKm=0.4 → não alterado (etapa de distância fixa)")
     void naoAlteraIntervalado() {
