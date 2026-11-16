@@ -30,7 +30,7 @@ class WorkoutAnalysisTranslatorTest {
     private ModelRouter modelRouter;
 
     @Mock
-    private ChatClient haikuClient;
+    private ChatClient client;
 
     @Mock
     private ChatClient.ChatClientRequestSpec requestSpec;
@@ -43,8 +43,8 @@ class WorkoutAnalysisTranslatorTest {
     @BeforeEach
     void setUp() {
         translator = new WorkoutAnalysisTranslator(modelRouter, new PromptTemplateLoader(new DefaultResourceLoader()));
-        when(modelRouter.route(TaskComplexity.STANDARD)).thenReturn(haikuClient);
-        when(haikuClient.prompt()).thenReturn(requestSpec);
+        when(modelRouter.route(TaskComplexity.SIMPLE)).thenReturn(client);
+        when(client.prompt()).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callSpec);
     }
@@ -110,6 +110,6 @@ class WorkoutAnalysisTranslatorTest {
         AnaliseWorkoutRawDto result = translator.translate(raw);
 
         assertThat(result.summary()).isNull();
-        verify(haikuClient, never()).prompt();
+        verify(client, never()).prompt();
     }
 }
