@@ -98,6 +98,103 @@ class PlanoTreinoRepositoryTest extends AbstractIntegrationTest {
     }
 
     @Nested
+    @DisplayName("existsReferencingRace")
+    class ExistsReferencingRace {
+
+        @Test
+        @DisplayName("acha referência por prova_id")
+        void porProvaId() {
+            fx.planoTreino(atleta, prova, SeasonPlanStatus.ARCHIVED);
+            em.flush();
+
+            assertThat(planoTreinoRepository.existsReferencingRace(prova.getId(), tenantId())).isTrue();
+        }
+
+        @Test
+        @DisplayName("acha referência só por prova_alvo_id (legado)")
+        void porProvaAlvoId() {
+            Prova outra = fx.prova(atleta);
+            PlanoTreino legado = fx.planoTreino(atleta, outra, null);
+            legado.setProvaAlvo(prova);
+            em.flush();
+
+            assertThat(planoTreinoRepository.existsReferencingRace(prova.getId(), tenantId())).isTrue();
+        }
+
+        @Test
+        @DisplayName("prova sem PlanoTreino não tem referência")
+        void semReferencia() {
+            assertThat(planoTreinoRepository.existsReferencingRace(prova.getId(), tenantId())).isFalse();
+        }
+
+        @Test
+        @DisplayName("não enxerga outro tenant")
+        void outroTenant() {
+            fx.planoTreino(atleta, prova, SeasonPlanStatus.ACTIVE);
+            em.flush();
+
+            assertThat(planoTreinoRepository.existsReferencingRace(prova.getId(), fx.assessoria().getId()))
+                    .isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("archiveOpenSeasons")
+    class ArchiveOpenSeasons {
+
+        @Test
+        @DisplayName("arquiva ACTIVE e PROPOSED da prova; não toca ARCHIVED, COMPLETED nem legado")
+        void arquivaSoAsAbertas() {
+            PlanoTreino ativa = fx.planoTreino(atleta, prova, SeasonPlanStatus.ACTIVE);
+            PlanoTreino proposta = fx.planoTreino(atleta, prova, SeasonPlanStatus.PROPOSED);
+            PlanoTreino concluida = fx.planoTreino(atleta, prova, SeasonPlanStatus.COMPLETED);
+            PlanoTreino legado = fx.planoTreino(atleta, prova, null);
+            em.flush();
+
+            int arquivadas = planoTreinoRepository.archiveOpenSeasons(prova.getId(), tenantId(), "prova cancelada");
+            em.clear();
+
+            assertThat(arquivadas).isEqualTo(2);
+            assertThat(status(ativa)).isEqualTo(SeasonPlanStatus.ARCHIVED);
+            assertThat(status(proposta)).isEqualTo(SeasonPlanStatus.ARCHIVED);
+            assertThat(em.find(PlanoTreino.class, ativa.getId()).getVersionReason()).isEqualTo("prova cancelada");
+            assertThat(status(concluida)).isEqualTo(SeasonPlanStatus.COMPLETED);
+            assertThat(status(legado)).isNull();
+        }
+
+        @Test
+        @DisplayName("repetir não altera nada")
+        void idempotente() {
+            fx.planoTreino(atleta, prova, SeasonPlanStatus.ACTIVE);
+            em.flush();
+            planoTreinoRepository.archiveOpenSeasons(prova.getId(), tenantId(), "prova cancelada");
+
+            assertThat(planoTreinoRepository.archiveOpenSeasons(prova.getId(), tenantId(), "prova cancelada"))
+                    .isZero();
+        }
+
+        @Test
+        @DisplayName("não arquiva temporada de outro tenant")
+        void outroTenant() {
+            PlanoTreino ativa = fx.planoTreino(atleta, prova, SeasonPlanStatus.ACTIVE);
+            em.flush();
+
+            planoTreinoRepository.archiveOpenSeasons(prova.getId(), fx.assessoria().getId(), "prova cancelada");
+            em.clear();
+
+            assertThat(status(ativa)).isEqualTo(SeasonPlanStatus.ACTIVE);
+        }
+
+        private SeasonPlanStatus status(PlanoTreino plano) {
+            return em.find(PlanoTreino.class, plano.getId()).getSeasonStatus();
+        }
+    }
+
+    private java.util.UUID tenantId() {
+        return atleta.getAssessoria().getId();
+    }
+
+    @Nested
     @DisplayName("índice uk_plano_treino_active_season")
     class IndiceAtivo {
 

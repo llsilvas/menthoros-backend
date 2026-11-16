@@ -71,6 +71,8 @@ class ProvaServiceImplTest {
     private AuthenticatedPrincipalResolver principalResolver;
     @Mock
     private br.com.menthoros.backend.services.plano.ProvaNoPlanoService provaNoPlanoService;
+    @Mock
+    private br.com.menthoros.backend.repository.PlanoTreinoRepository planoTreinoRepository;
     @Spy
     private Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
     @Spy
@@ -580,6 +582,96 @@ class ProvaServiceImplTest {
 
             assertThat(prova.getStatusProva()).isEqualTo(ProvaStatus.CANCELADA);
             verify(provaRepository, never()).delete(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("temporada da prova")
+    class TemporadaDaProva {
+
+        private static final String MOTIVO = "prova cancelada";
+
+        @BeforeEach
+        void atletaDoTenant() {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
+            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+        }
+
+        @Test
+        @DisplayName("ADMIN não exclui prova referenciada por plano de temporada: 422 e nada apagado")
+        void deletarReferenciadaRecusa() {
+            when(planoTreinoRepository.existsReferencingRace(provaId, tenantId)).thenReturn(true);
+
+            assertThatThrownBy(() -> provaService.deletarProva(atletaId, provaId))
+                    .isInstanceOf(br.com.menthoros.backend.exception.DomainRuleViolationException.class)
+                    .hasMessageContaining("Cancele");
+
+            verify(provaRepository, never()).delete(any());
+            verify(provaNoPlanoService, never()).removerProvaDeSemanaExistente(any(), any());
+        }
+
+        @Test
+        @DisplayName("ADMIN exclui prova sem plano de temporada, como antes")
+        void deletarSemReferencia() {
+            when(planoTreinoRepository.existsReferencingRace(provaId, tenantId)).thenReturn(false);
+
+            provaService.deletarProva(atletaId, provaId);
+
+            verify(provaRepository).delete(prova);
+            verify(planoTreinoRepository, never()).archiveOpenSeasons(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("cancelar arquiva as temporadas abertas da prova")
+        void cancelarArquiva() {
+            provaService.cancelarProva(atletaId, provaId);
+
+            verify(planoTreinoRepository).archiveOpenSeasons(provaId, tenantId, MOTIVO);
+        }
+
+        @Test
+        @DisplayName("editar para CANCELADA arquiva as temporadas abertas da prova")
+        void editarParaCanceladaArquiva() {
+            org.mockito.Mockito.doAnswer(inv -> {
+                prova.setStatusProva(ProvaStatus.CANCELADA);
+                return null;
+            }).when(provaMapper).updateEntity(inputDto, prova);
+            when(provaRepository.save(prova)).thenReturn(prova);
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.atualizarProva(atletaId, provaId, inputDto);
+
+            verify(planoTreinoRepository).archiveOpenSeasons(provaId, tenantId, MOTIVO);
+        }
+
+        @Test
+        @DisplayName("editar sem cancelar nem trocar alvo não arquiva")
+        void editarSemCancelarNaoArquiva() {
+            when(provaRepository.save(prova)).thenReturn(prova);
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.atualizarProva(atletaId, provaId, inputDto);
+
+            verify(planoTreinoRepository, never()).archiveOpenSeasons(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("trocar a prova-alvo arquiva as temporadas da alvo anterior, não da nova")
+        void trocarAlvoArquivaAnterior() {
+            Prova alvoAnterior = provaAlvoExistente("Meia do Rio");
+            ProvaInputDto inputAlvo = novoInput(true);
+            org.mockito.Mockito.doAnswer(inv -> {
+                prova.setProvaAlvo(true);
+                return null;
+            }).when(provaMapper).updateEntity(inputAlvo, prova);
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atleta)).thenReturn(List.of(alvoAnterior, prova));
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.atualizarProva(atletaId, provaId, inputAlvo);
+
+            verify(planoTreinoRepository).archiveOpenSeasons(alvoAnterior.getId(), tenantId, MOTIVO);
+            verify(planoTreinoRepository, never()).archiveOpenSeasons(eq(provaId), any(), any());
         }
     }
 

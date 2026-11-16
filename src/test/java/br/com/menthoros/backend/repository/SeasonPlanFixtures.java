@@ -28,15 +28,15 @@ import java.util.UUID;
  * Montagem do grafo mínimo do plano de temporada para testes contra Postgres real
  * (assessoria → atleta → prova → temporada → semanas / planos semanais).
  */
-final class SeasonPlanFixtures {
+public final class SeasonPlanFixtures {
 
     private final EntityManager em;
 
-    SeasonPlanFixtures(EntityManager em) {
+    public SeasonPlanFixtures(EntityManager em) {
         this.em = em;
     }
 
-    Assessoria assessoria() {
+    public Assessoria assessoria() {
         Assessoria assessoria = new Assessoria();
         assessoria.setNome("Assessoria temporada");
         assessoria.setDominio("temporada-" + UUID.randomUUID());
@@ -45,7 +45,7 @@ final class SeasonPlanFixtures {
         return assessoria;
     }
 
-    Atleta atleta(Assessoria assessoria) {
+    public Atleta atleta(Assessoria assessoria) {
         Atleta atleta = new Atleta();
         atleta.setNome("Atleta temporada");
         atleta.setEmail("temporada-" + UUID.randomUUID() + "@test.com");
@@ -57,7 +57,7 @@ final class SeasonPlanFixtures {
         return atleta;
     }
 
-    Prova prova(Atleta atleta) {
+    public Prova prova(Atleta atleta) {
         Prova prova = new Prova();
         prova.setNomeProva("Maratona alvo");
         prova.setDataProva(LocalDate.now().plusWeeks(16));
@@ -71,7 +71,7 @@ final class SeasonPlanFixtures {
     }
 
     /** {@code status} nulo = PlanoTreino legado, anterior ao plano de temporada. */
-    PlanoTreino planoTreino(Atleta atleta, Prova prova, SeasonPlanStatus status) {
+    public PlanoTreino planoTreino(Atleta atleta, Prova prova, SeasonPlanStatus status) {
         PlanoTreino plano = new PlanoTreino();
         plano.setAtleta(atleta);
         plano.setProva(prova);
@@ -86,7 +86,7 @@ final class SeasonPlanFixtures {
         return plano;
     }
 
-    SeasonWeek semana(PlanoTreino plano, int index) {
+    public SeasonWeek semana(PlanoTreino plano, int index) {
         SeasonWeek semana = new SeasonWeek();
         semana.setTenantId(plano.getAssessoria().getId());
         semana.setSeasonPlan(plano);
@@ -99,7 +99,7 @@ final class SeasonPlanFixtures {
         return semana;
     }
 
-    PlanoSemanal planoSemanalAprovado(PlanoTreino plano) {
+    public PlanoSemanal planoSemanalAprovado(PlanoTreino plano) {
         Atleta atleta = plano.getAtleta();
         PlanoMetaDados meta = new PlanoMetaDados();
         meta.setAtleta(atleta);
