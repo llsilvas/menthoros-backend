@@ -629,3 +629,51 @@ Treinos recentes: 5 sessões
 | 15 | taper-semana-prova | A = gpt-6-luna:medium | B = gpt-4o |
 
 </details>
+
+---
+
+## Veredito do coach-fundador (2026-11-16) — CA4b **não passa**
+
+Preferência: **gpt-6-luna 9 × 6 gpt-4o**. Mas o coach **barraria planos do Luna em 3 casos (5, 7, 9)**,
+o que reprova o CA4b ("nenhum item que o coach barraria"). Também há defeitos do Luna em 10, 12, 13 e 15.
+
+| # | preferido | barraria | motivo principal |
+|---|---|---|---|
+| 1 | luna | 4o | regenerativo do 4o em FC 146–153; 10 km em 75 min contra ritmo 5:38–6:00; promete fartlek/tempo que não estão no plano |
+| 2 | luna | — | Luna corta para 23 km (~60%, agressivo) e ritmo 6:45–7:00 não bate com FC 146–153 num sub-3h; ainda mais seguro que 63 km com TSB baixo |
+| 3 | luna | 4o | 4o: 12 km/60 min e 15 km/75 min (5:00/km) contra ritmos mais lentos — quem corre por distância vai rápido demais |
+| 4 | luna | 4o | Aquiles inflamado: 4o faz aquecimento no ritmo do contínuo e contínuo a 5:36 |
+| 5 | 4o | **luna** | 2,5 km em 40 min (16:00/km) e 2,2 km em 32 min (14:33/km): inexecutável |
+| 6 | luna | 4o | 7,5 km em 30 min (4:00/km) com tendinite ativa — pior erro da revisão |
+| 7 | 4o | **luna** | iniciante: 1,4 km em 39 min (27:51/km) |
+| 8 | luna | — | 4o: 6 km em 37 min, mais rápido que o prescrito, e ignora alerta; Luna talvez corte demais (9,3 km) |
+| 9 | 4o | **luna** | 3,6 km em 47 min (13:03/km) |
+| 10 | luna | 4o | 4o: intervalado RPE 7 sem sessões recentes; Luna correto, mas com distância 0,0 km |
+| 11 | luna | 4o | 4o: intervalado FC 153–162, RPE 8, num retorno sem dados |
+| 12 | luna | 4o | idem 11; Luna de novo com 0,0 km |
+| 13 | 4o | **luna** | Luna: meia a 5:48–5:55 com FC até 171, incoerente; taper de 8 km magro demais |
+| 14 | 4o | — | Luna omite a prova por seguir os dias do prompt com defeito |
+| 15 | 4o | luna | Luna marca o dia da prova como "sem treino prescrito" |
+
+**Padrões**
+
+- **Luna é melhor em segurança:** responde a TSB baixo, alerta de progressão, lesão ativa e falta de
+  dados. O 4o ignora esses sinais e chega a prescrever intervalado RPE 8 para quem volta do zero.
+- **Bug sistemático do Luna (5, 7, 9, 10, 12):** ao cortar volume, reduz km e mantém a duração do
+  planner (ritmos implícitos de 13 a 28 min/km); com só duração no planner, deixa distância 0,0 km.
+  Quebra o que o atleta lê e as métricas derivadas de distância (volume, ACWR, CTL).
+- **O 4o tem a mesma família de bug no sentido perigoso (1, 3, 6, 8):** distância ÷ duração dá ritmo
+  mais rápido que o prescrito.
+- **Arquétipo taper contaminado (13–15):** mede a fixture mais que o modelo.
+- **O grader determinístico não pega nenhum desses bugs** (deu 0–1 violação de qualidade ao Luna).
+
+**Ações recomendadas pelo coach antes de refazer a revisão**
+
+1. Validador pós-geração: duração ÷ distância de cada etapa dentro da faixa de ritmo (±10%); fora
+   disso, reparar a distância a partir de duração × ritmo médio, ou regenerar.
+2. Distância > 0 obrigatória em toda sessão com duração; se vier 0, derivar.
+3. Cobertura dos 7 dias: cada dia é treino ou descanso explícito.
+4. Corrigir a fixture do taper (dias e prova) e refazer 13–15.
+5. Conferir o dia de descanso obrigatório no `avancado-tsb-baixo`. (Verificado: a regra do prompt é
+   "dias consecutivos ≥ limite → descanso obrigatório", sem dia fixo; terça ou segunda são válidos.)
+6. Fora do CA4b: regra de dor para tendinite no prompt de produção.
