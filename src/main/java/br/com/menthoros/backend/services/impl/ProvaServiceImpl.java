@@ -11,12 +11,14 @@ import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.MotivoRevisaoProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.UserRole;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.ProvaRealizadaImutavelException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.PlanoTreinoRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.security.AuthenticatedAtletaResolver;
 import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
@@ -57,6 +59,9 @@ public class ProvaServiceImpl implements ProvaService {
     private final Validator validator;
     private final Clock clock;
     private final ProvaNoPlanoService provaNoPlanoService;
+    private final PlanoTreinoRepository planoTreinoRepository;
+
+    /** Texto gravado em {@code versionReason} quando a prova-alvo deixa de valer; exibido ao treinador. */
 
     /**
      * Resolve o atleta pelo ID garantindo isolamento por tenant.
@@ -232,6 +237,7 @@ public class ProvaServiceImpl implements ProvaService {
         // entra na nova (reabre as duas, se aprovadas); só nome/tempo objetivo -> atualiza o
         // treino já vinculado sem reabrir revisão.
         if (salva.getStatusProva() == ProvaStatus.CANCELADA) {
+            arquivarTemporadas(provaId, atleta, PlanoTreinoRepository.REASON_RACE_CANCELLED);
             provaNoPlanoService.removerProvaDeSemanaExistente(salva, antes.dataProva());
         } else if (!Objects.equals(antes.dataProva(), salva.getDataProva())) {
             provaNoPlanoService.removerProvaDeSemanaExistente(salva, antes.dataProva());
@@ -260,6 +266,12 @@ public class ProvaServiceImpl implements ProvaService {
     public void deletarProva(UUID atletaId, UUID provaId) {
         Atleta atleta = resolveAtletaComPosse(atletaId);
         Prova prova = resolveProva(atleta, provaId);
+        // Plano de temporada: a FK prova_id é RESTRICT (V116) e prova_alvo_id não tem ação; recusar
+        // aqui devolve 422 com orientação em vez de 500 por violação de constraint.
+        if (planoTreinoRepository.existsReferencingRace(provaId, atleta.getAssessoria().getId())) {
+            throw new DomainRuleViolationException(
+                    "Prova vinculada a um plano de temporada não pode ser excluída. Cancele a prova.");
+        }
         LocalDate dataProva = prova.getDataProva();
         // prova-no-plano-semanal: sem isso o DELETE físico (ON DELETE SET NULL na FK) deixa um
         // TreinoPlanejado do tipo PROVA órfão no plano do atleta, sem reabrir a revisão do coach.
@@ -290,6 +302,7 @@ public class ProvaServiceImpl implements ProvaService {
         LocalDate dataProva = prova.getDataProva();
         prova.setStatusProva(ProvaStatus.CANCELADA);
         Prova salva = provaRepository.save(prova);
+        arquivarTemporadas(provaId, atleta, PlanoTreinoRepository.REASON_RACE_CANCELLED);
         // prova-no-plano-semanal, D5, mesma transação: cancelar remove o PROVA da semana, se houver.
         provaNoPlanoService.removerProvaDeSemanaExistente(salva, dataProva);
         log.info("Prova cancelada: id={}, atletaId={}", provaId, atletaId);
@@ -407,7 +420,8 @@ public class ProvaServiceImpl implements ProvaService {
      * @return nome da alvo substituída, quando havia outra prova como alvo
      */
     private Optional<String> garantirAlvoUnica(Atleta atleta, Prova prova) {
-        if (!prova.isProvaAlvo()) {
+        // Prova cancelada não disputa o alvo: reeditá-la não pode desmarcar nem arquivar a alvo atual.
+        if (!prova.isProvaAlvo() || prova.getStatusProva() == ProvaStatus.CANCELADA) {
             return Optional.empty();
         }
         String alvoAnterior = null;
@@ -418,9 +432,22 @@ public class ProvaServiceImpl implements ProvaService {
             }
             outra.setProvaAlvo(false);
             provaRepository.save(outra);
+            arquivarTemporadas(outra.getId(), atleta, PlanoTreinoRepository.REASON_TARGET_REPLACED);
             alvoAnterior = outra.getNomeProva();
         }
         return Optional.ofNullable(alvoAnterior);
+    }
+
+    /**
+     * Prova-alvo deixou de valer (cancelada ou trocada): temporadas ACTIVE e PROPOSED dela vão a
+     * ARCHIVED. Nunca apaga — semanas e planos semanais ficam. Idempotente pelo filtro da query.
+     */
+    private void arquivarTemporadas(UUID provaId, Atleta atleta, String motivo) {
+        int arquivadas = planoTreinoRepository.archiveOpenSeasons(
+                provaId, atleta.getAssessoria().getId(), motivo);
+        if (arquivadas > 0) {
+            log.info("Temporadas arquivadas: provaId={}, quantidade={}", provaId, arquivadas);
+        }
     }
 
     /**

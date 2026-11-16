@@ -26,6 +26,7 @@ import br.com.menthoros.backend.repository.AthleteBaselineHistoryRepository;
 import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
+import br.com.menthoros.backend.repository.PlanoTreinoRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
@@ -91,6 +92,7 @@ public class OnboardingServiceImpl implements OnboardingService {
     private final AtletaProgressService atletaProgressService;
     private final ProvaEnricher provaEnricher;
     private final GarminProperties garminProperties;
+    private final PlanoTreinoRepository planoTreinoRepository;
 
     @Override
     @Transactional(readOnly = true)
@@ -177,6 +179,10 @@ public class OnboardingServiceImpl implements OnboardingService {
                 .forEach(p -> {
                     p.setProvaAlvo(false);
                     provaRepository.save(p);
+                    // Mesma regra de ProvaServiceImpl.garantirAlvoUnica: a alvo que perdeu o posto
+                    // leva suas temporadas abertas a ARCHIVED.
+                    planoTreinoRepository.archiveOpenSeasons(
+                            p.getId(), tenantId, PlanoTreinoRepository.REASON_TARGET_REPLACED);
                 });
 
         return salva;
