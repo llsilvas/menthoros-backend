@@ -81,8 +81,19 @@ public class EvalCandidateRunner {
         var avaliacao = grader.avaliar(responseJson, schemaVersion, prompt.regras(), skeleton,
                 zonasAtleta, atleta, semanaInicio);
         BigDecimal custo = custoDaChamada(chatResponse);
-        return new ResultadoCandidato(responseJson, avaliacao, custo);
+        // O JSON devolvido é o do plano normalizado, que é o que o coach recebe (add-etapa-pace-validator).
+        return new ResultadoCandidato(planoAvaliadoJson(avaliacao, responseJson), avaliacao, custo);
     }
+
+    private String planoAvaliadoJson(EvalDeterministicGrader.Resultado avaliacao, String bruto) {
+        try {
+            return JSON.writeValueAsString(avaliacao.planoAvaliado());
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            return bruto;
+        }
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON = new com.fasterxml.jackson.databind.ObjectMapper();
 
     private @Nullable BigDecimal custoDaChamada(ChatResponse chatResponse) {
         if (chatResponse == null || chatResponse.getMetadata() == null) {

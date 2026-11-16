@@ -2,9 +2,12 @@ package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.domain.compliance.PlannerViolation;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
+import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
+import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.services.prompt.constraint.Constraint;
+import br.com.menthoros.backend.services.prompt.constraint.ConstraintKey;
 import br.com.menthoros.backend.services.quality.PlanQualityChecker;
 import br.com.menthoros.backend.services.quality.ViolacaoQualidade;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -12,7 +15,9 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.jspecify.annotations.Nullable;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Grader determinístico do eval set (plan-generation-eval-set, fatia 1) — roda **só em modo
@@ -30,6 +35,10 @@ import java.util.List;
  * interno). Tenant-aware: NÃO — opera sobre dados de fixture/candidato, não de tenant real.
  *
  * <p>Deliberadamente sem {@code @Component} — nunca instanciada pelo Spring (achado do /qa).
+ *
+ * <p>Avalia o plano **depois** da {@link NormalizacaoDeTreino} de produção (add-etapa-pace-validator):
+ * a resposta bruta da LLM não é o que o coach recebe, e gradá-la mede bugs que a normalização já corrige
+ * e esconde os que ela cria. Treino reprovado por gate (em produção vai ao turno de reparo) é avaliado cru.
  */
 public class EvalDeterministicGrader {
 
@@ -37,6 +46,13 @@ public class EvalDeterministicGrader {
     private final SessionResolver sessionResolver;
     private final PlannerShadowService plannerShadowService;
     private final PlanQualityChecker planQualityChecker;
+    private final NormalizacaoDeTreino normalizacao = new NormalizacaoDeTreino(
+            new TreinoNormalizador(new PaceValidator()), new EtapaFcValidator(),
+            new PlanoEstruturaReparador(new SimpleMeterRegistry()), new PaceValidator(), new SimpleMeterRegistry());
+    private final PaceValidator paceValidator = new PaceValidator();
+
+    /** Tolerância do pace implícito (duração ÷ distância) em torno da faixa do ritmoAlvo — decisão do coach. */
+    static final double TOLERANCIA_PACE = 0.10;
 
     public EvalDeterministicGrader(ObjectMapper objectMapper, SessionResolver sessionResolver,
                                     PlannerShadowService plannerShadowService) {
@@ -48,7 +64,8 @@ public class EvalDeterministicGrader {
 
     /** Violações dos dois checkers reaproveitados — tipos distintos, sem conversão forçada. */
     public record Resultado(List<ViolacaoQualidade> violacoesQualidade,
-                             List<PlannerViolation> violacoesCompliance) {
+                             List<PlannerViolation> violacoesCompliance,
+                             PlanoSemanalLlmDto planoAvaliado) {
     }
 
     /**
@@ -60,10 +77,57 @@ public class EvalDeterministicGrader {
                               Atleta atleta, LocalDate semanaInicio) {
         PlanoSemanalLlmDto plano = EvalPlanoJsonParser.parsear(objectMapper, sessionResolver, respostaJson,
                 schemaVersion, zonasAtleta);
-        List<ViolacaoQualidade> violacoesQualidade = planQualityChecker.check(plano, regras);
+        plano = normalizar(plano, atleta, atleta != null ? atleta.getId() : null);
+        List<ViolacaoQualidade> violacoesQualidade = new ArrayList<>(planQualityChecker.check(plano, regras));
+        violacoesQualidade.addAll(paceImplicito(plano));
         List<PlannerViolation> violacoesCompliance = skeleton != null
                 ? plannerShadowService.checkPreRedistribution(plano, skeleton, atleta, semanaInicio)
                 : List.of();
-        return new Resultado(violacoesQualidade, violacoesCompliance);
+        return new Resultado(violacoesQualidade, violacoesCompliance, plano);
+    }
+
+    // shortcut: sem zonas de FC nem teto/piso históricos no contexto (eval não tem banco); corrigir-fc-zona
+    // e o teto/piso viram no-op. Suficiente para distância × duração × ritmo, que não dependem deles.
+    private PlanoSemanalLlmDto normalizar(PlanoSemanalLlmDto plano, Atleta atleta, java.util.@Nullable UUID atletaId) {
+        if (plano.treinosPlanejados() == null || atleta == null) return plano;
+        var ctx = new ContextoNormalizacao(atleta, atletaId, null, Map.of(), Map.of());
+        List<TreinoPlanejadoLlmDto> treinos = plano.treinosPlanejados().stream().map(t -> {
+            try {
+                return normalizacao.normalizar(t, ctx);
+            } catch (RuntimeException e) {
+                return t;
+            }
+        }).toList();
+        return new PlanoSemanalLlmDto(plano.volumePlanejadoKm(), plano.volumeAlvoKm(), plano.tsbInicio(),
+                plano.tsbFim(), plano.status(), plano.objetivoSemanal(), treinos, plano.restDays());
+    }
+
+    /** Etapa com duração e ritmo legível: sem distância, ou com pace implícito fora da faixa ±10%. */
+    List<ViolacaoQualidade> paceImplicito(PlanoSemanalLlmDto plano) {
+        List<ViolacaoQualidade> violacoes = new ArrayList<>();
+        if (plano.treinosPlanejados() == null) return violacoes;
+        for (TreinoPlanejadoLlmDto t : plano.treinosPlanejados()) {
+            if (t.etapas() == null) continue;
+            for (EtapaTreinoLlmDto e : t.etapas()) {
+                if (e.duracaoMin() == null || e.duracaoMin() <= 0) continue;
+                var faixa = paceValidator.parsear(e.ritmoAlvo());
+                if (faixa == null) continue;
+                if (e.distanciaKm() == null || e.distanciaKm() <= 0) {
+                    violacoes.add(new ViolacaoQualidade(ConstraintKey.PACE_IMPLICITO, String.format(
+                            "Etapa %s de %s em %s sem distância (%d min, ritmo %s)",
+                            e.tipoEtapa(), t.tipoTreino(), t.diaSemana(), e.duracaoMin(), e.ritmoAlvo())));
+                    continue;
+                }
+                double pace = e.duracaoMin() / e.distanciaKm();
+                if (pace < faixa.paceMin().doubleValue() * (1 - TOLERANCIA_PACE)
+                        || pace > faixa.paceMax().doubleValue() * (1 + TOLERANCIA_PACE)) {
+                    violacoes.add(new ViolacaoQualidade(ConstraintKey.PACE_IMPLICITO, String.format(
+                            "Etapa %s de %s em %s: %.2f km em %d min = %.2f min/km, fora do ritmo %s",
+                            e.tipoEtapa(), t.tipoTreino(), t.diaSemana(), e.distanciaKm(), e.duracaoMin(), pace,
+                            e.ritmoAlvo())));
+                }
+            }
+        }
+        return violacoes;
     }
 }
