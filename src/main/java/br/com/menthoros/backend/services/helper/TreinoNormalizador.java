@@ -266,6 +266,9 @@ public class TreinoNormalizador {
             default -> -1.0;
         };
         if (pace <= 0) return e;
+        // add-etapa-pace-validator: o ritmoAlvo declarado na etapa é a verdade; o pace da zona é só fallback
+        var paceDeclarado = paceValidator.calcularPaceMedia(e.ritmoAlvo());
+        if (paceDeclarado.isPresent() && paceDeclarado.getAsDouble() > 0) pace = paceDeclarado.getAsDouble();
         return e.comDistancia(arredondar2(e.duracaoMin() / pace));
     }
 
