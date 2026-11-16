@@ -4,6 +4,8 @@ import br.com.menthoros.backend.AbstractIntegrationTest;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoTreino;
 import br.com.menthoros.backend.entity.Prova;
+import br.com.menthoros.backend.dto.input.ProvaInputDto;
+import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
 import br.com.menthoros.backend.enums.UserRole;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
@@ -119,6 +121,32 @@ class ProvaTemporadaIT extends AbstractIntegrationTest {
                 .isInstanceOf(DomainRuleViolationException.class);
 
         assertThat(contar("tb_prova", "id", alvoLegado[0].getId())).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("reeditar prova cancelada como alvo não arquiva a temporada da alvo atual")
+    void canceladaReeditadaNaoArquivaAlvoAtual() {
+        when(principalResolver.hasRole(UserRole.ADMIN)).thenReturn(false);
+        provaService.removerProva(atleta.getId(), prova.getId());
+
+        PlanoTreino[] temporadaNova = new PlanoTreino[1];
+        Prova[] alvoNova = new Prova[1];
+        tx.executeWithoutResult(s -> {
+            SeasonPlanFixtures fx = new SeasonPlanFixtures(em);
+            Atleta gerenciado = em.find(Atleta.class, atleta.getId());
+            em.find(Prova.class, prova.getId()).setProvaAlvo(false);
+            alvoNova[0] = fx.prova(gerenciado);
+            temporadaNova[0] = fx.planoTreino(gerenciado, alvoNova[0], SeasonPlanStatus.ACTIVE);
+        });
+
+        provaService.atualizarProva(atleta.getId(), prova.getId(), new ProvaInputDto(
+                prova.getNomeProva(), prova.getDataProva(), prova.getTipoProva(), prova.getDistancia(),
+                null, true, ProvaStatus.CANCELADA, null, null, null, null, null,
+                null, null, null, null, null, null, null));
+
+        assertThat(status(temporadaNova[0])).isEqualTo("ACTIVE");
+        assertThat(jdbc.queryForObject("select prova_alvo from tb_prova where id = ?",
+                Boolean.class, alvoNova[0].getId())).isTrue();
     }
 
     private String status(PlanoTreino plano) {

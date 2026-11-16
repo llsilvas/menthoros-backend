@@ -590,6 +590,7 @@ class ProvaServiceImplTest {
     class TemporadaDaProva {
 
         private static final String MOTIVO = "prova cancelada";
+        private static final String MOTIVO_TROCA = "prova-alvo substituída";
 
         @BeforeEach
         void atletaDoTenant() {
@@ -670,7 +671,72 @@ class ProvaServiceImplTest {
 
             provaService.atualizarProva(atletaId, provaId, inputAlvo);
 
-            verify(planoTreinoRepository).archiveOpenSeasons(alvoAnterior.getId(), tenantId, MOTIVO);
+            verify(planoTreinoRepository).archiveOpenSeasons(alvoAnterior.getId(), tenantId, MOTIVO_TROCA);
+            verify(planoTreinoRepository, never()).archiveOpenSeasons(eq(provaId), any(), any());
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest(name = "prova {0} vira alvo: troca e arquiva a anterior")
+        @org.junit.jupiter.params.provider.EnumSource(value = ProvaStatus.class, names = "CANCELADA",
+                mode = org.junit.jupiter.params.provider.EnumSource.Mode.EXCLUDE)
+        @DisplayName("toda prova não cancelada que vira alvo substitui a anterior com o motivo da troca")
+        void provaAtivaViraAlvoPorStatus(ProvaStatus status) {
+            Prova alvoAnterior = provaAlvoExistente("Meia do Rio");
+            ProvaInputDto inputAlvo = novoInput(true);
+            org.mockito.Mockito.doAnswer(inv -> {
+                prova.setProvaAlvo(true);
+                prova.setStatusProva(status);
+                return null;
+            }).when(provaMapper).updateEntity(inputAlvo, prova);
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atleta)).thenReturn(List.of(alvoAnterior, prova));
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.atualizarProva(atletaId, provaId, inputAlvo);
+
+            assertThat(alvoAnterior.isProvaAlvo()).isFalse();
+            verify(planoTreinoRepository).archiveOpenSeasons(alvoAnterior.getId(), tenantId, MOTIVO_TROCA);
+        }
+
+        @Test
+        @DisplayName("reeditar prova cancelada ainda marcada como alvo não rouba o alvo nem arquiva a temporada da alvo atual")
+        void canceladaReeditadaNaoRoubaAlvo() {
+            Prova alvoAtual = provaAlvoExistente("Maratona de Porto Alegre");
+            ProvaInputDto inputCancelada = novoInput(true);
+            org.mockito.Mockito.doAnswer(inv -> {
+                prova.setProvaAlvo(true);
+                prova.setStatusProva(ProvaStatus.CANCELADA);
+                return null;
+            }).when(provaMapper).updateEntity(inputCancelada, prova);
+            when(provaRepository.save(prova)).thenReturn(prova);
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.atualizarProva(atletaId, provaId, inputCancelada);
+
+            assertThat(alvoAtual.isProvaAlvo()).isTrue();
+            verify(provaRepository, never()).findByAtletaAndProvaAlvoTrue(any());
+            verify(planoTreinoRepository, never()).archiveOpenSeasons(eq(alvoAtual.getId()), any(), any());
+            // a própria prova cancelada continua arquivando as dela (idempotente)
+            verify(planoTreinoRepository).archiveOpenSeasons(provaId, tenantId, MOTIVO);
+        }
+
+        @Test
+        @DisplayName("dados legados com duas alvos: a nova alvo arquiva as temporadas de cada uma")
+        void duasAlvosLegadasArquivaCada() {
+            Prova legadaA = provaAlvoExistente("Meia do Rio");
+            Prova legadaB = provaAlvoExistente("10K de Curitiba");
+            ProvaInputDto inputAlvo = novoInput(true);
+            org.mockito.Mockito.doAnswer(inv -> {
+                prova.setProvaAlvo(true);
+                return null;
+            }).when(provaMapper).updateEntity(inputAlvo, prova);
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atleta)).thenReturn(List.of(legadaA, prova, legadaB));
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> inv.getArgument(0));
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.atualizarProva(atletaId, provaId, inputAlvo);
+
+            verify(planoTreinoRepository).archiveOpenSeasons(legadaA.getId(), tenantId, MOTIVO_TROCA);
+            verify(planoTreinoRepository).archiveOpenSeasons(legadaB.getId(), tenantId, MOTIVO_TROCA);
             verify(planoTreinoRepository, never()).archiveOpenSeasons(eq(provaId), any(), any());
         }
     }

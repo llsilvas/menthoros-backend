@@ -3,7 +3,6 @@ package br.com.menthoros.backend.repository;
 import br.com.menthoros.backend.entity.PlanoTreino;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,6 +12,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface PlanoTreinoRepository extends JpaRepository<PlanoTreino, UUID> {
+
+    /** Motivos gravados em {@code versionReason} ao arquivar; texto exibido ao treinador. */
+    String REASON_RACE_CANCELLED = "prova cancelada";
+    String REASON_TARGET_REPLACED = "prova-alvo substituída";
 
     /** Busca a temporada (ou PlanoTreino legado) dentro do tenant. */
     Optional<PlanoTreino> findByIdAndAssessoriaId(UUID id, UUID tenantId);
@@ -35,21 +38,22 @@ public interface PlanoTreinoRepository extends JpaRepository<PlanoTreino, UUID> 
      * @return quantas temporadas foram arquivadas
      */
     default int archiveOpenSeasons(UUID raceId, UUID tenantId, String reason) {
-        return updateSeasonStatus(raceId, tenantId,
-                List.of(SeasonPlanStatus.ACTIVE, SeasonPlanStatus.PROPOSED), SeasonPlanStatus.ARCHIVED, reason);
+        List<PlanoTreino> abertas = findByProvaIdAndAssessoriaIdAndSeasonStatusIn(
+                raceId, tenantId, List.of(SeasonPlanStatus.ACTIVE, SeasonPlanStatus.PROPOSED));
+        // Altera as entidades em vez de UPDATE em massa: o bulk deixaria desatualizado um PlanoTreino
+        // já carregado na transação, e limpar o contexto destacaria as entidades de quem chamou.
+        abertas.forEach(plano -> {
+            plano.setSeasonStatus(SeasonPlanStatus.ARCHIVED);
+            plano.setVersionReason(reason);
+        });
+        saveAllAndFlush(abertas);
+        return abertas.size();
     }
 
-    @Modifying
-    @Query("""
-            update PlanoTreino p
-               set p.seasonStatus = :to, p.versionReason = :reason
-             where p.assessoria.id = :tenantId
-               and p.prova.id = :raceId
-               and p.seasonStatus in :from
-            """)
-    int updateSeasonStatus(@Param("raceId") UUID raceId,
-                           @Param("tenantId") UUID tenantId,
-                           @Param("from") Collection<SeasonPlanStatus> from,
-                           @Param("to") SeasonPlanStatus to,
-                           @Param("reason") String reason);
+    /**
+     * Considera só {@code prova_id}: é ele que governa a temporada. Plano legado que aponta a prova
+     * apenas por {@code prova_alvo_id} tem {@code season_status} nulo e não teria o que arquivar.
+     */
+    List<PlanoTreino> findByProvaIdAndAssessoriaIdAndSeasonStatusIn(
+            UUID raceId, UUID tenantId, Collection<SeasonPlanStatus> statuses);
 }

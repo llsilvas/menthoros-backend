@@ -62,7 +62,6 @@ public class ProvaServiceImpl implements ProvaService {
     private final PlanoTreinoRepository planoTreinoRepository;
 
     /** Texto gravado em {@code versionReason} quando a prova-alvo deixa de valer; exibido ao treinador. */
-    private static final String MOTIVO_TEMPORADA_ARQUIVADA = "prova cancelada";
 
     /**
      * Resolve o atleta pelo ID garantindo isolamento por tenant.
@@ -238,7 +237,7 @@ public class ProvaServiceImpl implements ProvaService {
         // entra na nova (reabre as duas, se aprovadas); só nome/tempo objetivo -> atualiza o
         // treino já vinculado sem reabrir revisão.
         if (salva.getStatusProva() == ProvaStatus.CANCELADA) {
-            arquivarTemporadas(provaId, atleta);
+            arquivarTemporadas(provaId, atleta, PlanoTreinoRepository.REASON_RACE_CANCELLED);
             provaNoPlanoService.removerProvaDeSemanaExistente(salva, antes.dataProva());
         } else if (!Objects.equals(antes.dataProva(), salva.getDataProva())) {
             provaNoPlanoService.removerProvaDeSemanaExistente(salva, antes.dataProva());
@@ -303,7 +302,7 @@ public class ProvaServiceImpl implements ProvaService {
         LocalDate dataProva = prova.getDataProva();
         prova.setStatusProva(ProvaStatus.CANCELADA);
         Prova salva = provaRepository.save(prova);
-        arquivarTemporadas(provaId, atleta);
+        arquivarTemporadas(provaId, atleta, PlanoTreinoRepository.REASON_RACE_CANCELLED);
         // prova-no-plano-semanal, D5, mesma transação: cancelar remove o PROVA da semana, se houver.
         provaNoPlanoService.removerProvaDeSemanaExistente(salva, dataProva);
         log.info("Prova cancelada: id={}, atletaId={}", provaId, atletaId);
@@ -421,7 +420,8 @@ public class ProvaServiceImpl implements ProvaService {
      * @return nome da alvo substituída, quando havia outra prova como alvo
      */
     private Optional<String> garantirAlvoUnica(Atleta atleta, Prova prova) {
-        if (!prova.isProvaAlvo()) {
+        // Prova cancelada não disputa o alvo: reeditá-la não pode desmarcar nem arquivar a alvo atual.
+        if (!prova.isProvaAlvo() || prova.getStatusProva() == ProvaStatus.CANCELADA) {
             return Optional.empty();
         }
         String alvoAnterior = null;
@@ -432,7 +432,7 @@ public class ProvaServiceImpl implements ProvaService {
             }
             outra.setProvaAlvo(false);
             provaRepository.save(outra);
-            arquivarTemporadas(outra.getId(), atleta);
+            arquivarTemporadas(outra.getId(), atleta, PlanoTreinoRepository.REASON_TARGET_REPLACED);
             alvoAnterior = outra.getNomeProva();
         }
         return Optional.ofNullable(alvoAnterior);
@@ -442,9 +442,9 @@ public class ProvaServiceImpl implements ProvaService {
      * Prova-alvo deixou de valer (cancelada ou trocada): temporadas ACTIVE e PROPOSED dela vão a
      * ARCHIVED. Nunca apaga — semanas e planos semanais ficam. Idempotente pelo filtro da query.
      */
-    private void arquivarTemporadas(UUID provaId, Atleta atleta) {
+    private void arquivarTemporadas(UUID provaId, Atleta atleta, String motivo) {
         int arquivadas = planoTreinoRepository.archiveOpenSeasons(
-                provaId, atleta.getAssessoria().getId(), MOTIVO_TEMPORADA_ARQUIVADA);
+                provaId, atleta.getAssessoria().getId(), motivo);
         if (arquivadas > 0) {
             log.info("Temporadas arquivadas: provaId={}, quantidade={}", provaId, arquivadas);
         }

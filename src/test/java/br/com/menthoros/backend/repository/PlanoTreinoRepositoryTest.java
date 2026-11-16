@@ -174,6 +174,35 @@ class PlanoTreinoRepositoryTest extends AbstractIntegrationTest {
         }
 
         @Test
+        @DisplayName("temporada já carregada na transação é lida arquivada depois, sem em.clear manual")
+        void entidadeCarregadaNaoFicaDesatualizada() {
+            PlanoTreino ativa = fx.planoTreino(atleta, prova, SeasonPlanStatus.ACTIVE);
+            em.flush();
+            PlanoTreino carregada = planoTreinoRepository.findById(ativa.getId()).orElseThrow();
+            assertThat(carregada.getSeasonStatus()).isEqualTo(SeasonPlanStatus.ACTIVE);
+
+            planoTreinoRepository.archiveOpenSeasons(prova.getId(), tenantId(), "prova cancelada");
+
+            PlanoTreino relida = planoTreinoRepository.findById(ativa.getId()).orElseThrow();
+            assertThat(relida.getSeasonStatus()).isEqualTo(SeasonPlanStatus.ARCHIVED);
+            assertThat(relida.getVersionReason()).isEqualTo("prova cancelada");
+        }
+
+        @Test
+        @DisplayName("alteração pendente na mesma transação é gravada antes do arquivamento, não perdida")
+        void alteracaoPendenteNaoSePerde() {
+            PlanoTreino ativa = fx.planoTreino(atleta, prova, SeasonPlanStatus.ACTIVE);
+            em.flush();
+            ativa.setNome("Temporada renomeada");
+
+            planoTreinoRepository.archiveOpenSeasons(prova.getId(), tenantId(), "prova cancelada");
+
+            PlanoTreino relida = planoTreinoRepository.findById(ativa.getId()).orElseThrow();
+            assertThat(relida.getNome()).isEqualTo("Temporada renomeada");
+            assertThat(relida.getSeasonStatus()).isEqualTo(SeasonPlanStatus.ARCHIVED);
+        }
+
+        @Test
         @DisplayName("não arquiva temporada de outro tenant")
         void outroTenant() {
             PlanoTreino ativa = fx.planoTreino(atleta, prova, SeasonPlanStatus.ACTIVE);
