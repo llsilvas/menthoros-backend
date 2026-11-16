@@ -677,3 +677,21 @@ o que reprova o CA4b ("nenhum item que o coach barraria"). Também há defeitos 
 5. Conferir o dia de descanso obrigatório no `avancado-tsb-baixo`. (Verificado: a regra do prompt é
    "dias consecutivos ≥ limite → descanso obrigatório", sem dia fixo; terça ou segunda são válidos.)
 6. Fora do CA4b: regra de dor para tendinite no prompt de produção.
+
+## Medição: os mesmos 30 planos depois da normalização de produção (2026-11-16)
+
+Sem chamar LLM: `RevisaoCegaNormalizacaoMedicaoTest` passa cada treino por `NormalizacaoDeTreino` (sem zonas de FC nem teto/piso históricos no contexto) e conta etapas com pace implícito fora do `ritmoAlvo` ±10% ou com 0 km. Nenhum treino foi rejeitado por gate.
+
+| modelo | tipo | etapas | bruto: pace fora | bruto: 0 km | normalizado: pace fora | normalizado: 0 km | treino rejeitado por gate |
+|---|---|---|---|---|---|---|---|
+| gpt-4o | CONTINUO | 61 | 11 | 4 | 4 | 0 | 0 |
+| gpt-4o | INTERVALADO | 26 | 0 | 0 | 0 | 0 | 0 |
+| gpt-4o | LONGO | 33 | 5 | 0 | 2 | 0 | 0 |
+| gpt-4o | REGENERATIVO | 48 | 11 | 3 | 4 | 0 | 0 |
+| gpt-6-luna_medium | CONTINUO | 45 | 12 | 2 | 14 | 0 | 0 |
+| gpt-6-luna_medium | LONGO | 27 | 7 | 6 | 8 | 0 | 0 |
+| gpt-6-luna_medium | REGENERATIVO | 43 | 7 | 16 | 18 | 0 | 0 |
+
+- **0 km:** zerado pela normalização (16 → 0 no Luna, 7 → 0 no gpt-4o).
+- **Pace fora na PRINCIPAL:** zerado — `distanciaPrincipalPorPace` (fix-etapas-continuos-pace) já repara a distância pelo `ritmoAlvo`. Os casos que o coach barrou (16:00/km, 27:51/km, 13:03/km) eram resposta bruta.
+- **Pace fora que sobra (50 etapas): só AQUECIMENTO e DESAQUECIMENTO.** É criado pela própria normalização: `corrigirDistanciasEtapasTemporais` deriva a distância de `paceLimiar × 1,20` e ignora o `ritmoAlvo` da etapa (ex.: 2,38 km em 10 min = 4:12/km com ritmo 6:00–6:30/km).
