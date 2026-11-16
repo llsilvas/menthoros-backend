@@ -146,7 +146,7 @@ final class PlanoPromptArquetipos {
                 .nivelExperiencia(NivelExperiencia.AVANCADO)
                 .objetivo("Sub-3h na maratona")
                 .fcMaxima(186).fcRepouso(48).fcLimiar(172)
-                .paceLimiar(new BigDecimal("3.50")).velocidadeLimiar(new BigDecimal("15.65"))
+                .paceLimiar(new BigDecimal("3.83")).velocidadeLimiar(new BigDecimal("15.65"))
                 .build();
         // TSB bem negativo → degrada elegibilidade de intervalado
         PlanoMetaDados meta = metaBase(atleta)
