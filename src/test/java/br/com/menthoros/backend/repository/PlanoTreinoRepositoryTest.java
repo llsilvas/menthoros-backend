@@ -1,0 +1,129 @@
+package br.com.menthoros.backend.repository;
+
+import br.com.menthoros.backend.AbstractIntegrationTest;
+import br.com.menthoros.backend.entity.Assessoria;
+import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.entity.PlanoTreino;
+import br.com.menthoros.backend.entity.Prova;
+import br.com.menthoros.backend.enums.SeasonPlanStatus;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.annotation.Transactional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+/**
+ * Integração real (Testcontainers + V116) do remapeamento de {@link PlanoTreino} para o plano de
+ * temporada: cascata sem REMOVE, legado com {@code seasonStatus} nulo, isolamento por tenant e o
+ * índice parcial de uma temporada ACTIVE por atleta.
+ */
+@Transactional
+class PlanoTreinoRepositoryTest extends AbstractIntegrationTest {
+
+    @Autowired
+    private PlanoTreinoRepository planoTreinoRepository;
+
+    @PersistenceContext
+    private EntityManager em;
+
+    private SeasonPlanFixtures fx;
+    private Atleta atleta;
+    private Prova prova;
+
+    @BeforeEach
+    void setUp() {
+        fx = new SeasonPlanFixtures(em);
+        atleta = fx.atleta(fx.assessoria());
+        prova = fx.prova(atleta);
+    }
+
+    @Nested
+    @DisplayName("delete")
+    class Delete {
+
+        @Test
+        @DisplayName("remover a temporada pelo JPA não apaga os planos semanais — ficam sem vínculo")
+        void preservaPlanosSemanais() {
+            PlanoTreino plano = fx.planoTreino(atleta, prova, SeasonPlanStatus.ACTIVE);
+            PlanoSemanal semanal = fx.planoSemanalAprovado(plano);
+            em.flush();
+            em.clear();
+
+            planoTreinoRepository.delete(planoTreinoRepository.findById(plano.getId()).orElseThrow());
+            em.flush();
+            em.clear();
+
+            PlanoSemanal recarregado = em.find(PlanoSemanal.class, semanal.getId());
+            assertThat(recarregado).isNotNull();
+            assertThat(recarregado.getPlanoTreino()).isNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("findByIdAndAssessoriaId")
+    class FindByIdAndAssessoriaId {
+
+        @Test
+        @DisplayName("lê PlanoTreino legado com seasonStatus nulo")
+        void legadoSemStatus() {
+            PlanoTreino legado = fx.planoTreino(atleta, prova, null);
+            em.flush();
+            em.clear();
+
+            PlanoTreino lido = planoTreinoRepository
+                    .findByIdAndAssessoriaId(legado.getId(), atleta.getAssessoria().getId())
+                    .orElseThrow();
+
+            assertThat(lido.getSeasonStatus()).isNull();
+        }
+
+        @Test
+        @DisplayName("temporada de outro tenant não aparece")
+        void isolaTenant() {
+            PlanoTreino plano = fx.planoTreino(atleta, prova, SeasonPlanStatus.ACTIVE);
+            Assessoria outra = fx.assessoria();
+            em.flush();
+
+            assertThat(planoTreinoRepository.findByIdAndAssessoriaId(plano.getId(), outra.getId()))
+                    .isEmpty();
+        }
+    }
+
+    @Nested
+    @DisplayName("índice uk_plano_treino_active_season")
+    class IndiceAtivo {
+
+        @Test
+        @DisplayName("recusa a segunda temporada ACTIVE do mesmo atleta")
+        void recusaSegundaAtiva() {
+            fx.planoTreino(atleta, prova, SeasonPlanStatus.ACTIVE);
+            em.flush();
+
+            assertThatThrownBy(() -> {
+                fx.planoTreino(atleta, fx.prova(atleta), SeasonPlanStatus.ACTIVE);
+                planoTreinoRepository.flush();
+            }).isInstanceOf(DataIntegrityViolationException.class);
+        }
+
+        @Test
+        @DisplayName("aceita vários PlanoTreino legados e propostas do mesmo atleta")
+        void aceitaLegadosEPropostas() {
+            fx.planoTreino(atleta, prova, null);
+            fx.planoTreino(atleta, fx.prova(atleta), null);
+            fx.planoTreino(atleta, fx.prova(atleta), SeasonPlanStatus.PROPOSED);
+            fx.planoTreino(atleta, fx.prova(atleta), SeasonPlanStatus.ACTIVE);
+
+            planoTreinoRepository.flush();
+
+            assertThat(planoTreinoRepository.count()).isGreaterThanOrEqualTo(4);
+        }
+    }
+}
