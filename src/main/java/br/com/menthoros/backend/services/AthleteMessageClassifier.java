@@ -17,7 +17,7 @@ import java.util.Locale;
  * semântica antes de o texto chegar ao atleta.
  *
  * <p><b>Fail-open de propósito:</b> falha na chamada → {@code false} (não bloqueia). O regex e as
- * demais checagens já rodaram; bloquear todo bloco quando o Haiku está fora derrubaria a feature
+ * demais checagens já rodaram; bloquear todo bloco quando o modelo está fora derrubaria a feature
  * inteira por indisponibilidade de um verificador secundário.
  */
 @Slf4j
@@ -34,7 +34,7 @@ public class AthleteMessageClassifier {
 
     /**
      * Idempotent: YES — mesma entrada tende à mesma resposta.
-     * Side Effects: External API call (Claude Haiku via rota STANDARD)
+     * Side Effects: External API call (rota SIMPLE, OpenAI)
      * Tenant-aware: N/A
      */
     public boolean mandaMudarPlano(AthleteMessageDto dto) {
@@ -42,7 +42,7 @@ public class AthleteMessageClassifier {
                 dto.recognition(), dto.howItWent(), dto.effortReading(), dto.nextWorkoutTip());
         try {
             String prompt = templateLoader.loadAndFormat(PROMPT_TEMPLATE, texto);
-            String resposta = modelRouter.route(TaskComplexity.STANDARD)
+            String resposta = modelRouter.route(TaskComplexity.SIMPLE)
                     .prompt()
                     .user(prompt)
                     .call()

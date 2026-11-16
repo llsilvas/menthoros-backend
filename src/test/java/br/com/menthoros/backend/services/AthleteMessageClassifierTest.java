@@ -20,7 +20,7 @@ import static org.mockito.Mockito.*;
 class AthleteMessageClassifierTest {
 
     @Mock private ModelRouter modelRouter;
-    @Mock private ChatClient haikuClient;
+    @Mock private ChatClient client;
     @Mock private ChatClient.ChatClientRequestSpec requestSpec;
     @Mock private ChatClient.CallResponseSpec callSpec;
 
@@ -30,8 +30,8 @@ class AthleteMessageClassifierTest {
     void setUp() {
         classifier = new AthleteMessageClassifier(
                 modelRouter, new PromptTemplateLoader(new DefaultResourceLoader()));
-        when(modelRouter.route(TaskComplexity.STANDARD)).thenReturn(haikuClient);
-        when(haikuClient.prompt()).thenReturn(requestSpec);
+        when(modelRouter.route(TaskComplexity.SIMPLE)).thenReturn(client);
+        when(client.prompt()).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(callSpec);
     }
@@ -46,15 +46,15 @@ class AthleteMessageClassifierTest {
     }
 
     @Test
-    void sim_do_haiku_marca_como_prescricao() {
+    void sim_do_modelo_marca_como_prescricao() {
         when(callSpec.content()).thenReturn("SIM");
 
         assertThat(classifier.mandaMudarPlano(blocoSemTokensMasPrescritivo())).isTrue();
-        verify(modelRouter).route(TaskComplexity.STANDARD);
+        verify(modelRouter).route(TaskComplexity.SIMPLE);
     }
 
     @Test
-    void nao_do_haiku_libera() {
+    void nao_do_modelo_libera() {
         when(callSpec.content()).thenReturn("NAO");
 
         assertThat(classifier.mandaMudarPlano(blocoSemTokensMasPrescritivo())).isFalse();
@@ -68,7 +68,7 @@ class AthleteMessageClassifierTest {
     }
 
     @Test
-    void falha_do_haiku_e_fail_open() {
+    void falha_do_modelo_e_fail_open() {
         when(callSpec.content()).thenThrow(new RuntimeException("model unavailable"));
 
         assertThat(classifier.mandaMudarPlano(blocoSemTokensMasPrescritivo())).isFalse();
