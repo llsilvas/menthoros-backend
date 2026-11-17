@@ -20,6 +20,7 @@ import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.routing.ModelRouter;
+import br.com.menthoros.backend.services.helper.AtletaHojeResolver;
 import br.com.menthoros.backend.util.Utils;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -68,6 +69,7 @@ class AtletaTreinoFeedbackAnaliseIT extends AbstractIntegrationTest {
     @Autowired private UsuarioRepository usuarioRepository;
     @Autowired private TreinoRealizadoRepository treinoRepository;
     @Autowired private AiWorkoutAnalysisRepository analiseRepository;
+    @Autowired private AtletaHojeResolver atletaHojeResolver;
     @MockitoBean private ModelRouter modelRouter;
 
     private Assessoria assessoria;
@@ -106,7 +108,10 @@ class AtletaTreinoFeedbackAnaliseIT extends AbstractIntegrationTest {
         atleta = atletaRepository.save(atleta);
 
         // Como chega do Garmin: sem RPE — o evento do insert não passa na elegibilidade da análise.
-        LocalDate hoje = LocalDate.now();
+        // "Hoje" do atleta (fuso dele, default America/Sao_Paulo), como a validação de data futura
+        // calcula. LocalDate.now() usa o fuso da JVM: no CI (UTC), entre 21h e 0h de São Paulo já é
+        // amanhã, e o feedback voltava 400 "data não pode ser futura".
+        LocalDate hoje = atletaHojeResolver.hojeDe(atleta);
         TreinoRealizado tr = new TreinoRealizado();
         tr.setAtleta(atleta);
         tr.setTenantId(assessoria.getId());
