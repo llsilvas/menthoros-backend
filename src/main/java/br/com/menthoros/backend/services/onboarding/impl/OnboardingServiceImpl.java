@@ -177,6 +177,9 @@ public class OnboardingServiceImpl implements OnboardingService {
         provasAlvoAtuais.stream()
                 .filter(p -> !p.getId().equals(salva.getId()))
                 .forEach(p -> {
+                    // Trava antes de arquivar (add-season-plan-generate-tracer, D13): uma geração
+                    // em curso sobre esta alvo termina antes, e o arquivamento a encontra.
+                    provaRepository.findByIdAndTenantIdForUpdate(p.getId(), tenantId);
                     p.setProvaAlvo(false);
                     provaRepository.save(p);
                     // Mesma regra de ProvaServiceImpl.garantirAlvoUnica: a alvo que perdeu o posto

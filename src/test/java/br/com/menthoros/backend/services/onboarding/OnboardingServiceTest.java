@@ -394,7 +394,9 @@ class OnboardingServiceTest {
             Prova nova = service.criarOuAtualizarProvaAlvo(
                     atletaId, tenantId, LocalDate.now().plusMonths(4), TipoProva.MARATONA, DistanciaProva.KM_42, null, "Maratona");
 
-            verify(planoTreinoRepository).archiveOpenSeasons(provaAntiga.getId(), tenantId, "prova-alvo substituída");
+            org.mockito.InOrder ordem = org.mockito.Mockito.inOrder(provaRepository, planoTreinoRepository);
+            ordem.verify(provaRepository).findByIdAndTenantIdForUpdate(provaAntiga.getId(), tenantId);
+            ordem.verify(planoTreinoRepository).archiveOpenSeasons(provaAntiga.getId(), tenantId, "prova-alvo substituída");
             verify(planoTreinoRepository, never()).archiveOpenSeasons(org.mockito.ArgumentMatchers.eq(nova.getId()),
                     any(), any());
         }

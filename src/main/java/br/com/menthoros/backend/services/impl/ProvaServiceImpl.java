@@ -105,6 +105,17 @@ public class ProvaServiceImpl implements ProvaService {
     }
 
     /**
+     * {@link #resolveProva} com lock pessimista, para os caminhos de escrita: serializa com a geração
+     * da temporada, que trava a mesma linha antes de gravar (add-season-plan-generate-tracer, D13).
+     */
+    private Prova travarProva(Atleta atleta, UUID provaId) {
+        UUID tenantId = atleta.getAssessoria().getId();
+        return provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)
+                .filter(p -> p.getAtleta().getId().equals(atleta.getId()))
+                .orElseThrow(() -> new ResourceNotFoundException("Prova não encontrada: " + provaId));
+    }
+
+    /**
      * Cria uma prova para o atleta dentro do tenant da requisição atual. Deriva os campos de
      * preparação e, se a prova nasce como alvo, desmarca a alvo anterior do atleta. Para o
      * atleta, só o subconjunto {@link ProvaAtletaInputDto} é aceito (data futura obrigatória).
@@ -217,7 +228,7 @@ public class ProvaServiceImpl implements ProvaService {
     @Transactional
     public ProvaOutputDto atualizarProva(UUID atletaId, UUID provaId, ProvaInputDto dto) {
         Atleta atleta = resolveAtletaComPosse(atletaId);
-        Prova prova = resolveProva(atleta, provaId);
+        Prova prova = travarProva(atleta, provaId);
         boolean atorAtleta = atletaResolver.atuaComoAtleta();
         EstadoRelevante antes = EstadoRelevante.de(prova);
         if (atorAtleta) {
@@ -232,6 +243,9 @@ public class ProvaServiceImpl implements ProvaService {
             registrarMudancaDoAtleta(prova, antes, alvoSubstituida);
         }
         Prova salva = provaRepository.save(prova);
+        if (antes.provaAlvo() && !salva.isProvaAlvo() && salva.getStatusProva() != ProvaStatus.CANCELADA) {
+            arquivarTemporadas(provaId, atleta, PlanoTreinoRepository.REASON_TARGET_UNMARKED);
+        }
 
         // prova-no-plano-semanal, D5, mesma transação: data mudou -> sai da semana antiga e
         // entra na nova (reabre as duas, se aprovadas); só nome/tempo objetivo -> atualiza o
@@ -265,7 +279,7 @@ public class ProvaServiceImpl implements ProvaService {
     @Transactional
     public void deletarProva(UUID atletaId, UUID provaId) {
         Atleta atleta = resolveAtletaComPosse(atletaId);
-        Prova prova = resolveProva(atleta, provaId);
+        Prova prova = travarProva(atleta, provaId);
         // Plano de temporada: a FK prova_id é RESTRICT (V116) e prova_alvo_id não tem ação; recusar
         // aqui devolve 422 com orientação em vez de 500 por violação de constraint.
         if (planoTreinoRepository.existsReferencingRace(provaId, atleta.getAssessoria().getId())) {
@@ -294,7 +308,7 @@ public class ProvaServiceImpl implements ProvaService {
     @Transactional
     public void cancelarProva(UUID atletaId, UUID provaId) {
         Atleta atleta = resolveAtletaComPosse(atletaId);
-        Prova prova = resolveProva(atleta, provaId);
+        Prova prova = travarProva(atleta, provaId);
         if (atletaResolver.atuaComoAtleta()) {
             exigirNaoRealizada(prova);
             marcarPendente(prova, MotivoRevisaoProva.CANCELADA, null);
@@ -339,7 +353,7 @@ public class ProvaServiceImpl implements ProvaService {
     @Transactional
     public ProvaOutputDto marcarCiente(UUID atletaId, UUID provaId) {
         Atleta atleta = resolveAtleta(atletaId);
-        Prova prova = resolveProva(atleta, provaId);
+        Prova prova = travarProva(atleta, provaId);
         if (!prova.isRevisadaPeloCoach()) {
             prova.setRevisadaPeloCoach(true);
             prova.setMotivoRevisao(null);
@@ -430,6 +444,8 @@ public class ProvaServiceImpl implements ProvaService {
             if (prova.getId() != null && prova.getId().equals(outra.getId())) {
                 continue;
             }
+            // Trava antes de arquivar (D13): uma geração em curso sobre esta alvo termina antes.
+            provaRepository.findByIdAndTenantIdForUpdate(outra.getId(), atleta.getAssessoria().getId());
             outra.setProvaAlvo(false);
             provaRepository.save(outra);
             arquivarTemporadas(outra.getId(), atleta, PlanoTreinoRepository.REASON_TARGET_REPLACED);
