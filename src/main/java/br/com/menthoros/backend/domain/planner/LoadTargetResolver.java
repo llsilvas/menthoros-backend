@@ -24,7 +24,7 @@ public class LoadTargetResolver {
     private static final double FAIXA_TOLERANCIA = 0.10;
 
     // Regime cold-start (ADR-0012) — atleta em calibracao, sem PMC confiavel.
-    private static final double TETO_CTL_COLD_START = 40.0; // cap contra autodeclaracao inflada
+    public static final double TETO_CTL_COLD_START = 40.0; // cap contra autodeclaracao inflada (também no SeasonPlanService)
     private static final double PISO_COLD_START = 120.0; // TSS/sem, so em fase progressiva
     private static final double BANDA_COLD_START = 0.25; // +-25% (vs +-10% do caminho normal)
     private static final double RAMPA_OBSERVATION = 0.60;
