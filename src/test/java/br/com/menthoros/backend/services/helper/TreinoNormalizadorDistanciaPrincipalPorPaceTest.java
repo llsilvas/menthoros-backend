@@ -166,6 +166,26 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         }
 
         @Test
+        @DisplayName("PRINCIPAL sem ritmo usa o ritmoAlvo do treino: 30 ÷ 6,25 = 4,8 km")
+        void semRitmoUsaRitmoDoTreino() {
+            var treino = continuoComRitmo("6:00-6:30/km", etapa("PRINCIPAL", 30, 5.5, null));
+
+            var resultado = normalizador.distanciaPrincipalPorPace(treino);
+
+            assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(4.8);
+        }
+
+        @Test
+        @DisplayName("ritmo da etapa tem precedência sobre o do treino")
+        void ritmoDaEtapaPrevalece() {
+            var treino = continuoComRitmo("6:00-6:30/km", etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km"));
+
+            var resultado = normalizador.distanciaPrincipalPorPace(treino);
+
+            assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(3.9);
+        }
+
+        @Test
         @DisplayName("só a distância muda: ordem, tipo, descrição, duração, FC, repetições e ritmo preservados")
         void soDistanciaMuda() {
             var original = new EtapaTreinoLlmDto(2, "PRINCIPAL", "Corrida regenerativa Z1", 30, 5.5,
@@ -411,8 +431,14 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         return new EtapaTreinoLlmDto(1, tipo, "etapa", duracaoMin, distanciaKm, null, 1, ritmoAlvo);
     }
 
+    // Treino sem ritmo próprio: os casos "sem ritmo" daqui são "sem ritmo em lugar nenhum" — o fallback
+    // para o ritmo do treino (fix-total-treino-soma-etapas) tem testes próprios, com continuoComRitmo.
     private static TreinoPlanejadoLlmDto continuo(EtapaTreinoLlmDto... etapas) {
+        return continuoComRitmo(null, etapas);
+    }
+
+    private static TreinoPlanejadoLlmDto continuoComRitmo(String ritmoTreino, EtapaTreinoLlmDto... etapas) {
         return new TreinoPlanejadoLlmDto("SEGUNDA", "REGENERATIVO", null, null, null, null, null,
-                "45:00", 6.0, "7:28-7:55/km", List.of(etapas));
+                "45:00", 6.0, ritmoTreino, List.of(etapas));
     }
 }

@@ -303,20 +303,26 @@ public class NormalizacaoDeTreino {
      * <ul>
      *   <li>sem distância da LLM — {@code garantir-distancia-continuo} (cauda) assume; reconciliar aqui
      *       adotaria a soma parcial e a PRINCIPAL sem ritmo nunca seria preenchida;</li>
-     *   <li>etapa sintetizada — ela se soma à prescrição: um regenerativo de 30min/4km viraria
-     *       45min/6,94km sem ninguém ter prescrito (decisão de produto de 22/09, mesma regra do CA4b);</li>
-     *   <li>PRINCIPAL sem ritmo — carrega o total que a LLM concentrou ali; somada a aquec/desaq, infla.</li>
+     *   <li>etapa sintetizada — o total prescrito fica (decisão de produto de 22/09: não inflar o volume) e
+     *       a PRINCIPAL encaixa nele, com a duração pelo pace (fix-total-treino-soma-etapas); sem como
+     *       encaixar, a divergência fica e é contada;</li>
+     *   <li>PRINCIPAL sem ritmo nem no treino — carrega o total que a LLM concentrou ali; somada a
+     *       aquec/desaq, infla. A divergência fica e é contada.</li>
      * </ul>
-     * Nos dois últimos, a divergência entre etapas e total fica e é contada.
      */
     private TreinoPlanejadoLlmDto reconciliarContinuo(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
         if (treino.distanciaKm() == null || treino.distanciaKm() <= 0) return treino;
-        String motivo = treino.etapas().stream().anyMatch(PlanoEstruturaReparador::foiSintetizada)
-                ? "etapa-sintetizada"
-                : !treinoNormalizador.principaisComDistanciaPorPace(treino) ? "principal-sem-ritmo" : null;
-        if (motivo == null) return treinoNormalizador.adotarSomaDasEtapas(treino);
-        registrarDivergenciaMantida(treino, motivo, ctx);
-        return treino;
+        if (treino.etapas().stream().anyMatch(PlanoEstruturaReparador::foiSintetizada)) {
+            var encaixado = treinoNormalizador.encaixarPrincipalNoTotal(treino);
+            if (encaixado.isPresent()) return encaixado.get();
+            registrarDivergenciaMantida(treino, "etapa-sintetizada", ctx);
+            return treino;
+        }
+        if (!treinoNormalizador.principaisComDistanciaPorPace(treino)) {
+            registrarDivergenciaMantida(treino, "principal-sem-ritmo", ctx);
+            return treino;
+        }
+        return treinoNormalizador.adotarSomaDasEtapas(treino);
     }
 
     /** Acima de 10% a tela do atleta (etapas) e a do treinador (total) contam histórias diferentes. */
