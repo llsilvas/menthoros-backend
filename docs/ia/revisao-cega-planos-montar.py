@@ -2,18 +2,15 @@
 
 Lê target/revisao-cega/ (gerado por RevisaoCegaPlanosRealTest) e escreve um par A/B embaralhado por
 arquétipo e repetição, com a chave no fim.
-Uso: python3 -I docs/ia/revisao-cega-planos-montar.py <dir_entrada> <saida.md> <candidato_1> <candidato_2>
+Uso: python3 -I docs/ia/revisao-cega-planos-montar.py <dir_entrada> <saida.md> <candidato_1> <candidato_2> [semente]
 """
 import json, random, sys
 from pathlib import Path
 
 entrada, saida, cand = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3:5]
 ORDEM = ['SEGUNDA', 'TERCA', 'QUARTA', 'QUINTA', 'SEXTA', 'SABADO', 'DOMINGO']
-AVISO = {
-    'taper-semana-prova': '> **Atenção (defeito da fixture, não do modelo):** o prompt pede treinos em TERÇA, QUINTA e '
-                          'SÁBADO, mas os dias disponíveis do atleta são SEGUNDA, QUARTA, SEXTA e SÁBADO. Não '
-                          'penalize nenhum dos dois por escolher um ou outro conjunto de dias.',
-}
+# Avisos por arquétipo (vazio desde a rodada 2: a fixture do taper foi corrigida).
+AVISO = {}
 
 
 def v(x, suf=''):
@@ -56,12 +53,15 @@ def plano(p):
     return '\n'.join(linhas)
 
 
-random.seed(20261116)
+random.seed(int(sys.argv[5]) if len(sys.argv) > 5 else 20261116)
 md = ['# Revisão cega de planos — gpt-4o × sucessor (migrate-openai-retired-models, task 3.5)\n',
       'Cada caso é um arquétipo do eval set com o contexto do atleta e dois planos, A e B, gerados pelo',
-      'mesmo prompt de produção. A ordem é embaralhada por caso; a chave está no fim.\n',
+      'mesmo prompt de produção e passados pela normalização de produção (o que o coach recebe). A ordem é',
+      'embaralhada por caso; a chave está no fim.\n',
       '**Para cada caso, anote:** (1) qual você mandaria ao atleta: A, B ou empate; (2) se algum dos dois',
       'tem algo que você barraria (risco de lesão, carga errada, dia proibido, ritmo incoerente).\n',
+      '**Nota da rodada 2:** um FARTLEK do gpt-4o foi reprovado por um gate estrutural da normalização (em',
+      'produção iria para o turno de reparo) e aparece como a LLM escreveu.\n',
       '**Critério (CA4b):** o sucessor não pode ser preferido em menos casos que o gpt-4o, e não pode ter',
       'item que você barraria.\n']
 chave, n = [], 0
