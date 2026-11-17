@@ -18,7 +18,7 @@ import br.com.menthoros.backend.enums.EstadoProgressao;
 @Component
 public class LoadTargetResolver {
 
-    private static final double MAX_CTL_RAMP_PER_WEEK = 8.0; // CA1
+    static final double MAX_CTL_RAMP_PER_WEEK = 8.0; // CA1 — também teto da rampa do SeasonPlanner
     private static final int SEMANAS_PARA_STEP_BACK = 3; // CA2 — na 4a semana consecutiva
     private static final double STEP_BACK_FACTOR = 0.80; // reducao de 20%, dentro da banda 15-25%
     private static final double FAIXA_TOLERANCIA = 0.10;
