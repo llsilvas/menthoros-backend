@@ -436,6 +436,11 @@ app:
 # e metricas de calibracao. planner_enabled persistido e sempre false nesta change;
 # nao existem flags enabled/fail-open aqui — nascem em planner-engine-enforcement.
 # ----------------------------------------
+# Plano de temporada (add-season-plan-generate-tracer). Desligado: os endpoints respondem
+# 404 SEASON_PLAN_DISABLED e o front esconde a aba Temporada.
+season-plan:
+  enabled: ${SEASON_PLAN_ENABLED:false}
+
 planner-engine:
   shadow: ${PLANNER_ENGINE_SHADOW:false}
   # Enforcement (planner-engine-enforcement): skeleton vinculante no prompt + compliance no retry.
