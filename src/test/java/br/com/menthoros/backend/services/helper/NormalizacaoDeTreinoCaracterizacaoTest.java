@@ -188,11 +188,13 @@ class NormalizacaoDeTreinoCaracterizacaoTest {
             // fix-etapas-continuos-pace: as etapas ganham distância pelo pace (PRINCIPAL 30 ÷ 6,75 = 4,44,
             // aquec/desaq a Z2), mas o total NÃO é reconciliado — aquec/desaq foram sintetizados pelo
             // reparo e se somam à prescrição; reconciliar levaria o regenerativo a 45min/6,94km.
+            // fix-total-treino-soma-etapas (decisão do coach, 2026-11-16): o total de 4 km fica e a PRINCIPAL
+            // encaixa nele — 4,0 − 1,67 − 0,83 = 1,5 km, 1,5 × 6,75 = 10 min; a duração do treino vira 25:00.
             var esperado = new TreinoPlanejadoLlmDto("QUARTA", "REGENERATIVO", "115-130 bpm", 25, 0.6, 3,
-                    "Recuperação ativa", "30:00", 4.0, "6:30-7:00/km",
+                    "Recuperação ativa", "25:00", 4.0, "6:30-7:00/km",
                     List.of(
                             new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve em Z1-Z2 (gerado pelo sistema)", 10, 1.67, null, 1, null),
-                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Trote regenerativo Z1", 30, 4.44, "115-130 bpm", 1, "6:30-7:00/km"),
+                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Trote regenerativo Z1", 10, 1.5, "115-130 bpm", 1, "6:30-7:00/km"),
                             new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve em Z1 (gerado pelo sistema)", 5, 0.83, null, 1, null)),
                     null, null, null);
 
