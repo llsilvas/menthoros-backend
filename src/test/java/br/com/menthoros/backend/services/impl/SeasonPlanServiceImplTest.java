@@ -142,6 +142,19 @@ class SeasonPlanServiceImplTest {
         }
 
         @Test
+        @DisplayName("prova cancelada entre a busca e o lock responde 422 (cancelar mantém provaAlvo)")
+        void canceladaAntesDoLock() {
+            atletaExiste();
+            Prova prova = provaAlvo(PROVA_20_SEMANAS);
+            prova.setStatusProva(br.com.menthoros.backend.enums.ProvaStatus.CANCELADA);
+            provaTravada(prova);
+
+            assertThatThrownBy(() -> service.generate(atleta.getId()))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("cancelada");
+            verify(planoTreinoRepository, never()).save(any());
+        }
+
+        @Test
         @DisplayName("prova sem data responde 422")
         void provaSemData() {
             atletaExiste();

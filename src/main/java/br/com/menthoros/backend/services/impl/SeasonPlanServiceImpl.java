@@ -14,6 +14,7 @@ import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.SeasonWeek;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.PlanoStatus;
+import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
 import br.com.menthoros.backend.enums.WeekValueSource;
 import br.com.menthoros.backend.exception.DomainConflictException;
@@ -169,13 +170,16 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado: " + atletaId));
     }
 
-    /** Trava a prova-alvo e confere de novo, já com o lock, que ela continua alvo (D13). */
+    /**
+     * Trava a prova-alvo e confere de novo, já com o lock, que ela continua alvo e não foi cancelada
+     * (D13) — cancelar mantém {@code provaAlvo = true}, então só o status denuncia o cancelamento.
+     */
     private Prova travarProvaAlvo(UUID atletaId, UUID tenantId) {
         UUID provaId = provaRepository.findTargetRaceIds(atletaId, tenantId).stream().findFirst()
                 .orElseThrow(() -> new DomainRuleViolationException("O atleta não tem prova-alvo"));
         return provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)
-                .filter(Prova::isProvaAlvo)
-                .orElseThrow(() -> new DomainRuleViolationException("A prova deixou de ser prova-alvo"));
+                .filter(p -> p.isProvaAlvo() && p.getStatusProva() != ProvaStatus.CANCELADA)
+                .orElseThrow(() -> new DomainRuleViolationException("A prova deixou de ser prova-alvo ou foi cancelada"));
     }
 
     /**
