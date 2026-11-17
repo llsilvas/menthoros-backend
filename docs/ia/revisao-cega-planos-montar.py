@@ -60,8 +60,10 @@ md = ['# Revisão cega de planos — gpt-4o × sucessor (migrate-openai-retired-
       'embaralhada por caso; a chave está no fim.\n',
       '**Para cada caso, anote:** (1) qual você mandaria ao atleta: A, B ou empate; (2) se algum dos dois',
       'tem algo que você barraria (risco de lesão, carga errada, dia proibido, ritmo incoerente).\n',
-      '**Nota da rodada 2:** um FARTLEK do gpt-4o foi reprovado por um gate estrutural da normalização (em',
-      'produção iria para o turno de reparo) e aparece como a LLM escreveu.\n',
+      '**Nota da rodada 2:** um treino foi reprovado por um gate estrutural da normalização (em produção',
+      'iria para o turno de reparo) e aparece como a LLM escreveu. A distância de cada treino contínuo é a',
+      'soma das etapas, exceto quando o total da LLM é menor que o aquecimento e o desaquecimento gerados',
+      'pelo sistema (aí a divergência é mostrada como veio).\n',
       '**Critério (CA4b):** o sucessor não pode ser preferido em menos casos que o gpt-4o, e não pode ter',
       'item que você barraria.\n']
 chave, n = [], 0
