@@ -134,8 +134,19 @@ public class EvalDeterministicGrader {
             treinos.add(provaNoPlano.construirTreinoProva(prova, atleta));
         }
         double volume = treinos.stream().mapToDouble(t -> t.distanciaKm() != null ? t.distanciaKm() : 0.0).sum();
+        // garantir-cobertura-sete-dias-plano: o persist completa o dia sem declaração como descanso
+        var declarados = new java.util.HashSet<String>();
+        treinos.forEach(t -> { if (t.diaSemana() != null) declarados.add(t.diaSemana().trim().toUpperCase()); });
+        List<br.com.menthoros.backend.dto.llm.RestDayLlmDto> descansos = new ArrayList<>(plano.restDays());
+        descansos.forEach(d -> { if (d.dayOfWeek() != null) declarados.add(d.dayOfWeek().trim().toUpperCase()); });
+        for (int i = 0; i < 7; i++) {
+            String dia = Utils.converterDayOfWeekParaDiaSemana(semanaInicio.plusDays(i).getDayOfWeek()).name();
+            if (!declarados.contains(dia)) {
+                descansos.add(new br.com.menthoros.backend.dto.llm.RestDayLlmDto(dia, PlanGenerationPersister.MOTIVO_SEM_PRESCRICAO));
+            }
+        }
         return new PlanoSemanalLlmDto(Math.round(volume * 100) / 100.0, plano.volumeAlvoKm(), plano.tsbInicio(),
-                plano.tsbFim(), plano.status(), plano.objetivoSemanal(), treinos, plano.restDays());
+                plano.tsbFim(), plano.status(), plano.objetivoSemanal(), treinos, descansos);
     }
 
     /** Etapa com duração e ritmo legível: sem distância, ou com pace implícito fora da faixa ±10%. */
