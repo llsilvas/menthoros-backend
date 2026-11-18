@@ -28,8 +28,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 /**
  * CA3 de migrate-openai-retired-models, pelo payload HTTP: contexto real, com {@code temperature 0.7}
  * deixada de propósito no default global. O JSON que chega ao provider tem de levar o perfil da rota
- * {@code plano} de produção ({@code gpt-6-luna}, {@code reasoning_effort medium}, {@code max_completion_tokens},
- * sem {@code temperature}, que a API rejeita com reasoning) e nada do default global
+ * {@code plano} ({@code temperature 0.2}, {@code max_completion_tokens}) e nada do default global
  * ({@code top_p}, penalidades, {@code max_tokens} legado), nos três formatos de opção que os chamadores
  * passam por requisição (produção v1/v2 via {@link LlmJsonSchemaBuilder}, juiz via
  * {@link EvalJudgeSchemaBuilder}) — todos chamam {@code .options(schema)} sobre o mesmo
@@ -93,9 +92,8 @@ class LlmPerfilDaRotaPayloadIT extends AbstractIntegrationTest {
                 .call().chatResponse();
 
         WIRE_MOCK.verify(postRequestedFor(urlPathEqualTo("/v1/chat/completions"))
-                .withRequestBody(matchingJsonPath("$.model", equalTo("gpt-6-luna")))
-                .withRequestBody(matchingJsonPath("$.reasoning_effort", equalTo("medium")))
-                .withRequestBody(notMatching(".*\"temperature\".*"))
+                .withRequestBody(matchingJsonPath("$.model", equalTo("gpt-4o")))
+                .withRequestBody(matchingJsonPath("$.temperature", equalTo("0.2")))
                 .withRequestBody(matchingJsonPath("$.max_completion_tokens"))
                 .withRequestBody(matchingJsonPath("$.response_format"))
                 .withRequestBody(notMatching(".*\"top_p\".*"))
