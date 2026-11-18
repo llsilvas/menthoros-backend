@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <pre>
  * OPENAI_API_KEY=... \
  * BAKEOFF_CANDIDATOS='gpt-4o;gpt-6-luna:none;gpt-6-luna:low;gpt-6-luna:medium' \
- * EVAL_JUDGE_MODEL=gpt-4o \
+ * EVAL_JUDGE_MODEL=gpt-5.2 \
  * ./mvnw test -Peval-real -Dtest=OpenAiSuccessorBakeoffRealTest
  * </pre>
  *
@@ -45,7 +45,7 @@ class OpenAiSuccessorBakeoffRealTest {
         if (apiKey == null || apiKey.isBlank() || candidatosEnv == null || candidatosEnv.isBlank()) {
             throw new IllegalStateException("OPENAI_API_KEY e BAKEOFF_CANDIDATOS são obrigatórios");
         }
-        String modeloJuiz = System.getenv().getOrDefault("EVAL_JUDGE_MODEL", "gpt-4o");
+        String modeloJuiz = System.getenv().getOrDefault("EVAL_JUDGE_MODEL", "gpt-5.2");
 
         List<OpenAiSuccessorBakeoff.Candidato> candidatos = new ArrayList<>();
         for (String item : candidatosEnv.split(";")) {

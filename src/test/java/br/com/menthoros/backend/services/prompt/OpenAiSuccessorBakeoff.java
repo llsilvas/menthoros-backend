@@ -108,9 +108,13 @@ final class OpenAiSuccessorBakeoff {
                     .forEach(v -> acc.detalhes.add("qualidade — " + caso.nome() + ": " + v));
             acc.tokensEntrada += resultado.tokensEntrada();
             acc.tokensSaida += resultado.tokensSaida();
-            if (resultado.custoUsd() != null) {
-                acc.custoCandidatoUsd = acc.custoCandidatoUsd.add(resultado.custoUsd());
+            // design D4: custo nulo é modelo servido sem preço em llm-pricing.yml — falha a rodada em vez de
+            // reportar um candidato "de graça"
+            if (resultado.custoUsd() == null) {
+                throw new IllegalStateException("Sem preço em llm-pricing.yml para o modelo servido '"
+                        + resultado.modeloRetornado() + "' (candidato " + candidato.nome() + ")");
             }
+            acc.custoCandidatoUsd = acc.custoCandidatoUsd.add(resultado.custoUsd());
             if (resultado.modeloRetornado() != null) {
                 acc.modelosServidos.add(resultado.modeloRetornado());
             }

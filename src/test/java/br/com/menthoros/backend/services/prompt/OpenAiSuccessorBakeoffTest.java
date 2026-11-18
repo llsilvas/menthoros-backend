@@ -25,6 +25,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.CALLS_REAL_METHODS;
@@ -49,7 +50,7 @@ class OpenAiSuccessorBakeoffTest {
                     arq.inicioSemana(), "contexto");
             var candidatos = List.of(
                     new OpenAiSuccessorBakeoff.Candidato("gpt-4o", clienteQueResponde("gpt-4o-2024-08-06")),
-                    new OpenAiSuccessorBakeoff.Candidato("gpt-6-luna:low", clienteQueResponde("gpt-6-luna-2026-10-01")),
+                    new OpenAiSuccessorBakeoff.Candidato("gpt-6-luna:low", clienteQueResponde("gpt-6-luna")),
                     new OpenAiSuccessorBakeoff.Candidato("gpt-6-luna:none", clienteQueFalha()));
 
             String md = OpenAiSuccessorBakeoff.rodar(candidatos, List.of(caso), juizComNota(4), "gpt-4o",
@@ -58,7 +59,7 @@ class OpenAiSuccessorBakeoffTest {
             assertThat(md).contains("Juiz: `gpt-4o`");
             assertThat(linhas(md)).hasSize(3);
             assertThat(linhas(md).get(0)).contains("gpt-4o-2024-08-06").contains("| 4.00 |");
-            assertThat(linhas(md).get(1)).contains("gpt-6-luna-2026-10-01");
+            assertThat(linhas(md).get(1)).contains("gpt-6-luna");
         }
 
         @Test
@@ -76,6 +77,20 @@ class OpenAiSuccessorBakeoffTest {
 
             assertThat(linhas(md).get(0)).endsWith("| 1 |");
         }
+    }
+
+    @Test
+    @DisplayName("modelo servido sem preço em llm-pricing.yml falha a rodada (design D4)")
+    void semPrecoFalha() {
+        Arquetipo arq = PlanoPromptArquetipos.todos().get(0);
+        var caso = new OpenAiSuccessorBakeoff.Caso(arq.nome(), prompt(arq), null,
+                new AthleteZones(190, 160, BigDecimal.valueOf(5.0)), arq.atleta(), arq.inicioSemana(), "contexto");
+
+        assertThatThrownBy(() -> OpenAiSuccessorBakeoff.rodar(
+                List.of(new OpenAiSuccessorBakeoff.Candidato("novo", clienteQueResponde("modelo-sem-preco"))),
+                List.of(caso), juizComNota(4), "gpt-5.2", mock(EvalDeterministicGrader.class, Answers.RETURNS_DEEP_STUBS)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("modelo-sem-preco");
     }
 
     private static List<String> linhas(String md) {

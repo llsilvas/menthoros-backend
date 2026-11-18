@@ -77,7 +77,7 @@ class EvalRunnerTest {
                 new TssCalculatorService());
         var grader = new EvalAgreementGrader(OBJECT_MAPPER, sessionResolver);
         String apiKey = System.getenv("OPENAI_API_KEY");
-        String modelo = System.getenv().getOrDefault("EVAL_JUDGE_MODEL", "gpt-4o");
+        String modelo = System.getenv().getOrDefault("EVAL_JUDGE_MODEL", "gpt-5.2");
         EvalLlmJudge judge = apiKey != null && !apiKey.isBlank()
                 ? new EvalLlmJudge(construirChatClientReal(apiKey, modelo, System.getenv("EVAL_REASONING_EFFORT")),
                         new br.com.menthoros.backend.services.prompt.EvalJudgeSchemaBuilder(), OBJECT_MAPPER)
