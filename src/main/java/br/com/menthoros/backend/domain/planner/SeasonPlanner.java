@@ -10,9 +10,11 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import static br.com.menthoros.backend.domain.planner.TrainingPhase.BASE;
 import static br.com.menthoros.backend.domain.planner.TrainingPhase.BUILD;
@@ -28,7 +30,10 @@ import static br.com.menthoros.backend.domain.planner.TrainingPhase.TAPER;
  * <p>Template default (D9/D14), na duração mínima de {@link RacePreparationRule}: proporções de
  * Pfitzinger para Base/Construção/Pico e Polimento pela janela do {@link TaperStrategy}. Ele vive
  * aqui como constante — shortcut: um único template global; vira tabela quando houver template
- * por assessoria. Descargas, longão e a curva real de taper ficam para o ticket 3.
+ * por assessoria.
+ *
+ * <p>Descarga 3:1 e longão (add-season-plan-complete-proposal, T4): a cada 4ª semana de Base+Construção
+ * o TSS cai 20% sobre a rampa, sem rebaixá-la; o longão é uma fração do volume, com teto por distância.
  */
 public final class SeasonPlanner {
 
@@ -42,18 +47,27 @@ public final class SeasonPlanner {
             16, new int[]{6, 4, 3, 2, 1});
 
     private static final double PEAK_GROWTH = 0.30;
-    private static final double TAPER_FACTOR = 0.60;
-    private static final double RACE_WEEK_FACTOR = 0.45;
+    /** Sem estado; a curva de redução (T5) é a mesma que o motor semanal usa. */
+    private static final TaperStrategy TAPER_STRATEGY = new TaperStrategy();
     /** Abaixo deste CTL o atleta não tem base: na preparação curta, a Base é a última a ser cortada. */
     private static final double CTL_COM_BASE = 40.0;
     private static final double MAX_TSS_RAMP_PER_WEEK = LoadTargetResolver.MAX_CTL_RAMP_PER_WEEK * 7;
     private static final int MIN_WEEKS = 2;
+    private static final int DELOAD_EVERY = 4;
+    private static final double DELOAD_FACTOR = 0.80;
+    private static final BigDecimal LONG_RUN_SHARE = new BigDecimal("0.28");
+    private static final BigDecimal LONG_RUN_DELOAD_FACTOR = new BigDecimal("0.75");
 
     private SeasonPlanner() {
     }
 
     public record WeekPlan(int weekIndex, LocalDate weekStart, TrainingPhase phase,
-                           BigDecimal targetVolumeKm, double targetTss) {
+                           BigDecimal targetVolumeKm, double targetTss, boolean deload,
+                           @Nullable BigDecimal longRunKm, @Nullable UUID milestoneRaceId) {
+    }
+
+    /** Prova preparatória candidata a marco (T6): data e distância em km. */
+    public record RaceMilestone(UUID provaId, LocalDate date, BigDecimal distanceKm) {
     }
 
     public record SeasonPlan(List<WeekPlan> weeks, boolean shortPreparation) {
@@ -80,6 +94,19 @@ public final class SeasonPlanner {
     public static SeasonPlan plan(DistanciaProva distancia, @Nullable BigDecimal distanciaKm,
                                   LocalDate dataProva, LocalDate hoje,
                                   double startCtl, BigDecimal startVolumeKm) {
+        return plan(distancia, distanciaKm, dataProva, hoje, startCtl, startVolumeKm, List.of());
+    }
+
+    /**
+     * Como {@link #plan(DistanciaProva, BigDecimal, LocalDate, LocalDate, double, BigDecimal)}, ancorando
+     * as provas preparatórias como marcos (T6): uma por semana, a mais longa (empate: a mais cedo), e só
+     * as que caem ao menos 7 dias antes da prova-alvo. A descarga que cai num marco passa para a semana
+     * seguinte de Base/Construção, ou é pulada.
+     */
+    public static SeasonPlan plan(DistanciaProva distancia, @Nullable BigDecimal distanciaKm,
+                                  LocalDate dataProva, LocalDate hoje,
+                                  double startCtl, BigDecimal startVolumeKm,
+                                  List<RaceMilestone> preparatorias) {
         int total = totalWeeks(dataProva, hoje);
         if (total < MIN_WEEKS) {
             throw new IllegalArgumentException("horizonte menor que " + MIN_WEEKS + " semanas: " + total);
@@ -94,26 +121,38 @@ public final class SeasonPlanner {
         double inicio = startCtl * 7;
         double pico = inicio * (1 + PEAK_GROWTH);
         int subida = semanas.get(BASE) + semanas.get(BUILD) + semanas.get(PEAK);
+        BigDecimal tetoLongao = tetoLongao(distancia, distanciaKm);
 
         List<WeekPlan> resultado = new ArrayList<>(total);
         LocalDate weekStart = segunda(hoje);
         double referencia = inicio;
         int indice = 0;
+        int baseEConstrucao = 0;
+        boolean descargaAdiada = false;
         for (TrainingPhase fase : ORDEM) {
             for (int k = 0; k < semanas.get(fase); k++) {
                 indice++;
                 double tss = switch (fase) {
-                    case TAPER -> referencia * TAPER_FACTOR;
-                    case RACE_WEEK -> referencia * RACE_WEEK_FACTOR;
+                    case TAPER, RACE_WEEK -> referencia
+                            * (1 - TAPER_STRATEGY.resolverReducaoPercentual(ChronoUnit.DAYS.between(weekStart, dataProva)));
                     default -> inicio + Math.min((pico - inicio) * indice / subida, MAX_TSS_RAMP_PER_WEEK * indice);
                 };
                 if (indice == subida) {
                     referencia = tss;
                 }
+                @Nullable UUID marco = marcoDaSemana(preparatorias, weekStart, dataProva);
+                boolean subindo = fase == BASE || fase == BUILD;
+                boolean devida = subindo && (++baseEConstrucao % DELOAD_EVERY == 0 || descargaAdiada);
+                boolean deload = devida && marco == null;
+                descargaAdiada = devida && marco != null;
+                if (deload) {
+                    tss *= DELOAD_FACTOR;
+                }
                 long tssArredondado = Math.round(tss);
                 BigDecimal volume = startVolumeKm.multiply(BigDecimal.valueOf(tssArredondado))
                         .divide(BigDecimal.valueOf(inicio), 1, RoundingMode.HALF_UP);
-                resultado.add(new WeekPlan(indice, weekStart, fase, volume, tssArredondado));
+                resultado.add(new WeekPlan(indice, weekStart, fase, volume, tssArredondado, deload,
+                        longao(fase, volume, deload, tetoLongao), marco));
                 weekStart = weekStart.plusWeeks(1);
             }
         }
@@ -140,6 +179,47 @@ public final class SeasonPlanner {
             aCortar -= corte;
         }
         return semanas;
+    }
+
+    private static @Nullable UUID marcoDaSemana(List<RaceMilestone> preparatorias, LocalDate weekStart,
+                                                LocalDate dataProva) {
+        LocalDate limite = dataProva.minusDays(7);
+        return preparatorias.stream()
+                .filter(r -> !r.date().isBefore(weekStart) && r.date().isBefore(weekStart.plusWeeks(1)))
+                .filter(r -> !r.date().isAfter(limite))
+                .min(Comparator.comparing(RaceMilestone::distanceKm).reversed()
+                        .thenComparing(RaceMilestone::date))
+                .map(RaceMilestone::provaId)
+                .orElse(null);
+    }
+
+    private static @Nullable BigDecimal longao(TrainingPhase fase, BigDecimal volume, boolean deload,
+                                               BigDecimal teto) {
+        if (fase == RACE_WEEK) {
+            return null;
+        }
+        BigDecimal longao = volume.multiply(LONG_RUN_SHARE).min(teto);
+        if (deload) {
+            longao = longao.multiply(LONG_RUN_DELOAD_FACTOR);
+        }
+        return longao.setScale(1, RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal tetoLongao(DistanciaProva distancia, @Nullable BigDecimal distanciaKm) {
+        if (distanciaKm == null && distancia == DistanciaProva.CUSTOMIZADA) {
+            return BigDecimal.valueOf(32);
+        }
+        BigDecimal km = distanciaKm != null ? distanciaKm : RacePreparationRule.distanciaNominalKm(distancia);
+        if (km.compareTo(new BigDecimal("5.5")) <= 0) {
+            return BigDecimal.valueOf(12);
+        }
+        if (km.compareTo(new BigDecimal("10.5")) <= 0) {
+            return BigDecimal.valueOf(16);
+        }
+        if (km.compareTo(new BigDecimal("21.5")) <= 0) {
+            return BigDecimal.valueOf(21);
+        }
+        return BigDecimal.valueOf(32);
     }
 
     private static LocalDate segunda(LocalDate data) {

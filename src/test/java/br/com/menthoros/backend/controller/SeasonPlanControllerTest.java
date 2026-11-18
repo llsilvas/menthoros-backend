@@ -87,7 +87,12 @@ class SeasonPlanControllerTest {
                     .andExpect(jsonPath("$.seasonStatus").value("PROPOSED"))
                     .andExpect(jsonPath("$.weeks[0].weekIndex").value(1))
                     .andExpect(jsonPath("$.weeks[0].targetTss").value(285.0))
-                    .andExpect(jsonPath("$.weeks[0].valueSource").value("ENGINE"));
+                    .andExpect(jsonPath("$.weeks[0].valueSource").value("ENGINE"))
+                    .andExpect(jsonPath("$.milestones[0].weekIndex").value(6))
+                    .andExpect(jsonPath("$.milestones[0].distance.value").value("21K"))
+                    .andExpect(jsonPath("$.validations[0].rule").value("RAMP"))
+                    .andExpect(jsonPath("$.validations[0].severity").value("WARN"))
+                    .andExpect(jsonPath("$.validations[0].limit").value(10.0));
         }
 
         @Test
@@ -195,6 +200,11 @@ class SeasonPlanControllerTest {
         return new SeasonPlanResponseDto(UUID.randomUUID(), SeasonPlanStatus.PROPOSED, UUID.randomUUID(),
                 "Maratona alvo", LocalDate.of(2027, 4, 4), false, 20, 40.0, new BigDecimal("52.0"),
                 List.of(new SeasonPlanResponseDto.Week(1, LocalDate.of(2026, 11, 16), TrainingPhase.BASE,
-                        new BigDecimal("40.7"), 285.0, false, null, WeekValueSource.ENGINE)));
+                        new BigDecimal("40.7"), 285.0, false, null, WeekValueSource.ENGINE)),
+                List.of(new SeasonPlanResponseDto.Milestone(6, UUID.randomUUID(), "Meia de teste",
+                        LocalDate.of(2026, 12, 27), br.com.menthoros.backend.enums.DistanciaProva.KM_21)),
+                List.of(new SeasonPlanResponseDto.Validation(
+                        br.com.menthoros.backend.domain.planner.SeasonPlanValidator.Rule.RAMP, "WARN", 2, 12.5, 10.0,
+                        "Volume sobe 12,5% sobre a semana anterior (teto 10%)")));
     }
 }
