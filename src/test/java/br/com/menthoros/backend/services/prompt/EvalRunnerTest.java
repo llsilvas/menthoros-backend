@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.services.prompt;
 
+import br.com.menthoros.backend.config.external.LlmRoutingProperties;
+import br.com.menthoros.backend.config.external.MultiModelConfig;
 import br.com.menthoros.backend.domain.compliance.SkeletonComplianceChecker;
 import br.com.menthoros.backend.domain.planner.PlannerEngine;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
@@ -22,7 +24,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.openai.OpenAiChatModel;
-import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.openai.api.OpenAiApi;
 
 import java.io.IOException;
@@ -47,6 +48,10 @@ import static org.mockito.Mockito.when;
  * <p><b>Modo candidato chama a LLM real</b> (custo real, `OPENAI_API_KEY` obrigatória) — por
  * design, é isso que fecha o bloqueador original do Codex (ver design.md). Roda só sob
  * {@code -Peval}, nunca no inner loop nem no gate de PR.
+ *
+ * <p>Variáveis de ambiente: {@code EVAL_MODEL} (candidato, default {@code gpt-4o}),
+ * {@code EVAL_JUDGE_MODEL} (juiz, default {@code gpt-4o}) e {@code EVAL_REASONING_EFFORT}
+ * (opcional, aplicado ao cliente montado).
  */
 @Tag("eval")
 @DisplayName("EvalRunner")
@@ -72,9 +77,9 @@ class EvalRunnerTest {
                 new TssCalculatorService());
         var grader = new EvalAgreementGrader(OBJECT_MAPPER, sessionResolver);
         String apiKey = System.getenv("OPENAI_API_KEY");
-        String modelo = System.getenv().getOrDefault("EVAL_MODEL", "gpt-4o");
+        String modelo = System.getenv().getOrDefault("EVAL_JUDGE_MODEL", "gpt-5.2");
         EvalLlmJudge judge = apiKey != null && !apiKey.isBlank()
-                ? new EvalLlmJudge(construirChatClientReal(apiKey, modelo),
+                ? new EvalLlmJudge(construirChatClientReal(apiKey, modelo, System.getenv("EVAL_REASONING_EFFORT")),
                         new br.com.menthoros.backend.services.prompt.EvalJudgeSchemaBuilder(), OBJECT_MAPPER)
                 : null;
 
@@ -123,20 +128,9 @@ class EvalRunnerTest {
         // uma mudança de modelo em produção nunca seria exercitada pelo gate. EVAL_MODEL permite
         // sobrepor; default alinhado com application.yml (app.llm.routing.plano.model).
         String modelo = System.getenv().getOrDefault("EVAL_MODEL", "gpt-4o");
-        ChatClient chatClient = construirChatClientReal(apiKey, modelo);
+        ChatClient chatClient = construirChatClientReal(apiKey, modelo, System.getenv("EVAL_REASONING_EFFORT"));
         var llmJsonSchemaBuilder = new LlmJsonSchemaBuilder();
-        var sessionResolver = new SessionResolver(new ZoneResolver(new ZonaTreinoService()),
-                new TssCalculatorService());
-        // PlannerShadowService real (não mock) — achado do /qa (Codex): um mock sem stub sempre
-        // devolve lista vazia de PlannerViolation, então a coluna "compliance" nunca refletia o
-        // skeleton de verdade. checkPreRedistribution só usa complianceChecker/resolverConstraints
-        // (nunca plannerEngine/periodizacaoPromptFormatter) — os demais colaboradores ficam
-        // mockados sem uso real.
-        var plannerShadowService = new PlannerShadowService(
-                mock(PlannerEngine.class), new SkeletonComplianceChecker(),
-                mock(PeriodizacaoPromptFormatter.class),
-                new SimpleMeterRegistry(), OBJECT_MAPPER, false, 30);
-        var grader = new EvalDeterministicGrader(OBJECT_MAPPER, sessionResolver, plannerShadowService);
+        var grader = construirGraderReal();
         var runner = new EvalCandidateRunner(chatClient, llmJsonSchemaBuilder, grader);
         var judge = new EvalLlmJudge(chatClient, new br.com.menthoros.backend.services.prompt.EvalJudgeSchemaBuilder(),
                 OBJECT_MAPPER);
@@ -175,7 +169,23 @@ class EvalRunnerTest {
         System.out.printf("custo total (candidato + juiz): USD %.6f%n", custoTotal);
     }
 
-    private PlanoTreinoPromptBuilder.PromptGerado montarPrompt(PlanoPromptArquetipos.Arquetipo arq,
+    /** Grader com PlannerShadowService real, compartilhado com o bake-off. */
+    static EvalDeterministicGrader construirGraderReal() {
+        var sessionResolver = new SessionResolver(new ZoneResolver(new ZonaTreinoService()),
+                new TssCalculatorService());
+        // PlannerShadowService real (não mock) — achado do /qa (Codex): um mock sem stub sempre
+        // devolve lista vazia de PlannerViolation, então a coluna "compliance" nunca refletia o
+        // skeleton de verdade. checkPreRedistribution só usa complianceChecker/resolverConstraints
+        // (nunca plannerEngine/periodizacaoPromptFormatter) — os demais colaboradores ficam
+        // mockados sem uso real.
+        var plannerShadowService = new PlannerShadowService(
+                mock(PlannerEngine.class), new SkeletonComplianceChecker(),
+                mock(PeriodizacaoPromptFormatter.class),
+                new SimpleMeterRegistry(), OBJECT_MAPPER, false, 30);
+        return new EvalDeterministicGrader(OBJECT_MAPPER, sessionResolver, plannerShadowService);
+    }
+
+    static PlanoTreinoPromptBuilder.PromptGerado montarPrompt(PlanoPromptArquetipos.Arquetipo arq,
                                                                 @org.jspecify.annotations.Nullable WeekPlanSkeleton skeleton) {
         TreinoHistoricoProvider provider = mock(TreinoHistoricoProvider.class);
         when(provider.prepararContexto(any())).thenReturn(arq.contexto());
@@ -190,7 +200,7 @@ class EvalRunnerTest {
     }
 
     /** Contexto real para o juiz-LLM em modo candidato — histórico recente, lesão e prova. */
-    private String contextoParaJuiz(PlanoPromptArquetipos.Arquetipo arq) {
+    static String contextoParaJuiz(PlanoPromptArquetipos.Arquetipo arq) {
         var atleta = arq.atleta();
         StringBuilder sb = new StringBuilder();
         sb.append("Nível: ").append(atleta.getNivelExperiencia()).append('\n');
@@ -206,7 +216,8 @@ class EvalRunnerTest {
         return sb.toString();
     }
 
-    private ChatClient construirChatClientReal(String apiKey, String modelo) {
+    static ChatClient construirChatClientReal(String apiKey, String modelo,
+                                              @org.jspecify.annotations.Nullable String esforco) {
         // Timeout de leitura 120s — mesmo valor de app.llm.routing.plano.timeout (application.yml).
         // Sem isso, o RestClient default do Spring AI usa um read timeout curto e a geração de um
         // plano (até 12000 tokens) estoura antes de a resposta voltar.
@@ -215,10 +226,24 @@ class EvalRunnerTest {
         factory.setReadTimeout(120_000);
         var restClientBuilder = org.springframework.web.client.RestClient.builder().requestFactory(factory);
 
+        // Perfil montado pelo mesmo caminho de produção; sem EVAL_REASONING_EFFORT mantém o
+        // comportamento clássico (temperature 0.2), que só vale para modelo sem reasoning ou effort none.
+        var rota = new LlmRoutingProperties.RotaLlm();
+        rota.setModel(modelo);
+        rota.setMaxTokens(12000);
+        if (esforco == null || esforco.isBlank()) {
+            rota.setTemperature(0.2);
+        } else {
+            rota.setReasoningEffort(esforco);
+            if ("none".equals(esforco)) {
+                rota.setTemperature(0.2);
+            }
+        }
+
         OpenAiApi api = OpenAiApi.builder().apiKey(apiKey).restClientBuilder(restClientBuilder).build();
         OpenAiChatModel model = OpenAiChatModel.builder()
                 .openAiApi(api)
-                .defaultOptions(OpenAiChatOptions.builder().model(modelo).temperature(0.2).maxTokens(12000).build())
+                .defaultOptions(MultiModelConfig.opcoesOpenAi(rota))
                 .build();
         return ChatClient.builder(model).build();
     }

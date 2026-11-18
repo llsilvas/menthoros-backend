@@ -3,7 +3,7 @@
 - Idade: 36 anos
 - Objetivo Principal: PR nos 21k
 - Nível: AVANCADO
-- Dias disponíveis: Segunda-feira, Quarta-feira, Sexta-feira, Sábado
+- Dias disponíveis: Terça-feira, Quinta-feira, Sábado, Domingo
 - Dia preferido do longo: SABADO
 - Provas planejadas: **PROVA ALVO:** Meia Maratona da Cidade
 - Data: 25/01/2026 (10 dias / 1 semanas)
@@ -35,7 +35,7 @@ Nenhuma prova preparatória cadastrada.
 - CONTINUO: não mais rápido que 5:48/km
 - LONGO: não mais rápido que 5:43/km
 - INTERVALADO: não mais rápido que 4:54/km
-- Gere treinos EXCLUSIVAMENTE nos dias permitidos: Terça-feira, Quinta-feira, Sábado. NÃO inclua treinos em nenhum outro dia da semana.
+- Gere treinos EXCLUSIVAMENTE nos dias permitidos: Terça-feira, Quinta-feira, Sábado, Domingo. NÃO inclua treinos em nenhum outro dia da semana.
 - No máximo 6 dias de treino consecutivos; intercale descanso completo ou regenerativo.
 
 (Estas regras são determinísticas, baseadas em dados reais do atleta, e SUBSTITUEM qualquer raciocínio independente. Não as viole.)
@@ -184,7 +184,7 @@ Nenhuma prova preparatória cadastrada.
 **Total de dias restantes:** 4
 
 ### Disponibilidade Semanal
-**Dias disponíveis para treinar (configuração do atleta):** Segunda-feira, Quarta-feira, Sexta-feira, Sábado
+**Dias disponíveis para treinar (configuração do atleta):** Terça-feira, Quinta-feira, Sábado, Domingo
 **Total:** 4 dias/semana
 
 **Dia de prova na semana:** Domingo (prova)

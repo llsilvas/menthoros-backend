@@ -3,12 +3,13 @@ package br.com.menthoros.backend.routing;
 /**
  * Classifica a complexidade de uma tarefa de IA para roteamento ao modelo correto.
  *
- * Mapeamento de custo (estimado por operação):
- * - SIMPLE   → GPT-4o-mini    (~R$ 0,0008)
- * - STANDARD → Claude Haiku   (~R$ 0,025)
- * - COMPLEX  → Claude Sonnet  (~R$ 0,10)
- * - EXPERT   → GPT-4o         (~R$ 0,08)
- * - PLANO    → GPT-4o         (geração de plano semanal — fluxo mais crítico)
+ * O modelo de cada rota vem de {@code app.llm.routing} no application.yml e os preços de
+ * {@code llm-pricing.yml} — não repetir nomes de modelo aqui (a migração de 2026-11 precisou caçá-los).
+ * - SIMPLE   → rota simple   (barata, sem reasoning)
+ * - STANDARD → rota standard (Anthropic)
+ * - COMPLEX  → rota complex  (Anthropic)
+ * - EXPERT   → rota expert   (com reasoning)
+ * - PLANO    → rota plano    (geração de plano semanal — fluxo mais crítico)
  */
 public enum TaskComplexity {
 

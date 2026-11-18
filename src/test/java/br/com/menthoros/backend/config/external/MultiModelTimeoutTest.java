@@ -13,7 +13,11 @@ import org.springframework.ai.openai.api.OpenAiApi;
 import java.time.Duration;
 
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
+import static com.github.tomakehurst.wiremock.client.WireMock.notMatching;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -113,6 +117,33 @@ class MultiModelTimeoutTest {
 
             assertThatThrownBy(() -> simple.call("oi")).isNotNull();
             assertThat(plano.call("oi")).isEqualTo("ok");
+        }
+    }
+
+    @Nested
+    @DisplayName("perfil da rota no model derivado")
+    class PerfilNoModelDerivado {
+
+        @Test
+        @DisplayName("chamada direta ao model derivado envia o perfil da rota, não o default global")
+        void enviaPerfilDaRota() {
+            LlmRoutingProperties.RotaLlm rota = new LlmRoutingProperties.RotaLlm();
+            rota.setModel("gpt-6-luna");
+            rota.setMaxTokens(1234);
+            rota.setReasoningEffort("low");
+            rota.setVerbosity("low");
+            rota.setTimeout(Duration.ofSeconds(10));
+
+            OpenAiChatModel derivado = MultiModelConfig.modeloOpenAiComTimeout(modelBase, apiBase, rota);
+            derivado.call("oi");
+
+            wireMock.verify(postRequestedFor(urlPathEqualTo("/v1/chat/completions"))
+                    .withRequestBody(matchingJsonPath("$.model", equalTo("gpt-6-luna")))
+                    .withRequestBody(matchingJsonPath("$.reasoning_effort", equalTo("low")))
+                    .withRequestBody(matchingJsonPath("$.verbosity", equalTo("low")))
+                    .withRequestBody(matchingJsonPath("$.max_completion_tokens", equalTo("1234")))
+                    .withRequestBody(notMatching(".*\"temperature\".*"))
+                    .withRequestBody(notMatching(".*\"max_tokens\".*")));
         }
     }
 

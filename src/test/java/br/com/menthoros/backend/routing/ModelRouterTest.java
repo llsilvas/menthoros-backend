@@ -10,26 +10,26 @@ import static org.mockito.Mockito.mock;
 
 class ModelRouterTest {
 
-    private ChatClient gpt4oMiniClient;
+    private ChatClient simpleClient;
     private ChatClient claudeHaikuClient;
     private ChatClient claudeSonnetClient;
-    private ChatClient gpt4oClient;
-    private ChatClient gpt4oPlanoClient;
+    private ChatClient expertClient;
+    private ChatClient planoClient;
     private ModelRouter router;
 
     @BeforeEach
     void setUp() {
-        gpt4oMiniClient = mock(ChatClient.class);
+        simpleClient = mock(ChatClient.class);
         claudeHaikuClient = mock(ChatClient.class);
         claudeSonnetClient = mock(ChatClient.class);
-        gpt4oClient = mock(ChatClient.class);
-        gpt4oPlanoClient = mock(ChatClient.class);
-        router = new ModelRouter(gpt4oMiniClient, claudeHaikuClient, claudeSonnetClient, gpt4oClient, gpt4oPlanoClient);
+        expertClient = mock(ChatClient.class);
+        planoClient = mock(ChatClient.class);
+        router = new ModelRouter(simpleClient, claudeHaikuClient, claudeSonnetClient, expertClient, planoClient);
     }
 
     @Test
-    void simple_routes_to_gpt4oMini() {
-        assertThat(router.route(TaskComplexity.SIMPLE)).isSameAs(gpt4oMiniClient);
+    void simple_routes_to_simpleClient() {
+        assertThat(router.route(TaskComplexity.SIMPLE)).isSameAs(simpleClient);
     }
 
     @Test
@@ -43,13 +43,13 @@ class ModelRouterTest {
     }
 
     @Test
-    void expert_routes_to_gpt4o() {
-        assertThat(router.route(TaskComplexity.EXPERT)).isSameAs(gpt4oClient);
+    void expert_routes_to_expertClient() {
+        assertThat(router.route(TaskComplexity.EXPERT)).isSameAs(expertClient);
     }
 
     @Test
-    void plano_routes_to_gpt4oPlano() {
-        assertThat(router.route(TaskComplexity.PLANO)).isSameAs(gpt4oPlanoClient);
+    void plano_routes_to_planoClient() {
+        assertThat(router.route(TaskComplexity.PLANO)).isSameAs(planoClient);
     }
 
     @Test
