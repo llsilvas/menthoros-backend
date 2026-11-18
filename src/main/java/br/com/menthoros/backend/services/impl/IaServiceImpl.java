@@ -134,7 +134,7 @@ public class IaServiceImpl implements IaService {
         String prompt = promptBuilder.buildRequest(atletaOutputDto, treinoRealizadoOutputDtoList, planoSemanalOutputDto);
 
         ChatClient chatClient = modelRouter.route(TaskComplexity.PLANO);
-        log.info("Geração de plano roteada via TaskComplexity.PLANO (bean gpt4oPlanoClient)");
+        log.info("Geração de plano roteada via TaskComplexity.PLANO (bean planoClient)");
 
         try {
             PlanoSemanalLlmDto plano = chatClient.prompt()
@@ -156,7 +156,7 @@ public class IaServiceImpl implements IaService {
     }
 
     /**
-     * Gera o plano semanal avançado via LLM (roteado por {@code TaskComplexity.PLANO} → GPT-4o).
+     * Gera o plano semanal avançado via LLM (roteado por {@code TaskComplexity.PLANO} → rota plano).
      *
      * Idempotent: NO — invoca o LLM (saída não-determinística); sem escrita de estado por tentativa.
      * Side Effects: chamada ao LLM (billable); leitura de atleta/histórico/metadados; log de uso de
@@ -192,7 +192,7 @@ public class IaServiceImpl implements IaService {
         String system = promptGerado.system();
 
         ChatClient chatClient = modelRouter.route(TaskComplexity.PLANO);
-        log.info("Geração de plano (avançado) roteada via TaskComplexity.PLANO (bean gpt4oPlanoClient)");
+        log.info("Geração de plano (avançado) roteada via TaskComplexity.PLANO (bean planoClient)");
 
         long startTime = System.currentTimeMillis();
         PlanoSemanalLlmDto plano;

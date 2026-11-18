@@ -41,8 +41,8 @@ import java.time.Duration;
  *
  * Nenhum bean aqui tem @Primary e não há ChatClient padrão: todo consumidor
  * escolhe a rota por qualifier ou pelo ModelRouter.
- * Injeção: use @Qualifier("gpt4oMiniClient"), ("claudeHaikuClient"),
- *          ("claudeSonnetClient"), ("gpt4oClient") ou ("gpt4oPlanoClient").
+ * Injeção: use @Qualifier("simpleClient"), ("claudeHaikuClient"),
+ *          ("claudeSonnetClient"), ("expertClient") ou ("planoClient").
  */
 @Configuration
 @RequiredArgsConstructor
@@ -57,8 +57,8 @@ public class MultiModelConfig {
      * Rota {@code simple} — tradução, extração de dados, tarefas simples.
      */
     @Bean
-    @Qualifier("gpt4oMiniClient")
-    public ChatClient gpt4oMiniClient(OpenAiChatModel openAiChatModel, OpenAiApi openAiApi) {
+    @Qualifier("simpleClient")
+    public ChatClient simpleClient(OpenAiChatModel openAiChatModel, OpenAiApi openAiApi) {
         return clienteDeRota(modeloOpenAiComTimeout(openAiChatModel, openAiApi, props.getSimple()),
                 opcoesOpenAi(props.getSimple()), "simple");
     }
@@ -93,8 +93,8 @@ public class MultiModelConfig {
      * Rota {@code expert} — raciocínio profundo, análise de lesões, casos especialistas.
      */
     @Bean
-    @Qualifier("gpt4oClient")
-    public ChatClient gpt4oClient(OpenAiChatModel openAiChatModel, OpenAiApi openAiApi) {
+    @Qualifier("expertClient")
+    public ChatClient expertClient(OpenAiChatModel openAiChatModel, OpenAiApi openAiApi) {
         return clienteDeRota(modeloOpenAiComTimeout(openAiChatModel, openAiApi, props.getExpert()),
                 opcoesOpenAi(props.getExpert()), "expert");
     }
@@ -107,8 +107,8 @@ public class MultiModelConfig {
      * regras estruturais do plano (ex.: nº de etapas por tipo de treino).
      */
     @Bean
-    @Qualifier("gpt4oPlanoClient")
-    public ChatClient gpt4oPlanoClient(OpenAiChatModel openAiChatModel, OpenAiApi openAiApi) {
+    @Qualifier("planoClient")
+    public ChatClient planoClient(OpenAiChatModel openAiChatModel, OpenAiApi openAiApi) {
         return clienteDeRota(modeloOpenAiComTimeout(openAiChatModel, openAiApi, props.getPlano()),
                 opcoesOpenAi(props.getPlano()), "plano");
     }
