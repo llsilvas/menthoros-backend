@@ -635,3 +635,37 @@ Treinos recentes: 5 sessões
 | 15 | taper-semana-prova | A = gpt-6-luna:medium | B = gpt-4o |
 
 </details>
+
+---
+
+## Veredito do coach-fundador (2026-11-18) — CA4b **passa**
+
+Preferência: **gpt-6-luna 12 × 3 gpt-4o** (as 3 do gpt-4o por diferença leve, no taper). **Nenhum item do
+luna barrado.** O gpt-4o tem 🔴 em 8 dos 15 casos.
+
+| # | preferido | barraria | motivo |
+|---|---|---|---|
+| 1 | luna | 🔴 4o | regenerativo a 5:23–5:38, mais rápido que o longo, com TSB −20 |
+| 2 | luna | — | luna: deload para 31 km com regenerativos RPE 2; 4o mantém 65 km com RPE 5–7 em semana de fadiga |
+| 3 | luna | 🔴 4o | idem 1, e sobe para 70 km com TSB −20 |
+| 4 | luna | — | 4o: aquec/desaq em FC 143–150 com Aquiles (ressalva) |
+| 5 | luna | 🔴 4o | 4o: aquecimento a 5:49/km com tendinite ativa; luna traz a regra de parar se a dor aumentar |
+| 6 | luna | 🔴 4o | idem 5 (5:43/km) |
+| 7 | luna | — | luna: 3 sessões, 22,7 km, respeita o alerta; 4o: 4 sessões, 26 km, sexta e sábado seguidos |
+| 8 | luna | — | idem 7 |
+| 9 | luna | 🔴 4o | 4o: sessão de 0 km, 00:00, FC 00–00 |
+| 10 | luna | 🔴 4o | 4o: fartlek + TEMPO_RUN RPE 6 após 28 dias parado |
+| 11 | luna | 🔴 4o | 4o: intervalado RPE 8, FC 153–162, após 28 dias parado |
+| 12 | luna | 🔴 4o | idem 11 |
+| 13 | 4o (leve) | — | luna: contínuo a 6:55–7:05 com FC 145–152, semana de taper sem ativação |
+| 14 | 4o (leve) | — | idem (6:30–7:00) |
+| 15 | 4o (leve) | — | idem |
+
+**Resolvido desde a rodada 2:** dia de prova determinístico (21,1 km, 1:28, 4:10/km); volume = soma das
+sessões; aquecimento gerado em ritmo fácil (ex.: 7:15/km no Aquiles); volume do iniciante estável no luna
+(22,4–22,7 km, antes 6,6–17,2); nenhum ritmo zerado/invertido nem número sem formatação.
+
+**Follow-ups (não bloqueiam o CA4b):** dias sem declaração (só um descanso listado em vários planos);
+"alvo 0 km" no arquétipo sem dados; ativação pré-prova no taper (strides ou 2–3 km em ritmo de prova);
+mapeamento ritmo × FC no taper (6:55–7:05 para FC 145–152, quando as zonas do atleta dão ~5:50);
+deload do avançado com TSB −20 em 26–31 km (o coach ficaria em 40–45 km — critério, não erro).
