@@ -61,7 +61,8 @@ class ProvaServiceTenantTest {
                 validator,
                 java.time.Clock.systemUTC(),
                 provaNoPlanoService,
-                planoTreinoRepository
+                planoTreinoRepository,
+                org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class)
         );
         // CRÍTICO: TenantContext vazio — simula chamada sem JWT
         TenantContext.clear();

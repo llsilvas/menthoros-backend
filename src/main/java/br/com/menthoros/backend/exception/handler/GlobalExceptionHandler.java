@@ -10,6 +10,7 @@ import br.com.menthoros.backend.exception.InvalidZoneAnchorsException;
 import br.com.menthoros.backend.exception.DomainGoneException;
 import br.com.menthoros.backend.exception.GarminCanalIndisponivelException;
 import br.com.menthoros.backend.exception.LgpdConsentRequiredException;
+import br.com.menthoros.backend.exception.SeasonPlanDisabledException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.DuplicateResourceException;
@@ -133,6 +134,18 @@ public class GlobalExceptionHandler {
      * <p>Código próprio ({@code LGPD_CONSENT_REQUIRED}) porque a ação do frontend aqui é exibir o
      * modal de consentimento — não a tela de "sem permissão" de um 403 de autorização comum.
      */
+    /** Flag do plano de temporada desligada: 404 com código, para o front esconder a aba (D12). */
+    @ExceptionHandler(SeasonPlanDisabledException.class)
+    public ResponseEntity<Map<String, Object>> handleSeasonPlanDisabled(SeasonPlanDisabledException ex) {
+        Map<String, Object> body = Map.of(
+                "status", 404,
+                "error", "Not Found",
+                "code", "SEASON_PLAN_DISABLED",
+                "message", ex.getMessage()
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    }
+
     @ExceptionHandler(LgpdConsentRequiredException.class)
     public ResponseEntity<Map<String, Object>> handleLgpdConsentRequired(LgpdConsentRequiredException ex) {
         Map<String, Object> body = Map.of(

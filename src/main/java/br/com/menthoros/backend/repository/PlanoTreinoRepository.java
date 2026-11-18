@@ -16,9 +16,14 @@ public interface PlanoTreinoRepository extends JpaRepository<PlanoTreino, UUID> 
     /** Motivos gravados em {@code versionReason} ao arquivar; texto exibido ao treinador. */
     String REASON_RACE_CANCELLED = "prova cancelada";
     String REASON_TARGET_REPLACED = "prova-alvo substituída";
+    String REASON_TARGET_UNMARKED = "prova deixou de ser alvo";
 
     /** Busca a temporada (ou PlanoTreino legado) dentro do tenant. */
     Optional<PlanoTreino> findByIdAndAssessoriaId(UUID id, UUID tenantId);
+
+    /** Temporadas do atleta nos status pedidos, dentro do tenant; legado (status nulo) fica de fora. */
+    List<PlanoTreino> findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(UUID atletaId, UUID tenantId,
+                                                                     Collection<SeasonPlanStatus> statuses);
 
     /**
      * Algum PlanoTreino do tenant aponta para a prova, como {@code prova_id} ou {@code prova_alvo_id},

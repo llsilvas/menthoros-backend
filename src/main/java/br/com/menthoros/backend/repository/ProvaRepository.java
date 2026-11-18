@@ -2,7 +2,9 @@ package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.Prova;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -72,6 +74,31 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
      */
     @Query("SELECT p FROM Prova p WHERE p.id = :id AND p.assessoria.id = :tenantId")
     Optional<Prova> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
+
+    /**
+     * IDs das provas-alvo não canceladas do atleta, da mais distante para a mais próxima. Só o ID, de
+     * propósito: carregar a entidade aqui a deixaria no contexto de persistência, e o
+     * {@link #findByIdAndTenantIdForUpdate} devolveria essa cópia sem reler o estado travado.
+     * Tenant-aware: YES.
+     */
+    @Query("""
+        SELECT p.id FROM Prova p
+        WHERE p.atleta.id = :atletaId
+          AND p.assessoria.id = :tenantId
+          AND p.provaAlvo = true
+          AND p.statusProva <> 'CANCELADA'
+        ORDER BY p.dataProva DESC NULLS LAST
+        """)
+    List<UUID> findTargetRaceIds(@Param("atletaId") UUID atletaId, @Param("tenantId") UUID tenantId);
+
+    /**
+     * Lock pessimista da prova: serializa a geração da temporada com quem desmarca, cancela ou troca
+     * a prova-alvo (add-season-plan-generate-tracer, D13). Só faz sentido dentro de uma transação.
+     * Tenant-aware: YES.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Prova p WHERE p.id = :id AND p.assessoria.id = :tenantId")
+    Optional<Prova> findByIdAndTenantIdForUpdate(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 
     @Query("""
         SELECT p FROM Prova p
