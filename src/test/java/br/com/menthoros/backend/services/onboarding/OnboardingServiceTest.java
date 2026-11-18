@@ -84,6 +84,8 @@ class OnboardingServiceTest {
     private UUID tenantId;
     private Atleta atleta;
 
+    @Mock private jakarta.persistence.EntityManager entityManager;
+
     @BeforeEach
     void setUp() {
         service = new OnboardingServiceImpl(
@@ -92,7 +94,7 @@ class OnboardingServiceTest {
                 activityNormalizer, activityDedupService,
                 baselineCalculator, confidenceScorer, planningPolicyResolver, calibrationService,
                 atletaProgressService, new br.com.menthoros.backend.services.helper.ProvaEnricher(), garminProperties,
-                planoTreinoRepository);
+                planoTreinoRepository, entityManager);
         atletaId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
         atleta = Atleta.builder().id(atletaId).nome("João").nivelExperiencia(NivelExperiencia.INTERMEDIARIO).build();
@@ -394,7 +396,10 @@ class OnboardingServiceTest {
             Prova nova = service.criarOuAtualizarProvaAlvo(
                     atletaId, tenantId, LocalDate.now().plusMonths(4), TipoProva.MARATONA, DistanciaProva.KM_42, null, "Maratona");
 
-            verify(planoTreinoRepository).archiveOpenSeasons(provaAntiga.getId(), tenantId, "prova-alvo substituída");
+            org.mockito.InOrder ordem = org.mockito.Mockito.inOrder(entityManager, provaRepository, planoTreinoRepository);
+            ordem.verify(entityManager).refresh(provaAntiga, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+            ordem.verify(provaRepository).save(provaAntiga);
+            ordem.verify(planoTreinoRepository).archiveOpenSeasons(provaAntiga.getId(), tenantId, "prova-alvo substituída");
             verify(planoTreinoRepository, never()).archiveOpenSeasons(org.mockito.ArgumentMatchers.eq(nova.getId()),
                     any(), any());
         }

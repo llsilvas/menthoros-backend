@@ -252,4 +252,34 @@ class PlanoTreinoRepositoryTest extends AbstractIntegrationTest {
             assertThat(planoTreinoRepository.count()).isGreaterThanOrEqualTo(4);
         }
     }
+
+    @Nested
+    @DisplayName("índice uk_plano_treino_proposed_season")
+    class IndiceProposta {
+
+        @Test
+        @DisplayName("recusa a segunda temporada PROPOSED do mesmo atleta")
+        void recusaSegundaProposta() {
+            fx.planoTreino(atleta, prova, SeasonPlanStatus.PROPOSED);
+            em.flush();
+
+            assertThatThrownBy(() -> {
+                fx.planoTreino(atleta, fx.prova(atleta), SeasonPlanStatus.PROPOSED);
+                planoTreinoRepository.flush();
+            }).isInstanceOf(DataIntegrityViolationException.class);
+        }
+
+        @Test
+        @DisplayName("aceita PROPOSED de atletas diferentes e PROPOSED ao lado de ARCHIVED")
+        void aceitaOutroAtletaEArquivada() {
+            fx.planoTreino(atleta, prova, SeasonPlanStatus.ARCHIVED);
+            fx.planoTreino(atleta, fx.prova(atleta), SeasonPlanStatus.PROPOSED);
+            Atleta outro = fx.atleta(atleta.getAssessoria());
+            fx.planoTreino(outro, fx.prova(outro), SeasonPlanStatus.PROPOSED);
+
+            planoTreinoRepository.flush();
+
+            assertThat(planoTreinoRepository.count()).isGreaterThanOrEqualTo(3);
+        }
+    }
 }

@@ -78,6 +78,9 @@ class ProvaServiceImplTest {
     @Spy
     private java.time.Clock clock = java.time.Clock.systemUTC();
 
+    @Mock
+    private jakarta.persistence.EntityManager entityManager;
+
     @InjectMocks
     private ProvaServiceImpl provaService;
 
@@ -289,7 +292,7 @@ class ProvaServiceImplTest {
         @DisplayName("aplica o DTO, deriva os campos e salva")
         void atualizaEDeriva() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
             when(provaRepository.save(prova)).thenReturn(prova);
             when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
 
@@ -308,7 +311,7 @@ class ProvaServiceImplTest {
             Prova alvoAnterior = provaAlvoExistente("Meia do Rio");
             ProvaInputDto inputAlvo = novoInput(true);
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
             doAnswerMarcarAlvo(inputAlvo);
             when(provaRepository.findByAtletaAndProvaAlvoTrue(atleta)).thenReturn(List.of(alvoAnterior, prova));
             when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -336,7 +339,7 @@ class ProvaServiceImplTest {
             LocalDate dataAntiga = prova.getDataProva();
             LocalDate dataNova = dataAntiga.plusDays(7);
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
             org.mockito.Mockito.doAnswer(inv -> {
                 prova.setDataProva(dataNova);
                 return null;
@@ -355,7 +358,7 @@ class ProvaServiceImplTest {
         @DisplayName("prova-no-plano-semanal: sem mudança de data, só atualiza o treino vinculado")
         void semMudancaDeDataAtualizaTreinoVinculado() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
             when(provaRepository.save(prova)).thenReturn(prova);
             when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
 
@@ -375,7 +378,7 @@ class ProvaServiceImplTest {
         @DisplayName("remove a prova quando pertence ao atleta")
         void removeProva() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
 
             provaService.deletarProva(atletaId, provaId);
 
@@ -386,7 +389,7 @@ class ProvaServiceImplTest {
         @DisplayName("desvincula o treino PROVA da semana antes do delete físico")
         void desvinculaTreinoDaSemana() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
 
             provaService.deletarProva(atletaId, provaId);
 
@@ -457,6 +460,7 @@ class ProvaServiceImplTest {
             assertThatThrownBy(() -> provaService.cancelarProva(atletaId, provaId)).isInstanceOf(ResourceNotFoundException.class);
             verify(provaRepository, never()).save(any());
             verify(provaRepository, never()).findByIdAndTenantId(any(), any());
+            verify(provaRepository, never()).findByIdAndTenantIdForUpdate(any(), any());
         }
     }
 
@@ -516,7 +520,7 @@ class ProvaServiceImplTest {
         @Test
         @DisplayName("atualizar aplica só o subconjunto do atleta")
         void atualizarUsaSubconjunto() {
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
             when(provaRepository.save(prova)).thenReturn(prova);
             when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
 
@@ -530,7 +534,7 @@ class ProvaServiceImplTest {
         @DisplayName("atualizar prova realizada responde conflito")
         void atualizarRealizada() {
             prova.setFoiRealizada(true);
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
 
             assertThatThrownBy(() -> provaService.atualizarProva(atletaId, provaId, inputDto))
                     .isInstanceOf(ProvaRealizadaImutavelException.class);
@@ -540,7 +544,7 @@ class ProvaServiceImplTest {
         @Test
         @DisplayName("cancelar marca CANCELADA e preserva a prova")
         void cancelar() {
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
 
             provaService.cancelarProva(atletaId, provaId);
 
@@ -553,7 +557,7 @@ class ProvaServiceImplTest {
         @DisplayName("prova-no-plano-semanal: cancelar remove a prova da semana existente")
         void cancelarRemoveDaSemana() {
             LocalDate dataProva = prova.getDataProva();
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
             when(provaRepository.save(prova)).thenReturn(prova);
 
             provaService.cancelarProva(atletaId, provaId);
@@ -565,7 +569,7 @@ class ProvaServiceImplTest {
         @DisplayName("cancelar prova realizada responde conflito")
         void cancelarRealizada() {
             prova.setFoiRealizada(true);
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
 
             assertThatThrownBy(() -> provaService.cancelarProva(atletaId, provaId))
                     .isInstanceOf(ProvaRealizadaImutavelException.class);
@@ -576,7 +580,7 @@ class ProvaServiceImplTest {
         @DisplayName("DELETE do atleta cancela em vez de remover")
         void removerCancela() {
             when(principalResolver.hasRole(UserRole.ADMIN)).thenReturn(false);
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
 
             provaService.removerProva(atletaId, provaId);
 
@@ -595,7 +599,7 @@ class ProvaServiceImplTest {
         @BeforeEach
         void atletaDoTenant() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
         }
 
         @Test
@@ -646,6 +650,52 @@ class ProvaServiceImplTest {
         }
 
         @Test
+        @DisplayName("desmarcar a prova-alvo sem substituta arquiva com 'prova deixou de ser alvo'")
+        void desmarcarAlvoArquiva() {
+            prova.setProvaAlvo(true);
+            org.mockito.Mockito.doAnswer(inv -> {
+                prova.setProvaAlvo(false);
+                return null;
+            }).when(provaMapper).updateEntity(inputDto, prova);
+            when(provaRepository.save(prova)).thenReturn(prova);
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.atualizarProva(atletaId, provaId, inputDto);
+
+            verify(planoTreinoRepository).archiveOpenSeasons(provaId, tenantId, "prova deixou de ser alvo");
+        }
+
+        @Test
+        @DisplayName("desmarcar e cancelar juntos arquiva só uma vez, como cancelada")
+        void desmarcarECancelarArquivaComoCancelada() {
+            prova.setProvaAlvo(true);
+            org.mockito.Mockito.doAnswer(inv -> {
+                prova.setProvaAlvo(false);
+                prova.setStatusProva(ProvaStatus.CANCELADA);
+                return null;
+            }).when(provaMapper).updateEntity(inputDto, prova);
+            when(provaRepository.save(prova)).thenReturn(prova);
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.atualizarProva(atletaId, provaId, inputDto);
+
+            verify(planoTreinoRepository).archiveOpenSeasons(provaId, tenantId, MOTIVO);
+            verify(planoTreinoRepository, never()).archiveOpenSeasons(provaId, tenantId, "prova deixou de ser alvo");
+        }
+
+        @Test
+        @DisplayName("editar uma prova que nunca foi alvo não arquiva")
+        void naoAlvoContinuaNaoAlvo() {
+            prova.setProvaAlvo(false);
+            when(provaRepository.save(prova)).thenReturn(prova);
+            when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
+
+            provaService.atualizarProva(atletaId, provaId, inputDto);
+
+            verify(planoTreinoRepository, never()).archiveOpenSeasons(any(), any(), any());
+        }
+
+        @Test
         @DisplayName("editar sem cancelar nem trocar alvo não arquiva")
         void editarSemCancelarNaoArquiva() {
             when(provaRepository.save(prova)).thenReturn(prova);
@@ -671,7 +721,10 @@ class ProvaServiceImplTest {
 
             provaService.atualizarProva(atletaId, provaId, inputAlvo);
 
-            verify(planoTreinoRepository).archiveOpenSeasons(alvoAnterior.getId(), tenantId, MOTIVO_TROCA);
+            org.mockito.InOrder ordem = org.mockito.Mockito.inOrder(entityManager, provaRepository, planoTreinoRepository);
+            ordem.verify(entityManager).refresh(alvoAnterior, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+            ordem.verify(provaRepository).save(alvoAnterior);
+            ordem.verify(planoTreinoRepository).archiveOpenSeasons(alvoAnterior.getId(), tenantId, MOTIVO_TROCA);
             verify(planoTreinoRepository, never()).archiveOpenSeasons(eq(provaId), any(), any());
         }
 
@@ -748,7 +801,7 @@ class ProvaServiceImplTest {
         @BeforeEach
         void atletaDoTenant() {
             when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(Optional.of(atleta));
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
         }
 
         @Test
@@ -905,7 +958,7 @@ class ProvaServiceImplTest {
         @DisplayName("coach muda a data → flag intacta")
         void coachMudaData() {
             prova.setRevisadaPeloCoach(true);
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
             org.mockito.Mockito.doAnswer(inv -> {
                 Prova p = inv.getArgument(1);
                 p.setDataProva(p.getDataProva().plusDays(7));
@@ -924,7 +977,7 @@ class ProvaServiceImplTest {
         void cancelaZera() {
             when(atletaResolver.atuaComoAtleta()).thenReturn(true);
             when(atletaResolver.resolverAtletaIdAtual()).thenReturn(atletaId);
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
 
             provaService.cancelarProva(atletaId, provaId);
 
@@ -938,7 +991,7 @@ class ProvaServiceImplTest {
             prova.setRevisadaPeloCoach(false);
             prova.setMotivoRevisao(MotivoRevisaoProva.ALVO_TROCADA);
             prova.setAlvoAnteriorNome("Meia do Rio");
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
             when(provaRepository.save(prova)).thenReturn(prova);
             when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
 
@@ -953,7 +1006,7 @@ class ProvaServiceImplTest {
         @Test
         @DisplayName("ciente em prova já revisada não grava nada")
         void cienteIdempotente() {
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
             when(provaMapper.toOutputDto(prova)).thenReturn(outputDto);
 
             provaService.marcarCiente(atletaId, provaId);
@@ -964,7 +1017,7 @@ class ProvaServiceImplTest {
         @Test
         @DisplayName("ciente em prova de outro tenant → não encontrado")
         void cienteOutroTenant() {
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.empty());
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.empty());
 
             assertThatThrownBy(() -> provaService.marcarCiente(atletaId, provaId))
                     .isInstanceOf(ResourceNotFoundException.class);
@@ -988,7 +1041,7 @@ class ProvaServiceImplTest {
             prova.setRevisadaPeloCoach(true);
             when(atletaResolver.atuaComoAtleta()).thenReturn(true);
             when(atletaResolver.resolverAtletaIdAtual()).thenReturn(atletaId);
-            when(provaRepository.findByIdAndTenantId(provaId, tenantId)).thenReturn(Optional.of(prova));
+            when(provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)).thenReturn(Optional.of(prova));
             org.mockito.Mockito.doAnswer(inv -> {
                 mudanca.accept(inv.getArgument(1));
                 return null;
