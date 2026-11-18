@@ -637,3 +637,49 @@ Treinos recentes: 5 sessões
 | 15 | taper-semana-prova | A = gpt-4o | B = gpt-6-luna:medium |
 
 </details>
+
+---
+
+## Veredito do coach-fundador (2026-11-18) — CA4b **ainda não passa**
+
+Preferência: **gpt-6-luna 10 × 5 gpt-4o** (rodada 1: 9 × 6). Barra em dois níveis: 🔴 não mandaria;
+🟠 só depois de corrigir o que aparece na tela (os dois contam como barra no CA4b).
+
+| # | preferido | barraria | motivo |
+|---|---|---|---|
+| 1 | luna | 🔴 4o | 4o sobe para 72 km com TSB −20, regenerativo em FC 146–153, fartlek prometido e ausente |
+| 2 | luna | — | luna todo Z2, 3 descansos (aquecimento no ritmo do principal); 4o com regenerativo em FC 146–153 |
+| 3 | luna | — | corte para 33 km defensável; 4o declara 58 km e soma 65,7; aquecimento gerado a 4:35/km no luna |
+| 4 | luna | 🔴 4o | 4o: sessão inteira a 5:36–5:48 com Aquiles inflamado |
+| 5 | luna | — | 4o: contínuo a 5:36–5:48 com tendinite (ressalva) |
+| 6 | 4o | 🟠 luna | luna: 1,5 km em 45 min no cabeçalho e etapas somando 7,9 km; volume da semana 6 km; faixa 5:55–7:30 larga |
+| 7 | luna | 🔴? 4o | 4o ignora o alerta de progressão (25 km em 4 sessões); luna com principal de 4 min |
+| 8 | luna | 🔴 4o | 4o: sessão com ritmo 00:00, FC 00–00 e principal de 0,13 km |
+| 9 | luna | 🔴? 4o | idem 7; luna: regenerativo de 14 min com 2 min de principal |
+| 10 | 4o | 🟠 luna | luna: ritmo "70:00-60:00/km", distância sem formatação, volume da semana 0,0 |
+| 11 | luna | 🟠 luna, 🔴 4o | luna: aquecimento "11:00-7:00/km", volume 0,0; 4o: intervalado RPE 8 após 28 dias parado |
+| 12 | luna | 🟠 luna, 🔴 4o | luna: 3 km em 60 min (20:00/km), volume 0,0; 4o: Z4 RPE 8 após 28 dias parado |
+| 13 | 4o | 🔴 luna | luna: meia a 5:54/km com FC até 171 para avançado |
+| 14 | 4o | 🔴 luna | luna: TEMPO_RUN de 30,48 km a 4:10 no dia da prova |
+| 15 | 4o | 🔴 luna | luna: prova a 6:00/km |
+
+**Leitura do coach:** o luna é o mais seguro em iniciante e lesão; erra o dia de prova nas três
+repetições do taper; o volume do iniciante varia muito entre repetições (6,6 a 17,2 km). A maior parte
+das barras 🟠 vem de apresentação/normalização, não do modelo.
+
+### Conferência contra a produção (2026-11-18)
+
+O material da revisão mostra LLM + normalização, mas **não** os passos do `PlanGenerationPersister`:
+
+- **Dia de prova (13–15):** em produção `ProvaNoPlanoService.garantirProvasNaSemana` troca o treino do dia
+  da prova por um treino `PROVA` determinístico (distância da prova, ritmo do tempo-alvo — 1:28 nos 21k =
+  4:10/km). A ação 1 do coach já existe; o eval é que não a aplica.
+- **"Volume planejado" 0,0 / 58 contra a soma (3, 10–12):** em produção o volume é recalculado pela lista
+  final de treinos no persist; o 0,0 é artefato do eval.
+- **"8.559999999999999 km":** formatação do script que monta este markdown, não do produto.
+- **Gate estrutural:** o treino reprovado é um INTERVALADO do gpt-4o, não o caso 14.
+
+Defeitos reais que sobram: aquecimento/desaquecimento gerado mais rápido que o principal; faixas de
+ritmo inválidas sem validação ("70:00-60:00", "11:00-7:00", "00:00-00:00", "20:00-20:00");
+principal menor que o aquecimento quando o total é pequeno; dias sem treino nem descanso; variação de
+volume do iniciante.
