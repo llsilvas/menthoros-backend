@@ -78,6 +78,9 @@ class ProvaServiceImplTest {
     @Spy
     private java.time.Clock clock = java.time.Clock.systemUTC();
 
+    @Mock
+    private jakarta.persistence.EntityManager entityManager;
+
     @InjectMocks
     private ProvaServiceImpl provaService;
 
@@ -718,8 +721,9 @@ class ProvaServiceImplTest {
 
             provaService.atualizarProva(atletaId, provaId, inputAlvo);
 
-            org.mockito.InOrder ordem = org.mockito.Mockito.inOrder(provaRepository, planoTreinoRepository);
-            ordem.verify(provaRepository).findByIdAndTenantIdForUpdate(alvoAnterior.getId(), tenantId);
+            org.mockito.InOrder ordem = org.mockito.Mockito.inOrder(entityManager, provaRepository, planoTreinoRepository);
+            ordem.verify(entityManager).refresh(alvoAnterior, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+            ordem.verify(provaRepository).save(alvoAnterior);
             ordem.verify(planoTreinoRepository).archiveOpenSeasons(alvoAnterior.getId(), tenantId, MOTIVO_TROCA);
             verify(planoTreinoRepository, never()).archiveOpenSeasons(eq(provaId), any(), any());
         }

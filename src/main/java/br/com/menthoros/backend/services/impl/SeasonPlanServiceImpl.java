@@ -66,6 +66,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
     /** Constante de tempo do CTL no PMC (Banister/Coggan). */
     private static final double CTL_TIME_CONSTANT_DAYS = 42.0;
     private static final int VOLUME_WINDOW_WEEKS = 4;
+    private static final int NOME_MAX = 100;
     private static final List<SeasonPlanStatus> ABERTAS = List.of(SeasonPlanStatus.ACTIVE, SeasonPlanStatus.PROPOSED);
 
     private final AtletaRepository atletaRepository;
@@ -221,8 +222,10 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
                 .map(TreinoRealizado::getDistanciaKm)
                 .filter(Objects::nonNull)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (soma.signum() > 0) {
-            return soma.divide(BigDecimal.valueOf(VOLUME_WINDOW_WEEKS), 1, RoundingMode.HALF_UP);
+        BigDecimal media = soma.divide(BigDecimal.valueOf(VOLUME_WINDOW_WEEKS), 1, RoundingMode.HALF_UP);
+        // Volume ínfimo arredonda para 0,0 e o motor rejeita base zero: cai no onboarding, como sem treino.
+        if (media.signum() > 0) {
+            return media;
         }
         return perfilRepository.findByAtletaIdAndTenantId(atletaId, tenantId)
                 .map(PerfilOnboardingAtleta::getVolumeSemanalMax)
@@ -238,7 +241,9 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         p.setAtleta(atleta);
         p.setProva(prova);
         p.setAssessoria(atleta.getAssessoria());
-        p.setNome("Temporada " + nomeProva);
+        // tb_plano_treino.nome é VARCHAR(100) e nome_prova também chega a 100: o prefixo estouraria.
+        String nome = "Temporada " + nomeProva;
+        p.setNome(nome.length() > NOME_MAX ? nome.substring(0, NOME_MAX) : nome);
         p.setDescricao("Plano de temporada até " + nomeProva + " em " + prova.getDataProva().format(DATA_BR));
         p.setObjetivo("Chegar preparado a " + nomeProva);
         p.setDataInicio(plano.weeks().get(0).weekStart());

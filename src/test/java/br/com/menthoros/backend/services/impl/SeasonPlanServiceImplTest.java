@@ -303,6 +303,43 @@ class SeasonPlanServiceImplTest {
         }
 
         @Test
+        @DisplayName("volume ínfimo que arredonda para 0,0 cai no volumeSemanalMax do onboarding")
+        void volumeInfimoCaiNoOnboarding() {
+            atletaExiste();
+            provaTravada(provaAlvo(PROVA_20_SEMANAS));
+            abertas();
+            pmc(40.0, HOJE, HOJE.minusDays(100));
+            treinos(treino(HOJE.minusDays(3), "0.1"));
+            PerfilOnboardingAtleta perfil = new PerfilOnboardingAtleta();
+            perfil.setVolumeSemanalMax(28);
+            when(perfilRepository.findByAtletaIdAndTenantId(atleta.getId(), tenantId)).thenReturn(Optional.of(perfil));
+            when(planoTreinoRepository.save(any(PlanoTreino.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            Generation resultado = service.generate(atleta.getId());
+
+            assertThat(resultado.plan().weeks().get(0).targetVolumeKm()).isEqualByComparingTo("28.5");
+        }
+
+        @Test
+        @DisplayName("nome de prova com 100 caracteres não estoura os 100 do nome da temporada")
+        void nomeLongoTruncado() {
+            atletaExiste();
+            Prova prova = provaAlvo(PROVA_20_SEMANAS);
+            prova.setNomeProva("M".repeat(100));
+            provaTravada(prova);
+            abertas();
+            pmc(40.0, HOJE, HOJE.minusDays(100));
+            treinos(treino(HOJE.minusDays(3), "40"));
+            when(planoTreinoRepository.save(any(PlanoTreino.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            service.generate(atleta.getId());
+
+            ArgumentCaptor<PlanoTreino> plano = ArgumentCaptor.forClass(PlanoTreino.class);
+            verify(planoTreinoRepository).save(plano.capture());
+            assertThat(plano.getValue().getNome()).hasSize(100).startsWith("Temporada M");
+        }
+
+        @Test
         @DisplayName("sem treino e sem volumeSemanalMax responde 422 nomeando a base de volume")
         void semBaseDeVolume() {
             atletaExiste();

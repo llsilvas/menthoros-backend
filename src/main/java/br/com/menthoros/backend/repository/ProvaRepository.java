@@ -76,11 +76,6 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
     Optional<Prova> findByIdAndTenantId(@Param("id") UUID id, @Param("tenantId") UUID tenantId);
 
     /**
-     * Lock pessimista da prova: serializa a geração da temporada com quem desmarca, cancela ou troca
-     * a prova-alvo (add-season-plan-generate-tracer, D13). Só faz sentido dentro de uma transação.
-     * Tenant-aware: YES.
-     */
-    /**
      * IDs das provas-alvo não canceladas do atleta, da mais distante para a mais próxima. Só o ID, de
      * propósito: carregar a entidade aqui a deixaria no contexto de persistência, e o
      * {@link #findByIdAndTenantIdForUpdate} devolveria essa cópia sem reler o estado travado.
@@ -96,6 +91,11 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
         """)
     List<UUID> findTargetRaceIds(@Param("atletaId") UUID atletaId, @Param("tenantId") UUID tenantId);
 
+    /**
+     * Lock pessimista da prova: serializa a geração da temporada com quem desmarca, cancela ou troca
+     * a prova-alvo (add-season-plan-generate-tracer, D13). Só faz sentido dentro de uma transação.
+     * Tenant-aware: YES.
+     */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Prova p WHERE p.id = :id AND p.assessoria.id = :tenantId")
     Optional<Prova> findByIdAndTenantIdForUpdate(@Param("id") UUID id, @Param("tenantId") UUID tenantId);

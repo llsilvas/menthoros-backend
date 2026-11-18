@@ -25,6 +25,8 @@ import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
 import br.com.menthoros.backend.services.ProvaService;
 import br.com.menthoros.backend.services.helper.ProvaEnricher;
 import br.com.menthoros.backend.services.plano.ProvaNoPlanoService;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
@@ -60,6 +62,7 @@ public class ProvaServiceImpl implements ProvaService {
     private final Clock clock;
     private final ProvaNoPlanoService provaNoPlanoService;
     private final PlanoTreinoRepository planoTreinoRepository;
+    private final EntityManager entityManager;
 
     /** Texto gravado em {@code versionReason} quando a prova-alvo deixa de valer; exibido ao treinador. */
 
@@ -444,8 +447,10 @@ public class ProvaServiceImpl implements ProvaService {
             if (prova.getId() != null && prova.getId().equals(outra.getId())) {
                 continue;
             }
-            // Trava antes de arquivar (D13): uma geração em curso sobre esta alvo termina antes.
-            provaRepository.findByIdAndTenantIdForUpdate(outra.getId(), atleta.getAssessoria().getId());
+            // Trava antes de arquivar (D13): uma geração em curso sobre esta alvo termina antes. É refresh,
+            // não consulta com lock: `outra` já está no contexto, e a consulta devolveria a cópia velha —
+            // um cancelamento confirmado no meio seria sobrescrito pelo save abaixo.
+            entityManager.refresh(outra, LockModeType.PESSIMISTIC_WRITE);
             outra.setProvaAlvo(false);
             provaRepository.save(outra);
             arquivarTemporadas(outra.getId(), atleta, PlanoTreinoRepository.REASON_TARGET_REPLACED);
