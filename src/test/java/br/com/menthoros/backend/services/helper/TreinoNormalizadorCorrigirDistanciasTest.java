@@ -76,6 +76,50 @@ class TreinoNormalizadorCorrigirDistanciasTest {
         assertThat(resultado.get(0).distanciaKm()).isEqualTo(1.6);
     }
 
+    // fix-etapas-sintetizadas-sessao-curta: Z2 = 3.83 × 1.20 = 4.6 min/km, mais rápido que a PRINCIPAL (6.75)
+    @Test
+    @DisplayName("AQUECIMENTO sem ritmo nunca fica mais rápido que a PRINCIPAL do mesmo treino")
+    void aquecimentoSemRitmoNaoPassaAPrincipal() {
+        var aquec = new EtapaTreinoLlmDto(1, "AQUECIMENTO", "gerado", 10, null, null, 1, null);
+        var principal = new EtapaTreinoLlmDto(2, "PRINCIPAL", "regenerativo", 30, 4.44, null, 1, "6:30-7:00/km");
+        var resultado = normalizador.corrigirDistanciasEtapasTemporais(List.of(aquec, principal), new BigDecimal("3.83"));
+        assertThat(resultado.get(0).distanciaKm()).isEqualTo(1.48); // 10 ÷ 6.75
+    }
+
+    @Test
+    @DisplayName("PRINCIPAL mais rápida que a zona fácil → aquecimento fica na zona")
+    void principalRapidaMantemZona() {
+        var aquec = new EtapaTreinoLlmDto(1, "AQUECIMENTO", "gerado", 10, null, null, 1, null);
+        var principal = new EtapaTreinoLlmDto(2, "PRINCIPAL", "tempo", 20, 4.4, null, 1, "4:30-4:40/km");
+        var resultado = normalizador.corrigirDistanciasEtapasTemporais(List.of(aquec, principal), new BigDecimal("4.5"));
+        assertThat(resultado.get(0).distanciaKm()).isCloseTo(1.85, within(0.01)); // 10 ÷ 5.4
+    }
+
+    @Nested
+    @DisplayName("encaixarPrincipalNoTotal")
+    class EncaixarPrincipalNoTotal {
+
+        @Test
+        @DisplayName("PRINCIPAL encaixada mais curta que o aquecimento → bloco único com o total, duração pelo pace")
+        void sessaoCurtaViraBlocoUnico() {
+            var treino = new TreinoPlanejadoLlmDto("SEGUNDA", "REGENERATIVO", null, null, null, null, null,
+                    "14:00", 2.0, "7:15-7:45/km", List.of(
+                    new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento (gerado pelo sistema)", 10, 1.33, null, 1, null),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "regenerativo", 14, 1.87, null, 1, "7:15-7:45/km"),
+                    new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento (gerado pelo sistema)", 5, 0.4, null, 1, null)));
+
+            var resultado = normalizador.encaixarPrincipalNoTotal(treino).orElseThrow();
+
+            assertThat(resultado.etapas()).singleElement().satisfies(e -> {
+                assertThat(e.tipoEtapa()).isEqualTo("PRINCIPAL");
+                assertThat(e.distanciaKm()).isEqualTo(2.0);
+                assertThat(e.duracaoMin()).isEqualTo(15); // 2.0 × 7.5
+                assertThat(e.ordem()).isEqualTo(1);
+            });
+            assertThat(resultado.distanciaKm()).isEqualTo(2.0);
+        }
+    }
+
     @Test
     @DisplayName("ritmoAlvo ilegível → mantém o fallback por paceLimiar")
     void ritmoIlegivelUsaFallback() {

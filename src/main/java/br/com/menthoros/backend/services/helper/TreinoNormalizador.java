@@ -252,16 +252,22 @@ public class TreinoNormalizador {
         double paceZ1 = paceLimiar != null
                 ? paceLimiar.doubleValue() * FATOR_PACE_Z1
                 : PACE_Z1_DEFAULT_MIN_KM;
+        // fix-etapas-sintetizadas-sessao-curta: aquec/desaq sem ritmo nunca mais rápido que a PRINCIPAL
+        double pacePrincipal = etapas.stream().filter(this::ehPrincipal)
+                .map(e -> paceValidator.calcularPaceMedia(e.ritmoAlvo()))
+                .filter(java.util.OptionalDouble::isPresent).mapToDouble(java.util.OptionalDouble::getAsDouble)
+                .findFirst().orElse(0.0);
+        double paceAquec = Math.max(paceZ2, pacePrincipal);
         return etapas.stream()
-                .map(e -> corrigirEtapaTemporal(e, paceZ1, paceZ2))
+                .map(e -> corrigirEtapaTemporal(e, paceZ1, paceAquec))
                 .toList();
     }
 
-    private EtapaTreinoLlmDto corrigirEtapaTemporal(EtapaTreinoLlmDto e, double paceZ1, double paceZ2) {
+    private EtapaTreinoLlmDto corrigirEtapaTemporal(EtapaTreinoLlmDto e, double paceZ1, double paceAquec) {
         if (e.tipoEtapa() == null) return e;
         if (e.duracaoMin() == null || e.duracaoMin() <= 0) return e;
         double pace = switch (e.tipoEtapa().toUpperCase()) {
-            case "AQUECIMENTO", "DESAQUECIMENTO" -> paceZ2;
+            case "AQUECIMENTO", "DESAQUECIMENTO" -> paceAquec;
             case "RECUPERACAO" -> paceZ1;
             default -> -1.0;
         };
@@ -353,6 +359,17 @@ public class TreinoNormalizador {
         EtapaTreinoLlmDto encaixada = principal.comDistancia(sobra);
         if (pace.isPresent()) {
             encaixada = encaixada.comDuracao(Math.max(1, (int) Math.round(sobra * pace.getAsDouble())));
+        }
+        // fix-etapas-sintetizadas-sessao-curta: PRINCIPAL mais curta que o aquecimento → bloco contínuo único
+        Integer aquecMin = demais.stream().filter(e -> "AQUECIMENTO".equals(normalizarTipoEtapa(e.tipoEtapa())))
+                .map(EtapaTreinoLlmDto::duracaoMin).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        if (pace.isPresent() && aquecMin != null && encaixada.duracaoMin() != null && encaixada.duracaoMin() < aquecMin) {
+            double total = arredondar2(treino.distanciaKm());
+            EtapaTreinoLlmDto bloco = principal.comOrdem(1).comDistancia(total)
+                    .comDuracao(Math.max(1, (int) Math.round(total * pace.getAsDouble())));
+            log.info("RECONCILIAÇÃO [{}]: PRINCIPAL encaixada ({} min) menor que o aquecimento ({} min) → bloco único de {} km",
+                    treino.tipoTreino(), encaixada.duracaoMin(), aquecMin, total);
+            return java.util.Optional.of(treino.comEtapas(List.of(bloco)).comDistancia(total));
         }
         EtapaTreinoLlmDto finalEncaixada = encaixada;
         List<EtapaTreinoLlmDto> etapas = treino.etapas().stream().map(e -> e == principal ? finalEncaixada : e).toList();
