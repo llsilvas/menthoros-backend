@@ -51,7 +51,8 @@ class RevisaoCegaPlanosRealTest {
                         EvalRunnerTest.construirChatClientReal(apiKey, partes[0], partes.length > 1 ? partes[1] : null),
                         new LlmJsonSchemaBuilder(), grader);
                 for (int r = 1; r <= repeticoes; r++) {
-                    var resultado = runner.rodar(prompt, c.skeleton(), zonas, arq.atleta(), arq.inicioSemana());
+                    var resultado = runner.rodar(prompt, c.skeleton(), zonas, arq.atleta(), arq.inicioSemana(), false,
+                            arq.prova());
                     Files.writeString(saida.resolve(arq.nome() + "." + item.trim().replace(':', '_') + "." + r + ".json"),
                             resultado.responseJson());
                 }

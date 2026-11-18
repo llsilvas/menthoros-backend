@@ -6,6 +6,11 @@ import br.com.menthoros.backend.dto.llm.EtapaTreinoLlmDto;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.Prova;
+import br.com.menthoros.backend.enums.DiaSemana;
+import br.com.menthoros.backend.mapper.TreinoMapperImpl;
+import br.com.menthoros.backend.services.plano.ProvaNoPlanoService;
+import br.com.menthoros.backend.util.Utils;
 import br.com.menthoros.backend.services.prompt.constraint.Constraint;
 import br.com.menthoros.backend.services.prompt.constraint.ConstraintKey;
 import br.com.menthoros.backend.services.quality.PlanQualityChecker;
@@ -50,6 +55,9 @@ public class EvalDeterministicGrader {
             new TreinoNormalizador(new PaceValidator()), new EtapaFcValidator(),
             new PlanoEstruturaReparador(new SimpleMeterRegistry()), new PaceValidator(), new SimpleMeterRegistry());
     private final PaceValidator paceValidator = new PaceValidator();
+    // Só construirTreinoProva é usado: não toca repositório nem os colaboradores do mapper (só durationToString).
+    private final ProvaNoPlanoService provaNoPlano =
+            new ProvaNoPlanoService(null, new TreinoMapperImpl(null, null), null, null);
 
     /** Tolerância do pace implícito (duração ÷ distância) em torno da faixa do ritmoAlvo — decisão do coach. */
     static final double TOLERANCIA_PACE = 0.10;
@@ -75,9 +83,22 @@ public class EvalDeterministicGrader {
     public Resultado avaliar(String respostaJson, @Nullable String schemaVersion, List<Constraint> regras,
                               @Nullable WeekPlanSkeleton skeleton, AthleteZones zonasAtleta,
                               Atleta atleta, LocalDate semanaInicio) {
+        return avaliar(respostaJson, schemaVersion, regras, skeleton, zonasAtleta, atleta, semanaInicio, null);
+    }
+
+    /**
+     * Como {@link #avaliar(String, String, List, WeekPlanSkeleton, AthleteZones, Atleta, LocalDate)}, aplicando
+     * também o que o {@code PlanGenerationPersister} faz depois da normalização (migrate-openai-retired-models,
+     * revisão cega rodada 2): o treino do dia da prova vira o {@code PROVA} determinístico de
+     * {@link ProvaNoPlanoService#construirTreinoProva} e o volume planejado é recalculado pela soma dos treinos.
+     */
+    public Resultado avaliar(String respostaJson, @Nullable String schemaVersion, List<Constraint> regras,
+                              @Nullable WeekPlanSkeleton skeleton, AthleteZones zonasAtleta,
+                              Atleta atleta, LocalDate semanaInicio, @Nullable Prova prova) {
         PlanoSemanalLlmDto plano = EvalPlanoJsonParser.parsear(objectMapper, sessionResolver, respostaJson,
                 schemaVersion, zonasAtleta);
         plano = normalizar(plano, atleta, atleta != null ? atleta.getId() : null);
+        plano = comoPersistido(plano, atleta, semanaInicio, prova);
         List<ViolacaoQualidade> violacoesQualidade = new ArrayList<>(planQualityChecker.check(plano, regras));
         violacoesQualidade.addAll(paceImplicito(plano));
         List<PlannerViolation> violacoesCompliance = skeleton != null
@@ -99,6 +120,21 @@ public class EvalDeterministicGrader {
             }
         }).toList();
         return new PlanoSemanalLlmDto(plano.volumePlanejadoKm(), plano.volumeAlvoKm(), plano.tsbInicio(),
+                plano.tsbFim(), plano.status(), plano.objetivoSemanal(), treinos, plano.restDays());
+    }
+
+    private PlanoSemanalLlmDto comoPersistido(PlanoSemanalLlmDto plano, Atleta atleta, LocalDate semanaInicio,
+                                               @Nullable Prova prova) {
+        if (plano.treinosPlanejados() == null) return plano;
+        List<TreinoPlanejadoLlmDto> treinos = plano.treinosPlanejados();
+        if (prova != null && prova.getDataProva() != null && atleta != null
+                && !prova.getDataProva().isBefore(semanaInicio) && !prova.getDataProva().isAfter(semanaInicio.plusDays(6))) {
+            DiaSemana dia = Utils.converterDayOfWeekParaDiaSemana(prova.getDataProva().getDayOfWeek());
+            treinos = new ArrayList<>(treinos.stream().filter(t -> !dia.name().equals(t.diaSemana())).toList());
+            treinos.add(provaNoPlano.construirTreinoProva(prova, atleta));
+        }
+        double volume = treinos.stream().mapToDouble(t -> t.distanciaKm() != null ? t.distanciaKm() : 0.0).sum();
+        return new PlanoSemanalLlmDto(Math.round(volume * 100) / 100.0, plano.volumeAlvoKm(), plano.tsbInicio(),
                 plano.tsbFim(), plano.status(), plano.objetivoSemanal(), treinos, plano.restDays());
     }
 

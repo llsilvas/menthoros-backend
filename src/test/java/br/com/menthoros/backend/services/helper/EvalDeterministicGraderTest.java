@@ -145,6 +145,34 @@ class EvalDeterministicGraderTest {
     }
 
     @Nested
+    @DisplayName("avaliar com prova")
+    class AvaliarComProva {
+
+        @Test
+        @DisplayName("treino do dia da prova vira PROVA determinístico e o volume é a soma dos treinos")
+        void provaSubstituiODiaERecalculaVolume() throws Exception {
+            var segunda = LocalDate.of(2026, 1, 19);
+            var prova = new br.com.menthoros.backend.entity.Prova();
+            prova.setNomeProva("Meia");
+            prova.setDataProva(segunda.plusDays(6));
+            prova.setDistanciaKm(new BigDecimal("21.097"));
+            prova.setTempoObjetivo(java.time.Duration.ofHours(1).plusMinutes(28));
+            var domingo = new TreinoPlanejadoLlmDto("DOMINGO", "TEMPO_RUN", null, null, null, null, null,
+                    "127:00", 30.48, "4:10-4:10/km", List.of());
+            var plano = new PlanoSemanalLlmDto(99.0, 20.0, 5.0, 5.0, "PLANEJADO", "objetivo", List.of(domingo), List.of());
+
+            var resultado = grader.avaliar(objectMapper.writeValueAsString(plano), SchemaVersion.CURRENT, List.of(),
+                    null, new AthleteZones(190, 160, BigDecimal.valueOf(5.0)), atleta(), segunda, prova);
+
+            var treino = resultado.planoAvaliado().treinosPlanejados().getFirst();
+            assertThat(treino.tipoTreino()).isEqualTo("PROVA");
+            assertThat(treino.distanciaKm()).isEqualTo(21.097);
+            assertThat(treino.ritmoAlvo()).isEqualTo("4:10");
+            assertThat(resultado.planoAvaliado().volumePlanejadoKm()).isEqualTo(21.1);
+        }
+    }
+
+    @Nested
     @DisplayName("paceImplicito")
     class PaceImplicito {
 

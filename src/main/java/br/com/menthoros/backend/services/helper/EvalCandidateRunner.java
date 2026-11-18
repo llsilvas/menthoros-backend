@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.helper;
 import br.com.menthoros.backend.domain.compliance.SchemaVersion;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.services.prompt.LlmJsonSchemaBuilder;
 import br.com.menthoros.backend.services.prompt.PlanoTreinoPromptBuilder.PromptGerado;
 import org.jspecify.annotations.Nullable;
@@ -66,6 +67,13 @@ public class EvalCandidateRunner {
     public ResultadoCandidato rodar(PromptGerado prompt, @Nullable WeekPlanSkeleton skeleton,
                                      AthleteZones zonasAtleta, Atleta atleta, LocalDate semanaInicio,
                                      boolean usaV2) {
+        return rodar(prompt, skeleton, zonasAtleta, atleta, semanaInicio, usaV2, null);
+    }
+
+    /** Com a prova da semana: o grader aplica o treino {@code PROVA} determinístico, como o persist. */
+    public ResultadoCandidato rodar(PromptGerado prompt, @Nullable WeekPlanSkeleton skeleton,
+                                     AthleteZones zonasAtleta, Atleta atleta, LocalDate semanaInicio,
+                                     boolean usaV2, @Nullable Prova prova) {
         var options = usaV2 ? llmJsonSchemaBuilder.v2JsonSchemaOptions() : llmJsonSchemaBuilder.defaultJsonSchemaOptions();
         ChatResponse chatResponse = chatClient.prompt()
                 .system(prompt.system())
@@ -81,7 +89,7 @@ public class EvalCandidateRunner {
         }
         String schemaVersion = usaV2 ? SchemaVersion.V2 : SchemaVersion.CURRENT;
         var avaliacao = grader.avaliar(responseJson, schemaVersion, prompt.regras(), skeleton,
-                zonasAtleta, atleta, semanaInicio);
+                zonasAtleta, atleta, semanaInicio, prova);
         BigDecimal custo = custoDaChamada(chatResponse);
         // metadata.model é o snapshot que a OpenAI de fato serviu; o bake-off o anota no relatório.
         String modeloRetornado = chatResponse.getMetadata() != null ? chatResponse.getMetadata().getModel() : null;

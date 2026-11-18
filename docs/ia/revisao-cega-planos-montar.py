@@ -14,7 +14,11 @@ AVISO = {}
 
 
 def v(x, suf=''):
-    return '—' if x in (None, '', []) else f'{x}{suf}'
+    if x in (None, '', []):
+        return '—'
+    if isinstance(x, float):
+        x = f'{x:.2f}'.rstrip('0').rstrip('.')
+    return f'{x}{suf}'
 
 
 def etapas(t):
@@ -24,7 +28,7 @@ def etapas(t):
         if e.get('repeticoes') and e['repeticoes'] > 1:
             partes.append(f"{e['repeticoes']}×")
         if e.get('distanciaKm'):
-            partes.append(f"{e['distanciaKm']} km")
+            partes.append(f"{v(e['distanciaKm'])} km")
         if e.get('duracaoMin'):
             partes.append(f"{e['duracaoMin']} min")
         if e.get('ritmoAlvo'):
