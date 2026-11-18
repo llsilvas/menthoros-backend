@@ -89,15 +89,17 @@ class LlmRoutingPropertiesTest {
         }
 
         @Test
-        @DisplayName("application.yml real define temperatura 0.2 na rota expert (deep-reasoning determinístico)")
+        @DisplayName("application.yml real: rota expert em gpt-6-luna com reasoning medium e sem temperatura")
         void temperaturaExpertNoYmlReal() {
             new ApplicationContextRunner()
                     .withInitializer(new org.springframework.boot.test.context.ConfigDataApplicationContextInitializer())
                     .withUserConfiguration(TestConfig.class)
                     .run(ctx -> {
                         LlmRoutingProperties props = ctx.getBean(LlmRoutingProperties.class);
-                        assertThat(props.getExpert().getModel()).isEqualTo("gpt-4o");
-                        assertThat(props.getExpert().getTemperature()).isEqualTo(0.2);
+                        // migrate-openai-retired-models: com reasoning a API rejeita temperature (D1)
+                        assertThat(props.getExpert().getModel()).isEqualTo("gpt-6-luna");
+                        assertThat(props.getExpert().getReasoningEffort()).isEqualTo("medium");
+                        assertThat(props.getExpert().getTemperature()).isNull();
                     });
         }
 
