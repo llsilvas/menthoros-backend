@@ -40,7 +40,8 @@ public class AtletaHojeResolver {
         return LocalDateTime.now(clock.withZone(fusoDe(atleta)));
     }
 
-    private ZoneId fusoDe(Atleta atleta) {
+    /** Fuso do atleta, com o padrão do produto quando ausente ou inválido. Estático: o persister de FIT o usa sem relógio. */
+    static ZoneId fusoDe(Atleta atleta) {
         String timezone = atleta != null ? atleta.getTimezone() : null;
         if (timezone == null || timezone.isBlank()) {
             return FUSO_PADRAO;

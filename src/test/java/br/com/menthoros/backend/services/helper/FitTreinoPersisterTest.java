@@ -71,6 +71,37 @@ class FitTreinoPersisterTest {
         TenantContext.clear();
     }
 
+    @org.junit.jupiter.api.Nested
+    @org.junit.jupiter.api.DisplayName("data do treino no fuso do atleta")
+    class DataNoFusoDoAtleta {
+
+        // 2026-11-16T02:30:00Z = 2026-11-15 23:30 em São Paulo
+        private static final long NOITE_DE_DOMINGO = java.time.Instant.parse("2026-11-16T02:30:00Z").getEpochSecond();
+
+        @org.junit.jupiter.api.Test
+        @org.junit.jupiter.api.DisplayName("treino noturno em São Paulo (fuso padrão) fica no dia em que foi corrido (CA1)")
+        void noturnoFicaNoDia() {
+            assertThat(dataSalva(NOITE_DE_DOMINGO)).isEqualTo(LocalDate.of(2026, 11, 15));
+        }
+
+        @org.junit.jupiter.api.Test
+        @org.junit.jupiter.api.DisplayName("atleta com outro fuso usa o fuso dele (CA2)")
+        void usaFusoDoAtleta() {
+            when(atleta.getTimezone()).thenReturn("Europe/Lisbon");
+            assertThat(dataSalva(NOITE_DE_DOMINGO)).isEqualTo(LocalDate.of(2026, 11, 16));
+        }
+
+        private LocalDate dataSalva(long startEpoch) {
+            when(atletaRepository.findByIdAndTenantId(atletaId, tenantId)).thenReturn(java.util.Optional.of(atleta));
+            when(ingestaoTreinoRealizadoService.registrar(any(), anyString()))
+                    .thenAnswer(inv -> new TreinoDedupHelper.SaveResult(inv.getArgument(0), true));
+            service.persistir(atletaId, sessionCorrida(1L, startEpoch), null);
+            ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
+            verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
+            return captor.getValue().getDataTreino();
+        }
+    }
+
     private FitSessionData sessionCorrida(Long serial, long startEpoch) {
         return new FitSessionData(serial, LocalDate.of(2026, 7, 1), startEpoch,
                 Duration.ofMinutes(30), 5.0, 150, 175, 62, true, "RUNNING",
@@ -161,7 +192,9 @@ class FitTreinoPersisterTest {
             ArgumentCaptor<TreinoRealizado> captor = ArgumentCaptor.forClass(TreinoRealizado.class);
             verify(ingestaoTreinoRealizadoService).registrar(captor.capture(), anyString());
             TreinoRealizado salvo = captor.getValue();
-            assertThat(salvo.getDataTreino()).isEqualTo(LocalDate.of(2026, 7, 1));
+            // fix-fit-import-athlete-timezone: a data sai do início da sessão (1751360400 = 2025-07-01T09:00Z) no fuso
+            // do atleta, não do LocalDate que o parser calculou no fuso da JVM
+            assertThat(salvo.getDataTreino()).isEqualTo(LocalDate.of(2025, 7, 1));
             assertThat(salvo.getFcMedia()).isEqualTo(150);
             assertThat(salvo.getTssCalculado()).isEqualTo(62);
             assertThat(salvo.getMetodoCalculoTss()).isEqualTo("DISPOSITIVO");
