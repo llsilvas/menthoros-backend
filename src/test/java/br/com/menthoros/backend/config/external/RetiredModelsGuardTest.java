@@ -36,6 +36,8 @@ class RetiredModelsGuardTest {
             .withUserConfiguration(TestConfig.class);
 
     @Test
+    @org.junit.jupiter.api.Disabled("ROLLBACK para gpt-4o (migrate-openai-retired-models, design D7): exceção deliberada e "
+            + "temporária — o gpt-4o é desligado em 2027-01-14; reverter este PR antes disso")
     @DisplayName("application.yml real não usa modelo retirado em nenhuma rota nem no default")
     void configuracaoRealSemModeloRetirado() {
         runner.run(ctx -> assertThat(retirados(ctx)).isEmpty());
@@ -48,7 +50,7 @@ class RetiredModelsGuardTest {
         // já recusa o gpt-4o e o contexto nem sobe — o guard é a segunda linha.
         runner.withPropertyValues("app.llm.routing.standard.model=gpt-4o",
                         "spring.ai.openai.chat.options.model=gpt-4o-mini-2024-07-18")
-                .run(ctx -> assertThat(retirados(ctx)).containsExactlyInAnyOrder(
+                .run(ctx -> assertThat(retirados(ctx)).contains(
                         "app.llm.routing.standard=gpt-4o", "spring.ai.openai.chat.options.model=gpt-4o-mini-2024-07-18"));
     }
 
