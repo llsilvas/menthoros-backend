@@ -112,8 +112,7 @@ spring:
       api-key: ${OPENAI_API_KEY}
       chat:
         options:
-          # Sucessor do gpt-4o (retirado em 2027-01-14) — migrate-openai-retired-models, "Decisão do bake-off".
-          model: gpt-6-luna
+          model: gpt-4o
           max-completion-tokens: 12000
       embedding:
         options:
@@ -283,9 +282,7 @@ app:
     # (~80s); recalibrar com o Timer por rota do CostTrackingAdvisor.
     routing:
       simple:            # tradução, extração, classificação simples
-        model: gpt-6-luna
-        # none mantém a amostragem clássica (temperatura aceita); revisão cega das traduções: 26/40
-        reasoning-effort: none
+        model: gpt-4o-mini
         temperature: 0.3
         max-tokens: 1000
         timeout: 20s
@@ -300,16 +297,15 @@ app:
         max-tokens: 4000
         timeout: 45s
       expert:            # deep-reasoning: lesões, casos clínicos
-        model: gpt-6-luna
-        # Com reasoning a API rejeita temperature/top_p; o esforço substitui o 0.2 do gpt-4o.
-        reasoning-effort: medium
+        model: gpt-4o
+        # 0.2 (era 0.8): raciocínio especialista/clínico pede determinismo;
+        # 0.8 era semântica de geração criativa, invertida para esta rota.
+        temperature: 0.2
         max-tokens: 8000
         timeout: 90s
       plano:             # geração de plano semanal — fluxo mais caro e crítico
-        model: gpt-6-luna
-        # medium: melhor qualidade no bake-off e na revisão cega (CA4b, 12 × 3); 30–35 s por plano,
-        # dentro do timeout. max-tokens inclui os tokens de reasoning (~3,5k de saída medidos).
-        reasoning-effort: medium
+        model: gpt-4o
+        temperature: 0.2
         max-tokens: 12000
         timeout: 120s
     # Template estático (system) da geração de plano (system-user-prompt-split, F1). Lido pelo
