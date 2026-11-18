@@ -225,10 +225,23 @@ public class NormalizacaoDeTreino {
         return mapa;
     }
 
-    private static Receita receita(List<Passo> cabeca, List<Passo> cauda) {
-        List<Passo> todos = new ArrayList<>(cabeca);
+    private Receita receita(List<Passo> cabeca, List<Passo> cauda) {
+        // validar-ritmo-etapa-contra-zona: sanidade das faixas antes de qualquer derivação de distância
+        List<Passo> todos = new ArrayList<>(List.of(new Passo("sanear-ritmos", this::sanearRitmos)));
+        todos.addAll(cabeca);
         todos.addAll(cauda);
         return new Receita(todos);
+    }
+
+    private TreinoPlanejadoLlmDto sanearRitmos(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
+        TreinoPlanejadoLlmDto saneado = Objects.equals(paceValidator.sanear(treino.ritmoAlvo()), treino.ritmoAlvo())
+                ? treino : treino.comRitmo(paceValidator.sanear(treino.ritmoAlvo()));
+        if (saneado.etapas() == null || saneado.etapas().isEmpty()) return saneado;
+        List<EtapaTreinoLlmDto> etapas = saneado.etapas().stream()
+                .map(e -> Objects.equals(paceValidator.sanear(e.ritmoAlvo()), e.ritmoAlvo())
+                        ? e : e.comRitmo(paceValidator.sanear(e.ritmoAlvo())))
+                .toList();
+        return etapas.equals(saneado.etapas()) ? saneado : saneado.comEtapas(etapas);
     }
 
     /** Passo de validação: executa a checagem (que lança em violação) e devolve o treino intacto. */

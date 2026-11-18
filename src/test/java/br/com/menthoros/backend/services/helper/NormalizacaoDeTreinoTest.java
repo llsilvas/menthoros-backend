@@ -279,6 +279,20 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
+        @DisplayName("ritmo absurdo da PRINCIPAL é descartado e a distância sai do ritmo do treino (validar-ritmo, S4)")
+        void ritmoAbsurdoDescartado() {
+            var treino = continuo("6.0", "45:00", "6:00-6:30/km",
+                    etapa("AQUECIMENTO", 10, 0.0, null),
+                    etapa("PRINCIPAL", 30, 5.5, "70:00-60:00/km"),
+                    etapa("DESAQUECIMENTO", 5, 0.5, null));
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            assertThat(resultado.etapas().get(1).ritmoAlvo()).isNull();
+            assertThat(resultado.etapas().get(1).distanciaKm()).isEqualTo(4.8); // 30 ÷ 6,25
+        }
+
+        @Test
         @DisplayName("PRINCIPAL sem ritmo usa o ritmo do treino: distância pelo pace e total = soma das etapas")
         void principalSemRitmoUsaRitmoDoTreino() {
             // fix-total-treino-soma-etapas (CA1): antes a PRINCIPAL ficava com os 5,5 km da LLM e o total de 6,0
@@ -718,9 +732,9 @@ class NormalizacaoDeTreinoTest {
                     .filter(e -> e.getLevel() == Level.DEBUG)
                     .map(ILoggingEvent::getFormattedMessage)
                     .toList();
-            assertThat(debug).hasSize(6); // um por passo da cauda comum
+            assertThat(debug).hasSize(7); // sanear-ritmos + um por passo da cauda comum
             assertThat(debug).allSatisfy(m -> assertThat(m).contains("familia=PADRAO").contains("alterou=false"));
-            assertThat(debug.get(3)).contains("passo=recalcular-duracao");
+            assertThat(debug.get(4)).contains("passo=recalcular-duracao");
         }
 
         @Test
