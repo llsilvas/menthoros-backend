@@ -69,6 +69,48 @@ class PlanGenerationPersisterDescansoTest {
         assertThat(plano.getRestDaysOuVazio()).isEmpty();
     }
 
+    @Test
+    @DisplayName("garantir-cobertura-sete-dias-plano: dia sem treino nem descanso vira descanso explícito (CA1)")
+    void completaDiasSemDeclaracao() {
+        PlanoSemanal plano = new PlanoSemanal();
+        plano.setRestDays(new ArrayList<>(List.of(new RestDay("QUINTA", "check-in de hoje: DESCANSAR"))));
+        var segunda = java.time.LocalDate.of(2026, 11, 16);
+
+        persister.completarDescansos(plano, List.of(treino("SEGUNDA"), treino("QUARTA"), treino("SEXTA"),
+                treino("SABADO")), segunda, segunda.plusDays(6));
+
+        assertThat(plano.getRestDaysOuVazio()).extracting(RestDay::dayOfWeek)
+                .containsExactlyInAnyOrder("QUINTA", "TERCA", "DOMINGO");
+        assertThat(plano.getRestDaysOuVazio()).filteredOn(d -> "TERCA".equals(d.dayOfWeek()))
+                .extracting(RestDay::reason).containsExactly(PlanGenerationPersister.MOTIVO_SEM_PRESCRICAO);
+    }
+
+    @Test
+    @DisplayName("semana toda coberta fica intacta (CA2)")
+    void semanaCobertaNaoMexe() {
+        PlanoSemanal plano = new PlanoSemanal();
+        var descansos = List.of(new RestDay("DOMINGO", "folga"));
+        plano.setRestDays(new ArrayList<>(descansos));
+        var segunda = java.time.LocalDate.of(2026, 11, 16);
+
+        persister.completarDescansos(plano, List.of(treino("SEGUNDA"), treino("TERCA"), treino("QUARTA"),
+                treino("QUINTA"), treino("SEXTA"), treino("SABADO")), segunda, segunda.plusDays(6));
+
+        assertThat(plano.getRestDaysOuVazio()).isEqualTo(descansos);
+    }
+
+    @Test
+    @DisplayName("semana atual parcial: só os dias do período do plano são completados")
+    void soDiasDoPeriodo() {
+        PlanoSemanal plano = new PlanoSemanal();
+        var quinta = java.time.LocalDate.of(2026, 11, 19);
+
+        persister.completarDescansos(plano, List.of(treino("SABADO")), quinta, quinta.plusDays(3));
+
+        assertThat(plano.getRestDaysOuVazio()).extracting(RestDay::dayOfWeek)
+                .containsExactlyInAnyOrder("QUINTA", "SEXTA", "DOMINGO");
+    }
+
     private static TreinoPlanejadoLlmDto treino(String dia) {
         return new TreinoPlanejadoLlmDto(dia, "CONTINUO", null, null, null, null, null, null, null, null, List.of());
     }
