@@ -136,12 +136,20 @@ class ZonaTreinoServiceTest {
         void paceLimiar5_valoresAbsolutos() {
             List<ZonaTreinoService.ZonaPace> zonas = service.calcularZonasPace(new BigDecimal("5.00"));
 
-            assertThat(zonas.get(2).paceMin()).isEqualByComparingTo("5.00");
-            assertThat(zonas.get(2).paceMax()).isEqualByComparingTo("5.25");
-            assertThat(zonas.get(3).paceMin()).isEqualByComparingTo("4.75");
-            assertThat(zonas.get(3).paceMax()).isEqualByComparingTo("5.00");
+            // Friel (revalidar-fatores-pace-zonas): Z1 6:27–7:00 · Z2 5:39–6:27 · Z3 5:15–5:39 · Z4 4:57–5:15
+            // · Z5 4:30–4:57 · Z6 4:06–4:30
+            assertThat(zonas.get(0).paceMin()).isEqualByComparingTo("6.45");
+            assertThat(zonas.get(0).paceMax()).isEqualByComparingTo("7.00");
+            assertThat(zonas.get(1).paceMin()).isEqualByComparingTo("5.65");
+            assertThat(zonas.get(1).paceMax()).isEqualByComparingTo("6.45");
+            assertThat(zonas.get(2).paceMin()).isEqualByComparingTo("5.25");
+            assertThat(zonas.get(2).paceMax()).isEqualByComparingTo("5.65");
+            assertThat(zonas.get(3).paceMin()).isEqualByComparingTo("4.95");
+            assertThat(zonas.get(3).paceMax()).isEqualByComparingTo("5.25");
             assertThat(zonas.get(4).paceMin()).isEqualByComparingTo("4.50");
-            assertThat(zonas.get(4).paceMax()).isEqualByComparingTo("4.75");
+            assertThat(zonas.get(4).paceMax()).isEqualByComparingTo("4.95");
+            assertThat(zonas.get(5).paceMin()).isEqualByComparingTo("4.10");
+            assertThat(zonas.get(5).paceMax()).isEqualByComparingTo("4.50");
         }
     }
 }
