@@ -3,7 +3,6 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.domain.planner.LoadTargetResolver;
 import br.com.menthoros.backend.domain.planner.SeasonPlanValidator;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner;
-import br.com.menthoros.backend.domain.planner.RacePreparationRule;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.RaceMilestone;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.SeasonPlan;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.WeekPlan;
@@ -18,7 +17,6 @@ import br.com.menthoros.backend.entity.SeasonWeek;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.ProvaStatus;
-import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
 import br.com.menthoros.backend.enums.WeekValueSource;
 import br.com.menthoros.backend.exception.DomainConflictException;
@@ -278,17 +276,9 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
     private List<RaceMilestone> preparatorias(UUID atletaId, UUID tenantId, Prova alvo, LocalDate hoje) {
         return provaRepository.findUpcomingByAtletaIdAndTenantId(atletaId, tenantId, hoje).stream()
                 .filter(p -> !p.isProvaAlvo() && !alvo.getId().equals(p.getId()) && p.getDataProva() != null)
-                .map(p -> new RaceMilestone(p.getId(), p.getDataProva(), distanciaKm(p)))
+                .map(p -> new RaceMilestone(p.getId(), p.getDataProva(), Objects.requireNonNullElse(
+                        SeasonPlanner.distanciaEfetivaKm(p.getDistancia(), p.getDistanciaKm()), BigDecimal.ZERO)))
                 .toList();
-    }
-
-    private static BigDecimal distanciaKm(Prova p) {
-        if (p.getDistanciaKm() != null) {
-            return p.getDistanciaKm();
-        }
-        return p.getDistancia() == null || p.getDistancia() == DistanciaProva.CUSTOMIZADA
-                ? BigDecimal.ZERO
-                : RacePreparationRule.distanciaNominalKm(p.getDistancia());
     }
 
     private static SeasonWeek novaSemana(PlanoTreino temporada, UUID tenantId, WeekPlan w) {
@@ -317,7 +307,8 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         List<SeasonPlanResponseDto.Validation> validations = prova == null || prova.getDataProva() == null
                 ? List.of()
                 : SeasonPlanValidator.validate(weeks.stream().map(SeasonPlanServiceImpl::comoSemana).toList(),
-                                prova.getDataProva()).stream()
+                                prova.getDataProva(),
+                                SeasonPlanner.distanciaEfetivaKm(prova.getDistancia(), prova.getDistanciaKm())).stream()
                         .map(a -> new SeasonPlanResponseDto.Validation(a.rule(), SEVERITY_WARN, a.weekIndex(),
                                 a.measured(), a.limit(), a.message()))
                         .toList();
@@ -344,24 +335,31 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
                 validations);
     }
 
-    /** Marcos das semanas (T2): prova cancelada, excluída ou de outra assessoria sai da lista. */
+    /**
+     * Marcos das semanas (T2): prova cancelada, excluída ou de outra assessoria sai da lista, e também a
+     * remarcada para fora da semana gravada — até a proposta ser regerada.
+     */
     private List<SeasonPlanResponseDto.Milestone> marcos(List<SeasonWeek> weeks, UUID tenantId) {
         List<UUID> ids = weeks.stream().map(SeasonWeek::getMilestoneRaceId).filter(Objects::nonNull).toList();
         if (ids.isEmpty()) {
             return List.of();
         }
-        Map<UUID, Prova> provas = provaRepository.findAllById(ids).stream()
-                .filter(pr -> pr.getAssessoria() != null && tenantId.equals(pr.getAssessoria().getId()))
+        Map<UUID, Prova> provas = provaRepository.findByIdInAndAssessoriaId(ids, tenantId).stream()
                 .filter(pr -> pr.getStatusProva() != ProvaStatus.CANCELADA)
                 .collect(Collectors.toMap(Prova::getId, pr -> pr));
         return weeks.stream()
                 .filter(w -> w.getMilestoneRaceId() != null && provas.containsKey(w.getMilestoneRaceId()))
+                .filter(w -> naSemana(provas.get(w.getMilestoneRaceId()).getDataProva(), w.getWeekStart()))
                 .map(w -> {
                     Prova pr = provas.get(w.getMilestoneRaceId());
                     return new SeasonPlanResponseDto.Milestone(w.getWeekIndex(), pr.getId(), pr.getNomeProva(),
                             pr.getDataProva(), pr.getDistancia());
                 })
                 .toList();
+    }
+
+    private static boolean naSemana(@Nullable LocalDate data, LocalDate weekStart) {
+        return data != null && !data.isBefore(weekStart) && data.isBefore(weekStart.plusWeeks(1));
     }
 
     private static WeekPlan comoSemana(SeasonWeek w) {

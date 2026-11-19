@@ -57,6 +57,7 @@ public final class SeasonPlanner {
     private static final double DELOAD_FACTOR = 0.80;
     private static final BigDecimal LONG_RUN_SHARE = new BigDecimal("0.28");
     private static final BigDecimal LONG_RUN_DELOAD_FACTOR = new BigDecimal("0.75");
+    private static final BigDecimal MAX_LONG_RUN_KM = BigDecimal.valueOf(32);
 
     private SeasonPlanner() {
     }
@@ -142,7 +143,10 @@ public final class SeasonPlanner {
                 }
                 @Nullable UUID marco = marcoDaSemana(preparatorias, weekStart, dataProva);
                 boolean subindo = fase == BASE || fase == BUILD;
-                boolean devida = subindo && (++baseEConstrucao % DELOAD_EVERY == 0 || descargaAdiada);
+                if (subindo) {
+                    baseEConstrucao++;
+                }
+                boolean devida = subindo && (baseEConstrucao % DELOAD_EVERY == 0 || descargaAdiada);
                 boolean deload = devida && marco == null;
                 descargaAdiada = devida && marco != null;
                 if (deload) {
@@ -205,11 +209,22 @@ public final class SeasonPlanner {
         return longao.setScale(1, RoundingMode.HALF_UP);
     }
 
-    private static BigDecimal tetoLongao(DistanciaProva distancia, @Nullable BigDecimal distanciaKm) {
-        if (distanciaKm == null && distancia == DistanciaProva.CUSTOMIZADA) {
-            return BigDecimal.valueOf(32);
+    /** {@code distanciaKm} informada ou a nominal da categoria; nula para CUSTOMIZADA sem km. */
+    public static @Nullable BigDecimal distanciaEfetivaKm(@Nullable DistanciaProva distancia,
+                                                          @Nullable BigDecimal distanciaKm) {
+        if (distanciaKm != null) {
+            return distanciaKm;
         }
-        BigDecimal km = distanciaKm != null ? distanciaKm : RacePreparationRule.distanciaNominalKm(distancia);
+        return distancia == null || distancia == DistanciaProva.CUSTOMIZADA
+                ? null
+                : RacePreparationRule.distanciaNominalKm(distancia);
+    }
+
+    private static BigDecimal tetoLongao(DistanciaProva distancia, @Nullable BigDecimal distanciaKm) {
+        BigDecimal km = distanciaEfetivaKm(distancia, distanciaKm);
+        if (km == null) {
+            return MAX_LONG_RUN_KM;
+        }
         if (km.compareTo(new BigDecimal("5.5")) <= 0) {
             return BigDecimal.valueOf(12);
         }
@@ -219,7 +234,7 @@ public final class SeasonPlanner {
         if (km.compareTo(new BigDecimal("21.5")) <= 0) {
             return BigDecimal.valueOf(21);
         }
-        return BigDecimal.valueOf(32);
+        return MAX_LONG_RUN_KM;
     }
 
     private static LocalDate segunda(LocalDate data) {

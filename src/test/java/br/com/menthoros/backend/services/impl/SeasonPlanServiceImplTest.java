@@ -414,7 +414,7 @@ class SeasonPlanServiceImplTest {
         }
 
         @Test
-        @DisplayName("marcos de prova cancelada saem; validações recalculadas na leitura")
+        @DisplayName("marcos de prova cancelada ou remarcada para outra semana saem; validações recalculadas na leitura")
         void marcosEValidacoesNaLeitura() {
             atletaExiste();
             Prova alvo = provaAlvo(PROVA_20_SEMANAS);
@@ -427,10 +427,15 @@ class SeasonPlanServiceImplTest {
             Prova cancelada = provaAlvo(HOJE.plusDays(13));
             cancelada.setProvaAlvo(false);
             cancelada.setStatusProva(br.com.menthoros.backend.enums.ProvaStatus.CANCELADA);
+            Prova remarcada = provaAlvo(HOJE.plusDays(30));
+            remarcada.setProvaAlvo(false);
             when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(ativa.getId(), tenantId))
                     .thenReturn(List.of(semanaGravada(1, "72", "34", meia.getId()),
-                            semanaGravada(2, "70", "20", cancelada.getId())));
-            when(provaRepository.findAllById(any())).thenReturn(List.of(meia, cancelada));
+                            semanaGravada(2, "70", "20", cancelada.getId()),
+                            semanaGravada(3, "70", "20", remarcada.getId())));
+            when(provaRepository.findByIdInAndAssessoriaId(
+                    List.of(meia.getId(), cancelada.getId(), remarcada.getId()), tenantId))
+                    .thenReturn(List.of(meia, cancelada, remarcada));
 
             SeasonPlanResponseDto atual = service.findCurrent(atleta.getId()).orElseThrow();
 
@@ -456,7 +461,7 @@ class SeasonPlanServiceImplTest {
 
             assertThat(atual.milestones()).isEmpty();
             assertThat(atual.validations()).isEmpty();
-            verify(provaRepository, never()).findAllById(any());
+            verify(provaRepository, never()).findByIdInAndAssessoriaId(any(), any());
         }
 
         @Test
