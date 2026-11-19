@@ -36,6 +36,8 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -57,6 +59,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -75,6 +78,7 @@ class SeasonPlanServiceImplTest {
     @Mock private AthleteBaselineStateRepository baselineRepository;
     @Mock private PerfilOnboardingAtletaRepository perfilRepository;
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
+    @Captor private ArgumentCaptor<List<SeasonWeek>> semanasCaptor;
 
     private SeasonPlanServiceImpl service;
     private UUID tenantId;
@@ -241,13 +245,41 @@ class SeasonPlanServiceImplTest {
 
             List<SeasonPlanResponseDto.Week> semanas = resultado.plan().weeks();
             assertThat(semanas).hasSize(20);
-            assertThat(semanas).allSatisfy(s -> {
-                assertThat(s.valueSource()).isEqualTo(WeekValueSource.ENGINE);
-                assertThat(s.deload()).isFalse();
-                assertThat(s.longRunKm()).isNull();
-            });
+            assertThat(semanas).allSatisfy(s -> assertThat(s.valueSource()).isEqualTo(WeekValueSource.ENGINE));
+            // descarga e longão do motor chegam à resposta (T4)
+            assertThat(semanas).filteredOn(SeasonPlanResponseDto.Week::deload).isNotEmpty();
+            assertThat(semanas.get(0).longRunKm()).isNotNull();
+            assertThat(semanas.get(19).longRunKm()).isNull();
+            assertThat(resultado.plan().milestones()).isEmpty();
+            assertThat(resultado.plan().validations()).isEmpty();
             assertThat(semanas.get(19).phase()).isEqualTo(TrainingPhase.RACE_WEEK);
             assertThat(resultado.plan().peakVolumeKm()).isEqualByComparingTo(salvo.getPeakVolumeKm());
+        }
+
+        @Test
+        @DisplayName("prova preparatória grava o marco da semana; a alvo não vira marco; candidatas lidas depois do lock")
+        void gravaMarcoDaPreparatoria() {
+            atletaExiste();
+            Prova alvo = provaTravada(provaAlvo(PROVA_20_SEMANAS));
+            abertas();
+            pmc(40.0, HOJE, HOJE.minusDays(100));
+            treinos(treino(HOJE.minusDays(3), "40"));
+            Prova meia = provaAlvo(HOJE.plusWeeks(5).plusDays(6));
+            meia.setProvaAlvo(false);
+            meia.setDistancia(DistanciaProva.KM_21);
+            when(provaRepository.findUpcomingByAtletaIdAndTenantId(atleta.getId(), tenantId, HOJE))
+                    .thenReturn(List.of(meia, alvo));
+            when(planoTreinoRepository.save(any(PlanoTreino.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            service.generate(atleta.getId());
+
+            verify(seasonWeekRepository).saveAll(semanasCaptor.capture());
+            assertThat(semanasCaptor.getValue()).filteredOn(w -> w.getMilestoneRaceId() != null)
+                    .extracting(SeasonWeek::getWeekIndex, SeasonWeek::getMilestoneRaceId)
+                    .containsExactly(org.assertj.core.groups.Tuple.tuple(6, meia.getId()));
+            InOrder ordem = inOrder(provaRepository);
+            ordem.verify(provaRepository).findByIdAndTenantIdForUpdate(alvo.getId(), tenantId);
+            ordem.verify(provaRepository).findUpcomingByAtletaIdAndTenantId(atleta.getId(), tenantId, HOJE);
         }
 
         @Test
@@ -382,6 +414,57 @@ class SeasonPlanServiceImplTest {
         }
 
         @Test
+        @DisplayName("marcos de prova cancelada ou remarcada para outra semana saem; validações recalculadas na leitura")
+        void marcosEValidacoesNaLeitura() {
+            atletaExiste();
+            Prova alvo = provaAlvo(PROVA_20_SEMANAS);
+            PlanoTreino ativa = temporada(alvo, SeasonPlanStatus.ACTIVE);
+            abertas(ativa);
+            Prova meia = provaAlvo(HOJE.plusDays(6));
+            meia.setProvaAlvo(false);
+            meia.setNomeProva("Meia de teste");
+            meia.setDistancia(DistanciaProva.KM_21);
+            Prova cancelada = provaAlvo(HOJE.plusDays(13));
+            cancelada.setProvaAlvo(false);
+            cancelada.setStatusProva(br.com.menthoros.backend.enums.ProvaStatus.CANCELADA);
+            Prova remarcada = provaAlvo(HOJE.plusDays(30));
+            remarcada.setProvaAlvo(false);
+            when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(ativa.getId(), tenantId))
+                    .thenReturn(List.of(semanaGravada(1, "72", "34", meia.getId()),
+                            semanaGravada(2, "70", "20", cancelada.getId()),
+                            semanaGravada(3, "70", "20", remarcada.getId())));
+            when(provaRepository.findByIdInAndAssessoriaId(
+                    List.of(meia.getId(), cancelada.getId(), remarcada.getId()), tenantId))
+                    .thenReturn(List.of(meia, cancelada, remarcada));
+
+            SeasonPlanResponseDto atual = service.findCurrent(atleta.getId()).orElseThrow();
+
+            assertThat(atual.milestones()).extracting(SeasonPlanResponseDto.Milestone::weekIndex,
+                            SeasonPlanResponseDto.Milestone::provaId, SeasonPlanResponseDto.Milestone::name)
+                    .containsExactly(org.assertj.core.groups.Tuple.tuple(1, meia.getId(), "Meia de teste"));
+            assertThat(atual.validations()).extracting(SeasonPlanResponseDto.Validation::rule,
+                            SeasonPlanResponseDto.Validation::weekIndex, SeasonPlanResponseDto.Validation::severity)
+                    .containsExactly(org.assertj.core.groups.Tuple.tuple(
+                            br.com.menthoros.backend.domain.planner.SeasonPlanValidator.Rule.LONG_RUN_SHARE, 1, "WARN"));
+        }
+
+        @Test
+        @DisplayName("sem marco não consulta provas e devolve listas vazias")
+        void semMarcoListasVazias() {
+            atletaExiste();
+            PlanoTreino ativa = temporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.ACTIVE);
+            abertas(ativa);
+            when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(ativa.getId(), tenantId))
+                    .thenReturn(List.of(semanaGravada(1, "40", "11", null)));
+
+            SeasonPlanResponseDto atual = service.findCurrent(atleta.getId()).orElseThrow();
+
+            assertThat(atual.milestones()).isEmpty();
+            assertThat(atual.validations()).isEmpty();
+            verify(provaRepository, never()).findByIdInAndAssessoriaId(any(), any());
+        }
+
+        @Test
         @DisplayName("sem temporada aberta devolve vazio")
         void semTemporada() {
             atletaExiste();
@@ -450,6 +533,19 @@ class SeasonPlanServiceImplTest {
         prova.setAtleta(atleta);
         prova.setAssessoria(atleta.getAssessoria());
         return prova;
+    }
+
+    private static SeasonWeek semanaGravada(int indice, String km, String longao, UUID marco) {
+        SeasonWeek w = new SeasonWeek();
+        w.setWeekIndex(indice);
+        w.setWeekStart(HOJE.plusWeeks(indice - 1L));
+        w.setPhase(br.com.menthoros.backend.domain.planner.TrainingPhase.BASE);
+        w.setTargetVolumeKm(new BigDecimal(km));
+        w.setTargetTss(300.0);
+        w.setLongRunKm(new BigDecimal(longao));
+        w.setMilestoneRaceId(marco);
+        w.setValueSource(WeekValueSource.ENGINE);
+        return w;
     }
 
     private PlanoTreino temporada(Prova prova, SeasonPlanStatus status) {

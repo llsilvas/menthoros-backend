@@ -139,6 +139,38 @@ class SeasonPlanIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("prova preparatória vira marco; POST e GET devolvem os mesmos marcos e validações")
+    void marcosEValidacoesIdaEVolta() throws Exception {
+        String base = "/api/v1/atletas/" + atleta.getId() + "/season-plans";
+        UUID meiaId = tx.execute(s -> {
+            Prova meia = new SeasonPlanFixtures(em).prova(em.find(Atleta.class, atleta.getId()));
+            meia.setNomeProva("Meia preparatória");
+            meia.setDistancia(br.com.menthoros.backend.enums.DistanciaProva.KM_21);
+            meia.setDataProva(LocalDate.now(FUSO).plusWeeks(6));
+            meia.setProvaAlvo(false);
+            return meia.getId();
+        });
+
+        String criada = mockMvc.perform(post(base).with(como(subTecnico, tenantId, "TECNICO")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.milestones.length()").value(1))
+                .andExpect(jsonPath("$.milestones[0].provaId").value(meiaId.toString()))
+                .andExpect(jsonPath("$.validations").isArray())
+                .andReturn().getResponse().getContentAsString();
+        String lida = mockMvc.perform(get(base + "/current").with(como(subTecnico, tenantId, "TECNICO")))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        assertThat((Object) com.jayway.jsonpath.JsonPath.read(lida, "$.milestones"))
+                .isEqualTo(com.jayway.jsonpath.JsonPath.read(criada, "$.milestones"));
+        assertThat((Object) com.jayway.jsonpath.JsonPath.read(lida, "$.validations"))
+                .isEqualTo(com.jayway.jsonpath.JsonPath.read(criada, "$.validations"));
+        assertThat(jdbc.queryForObject(
+                "select count(*) from tb_season_week where milestone_race_id = ?", Integer.class, meiaId))
+                .isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("ATLETA recebe 403 em gerar e ler")
     void atletaProibido() throws Exception {
         String base = "/api/v1/atletas/" + atleta.getId() + "/season-plans";

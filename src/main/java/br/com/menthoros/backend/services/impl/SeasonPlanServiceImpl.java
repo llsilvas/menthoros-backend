@@ -1,7 +1,9 @@
 package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.domain.planner.LoadTargetResolver;
+import br.com.menthoros.backend.domain.planner.SeasonPlanValidator;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner;
+import br.com.menthoros.backend.domain.planner.SeasonPlanner.RaceMilestone;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.SeasonPlan;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.WeekPlan;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
@@ -48,9 +50,12 @@ import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Gera e lê o plano de temporada (add-season-plan-generate-tracer). O cálculo vive no
@@ -67,6 +72,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
     private static final double CTL_TIME_CONSTANT_DAYS = 42.0;
     private static final int VOLUME_WINDOW_WEEKS = 4;
     private static final int NOME_MAX = 100;
+    private static final String SEVERITY_WARN = "WARN";
     private static final List<SeasonPlanStatus> ABERTAS = List.of(SeasonPlanStatus.ACTIVE, SeasonPlanStatus.PROPOSED);
 
     private final AtletaRepository atletaRepository;
@@ -139,13 +145,18 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         double ctl = resolverCtl(atletaId, tenantId, hoje);
         BigDecimal volume = resolverVolume(atletaId, tenantId, hoje);
         SeasonPlan plano = SeasonPlanner.plan(prova.getDistancia(), prova.getDistanciaKm(),
-                prova.getDataProva(), hoje, ctl, volume);
+                prova.getDataProva(), hoje, ctl, volume, preparatorias(atletaId, tenantId, prova, hoje));
 
         PlanoTreino temporada = planoTreinoRepository.save(novaTemporada(atleta, prova, plano, ctl, hoje));
         List<SeasonWeek> weeks = plano.weeks().stream().map(w -> novaSemana(temporada, tenantId, w)).toList();
         seasonWeekRepository.saveAll(weeks);
+        SeasonPlanResponseDto dto = toDto(temporada, weeks, tenantId);
         log.info("Temporada gerada: id={}, semanas={}, curta={}", temporada.getId(), semanas, plano.shortPreparation());
-        return new Generation(toDto(temporada, weeks), true);
+        // Métrica T9: % de propostas com alerta, por regra.
+        log.info("season-plan.generated tenantId={} seasonPlanId={} alerts={}", tenantId, temporada.getId(),
+                dto.validations().stream().collect(Collectors.groupingBy(
+                        SeasonPlanResponseDto.Validation::rule, TreeMap::new, Collectors.counting())));
+        return new Generation(dto, true);
     }
 
     @Override
@@ -258,6 +269,18 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         return p;
     }
 
+    /**
+     * Provas preparatórias candidatas a marco (T6): futuras, não canceladas, que não são a alvo. Chamado
+     * depois do lock da alvo — carregar {@code Prova} antes deixaria a cópia travada sem reler (D13).
+     */
+    private List<RaceMilestone> preparatorias(UUID atletaId, UUID tenantId, Prova alvo, LocalDate hoje) {
+        return provaRepository.findUpcomingByAtletaIdAndTenantId(atletaId, tenantId, hoje).stream()
+                .filter(p -> !p.isProvaAlvo() && !alvo.getId().equals(p.getId()) && p.getDataProva() != null)
+                .map(p -> new RaceMilestone(p.getId(), p.getDataProva(), Objects.requireNonNullElse(
+                        SeasonPlanner.distanciaEfetivaKm(p.getDistancia(), p.getDistanciaKm()), BigDecimal.ZERO)))
+                .toList();
+    }
+
     private static SeasonWeek novaSemana(PlanoTreino temporada, UUID tenantId, WeekPlan w) {
         SeasonWeek s = new SeasonWeek();
         s.setTenantId(tenantId);
@@ -267,16 +290,28 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         s.setPhase(w.phase());
         s.setTargetVolumeKm(w.targetVolumeKm());
         s.setTargetTss(w.targetTss());
+        s.setDeload(w.deload());
+        s.setLongRunKm(w.longRunKm());
+        s.setMilestoneRaceId(w.milestoneRaceId());
         s.setValueSource(WeekValueSource.ENGINE);
         return s;
     }
 
     private SeasonPlanResponseDto toDto(PlanoTreino p, UUID tenantId) {
-        return toDto(p, seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(p.getId(), tenantId));
+        return toDto(p, seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(p.getId(), tenantId),
+                tenantId);
     }
 
-    private static SeasonPlanResponseDto toDto(PlanoTreino p, List<SeasonWeek> weeks) {
+    private SeasonPlanResponseDto toDto(PlanoTreino p, List<SeasonWeek> weeks, UUID tenantId) {
         @Nullable Prova prova = p.getProva();
+        List<SeasonPlanResponseDto.Validation> validations = prova == null || prova.getDataProva() == null
+                ? List.of()
+                : SeasonPlanValidator.validate(weeks.stream().map(SeasonPlanServiceImpl::comoSemana).toList(),
+                                prova.getDataProva(),
+                                SeasonPlanner.distanciaEfetivaKm(prova.getDistancia(), prova.getDistanciaKm())).stream()
+                        .map(a -> new SeasonPlanResponseDto.Validation(a.rule(), SEVERITY_WARN, a.weekIndex(),
+                                a.measured(), a.limit(), a.message()))
+                        .toList();
         return new SeasonPlanResponseDto(
                 p.getId(),
                 p.getSeasonStatus(),
@@ -295,6 +330,41 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
                         w.getTargetTss(),
                         w.isDeload(),
                         w.getLongRunKm(),
-                        w.getValueSource())).toList());
+                        w.getValueSource())).toList(),
+                marcos(weeks, tenantId),
+                validations);
+    }
+
+    /**
+     * Marcos das semanas (T2): prova cancelada, excluída ou de outra assessoria sai da lista, e também a
+     * remarcada para fora da semana gravada — até a proposta ser regerada.
+     */
+    private List<SeasonPlanResponseDto.Milestone> marcos(List<SeasonWeek> weeks, UUID tenantId) {
+        List<UUID> ids = weeks.stream().map(SeasonWeek::getMilestoneRaceId).filter(Objects::nonNull).toList();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, Prova> provas = provaRepository.findByIdInAndAssessoriaId(ids, tenantId).stream()
+                .filter(pr -> pr.getStatusProva() != ProvaStatus.CANCELADA)
+                .collect(Collectors.toMap(Prova::getId, pr -> pr));
+        return weeks.stream()
+                .filter(w -> w.getMilestoneRaceId() != null && provas.containsKey(w.getMilestoneRaceId()))
+                .filter(w -> naSemana(provas.get(w.getMilestoneRaceId()).getDataProva(), w.getWeekStart()))
+                .map(w -> {
+                    Prova pr = provas.get(w.getMilestoneRaceId());
+                    return new SeasonPlanResponseDto.Milestone(w.getWeekIndex(), pr.getId(), pr.getNomeProva(),
+                            pr.getDataProva(), pr.getDistancia());
+                })
+                .toList();
+    }
+
+    private static boolean naSemana(@Nullable LocalDate data, LocalDate weekStart) {
+        return data != null && !data.isBefore(weekStart) && data.isBefore(weekStart.plusWeeks(1));
+    }
+
+    private static WeekPlan comoSemana(SeasonWeek w) {
+        return new WeekPlan(w.getWeekIndex() == null ? 0 : w.getWeekIndex(), w.getWeekStart(), w.getPhase(),
+                w.getTargetVolumeKm(), w.getTargetTss() == null ? 0 : w.getTargetTss(), w.isDeload(),
+                w.getLongRunKm(), w.getMilestoneRaceId());
     }
 }

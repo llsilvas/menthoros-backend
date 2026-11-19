@@ -64,7 +64,7 @@ public class TaperStrategy {
                 .toList();
     }
 
-    private long duracaoMaximaDias(double distanciaKm) {
+    long duracaoMaximaDias(double distanciaKm) {
         if (distanciaKm <= 10.5) {
             return 7;
         }

@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -180,4 +181,7 @@ public interface ProvaRepository extends JpaRepository<Prova, UUID> {
             @Param("tenantId") UUID tenantId,
             @Param("dataMinima") LocalDate dataMinima
     );
+
+    /** Provas por id restritas à assessoria (marcos da temporada). */
+    List<Prova> findByIdInAndAssessoriaId(Collection<UUID> ids, UUID assessoriaId);
 }
