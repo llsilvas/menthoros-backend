@@ -126,4 +126,29 @@ class PaceValidatorTest {
 
         assertThat(resultado).isEqualTo(ritmoAlvo);
     }
+
+    // ======================== sanear (validar-ritmo-etapa-contra-zona) ========================
+
+    @org.junit.jupiter.params.ParameterizedTest(name = "{0} → {1}")
+    @org.junit.jupiter.params.provider.CsvSource(value = {
+            "11:00-7:00/km, 7:00-11:00/km",
+            "5:30-5:00/km, 5:00-5:30/km",
+            "00:00-00:00/km, NULL",
+            "70:00-60:00/km, NULL",
+            "20:00-20:00/km, NULL",
+            "2:00-2:10/km, NULL",
+            "6:30-7:00/km, 6:30-7:00/km",
+            "4:10, 4:10",
+            "leve, leve"
+    }, nullValues = "NULL")
+    @DisplayName("sanear desinverte faixa e descarta faixa zerada ou absurda (S1–S3)")
+    void sanear(String entrada, String esperado) {
+        assertThat(validator.sanear(entrada)).isEqualTo(esperado);
+    }
+
+    @Test
+    @DisplayName("sanear devolve null para null")
+    void sanearNull() {
+        assertThat(validator.sanear(null)).isNull();
+    }
 }

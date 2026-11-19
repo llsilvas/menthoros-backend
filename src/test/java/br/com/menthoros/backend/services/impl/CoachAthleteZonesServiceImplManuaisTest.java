@@ -115,8 +115,8 @@ class CoachAthleteZonesServiceImplManuaisTest {
             var z2 = dto.zonas().get(1);
             assertThat(z2.pace().minSegKm()).isEqualTo(320);
             assertThat(z2.pace().maxSegKm()).isEqualTo(350);
-            assertThat(z2.pacePeloLimiar().minSegKm()).isEqualTo(315);
-            assertThat(z2.pacePeloLimiar().maxSegKm()).isEqualTo(345);
+            assertThat(z2.pacePeloLimiar().minSegKm()).isEqualTo(339);
+            assertThat(z2.pacePeloLimiar().maxSegKm()).isEqualTo(387);
             assertThat(z2.fcPeloLimiar()).isNull();
             assertThat(z2.fc().min()).isEqualTo(143);
         }

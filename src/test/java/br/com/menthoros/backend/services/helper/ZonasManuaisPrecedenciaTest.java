@@ -168,7 +168,7 @@ class ZonasManuaisPrecedenciaTest {
 
             assertThat(zoneResolver.bpm(Zona.Z2, zonas)).isEqualTo(new FaixaFc(143, 150));
             assertThat(zoneResolver.pace(Zona.Z2, zonas))
-                    .isEqualTo(new FaixaPace(new BigDecimal("5.25"), new BigDecimal("5.75")));
+                    .isEqualTo(new FaixaPace(new BigDecimal("5.65"), new BigDecimal("6.45")));
         }
     }
 

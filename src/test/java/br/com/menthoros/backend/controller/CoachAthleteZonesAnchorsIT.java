@@ -132,8 +132,8 @@ class CoachAthleteZonesAnchorsIT extends AbstractIntegrationTest {
                     .andExpect(jsonPath("$.disponibilidade.pace").value(true))
                     .andExpect(jsonPath("$.ancoras.paceLimiarMinKm").value(4.83))
                     .andExpect(jsonPath("$.ancoras.fonteLimiarPace").value("TESTE_CAMPO"))
-                    .andExpect(jsonPath("$.zonas[1].pace.minSegKm").value(304))
-                    .andExpect(jsonPath("$.zonas[1].pace.maxSegKm").value(333));
+                    .andExpect(jsonPath("$.zonas[1].pace.minSegKm").value(328))
+                    .andExpect(jsonPath("$.zonas[1].pace.maxSegKm").value(374));
 
             Atleta salvo = relido();
             assertThat(salvo.getPaceLimiar()).isEqualByComparingTo("4.83");
