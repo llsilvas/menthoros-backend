@@ -56,13 +56,15 @@ public class ZonaTreinoService {
             {1.00, 1.06}, // Z5: VO2max (supralimiar — cap prático de 106%)
     };
 
-    // Pace: 6 zonas (Z6 = sprint/anaeróbico)
+    // Pace: 6 zonas em fator do pace de limiar — Friel, "Quick Guide to Setting Zones" (TrainingPeaks,
+    // © 2009), pace de corrida. Contíguas; Z1 fechada em 1,40 (Friel não dá limite lento), Z5 = Z5a+Z5b,
+    // Z6 = Z5c. Decisão em revalidar-fatores-pace-zonas (design.md).
     private static final double[][] PACE_FATORES = {
-            {1.15, 1.25}, // Z1 (mais lento = mais fácil)
-            {1.05, 1.15}, // Z2
-            {1.00, 1.05}, // Z3
-            {0.95, 1.00}, // Z4
-            {0.90, 0.95}, // Z5
+            {1.29, 1.40}, // Z1 (mais lento = mais fácil)
+            {1.13, 1.29}, // Z2
+            {1.05, 1.13}, // Z3
+            {0.99, 1.05}, // Z4 (contém o limiar)
+            {0.90, 0.99}, // Z5
             {0.82, 0.90}, // Z6 (sprint, mais rápido que VO2max)
     };
 
