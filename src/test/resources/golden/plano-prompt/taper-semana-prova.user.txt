@@ -80,7 +80,7 @@ Nenhuma prova preparatória cadastrada.
 - Esta prova SUBSTITUI o treino-chave e o longo tradicional da semana, se houver conflito.
 - Reduza o volume semanal total em 30-50% em relacao a uma semana normal desta fase.
 - Nao prescreva intervalado pesado, tiro longo ou longo estressor nas 48-72h anteriores a prova.
-- Permita no maximo 1 treino de ativacao leve e curta 24-48h antes da prova.
+- Prescreva exatamente 1 treino de ativacao 24-48h antes da prova: 20-30 min em Z1/Z2 com 4-6 aceleracoes (strides) de 20 s e recuperacao completa entre elas. Para atleta AVANCADO, pode trocar os strides por 2-3 km em ritmo de prova na quarta ou quinta.
 - O dia seguinte a prova deve ser descanso completo ou regenerativo muito leve.
 - Se houver conflito entre TSS alvo e frescor para competir, priorize frescor para a prova.
 - Diretriz do treinador: Priorize frescor, estrategia e confianca para competir bem.
@@ -293,7 +293,7 @@ Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDa
 ### 2. Treinos Regenerativos Recomendados
 **RECOMENDAÇÃO: Treinos regenerativos estruturados**
 
-- **Corrida Longa Fácil (50-70 min)**: FC = 93-111 bpm
+- **Corrida Longa Fácil (50-70 min)**: Z1
   - Base aeróbica com foco em durabilidade
 
 - **Corrida com Variações (45-60 min)**:
@@ -304,16 +304,14 @@ Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDa
 
 ### 3. Parâmetros Técnicos para Zona Z1
 **Zona Z1 (Regenerativa)**:
-- FC Alvo: 93-111 bpm (50-60% da FCMax)
-- Pace Estimado: ~7:00-7:30 /km
+- FC e pace: faixa Z1 das Zonas de Treino Calculadas do atleta (sem zonas, guie pelo RPE)
 - RPE (Escala 1-10): 2-3 (Muito Fácil)
 - Respiração: Nasal, leve, ritmo natural
 - Conversa: Conversa fácil, sem ofegância
 - Sensação: Leve, movimento fluido, sem tensão
 
 **Zona Z2 (Base Aeróbica)**:
-- FC Alvo: 111-130 bpm (60-70% da FCMax)
-- Pace Estimado: ~6:30-7:00 /km
+- FC e pace: faixa Z2 das Zonas de Treino Calculadas do atleta (sem zonas, guie pelo RPE)
 - RPE: 3-4 (Fácil com esforço moderado)
 - Respiração: Nasal predominante, ritmo controlado
 - Conversa: Conversa possível com pequenos ajustes respiratórios
