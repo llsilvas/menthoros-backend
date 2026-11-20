@@ -49,9 +49,9 @@ import static org.mockito.Mockito.when;
  * design, é isso que fecha o bloqueador original do Codex (ver design.md). Roda só sob
  * {@code -Peval}, nunca no inner loop nem no gate de PR.
  *
- * <p>Variáveis de ambiente: {@code EVAL_MODEL} (candidato, default {@code gpt-4o}),
- * {@code EVAL_JUDGE_MODEL} (juiz, default {@code gpt-4o}) e {@code EVAL_REASONING_EFFORT}
- * (opcional, aplicado ao cliente montado).
+ * <p>Variáveis de ambiente: {@code EVAL_MODEL} (candidato, default {@code gpt-6-luna}),
+ * {@code EVAL_JUDGE_MODEL} (juiz, default {@code gpt-5.2}) e {@code EVAL_REASONING_EFFORT}
+ * (candidato: default {@code medium}, o perfil da rota plano; juiz: opcional).
  */
 @Tag("eval")
 @DisplayName("EvalRunner")
@@ -127,8 +127,10 @@ class EvalRunnerTest {
         // Achado do /qa (Codex): modelo estava fixo em "gpt-4o", sem seguir app.llm.routing.plano —
         // uma mudança de modelo em produção nunca seria exercitada pelo gate. EVAL_MODEL permite
         // sobrepor; default alinhado com application.yml (app.llm.routing.plano.model).
-        String modelo = System.getenv().getOrDefault("EVAL_MODEL", "gpt-4o");
-        ChatClient chatClient = construirChatClientReal(apiKey, modelo, System.getenv("EVAL_REASONING_EFFORT"));
+        // migrate-openai-retired-models: gpt-4o sai do ar em 2027-01-14; default = perfil da rota plano
+        String modelo = System.getenv().getOrDefault("EVAL_MODEL", "gpt-6-luna");
+        String esforco = System.getenv().getOrDefault("EVAL_REASONING_EFFORT", "medium");
+        ChatClient chatClient = construirChatClientReal(apiKey, modelo, esforco);
         var llmJsonSchemaBuilder = new LlmJsonSchemaBuilder();
         var grader = construirGraderReal();
         var runner = new EvalCandidateRunner(chatClient, llmJsonSchemaBuilder, grader);
