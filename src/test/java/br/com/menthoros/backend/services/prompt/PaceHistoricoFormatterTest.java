@@ -91,6 +91,16 @@ class PaceHistoricoFormatterTest {
     // ======================== calcularTetoPorTipo ========================
 
     @Test
+    @DisplayName("teto nasce no segundo de cima: o prompt mostra o mesmo número que o checker usa (CA1)")
+    void tetoNoSegundoDeCima() {
+        // melhor 5:45 = 345 s × 0,98 = 338,1 s → 339 s = 5:39 (antes: 5,635 exibido como 5:38)
+        Map<TipoTreino, BigDecimal> tetos = formatter.calcularTetoPorTipo(List.of(criarTreino(TipoTreino.LONGO, 5, 45)));
+
+        assertThat(tetos.get(TipoTreino.LONGO)).isEqualByComparingTo(new BigDecimal("5.65"));
+        assertThat(formatter.formatarTetoPace(tetos)).contains("não mais rápido que 5:39/km");
+    }
+
+    @Test
     @DisplayName("Deve calcular teto 2% mais rápido que o melhor pace recente")
     void deveCalcularTetoPorTipo() {
         // Dado: INTERVALADO com melhor pace = 4:48/km = 288 seg

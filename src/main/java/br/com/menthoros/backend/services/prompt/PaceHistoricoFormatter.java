@@ -111,11 +111,11 @@ public class PaceHistoricoFormatter {
                     .min();
 
             melhorSeg.ifPresent(seg -> {
-                BigDecimal melhorDecimal = segundosParaDecimalMinutos(seg);
-                BigDecimal teto = melhorDecimal
-                        .multiply(BigDecimal.valueOf(FATOR_TETO))
-                        .setScale(4, RoundingMode.HALF_UP);
-                tetos.put(tipo, teto);
+                // Segundo de cima (alinhar-teto-pace-prompt-checker): o prompt mostra o teto ao segundo e o
+                // checker usa o valor exato — 5:38,1 aparecia como 5:38 e o modelo que obedecia era acusado.
+                long tetoSeg = BigDecimal.valueOf(seg).multiply(BigDecimal.valueOf(FATOR_TETO))
+                        .setScale(1, RoundingMode.HALF_UP).setScale(0, RoundingMode.CEILING).longValue();
+                tetos.put(tipo, segundosParaDecimalMinutos(tetoSeg));
             });
         });
 

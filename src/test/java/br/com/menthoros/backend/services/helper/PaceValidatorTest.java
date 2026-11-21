@@ -240,6 +240,14 @@ class PaceValidatorTest {
         }
 
         @Test
+        @DisplayName("histórico mais lento que a zona: etapa mais rápida que o teto é deslocada até ele")
+        void historicoMaisLentoDesacelera() {
+            var r = validator.validarZonaEtapa(etapa("PRINCIPAL", "4:10-4:20/km"), "CONTINUO", zonas, new BigDecimal("5.40"));
+
+            assertThat(r.ritmoAlvo()).isEqualTo("5:24-5:34/km");
+        }
+
+        @Test
         @DisplayName("teto do histórico dentro da zona limita a borda rápida")
         void tetoLimitaBordaRapida() {
             var r = validator.validarZonaEtapa(etapa("PRINCIPAL", "4:20-4:40/km"), "CONTINUO", zonas, new BigDecimal("4.50"));

@@ -316,6 +316,24 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
+        @DisplayName("aquecimento recortado no teto do histórico não é desfeito pela regra da principal")
+        void aquecimentoDesaceleradoPeloTetoFica() {
+            // Z1 ≈ 8:10–8:52; teto REGENERATIVO 8:20 → aquecimento 8:12–8:40 vira 8:20–8:40, mesmo com a principal mais lenta
+            var comZonas = new ContextoNormalizacao(ctxLeandro.atleta(), ctxLeandro.atletaId(), null,
+                    Map.of(br.com.menthoros.backend.enums.TipoTreino.REGENERATIVO, new BigDecimal("8.3333")), Map.of(),
+                    new ZonaTreinoService().zonasPace(ctxLeandro.atleta()));
+            var treino = new TreinoPlanejadoLlmDto("TERCA", "REGENERATIVO", "120-135 bpm", 40, 0.5, 3,
+                    "Regenerativo", "45:00", 5.0, "8:30-8:50/km",
+                    List.of(new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Trote", 10, 1.2, null, 1, "8:12-8:40/km"),
+                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Leve", 30, 3.4, null, 1, "8:30-8:50/km"),
+                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Trote", 5, 0.5, null, 1, null)));
+
+            var resultado = normalizacao.normalizar(treino, comZonas);
+
+            assertThat(resultado.etapas().get(0).ritmoAlvo()).isEqualTo("8:20-8:40/km");
+        }
+
+        @Test
         @DisplayName("ritmo absurdo da PRINCIPAL é descartado e a distância sai do ritmo do treino (validar-ritmo, S4)")
         void ritmoAbsurdoDescartado() {
             var treino = continuo("6.0", "45:00", "6:00-6:30/km",

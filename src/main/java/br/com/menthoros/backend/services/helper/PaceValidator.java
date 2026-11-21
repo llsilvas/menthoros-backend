@@ -154,7 +154,14 @@ public class PaceValidator {
         BigDecimal rapido = zonas.get(faixa[1] - 1).paceMin();
         BigDecimal lento = zonas.get(faixa[0] - 1).paceMax();
         if (teto != null) {
-            if (teto.compareTo(lento) >= 0) return etapa;
+            if (teto.compareTo(lento) >= 0) {
+                // Histórico mais lento que a zona inteira: ele vence — só desloca a etapa que está mais rápida que o teto
+                if (prescrito.paceMin().compareTo(teto) >= 0) return etapa;
+                String deslocado = validar(etapa.ritmoAlvo(), teto);
+                log.warn("ritmo da etapa mais rápido que o teto do histórico: tipo='{}' treino='{}' prescrito='{}' → '{}'",
+                        etapa.tipoEtapa(), tipoTreino, etapa.ritmoAlvo(), deslocado);
+                return etapa.comRitmo(deslocado);
+            }
             rapido = rapido.max(teto);
         }
         // Borda rápida arredondada para o segundo de cima: formatar arredonda ao segundo, e 5:23,4 virando
