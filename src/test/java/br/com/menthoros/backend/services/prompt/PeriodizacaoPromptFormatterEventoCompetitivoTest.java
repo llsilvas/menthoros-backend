@@ -25,6 +25,19 @@ class PeriodizacaoPromptFormatterEventoCompetitivoTest {
 
     private final PeriodizacaoPromptFormatter formatter = new PeriodizacaoPromptFormatter();
 
+    @Test
+    @DisplayName("ajustar-taper-pre-prova (CA1): ativação com strides é obrigatória, não só permitida")
+    void ativacaoObrigatoria() {
+        LocalDate inicioSemana = LocalDate.of(2026, 12, 7);
+        Prova prova = provaCom("Meia Maratona de SP", LocalDate.of(2026, 12, 13));
+
+        String prompt = formatter.formatarEventoCompetitivoSemana(prova, List.of(), inicioSemana);
+
+        assertThat(prompt).contains("- Prescreva exatamente 1 treino de ativacao 24-48h antes da prova")
+                .contains("4-6 aceleracoes (strides) de 20 s")
+                .doesNotContain("Permita no maximo 1 treino de ativacao");
+    }
+
     @Nested
     @DisplayName("instrução de não prescrever outro treino")
     class InstrucaoPorProva {

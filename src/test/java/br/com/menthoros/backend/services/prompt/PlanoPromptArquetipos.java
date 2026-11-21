@@ -201,7 +201,7 @@ final class PlanoPromptArquetipos {
         prova.setTsbIdealProva(20.0);
         prova.setProvaAlvo(true);
         return new Arquetipo("taper-semana-prova", atleta, meta, prova,
-                contexto(historicoModerado()), INICIO_SEMANA, diasTaper());
+                contexto(historicoTaper()), INICIO_SEMANA, diasTaper());
     }
 
     private static Arquetipo semDados() {
@@ -268,6 +268,19 @@ final class PlanoPromptArquetipos {
         t.add(treino(HOJE.minusDays(9), TipoTreino.CONTINUO, 7.0, 47, 52, 5, 355));
         t.add(treino(HOJE.minusDays(12), TipoTreino.LONGO, 16.0, 95, 120, 6, 350));
         t.add(treino(HOJE.minusDays(16), TipoTreino.INTERVALADO, 10.0, 55, 85, 7, 300));
+        return t;
+    }
+
+    private static List<TreinoRealizado> historicoTaper() {
+        // ajustar-taper-pre-prova: histórico coerente com o limiar de 4:05 (meia em ~1:28). Antes usava
+        // historicoModerado() (regenerativo a 7:00, contínuo a 5:55) e o teto "pace demonstrado" do prompt
+        // forçava rodagens ~1 min/km mais lentas que as zonas — a incoerência ritmo × FC da revisão cega.
+        List<TreinoRealizado> t = new ArrayList<>();
+        t.add(treino(HOJE.minusDays(2), TipoTreino.CONTINUO, 10.0, 50, 60, 4, 300));
+        t.add(treino(HOJE.minusDays(5), TipoTreino.REGENERATIVO, 6.0, 33, 30, 3, 330));
+        t.add(treino(HOJE.minusDays(9), TipoTreino.CONTINUO, 12.0, 61, 72, 5, 305));
+        t.add(treino(HOJE.minusDays(12), TipoTreino.LONGO, 22.0, 112, 140, 6, 305));
+        t.add(treino(HOJE.minusDays(16), TipoTreino.INTERVALADO, 12.0, 48, 90, 7, 240));
         return t;
     }
 
