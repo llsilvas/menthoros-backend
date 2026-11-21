@@ -6,8 +6,14 @@ import br.com.menthoros.backend.domain.planner.SeasonPlanner;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.RaceMilestone;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.SeasonPlan;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.WeekPlan;
+import br.com.menthoros.backend.domain.planner.TrainingPhase;
+import br.com.menthoros.backend.dto.output.AthleteSeasonPlanDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 import br.com.menthoros.backend.entity.AthleteBaselineState;
+import br.com.menthoros.backend.entity.Usuario;
+import br.com.menthoros.backend.repository.UsuarioRepository;
+import br.com.menthoros.backend.security.AuthenticatedAtletaResolver;
+import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.MetricasDiarias;
 import br.com.menthoros.backend.entity.PerfilOnboardingAtleta;
@@ -74,6 +80,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
     private static final int NOME_MAX = 100;
     private static final String SEVERITY_WARN = "WARN";
     private static final List<SeasonPlanStatus> ABERTAS = List.of(SeasonPlanStatus.ACTIVE, SeasonPlanStatus.PROPOSED);
+    private static final List<SeasonPlanStatus> SO_ATIVA = List.of(SeasonPlanStatus.ACTIVE);
 
     private final AtletaRepository atletaRepository;
     private final ProvaRepository provaRepository;
@@ -83,6 +90,9 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
     private final AthleteBaselineStateRepository baselineRepository;
     private final PerfilOnboardingAtletaRepository perfilRepository;
     private final TreinoRealizadoRepository treinoRealizadoRepository;
+    private final UsuarioRepository usuarioRepository;
+    private final AuthenticatedPrincipalResolver principalResolver;
+    private final AuthenticatedAtletaResolver atletaResolver;
     private final Clock clock;
     private final boolean enabled;
 
@@ -94,6 +104,9 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
                                  AthleteBaselineStateRepository baselineRepository,
                                  PerfilOnboardingAtletaRepository perfilRepository,
                                  TreinoRealizadoRepository treinoRealizadoRepository,
+                                 UsuarioRepository usuarioRepository,
+                                 AuthenticatedPrincipalResolver principalResolver,
+                                 AuthenticatedAtletaResolver atletaResolver,
                                  Clock clock,
                                  @Value("${season-plan.enabled:false}") boolean enabled) {
         this.atletaRepository = atletaRepository;
@@ -104,6 +117,9 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         this.baselineRepository = baselineRepository;
         this.perfilRepository = perfilRepository;
         this.treinoRealizadoRepository = treinoRealizadoRepository;
+        this.usuarioRepository = usuarioRepository;
+        this.principalResolver = principalResolver;
+        this.atletaResolver = atletaResolver;
         this.clock = clock;
         this.enabled = enabled;
     }
@@ -169,6 +185,80 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
                 .stream()
                 .min(Comparator.comparing(p -> p.getSeasonStatus() == SeasonPlanStatus.ACTIVE ? 0 : 1))
                 .map(p -> toDto(p, tenantId));
+    }
+
+    @Override
+    @Transactional
+    public SeasonPlanResponseDto approve(UUID atletaId, UUID seasonPlanId) {
+        exigirHabilitado();
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        log.info("Aprovando temporada: id={}, atletaId={}, tenantId={}", seasonPlanId, atletaId, tenantId);
+        // A5: trava a prova antes de carregar a temporada, como quem cancela ou troca a alvo (D13).
+        UUID provaId = planoTreinoRepository.findRaceIdBySeasonPlan(seasonPlanId, atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
+        provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)
+                .filter(p -> p.isProvaAlvo() && p.getStatusProva() != ProvaStatus.CANCELADA)
+                .orElseThrow(() -> new DomainRuleViolationException("A prova deixou de ser prova-alvo ou foi cancelada"));
+        PlanoTreino temporada = planoTreinoRepository.findByIdAndAssessoriaId(seasonPlanId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
+
+        if (temporada.getSeasonStatus() == SeasonPlanStatus.ACTIVE) {
+            log.info("Temporada já aprovada: id={}", seasonPlanId);
+            return toDto(temporada, tenantId);
+        }
+        if (temporada.getSeasonStatus() != SeasonPlanStatus.PROPOSED) {
+            throw new DomainConflictException("Só uma temporada proposta pode ser aprovada");
+        }
+        if (!planoTreinoRepository.findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(atletaId, tenantId, SO_ATIVA).isEmpty()) {
+            throw new DomainConflictException("O atleta já tem uma temporada ativa");
+        }
+        temporada.setSeasonStatus(SeasonPlanStatus.ACTIVE);
+        temporada.setApprovedBy(usuarioAutenticado(tenantId));
+        temporada.setApprovedAt(clock.instant());
+        // flush aqui: se o índice de uma ACTIVE por atleta recusar, o 409 sai desta chamada, não do commit.
+        planoTreinoRepository.saveAndFlush(temporada);
+        log.info("Temporada aprovada: id={}, approvedBy={}", seasonPlanId, temporada.getApprovedBy());
+        return toDto(temporada, tenantId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<AthleteSeasonPlanDto> findForAuthenticatedAthlete() {
+        if (!enabled) {
+            return Optional.empty();
+        }
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        UUID atletaId = atletaResolver.resolverAtletaIdAtual();
+        LocalDate hoje = LocalDate.now(clock.withZone(FUSO));
+        return planoTreinoRepository.findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(atletaId, tenantId, SO_ATIVA)
+                .stream()
+                .filter(p -> p.getProva() != null && p.getProva().getDataProva() != null
+                        && !p.getProva().getDataProva().isBefore(hoje))
+                .findFirst()
+                .map(p -> paraAtleta(p, tenantId, hoje));
+    }
+
+    private AthleteSeasonPlanDto paraAtleta(PlanoTreino p, UUID tenantId, LocalDate hoje) {
+        Prova prova = Objects.requireNonNull(p.getProva());
+        List<SeasonWeek> weeks = seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(p.getId(), tenantId);
+        TrainingPhase fase = weeks.stream()
+                .filter(w -> naSemana(hoje, w.getWeekStart()))
+                .map(SeasonWeek::getPhase)
+                .findFirst()
+                .orElse(null);
+        List<AthleteSeasonPlanDto.Milestone> marcos = marcos(weeks, tenantId).stream()
+                .filter(m -> !m.date().isBefore(hoje))
+                .map(m -> new AthleteSeasonPlanDto.Milestone(m.name(), m.date(), m.distance()))
+                .toList();
+        return new AthleteSeasonPlanDto(prova.getNomeProva(), prova.getDataProva(), prova.getDistancia(),
+                ChronoUnit.DAYS.between(hoje, prova.getDataProva()), fase, marcos);
+    }
+
+    /** {@code Usuario.id} de quem aprovou, nunca o {@code sub} do Keycloak (padrão de SugestaoCoachServiceImpl). */
+    private UUID usuarioAutenticado(UUID tenantId) {
+        return usuarioRepository.findByKeycloakIdAndAssessoria_Id(principalResolver.getCurrentSubject(), tenantId)
+                .map(Usuario::getId)
+                .orElseThrow(() -> new DomainNotFoundException("Usuário autenticado não encontrado no tenant atual"));
     }
 
     private void exigirHabilitado() {
@@ -315,6 +405,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         return new SeasonPlanResponseDto(
                 p.getId(),
                 p.getSeasonStatus(),
+                p.getApprovedAt(),
                 prova == null ? null : prova.getId(),
                 prova == null ? null : prova.getNomeProva(),
                 prova == null ? null : prova.getDataProva(),

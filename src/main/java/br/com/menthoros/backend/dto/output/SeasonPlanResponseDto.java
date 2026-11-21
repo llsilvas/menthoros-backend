@@ -9,6 +9,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -18,6 +19,8 @@ import java.util.UUID;
 public record SeasonPlanResponseDto(
         @Schema(description = "ID da temporada (PlanoTreino)") UUID id,
         @Schema(description = "Status da temporada", example = "PROPOSED") SeasonPlanStatus seasonStatus,
+        @Schema(description = "Quando o treinador aprovou; ausente enquanto PROPOSED", example = "2026-11-20T13:00:00Z")
+        Instant approvedAt,
         @Schema(description = "ID da prova-alvo") UUID provaId,
         @Schema(description = "Nome da prova-alvo", example = "Maratona de São Paulo") String provaNome,
         @Schema(description = "Data da prova-alvo", example = "2027-04-04") LocalDate provaData,
