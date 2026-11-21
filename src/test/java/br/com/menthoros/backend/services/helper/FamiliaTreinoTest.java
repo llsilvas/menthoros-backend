@@ -53,6 +53,7 @@ class FamiliaTreinoTest {
         void intervaladoTiro() {
             assertThat(normalizacao.receita(FamiliaTreino.INTERVALADO_TIRO).nomes()).containsExactly(
                     "sanear-ritmos",
+                    "corrigir-pace-zona",
                     "corrigir-temporais",
                     "expandir",
                     "corrigir-temporais", // 2ª vez: recuperações criadas por série por tempo nascem com 0.0
@@ -81,7 +82,7 @@ class FamiliaTreinoTest {
         @DisplayName("FARTLEK: gates estruturais DEPOIS de expandir (série comprimida vira pares antes de ser julgada)")
         void fartlek() {
             assertThat(normalizacao.receita(FamiliaTreino.FARTLEK).nomes())
-                    .containsExactlyElementsOf(concat(List.of("sanear-ritmos", "expandir", "corrigir-temporais",
+                    .containsExactlyElementsOf(concat(List.of("sanear-ritmos", "corrigir-pace-zona", "expandir", "corrigir-temporais",
                             "gate-existencia", "gate-presenca-aquec-desaq", "gate-ordem-aquec-desaq",
                             "gate-aceleracoes-fartlek", "gate-sequencia", "reconciliar-distancia")));
         }
@@ -90,7 +91,7 @@ class FamiliaTreinoTest {
         @DisplayName("TRES_ETAPAS: reparar ANTES de validar por tipo (só passa REGENERATIVO só com PRINCIPAL por isso)")
         void tresEtapas() {
             assertThat(normalizacao.receita(FamiliaTreino.TRES_ETAPAS).nomes())
-                    .containsExactlyElementsOf(concat(List.of("sanear-ritmos", "reparar-3-etapas", "validar-por-tipo",
+                    .containsExactlyElementsOf(concat(List.of("sanear-ritmos", "corrigir-pace-zona", "reparar-3-etapas", "validar-por-tipo",
                             "corrigir-temporais", "distancia-principal-por-pace", "reconciliar-distancia")));
         }
 
@@ -98,7 +99,7 @@ class FamiliaTreinoTest {
         @DisplayName("PADRAO: só a cauda comum — explícito, não omissão")
         void padrao() {
             assertThat(normalizacao.receita(FamiliaTreino.PADRAO).nomes())
-                    .containsExactlyElementsOf(concat(List.of("sanear-ritmos")));
+                    .containsExactlyElementsOf(concat(List.of("sanear-ritmos", "corrigir-pace-zona")));
         }
 
         @ParameterizedTest

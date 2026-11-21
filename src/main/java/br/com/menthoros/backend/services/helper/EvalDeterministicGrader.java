@@ -111,7 +111,9 @@ public class EvalDeterministicGrader {
     // e o teto/piso viram no-op. Suficiente para distância × duração × ritmo, que não dependem deles.
     private PlanoSemanalLlmDto normalizar(PlanoSemanalLlmDto plano, Atleta atleta, java.util.@Nullable UUID atletaId) {
         if (plano.treinosPlanejados() == null || atleta == null) return plano;
-        var ctx = new ContextoNormalizacao(atleta, atletaId, null, Map.of(), Map.of());
+        // validar-ritmo-etapa-contra-zona: as zonas de pace saem do atleta, sem banco — o eval as aplica como produção
+        var ctx = new ContextoNormalizacao(atleta, atletaId, null, Map.of(), Map.of(),
+                ContextoNormalizacao.zonasPaceComDado(atleta, new ZonaTreinoService()));
         List<TreinoPlanejadoLlmDto> treinos = plano.treinosPlanejados().stream().map(t -> {
             try {
                 return normalizacao.normalizar(t, ctx);

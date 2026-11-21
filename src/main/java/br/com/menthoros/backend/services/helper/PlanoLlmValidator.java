@@ -287,7 +287,8 @@ public class PlanoLlmValidator {
         // Zonas de FC só com dado fisiológico (limiar, máxima ou faixa manual) — null desliga corrigir-fc-zona
         List<ZonaFC> zonasFC = zonaTreinoService.calcularZonasFCComDado(atleta);
 
-        return new ContextoNormalizacao(atleta, atletaId, zonasFC, tetoPorTipo, pisoPorTipo);
+        return new ContextoNormalizacao(atleta, atletaId, zonasFC, tetoPorTipo, pisoPorTipo,
+                ContextoNormalizacao.zonasPaceComDado(atleta, zonaTreinoService));
     }
 
     /**

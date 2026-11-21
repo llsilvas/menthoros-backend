@@ -227,7 +227,9 @@ public class NormalizacaoDeTreino {
 
     private Receita receita(List<Passo> cabeca, List<Passo> cauda) {
         // validar-ritmo-etapa-contra-zona: sanidade das faixas antes de qualquer derivação de distância
-        List<Passo> todos = new ArrayList<>(List.of(new Passo("sanear-ritmos", this::sanearRitmos)));
+        // validar-ritmo-etapa-contra-zona: o ritmo da etapa vai para a zona do atleta antes de virar distância
+        List<Passo> todos = new ArrayList<>(List.of(new Passo("sanear-ritmos", this::sanearRitmos),
+                new Passo("corrigir-pace-zona", this::corrigirPaceZona)));
         todos.addAll(cabeca);
         todos.addAll(cauda);
         return new Receita(todos);
@@ -658,6 +660,20 @@ public class NormalizacaoDeTreino {
         return treino.comEtapas(treino.etapas().stream()
                 .map(etapa -> etapaFcValidator.validarFcEtapa(etapa, tipoTreino, zonas))
                 .collect(Collectors.toList()));
+    }
+
+    /** Ritmo de cada etapa contra a zona de pace esperada; teto do histórico do tipo do treino vence a zona. */
+    private TreinoPlanejadoLlmDto corrigirPaceZona(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
+        if (ctx.zonasPace() == null || treino.etapas() == null || treino.etapas().isEmpty()) return treino;
+        BigDecimal teto = null;
+        try {
+            teto = ctx.tetoPorTipo().get(TipoTreino.valueOf(treino.tipoTreino()));
+        } catch (IllegalArgumentException | NullPointerException ignored) {}
+        final BigDecimal tetoTipo = teto;
+        List<EtapaTreinoLlmDto> etapas = treino.etapas().stream()
+                .map(e -> paceValidator.validarZonaEtapa(e, treino.tipoTreino(), ctx.zonasPace(), tetoTipo))
+                .toList();
+        return etapas.equals(treino.etapas()) ? treino : treino.comEtapas(etapas);
     }
 
     /** ritmoAlvo contra teto e piso de pace do histórico; só reconstrói se mudou. */
