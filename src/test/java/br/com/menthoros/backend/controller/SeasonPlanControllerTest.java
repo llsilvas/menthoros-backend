@@ -29,6 +29,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -196,8 +197,81 @@ class SeasonPlanControllerTest {
         }
     }
 
+    @Nested
+    @DisplayName("POST /season-plans/{id}/approve")
+    class Approve {
+
+        private final UUID planoId = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000002");
+        private final String url = BASE + "/" + planoId + "/approve";
+
+        @Test
+        @DisplayName("200 com a temporada aprovada")
+        void aprovada() throws Exception {
+            atletaDoTenant();
+            when(seasonPlanService.approve(ATLETA_ID, planoId)).thenReturn(planoAprovado());
+
+            mockMvc.perform(post(url).with(tecnicoJwt()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.seasonStatus").value("ACTIVE"))
+                    .andExpect(jsonPath("$.approvedAt").value("2026-11-20T13:00:00Z"));
+        }
+
+        @Test
+        @DisplayName("404 para temporada de outro atleta")
+        void naoEncontrada() throws Exception {
+            atletaDoTenant();
+            when(seasonPlanService.approve(ATLETA_ID, planoId)).thenThrow(new DomainNotFoundException("temporada"));
+
+            mockMvc.perform(post(url).with(tecnicoJwt())).andExpect(status().isNotFound());
+        }
+
+        @Test
+        @DisplayName("404 com code SEASON_PLAN_DISABLED quando a flag está desligada")
+        void flagDesligada() throws Exception {
+            atletaDoTenant();
+            when(seasonPlanService.approve(ATLETA_ID, planoId)).thenThrow(new SeasonPlanDisabledException());
+
+            mockMvc.perform(post(url).with(adminJwt()))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("SEASON_PLAN_DISABLED"));
+        }
+
+        @Test
+        @DisplayName("409 com temporada arquivada")
+        void conflito() throws Exception {
+            atletaDoTenant();
+            when(seasonPlanService.approve(ATLETA_ID, planoId)).thenThrow(new DomainConflictException("arquivada"));
+
+            mockMvc.perform(post(url).with(tecnicoJwt())).andExpect(status().isConflict());
+        }
+
+        @Test
+        @DisplayName("422 com a prova cancelada")
+        void regra() throws Exception {
+            atletaDoTenant();
+            when(seasonPlanService.approve(ATLETA_ID, planoId)).thenThrow(new DomainRuleViolationException("cancelada"));
+
+            mockMvc.perform(post(url).with(tecnicoJwt())).andExpect(status().isUnprocessableEntity());
+        }
+
+        @Test
+        @DisplayName("403 para ATLETA, sem chegar ao serviço")
+        void atletaProibido() throws Exception {
+            mockMvc.perform(post(url).with(atletaJwt())).andExpect(status().isForbidden());
+
+            verifyNoInteractions(seasonPlanService);
+        }
+
+        private SeasonPlanResponseDto planoAprovado() {
+            SeasonPlanResponseDto p = plano();
+            return new SeasonPlanResponseDto(planoId, SeasonPlanStatus.ACTIVE, Instant.parse("2026-11-20T13:00:00Z"),
+                    p.provaId(), p.provaNome(), p.provaData(), p.shortPreparation(), p.totalWeeks(), p.initialCtl(),
+                    p.peakVolumeKm(), p.weeks(), p.milestones(), p.validations());
+        }
+    }
+
     private static SeasonPlanResponseDto plano() {
-        return new SeasonPlanResponseDto(UUID.randomUUID(), SeasonPlanStatus.PROPOSED, UUID.randomUUID(),
+        return new SeasonPlanResponseDto(UUID.randomUUID(), SeasonPlanStatus.PROPOSED, null, UUID.randomUUID(),
                 "Maratona alvo", LocalDate.of(2027, 4, 4), false, 20, 40.0, new BigDecimal("52.0"),
                 List.of(new SeasonPlanResponseDto.Week(1, LocalDate.of(2026, 11, 16), TrainingPhase.BASE,
                         new BigDecimal("40.7"), 285.0, false, null, WeekValueSource.ENGINE)),

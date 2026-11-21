@@ -69,4 +69,23 @@ public class SeasonPlanController {
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.noContent().build());
     }
+
+    @PostMapping("/{seasonPlanId}/approve")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
+    @Operation(summary = "Aprovar a temporada proposta",
+            description = "PROPOSED vira ACTIVE com quem e quando aprovou; aprovar uma ACTIVE devolve a mesma, sem alterar")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Temporada aprovada (ou já aprovada)",
+                    content = @Content(schema = @Schema(implementation = SeasonPlanResponseDto.class))),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — apenas TECNICO e ADMIN da assessoria"),
+            @ApiResponse(responseCode = "404", description = "Temporada não encontrada para o atleta, ou plano de temporada desabilitado (code SEASON_PLAN_DISABLED)"),
+            @ApiResponse(responseCode = "409", description = "Temporada arquivada ou concluída, ou o atleta já tem outra ativa"),
+            @ApiResponse(responseCode = "422", description = "A prova deixou de ser prova-alvo ou foi cancelada")
+    })
+    public ResponseEntity<SeasonPlanResponseDto> approve(
+            @Parameter(description = "ID do atleta") @PathVariable UUID atletaId,
+            @Parameter(description = "ID da temporada") @PathVariable UUID seasonPlanId) {
+        return ResponseEntity.ok(seasonPlanService.approve(atletaId, seasonPlanId));
+    }
 }
