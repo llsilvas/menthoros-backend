@@ -227,7 +227,9 @@ public class NormalizacaoDeTreino {
 
     private Receita receita(List<Passo> cabeca, List<Passo> cauda) {
         // validar-ritmo-etapa-contra-zona: sanidade das faixas antes de qualquer derivação de distância
-        List<Passo> todos = new ArrayList<>(List.of(new Passo("sanear-ritmos", this::sanearRitmos)));
+        // validar-ritmo-etapa-contra-zona: o ritmo da etapa vai para a zona do atleta antes de virar distância
+        List<Passo> todos = new ArrayList<>(List.of(new Passo("sanear-ritmos", this::sanearRitmos),
+                new Passo("corrigir-pace-zona", this::corrigirPaceZona)));
         todos.addAll(cabeca);
         todos.addAll(cauda);
         return new Receita(todos);
@@ -658,6 +660,38 @@ public class NormalizacaoDeTreino {
         return treino.comEtapas(treino.etapas().stream()
                 .map(etapa -> etapaFcValidator.validarFcEtapa(etapa, tipoTreino, zonas))
                 .collect(Collectors.toList()));
+    }
+
+    /** Ritmo de cada etapa contra a zona de pace esperada; teto do histórico do tipo do treino vence a zona. */
+    private TreinoPlanejadoLlmDto corrigirPaceZona(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
+        if (ctx.zonasPace() == null || treino.etapas() == null || treino.etapas().isEmpty()) return treino;
+        BigDecimal teto = null;
+        try {
+            teto = ctx.tetoPorTipo().get(TipoTreino.valueOf(treino.tipoTreino()));
+        } catch (IllegalArgumentException | NullPointerException ignored) {}
+        final BigDecimal tetoTipo = teto;
+        List<EtapaTreinoLlmDto> validadas = treino.etapas().stream()
+                .map(e -> paceValidator.validarZonaEtapa(e, treino.tipoTreino(), ctx.zonasPace(), tetoTipo))
+                .toList();
+        // A zona não pode deixar aquecimento/desaquecimento mais rápido que a PRINCIPAL (regra de
+        // fix-etapas-sintetizadas-sessao-curta): quando a principal ficou lenta por cautela, a etapa leve fica como veio.
+        PaceValidator.PaceRange principal = validadas.stream()
+                .filter(e -> "PRINCIPAL".equalsIgnoreCase(e.tipoEtapa()) && e.ritmoAlvo() != null)
+                .map(e -> paceValidator.parsear(e.ritmoAlvo()))
+                .filter(Objects::nonNull)
+                .findFirst().orElse(null);
+        List<EtapaTreinoLlmDto> etapas = new ArrayList<>(validadas);
+        for (int i = 0; i < etapas.size(); i++) {
+            EtapaTreinoLlmDto nova = etapas.get(i);
+            EtapaTreinoLlmDto original = treino.etapas().get(i);
+            boolean leve = "AQUECIMENTO".equalsIgnoreCase(nova.tipoEtapa()) || "DESAQUECIMENTO".equalsIgnoreCase(nova.tipoEtapa());
+            if (!leve || principal == null || nova == original || nova.ritmoAlvo() == null) continue;
+            PaceValidator.PaceRange r = paceValidator.parsear(nova.ritmoAlvo());
+            if (r != null && r.paceMin().compareTo(principal.paceMax()) < 0) {
+                etapas.set(i, original);
+            }
+        }
+        return etapas.equals(treino.etapas()) ? treino : treino.comEtapas(etapas);
     }
 
     /** ritmoAlvo contra teto e piso de pace do histórico; só reconstrói se mudou. */
