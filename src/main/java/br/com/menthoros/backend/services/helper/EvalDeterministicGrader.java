@@ -97,7 +97,7 @@ public class EvalDeterministicGrader {
                               Atleta atleta, LocalDate semanaInicio, @Nullable Prova prova) {
         PlanoSemanalLlmDto plano = EvalPlanoJsonParser.parsear(objectMapper, sessionResolver, respostaJson,
                 schemaVersion, zonasAtleta);
-        plano = normalizar(plano, atleta, atleta != null ? atleta.getId() : null);
+        plano = normalizar(plano, atleta, atleta != null ? atleta.getId() : null, tetoDasRegras(regras));
         plano = comoPersistido(plano, atleta, semanaInicio, prova);
         List<ViolacaoQualidade> violacoesQualidade = new ArrayList<>(planQualityChecker.check(plano, regras));
         violacoesQualidade.addAll(paceImplicito(plano));
@@ -107,12 +107,31 @@ public class EvalDeterministicGrader {
         return new Resultado(violacoesQualidade, violacoesCompliance, plano);
     }
 
-    // shortcut: sem zonas de FC nem teto/piso históricos no contexto (eval não tem banco); corrigir-fc-zona
-    // e o teto/piso viram no-op. Suficiente para distância × duração × ritmo, que não dependem deles.
-    private PlanoSemanalLlmDto normalizar(PlanoSemanalLlmDto plano, Atleta atleta, java.util.@Nullable UUID atletaId) {
+    // shortcut: sem zonas de FC nem piso histórico no contexto (eval não tem banco); corrigir-fc-zona e o piso
+    // viram no-op. O teto vem da regra PACE_TETO do prompt, para corrigir-pace-zona agir como em produção.
+    /** Teto de pace por tipo vindo da regra PACE_TETO do prompt — o mesmo que produção põe no contexto. */
+    private static Map<br.com.menthoros.backend.enums.TipoTreino, java.math.BigDecimal> tetoDasRegras(List<Constraint> regras) {
+        Map<br.com.menthoros.backend.enums.TipoTreino, java.math.BigDecimal> teto = new java.util.EnumMap<>(
+                br.com.menthoros.backend.enums.TipoTreino.class);
+        if (regras == null) return teto;
+        regras.stream()
+                .filter(c -> c.key() == br.com.menthoros.backend.services.prompt.constraint.ConstraintKey.PACE_TETO)
+                .map(c -> c.params().get("teto"))
+                .filter(Map.class::isInstance)
+                .forEach(m -> ((Map<?, ?>) m).forEach((tipo, pace) -> {
+                    try {
+                        teto.put(br.com.menthoros.backend.enums.TipoTreino.valueOf(tipo.toString()),
+                                new java.math.BigDecimal(pace.toString()));
+                    } catch (IllegalArgumentException ignored) {}
+                }));
+        return teto;
+    }
+
+    private PlanoSemanalLlmDto normalizar(PlanoSemanalLlmDto plano, Atleta atleta, java.util.@Nullable UUID atletaId,
+                                          Map<br.com.menthoros.backend.enums.TipoTreino, java.math.BigDecimal> teto) {
         if (plano.treinosPlanejados() == null || atleta == null) return plano;
         // validar-ritmo-etapa-contra-zona: as zonas de pace saem do atleta, sem banco — o eval as aplica como produção
-        var ctx = new ContextoNormalizacao(atleta, atletaId, null, Map.of(), Map.of(),
+        var ctx = new ContextoNormalizacao(atleta, atletaId, null, teto, Map.of(),
                 ContextoNormalizacao.zonasPaceComDado(atleta, new ZonaTreinoService()));
         List<TreinoPlanejadoLlmDto> treinos = plano.treinosPlanejados().stream().map(t -> {
             try {
