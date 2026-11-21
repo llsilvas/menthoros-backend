@@ -129,6 +129,12 @@ class PaceValidatorTest {
         assertThat(resultado).isEqualTo(ritmoAlvo);
     }
 
+    @Test
+    @DisplayName("teto fracionário: o ritmo corrigido nunca sai mais rápido que o teto no arredondamento")
+    void tetoFracionarioNoValidar() {
+        assertThat(validator.validar("5:00-5:20/km", new BigDecimal("5.39"))).isEqualTo("5:24-5:44/km");
+    }
+
     // ======================== sanear (validar-ritmo-etapa-contra-zona) ========================
 
     @org.junit.jupiter.params.ParameterizedTest(name = "{0} → {1}")

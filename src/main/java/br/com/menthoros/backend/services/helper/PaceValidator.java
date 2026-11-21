@@ -62,8 +62,11 @@ public class PaceValidator {
 
         // 1) Teto: paceMin não pode ser mais rápido que o teto
         if (teto != null && curMin.compareTo(teto) < 0) {
-            BigDecimal diferenca = teto.subtract(curMin);
-            curMin = teto;
+            // teto arredondado para o segundo de cima: 5:23,4 formatado como 5:23 ficaria mais rápido que ele
+            BigDecimal tetoSegundo = teto.multiply(BigDecimal.valueOf(60)).setScale(1, RoundingMode.HALF_UP).setScale(0, RoundingMode.CEILING)
+                    .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
+            BigDecimal diferenca = tetoSegundo.subtract(curMin);
+            curMin = tetoSegundo;
             curMax = curMax.add(diferenca).setScale(4, RoundingMode.HALF_UP);
             log.warn("ritmoAlvo corrigido (teto): '{}' → '{}' (paceMin mais rápido que teto {})",
                     ritmoAlvo, formatar(curMin, curMax), formatarDecimalMinutos(teto));
@@ -156,7 +159,7 @@ public class PaceValidator {
         }
         // Borda rápida arredondada para o segundo de cima: formatar arredonda ao segundo, e 5:23,4 virando
         // 5:23 ficaria mais rápido que o teto do histórico.
-        rapido = rapido.multiply(BigDecimal.valueOf(60)).setScale(0, RoundingMode.CEILING)
+        rapido = rapido.multiply(BigDecimal.valueOf(60)).setScale(1, RoundingMode.HALF_UP).setScale(0, RoundingMode.CEILING)
                 .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
 
         // Principal mais lenta que a zona é cautela da prescrição: acelerar uma rodagem é o erro perigoso.
