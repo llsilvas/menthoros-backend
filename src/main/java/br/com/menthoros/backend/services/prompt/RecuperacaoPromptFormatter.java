@@ -35,12 +35,6 @@ public class RecuperacaoPromptFormatter {
         StringBuilder recuperacao = new StringBuilder();
         recuperacao.append("**INSTRUÇÕES DE RECUPERAÇÃO/REGENERAÇÃO:**\n\n");
 
-        Integer fcRepouso = atleta.getFcRepouso() != null ? atleta.getFcRepouso() : 60;
-        Integer fcMax = atleta.getFcMaximaComFallback();
-
-        int fcZ1Min = Math.round(fcMax * 0.50f);
-        int fcZ1Max = Math.round(fcMax * 0.60f);
-
         Double tsb = metaDados != null && metaDados.getTsbAtual() != null ? metaDados.getTsbAtual() : 0.0;
         Double atl = metaDados != null && metaDados.getAtlAtual() != null ? metaDados.getAtlAtual() : 0.0;
         Double ctl = metaDados != null && metaDados.getCtlAtual() != null ? metaDados.getCtlAtual() : 0.0;
@@ -58,11 +52,11 @@ public class RecuperacaoPromptFormatter {
         recuperacao.append("\n");
 
         recuperacao.append("### 2. Treinos Regenerativos Recomendados\n");
-        gerarTreinosRegenerativos(recuperacao, fcZ1Min, fcZ1Max, fcRepouso, nivelFadiga);
+        gerarTreinosRegenerativos(recuperacao, nivelFadiga);
         recuperacao.append("\n");
 
         recuperacao.append("### 3. Parâmetros Técnicos para Zona Z1\n");
-        gerarParametrosTecnicos(recuperacao, atleta, fcZ1Min, fcZ1Max, fcRepouso);
+        gerarParametrosTecnicos(recuperacao);
         recuperacao.append("\n");
 
         recuperacao.append("### 4. Recuperação Ativa\n");
@@ -103,18 +97,18 @@ public class RecuperacaoPromptFormatter {
         }
     }
 
-    private void gerarTreinosRegenerativos(StringBuilder sb, int fcZ1Min, int fcZ1Max, int fcRepouso, String nivelFadiga) {
+    private void gerarTreinosRegenerativos(StringBuilder sb, String nivelFadiga) {
         if (nivelFadiga.contains("CRÍTICA") || nivelFadiga.contains("ALTA")) {
             sb.append("**PRIORIDADE: Descanso completo ou treino muito leve**\n\n");
-            sb.append("- **Caminhada fácil (20-30 min)**: FC = ").append(fcRepouso).append("-").append(fcZ1Min).append(" bpm\n");
+            sb.append("- **Caminhada fácil (20-30 min)**: FC abaixo da Z1\n");
             sb.append("  - Ritmo conversável, muito leve\n");
             sb.append("  - Objetivo: movimento leve, não treino\n\n");
-            sb.append("- **Natação regenerativa (20-30 min)**: FC = ").append(fcRepouso).append("-").append(fcZ1Min).append(" bpm\n");
+            sb.append("- **Natação regenerativa (20-30 min)**: FC abaixo da Z1\n");
             sb.append("  - Nado leve contínuo ou alternado com flutuação\n");
             sb.append("  - Objetivo: recuperação ativa do sistema aeróbico\n\n");
         } else if (nivelFadiga.contains("MODERADA")) {
             sb.append("**RECOMENDAÇÃO: Treinos Z1 com duração moderada**\n\n");
-            sb.append("- **Corrida Fácil Curta (30-40 min)**: FC = ").append(fcZ1Min).append("-").append(fcZ1Max).append(" bpm\n");
+            sb.append("- **Corrida Fácil Curta (30-40 min)**: Z1\n");
             sb.append("  - Conversa fácil mantida, ritmo muito relaxado\n\n");
             sb.append("- **Corrida Fácil com Estímulos (40 min total)**:\n");
             sb.append("  - 10 min aquecimento em Z1\n");
@@ -122,7 +116,7 @@ public class RecuperacaoPromptFormatter {
             sb.append("  - 5 min arremate em Z1\n\n");
         } else {
             sb.append("**RECOMENDAÇÃO: Treinos regenerativos estruturados**\n\n");
-            sb.append("- **Corrida Longa Fácil (50-70 min)**: FC = ").append(fcZ1Min).append("-").append(fcZ1Max).append(" bpm\n");
+            sb.append("- **Corrida Longa Fácil (50-70 min)**: Z1\n");
             sb.append("  - Base aeróbica com foco em durabilidade\n\n");
             sb.append("- **Corrida com Variações (45-60 min)**:\n");
             sb.append("  - 10 min aquecimento em Z1\n");
@@ -131,20 +125,18 @@ public class RecuperacaoPromptFormatter {
         }
     }
 
-    private void gerarParametrosTecnicos(StringBuilder sb, Atleta atleta, int fcZ1Min, int fcZ1Max, int fcRepouso) {
+    // ajustar-taper-pre-prova: FC e pace saem só da tabela "Zonas de Treino Calculadas" do atleta. Os números
+    // daqui (FC 50-70% da FCmáx, pace fixo 6:30-7:30) contradiziam a tabela e foram copiados pela LLM.
+    private void gerarParametrosTecnicos(StringBuilder sb) {
         sb.append("**Zona Z1 (Regenerativa)**:\n");
-        sb.append(String.format("- FC Alvo: %d-%d bpm (50-60%% da FCMax)\n", fcZ1Min, fcZ1Max));
-        sb.append("- Pace Estimado: ~7:00-7:30 /km\n");
+        sb.append("- FC e pace: faixa Z1 das Zonas de Treino Calculadas do atleta (sem zonas, guie pelo RPE)\n");
         sb.append("- RPE (Escala 1-10): 2-3 (Muito Fácil)\n");
         sb.append("- Respiração: Nasal, leve, ritmo natural\n");
         sb.append("- Conversa: Conversa fácil, sem ofegância\n");
         sb.append("- Sensação: Leve, movimento fluido, sem tensão\n\n");
 
-        Integer fcMaxima = atleta.getFcMaxima();
         sb.append("**Zona Z2 (Base Aeróbica)**:\n");
-        sb.append(String.format("- FC Alvo: %d-%d bpm (60-70%% da FCMax)\n",
-                fcZ1Max, fcMaxima != null ? Math.round(fcMaxima * 0.70f) : fcZ1Max + 20));
-        sb.append("- Pace Estimado: ~6:30-7:00 /km\n");
+        sb.append("- FC e pace: faixa Z2 das Zonas de Treino Calculadas do atleta (sem zonas, guie pelo RPE)\n");
         sb.append("- RPE: 3-4 (Fácil com esforço moderado)\n");
         sb.append("- Respiração: Nasal predominante, ritmo controlado\n");
         sb.append("- Conversa: Conversa possível com pequenos ajustes respiratórios\n");
