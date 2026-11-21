@@ -198,7 +198,7 @@ class PaceValidatorTest {
             // CONTINUO espera Z2–Z3 (4:01–4:56); 3:55–4:15 sobrepõe 14 de 20 s (70%) → recorta o lado rápido
             var r = validator.validarZonaEtapa(etapa("PRINCIPAL", "3:55-4:15/km"), "CONTINUO", zonas, null);
 
-            assertThat(r.ritmoAlvo()).isEqualTo("4:01-4:15/km");
+            assertThat(r.ritmoAlvo()).isEqualTo("4:02-4:15/km"); // borda 4:01,x arredondada para cima
         }
 
         @Test
@@ -239,6 +239,15 @@ class PaceValidatorTest {
             var r = validator.validarZonaEtapa(etapa("PRINCIPAL", "4:20-4:40/km"), "CONTINUO", zonas, new BigDecimal("4.50"));
 
             assertThat(r.ritmoAlvo()).isEqualTo("4:30-4:40/km");
+        }
+
+        @Test
+        @DisplayName("teto fracionário não vira ritmo mais rápido que ele no arredondamento")
+        void tetoFracionario() {
+            // teto 4,69 min = 4:41,4 dentro de Z2–Z3 → a borda rápida sai 4:42, nunca 4:41
+            var r = validator.validarZonaEtapa(etapa("PRINCIPAL", "4:35-4:55/km"), "CONTINUO", zonas, new BigDecimal("4.69"));
+
+            assertThat(r.ritmoAlvo()).isEqualTo("4:42-4:55/km");
         }
 
         @Test

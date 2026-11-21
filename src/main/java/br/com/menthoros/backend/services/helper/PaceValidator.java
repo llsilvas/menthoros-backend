@@ -154,6 +154,10 @@ public class PaceValidator {
             if (teto.compareTo(lento) >= 0) return etapa;
             rapido = rapido.max(teto);
         }
+        // Borda rápida arredondada para o segundo de cima: formatar arredonda ao segundo, e 5:23,4 virando
+        // 5:23 ficaria mais rápido que o teto do histórico.
+        rapido = rapido.multiply(BigDecimal.valueOf(60)).setScale(0, RoundingMode.CEILING)
+                .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
 
         // Principal mais lenta que a zona é cautela da prescrição: acelerar uma rodagem é o erro perigoso.
         // Aquecimento/desaquecimento/recuperação corrigem nos dois sentidos (CA1: aquecimento lento demais).
