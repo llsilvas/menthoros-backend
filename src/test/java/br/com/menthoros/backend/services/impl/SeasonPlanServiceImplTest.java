@@ -72,7 +72,7 @@ import static org.mockito.Mockito.when;
 class SeasonPlanServiceImplTest {
 
     /** 2026-11-16 (segunda) 12:00 UTC = 09:00 em São Paulo. */
-    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-16T12:00:00Z"), ZoneOffset.UTC);
+    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-16T12:00:00.123456789Z"), ZoneOffset.UTC);
     private static final LocalDate HOJE = LocalDate.of(2026, 11, 16);
     private static final LocalDate PROVA_20_SEMANAS = LocalDate.of(2027, 4, 4);
 
@@ -519,7 +519,7 @@ class SeasonPlanServiceImplTest {
             SeasonPlanResponseDto dto = service.approve(atleta.getId(), proposta.getId());
 
             assertThat(dto.seasonStatus()).isEqualTo(SeasonPlanStatus.ACTIVE);
-            assertThat(dto.approvedAt()).isEqualTo(CLOCK.instant());
+            assertThat(dto.approvedAt()).isEqualTo(Instant.parse("2026-11-16T12:00:00.123456Z"));
             assertThat(proposta.getApprovedBy()).isEqualTo(treinador.getId());
             InOrder ordem = inOrder(provaRepository, planoTreinoRepository);
             ordem.verify(provaRepository).findByIdAndTenantIdForUpdate(prova.getId(), tenantId);

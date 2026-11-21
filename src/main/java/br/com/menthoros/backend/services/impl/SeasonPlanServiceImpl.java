@@ -216,7 +216,8 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         }
         temporada.setSeasonStatus(SeasonPlanStatus.ACTIVE);
         temporada.setApprovedBy(usuarioAutenticado(tenantId));
-        temporada.setApprovedAt(clock.instant());
+        // Postgres guarda microssegundos: sem truncar, esta resposta difere da releitura (idempotente/GET).
+        temporada.setApprovedAt(clock.instant().truncatedTo(ChronoUnit.MICROS));
         // flush aqui: se o índice de uma ACTIVE por atleta recusar, o 409 sai desta chamada, não do commit.
         planoTreinoRepository.saveAndFlush(temporada);
         log.info("Temporada aprovada: id={}, approvedBy={}", seasonPlanId, temporada.getApprovedBy());
