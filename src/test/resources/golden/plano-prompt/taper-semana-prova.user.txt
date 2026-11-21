@@ -31,10 +31,10 @@ Nenhuma prova preparatória cadastrada.
 ## ⛔ REGRAS QUE VOCÊ NÃO PODE VIOLAR
 
 - O `ritmoAlvo` (paceMin) de cada treino NÃO pode ser mais rápido que o teto do seu tipo:
-- REGENERATIVO: não mais rápido que 5:23/km
+- REGENERATIVO: não mais rápido que 5:24/km
 - CONTINUO: não mais rápido que 4:54/km
 - LONGO: não mais rápido que 4:59/km
-- INTERVALADO: não mais rápido que 3:55/km
+- INTERVALADO: não mais rápido que 3:56/km
 - Gere treinos EXCLUSIVAMENTE nos dias permitidos: Terça-feira, Quinta-feira, Sábado, Domingo. NÃO inclua treinos em nenhum outro dia da semana.
 - No máximo 6 dias de treino consecutivos; intercale descanso completo ou regenerativo.
 
@@ -80,7 +80,7 @@ Nenhuma prova preparatória cadastrada.
 - Esta prova SUBSTITUI o treino-chave e o longo tradicional da semana, se houver conflito.
 - Reduza o volume semanal total em 30-50% em relacao a uma semana normal desta fase.
 - Nao prescreva intervalado pesado, tiro longo ou longo estressor nas 48-72h anteriores a prova.
-- Prescreva exatamente 1 treino de ativacao 24-48h antes da prova: 20-30 min em Z1/Z2 com 4-6 aceleracoes (strides) de 20 s e recuperacao completa entre elas. Para atleta AVANCADO, pode trocar os strides por 2-3 km em ritmo de prova na quarta ou quinta.
+- Prescreva exatamente 1 treino de ativacao 24-48h antes da prova: 20-30 min em Z1/Z2 com 4-6 aceleracoes (strides) de 20 s e recuperacao completa entre elas. Para atleta AVANCADO, pode trocar os strides por 2-3 km em ritmo de prova na quarta ou quinta, como treino TEMPO_RUN (nao CONTINUO).
 - O dia seguinte a prova deve ser descanso completo ou regenerativo muito leve.
 - Se houver conflito entre TSS alvo e frescor para competir, priorize frescor para a prova.
 - Diretriz do treinador: Priorize frescor, estrategia e confianca para competir bem.

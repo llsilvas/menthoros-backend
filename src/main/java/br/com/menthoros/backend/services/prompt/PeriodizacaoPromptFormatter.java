@@ -179,7 +179,7 @@ public class PeriodizacaoPromptFormatter {
         // ajustar-taper-pre-prova: ativação obrigatória (decisão do coach) — antes só "permitida", e os modelos omitiam
         sb.append("- Prescreva exatamente 1 treino de ativacao 24-48h antes da prova: 20-30 min em Z1/Z2 com 4-6 "
                 + "aceleracoes (strides) de 20 s e recuperacao completa entre elas. Para atleta AVANCADO, pode trocar os "
-                + "strides por 2-3 km em ritmo de prova na quarta ou quinta.\n");
+                + "strides por 2-3 km em ritmo de prova na quarta ou quinta, como treino TEMPO_RUN (nao CONTINUO).\n");
         sb.append("- O dia seguinte a prova deve ser descanso completo ou regenerativo muito leve.\n");
         sb.append("- Se houver conflito entre TSS alvo e frescor para competir, priorize frescor para a prova.\n");
         sb.append(String.format("- Diretriz do treinador: %s\n", ajusteCarga));

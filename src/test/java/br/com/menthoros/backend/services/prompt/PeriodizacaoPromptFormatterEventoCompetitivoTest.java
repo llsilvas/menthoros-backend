@@ -35,6 +35,7 @@ class PeriodizacaoPromptFormatterEventoCompetitivoTest {
 
         assertThat(prompt).contains("- Prescreva exatamente 1 treino de ativacao 24-48h antes da prova")
                 .contains("4-6 aceleracoes (strides) de 20 s")
+                .contains("como treino TEMPO_RUN (nao CONTINUO)")
                 .doesNotContain("Permita no maximo 1 treino de ativacao");
     }
 
