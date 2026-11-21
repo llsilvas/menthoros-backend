@@ -687,7 +687,10 @@ public class NormalizacaoDeTreino {
             boolean leve = "AQUECIMENTO".equalsIgnoreCase(nova.tipoEtapa()) || "DESAQUECIMENTO".equalsIgnoreCase(nova.tipoEtapa());
             if (!leve || principal == null || nova == original || nova.ritmoAlvo() == null) continue;
             PaceValidator.PaceRange r = paceValidator.parsear(nova.ritmoAlvo());
-            if (r != null && r.paceMin().compareTo(principal.paceMax()) < 0) {
+            PaceValidator.PaceRange antes = original.ritmoAlvo() == null ? null : paceValidator.parsear(original.ritmoAlvo());
+            // Só desfaz correção que ACELEROU a etapa; desacelerar (teto do histórico, zona) é sempre seguro.
+            boolean acelerou = antes != null && r != null && r.paceMin().compareTo(antes.paceMin()) < 0;
+            if (acelerou && r.paceMin().compareTo(principal.paceMax()) < 0) {
                 etapas.set(i, original);
             }
         }

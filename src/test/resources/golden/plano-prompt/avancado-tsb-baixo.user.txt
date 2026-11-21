@@ -20,10 +20,10 @@
 
 - INTENSIDADE só na versão segura — categoria D (Tempo Run / Fartlek suave). Fundamento: Apenas 24h desde ultimo intensivo (minimo: 48h para Avançado). INTERVALADO DEGRADADO para Categoria D — recuperacao insuficiente: 24h desde ultimo treino intensivo (minimo 48h para Avançado). Prescreva fartlek leve estruturado, ex.: 5× (1min Z3 + 2min Z2). Cada aceleração e cada recuperação é uma etapa individual (INTERVALADO e RECUPERACAO), entre aquecimento e desaquecimento — nunca a série inteira numa etapa só.
 - O `ritmoAlvo` (paceMin) de cada treino NÃO pode ser mais rápido que o teto do seu tipo:
-- CONTINUO: não mais rápido que 5:23/km
-- LONGO: não mais rápido que 5:38/km
-- INTERVALADO: não mais rápido que 4:44/km
-- TIRO: não mais rápido que 4:34/km
+- CONTINUO: não mais rápido que 5:24/km
+- LONGO: não mais rápido que 5:39/km
+- INTERVALADO: não mais rápido que 4:45/km
+- TIRO: não mais rápido que 4:35/km
 - Gere treinos EXCLUSIVAMENTE nos dias permitidos: Segunda-feira, Terça-feira, Quarta-feira, Quinta-feira, Sexta-feira, Sábado. NÃO inclua treinos em nenhum outro dia da semana.
 - No máximo 3 dias de treino consecutivos; intercale descanso completo ou regenerativo.
 
