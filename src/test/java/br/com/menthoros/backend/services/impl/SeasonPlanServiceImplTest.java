@@ -570,18 +570,26 @@ class SeasonPlanServiceImplTest {
         }
 
         @Test
-        @DisplayName("prova cancelada encontrada depois do lock responde 422")
+        @DisplayName("proposta com a prova cancelada encontrada depois do lock responde 422")
         void provaCancelada() {
             Prova prova = provaAlvo(PROVA_20_SEMANAS);
             prova.setStatusProva(ProvaStatus.CANCELADA);
-            UUID id = UUID.randomUUID();
-            when(planoTreinoRepository.findRaceIdBySeasonPlan(id, atleta.getId(), tenantId))
-                    .thenReturn(Optional.of(prova.getId()));
-            when(provaRepository.findByIdAndTenantIdForUpdate(prova.getId(), tenantId)).thenReturn(Optional.of(prova));
+            PlanoTreino proposta = travadaComTemporada(prova, SeasonPlanStatus.PROPOSED);
 
-            assertThatThrownBy(() -> service.approve(atleta.getId(), id))
+            assertThatThrownBy(() -> service.approve(atleta.getId(), proposta.getId()))
                     .isInstanceOf(DomainRuleViolationException.class);
             verify(planoTreinoRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("temporada arquivada pelo cancelamento da prova responde 409, não 422")
+        void arquivadaPeloCancelamento() {
+            Prova prova = provaAlvo(PROVA_20_SEMANAS);
+            prova.setStatusProva(ProvaStatus.CANCELADA);
+            PlanoTreino arquivada = travadaComTemporada(prova, SeasonPlanStatus.ARCHIVED);
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), arquivada.getId()))
+                    .isInstanceOf(DomainConflictException.class);
         }
     }
 

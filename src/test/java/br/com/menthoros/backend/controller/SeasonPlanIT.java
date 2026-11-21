@@ -254,24 +254,46 @@ class SeasonPlanIT extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("aprovar depois de cancelar a prova responde 409: a temporada já foi arquivada")
+    void aprovarDepoisDeCancelar() throws Exception {
+        String base = "/api/v1/atletas/" + atleta.getId() + "/season-plans";
+        TenantContext.setTenantId(tenantId);
+        UUID id = seasonPlanService.generate(atleta.getId()).plan().id();
+        provaService.cancelarProva(atleta.getId(), prova.getId());
+        TenantContext.clear();
+
+        mockMvc.perform(post(base + "/" + id + "/approve").with(como(subTecnico, tenantId, "TECNICO")))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     @DisplayName("atleta não vê a temporada de outro atleta nem a de outra assessoria")
     void atletaNaoVeTemporadaAlheia() throws Exception {
+        // A e B, na mesma assessoria, com uma ACTIVE cada: cada um só recebe a própria.
         UUID outroAtleta = tx.execute(s -> {
             SeasonPlanFixtures fx = new SeasonPlanFixtures(em);
+            fx.semana(fx.planoTreino(em.find(Atleta.class, atleta.getId()), em.find(Prova.class, prova.getId()),
+                    br.com.menthoros.backend.enums.SeasonPlanStatus.ACTIVE), 1);
             Atleta b = fx.atleta(em.find(Assessoria.class, tenantId));
-            fx.semana(fx.planoTreino(b, fx.prova(b), br.com.menthoros.backend.enums.SeasonPlanStatus.ACTIVE), 1);
+            Prova provaB = fx.prova(b);
+            provaB.setNomeProva("Prova do B");
+            fx.semana(fx.planoTreino(b, provaB, br.com.menthoros.backend.enums.SeasonPlanStatus.ACTIVE), 1);
             return b.getId();
         });
         UUID outroTenant = jdbc.queryForObject(
                 "select tenant_id from tb_usuario where id = ?", UUID.class, subTecnicoOutraAssessoria);
 
         when(atletaResolver.resolverAtletaIdAtual()).thenReturn(atleta.getId());
-        mockMvc.perform(get(MINHA).with(como(subAtleta, tenantId, "ATLETA"))).andExpect(status().isNoContent());
-        // mesmo com o id de B, o tenant do JWT de outra assessoria não alcança a temporada dele
+        mockMvc.perform(get(MINHA).with(como(subAtleta, tenantId, "ATLETA")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.raceName").value("Maratona alvo"));
         when(atletaResolver.resolverAtletaIdAtual()).thenReturn(outroAtleta);
+        mockMvc.perform(get(MINHA).with(como(subAtleta, tenantId, "ATLETA")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.raceName").value("Prova do B"));
+        // mesmo com o id de B, o tenant do JWT de outra assessoria não alcança a temporada dele
         mockMvc.perform(get(MINHA).with(como(subTecnicoOutraAssessoria, outroTenant, "ATLETA")))
                 .andExpect(status().isNoContent());
-        mockMvc.perform(get(MINHA).with(como(subAtleta, tenantId, "ATLETA"))).andExpect(status().isOk());
     }
 
     @Test
@@ -317,6 +339,8 @@ class SeasonPlanIT extends AbstractIntegrationTest {
                 select count(*) from tb_plano_treino t join tb_prova p on p.id = t.prova_id
                  where t.atleta_id = ? and t.season_status = 'ACTIVE' and p.status_prova = 'CANCELADA'
                 """, Integer.class, atleta.getId())).isZero();
+        assertThat(jdbc.queryForObject("select status_prova from tb_prova where id = ?", String.class, prova.getId()))
+                .isEqualTo("CANCELADA");
         assertThat(contarAbertas()).isZero();
     }
 

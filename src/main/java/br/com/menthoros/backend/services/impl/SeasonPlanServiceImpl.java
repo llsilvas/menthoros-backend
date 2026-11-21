@@ -196,18 +196,20 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         // A5: trava a prova antes de carregar a temporada, como quem cancela ou troca a alvo (D13).
         UUID provaId = planoTreinoRepository.findRaceIdBySeasonPlan(seasonPlanId, atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
-        provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)
-                .filter(p -> p.isProvaAlvo() && p.getStatusProva() != ProvaStatus.CANCELADA)
-                .orElseThrow(() -> new DomainRuleViolationException("A prova deixou de ser prova-alvo ou foi cancelada"));
+        Optional<Prova> prova = provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId);
         PlanoTreino temporada = planoTreinoRepository.findByIdAndAssessoriaId(seasonPlanId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
 
+        // O status vem antes da prova: cancelar ou trocar a alvo arquiva a temporada, e isso é 409 (A1).
         if (temporada.getSeasonStatus() == SeasonPlanStatus.ACTIVE) {
             log.info("Temporada já aprovada: id={}", seasonPlanId);
             return toDto(temporada, tenantId);
         }
         if (temporada.getSeasonStatus() != SeasonPlanStatus.PROPOSED) {
             throw new DomainConflictException("Só uma temporada proposta pode ser aprovada");
+        }
+        if (prova.filter(p -> p.isProvaAlvo() && p.getStatusProva() != ProvaStatus.CANCELADA).isEmpty()) {
+            throw new DomainRuleViolationException("A prova deixou de ser prova-alvo ou foi cancelada");
         }
         if (!planoTreinoRepository.findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(atletaId, tenantId, SO_ATIVA).isEmpty()) {
             throw new DomainConflictException("O atleta já tem uma temporada ativa");
