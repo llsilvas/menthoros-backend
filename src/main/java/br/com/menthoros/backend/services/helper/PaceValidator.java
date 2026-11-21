@@ -155,6 +155,12 @@ public class PaceValidator {
             rapido = rapido.max(teto);
         }
 
+        // Principal mais lenta que a zona é cautela da prescrição: acelerar uma rodagem é o erro perigoso.
+        // Aquecimento/desaquecimento/recuperação corrigem nos dois sentidos (CA1: aquecimento lento demais).
+        boolean etapaLeve = faixa[0] == 1 && faixa[1] <= 2 && !"PRINCIPAL".equalsIgnoreCase(etapa.tipoEtapa())
+                && !"INTERVALADO".equalsIgnoreCase(etapa.tipoEtapa());
+        if (!etapaLeve && prescrito.paceMin().compareTo(rapido) >= 0) return etapa;
+
         BigDecimal largura = prescrito.paceMax().subtract(prescrito.paceMin()).max(new BigDecimal("0.0167"));
         BigDecimal sobreposicao = prescrito.paceMax().min(lento).subtract(prescrito.paceMin().max(rapido)).max(BigDecimal.ZERO);
         String corrigido;
@@ -166,6 +172,7 @@ public class PaceValidator {
         } else {
             return etapa;
         }
+        if (corrigido.equals(formatar(prescrito.paceMin(), prescrito.paceMax()))) return etapa;
         log.warn("ritmo da etapa fora da zona esperada: tipo='{}' treino='{}' prescrito='{}' zona='{}' → '{}'",
                 etapa.tipoEtapa(), tipoTreino, etapa.ritmoAlvo(), formatar(rapido, lento), corrigido);
         return etapa.comRitmo(corrigido);

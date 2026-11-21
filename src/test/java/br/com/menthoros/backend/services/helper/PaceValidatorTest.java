@@ -195,10 +195,26 @@ class PaceValidatorTest {
         @Test
         @DisplayName("sobreposição ≥ 50% é recortada para a interseção")
         void recorta() {
-            // CONTINUO espera Z2–Z3 (4:01–4:56); 4:45–5:05 sobrepõe 11 de 20 s (55%) → recorta
-            var r = validator.validarZonaEtapa(etapa("PRINCIPAL", "4:45-5:05/km"), "CONTINUO", zonas, null);
+            // CONTINUO espera Z2–Z3 (4:01–4:56); 3:55–4:15 sobrepõe 14 de 20 s (70%) → recorta o lado rápido
+            var r = validator.validarZonaEtapa(etapa("PRINCIPAL", "3:55-4:15/km"), "CONTINUO", zonas, null);
 
-            assertThat(r.ritmoAlvo()).isEqualTo("4:45-4:56/km");
+            assertThat(r.ritmoAlvo()).isEqualTo("4:01-4:15/km");
+        }
+
+        @Test
+        @DisplayName("principal mais lenta que a zona não é acelerada — cautela da prescrição")
+        void principalLentaNaoAcelera() {
+            var e = etapa("PRINCIPAL", "5:45-6:05/km");
+
+            assertThat(validator.validarZonaEtapa(e, "CONTINUO", zonas, null)).isSameAs(e);
+        }
+
+        @Test
+        @DisplayName("principal mais rápida que a zona é desacelerada")
+        void principalRapidaDesacelera() {
+            var r = validator.validarZonaEtapa(etapa("PRINCIPAL", "3:40-3:50/km"), "CONTINUO", zonas, null);
+
+            assertDentro(r.ritmoAlvo(), "4.01", "4.94");
         }
 
         @Test
