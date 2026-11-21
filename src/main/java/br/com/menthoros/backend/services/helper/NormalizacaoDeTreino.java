@@ -670,9 +670,27 @@ public class NormalizacaoDeTreino {
             teto = ctx.tetoPorTipo().get(TipoTreino.valueOf(treino.tipoTreino()));
         } catch (IllegalArgumentException | NullPointerException ignored) {}
         final BigDecimal tetoTipo = teto;
-        List<EtapaTreinoLlmDto> etapas = treino.etapas().stream()
+        List<EtapaTreinoLlmDto> validadas = treino.etapas().stream()
                 .map(e -> paceValidator.validarZonaEtapa(e, treino.tipoTreino(), ctx.zonasPace(), tetoTipo))
                 .toList();
+        // A zona não pode deixar aquecimento/desaquecimento mais rápido que a PRINCIPAL (regra de
+        // fix-etapas-sintetizadas-sessao-curta): quando a principal ficou lenta por cautela, a etapa leve fica como veio.
+        PaceValidator.PaceRange principal = validadas.stream()
+                .filter(e -> "PRINCIPAL".equalsIgnoreCase(e.tipoEtapa()) && e.ritmoAlvo() != null)
+                .map(e -> paceValidator.parsear(e.ritmoAlvo()))
+                .filter(Objects::nonNull)
+                .findFirst().orElse(null);
+        List<EtapaTreinoLlmDto> etapas = new ArrayList<>(validadas);
+        for (int i = 0; i < etapas.size(); i++) {
+            EtapaTreinoLlmDto nova = etapas.get(i);
+            EtapaTreinoLlmDto original = treino.etapas().get(i);
+            boolean leve = "AQUECIMENTO".equalsIgnoreCase(nova.tipoEtapa()) || "DESAQUECIMENTO".equalsIgnoreCase(nova.tipoEtapa());
+            if (!leve || principal == null || nova == original || nova.ritmoAlvo() == null) continue;
+            PaceValidator.PaceRange r = paceValidator.parsear(nova.ritmoAlvo());
+            if (r != null && r.paceMin().compareTo(principal.paceMax()) < 0) {
+                etapas.set(i, original);
+            }
+        }
         return etapas.equals(treino.etapas()) ? treino : treino.comEtapas(etapas);
     }
 
