@@ -19,11 +19,27 @@ import java.util.UUID;
  * (#4) pousam depois: hoje 5 campos, o alvo é 1.</p>
  *
  * @param zonasFC {@code null} quando o atleta não tem FC cadastrada — {@code corrigir-fc-zona} vira no-op
+ * @param zonasPace {@code null} sem pace de limiar nem zonas manuais de pace — {@code corrigir-pace-zona} vira no-op
  */
 public record ContextoNormalizacao(
         Atleta atleta,
         UUID atletaId,
         @Nullable List<ZonaFC> zonasFC,
         Map<TipoTreino, BigDecimal> tetoPorTipo,
-        Map<TipoTreino, BigDecimal> pisoPorTipo
-) {}
+        Map<TipoTreino, BigDecimal> pisoPorTipo,
+        @Nullable List<ZonaTreinoService.ZonaPace> zonasPace
+) {
+    /** Sem zonas de pace — eval e testes anteriores a validar-ritmo-etapa-contra-zona. */
+    public ContextoNormalizacao(Atleta atleta, UUID atletaId, @Nullable List<ZonaFC> zonasFC,
+                                Map<TipoTreino, BigDecimal> tetoPorTipo, Map<TipoTreino, BigDecimal> pisoPorTipo) {
+        this(atleta, atletaId, zonasFC, tetoPorTipo, pisoPorTipo, null);
+    }
+
+    /** Zonas de pace só com dado (limiar ou faixas manuais); sem ele, o fallback sintético não vale como régua. */
+    public static @Nullable List<ZonaTreinoService.ZonaPace> zonasPaceComDado(Atleta atleta, ZonaTreinoService zonas) {
+        boolean manual = atleta.getModoZonasPace() == br.com.menthoros.backend.enums.ModoZonas.MANUAL
+                && atleta.getZonasManuaisPace() != null;
+        boolean limiar = atleta.getPaceLimiar() != null && atleta.getPaceLimiar().signum() > 0;
+        return manual || limiar ? zonas.zonasPace(atleta) : null;
+    }
+}

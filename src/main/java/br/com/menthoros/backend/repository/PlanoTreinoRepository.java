@@ -21,6 +21,17 @@ public interface PlanoTreinoRepository extends JpaRepository<PlanoTreino, UUID> 
     /** Busca a temporada (ou PlanoTreino legado) dentro do tenant. */
     Optional<PlanoTreino> findByIdAndAssessoriaId(UUID id, UUID tenantId);
 
+    /**
+     * Só o id da prova da temporada do atleta, sem carregar a entidade: quem aprova trava a prova antes
+     * de ler a temporada, e uma cópia já carregada não seria relida depois do lock (D13).
+     */
+    @Query("""
+            select p.prova.id from PlanoTreino p
+             where p.id = :id and p.atleta.id = :atletaId and p.assessoria.id = :tenantId
+            """)
+    Optional<UUID> findRaceIdBySeasonPlan(@Param("id") UUID id, @Param("atletaId") UUID atletaId,
+                                          @Param("tenantId") UUID tenantId);
+
     /** Temporadas do atleta nos status pedidos, dentro do tenant; legado (status nulo) fica de fora. */
     List<PlanoTreino> findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(UUID atletaId, UUID tenantId,
                                                                      Collection<SeasonPlanStatus> statuses);

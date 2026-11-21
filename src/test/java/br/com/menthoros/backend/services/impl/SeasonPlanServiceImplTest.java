@@ -28,7 +28,13 @@ import br.com.menthoros.backend.repository.PlanoTreinoRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.SeasonWeekRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
+import br.com.menthoros.backend.repository.UsuarioRepository;
+import br.com.menthoros.backend.security.AuthenticatedAtletaResolver;
+import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
 import br.com.menthoros.backend.services.SeasonPlanService.Generation;
+import br.com.menthoros.backend.dto.output.AthleteSeasonPlanDto;
+import br.com.menthoros.backend.entity.Usuario;
+import br.com.menthoros.backend.enums.ProvaStatus;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -66,7 +72,7 @@ import static org.mockito.Mockito.when;
 class SeasonPlanServiceImplTest {
 
     /** 2026-11-16 (segunda) 12:00 UTC = 09:00 em São Paulo. */
-    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-16T12:00:00Z"), ZoneOffset.UTC);
+    private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-16T12:00:00.123456789Z"), ZoneOffset.UTC);
     private static final LocalDate HOJE = LocalDate.of(2026, 11, 16);
     private static final LocalDate PROVA_20_SEMANAS = LocalDate.of(2027, 4, 4);
 
@@ -78,6 +84,9 @@ class SeasonPlanServiceImplTest {
     @Mock private AthleteBaselineStateRepository baselineRepository;
     @Mock private PerfilOnboardingAtletaRepository perfilRepository;
     @Mock private TreinoRealizadoRepository treinoRealizadoRepository;
+    @Mock private UsuarioRepository usuarioRepository;
+    @Mock private AuthenticatedPrincipalResolver principalResolver;
+    @Mock private AuthenticatedAtletaResolver atletaResolver;
     @Captor private ArgumentCaptor<List<SeasonWeek>> semanasCaptor;
 
     private SeasonPlanServiceImpl service;
@@ -474,10 +483,224 @@ class SeasonPlanServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("approve")
+    class Approve {
+
+        @Test
+        @DisplayName("flag desligada responde SeasonPlanDisabledException sem tocar no banco")
+        void flagDesligada() {
+            service = novo(false);
+            UUID id = UUID.randomUUID();
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), id)).isInstanceOf(SeasonPlanDisabledException.class);
+            verifyNoInteractions(planoTreinoRepository, provaRepository, usuarioRepository);
+        }
+
+        @Test
+        @DisplayName("temporada que não é do atleta no tenant vira não encontrado, sem lock")
+        void naoEncontrada() {
+            UUID id = UUID.randomUUID();
+            when(planoTreinoRepository.findRaceIdBySeasonPlan(id, atleta.getId(), tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), id)).isInstanceOf(DomainNotFoundException.class);
+            verifyNoInteractions(provaRepository);
+        }
+
+        @Test
+        @DisplayName("PROPOSED vira ACTIVE com o Usuario.id do treinador e o instante do relógio, lendo depois do lock")
+        void aprova() {
+            Prova prova = provaAlvo(PROVA_20_SEMANAS);
+            PlanoTreino proposta = travadaComTemporada(prova, SeasonPlanStatus.PROPOSED);
+            when(planoTreinoRepository.findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(
+                    atleta.getId(), tenantId, List.of(SeasonPlanStatus.ACTIVE))).thenReturn(List.of());
+            Usuario treinador = treinadorAutenticado();
+
+            SeasonPlanResponseDto dto = service.approve(atleta.getId(), proposta.getId());
+
+            assertThat(dto.seasonStatus()).isEqualTo(SeasonPlanStatus.ACTIVE);
+            assertThat(dto.approvedAt()).isEqualTo(Instant.parse("2026-11-16T12:00:00.123456Z"));
+            assertThat(proposta.getApprovedBy()).isEqualTo(treinador.getId());
+            InOrder ordem = inOrder(provaRepository, planoTreinoRepository);
+            ordem.verify(provaRepository).findByIdAndTenantIdForUpdate(prova.getId(), tenantId);
+            ordem.verify(planoTreinoRepository).findByIdAndAssessoriaId(proposta.getId(), tenantId);
+            ordem.verify(planoTreinoRepository).saveAndFlush(proposta);
+        }
+
+        @Test
+        @DisplayName("aprovar uma ACTIVE devolve a mesma sem reescrever quem e quando aprovou")
+        void idempotente() {
+            Prova prova = provaAlvo(PROVA_20_SEMANAS);
+            PlanoTreino ativa = travadaComTemporada(prova, SeasonPlanStatus.ACTIVE);
+            UUID aprovador = UUID.randomUUID();
+            Instant quando = Instant.parse("2026-11-10T10:00:00Z");
+            ativa.setApprovedBy(aprovador);
+            ativa.setApprovedAt(quando);
+
+            SeasonPlanResponseDto dto = service.approve(atleta.getId(), ativa.getId());
+
+            assertThat(dto.seasonStatus()).isEqualTo(SeasonPlanStatus.ACTIVE);
+            assertThat(dto.approvedAt()).isEqualTo(quando);
+            assertThat(ativa.getApprovedBy()).isEqualTo(aprovador);
+            verify(planoTreinoRepository, never()).saveAndFlush(any());
+            verifyNoInteractions(usuarioRepository);
+        }
+
+        @Test
+        @DisplayName("ARCHIVED responde 409")
+        void arquivada() {
+            PlanoTreino arquivada = travadaComTemporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.ARCHIVED);
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), arquivada.getId()))
+                    .isInstanceOf(DomainConflictException.class);
+            verify(planoTreinoRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("outra ACTIVE do atleta responde 409")
+        void outraAtiva() {
+            PlanoTreino proposta = travadaComTemporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.PROPOSED);
+            PlanoTreino outra = temporada(provaAlvo(PROVA_20_SEMANAS.plusWeeks(4)), SeasonPlanStatus.ACTIVE);
+            when(planoTreinoRepository.findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(
+                    atleta.getId(), tenantId, List.of(SeasonPlanStatus.ACTIVE))).thenReturn(List.of(outra));
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), proposta.getId()))
+                    .isInstanceOf(DomainConflictException.class);
+            verify(planoTreinoRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("proposta com a prova cancelada encontrada depois do lock responde 422")
+        void provaCancelada() {
+            Prova prova = provaAlvo(PROVA_20_SEMANAS);
+            prova.setStatusProva(ProvaStatus.CANCELADA);
+            PlanoTreino proposta = travadaComTemporada(prova, SeasonPlanStatus.PROPOSED);
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), proposta.getId()))
+                    .isInstanceOf(DomainRuleViolationException.class);
+            verify(planoTreinoRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("temporada arquivada pelo cancelamento da prova responde 409, não 422")
+        void arquivadaPeloCancelamento() {
+            Prova prova = provaAlvo(PROVA_20_SEMANAS);
+            prova.setStatusProva(ProvaStatus.CANCELADA);
+            PlanoTreino arquivada = travadaComTemporada(prova, SeasonPlanStatus.ARCHIVED);
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), arquivada.getId()))
+                    .isInstanceOf(DomainConflictException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("findForAuthenticatedAthlete")
+    class FindForAuthenticatedAthlete {
+
+        @Test
+        @DisplayName("flag desligada devolve vazio sem resolver o atleta")
+        void flagDesligada() {
+            service = novo(false);
+
+            assertThat(service.findForAuthenticatedAthlete()).isEmpty();
+            verifyNoInteractions(atletaResolver, planoTreinoRepository);
+        }
+
+        @Test
+        @DisplayName("sem ACTIVE devolve vazio")
+        void semAtiva() {
+            when(atletaResolver.resolverAtletaIdAtual()).thenReturn(atleta.getId());
+            ativas();
+
+            assertThat(service.findForAuthenticatedAthlete()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("prova que já passou devolve vazio")
+        void provaPassou() {
+            when(atletaResolver.resolverAtletaIdAtual()).thenReturn(atleta.getId());
+            ativas(temporada(provaAlvo(HOJE.minusDays(1)), SeasonPlanStatus.ACTIVE));
+
+            assertThat(service.findForAuthenticatedAthlete()).isEmpty();
+        }
+
+        @Test
+        @DisplayName("ACTIVE traz prova, dias, fase da semana corrente e só os marcos de hoje em diante")
+        void ativa() {
+            when(atletaResolver.resolverAtletaIdAtual()).thenReturn(atleta.getId());
+            PlanoTreino ativa = temporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.ACTIVE);
+            ativas(ativa);
+            Prova passada = preparatoria("Passada", HOJE.minusDays(3));
+            Prova futura = preparatoria("Futura", HOJE.plusDays(10));
+            SeasonWeek anterior = semanaGravada(0, "38", "10", passada.getId());
+            SeasonWeek corrente = semanaGravada(1, "40", "11", null);
+            corrente.setPhase(TrainingPhase.BUILD);
+            SeasonWeek seguinte = semanaGravada(2, "42", "11", futura.getId());
+            when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(ativa.getId(), tenantId))
+                    .thenReturn(List.of(anterior, corrente, seguinte));
+            when(provaRepository.findByIdInAndAssessoriaId(anyCollection(), any())).thenReturn(List.of(passada, futura));
+
+            AthleteSeasonPlanDto dto = service.findForAuthenticatedAthlete().orElseThrow();
+
+            assertThat(dto.raceName()).isEqualTo("Maratona alvo");
+            assertThat(dto.raceDate()).isEqualTo(PROVA_20_SEMANAS);
+            assertThat(dto.distance()).isEqualTo(DistanciaProva.KM_42);
+            assertThat(dto.daysToRace()).isEqualTo(139);
+            assertThat(dto.currentPhase()).isEqualTo(TrainingPhase.BUILD);
+            assertThat(dto.upcomingMilestones()).extracting(AthleteSeasonPlanDto.Milestone::name).containsExactly("Futura");
+        }
+
+        @Test
+        @DisplayName("antes da primeira semana a fase atual fica ausente")
+        void foraDoHorizonte() {
+            when(atletaResolver.resolverAtletaIdAtual()).thenReturn(atleta.getId());
+            PlanoTreino ativa = temporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.ACTIVE);
+            ativas(ativa);
+            when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(ativa.getId(), tenantId))
+                    .thenReturn(List.of(semanaGravada(2, "40", "11", null)));
+
+            AthleteSeasonPlanDto dto = service.findForAuthenticatedAthlete().orElseThrow();
+
+            assertThat(dto.currentPhase()).isNull();
+            assertThat(dto.upcomingMilestones()).isEmpty();
+        }
+
+        private void ativas(PlanoTreino... temporadas) {
+            when(planoTreinoRepository.findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(
+                    atleta.getId(), tenantId, List.of(SeasonPlanStatus.ACTIVE))).thenReturn(List.of(temporadas));
+        }
+    }
+
     private SeasonPlanServiceImpl novo(boolean enabled) {
         return new SeasonPlanServiceImpl(atletaRepository, provaRepository, planoTreinoRepository,
                 seasonWeekRepository, metricasDiariasRepository, baselineRepository, perfilRepository,
-                treinoRealizadoRepository, CLOCK, enabled);
+                treinoRealizadoRepository, usuarioRepository, principalResolver, atletaResolver, CLOCK, enabled);
+    }
+
+    /** Temporada com a prova travada e relida pelo id, como no fluxo de aprovar. */
+    private PlanoTreino travadaComTemporada(Prova prova, SeasonPlanStatus status) {
+        PlanoTreino t = temporada(prova, status);
+        when(planoTreinoRepository.findRaceIdBySeasonPlan(t.getId(), atleta.getId(), tenantId))
+                .thenReturn(Optional.of(prova.getId()));
+        when(provaRepository.findByIdAndTenantIdForUpdate(prova.getId(), tenantId)).thenReturn(Optional.of(prova));
+        when(planoTreinoRepository.findByIdAndAssessoriaId(t.getId(), tenantId)).thenReturn(Optional.of(t));
+        return t;
+    }
+
+    private Usuario treinadorAutenticado() {
+        Usuario u = new Usuario();
+        u.setId(UUID.randomUUID());
+        when(principalResolver.getCurrentSubject()).thenReturn("kc-sub");
+        when(usuarioRepository.findByKeycloakIdAndAssessoria_Id("kc-sub", tenantId)).thenReturn(Optional.of(u));
+        return u;
+    }
+
+    private Prova preparatoria(String nome, LocalDate data) {
+        Prova p = provaAlvo(data);
+        p.setProvaAlvo(false);
+        p.setNomeProva(nome);
+        p.setDistancia(DistanciaProva.KM_21);
+        return p;
     }
 
     private void atletaExiste() {

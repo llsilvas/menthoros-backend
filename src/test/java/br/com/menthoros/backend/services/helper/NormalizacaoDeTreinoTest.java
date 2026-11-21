@@ -279,6 +279,43 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
+        @DisplayName("CA1: aquecimento rápido demais vai para a Z1 do atleta e a distância sai do ritmo corrigido")
+        void aquecimentoForaDaZonaCorrigidoAntesDaDistancia() {
+            // limiar 6:20 → Z1 de Friel ≈ 8:10–8:52; o aquecimento veio a 6:00–6:30
+            var comZonas = new ContextoNormalizacao(ctxLeandro.atleta(), ctxLeandro.atletaId(), null, Map.of(), Map.of(),
+                    new ZonaTreinoService().zonasPace(ctxLeandro.atleta()));
+            var treino = continuo("6.0", "45:00", "8:00-8:20/km",
+                    etapa("AQUECIMENTO", 10, 0.0, "6:00-6:30/km"),
+                    etapa("PRINCIPAL", 30, 3.7, "8:00-8:20/km"),
+                    etapa("DESAQUECIMENTO", 5, 0.5, null));
+
+            var resultado = normalizacao.normalizar(treino, comZonas);
+
+            var aquecimento = resultado.etapas().get(0);
+            assertThat(aquecimento.ritmoAlvo()).isNotEqualTo("6:00-6:30/km");
+            assertThat(new PaceValidator().calcularPaceMedia(aquecimento.ritmoAlvo()).orElseThrow())
+                    .isBetween(8.10, 8.90);
+            assertThat(aquecimento.distanciaKm()).isCloseTo(1.17, org.assertj.core.data.Offset.offset(0.1)); // 10 ÷ ~8:31
+        }
+
+        @Test
+        @DisplayName("zona não deixa o aquecimento mais rápido que a PRINCIPAL lenta por cautela")
+        void aquecimentoNaoPassaAPrincipal() {
+            // Z1 ≈ 8:10–8:52 e Z2–Z3 ≈ 6:39–8:10; principal a 8:50–9:10 (mais lenta que a zona) fica intacta
+            var comZonas = new ContextoNormalizacao(ctxLeandro.atleta(), ctxLeandro.atletaId(), null, Map.of(), Map.of(),
+                    new ZonaTreinoService().zonasPace(ctxLeandro.atleta()));
+            var treino = continuo("5.0", "45:00", "8:50-9:10/km",
+                    etapa("AQUECIMENTO", 10, 0.0, "9:00-9:20/km"),
+                    etapa("PRINCIPAL", 30, 3.3, "8:50-9:10/km"),
+                    etapa("DESAQUECIMENTO", 5, 0.5, null));
+
+            var resultado = normalizacao.normalizar(treino, comZonas);
+
+            assertThat(resultado.etapas().get(1).ritmoAlvo()).isEqualTo("8:50-9:10/km");
+            assertThat(resultado.etapas().get(0).ritmoAlvo()).isEqualTo("9:00-9:20/km");
+        }
+
+        @Test
         @DisplayName("ritmo absurdo da PRINCIPAL é descartado e a distância sai do ritmo do treino (validar-ritmo, S4)")
         void ritmoAbsurdoDescartado() {
             var treino = continuo("6.0", "45:00", "6:00-6:30/km",
@@ -732,9 +769,9 @@ class NormalizacaoDeTreinoTest {
                     .filter(e -> e.getLevel() == Level.DEBUG)
                     .map(ILoggingEvent::getFormattedMessage)
                     .toList();
-            assertThat(debug).hasSize(7); // sanear-ritmos + um por passo da cauda comum
+            assertThat(debug).hasSize(8); // sanear-ritmos + corrigir-pace-zona + um por passo da cauda comum
             assertThat(debug).allSatisfy(m -> assertThat(m).contains("familia=PADRAO").contains("alterou=false"));
-            assertThat(debug.get(4)).contains("passo=recalcular-duracao");
+            assertThat(debug.get(5)).contains("passo=recalcular-duracao");
         }
 
         @Test

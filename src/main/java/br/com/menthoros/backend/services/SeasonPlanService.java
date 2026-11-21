@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services;
 
+import br.com.menthoros.backend.dto.output.AthleteSeasonPlanDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 
 import java.util.Optional;
@@ -38,4 +39,34 @@ public interface SeasonPlanService {
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException atleta fora do tenant
      */
     Optional<SeasonPlanResponseDto> findCurrent(UUID atletaId);
+
+    /**
+     * Aprova a temporada PROPOSED do atleta: vira ACTIVE com quem e quando aprovou
+     * (add-season-plan-approve-athlete-view, A1, A3, A5).
+     *
+     * Idempotent: YES — aprovar uma ACTIVE devolve a mesma, sem reescrever {@code approvedBy}/{@code approvedAt}.
+     * Side Effects: Database update (status e auditoria da temporada); lock pessimista na prova da temporada.
+     * Tenant-aware: YES
+     *
+     * @throws br.com.menthoros.backend.exception.SeasonPlanDisabledException flag desligada
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException temporada não é do atleta no tenant, ou
+     *         usuário autenticado fora do tenant
+     * @throws br.com.menthoros.backend.exception.DomainConflictException temporada ARCHIVED/COMPLETED, ou outra
+     *         ACTIVE do atleta
+     * @throws br.com.menthoros.backend.exception.DomainRuleViolationException a prova deixou de ser alvo ou foi
+     *         cancelada
+     */
+    SeasonPlanResponseDto approve(UUID atletaId, UUID seasonPlanId);
+
+    /**
+     * Temporada ACTIVE do atleta autenticado, enquanto a prova não passou (A2). Vazio também com a flag
+     * desligada (A6): o atleta não precisa saber que existe flag.
+     *
+     * Idempotent: YES
+     * Side Effects: NONE
+     * Tenant-aware: YES — o atleta vem do JWT, nunca de parâmetro.
+     *
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException usuário sem atleta no tenant
+     */
+    Optional<AthleteSeasonPlanDto> findForAuthenticatedAthlete();
 }
