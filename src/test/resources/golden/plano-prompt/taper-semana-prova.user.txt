@@ -3,7 +3,7 @@
 - Idade: 36 anos
 - Objetivo Principal: PR nos 21k
 - Nível: AVANCADO
-- Dias disponíveis: Segunda-feira, Quarta-feira, Sexta-feira, Sábado
+- Dias disponíveis: Terça-feira, Quinta-feira, Sábado, Domingo
 - Dia preferido do longo: SABADO
 - Provas planejadas: **PROVA ALVO:** Meia Maratona da Cidade
 - Data: 25/01/2026 (10 dias / 1 semanas)
@@ -31,11 +31,11 @@ Nenhuma prova preparatória cadastrada.
 ## ⛔ REGRAS QUE VOCÊ NÃO PODE VIOLAR
 
 - O `ritmoAlvo` (paceMin) de cada treino NÃO pode ser mais rápido que o teto do seu tipo:
-- REGENERATIVO: não mais rápido que 6:52/km
-- CONTINUO: não mais rápido que 5:48/km
-- LONGO: não mais rápido que 5:43/km
-- INTERVALADO: não mais rápido que 4:54/km
-- Gere treinos EXCLUSIVAMENTE nos dias permitidos: Terça-feira, Quinta-feira, Sábado. NÃO inclua treinos em nenhum outro dia da semana.
+- REGENERATIVO: não mais rápido que 5:23/km
+- CONTINUO: não mais rápido que 4:54/km
+- LONGO: não mais rápido que 4:59/km
+- INTERVALADO: não mais rápido que 3:55/km
+- Gere treinos EXCLUSIVAMENTE nos dias permitidos: Terça-feira, Quinta-feira, Sábado, Domingo. NÃO inclua treinos em nenhum outro dia da semana.
 - No máximo 6 dias de treino consecutivos; intercale descanso completo ou regenerativo.
 
 (Estas regras são determinísticas, baseadas em dados reais do atleta, e SUBSTITUEM qualquer raciocínio independente. Não as viole.)
@@ -80,7 +80,7 @@ Nenhuma prova preparatória cadastrada.
 - Esta prova SUBSTITUI o treino-chave e o longo tradicional da semana, se houver conflito.
 - Reduza o volume semanal total em 30-50% em relacao a uma semana normal desta fase.
 - Nao prescreva intervalado pesado, tiro longo ou longo estressor nas 48-72h anteriores a prova.
-- Permita no maximo 1 treino de ativacao leve e curta 24-48h antes da prova.
+- Prescreva exatamente 1 treino de ativacao 24-48h antes da prova: 20-30 min em Z1/Z2 com 4-6 aceleracoes (strides) de 20 s e recuperacao completa entre elas. Para atleta AVANCADO, pode trocar os strides por 2-3 km em ritmo de prova na quarta ou quinta.
 - O dia seguinte a prova deve ser descanso completo ou regenerativo muito leve.
 - Se houver conflito entre TSS alvo e frescor para competir, priorize frescor para a prova.
 - Diretriz do treinador: Priorize frescor, estrategia e confianca para competir bem.
@@ -104,11 +104,11 @@ Nenhuma prova preparatória cadastrada.
 - Última atualização: Nunca testado
 
 **Zonas de Treino Calculadas:**
-- Z1 (Recuperação): 4.66-5.06 min/km | 128-145 bpm
-- Z2 (Aeróbico): 4.25-4.66 min/km | 145-152 bpm
-- Z3 (Tempo): 4.05-4.25 min/km | 152-161 bpm
-- Z4 (Limiar): 3.85-4.05 min/km | 161-171 bpm
-- Z5 (VO2max): 3.65-3.85 min/km | 171-181 bpm
+- Z1 (Recuperação): 5.22-5.67 min/km | 128-145 bpm
+- Z2 (Aeróbico): 4.58-5.22 min/km | 145-152 bpm
+- Z3 (Tempo): 4.25-4.58 min/km | 152-161 bpm
+- Z4 (Limiar): 4.01-4.25 min/km | 161-171 bpm
+- Z5 (VO2max): 3.65-4.01 min/km | 171-181 bpm
 - Z6 (Sprint): 3.32-3.65 min/km | 171-181 bpm
 
 
@@ -142,16 +142,16 @@ Nenhuma prova preparatória cadastrada.
 **Últimos 14 dias:**
 
 - **Total de treinos:** 5
-- **Volume total:** 43,0 km
-- **TSS total:** 327 pontos
-- **Média por treino:** 8,6 km | 65 TSS
+- **Volume total:** 62,0 km
+- **TSS total:** 392 pontos
+- **Média por treino:** 12,4 km | 78 TSS
 
 **Últimos 5 treinos:**
-- 2026-01-13: CONTINUO - 6,0 km, PT40M min, TSS 45 | RPE 4/10
-- 2026-01-10: REGENERATIVO - 4,0 km, PT28M min, TSS 25 | RPE 3/10
-- 2026-01-06: CONTINUO - 7,0 km, PT47M min, TSS 52 | RPE 5/10
-- 2026-01-03: LONGO - 16,0 km, PT1H35M min, TSS 120 | RPE 6/10
-- 2025-12-30: INTERVALADO - 10,0 km, PT55M min, TSS 85 | RPE 7/10
+- 2026-01-13: CONTINUO - 10,0 km, PT50M min, TSS 60 | RPE 4/10
+- 2026-01-10: REGENERATIVO - 6,0 km, PT33M min, TSS 30 | RPE 3/10
+- 2026-01-06: CONTINUO - 12,0 km, PT1H1M min, TSS 72 | RPE 5/10
+- 2026-01-03: LONGO - 22,0 km, PT1H52M min, TSS 140 | RPE 6/10
+- 2025-12-30: INTERVALADO - 12,0 km, PT48M min, TSS 90 | RPE 7/10
 
 
 ## 🏃 PACE DEMONSTRADO NOS ÚLTIMOS TREINOS
@@ -161,10 +161,10 @@ Nenhuma prova preparatória cadastrada.
 
 | Tipo        | Pace mínimo | Pace médio | Pace máximo | Treinos |
 |-------------|-------------|------------|-------------|--------|
-| REGENERATIVO | 7:00/km     | 7:00/km    | 7:00/km     | 1       |
-| CONTINUO    | 5:55/km     | 5:57/km    | 6:00/km     | 2       |
-| LONGO       | 5:50/km     | 5:50/km    | 5:50/km     | 1       |
-| INTERVALADO | 5:00/km     | 5:00/km    | 5:00/km     | 1       |
+| REGENERATIVO | 5:30/km     | 5:30/km    | 5:30/km     | 1       |
+| CONTINUO    | 5:00/km     | 5:02/km    | 5:05/km     | 2       |
+| LONGO       | 5:05/km     | 5:05/km    | 5:05/km     | 1       |
+| INTERVALADO | 4:00/km     | 4:00/km    | 4:00/km     | 1       |
 
 ⚠️ Tipos sem histórico recente: usar a zona calculada (Z correspondente) como referência.
 
@@ -184,7 +184,7 @@ Nenhuma prova preparatória cadastrada.
 **Total de dias restantes:** 4
 
 ### Disponibilidade Semanal
-**Dias disponíveis para treinar (configuração do atleta):** Segunda-feira, Quarta-feira, Sexta-feira, Sábado
+**Dias disponíveis para treinar (configuração do atleta):** Terça-feira, Quinta-feira, Sábado, Domingo
 **Total:** 4 dias/semana
 
 **Dia de prova na semana:** Domingo (prova)
@@ -224,9 +224,9 @@ Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDa
 - ⚠️ FARTLEK: NUNCA realizado
 
 ### 2. Volume Semanal Realizado
-- **Semana 📊 Atual (0–6 dias atrás):** 10,0 km | 70 TSS | 2 treinos
-- **Semana 📈 Anterior (7–13 dias atrás):** 23,0 km | 172 TSS | 2 treinos
-- **Semana 📊 Base (14–20 dias atrás):** 10,0 km | 85 TSS | 1 treinos
+- **Semana 📊 Atual (0–6 dias atrás):** 16,0 km | 90 TSS | 2 treinos
+- **Semana 📈 Anterior (7–13 dias atrás):** 34,0 km | 212 TSS | 2 treinos
+- **Semana 📊 Base (14–20 dias atrás):** 12,0 km | 90 TSS | 1 treinos
 
 ### 3. Padrão de Intensidade (Distribuição de Zonas)
 - **Z1 (Recuperação):** 0 TSS (0%)
@@ -244,11 +244,11 @@ Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDa
 
 
 ## 📈 VOLUME MÉDIO DAS ÚLTIMAS 3 SEMANAS
-- **Volume Médio:** 14,3 km
+- **Volume Médio:** 20,7 km
 - **Tendência:** VARIÁVEL
-- **Semana Mais Recente:** 10,0 km
-- **Semana Anterior:** 23,0 km
-- **2 Semanas Atrás:** 10,0 km
+- **Semana Mais Recente:** 16,0 km
+- **Semana Anterior:** 34,0 km
+- **2 Semanas Atrás:** 12,0 km
 
 **MATRIZ DE VARIABILIDADE (últimas 4 semanas):**
 
@@ -293,7 +293,7 @@ Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDa
 ### 2. Treinos Regenerativos Recomendados
 **RECOMENDAÇÃO: Treinos regenerativos estruturados**
 
-- **Corrida Longa Fácil (50-70 min)**: FC = 93-111 bpm
+- **Corrida Longa Fácil (50-70 min)**: Z1
   - Base aeróbica com foco em durabilidade
 
 - **Corrida com Variações (45-60 min)**:
@@ -304,16 +304,14 @@ Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDa
 
 ### 3. Parâmetros Técnicos para Zona Z1
 **Zona Z1 (Regenerativa)**:
-- FC Alvo: 93-111 bpm (50-60% da FCMax)
-- Pace Estimado: ~7:00-7:30 /km
+- FC e pace: faixa Z1 das Zonas de Treino Calculadas do atleta (sem zonas, guie pelo RPE)
 - RPE (Escala 1-10): 2-3 (Muito Fácil)
 - Respiração: Nasal, leve, ritmo natural
 - Conversa: Conversa fácil, sem ofegância
 - Sensação: Leve, movimento fluido, sem tensão
 
 **Zona Z2 (Base Aeróbica)**:
-- FC Alvo: 111-130 bpm (60-70% da FCMax)
-- Pace Estimado: ~6:30-7:00 /km
+- FC e pace: faixa Z2 das Zonas de Treino Calculadas do atleta (sem zonas, guie pelo RPE)
 - RPE: 3-4 (Fácil com esforço moderado)
 - Respiração: Nasal predominante, ritmo controlado
 - Conversa: Conversa possível com pequenos ajustes respiratórios

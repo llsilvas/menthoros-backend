@@ -26,6 +26,7 @@ import br.com.menthoros.backend.repository.AthleteBaselineHistoryRepository;
 import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PerfilOnboardingAtletaRepository;
+import br.com.menthoros.backend.repository.PlanoTreinoRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
@@ -50,6 +51,8 @@ import br.com.menthoros.backend.services.onboarding.PlanningPolicyResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.hibernate.Hibernate;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -91,6 +94,8 @@ public class OnboardingServiceImpl implements OnboardingService {
     private final AtletaProgressService atletaProgressService;
     private final ProvaEnricher provaEnricher;
     private final GarminProperties garminProperties;
+    private final PlanoTreinoRepository planoTreinoRepository;
+    private final EntityManager entityManager;
 
     @Override
     @Transactional(readOnly = true)
@@ -175,8 +180,16 @@ public class OnboardingServiceImpl implements OnboardingService {
         provasAlvoAtuais.stream()
                 .filter(p -> !p.getId().equals(salva.getId()))
                 .forEach(p -> {
+                    // Trava antes de arquivar (add-season-plan-generate-tracer, D13): uma geração
+                    // em curso sobre esta alvo termina antes, e o arquivamento a encontra. Refresh,
+                    // não consulta com lock: `p` já está no contexto e a consulta devolveria o estado velho.
+                    entityManager.refresh(p, LockModeType.PESSIMISTIC_WRITE);
                     p.setProvaAlvo(false);
                     provaRepository.save(p);
+                    // Mesma regra de ProvaServiceImpl.garantirAlvoUnica: a alvo que perdeu o posto
+                    // leva suas temporadas abertas a ARCHIVED.
+                    planoTreinoRepository.archiveOpenSeasons(
+                            p.getId(), tenantId, PlanoTreinoRepository.REASON_TARGET_REPLACED);
                 });
 
         return salva;

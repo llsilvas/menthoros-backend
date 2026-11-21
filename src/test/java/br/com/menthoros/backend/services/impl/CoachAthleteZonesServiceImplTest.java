@@ -109,8 +109,8 @@ class CoachAthleteZonesServiceImplTest {
             AthleteTrainingZonesOutputDto dto = service.buscarZonas(atletaId);
 
             assertThat(dto.zonas()).hasSize(6);
-            assertThat(zona(dto, 2).pace().minSegKm()).isEqualTo(315);
-            assertThat(zona(dto, 2).pace().maxSegKm()).isEqualTo(345);
+            assertThat(zona(dto, 2).pace().minSegKm()).isEqualTo(339);
+            assertThat(zona(dto, 2).pace().maxSegKm()).isEqualTo(387);
             assertThat(zona(dto, 2).fc().min()).isEqualTo(143);
             assertThat(zona(dto, 2).fc().max()).isEqualTo(150);
             assertThat(zona(dto, 6).pace().minSegKm()).isEqualTo(246);
@@ -172,8 +172,8 @@ class CoachAthleteZonesServiceImplTest {
 
             assertThat(dto.ajusteFadiga().segundosPorKm()).isEqualTo(7);
             assertThat(dto.ajusteFadiga().tsbProntidao()).isEqualTo(-12.0);
-            assertThat(zona(dto, 2).pace().minSegKm()).isEqualTo(315);
-            assertThat(zona(dto, 2).pace().maxSegKm()).isEqualTo(345);
+            assertThat(zona(dto, 2).pace().minSegKm()).isEqualTo(339);
+            assertThat(zona(dto, 2).pace().maxSegKm()).isEqualTo(387);
         }
 
         @Test
@@ -402,7 +402,7 @@ class CoachAthleteZonesServiceImplTest {
 
             assertThat(simulado).isEqualTo(gravado);
             assertThat(simulado.disponibilidade().pace()).isTrue();
-            assertThat(zona(simulado, 2).pace().minSegKm()).isEqualTo(304);
+            assertThat(zona(simulado, 2).pace().minSegKm()).isEqualTo(328);
         }
 
         @Test

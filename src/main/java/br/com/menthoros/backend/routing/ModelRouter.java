@@ -14,23 +14,23 @@ import org.springframework.stereotype.Component;
 @Component
 public class ModelRouter {
 
-    private final ChatClient gpt4oMiniClient;
+    private final ChatClient simpleClient;
     private final ChatClient claudeHaikuClient;
     private final ChatClient claudeSonnetClient;
-    private final ChatClient gpt4oClient;
-    private final ChatClient gpt4oPlanoClient;
+    private final ChatClient expertClient;
+    private final ChatClient planoClient;
 
     public ModelRouter(
-            @Qualifier("gpt4oMiniClient") ChatClient gpt4oMiniClient,
+            @Qualifier("simpleClient") ChatClient simpleClient,
             @Qualifier("claudeHaikuClient") ChatClient claudeHaikuClient,
             @Qualifier("claudeSonnetClient") ChatClient claudeSonnetClient,
-            @Qualifier("gpt4oClient") ChatClient gpt4oClient,
-            @Qualifier("gpt4oPlanoClient") ChatClient gpt4oPlanoClient) {
-        this.gpt4oMiniClient = gpt4oMiniClient;
+            @Qualifier("expertClient") ChatClient expertClient,
+            @Qualifier("planoClient") ChatClient planoClient) {
+        this.simpleClient = simpleClient;
         this.claudeHaikuClient = claudeHaikuClient;
         this.claudeSonnetClient = claudeSonnetClient;
-        this.gpt4oClient = gpt4oClient;
-        this.gpt4oPlanoClient = gpt4oPlanoClient;
+        this.expertClient = expertClient;
+        this.planoClient = planoClient;
     }
 
     /**
@@ -49,11 +49,11 @@ public class ModelRouter {
             throw new IllegalArgumentException("TaskComplexity não pode ser null");
         }
         return switch (complexity) {
-            case SIMPLE -> gpt4oMiniClient;
+            case SIMPLE -> simpleClient;
             case STANDARD -> claudeHaikuClient;
             case COMPLEX -> claudeSonnetClient;
-            case EXPERT -> gpt4oClient;
-            case PLANO -> gpt4oPlanoClient;
+            case EXPERT -> expertClient;
+            case PLANO -> planoClient;
         };
     }
 }

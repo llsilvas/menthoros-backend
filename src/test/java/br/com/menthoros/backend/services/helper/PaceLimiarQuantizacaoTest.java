@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PaceLimiarQuantizacaoTest {
 
     private static final double[][] FATORES = {
-            {1.15, 1.25}, {1.05, 1.15}, {1.00, 1.05}, {0.95, 1.00}, {0.90, 0.95}, {0.82, 0.90}
+            {1.29, 1.40}, {1.13, 1.29}, {1.05, 1.13}, {0.99, 1.05}, {0.90, 0.99}, {0.82, 0.90}
     };
 
     private final ZonaTreinoService zonaTreinoService = new ZonaTreinoService();

@@ -18,6 +18,8 @@ public enum ConstraintKey {
     INTERVALADO_PROIBIDO,
     INTERVALADO_MAX_CATEGORIA,
     PACE_TETO,
+    /** Eval: duração ÷ distância da etapa fora do ritmoAlvo ±10%, ou etapa sem distância (add-etapa-pace-validator). */
+    PACE_IMPLICITO,
     DIAS_PERMITIDOS,
     MAX_CONSECUTIVOS,
     /** FC limiar inferido por mediana do quintil superior dos últimos 30 dias. */

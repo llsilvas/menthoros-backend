@@ -27,7 +27,7 @@ public class PaceValidator {
     private static final Pattern RITMO_PATTERN =
             Pattern.compile("(\\d{1,2}):(\\d{2})-(\\d{1,2}):(\\d{2})/km");
 
-    private record PaceRange(BigDecimal paceMin, BigDecimal paceMax) {}
+    record PaceRange(BigDecimal paceMin, BigDecimal paceMax) {}
 
     /**
      * Valida o ritmoAlvo contra teto e piso calculados.
@@ -95,6 +95,37 @@ public class PaceValidator {
      */
     public String validar(String ritmoAlvo, BigDecimal teto) {
         return validar(ritmoAlvo, teto, null);
+    }
+
+    /** Faixa do ritmo com ou sem "/km", tolerante a espaços — só para a sanidade. */
+    private static final Pattern FAIXA_LENIENTE =
+            Pattern.compile("^\\s*(\\d{1,2}):(\\d{2})\\s*-\\s*(\\d{1,2}):(\\d{2})\\s*(/km)?\\s*$");
+    private static final BigDecimal PACE_MAIS_RAPIDO_PLAUSIVEL = new BigDecimal("2.5");  // 2:30/km
+    private static final BigDecimal PACE_MAIS_LENTO_PLAUSIVEL = new BigDecimal("12");    // 12:00/km
+
+    /**
+     * Sanidade da faixa de ritmo (validar-ritmo-etapa-contra-zona): faixa invertida é desinvertida; faixa
+     * zerada ou fora de 2:30–12:00/km vira {@code null}, para os passos seguintes usarem o ritmo do treino ou
+     * a zona. Ritmo único e texto livre passam intactos. Não cruza com a zona do atleta.
+     */
+    public String sanear(String ritmoAlvo) {
+        if (ritmoAlvo == null) return null;
+        Matcher m = FAIXA_LENIENTE.matcher(ritmoAlvo);
+        if (!m.matches()) return ritmoAlvo;
+        BigDecimal a = minutosSegundosParaDecimal(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)));
+        BigDecimal b = minutosSegundosParaDecimal(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)));
+        BigDecimal min = a.min(b);
+        BigDecimal max = a.max(b);
+        if (min.compareTo(PACE_MAIS_RAPIDO_PLAUSIVEL) < 0 || max.compareTo(PACE_MAIS_LENTO_PLAUSIVEL) > 0) {
+            log.warn("ritmoAlvo descartado (zerado ou fora de 2:30–12:00/km): '{}'", ritmoAlvo);
+            return null;
+        }
+        if (a.compareTo(b) > 0) {
+            String desinvertido = formatar(min, max);
+            log.warn("ritmoAlvo invertido corrigido: '{}' → '{}'", ritmoAlvo, desinvertido);
+            return desinvertido;
+        }
+        return ritmoAlvo;
     }
 
     // ===== Helpers =====

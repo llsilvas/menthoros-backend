@@ -26,8 +26,8 @@ public class WorkoutAnalysisTranslator {
     /**
      * Traduz os campos textuais livres do AnaliseWorkoutRawDto para português.
      *
-     * Idempotent: YES — mesma entrada produz mesma saída (determinístico via Haiku).
-     * Side Effects: External API call (Claude Haiku)
+     * Idempotent: YES — mesma entrada produz mesma saída (temperatura baixa da rota simple).
+     * Side Effects: External API call (rota SIMPLE, OpenAI)
      * Tenant-aware: NO
      *
      * @param raw análise em inglês retornada pelo LLM de análise
@@ -39,12 +39,12 @@ public class WorkoutAnalysisTranslator {
         }
         log.debug("Traduzindo análise: summary={}", raw.summary());
 
-        ChatClient haiku = modelRouter.route(TaskComplexity.STANDARD);
+        ChatClient client = modelRouter.route(TaskComplexity.SIMPLE);
 
-        String summaryPt = translateField(haiku, raw.summary());
-        String interpretationPt = translateField(haiku, raw.technicalInterpretation());
-        String recommendationPt = translateField(haiku, raw.recommendation());
-        String rationalePt = translateField(haiku, raw.rationale());
+        String summaryPt = translateField(client, raw.summary());
+        String interpretationPt = translateField(client, raw.technicalInterpretation());
+        String recommendationPt = translateField(client, raw.recommendation());
+        String rationalePt = translateField(client, raw.rationale());
 
         log.debug("Tradução concluída: summary_pt={}", summaryPt);
 

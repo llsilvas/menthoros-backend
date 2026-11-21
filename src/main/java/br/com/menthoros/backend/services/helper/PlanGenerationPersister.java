@@ -171,6 +171,7 @@ public class PlanGenerationPersister {
         // Prova vence descanso (add-descanso-explicito-por-fadiga, CA12b): garantirProvasNaSemana pode
         // ter posto uma prova num dia prescrito como descanso — o dia não pode ter os dois.
         removerDescansosDeDiasComTreino(plano, treinos);
+        completarDescansos(plano, treinos, periodo.inicio(), periodo.fim());
         // Ligação plano ↔ chamadas LLM por join (add-plan-generation-ledger, D4): mesmo save, sem UPDATE.
         plano.setGenerationRequestId(ctx.generationRequestId());
 
@@ -530,6 +531,40 @@ public class PlanGenerationPersister {
                             d.dayOfWeek()));
             plano.setRestDays(mantidos);
         }
+    }
+
+    /** Motivo do descanso completado pelo sistema — o coach vê e decide se o dia era mesmo folga. */
+    static final String MOTIVO_SEM_PRESCRICAO = "Sem treino prescrito para este dia";
+
+    /**
+     * Todo dia do período do plano é treino ou descanso explícito (garantir-cobertura-sete-dias-plano):
+     * dia que ficou sem nenhum dos dois vira descanso com {@link #MOTIVO_SEM_PRESCRICAO}. Não inventa
+     * treino. Com o skeleton do planner a cobertura da {@code CoberturaSemanalPolicy} não roda, e a LLM
+     * deixava dias sem declaração (revisão cega de 2026-11-18).
+     */
+    // package-private: testado direto por PlanGenerationPersisterDescansoTest
+    void completarDescansos(PlanoSemanal plano, List<TreinoPlanejadoLlmDto> treinos, LocalDate inicio, LocalDate fim) {
+        Set<String> declarados = treinos.stream()
+                .map(TreinoPlanejadoLlmDto::diaSemana)
+                .filter(Objects::nonNull)
+                .map(d -> d.trim().toUpperCase())
+                .collect(Collectors.toCollection(java.util.HashSet::new));
+        plano.getRestDaysOuVazio().forEach(d -> declarados.add(d.dayOfWeek()));
+
+        List<RestDay> completados = new ArrayList<>();
+        for (LocalDate dia = inicio; !dia.isAfter(fim); dia = dia.plusDays(1)) {
+            String nome = Utils.converterDayOfWeekParaDiaSemana(dia.getDayOfWeek()).name();
+            if (!declarados.contains(nome)) {
+                completados.add(new RestDay(nome, MOTIVO_SEM_PRESCRICAO));
+            }
+        }
+        if (completados.isEmpty()) return;
+        log.info("DESCANSO COMPLETADO: {} sem treino nem descanso declarado",
+                completados.stream().map(RestDay::dayOfWeek).toList());
+        // ArrayList pelo mesmo motivo de removerDescansosDeDiasComTreino (merge do Hibernate)
+        List<RestDay> todos = new ArrayList<>(plano.getRestDaysOuVazio());
+        todos.addAll(completados);
+        plano.setRestDays(todos);
     }
 
     private PlanoSemanal criarPlanoEntity(PlanoSemanalLlmDto planoDto, Atleta atleta, LocalDate semanaInicio,

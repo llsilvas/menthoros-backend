@@ -252,20 +252,29 @@ public class TreinoNormalizador {
         double paceZ1 = paceLimiar != null
                 ? paceLimiar.doubleValue() * FATOR_PACE_Z1
                 : PACE_Z1_DEFAULT_MIN_KM;
+        // fix-etapas-sintetizadas-sessao-curta: aquec/desaq sem ritmo nunca mais rápido que a PRINCIPAL
+        double pacePrincipal = etapas.stream().filter(this::ehPrincipal)
+                .map(e -> paceValidator.calcularPaceMedia(e.ritmoAlvo()))
+                .filter(java.util.OptionalDouble::isPresent).mapToDouble(java.util.OptionalDouble::getAsDouble)
+                .findFirst().orElse(0.0);
+        double paceAquec = Math.max(paceZ2, pacePrincipal);
         return etapas.stream()
-                .map(e -> corrigirEtapaTemporal(e, paceZ1, paceZ2))
+                .map(e -> corrigirEtapaTemporal(e, paceZ1, paceAquec))
                 .toList();
     }
 
-    private EtapaTreinoLlmDto corrigirEtapaTemporal(EtapaTreinoLlmDto e, double paceZ1, double paceZ2) {
+    private EtapaTreinoLlmDto corrigirEtapaTemporal(EtapaTreinoLlmDto e, double paceZ1, double paceAquec) {
         if (e.tipoEtapa() == null) return e;
         if (e.duracaoMin() == null || e.duracaoMin() <= 0) return e;
         double pace = switch (e.tipoEtapa().toUpperCase()) {
-            case "AQUECIMENTO", "DESAQUECIMENTO" -> paceZ2;
+            case "AQUECIMENTO", "DESAQUECIMENTO" -> paceAquec;
             case "RECUPERACAO" -> paceZ1;
             default -> -1.0;
         };
         if (pace <= 0) return e;
+        // add-etapa-pace-validator: o ritmoAlvo declarado na etapa é a verdade; o pace da zona é só fallback
+        var paceDeclarado = paceValidator.calcularPaceMedia(e.ritmoAlvo());
+        if (paceDeclarado.isPresent() && paceDeclarado.getAsDouble() > 0) pace = paceDeclarado.getAsDouble();
         return e.comDistancia(arredondar2(e.duracaoMin() / pace));
     }
 
@@ -279,7 +288,7 @@ public class TreinoNormalizador {
         if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
         List<EtapaTreinoLlmDto> etapas = treino.etapas().stream().map(e -> {
             if (!ehPrincipal(e)) return e;
-            var pace = paceDerivavel(e);
+            var pace = paceDerivavel(e, treino.ritmoAlvo());
             if (pace.isEmpty()) return e;
             return e.comDistancia(arredondar2(e.duracaoMin() / pace.getAsDouble()));
         }).toList();
@@ -294,7 +303,8 @@ public class TreinoNormalizador {
     public boolean principaisComDistanciaPorPace(TreinoPlanejadoLlmDto treino) {
         if (treino.etapas() == null) return false;
         List<EtapaTreinoLlmDto> principais = treino.etapas().stream().filter(this::ehPrincipal).toList();
-        return !principais.isEmpty() && principais.stream().allMatch(e -> paceDerivavel(e).isPresent());
+        return !principais.isEmpty()
+                && principais.stream().allMatch(e -> paceDerivavel(e, treino.ritmoAlvo()).isPresent());
     }
 
     /**
@@ -316,11 +326,56 @@ public class TreinoNormalizador {
         return "PRINCIPAL".equals(normalizarTipoEtapa(e.tipoEtapa()));
     }
 
-    /** Pace médio do ritmoAlvo da etapa, quando a etapa tem duração e ritmo interpretável. */
-    private java.util.OptionalDouble paceDerivavel(EtapaTreinoLlmDto e) {
+    /**
+     * Pace médio do ritmoAlvo da etapa — ou do treino, quando a etapa não declara o seu
+     * (fix-total-treino-soma-etapas: o gpt-4o põe o ritmo só no treino) —, se a etapa tem duração.
+     */
+    private java.util.OptionalDouble paceDerivavel(EtapaTreinoLlmDto e, String ritmoDoTreino) {
         if (e.duracaoMin() == null || e.duracaoMin() <= 0) return java.util.OptionalDouble.empty();
         var pace = paceValidator.calcularPaceMedia(e.ritmoAlvo());
+        if (pace.isEmpty()) pace = paceValidator.calcularPaceMedia(ritmoDoTreino);
         return pace.isPresent() && pace.getAsDouble() > 0 ? pace : java.util.OptionalDouble.empty();
+    }
+
+    /**
+     * Encaixa a única PRINCIPAL no total prescrito: distância = total − demais etapas, duração pelo pace
+     * (fix-total-treino-soma-etapas, decisão do coach: o sistema não infla o volume, e etapas e total
+     * contam a mesma história). Vazio quando não dá para encaixar — mais de uma PRINCIPAL, etapa sem
+     * distância, ou sobra ≤ 0 — e o chamador mantém o comportamento anterior.
+     */
+    public java.util.Optional<TreinoPlanejadoLlmDto> encaixarPrincipalNoTotal(TreinoPlanejadoLlmDto treino) {
+        if (treino.etapas() == null || treino.distanciaKm() == null || treino.distanciaKm() <= 0) {
+            return java.util.Optional.empty();
+        }
+        List<EtapaTreinoLlmDto> principais = treino.etapas().stream().filter(this::ehPrincipal).toList();
+        List<EtapaTreinoLlmDto> demais = treino.etapas().stream().filter(e -> !ehPrincipal(e)).toList();
+        if (principais.size() != 1 || demais.stream().anyMatch(e -> e.distanciaKm() == null || e.distanciaKm() <= 0)) {
+            return java.util.Optional.empty();
+        }
+        double sobra = arredondar2(treino.distanciaKm() - somarDistancias(demais));
+        if (sobra <= 0) return java.util.Optional.empty();
+        EtapaTreinoLlmDto principal = principais.get(0);
+        var pace = paceDerivavel(principal, treino.ritmoAlvo());
+        EtapaTreinoLlmDto encaixada = principal.comDistancia(sobra);
+        if (pace.isPresent()) {
+            encaixada = encaixada.comDuracao(Math.max(1, (int) Math.round(sobra * pace.getAsDouble())));
+        }
+        // fix-etapas-sintetizadas-sessao-curta: PRINCIPAL mais curta que o aquecimento → bloco contínuo único
+        Integer aquecMin = demais.stream().filter(e -> "AQUECIMENTO".equals(normalizarTipoEtapa(e.tipoEtapa())))
+                .map(EtapaTreinoLlmDto::duracaoMin).filter(java.util.Objects::nonNull).findFirst().orElse(null);
+        if (pace.isPresent() && aquecMin != null && encaixada.duracaoMin() != null && encaixada.duracaoMin() < aquecMin) {
+            double total = arredondar2(treino.distanciaKm());
+            EtapaTreinoLlmDto bloco = principal.comOrdem(1).comDistancia(total)
+                    .comDuracao(Math.max(1, (int) Math.round(total * pace.getAsDouble())));
+            log.info("RECONCILIAÇÃO [{}]: PRINCIPAL encaixada ({} min) menor que o aquecimento ({} min) → bloco único de {} km",
+                    treino.tipoTreino(), encaixada.duracaoMin(), aquecMin, total);
+            return java.util.Optional.of(treino.comEtapas(List.of(bloco)).comDistancia(total));
+        }
+        EtapaTreinoLlmDto finalEncaixada = encaixada;
+        List<EtapaTreinoLlmDto> etapas = treino.etapas().stream().map(e -> e == principal ? finalEncaixada : e).toList();
+        log.info("RECONCILIAÇÃO [{}]: etapa sintetizada → PRINCIPAL encaixada no total de {} km ({} km)",
+                treino.tipoTreino(), treino.distanciaKm(), sobra);
+        return java.util.Optional.of(treino.comEtapas(etapas).comDistancia(arredondar2(somarDistancias(etapas))));
     }
 
     /**

@@ -18,7 +18,7 @@ import java.util.Optional;
 /**
  * Segunda chamada da análise pós-treino: o bloco do atleta em PT-BR (design D2 de
  * {@code analise-ia-treino-atleta}). Roda depois da análise do coach, recebe o mesmo payload
- * numérico mais o {@code primary_cause} resultante, e usa a rota {@code SIMPLE} (gpt-4o-mini) —
+ * numérico mais o {@code primary_cause} resultante, e usa a rota {@code SIMPLE} —
  * quatro frases curtas não precisam de raciocínio complexo.
  *
  * <p>Falha aqui NUNCA falha a análise do coach: qualquer exceção vira {@link Optional#empty()}
@@ -50,7 +50,7 @@ public class AthleteMessageGenerator {
 
     /**
      * Idempotent: YES — mesma entrada tende à mesma saída; sem estado gravado.
-     * Side Effects: External API call (gpt-4o-mini via rota SIMPLE)
+     * Side Effects: External API call (rota SIMPLE)
      * Tenant-aware: N/A — opera sobre o payload já montado pelo chamador.
      *
      * @param promptData   JSON numérico do treino ({@link WorkoutAnalysisPromptDataBuilder})

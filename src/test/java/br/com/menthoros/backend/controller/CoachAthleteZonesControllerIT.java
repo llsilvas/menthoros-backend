@@ -78,7 +78,7 @@ class CoachAthleteZonesControllerIT extends AbstractIntegrationTest {
                         .with(jwtDe(subTecnicoA, tenantAId, "TECNICO")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.zonas.length()").value(6))
-                .andExpect(jsonPath("$.zonas[1].pace.minSegKm").value(315))
+                .andExpect(jsonPath("$.zonas[1].pace.minSegKm").value(339))
                 .andExpect(jsonPath("$.zonas[1].fc.min").value(143))
                 .andExpect(jsonPath("$.zonas[5].motivoFc").value("FC_NAO_ESTABILIZA"))
                 .andExpect(jsonPath("$.fcMaxima.bpm").value(185));

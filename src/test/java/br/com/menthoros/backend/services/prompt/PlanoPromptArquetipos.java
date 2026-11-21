@@ -146,7 +146,7 @@ final class PlanoPromptArquetipos {
                 .nivelExperiencia(NivelExperiencia.AVANCADO)
                 .objetivo("Sub-3h na maratona")
                 .fcMaxima(186).fcRepouso(48).fcLimiar(172)
-                .paceLimiar(new BigDecimal("3.50")).velocidadeLimiar(new BigDecimal("15.65"))
+                .paceLimiar(new BigDecimal("3.83")).velocidadeLimiar(new BigDecimal("15.65"))
                 .build();
         // TSB bem negativo → degrada elegibilidade de intervalado
         PlanoMetaDados meta = metaBase(atleta)
@@ -176,8 +176,11 @@ final class PlanoPromptArquetipos {
     }
 
     private static Arquetipo taperSemanaProva() {
+        // Dias disponíveis iguais aos dias efetivos do prompt, com o domingo da prova: antes o prompt
+        // pedia TERÇA/QUINTA/SÁBADO e o atleta tinha os dias úteis, e quem obedecia ao prompt perdia a prova.
         Atleta atleta = atletaBase()
                 .nome("Diego Taper")
+                .diasDisponiveis(diasTaper())
                 .nivelExperiencia(NivelExperiencia.AVANCADO)
                 .objetivo("PR nos 21k")
                 .fcMaxima(185).fcRepouso(50).fcLimiar(171)
@@ -198,7 +201,7 @@ final class PlanoPromptArquetipos {
         prova.setTsbIdealProva(20.0);
         prova.setProvaAlvo(true);
         return new Arquetipo("taper-semana-prova", atleta, meta, prova,
-                contexto(historicoModerado()), INICIO_SEMANA, diasTaper());
+                contexto(historicoTaper()), INICIO_SEMANA, diasTaper());
     }
 
     private static Arquetipo semDados() {
@@ -268,6 +271,19 @@ final class PlanoPromptArquetipos {
         return t;
     }
 
+    private static List<TreinoRealizado> historicoTaper() {
+        // ajustar-taper-pre-prova: histórico coerente com o limiar de 4:05 (meia em ~1:28). Antes usava
+        // historicoModerado() (regenerativo a 7:00, contínuo a 5:55) e o teto "pace demonstrado" do prompt
+        // forçava rodagens ~1 min/km mais lentas que as zonas — a incoerência ritmo × FC da revisão cega.
+        List<TreinoRealizado> t = new ArrayList<>();
+        t.add(treino(HOJE.minusDays(2), TipoTreino.CONTINUO, 10.0, 50, 60, 4, 300));
+        t.add(treino(HOJE.minusDays(5), TipoTreino.REGENERATIVO, 6.0, 33, 30, 3, 330));
+        t.add(treino(HOJE.minusDays(9), TipoTreino.CONTINUO, 12.0, 61, 72, 5, 305));
+        t.add(treino(HOJE.minusDays(12), TipoTreino.LONGO, 22.0, 112, 140, 6, 305));
+        t.add(treino(HOJE.minusDays(16), TipoTreino.INTERVALADO, 12.0, 48, 90, 7, 240));
+        return t;
+    }
+
     private static List<TreinoRealizado> historicoPesado() {
         List<TreinoRealizado> t = new ArrayList<>();
         t.add(treino(HOJE.minusDays(1), TipoTreino.INTERVALADO, 12.0, 60, 95, 8, 290));
@@ -309,6 +325,6 @@ final class PlanoPromptArquetipos {
     }
 
     private static List<DiaSemana> diasTaper() {
-        return List.of(DiaSemana.TERCA, DiaSemana.QUINTA, DiaSemana.SABADO);
+        return List.of(DiaSemana.TERCA, DiaSemana.QUINTA, DiaSemana.SABADO, DiaSemana.DOMINGO);
     }
 }

@@ -11,18 +11,22 @@ import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.MotivoRevisaoProva;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.UserRole;
+import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.exception.ProvaRealizadaImutavelException;
 import br.com.menthoros.backend.exception.ResourceNotFoundException;
 import br.com.menthoros.backend.mapper.ProvaMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.repository.AssessoriaRepository;
 import br.com.menthoros.backend.repository.AtletaRepository;
+import br.com.menthoros.backend.repository.PlanoTreinoRepository;
 import br.com.menthoros.backend.repository.ProvaRepository;
 import br.com.menthoros.backend.security.AuthenticatedAtletaResolver;
 import br.com.menthoros.backend.security.AuthenticatedPrincipalResolver;
 import br.com.menthoros.backend.services.ProvaService;
 import br.com.menthoros.backend.services.helper.ProvaEnricher;
 import br.com.menthoros.backend.services.plano.ProvaNoPlanoService;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.validation.Validator;
@@ -57,6 +61,10 @@ public class ProvaServiceImpl implements ProvaService {
     private final Validator validator;
     private final Clock clock;
     private final ProvaNoPlanoService provaNoPlanoService;
+    private final PlanoTreinoRepository planoTreinoRepository;
+    private final EntityManager entityManager;
+
+    /** Texto gravado em {@code versionReason} quando a prova-alvo deixa de valer; exibido ao treinador. */
 
     /**
      * Resolve o atleta pelo ID garantindo isolamento por tenant.
@@ -95,6 +103,17 @@ public class ProvaServiceImpl implements ProvaService {
         // tenant-aware: usa assessoria do atleta como tenant para garantir isolamento cross-tenant
         UUID tenantId = atleta.getAssessoria().getId();
         return provaRepository.findByIdAndTenantId(provaId, tenantId)
+                .filter(p -> p.getAtleta().getId().equals(atleta.getId()))
+                .orElseThrow(() -> new ResourceNotFoundException("Prova não encontrada: " + provaId));
+    }
+
+    /**
+     * {@link #resolveProva} com lock pessimista, para os caminhos de escrita: serializa com a geração
+     * da temporada, que trava a mesma linha antes de gravar (add-season-plan-generate-tracer, D13).
+     */
+    private Prova travarProva(Atleta atleta, UUID provaId) {
+        UUID tenantId = atleta.getAssessoria().getId();
+        return provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)
                 .filter(p -> p.getAtleta().getId().equals(atleta.getId()))
                 .orElseThrow(() -> new ResourceNotFoundException("Prova não encontrada: " + provaId));
     }
@@ -212,7 +231,7 @@ public class ProvaServiceImpl implements ProvaService {
     @Transactional
     public ProvaOutputDto atualizarProva(UUID atletaId, UUID provaId, ProvaInputDto dto) {
         Atleta atleta = resolveAtletaComPosse(atletaId);
-        Prova prova = resolveProva(atleta, provaId);
+        Prova prova = travarProva(atleta, provaId);
         boolean atorAtleta = atletaResolver.atuaComoAtleta();
         EstadoRelevante antes = EstadoRelevante.de(prova);
         if (atorAtleta) {
@@ -227,11 +246,15 @@ public class ProvaServiceImpl implements ProvaService {
             registrarMudancaDoAtleta(prova, antes, alvoSubstituida);
         }
         Prova salva = provaRepository.save(prova);
+        if (antes.provaAlvo() && !salva.isProvaAlvo() && salva.getStatusProva() != ProvaStatus.CANCELADA) {
+            arquivarTemporadas(provaId, atleta, PlanoTreinoRepository.REASON_TARGET_UNMARKED);
+        }
 
         // prova-no-plano-semanal, D5, mesma transação: data mudou -> sai da semana antiga e
         // entra na nova (reabre as duas, se aprovadas); só nome/tempo objetivo -> atualiza o
         // treino já vinculado sem reabrir revisão.
         if (salva.getStatusProva() == ProvaStatus.CANCELADA) {
+            arquivarTemporadas(provaId, atleta, PlanoTreinoRepository.REASON_RACE_CANCELLED);
             provaNoPlanoService.removerProvaDeSemanaExistente(salva, antes.dataProva());
         } else if (!Objects.equals(antes.dataProva(), salva.getDataProva())) {
             provaNoPlanoService.removerProvaDeSemanaExistente(salva, antes.dataProva());
@@ -259,7 +282,13 @@ public class ProvaServiceImpl implements ProvaService {
     @Transactional
     public void deletarProva(UUID atletaId, UUID provaId) {
         Atleta atleta = resolveAtletaComPosse(atletaId);
-        Prova prova = resolveProva(atleta, provaId);
+        Prova prova = travarProva(atleta, provaId);
+        // Plano de temporada: a FK prova_id é RESTRICT (V116) e prova_alvo_id não tem ação; recusar
+        // aqui devolve 422 com orientação em vez de 500 por violação de constraint.
+        if (planoTreinoRepository.existsReferencingRace(provaId, atleta.getAssessoria().getId())) {
+            throw new DomainRuleViolationException(
+                    "Prova vinculada a um plano de temporada não pode ser excluída. Cancele a prova.");
+        }
         LocalDate dataProva = prova.getDataProva();
         // prova-no-plano-semanal: sem isso o DELETE físico (ON DELETE SET NULL na FK) deixa um
         // TreinoPlanejado do tipo PROVA órfão no plano do atleta, sem reabrir a revisão do coach.
@@ -282,7 +311,7 @@ public class ProvaServiceImpl implements ProvaService {
     @Transactional
     public void cancelarProva(UUID atletaId, UUID provaId) {
         Atleta atleta = resolveAtletaComPosse(atletaId);
-        Prova prova = resolveProva(atleta, provaId);
+        Prova prova = travarProva(atleta, provaId);
         if (atletaResolver.atuaComoAtleta()) {
             exigirNaoRealizada(prova);
             marcarPendente(prova, MotivoRevisaoProva.CANCELADA, null);
@@ -290,6 +319,7 @@ public class ProvaServiceImpl implements ProvaService {
         LocalDate dataProva = prova.getDataProva();
         prova.setStatusProva(ProvaStatus.CANCELADA);
         Prova salva = provaRepository.save(prova);
+        arquivarTemporadas(provaId, atleta, PlanoTreinoRepository.REASON_RACE_CANCELLED);
         // prova-no-plano-semanal, D5, mesma transação: cancelar remove o PROVA da semana, se houver.
         provaNoPlanoService.removerProvaDeSemanaExistente(salva, dataProva);
         log.info("Prova cancelada: id={}, atletaId={}", provaId, atletaId);
@@ -326,7 +356,7 @@ public class ProvaServiceImpl implements ProvaService {
     @Transactional
     public ProvaOutputDto marcarCiente(UUID atletaId, UUID provaId) {
         Atleta atleta = resolveAtleta(atletaId);
-        Prova prova = resolveProva(atleta, provaId);
+        Prova prova = travarProva(atleta, provaId);
         if (!prova.isRevisadaPeloCoach()) {
             prova.setRevisadaPeloCoach(true);
             prova.setMotivoRevisao(null);
@@ -407,7 +437,8 @@ public class ProvaServiceImpl implements ProvaService {
      * @return nome da alvo substituída, quando havia outra prova como alvo
      */
     private Optional<String> garantirAlvoUnica(Atleta atleta, Prova prova) {
-        if (!prova.isProvaAlvo()) {
+        // Prova cancelada não disputa o alvo: reeditá-la não pode desmarcar nem arquivar a alvo atual.
+        if (!prova.isProvaAlvo() || prova.getStatusProva() == ProvaStatus.CANCELADA) {
             return Optional.empty();
         }
         String alvoAnterior = null;
@@ -416,11 +447,28 @@ public class ProvaServiceImpl implements ProvaService {
             if (prova.getId() != null && prova.getId().equals(outra.getId())) {
                 continue;
             }
+            // Trava antes de arquivar (D13): uma geração em curso sobre esta alvo termina antes. É refresh,
+            // não consulta com lock: `outra` já está no contexto, e a consulta devolveria a cópia velha —
+            // um cancelamento confirmado no meio seria sobrescrito pelo save abaixo.
+            entityManager.refresh(outra, LockModeType.PESSIMISTIC_WRITE);
             outra.setProvaAlvo(false);
             provaRepository.save(outra);
+            arquivarTemporadas(outra.getId(), atleta, PlanoTreinoRepository.REASON_TARGET_REPLACED);
             alvoAnterior = outra.getNomeProva();
         }
         return Optional.ofNullable(alvoAnterior);
+    }
+
+    /**
+     * Prova-alvo deixou de valer (cancelada ou trocada): temporadas ACTIVE e PROPOSED dela vão a
+     * ARCHIVED. Nunca apaga — semanas e planos semanais ficam. Idempotente pelo filtro da query.
+     */
+    private void arquivarTemporadas(UUID provaId, Atleta atleta, String motivo) {
+        int arquivadas = planoTreinoRepository.archiveOpenSeasons(
+                provaId, atleta.getAssessoria().getId(), motivo);
+        if (arquivadas > 0) {
+            log.info("Temporadas arquivadas: provaId={}, quantidade={}", provaId, arquivadas);
+        }
     }
 
     /**

@@ -146,8 +146,12 @@ public class FitTreinoPersister {
         TreinoRealizado treino = new TreinoRealizado();
         treino.setAtleta(atleta);
         treino.setTenantId(tenantId);
-        treino.setDataTreino(dados.dataTreino());
-        treino.setDiaSemana(Utils.converterDayOfWeekParaDiaSemana(dados.dataTreino().getDayOfWeek()));
+        // fix-fit-import-athlete-timezone: o dia do treino é o do atleta, não o da JVM (UTC no Railway) — treino
+        // noturno em São Paulo virava o dia seguinte e era recusado como futuro
+        java.time.LocalDate dataTreino = java.time.Instant.ofEpochSecond(dados.startTimeEpochSeconds())
+                .atZone(AtletaHojeResolver.fusoDe(atleta)).toLocalDate();
+        treino.setDataTreino(dataTreino);
+        treino.setDiaSemana(Utils.converterDayOfWeekParaDiaSemana(dataTreino.getDayOfWeek()));
         // TipoTreino não discrimina esporte (só propósito de treino de corrida) — nunca fabricar
         // INTERVALADO/TIRO/etc. a partir da estrutura do .fit (D0.6).
         treino.setTipoTreino(TipoTreino.CONTINUO);

@@ -106,12 +106,14 @@ class NormalizacaoDeTreinoCaracterizacaoTest {
         void regenerativo() {
             // fix-etapas-continuos-pace: PRINCIPAL 25 ÷ 6,75 = 3,70; aquec/desaq 5 ÷ 6,0 = 0,83; com toda
             // etapa pelo pace o total é a soma (tolerância zero): 5,0 → 5,36
+            // fix-etapas-sintetizadas-sessao-curta: aquec/desaq sem ritmo não ficam mais rápidos que a PRINCIPAL —
+            // 5 ÷ 6,75 = 0,74 (era 5 ÷ Z2 6,0 = 0,83); total 5,18
             var esperado = new TreinoPlanejadoLlmDto("QUARTA", "REGENERATIVO", "115-130 bpm", 25, 0.6, 3,
-                    "Recuperação ativa", "35:00", 5.36, "6:30-7:00/km",
+                    "Recuperação ativa", "35:00", 5.18, "6:30-7:00/km",
                     List.of(
-                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento muito leve", 5, 0.83, "115-130 bpm", 1, null),
+                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento muito leve", 5, 0.74, "115-130 bpm", 1, null),
                             new EtapaTreinoLlmDto(2, "PRINCIPAL", "Trote regenerativo Z1", 25, 3.7, "115-130 bpm", 1, "6:30-7:00/km"),
-                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve", 5, 0.83, "115-130 bpm", 1, null)),
+                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve", 5, 0.74, "115-130 bpm", 1, null)),
                     null, null, null);
 
             assertThat(normalizar(atletaSemFc, entradaRegenerativo())).isEqualTo(esperado);
@@ -188,12 +190,15 @@ class NormalizacaoDeTreinoCaracterizacaoTest {
             // fix-etapas-continuos-pace: as etapas ganham distância pelo pace (PRINCIPAL 30 ÷ 6,75 = 4,44,
             // aquec/desaq a Z2), mas o total NÃO é reconciliado — aquec/desaq foram sintetizados pelo
             // reparo e se somam à prescrição; reconciliar levaria o regenerativo a 45min/6,94km.
+            // fix-total-treino-soma-etapas (decisão do coach, 2026-11-16): o total de 4 km fica e a PRINCIPAL
+            // encaixa nele. fix-etapas-sintetizadas-sessao-curta: aquec/desaq no pace da PRINCIPAL (6,75) → 1,48 e
+            // 0,74; PRINCIPAL = 4,0 − 1,48 − 0,74 = 1,78 km, 1,78 × 6,75 = 12 min; o treino vira 27:00.
             var esperado = new TreinoPlanejadoLlmDto("QUARTA", "REGENERATIVO", "115-130 bpm", 25, 0.6, 3,
-                    "Recuperação ativa", "30:00", 4.0, "6:30-7:00/km",
+                    "Recuperação ativa", "27:00", 4.0, "6:30-7:00/km",
                     List.of(
-                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve em Z1-Z2 (gerado pelo sistema)", 10, 1.67, null, 1, null),
-                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Trote regenerativo Z1", 30, 4.44, "115-130 bpm", 1, "6:30-7:00/km"),
-                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve em Z1 (gerado pelo sistema)", 5, 0.83, null, 1, null)),
+                            new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve em Z1-Z2 (gerado pelo sistema)", 10, 1.48, null, 1, null),
+                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Trote regenerativo Z1", 12, 1.78, "115-130 bpm", 1, "6:30-7:00/km"),
+                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve em Z1 (gerado pelo sistema)", 5, 0.74, null, 1, null)),
                     null, null, null);
 
             assertThat(normalizar(atletaSemFc, entradaRegenerativoSoPrincipal())).isEqualTo(esperado);

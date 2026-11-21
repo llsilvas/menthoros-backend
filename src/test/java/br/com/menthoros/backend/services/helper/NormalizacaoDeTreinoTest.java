@@ -243,8 +243,8 @@ class NormalizacaoDeTreinoTest {
             var resultado = normalizacao.normalizar(treino, ctxLeandro);
 
             assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm)
-                    .containsExactly(1.32, 3.9, 0.66);
-            assertThat(resultado.distanciaKm()).isEqualTo(5.88);
+                    .containsExactly(1.3, 3.9, 0.65);  // fix-etapas-sintetizadas-sessao-curta: aquec/desaq sem ritmo no pace da PRINCIPAL (7,69), mais lenta que Z2
+            assertThat(resultado.distanciaKm()).isEqualTo(5.85);
             assertThat(resultado.duracaoMin()).isEqualTo("45:00");
         }
 
@@ -259,7 +259,7 @@ class NormalizacaoDeTreinoTest {
 
             // reparo acrescenta AQUECIMENTO de 10min → 10 / 7,60 = 1,32
             assertThat(resultado.etapas().getFirst().tipoEtapa()).isEqualTo("AQUECIMENTO");
-            assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(1.32);
+            assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(1.3);  // fix-etapas-sintetizadas-sessao-curta: aquec/desaq sem ritmo no pace da PRINCIPAL (7,69), mais lenta que Z2
         }
 
         @Test
@@ -274,15 +274,29 @@ class NormalizacaoDeTreinoTest {
 
             var resultado = normalizacao.normalizar(treino, ctxLeandro);
 
-            assertThat(resultado.distanciaKm()).isCloseTo(5.88, org.assertj.core.data.Offset.offset(0.001));
+            assertThat(resultado.distanciaKm()).isCloseTo(5.85, org.assertj.core.data.Offset.offset(0.001));  // fix-etapas-sintetizadas-sessao-curta: aquec/desaq sem ritmo no pace da PRINCIPAL (7,69), mais lenta que Z2
             assertThat(resultado.duracaoMin()).isEqualTo("45:00");
         }
 
         @Test
-        @DisplayName("CA9: PRINCIPAL sem ritmo mantém a distância da LLM e o total NÃO é reconciliado com a soma inflada")
-        void principalSemRitmoNaoInflaOTotal() {
-            // a PRINCIPAL fica com os 5,5 km da LLM (o total concentrado nela) e aquec/desaq ganham Z2:
-            // soma 7,48 contra 6,0 — reconciliar trocaria uma prescrição coerente por uma soma sem pace
+        @DisplayName("ritmo absurdo da PRINCIPAL é descartado e a distância sai do ritmo do treino (validar-ritmo, S4)")
+        void ritmoAbsurdoDescartado() {
+            var treino = continuo("6.0", "45:00", "6:00-6:30/km",
+                    etapa("AQUECIMENTO", 10, 0.0, null),
+                    etapa("PRINCIPAL", 30, 5.5, "70:00-60:00/km"),
+                    etapa("DESAQUECIMENTO", 5, 0.5, null));
+
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
+
+            assertThat(resultado.etapas().get(1).ritmoAlvo()).isNull();
+            assertThat(resultado.etapas().get(1).distanciaKm()).isEqualTo(4.8); // 30 ÷ 6,25
+        }
+
+        @Test
+        @DisplayName("PRINCIPAL sem ritmo usa o ritmo do treino: distância pelo pace e total = soma das etapas")
+        void principalSemRitmoUsaRitmoDoTreino() {
+            // fix-total-treino-soma-etapas (CA1): antes a PRINCIPAL ficava com os 5,5 km da LLM e o total de 6,0
+            // não batia com as etapas (7,48); agora 30 ÷ 7,69 = 3,9 km e o total é a soma
             var treino = continuo("6.0", "45:00", "7:28-7:55/km",
                     etapa("AQUECIMENTO", 10, 0.0, null),
                     etapa("PRINCIPAL", 30, 5.5, null),
@@ -290,9 +304,26 @@ class NormalizacaoDeTreinoTest {
 
             var resultado = normalizacao.normalizar(treino, ctxLeandro);
 
-            assertThat(resultado.distanciaKm()).isEqualTo(6.0);
-            assertThat(resultado.duracaoMin()).isEqualTo("45:00");
-            assertThat(resultado.etapas().get(1).distanciaKm()).isEqualTo(5.5);
+            assertThat(resultado.etapas().get(1).distanciaKm()).isEqualTo(3.9);
+            assertThat(resultado.distanciaKm()).isEqualTo(
+                    resultado.etapas().stream().mapToDouble(EtapaTreinoLlmDto::distanciaKm).sum(),
+                    org.assertj.core.data.Offset.offset(0.001));
+        }
+
+        @Test
+        @DisplayName("etapa sintetizada: o total prescrito fica e a PRINCIPAL encaixa — total == soma, duração pelo pace")
+        void sintetizadaEncaixaPrincipalNoTotal() {
+            // REGENERATIVO 7 km só com PRINCIPAL (fix-total-treino-soma-etapas, CA2)
+            var treino = continuo("7.0", "50:00", "6:30-7:00/km", etapa("PRINCIPAL", 50, 7.0, "6:30-7:00/km"));
+
+            var resultado = normalizacao.normalizar(treino, ctx);
+
+            double soma = resultado.etapas().stream().mapToDouble(EtapaTreinoLlmDto::distanciaKm).sum();
+            assertThat(resultado.distanciaKm()).isEqualTo(7.0);
+            assertThat(soma).isCloseTo(7.0, org.assertj.core.data.Offset.offset(0.001));
+            var principal = resultado.etapas().get(1);
+            assertThat(principal.duracaoMin()).isEqualTo((int) Math.round(principal.distanciaKm() * 6.75));
+            assertThat(contadorDivergencia("REGENERATIVO", "etapa-sintetizada")).isZero();
         }
 
         @Test
@@ -315,11 +346,11 @@ class NormalizacaoDeTreinoTest {
         @ParameterizedTest(name = "{0}: {1} km / {2} (ritmo {3}) → PRINCIPAL {4} km, total {5} km")
         @CsvSource({
                 // os três contínuos persistidos em 22/09 07:24 (limiar 6:20), LLM → esperado
-                "REGENERATIVO, 6.0, 45:00, 7:28-7:55/km, 30, 5.5, 5, 0.5, 3.9,  5.88",
+                "REGENERATIVO, 6.0, 45:00, 7:28-7:55/km, 30, 5.5, 5, 0.5, 3.9,  5.85",
                 "REGENERATIVO, 7.0, 48:00, 6:45-7:06/km, 35, 6.5, 3, 0.5, 5.05, 6.76",
                 "LONGO,        9.0, 60:00, 6:45-7:06/km, 45, 8.5, 5, 0.5, 6.5,  8.48",
                 // os três de 22/09 08:00 — já com a correção, os totais da LLM ficavam 7 e 8% acima da soma
-                "REGENERATIVO, 6.0, 45:00, 7:28-7:55/km, 30, 4.0, 5, 1.0, 3.9,  5.88",
+                "REGENERATIVO, 6.0, 45:00, 7:28-7:55/km, 30, 4.0, 5, 1.0, 3.9,  5.85",
                 "REGENERATIVO, 7.0, 48:00, 6:55-7:28/km, 30, 5.0, 8, 1.0, 4.17, 6.54",
                 "LONGO,        9.0, 60:00, 6:55-7:28/km, 45, 6.5, 5, 1.0, 6.26, 8.24"
         })
@@ -335,7 +366,7 @@ class NormalizacaoDeTreinoTest {
             var resultado = normalizacao.normalizar(treino, ctxLeandro);
 
             assertThat(resultado.etapas().get(1).distanciaKm()).isEqualTo(principalEsperada);
-            assertThat(resultado.etapas().get(0).distanciaKm()).isEqualTo(1.32); // 10 ÷ Z2 7,60
+            assertThat(resultado.etapas().get(0).distanciaKm()).isEqualTo(kmPrincipalRitmoLento(ritmo) ? 1.3 : 1.32); // 10 ÷ max(Z2 7,60, PRINCIPAL)
             assertThat(resultado.distanciaKm()).isEqualTo(totalEsperado);
             assertThat(resultado.duracaoMin()).isEqualTo(duracao);
         }
@@ -424,16 +455,19 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
-        @DisplayName("regenerativo só com PRINCIPAL: aquec/desaq sintetizados, prescrição de 30min/4km preservada")
+        @DisplayName("regenerativo só com PRINCIPAL: aquec/desaq sintetizados, o total de 4 km fica e a PRINCIPAL encaixa nele")
         void soPrincipalPreservaPrescricao() {
             // a decisão de produto de 22/09: o que o sistema inventa não infla o volume que o treinador aprova
             var treino = continuo("4.0", "30:00", "6:30-7:00/km", etapa("PRINCIPAL", 30, 4.0, "6:30-7:00/km"));
 
             var resultado = normalizacao.normalizar(treino, ctx);
 
+            // fix-total-treino-soma-etapas + fix-etapas-sintetizadas-sessao-curta: aquec/desaq no pace da PRINCIPAL
+            // (6,75) → 1,48 e 0,74; PRINCIPAL = 4,0 − 1,48 − 0,74 = 1,78 km, 1,78 × 6,75 = 12 min
             assertThat(resultado.distanciaKm()).isEqualTo(4.0);
-            assertThat(resultado.duracaoMin()).isEqualTo("30:00");
-            assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsExactly(1.67, 4.44, 0.83);
+            assertThat(resultado.duracaoMin()).isEqualTo("27:00");
+            assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsExactly(1.48, 1.78, 0.74);
+            assertThat(resultado.etapas().get(1).duracaoMin()).isEqualTo(12);
         }
 
         @Test
@@ -490,8 +524,8 @@ class NormalizacaoDeTreinoTest {
             var resultado = normalizacao.normalizar(treino, ctx);
 
             // aquec 10 ÷ 6,0 = 1,67 · 40 ÷ 6,925 = 5,78 · 10 ÷ 6,083 = 1,64 → total = soma 9,09
-            assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsExactly(1.67, 5.78, 1.64);
-            assertThat(resultado.distanciaKm()).isEqualTo(9.09);
+            assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsExactly(1.44, 5.78, 1.64);  // aquec no pace da 1ª PRINCIPAL (6,93)
+            assertThat(resultado.distanciaKm()).isEqualTo(8.86);
         }
 
         @Test
@@ -546,7 +580,7 @@ class NormalizacaoDeTreinoTest {
 
             var resultado = normalizacao.normalizar(treino, ctxLeandro);
 
-            assertThat(resultado.distanciaKm()).isEqualTo(5.88);
+            assertThat(resultado.distanciaKm()).isEqualTo(5.85);  // fix-etapas-sintetizadas-sessao-curta: aquec/desaq sem ritmo no pace da PRINCIPAL (7,69), mais lenta que Z2
         }
 
         @ParameterizedTest(name = "{0} min a {1} com LLM {2} km")
@@ -575,7 +609,8 @@ class NormalizacaoDeTreinoTest {
         @Test
         @DisplayName("telemetria: PRINCIPAL sem ritmo com soma > 10% do total mantido → WARN + contador motivo=principal-sem-ritmo")
         void telemetriaPrincipalSemRitmo() {
-            var treino = continuo("6.0", "45:00", "7:28-7:55/km",
+            // sem ritmo em lugar nenhum: nem na PRINCIPAL nem no treino (o do treino viraria fallback)
+            var treino = continuo("6.0", "45:00", null,
                     etapa("AQUECIMENTO", 10, 0.0, null),
                     etapa("PRINCIPAL", 30, 5.5, null),
                     etapa("DESAQUECIMENTO", 5, 0.5, null));
@@ -589,8 +624,8 @@ class NormalizacaoDeTreinoTest {
         @Test
         @DisplayName("telemetria: etapa sintetizada com soma > 10% do total mantido → contador motivo=etapa-sintetizada")
         void telemetriaEtapaSintetizada() {
-            // 30min/4km só com PRINCIPAL: aquec/desaq sintetizados levam a soma a 6,94 (73%)
-            var treino = continuo("4.0", "30:00", "6:30-7:00/km", etapa("PRINCIPAL", 30, 4.0, "6:30-7:00/km"));
+            // total de 2 km menor que aquec + desaq sintetizados (1,67 + 0,83): a PRINCIPAL não cabe, a divergência fica
+            var treino = continuo("2.0", "30:00", "6:30-7:00/km", etapa("PRINCIPAL", 30, 2.0, "6:30-7:00/km"));
 
             normalizacao.normalizar(treino, ctx);
 
@@ -637,7 +672,12 @@ class NormalizacaoDeTreinoTest {
 
             var resultado = normalizacao.normalizar(treino, ctxSemLimiar);
 
-            assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsExactly(2.0, 3.9, 1.0);
+            assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsExactly(1.82, 3.9, 0.91);  // Z2 genérico 7,00 mais rápido que a PRINCIPAL (7,69)
+        }
+
+        /** Ritmo da PRINCIPAL mais lento que o Z2 do Leandro (6,33 × 1,20 = 7,60): o aquecimento segue a PRINCIPAL. */
+        private boolean kmPrincipalRitmoLento(String ritmo) {
+            return "7:28-7:55/km".equals(ritmo);
         }
 
         private EtapaTreinoLlmDto etapa(String tipo, Integer duracaoMin, Double distanciaKm, String ritmoAlvo) {
@@ -692,9 +732,9 @@ class NormalizacaoDeTreinoTest {
                     .filter(e -> e.getLevel() == Level.DEBUG)
                     .map(ILoggingEvent::getFormattedMessage)
                     .toList();
-            assertThat(debug).hasSize(6); // um por passo da cauda comum
+            assertThat(debug).hasSize(7); // sanear-ritmos + um por passo da cauda comum
             assertThat(debug).allSatisfy(m -> assertThat(m).contains("familia=PADRAO").contains("alterou=false"));
-            assertThat(debug.get(3)).contains("passo=recalcular-duracao");
+            assertThat(debug.get(4)).contains("passo=recalcular-duracao");
         }
 
         @Test
@@ -728,14 +768,16 @@ class NormalizacaoDeTreinoTest {
     class RecalcularDuracaoComEtapasIncompletas {
 
         @Test
-        @DisplayName("CA4: REGENERATIVO 45:00 / 7km / 7:28-7:55 com etapas 10+5min → mantém 45:00")
+        @DisplayName("CA4: REGENERATIVO 45:00 / 7km / 7:28-7:55 com etapas 10+5min → PRINCIPAL encaixa nos 7 km, 50:00")
         void mantemDuracaoDaLlmQuandoEtapasNaoCobremOTreino() {
             var treino = continuo("REGENERATIVO", "45:00", 7.0, "7:28-7:55/km",
                     etapaMin("PRINCIPAL", 10), etapaMin("DESAQUECIMENTO", 5));
 
             var resultado = normalizacao.normalizar(treino, ctx);
 
-            assertThat(resultado.duracaoMin()).isEqualTo("45:00");
+            // fix-total-treino-soma-etapas: a PRINCIPAL sem ritmo usa o do treino e encaixa no total de 7 km,
+            // e as etapas passam a cobrir o treino (antes: 45:00 da LLM com etapas de 25 min)
+            assertThat(resultado.duracaoMin()).isEqualTo("50:00");
             assertThat(resultado.distanciaKm()).isEqualTo(7.0);
         }
 
@@ -789,13 +831,14 @@ class NormalizacaoDeTreinoTest {
         @Test
         @DisplayName("LLM mais longe do triângulo que a soma → soma das etapas")
         void ambosInconsistentesMantemSoma() {
-            // esperado ≈ 53.8min; 120 desvia 123%, soma 25 desvia 54% → a soma está mais perto e vence
+            // esperado ≈ 53.8min; 120 desvia 123% e a soma das etapas, com a PRINCIPAL encaixada nos 7 km
+            // (fix-total-treino-soma-etapas), dá 50 → a soma está mais perto e vence
             var treino = continuo("REGENERATIVO", "120:00", 7.0, "7:28-7:55/km",
                     etapaMin("PRINCIPAL", 10), etapaMin("DESAQUECIMENTO", 5));
 
             var resultado = normalizacao.normalizar(treino, ctx);
 
-            assertThat(resultado.duracaoMin()).isEqualTo("25:00");
+            assertThat(resultado.duracaoMin()).isEqualTo("50:00");
         }
 
         private EtapaTreinoLlmDto etapaMin(String tipoEtapa, int duracaoMin) {

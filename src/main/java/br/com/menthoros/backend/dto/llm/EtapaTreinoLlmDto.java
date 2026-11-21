@@ -41,6 +41,11 @@ public record EtapaTreinoLlmDto(
                 fcAlvoEtapa, repeticoes, ritmoAlvo);
     }
 
+    public EtapaTreinoLlmDto comRitmo(String novoRitmoAlvo) {
+        return new EtapaTreinoLlmDto(ordem, tipoEtapa, descricaoEtapa, duracaoMin, distanciaKm,
+                fcAlvoEtapa, repeticoes, novoRitmoAlvo);
+    }
+
     public EtapaTreinoLlmDto comFc(String novoFcAlvoEtapa) {
         return new EtapaTreinoLlmDto(ordem, tipoEtapa, descricaoEtapa, duracaoMin, distanciaKm,
                 novoFcAlvoEtapa, repeticoes, ritmoAlvo);

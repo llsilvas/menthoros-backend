@@ -52,6 +52,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -72,6 +73,7 @@ class OnboardingServiceTest {
     @Mock private PlanningPolicyResolver planningPolicyResolver;
     @Mock private CalibrationService calibrationService;
     @Mock private br.com.menthoros.backend.services.AtletaProgressService atletaProgressService;
+    @Mock private br.com.menthoros.backend.repository.PlanoTreinoRepository planoTreinoRepository;
 
     private final br.com.menthoros.backend.config.external.GarminProperties garminProperties =
             new br.com.menthoros.backend.config.external.GarminProperties();
@@ -82,6 +84,8 @@ class OnboardingServiceTest {
     private UUID tenantId;
     private Atleta atleta;
 
+    @Mock private jakarta.persistence.EntityManager entityManager;
+
     @BeforeEach
     void setUp() {
         service = new OnboardingServiceImpl(
@@ -89,7 +93,8 @@ class OnboardingServiceTest {
                 athleteBaselineStateRepository, athleteBaselineHistoryRepository, provaRepository,
                 activityNormalizer, activityDedupService,
                 baselineCalculator, confidenceScorer, planningPolicyResolver, calibrationService,
-                atletaProgressService, new br.com.menthoros.backend.services.helper.ProvaEnricher(), garminProperties);
+                atletaProgressService, new br.com.menthoros.backend.services.helper.ProvaEnricher(), garminProperties,
+                planoTreinoRepository, entityManager);
         atletaId = UUID.randomUUID();
         tenantId = UUID.randomUUID();
         atleta = Atleta.builder().id(atletaId).nome("João").nivelExperiencia(NivelExperiencia.INTERMEDIARIO).build();
@@ -377,6 +382,82 @@ class OnboardingServiceTest {
             ArgumentCaptor<Prova> captor = ArgumentCaptor.forClass(Prova.class);
             verify(provaRepository, times(2)).save(captor.capture());
             assertThat(captor.getAllValues()).extracting(Prova::isProvaAlvo).containsExactly(true, false);
+        }
+
+        @Test
+        @DisplayName("trocar a prova-alvo arquiva as temporadas abertas da alvo anterior, com o motivo da troca")
+        void trocaDeAlvoArquivaTemporadaDaAnterior() {
+            Prova provaAntiga = Prova.builder()
+                    .id(UUID.randomUUID()).dataProva(LocalDate.now().plusMonths(1)).distancia(DistanciaProva.KM_10)
+                    .provaAlvo(true).nomeProva("Prova antiga").build();
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atletaComAssessoria)).thenReturn(List.of(provaAntiga));
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> comId(inv.getArgument(0)));
+
+            Prova nova = service.criarOuAtualizarProvaAlvo(
+                    atletaId, tenantId, LocalDate.now().plusMonths(4), TipoProva.MARATONA, DistanciaProva.KM_42, null, "Maratona");
+
+            org.mockito.InOrder ordem = org.mockito.Mockito.inOrder(entityManager, provaRepository, planoTreinoRepository);
+            ordem.verify(entityManager).refresh(provaAntiga, jakarta.persistence.LockModeType.PESSIMISTIC_WRITE);
+            ordem.verify(provaRepository).save(provaAntiga);
+            ordem.verify(planoTreinoRepository).archiveOpenSeasons(provaAntiga.getId(), tenantId, "prova-alvo substituída");
+            verify(planoTreinoRepository, never()).archiveOpenSeasons(org.mockito.ArgumentMatchers.eq(nova.getId()),
+                    any(), any());
+        }
+
+        @Test
+        @DisplayName("reenviar a mesma prova-alvo (mesma data e distância) não arquiva nada")
+        void mesmaAlvoNaoArquiva() {
+            LocalDate dataProva = LocalDate.now().plusMonths(3);
+            Prova existente = Prova.builder()
+                    .id(UUID.randomUUID()).dataProva(dataProva).distancia(DistanciaProva.KM_21)
+                    .provaAlvo(true).nomeProva("Meia").build();
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atletaComAssessoria)).thenReturn(List.of(existente));
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            service.criarOuAtualizarProvaAlvo(
+                    atletaId, tenantId, dataProva, TipoProva.CORRIDA_RUA, DistanciaProva.KM_21, null, "Meia");
+
+            org.mockito.Mockito.verifyNoInteractions(planoTreinoRepository);
+        }
+
+        @Test
+        @DisplayName("primeira prova-alvo do atleta não arquiva nada")
+        void primeiraAlvoNaoArquiva() {
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atletaComAssessoria)).thenReturn(List.of());
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> comId(inv.getArgument(0)));
+
+            service.criarOuAtualizarProvaAlvo(
+                    atletaId, tenantId, LocalDate.now().plusMonths(3), TipoProva.CORRIDA_RUA, DistanciaProva.KM_21, null, "Meia");
+
+            org.mockito.Mockito.verifyNoInteractions(planoTreinoRepository);
+        }
+
+        @Test
+        @DisplayName("dados legados com duas alvos, uma coincidente: arquiva só a que perdeu o alvo")
+        void duasAlvosLegadasArquivaSoAPerdedora() {
+            LocalDate dataProva = LocalDate.now().plusMonths(3);
+            Prova coincidente = Prova.builder()
+                    .id(UUID.randomUUID()).dataProva(dataProva).distancia(DistanciaProva.KM_21)
+                    .provaAlvo(true).nomeProva("Meia").build();
+            Prova perdedora = Prova.builder()
+                    .id(UUID.randomUUID()).dataProva(dataProva.minusWeeks(6)).distancia(DistanciaProva.KM_10)
+                    .provaAlvo(true).nomeProva("10K").build();
+            when(provaRepository.findByAtletaAndProvaAlvoTrue(atletaComAssessoria))
+                    .thenReturn(List.of(perdedora, coincidente));
+            when(provaRepository.save(any(Prova.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            service.criarOuAtualizarProvaAlvo(
+                    atletaId, tenantId, dataProva, TipoProva.CORRIDA_RUA, DistanciaProva.KM_21, null, "Meia");
+
+            verify(planoTreinoRepository).archiveOpenSeasons(perdedora.getId(), tenantId, "prova-alvo substituída");
+            org.mockito.Mockito.verifyNoMoreInteractions(planoTreinoRepository);
+        }
+
+        private Prova comId(Prova p) {
+            if (p.getId() == null) {
+                p.setId(UUID.randomUUID());
+            }
+            return p;
         }
 
         @Test

@@ -81,11 +81,11 @@
 - Última atualização: Nunca testado
 
 **Zonas de Treino Calculadas:**
-- Z1 (Recuperação): 7.25-7.88 min/km | 124-140 bpm
-- Z2 (Aeróbico): 6.62-7.25 min/km | 140-147 bpm
-- Z3 (Tempo): 6.30-6.62 min/km | 147-155 bpm
-- Z4 (Limiar): 5.99-6.30 min/km | 155-165 bpm
-- Z5 (VO2max): 5.67-5.99 min/km | 165-175 bpm
+- Z1 (Recuperação): 8.13-8.82 min/km | 124-140 bpm
+- Z2 (Aeróbico): 7.12-8.13 min/km | 140-147 bpm
+- Z3 (Tempo): 6.62-7.12 min/km | 147-155 bpm
+- Z4 (Limiar): 6.24-6.62 min/km | 155-165 bpm
+- Z5 (VO2max): 5.67-6.24 min/km | 165-175 bpm
 - Z6 (Sprint): 5.17-5.67 min/km | 165-175 bpm
 
 
@@ -267,7 +267,7 @@ Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDa
 ### 2. Treinos Regenerativos Recomendados
 **RECOMENDAÇÃO: Treinos regenerativos estruturados**
 
-- **Corrida Longa Fácil (50-70 min)**: FC = 95-114 bpm
+- **Corrida Longa Fácil (50-70 min)**: Z1
   - Base aeróbica com foco em durabilidade
 
 - **Corrida com Variações (45-60 min)**:
@@ -278,16 +278,14 @@ Cada um desses dias recebe **um treino** ou **um descanso declarado** em `restDa
 
 ### 3. Parâmetros Técnicos para Zona Z1
 **Zona Z1 (Regenerativa)**:
-- FC Alvo: 95-114 bpm (50-60% da FCMax)
-- Pace Estimado: ~7:00-7:30 /km
+- FC e pace: faixa Z1 das Zonas de Treino Calculadas do atleta (sem zonas, guie pelo RPE)
 - RPE (Escala 1-10): 2-3 (Muito Fácil)
 - Respiração: Nasal, leve, ritmo natural
 - Conversa: Conversa fácil, sem ofegância
 - Sensação: Leve, movimento fluido, sem tensão
 
 **Zona Z2 (Base Aeróbica)**:
-- FC Alvo: 114-133 bpm (60-70% da FCMax)
-- Pace Estimado: ~6:30-7:00 /km
+- FC e pace: faixa Z2 das Zonas de Treino Calculadas do atleta (sem zonas, guie pelo RPE)
 - RPE: 3-4 (Fácil com esforço moderado)
 - Respiração: Nasal predominante, ritmo controlado
 - Conversa: Conversa possível com pequenos ajustes respiratórios
