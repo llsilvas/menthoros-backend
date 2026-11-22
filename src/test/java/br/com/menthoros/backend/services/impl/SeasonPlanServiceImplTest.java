@@ -393,6 +393,42 @@ class SeasonPlanServiceImplTest {
             assertThatThrownBy(() -> service.generate(atleta.getId()))
                     .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("volume");
         }
+
+        @Test
+        @DisplayName("atleta em calibração não gera: 422 antes de travar a prova e sem gravar")
+        void calibracaoRecusa() {
+            service = novo(true, true);
+            atletaExiste();
+            emCalibracao();
+
+            assertThatThrownBy(() -> service.generate(atleta.getId()))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("calibração");
+            verifyNoInteractions(provaRepository, planoTreinoRepository);
+        }
+
+        @Test
+        @DisplayName("em calibração com o shadow desligado: ninguém gradua, então o gate não se aplica")
+        void calibracaoComShadowDesligadoSegue() {
+            atletaExiste();
+            when(provaRepository.findTargetRaceIds(atleta.getId(), tenantId)).thenReturn(List.of());
+
+            assertThatThrownBy(() -> service.generate(atleta.getId()))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("prova-alvo");
+            verifyNoInteractions(baselineRepository);
+        }
+
+        @Test
+        @DisplayName("baseline sem calibracaoIniciadaEm segue o fluxo com o shadow ligado")
+        void foraDeCalibracaoSegue() {
+            service = novo(true, true);
+            atletaExiste();
+            when(baselineRepository.findByAtletaIdAndTenantId(atleta.getId(), tenantId))
+                    .thenReturn(Optional.of(new AthleteBaselineState()));
+            when(provaRepository.findTargetRaceIds(atleta.getId(), tenantId)).thenReturn(List.of());
+
+            assertThatThrownBy(() -> service.generate(atleta.getId()))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("prova-alvo");
+        }
     }
 
     @Nested
@@ -591,6 +627,19 @@ class SeasonPlanServiceImplTest {
             assertThatThrownBy(() -> service.approve(atleta.getId(), arquivada.getId()))
                     .isInstanceOf(DomainConflictException.class);
         }
+
+        @Test
+        @DisplayName("proposta não vira ACTIVE com o atleta em calibração")
+        void calibracaoRecusa() {
+            service = novo(true, true);
+            PlanoTreino proposta = travadaComTemporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.PROPOSED);
+            emCalibracao();
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), proposta.getId()))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("calibração");
+            assertThat(proposta.getSeasonStatus()).isEqualTo(SeasonPlanStatus.PROPOSED);
+            verify(planoTreinoRepository, never()).saveAndFlush(any());
+        }
     }
 
     @Nested
@@ -672,9 +721,14 @@ class SeasonPlanServiceImplTest {
     }
 
     private SeasonPlanServiceImpl novo(boolean enabled) {
+        return novo(enabled, false);
+    }
+
+    private SeasonPlanServiceImpl novo(boolean enabled, boolean plannerShadow) {
         return new SeasonPlanServiceImpl(atletaRepository, provaRepository, planoTreinoRepository,
                 seasonWeekRepository, metricasDiariasRepository, baselineRepository, perfilRepository,
-                treinoRealizadoRepository, usuarioRepository, principalResolver, atletaResolver, CLOCK, enabled);
+                treinoRealizadoRepository, usuarioRepository, principalResolver, atletaResolver, CLOCK, enabled,
+                plannerShadow);
     }
 
     /** Temporada com a prova travada e relida pelo id, como no fluxo de aprovar. */
@@ -779,5 +833,11 @@ class SeasonPlanServiceImplTest {
         p.setAssessoria(atleta.getAssessoria());
         p.setSeasonStatus(status);
         return p;
+    }
+
+    private void emCalibracao() {
+        AthleteBaselineState b = new AthleteBaselineState();
+        b.setCalibracaoIniciadaEm(Instant.parse("2026-10-01T00:00:00Z"));
+        when(baselineRepository.findByAtletaIdAndTenantId(atleta.getId(), tenantId)).thenReturn(Optional.of(b));
     }
 }

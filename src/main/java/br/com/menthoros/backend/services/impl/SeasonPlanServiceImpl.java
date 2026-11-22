@@ -95,6 +95,9 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
     private final AuthenticatedAtletaResolver atletaResolver;
     private final Clock clock;
     private final boolean enabled;
+    // A graduação da calibração só é avaliada com o shadow do planner (PlannerShadowService); sem ele
+    // ninguém gradua, e bloquear a temporada por calibração seria bloquear para sempre.
+    private final boolean plannerShadowEnabled;
 
     public SeasonPlanServiceImpl(AtletaRepository atletaRepository,
                                  ProvaRepository provaRepository,
@@ -108,7 +111,8 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
                                  AuthenticatedPrincipalResolver principalResolver,
                                  AuthenticatedAtletaResolver atletaResolver,
                                  Clock clock,
-                                 @Value("${season-plan.enabled:false}") boolean enabled) {
+                                 @Value("${season-plan.enabled:false}") boolean enabled,
+                                 @Value("${planner-engine.shadow:false}") boolean plannerShadowEnabled) {
         this.atletaRepository = atletaRepository;
         this.provaRepository = provaRepository;
         this.planoTreinoRepository = planoTreinoRepository;
@@ -122,6 +126,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         this.atletaResolver = atletaResolver;
         this.clock = clock;
         this.enabled = enabled;
+        this.plannerShadowEnabled = plannerShadowEnabled;
     }
 
     @Override
@@ -131,6 +136,8 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         UUID tenantId = TenantContext.getRequiredTenantId();
         log.info("Gerando temporada: atletaId={}, tenantId={}", atletaId, tenantId);
         Atleta atleta = buscarAtleta(atletaId, tenantId);
+        // Antes do retorno idempotente: atleta em calibração recebe 422 mesmo com proposta existente.
+        exigirForaDeCalibracao(atletaId, tenantId);
         LocalDate hoje = LocalDate.now(clock.withZone(FUSO));
 
         Prova prova = travarProvaAlvo(atletaId, tenantId);
@@ -211,6 +218,8 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         if (prova.filter(p -> p.isProvaAlvo() && p.getStatusProva() != ProvaStatus.CANCELADA).isEmpty()) {
             throw new DomainRuleViolationException("A prova deixou de ser prova-alvo ou foi cancelada");
         }
+        // Proposta gerada antes de a calibração começar não vira ACTIVE enquanto o atleta calibra.
+        exigirForaDeCalibracao(atletaId, tenantId);
         if (!planoTreinoRepository.findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(atletaId, tenantId, SO_ATIVA).isEmpty()) {
             throw new DomainConflictException("O atleta já tem uma temporada ativa");
         }
@@ -273,6 +282,21 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
     private Atleta buscarAtleta(UUID atletaId, UUID tenantId) {
         return atletaRepository.findByIdAndTenantId(atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Atleta não encontrado: " + atletaId));
+    }
+
+    /** Mesma regra do status de calibração do onboarding: em calibração = {@code calibracaoIniciadaEm} preenchida. */
+    private void exigirForaDeCalibracao(UUID atletaId, UUID tenantId) {
+        if (!plannerShadowEnabled) {
+            return;
+        }
+        boolean emCalibracao = baselineRepository.findByAtletaIdAndTenantId(atletaId, tenantId)
+                .map(AthleteBaselineState::getCalibracaoIniciadaEm)
+                .isPresent();
+        if (emCalibracao) {
+            log.info("Temporada recusada: atleta em calibração, atletaId={}, tenantId={}", atletaId, tenantId);
+            throw new DomainRuleViolationException(
+                    "O atleta está em calibração: a temporada fica disponível quando ele concluir a calibração");
+        }
     }
 
     /**
