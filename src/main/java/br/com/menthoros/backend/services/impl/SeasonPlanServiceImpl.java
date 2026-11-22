@@ -97,7 +97,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
     private final boolean enabled;
     // A graduação da calibração só é avaliada com o shadow do planner (PlannerShadowService); sem ele
     // ninguém gradua, e bloquear a temporada por calibração seria bloquear para sempre.
-    private final boolean calibrationGateActive;
+    private final boolean plannerShadowEnabled;
 
     public SeasonPlanServiceImpl(AtletaRepository atletaRepository,
                                  ProvaRepository provaRepository,
@@ -112,7 +112,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
                                  AuthenticatedAtletaResolver atletaResolver,
                                  Clock clock,
                                  @Value("${season-plan.enabled:false}") boolean enabled,
-                                 @Value("${planner-engine.shadow:false}") boolean calibrationGateActive) {
+                                 @Value("${planner-engine.shadow:false}") boolean plannerShadowEnabled) {
         this.atletaRepository = atletaRepository;
         this.provaRepository = provaRepository;
         this.planoTreinoRepository = planoTreinoRepository;
@@ -126,7 +126,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         this.atletaResolver = atletaResolver;
         this.clock = clock;
         this.enabled = enabled;
-        this.calibrationGateActive = calibrationGateActive;
+        this.plannerShadowEnabled = plannerShadowEnabled;
     }
 
     @Override
@@ -286,7 +286,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
 
     /** Mesma regra do status de calibração do onboarding: em calibração = {@code calibracaoIniciadaEm} preenchida. */
     private void exigirForaDeCalibracao(UUID atletaId, UUID tenantId) {
-        if (!calibrationGateActive) {
+        if (!plannerShadowEnabled) {
             return;
         }
         boolean emCalibracao = baselineRepository.findByAtletaIdAndTenantId(atletaId, tenantId)

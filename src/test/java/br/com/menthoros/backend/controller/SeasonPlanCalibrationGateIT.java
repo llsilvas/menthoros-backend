@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.AbstractIntegrationTest;
+import com.jayway.jsonpath.JsonPath;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.AthleteBaselineState;
 import br.com.menthoros.backend.entity.Atleta;
@@ -39,6 +40,7 @@ import java.time.ZoneId;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -119,7 +121,7 @@ class SeasonPlanCalibrationGateIT extends AbstractIntegrationTest {
 
         mockMvc.perform(post(base).with(tecnico()))
                 .andExpect(status().isUnprocessableEntity())
-                .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("calibração")));
+                .andExpect(jsonPath("$.message").value(containsString("calibração")));
 
         assertThat(contar("select count(*) from tb_plano_treino where atleta_id = ?")).isZero();
         assertThat(contar("select count(*) from tb_season_week w join tb_plano_treino p on p.id = w.season_plan_id"
@@ -129,7 +131,7 @@ class SeasonPlanCalibrationGateIT extends AbstractIntegrationTest {
     @Test
     @DisplayName("proposta gerada antes da calibração: gerar e aprovar respondem 422 e ela continua PROPOSED")
     void propostaAnteriorBloqueada() throws Exception {
-        String id = com.jayway.jsonpath.JsonPath.read(mockMvc.perform(post(base).with(tecnico()))
+        String id = JsonPath.read(mockMvc.perform(post(base).with(tecnico()))
                 .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.id");
         baseline(Instant.now());
 
