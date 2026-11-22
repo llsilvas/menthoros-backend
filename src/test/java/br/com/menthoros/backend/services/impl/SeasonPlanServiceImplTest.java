@@ -671,10 +671,77 @@ class SeasonPlanServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("gate de calibração (add-season-plan-calibration-gate)")
+    class GateCalibracao {
+
+        @BeforeEach
+        void comShadow() {
+            service = novo(true, true);
+        }
+
+        @Test
+        @DisplayName("atleta em calibração não gera: 422 antes de travar a prova e sem gravar")
+        void geracaoRecusada() {
+            atletaExiste();
+            emCalibracao();
+
+            assertThatThrownBy(() -> service.generate(atleta.getId()))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("calibração");
+            verifyNoInteractions(provaRepository, planoTreinoRepository);
+        }
+
+        @Test
+        @DisplayName("com o shadow desligado ninguém gradua, então o gate não se aplica")
+        void shadowDesligadoNaoBloqueia() {
+            service = novo(true, false);
+            atletaExiste();
+            when(provaRepository.findTargetRaceIds(atleta.getId(), tenantId)).thenReturn(List.of());
+
+            assertThatThrownBy(() -> service.generate(atleta.getId()))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("prova-alvo");
+        }
+
+        @Test
+        @DisplayName("baseline sem calibracaoIniciadaEm segue o fluxo")
+        void foraDeCalibracaoSegue() {
+            atletaExiste();
+            when(baselineRepository.findByAtletaIdAndTenantId(atleta.getId(), tenantId))
+                    .thenReturn(Optional.of(new AthleteBaselineState()));
+            when(provaRepository.findTargetRaceIds(atleta.getId(), tenantId)).thenReturn(List.of());
+
+            assertThatThrownBy(() -> service.generate(atleta.getId()))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("prova-alvo");
+        }
+
+        @Test
+        @DisplayName("proposta existente não vira ACTIVE com o atleta em calibração")
+        void aprovacaoRecusada() {
+            PlanoTreino proposta = travadaComTemporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.PROPOSED);
+            emCalibracao();
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), proposta.getId()))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("calibração");
+            assertThat(proposta.getSeasonStatus()).isEqualTo(SeasonPlanStatus.PROPOSED);
+            verify(planoTreinoRepository, never()).saveAndFlush(any());
+        }
+
+        private void emCalibracao() {
+            AthleteBaselineState b = new AthleteBaselineState();
+            b.setCalibracaoIniciadaEm(Instant.parse("2026-10-01T00:00:00Z"));
+            when(baselineRepository.findByAtletaIdAndTenantId(atleta.getId(), tenantId)).thenReturn(Optional.of(b));
+        }
+    }
+
     private SeasonPlanServiceImpl novo(boolean enabled) {
+        return novo(enabled, false);
+    }
+
+    private SeasonPlanServiceImpl novo(boolean enabled, boolean plannerShadow) {
         return new SeasonPlanServiceImpl(atletaRepository, provaRepository, planoTreinoRepository,
                 seasonWeekRepository, metricasDiariasRepository, baselineRepository, perfilRepository,
-                treinoRealizadoRepository, usuarioRepository, principalResolver, atletaResolver, CLOCK, enabled);
+                treinoRealizadoRepository, usuarioRepository, principalResolver, atletaResolver, CLOCK, enabled,
+                plannerShadow);
     }
 
     /** Temporada com a prova travada e relida pelo id, como no fluxo de aprovar. */

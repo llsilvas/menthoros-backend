@@ -44,7 +44,7 @@ public class SeasonPlanController {
             @ApiResponse(responseCode = "403", description = "Acesso negado — apenas TECNICO e ADMIN da assessoria"),
             @ApiResponse(responseCode = "404", description = "Atleta não encontrado, ou plano de temporada desabilitado (code SEASON_PLAN_DISABLED)"),
             @ApiResponse(responseCode = "409", description = "Temporada ativa existente, ou proposta de outra prova"),
-            @ApiResponse(responseCode = "422", description = "Sem prova-alvo válida, prova a menos de 2 semanas, ou base de partida faltando")
+            @ApiResponse(responseCode = "422", description = "Sem prova-alvo válida, prova a menos de 2 semanas, base de partida faltando, ou atleta em calibração")
     })
     public ResponseEntity<SeasonPlanResponseDto> generate(
             @Parameter(description = "ID do atleta") @PathVariable UUID atletaId) {
@@ -81,7 +81,7 @@ public class SeasonPlanController {
             @ApiResponse(responseCode = "403", description = "Acesso negado — apenas TECNICO e ADMIN da assessoria"),
             @ApiResponse(responseCode = "404", description = "Temporada não encontrada para o atleta, ou plano de temporada desabilitado (code SEASON_PLAN_DISABLED)"),
             @ApiResponse(responseCode = "409", description = "Temporada arquivada ou concluída, ou o atleta já tem outra ativa"),
-            @ApiResponse(responseCode = "422", description = "A prova deixou de ser prova-alvo ou foi cancelada")
+            @ApiResponse(responseCode = "422", description = "A prova deixou de ser prova-alvo ou foi cancelada, ou o atleta está em calibração")
     })
     public ResponseEntity<SeasonPlanResponseDto> approve(
             @Parameter(description = "ID do atleta") @PathVariable UUID atletaId,
