@@ -601,6 +601,7 @@ class SeasonPlanAdjustmentServiceImplTest {
                 Arguments.of("sem fases", new SeasonPlanRecalculateInputDto(null, new BigDecimal("40"))),
                 Arguments.of("fase ausente", new SeasonPlanRecalculateInputDto(semTaper, new BigDecimal("40"))),
                 Arguments.of("fase negativa", entrada(3, -1, 2, 2, "40")),
+                Arguments.of("fase gigante que estoura a soma", entrada(Integer.MAX_VALUE, Integer.MAX_VALUE, 11, 0, "40")),
                 Arguments.of("fase fora das quatro", new SeasonPlanRecalculateInputDto(comProva, new BigDecimal("40"))),
                 Arguments.of("sem Base, Construção nem Pico", entrada(0, 0, 0, 11, "40")),
                 Arguments.of("volume ausente", new SeasonPlanRecalculateInputDto(fases(3, 4, 2, 2), null)),

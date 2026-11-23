@@ -57,6 +57,7 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
     private static final int KEY_SESSIONS_MAX = 500;
     // Tetos de domínio bem acima do real (e dentro de NUMERIC(10,3)): valor absurdo vira 422, nunca 500 do banco.
     private static final BigDecimal VOLUME_MAX_KM = BigDecimal.valueOf(500);
+    private static final int MAX_SEMANAS_FASE = 104;
     private static final BigDecimal LONGAO_MAX_KM = BigDecimal.valueOf(200);
     private static final double TSS_MAX = 3000;
     private static final String DESCARTADO = "rascunho descartado";
@@ -113,11 +114,7 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
     public SeasonPlanResponseDto findById(UUID atletaId, UUID seasonPlanId) {
         exigirHabilitado();
         UUID tenantId = TenantContext.getRequiredTenantId();
-        // O id da prova só serve para provar que a temporada é do atleta no tenant.
-        planoTreinoRepository.findRaceIdBySeasonPlan(seasonPlanId, atletaId, tenantId)
-                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
-        PlanoTreino temporada = planoTreinoRepository.findByIdAndAssessoriaId(seasonPlanId, tenantId)
-                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
+        PlanoTreino temporada = carregarDoAtleta(atletaId, seasonPlanId, tenantId);
         @Nullable UUID rascunho = temporada.getSeasonStatus() == SeasonPlanStatus.ACTIVE
                 ? SeasonPlanVersioning.rascunhoAberto(temporada, planoTreinoRepository
                         .findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(atletaId, tenantId, List.of(SeasonPlanStatus.PROPOSED)))
@@ -227,10 +224,7 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
     public List<SeasonPlanDiffDto> diff(UUID atletaId, UUID seasonPlanId) {
         exigirHabilitado();
         UUID tenantId = TenantContext.getRequiredTenantId();
-        planoTreinoRepository.findRaceIdBySeasonPlan(seasonPlanId, atletaId, tenantId)
-                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
-        PlanoTreino rascunho = planoTreinoRepository.findByIdAndAssessoriaId(seasonPlanId, tenantId)
-                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
+        PlanoTreino rascunho = carregarDoAtleta(atletaId, seasonPlanId, tenantId);
         if (rascunho.getSeasonStatus() != SeasonPlanStatus.PROPOSED || rascunho.getBaseSeasonPlanId() == null) {
             throw new DomainConflictException("Só um ajuste em aberto tem alterações a comparar");
         }
@@ -279,6 +273,15 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
         }
     }
 
+    /** Temporada do atleta no tenant; 404 se o id for de outro atleta ou de outro tenant. */
+    private PlanoTreino carregarDoAtleta(UUID atletaId, UUID seasonPlanId, UUID tenantId) {
+        // O id da prova só serve para provar que a temporada é do atleta no tenant.
+        planoTreinoRepository.findRaceIdBySeasonPlan(seasonPlanId, atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
+        return planoTreinoRepository.findByIdAndAssessoriaId(seasonPlanId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
+    }
+
     /** Forma da entrada do recálculo, antes do lock; a soma contra o ciclo depende do rascunho e vem depois. */
     private static void validarRecalculo(@Nullable SeasonPlanRecalculateInputDto input) {
         if (input == null || input.phaseWeeks() == null) {
@@ -289,6 +292,10 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
         }
         if (input.phaseWeeks().values().stream().anyMatch(n -> n == null || n < 0)) {
             throw new DomainRuleViolationException("As semanas por fase não podem ser negativas");
+        }
+        // Teto por fase: sem ele a soma em int estoura e volta a bater com o ciclo, e o motor itera bilhões de vezes.
+        if (input.phaseWeeks().values().stream().anyMatch(n -> n > MAX_SEMANAS_FASE)) {
+            throw new DomainRuleViolationException("Cada fase tem no máximo " + MAX_SEMANAS_FASE + " semanas");
         }
         if (input.phaseWeeks().get(TrainingPhase.BASE) + input.phaseWeeks().get(TrainingPhase.BUILD)
                 + input.phaseWeeks().get(TrainingPhase.PEAK) == 0) {
