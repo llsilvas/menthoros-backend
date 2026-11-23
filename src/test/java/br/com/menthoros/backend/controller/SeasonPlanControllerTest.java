@@ -15,6 +15,7 @@ import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.SeasonPlanAdjustmentService;
 import br.com.menthoros.backend.services.SeasonPlanService;
 import br.com.menthoros.backend.dto.input.SeasonPlanRecalculateInputDto;
+import br.com.menthoros.backend.dto.output.SeasonPlanDiffDto;
 import br.com.menthoros.backend.dto.input.SeasonWeekUpdateInputDto;
 import org.springframework.http.MediaType;
 import br.com.menthoros.backend.services.SeasonPlanService.Generation;
@@ -433,6 +434,50 @@ class SeasonPlanControllerTest {
         void atletaProibido() throws Exception {
             mockMvc.perform(post(url).with(atletaJwt()).contentType(MediaType.APPLICATION_JSON).content(CORPO))
                     .andExpect(status().isForbidden());
+
+            verifyNoInteractions(adjustmentService);
+        }
+    }
+
+    @Nested
+    @DisplayName("diff")
+    class Diff {
+
+        private final UUID planoId = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000002");
+        private final String url = BASE + "/" + planoId + "/diff";
+
+        @Test
+        @DisplayName("GET devolve a lista de alterações como array, com antes nulo explícito")
+        void lista() throws Exception {
+            atletaDoTenant();
+            when(adjustmentService.diff(ATLETA_ID, planoId)).thenReturn(List.of(
+                    new SeasonPlanDiffDto(5, "longRunKm", new BigDecimal("18"), new BigDecimal("20"), WeekValueSource.COACH),
+                    new SeasonPlanDiffDto(6, "keySessions", null, "6x1km", WeekValueSource.COACH)));
+
+            mockMvc.perform(get(url).with(tecnicoJwt()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].weekIndex").value(5))
+                    .andExpect(jsonPath("$[0].field").value("longRunKm"))
+                    .andExpect(jsonPath("$[0].before").value(18))
+                    .andExpect(jsonPath("$[0].after").value(20))
+                    .andExpect(jsonPath("$[0].source").value("COACH"))
+                    .andExpect(jsonPath("$[1].before").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$[1].after").value("6x1km"));
+        }
+
+        @Test
+        @DisplayName("temporada que não é ajuste em aberto responde 409")
+        void naoRascunho() throws Exception {
+            atletaDoTenant();
+            when(adjustmentService.diff(ATLETA_ID, planoId)).thenThrow(new DomainConflictException("Só um ajuste"));
+
+            mockMvc.perform(get(url).with(tecnicoJwt())).andExpect(status().isConflict());
+        }
+
+        @Test
+        @DisplayName("403 para ATLETA, sem chegar ao serviço")
+        void atletaProibido() throws Exception {
+            mockMvc.perform(get(url).with(atletaJwt())).andExpect(status().isForbidden());
 
             verifyNoInteractions(adjustmentService);
         }

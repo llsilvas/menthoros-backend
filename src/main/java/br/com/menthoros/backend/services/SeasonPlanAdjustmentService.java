@@ -2,9 +2,11 @@ package br.com.menthoros.backend.services;
 
 import br.com.menthoros.backend.dto.input.SeasonPlanRecalculateInputDto;
 import br.com.menthoros.backend.dto.input.SeasonWeekUpdateInputDto;
+import br.com.menthoros.backend.dto.output.SeasonPlanDiffDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 import br.com.menthoros.backend.services.SeasonPlanService.Generation;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -70,6 +72,19 @@ public interface SeasonPlanAdjustmentService {
      *         diferente do ciclo, prova remarcada, CTL de partida ausente ou fase divergente numa semana travada
      */
     SeasonPlanResponseDto recalculate(UUID atletaId, UUID seasonPlanId, SeasonPlanRecalculateInputDto input);
+
+    /**
+     * Campos alterados do rascunho de ajuste em relação à temporada ativa de que ele partiu, por semana.
+     *
+     * Idempotent: YES
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     *
+     * @throws br.com.menthoros.backend.exception.SeasonPlanDisabledException flag desligada
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException temporada não é do atleta no tenant
+     * @throws br.com.menthoros.backend.exception.DomainConflictException não é um rascunho de ajuste aberto
+     */
+    List<SeasonPlanDiffDto> diff(UUID atletaId, UUID seasonPlanId);
 
     /**
      * Descarta o rascunho de ajuste: vira ARCHIVED, sem apagar linhas.

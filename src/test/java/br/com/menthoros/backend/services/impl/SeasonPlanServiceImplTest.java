@@ -2,6 +2,10 @@ package br.com.menthoros.backend.services.impl;
 
 import br.com.menthoros.backend.services.helper.SeasonPlanResponseMapper;
 import br.com.menthoros.backend.services.helper.SeasonPlanVersioning;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
@@ -718,6 +722,45 @@ class SeasonPlanServiceImplTest {
             ordem.verify(planoTreinoRepository).saveAndFlush(rascunho);
             verify(planoTreinoRepository, never()).findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(
                     atleta.getId(), tenantId, List.of(SeasonPlanStatus.ACTIVE));
+        }
+
+        @Test
+        @DisplayName("o log season-plan.version-approved traz changedWeeks e coachWeeks da versão aprovada")
+        void logaMetrica() {
+            Prova prova = provaAlvo(PROVA_20_SEMANAS);
+            PlanoTreino base = temporada(prova, SeasonPlanStatus.ACTIVE);
+            base.setVersion(1);
+            PlanoTreino rascunho = travadaComTemporada(prova, SeasonPlanStatus.PROPOSED);
+            rascunho.setVersion(2);
+            rascunho.setBaseSeasonPlanId(base.getId());
+            when(planoTreinoRepository.findByIdAndAssessoriaId(base.getId(), tenantId)).thenReturn(Optional.of(base));
+            // Semana 1 em andamento volta da ativa (não conta); 2 e 3 mudaram, só a 2 pelo treinador.
+            SeasonWeek corrente = semanaGravada(1, "99", "10", null);
+            corrente.setValueSource(WeekValueSource.COACH);
+            SeasonWeek editada = semanaGravada(2, "50", "14", null);
+            editada.setValueSource(WeekValueSource.COACH);
+            SeasonWeek recalculada = semanaGravada(3, "44", "12", null);
+            when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(base.getId(), tenantId))
+                    .thenReturn(List.of(semanaGravada(1, "40", "10", null), semanaGravada(2, "42", "11", null),
+                            semanaGravada(3, "43", "12", null)));
+            when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(rascunho.getId(), tenantId))
+                    .thenReturn(List.of(corrente, editada, recalculada));
+            treinadorAutenticado();
+            ListAppender<ILoggingEvent> logs = new ListAppender<>();
+            logs.start();
+            Logger logger = (Logger) LoggerFactory.getLogger(SeasonPlanVersioning.class);
+            logger.addAppender(logs);
+
+            try {
+                service.approve(atleta.getId(), rascunho.getId(), "Ajuste de volume");
+            } finally {
+                logger.detachAppender(logs);
+            }
+
+            assertThat(logs.list).extracting(ILoggingEvent::getFormattedMessage)
+                    .filteredOn(m -> m.startsWith("season-plan.version-approved"))
+                    .singleElement(org.assertj.core.api.InstanceOfAssertFactories.STRING)
+                    .contains("changedWeeks=2", "coachWeeks=1");
         }
 
         @Test

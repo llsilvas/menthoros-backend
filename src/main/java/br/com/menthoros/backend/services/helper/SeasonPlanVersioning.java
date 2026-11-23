@@ -4,6 +4,7 @@ import br.com.menthoros.backend.domain.planner.SeasonWeekLock;
 import br.com.menthoros.backend.entity.PlanoTreino;
 import br.com.menthoros.backend.entity.SeasonWeek;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
+import br.com.menthoros.backend.enums.WeekValueSource;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
 import br.com.menthoros.backend.repository.PlanoTreinoRepository;
@@ -145,10 +146,14 @@ public class SeasonPlanVersioning {
         rascunho.setApprovedBy(aprovadoPor);
         rascunho.setApprovedAt(agora);
         planoTreinoRepository.saveAndFlush(rascunho);
-        // Métrica do ticket 6: versões por ciclo e intervalo desde a aprovação anterior, por tenant.
-        log.info("season-plan.version-approved tenantId={} seasonPlanId={} version={} daysSincePreviousApproval={}",
+        // Métrica do ticket 6 (versões por ciclo, intervalo desde a anterior) e do ticket 7 (quanto o
+        // treinador mexe: semanas alteradas e semanas editadas à mão), por tenant.
+        log.info("season-plan.version-approved tenantId={} seasonPlanId={} version={} daysSincePreviousApproval={} "
+                        + "changedWeeks={} coachWeeks={}",
                 tenantId, rascunho.getId(), rascunho.getVersion(),
-                ativa.getApprovedAt() == null ? null : ChronoUnit.DAYS.between(ativa.getApprovedAt(), agora));
+                ativa.getApprovedAt() == null ? null : ChronoUnit.DAYS.between(ativa.getApprovedAt(), agora),
+                SeasonPlanDiff.changedWeeks(SeasonPlanDiff.between(List.copyOf(daAtiva.values()), semanas)),
+                semanas.stream().filter(w -> w.getValueSource() == WeekValueSource.COACH).count());
     }
 
     /** Maior volume e maior longão entre as semanas; sem nenhum valor, mantém o que havia. */

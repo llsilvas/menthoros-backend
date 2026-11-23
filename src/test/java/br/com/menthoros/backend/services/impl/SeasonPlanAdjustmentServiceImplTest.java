@@ -5,6 +5,7 @@ import br.com.menthoros.backend.domain.planner.SeasonPlanner.WeekPlan;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.dto.input.SeasonPlanRecalculateInputDto;
 import br.com.menthoros.backend.dto.input.SeasonWeekUpdateInputDto;
+import br.com.menthoros.backend.dto.output.SeasonPlanDiffDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
@@ -515,6 +516,78 @@ class SeasonPlanAdjustmentServiceImplTest {
             assertThat(rascunho.getInitialVolumeKm()).isNull();
             verify(seasonWeekRepository, never()).saveAll(any());
             verify(planoTreinoRepository, never()).save(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("diff")
+    class Diff {
+
+        @Test
+        @DisplayName("semana 5 com longão 18 na ativa e 20 no rascunho, editada pelo treinador, entra no diff")
+        void criterioDeAceite() {
+            PlanoTreino rascunho = temporada(SeasonPlanStatus.PROPOSED, 2);
+            PlanoTreino ativa = temporada(SeasonPlanStatus.ACTIVE, 1);
+            rascunho.setBaseSeasonPlanId(ativa.getId());
+            lida(rascunho);
+            List<SeasonWeek> daAtiva = semanas(ativa, "40", "40", "40", "40", "40");
+            daAtiva.get(4).setLongRunKm(new BigDecimal("18"));
+            List<SeasonWeek> doRascunho = semanas(rascunho, "40", "40", "40", "40", "40");
+            doRascunho.get(4).setLongRunKm(new BigDecimal("20"));
+            doRascunho.get(4).setValueSource(WeekValueSource.COACH);
+
+            List<SeasonPlanDiffDto> diff = service.diff(atleta.getId(), rascunho.getId());
+
+            assertThat(diff).containsExactly(new SeasonPlanDiffDto(5, "longRunKm", new BigDecimal("18"),
+                    new BigDecimal("20"), WeekValueSource.COACH));
+        }
+
+        @Test
+        @DisplayName("rascunho igual à ativa dá lista vazia")
+        void vazio() {
+            PlanoTreino rascunho = temporada(SeasonPlanStatus.PROPOSED, 2);
+            PlanoTreino ativa = temporada(SeasonPlanStatus.ACTIVE, 1);
+            rascunho.setBaseSeasonPlanId(ativa.getId());
+            lida(rascunho);
+            semanas(ativa, "40", "42");
+            semanas(rascunho, "40", "42");
+
+            assertThat(service.diff(atleta.getId(), rascunho.getId())).isEmpty();
+        }
+
+        @Test
+        @DisplayName("temporada ACTIVE responde 409")
+        void ativa() {
+            PlanoTreino ativa = lida(temporada(SeasonPlanStatus.ACTIVE, 1));
+
+            assertThatThrownBy(() -> service.diff(atleta.getId(), ativa.getId()))
+                    .isInstanceOf(DomainConflictException.class);
+            verifyNoInteractions(seasonWeekRepository);
+        }
+
+        @Test
+        @DisplayName("temporada de outro atleta ou tenant responde 404")
+        void naoEncontrada() {
+            UUID id = UUID.randomUUID();
+            when(planoTreinoRepository.findRaceIdBySeasonPlan(id, atleta.getId(), tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.diff(atleta.getId(), id)).isInstanceOf(DomainNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("flag desligada recusa sem tocar o banco")
+        void desligada() {
+            assertThatThrownBy(() -> novo(false).diff(atleta.getId(), UUID.randomUUID()))
+                    .isInstanceOf(SeasonPlanDisabledException.class);
+            verifyNoInteractions(planoTreinoRepository, seasonWeekRepository);
+        }
+
+        /** Leitura sem lock, como no findById. */
+        private PlanoTreino lida(PlanoTreino t) {
+            when(planoTreinoRepository.findRaceIdBySeasonPlan(t.getId(), atleta.getId(), tenantId))
+                    .thenReturn(Optional.of(t.getProva().getId()));
+            when(planoTreinoRepository.findByIdAndAssessoriaId(t.getId(), tenantId)).thenReturn(Optional.of(t));
+            return t;
         }
     }
 

@@ -7,6 +7,7 @@ import br.com.menthoros.backend.domain.planner.SeasonWeekLock;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.dto.input.SeasonPlanRecalculateInputDto;
 import br.com.menthoros.backend.dto.input.SeasonWeekUpdateInputDto;
+import br.com.menthoros.backend.dto.output.SeasonPlanDiffDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 import br.com.menthoros.backend.entity.PlanoTreino;
 import br.com.menthoros.backend.entity.Prova;
@@ -22,6 +23,7 @@ import br.com.menthoros.backend.repository.PlanoTreinoRepository;
 import br.com.menthoros.backend.repository.SeasonWeekRepository;
 import br.com.menthoros.backend.services.SeasonPlanAdjustmentService;
 import br.com.menthoros.backend.services.SeasonPlanService.Generation;
+import br.com.menthoros.backend.services.helper.SeasonPlanDiff;
 import br.com.menthoros.backend.services.helper.SeasonPlanResponseMapper;
 import br.com.menthoros.backend.services.helper.SeasonPlanVersioning;
 import lombok.extern.slf4j.Slf4j;
@@ -218,6 +220,26 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
         planoTreinoRepository.save(rascunho);
         log.info("Ajuste {} recalculado: {} semanas regeneradas pelo motor", seasonPlanId, livres.size());
         return responseMapper.toDto(rascunho, semanas, tenantId, null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SeasonPlanDiffDto> diff(UUID atletaId, UUID seasonPlanId) {
+        exigirHabilitado();
+        UUID tenantId = TenantContext.getRequiredTenantId();
+        planoTreinoRepository.findRaceIdBySeasonPlan(seasonPlanId, atletaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
+        PlanoTreino rascunho = planoTreinoRepository.findByIdAndAssessoriaId(seasonPlanId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
+        if (rascunho.getSeasonStatus() != SeasonPlanStatus.PROPOSED || rascunho.getBaseSeasonPlanId() == null) {
+            throw new DomainConflictException("Só um ajuste em aberto tem alterações a comparar");
+        }
+        List<SeasonPlanDiffDto> diff = SeasonPlanDiff.between(
+                seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(rascunho.getBaseSeasonPlanId(), tenantId),
+                seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(rascunho.getId(), tenantId));
+        log.info("Diff do ajuste {}: {} campos em {} semanas, tenantId={}", seasonPlanId, diff.size(),
+                SeasonPlanDiff.changedWeeks(diff), tenantId);
+        return diff;
     }
 
     @Override
