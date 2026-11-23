@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.helper;
 import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.domain.planner.ReviewMode;
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import br.com.menthoros.backend.domain.planner.SessionSlot;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
@@ -209,9 +210,37 @@ public class PlanGenerationPersister {
         // ausencia de dado, nao julgamento negativo do coach.
         registrarRevisaoConsumida(plano, ctx.revisaoConsumidaOpcional());
 
+        // Depois de todas as transformações dos treinos (redistribuição, prova garantida): o desvio
+        // mede o plano que o coach vai revisar, não o que o LLM devolveu.
+        registrarSemanaDaTemporada(plano, ctx.seasonWeek());
+
         PlanoSemanal salvo = salvarPlanoCompleto(plano);
         publicarRevisaoConsumida(salvo, tenantId);
         return salvo;
+    }
+
+    /**
+     * Vínculo com a semana da temporada e desvio do TSS planejado contra o alvo dela
+     * (add-season-plan-weekly-context): {@code round1((Σ tssPlanejado − targetTss) / targetTss × 100)}.
+     * Treino sem {@code tssPlanejado} conta 0; alvo nulo ou ≤ 0 deixa o desvio nulo, mas a semana é
+     * gravada. Package-private e estático para o teste da fórmula.
+     *
+     * Idempotent: YES — mutação in-memory determinística. Side Effects: NONE (salvo depois).
+     * Tenant-aware: NO — a semana já veio filtrada por tenant do loader.
+     */
+    static void registrarSemanaDaTemporada(PlanoSemanal plano, Optional<SeasonWeekSnapshot> seasonWeek) {
+        seasonWeek.ifPresent(semana -> {
+            plano.setSeasonWeekId(semana.seasonWeekId());
+            Double alvo = semana.targetTss();
+            if (alvo == null || alvo <= 0) {
+                return;
+            }
+            int planejado = plano.getTreinosPlanejados() == null ? 0 : plano.getTreinosPlanejados().stream()
+                    .mapToInt(t -> t.getTssPlanejado() == null ? 0 : t.getTssPlanejado())
+                    .sum();
+            plano.setTargetDeviationPct(BigDecimal.valueOf((planejado - alvo) / alvo * 100)
+                    .setScale(1, java.math.RoundingMode.HALF_UP));
+        });
     }
 
     /**
