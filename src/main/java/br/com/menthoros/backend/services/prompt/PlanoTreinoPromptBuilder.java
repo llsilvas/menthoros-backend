@@ -12,7 +12,7 @@ import br.com.menthoros.backend.entity.RevisaoSemanal;
 import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.domain.planner.AthleteSnapshot;
 import br.com.menthoros.backend.domain.planner.InjuryPolicyResolver;
-import br.com.menthoros.backend.domain.planner.PeriodizationPlanner;
+import br.com.menthoros.backend.domain.planner.PlannerEngine;
 import br.com.menthoros.backend.domain.planner.ProvaSnapshot;
 import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.SessionSlot;
@@ -591,9 +591,9 @@ public class PlanoTreinoPromptBuilder {
     }
 
     /**
-     * Fase que prevalece sobre a da temporada nesta semana, na mesma ordem do {@code PlannerEngine}:
-     * lesão ({@link InjuryPolicyResolver}) e, sem ela, pós-prova (prova nos 7 dias antes de
-     * {@code inicioSemana}, {@link PeriodizationPlanner#provaRecemRealizada}).
+     * Fase que prevalece sobre a da temporada nesta semana — a regra é a do motor
+     * ({@link PlannerEngine#fasePrevalente}); aqui só se montam os snapshots a partir do atleta, porque
+     * com o motor desligado (default) não há skeleton de onde ler a fase.
      */
     private Optional<TrainingPhase> fasePrevalente(Atleta atleta, LocalDate inicioSemana) {
         AthleteSnapshot snapshot = new AthleteSnapshot(atleta.getId(), atleta.getNivelExperiencia(),
@@ -603,8 +603,8 @@ public class PlanoTreinoPromptBuilder {
                 .filter(p -> p.getDataProva() != null)
                 .map(p -> new ProvaSnapshot(p.getDataProva(), null, p.isProvaAlvo(), p.getStatusProva() == ProvaStatus.CANCELADA))
                 .toList();
-        return injuryPolicyResolver.resolve(snapshot, inicioSemana, injuryRecentWindowDays).phaseOverride()
-                .or(() -> PeriodizationPlanner.provaRecemRealizada(provas, inicioSemana).map(p -> TrainingPhase.POST_RACE));
+        return PlannerEngine.fasePrevalente(
+                injuryPolicyResolver.resolve(snapshot, inicioSemana, injuryRecentWindowDays), provas, inicioSemana);
     }
 
     private @Nullable PosProvaSemanaAnterior resolverPosProva(Atleta atleta, LocalDate inicioSemana,

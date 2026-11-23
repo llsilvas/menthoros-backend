@@ -56,7 +56,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 @Slf4j
@@ -167,7 +166,7 @@ public class IaServiceImpl implements IaService {
      *   opera sob o {@code TenantContext} corrente.
      */
     @Override
-    public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracaoPlano, DecisaoProgressao decisaoProgressao, RevisaoSemanal revisaoConsumida, LocalDate inicioSemana, br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeleton, Optional<SeasonWeekSnapshot> seasonWeek){
+    public PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracaoPlano, DecisaoProgressao decisaoProgressao, RevisaoSemanal revisaoConsumida, LocalDate inicioSemana, br.com.menthoros.backend.domain.planner.WeekPlanSkeleton skeleton, SeasonWeekSnapshot seasonWeek){
         // Para SEMANA_ATUAL, filtra apenas os dias que ainda não passaram e informa o LLM.
         // Para PROXIMA_SEMANA, passa null — o prompt usa todos os dias disponíveis do atleta.
         List<DiaSemana> diasEfetivos = coberturaSemanalPolicy.diasEfetivos(atleta, modoGeracaoPlano);
@@ -178,7 +177,7 @@ public class IaServiceImpl implements IaService {
         String schemaVersion = usaV2 ? SchemaVersion.V2 : SchemaVersion.CURRENT;
 
         var promptGerado = promptBuilder.buildOptimizedPrompt(atleta, metaDados, prova, inicioSemana, diasEfetivos, decisaoProgressao, revisaoConsumida, skeleton, usaV2,
-                seasonWeek.orElse(null));
+                seasonWeek);
 
         // O contexto de cobertura vem do prompt builder — é o mesmo objeto que escreveu o bloco de
         // cobertura, então prompt e validação não podem divergir. Não roda com skeleton: ali o

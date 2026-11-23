@@ -51,6 +51,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
@@ -239,7 +240,7 @@ public class PlanGenerationPersister {
                     .mapToInt(t -> t.getTssPlanejado() == null ? 0 : t.getTssPlanejado())
                     .sum();
             plano.setTargetDeviationPct(BigDecimal.valueOf((planejado - alvo) / alvo * 100)
-                    .setScale(1, java.math.RoundingMode.HALF_UP));
+                    .setScale(1, RoundingMode.HALF_UP));
         });
     }
 

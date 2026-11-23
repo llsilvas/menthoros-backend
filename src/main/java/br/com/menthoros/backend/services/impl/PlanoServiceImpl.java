@@ -266,7 +266,7 @@ public class PlanoServiceImpl implements PlanoService {
                     iaService.geraPlanoSemanalAvancado(
                             ctx.atleta(), ctx.metaDados(), ctx.proximaProva(), modoGeracao,
                             ctx.decisaoProgressao(), ctx.revisaoConsumida(), ctx.semanaInicio(), skeleton,
-                            ctx.seasonWeek()));
+                            ctx.seasonWeek().orElse(null)));
 
             validaPlanoGerado(planoDto);
             return planoDto;

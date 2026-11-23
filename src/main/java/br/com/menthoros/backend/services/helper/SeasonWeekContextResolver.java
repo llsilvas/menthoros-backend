@@ -60,7 +60,7 @@ public class SeasonWeekContextResolver {
         Optional<UUID> temporadaId = planoTreinoRepository
                 .findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(atleta.getId(), tenantId, List.of(SeasonPlanStatus.ACTIVE))
                 .stream()
-                .findFirst()
+                .findFirst() // no máximo uma: índice único parcial uk_plano_treino_active_season (V116)
                 .map(PlanoTreino::getId);
         if (temporadaId.isEmpty()) {
             return Optional.empty();

@@ -432,6 +432,15 @@ public class PlannerShadowService {
      * temporada, nada é registrado. A tag {@code tenant} isola o piloto na leitura: o shadow é global.
      */
     private void registrarDivergenciaDaTemporada(PlannerInputSnapshot snapshot, Atleta atleta) {
+        try {
+            contarDivergenciaDaTemporada(snapshot, atleta);
+        } catch (RuntimeException e) {
+            // Instrumento de calibração: falhar aqui não pode descartar o skeleton já calculado.
+            log.warn("[planner-shadow] falha ao registrar divergência da temporada: {}", e.getMessage());
+        }
+    }
+
+    private void contarDivergenciaDaTemporada(PlannerInputSnapshot snapshot, Atleta atleta) {
         snapshot.seasonWeek().ifPresent(semana -> {
             TrainingPhase heuristica = plannerEngine.heuristicPhase(snapshot);
             if (semana.phase() != heuristica) {

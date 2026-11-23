@@ -133,11 +133,20 @@ public class PlannerEngine {
      */
     private static TrainingPhase resolverFase(InjuryPolicyResult injuryPolicy, PeriodizationResult periodizacao,
                                               PlannerInputSnapshot snapshot) {
-        boolean posProva = PeriodizationPlanner.provaRecemRealizada(snapshot.provas(), snapshot.referenceDate()).isPresent();
-        return injuryPolicy.phaseOverride()
-                .or(() -> posProva ? Optional.of(TrainingPhase.POST_RACE) : Optional.empty())
+        return fasePrevalente(injuryPolicy, snapshot.provas(), snapshot.referenceDate())
                 .or(() -> snapshot.seasonWeek().map(SeasonWeekSnapshot::phase))
                 .orElse(periodizacao.phase());
+    }
+
+    /**
+     * Fase que prevalece sobre a da temporada: lesão e, sem ela, pós-prova (prova nos 7 dias antes de
+     * {@code referenceDate}). Regra única — o motor e o prompt ({@code PlanoTreinoPromptBuilder}) a
+     * usam, para o prompt nunca anunciar uma fase e o motor seguir outra.
+     */
+    public static Optional<TrainingPhase> fasePrevalente(InjuryPolicyResult injuryPolicy, List<ProvaSnapshot> provas,
+                                                         LocalDate referenceDate) {
+        return injuryPolicy.phaseOverride()
+                .or(() -> PeriodizationPlanner.provaRecemRealizada(provas, referenceDate).map(p -> TrainingPhase.POST_RACE));
     }
 
     /** Sessões sem a(s) pesada(s) órfã(s) + motivo acumulado (uma linha por slot removido). */

@@ -16,7 +16,6 @@ import org.jspecify.annotations.Nullable;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 
 public interface IaService {
 
@@ -31,7 +30,7 @@ public interface IaService {
      * @param skeleton estrutura prescritiva do planner (planner-engine-enforcement §3); {@code null}
      *        quando {@code planner-engine.enabled=false} — nesse caso o prompt é idêntico ao legado.
      * @param seasonWeek semana da temporada ativa (add-season-plan-weekly-context), lida uma vez pelo
-     *        {@code PlanGenerationContextLoader}; vazia mantém o prompt legado.
+     *        {@code PlanGenerationContextLoader}; {@code null} mantém o prompt legado.
      */
-    PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracao, @Nullable DecisaoProgressao decisaoProgressao, @Nullable RevisaoSemanal revisaoConsumida, LocalDate inicioSemana, @Nullable WeekPlanSkeleton skeleton, Optional<SeasonWeekSnapshot> seasonWeek);
+    PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracao, @Nullable DecisaoProgressao decisaoProgressao, @Nullable RevisaoSemanal revisaoConsumida, LocalDate inicioSemana, @Nullable WeekPlanSkeleton skeleton, @Nullable SeasonWeekSnapshot seasonWeek);
 }

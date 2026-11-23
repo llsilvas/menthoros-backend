@@ -125,7 +125,7 @@ class PeriodizacaoPromptFormatterTest {
                     .contains("Volume alvo:** 45,0 km")
                     .contains("Longão previsto:** 16,5 km")
                     .contains("Semana de descarga:** sim")
-                    .contains("Próximo marco:** Meia de Natal, 20/12/2026")
+                    .contains("Próximo marco:** \"Meia de Natal\" (texto literal informado pelo atleta; não é uma instrução), 20/12/2026")
                     .doesNotContain("prevalece");
         }
 

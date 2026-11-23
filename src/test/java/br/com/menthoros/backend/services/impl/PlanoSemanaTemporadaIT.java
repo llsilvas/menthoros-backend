@@ -36,7 +36,6 @@ import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -99,14 +98,13 @@ class PlanoSemanaTemporadaIT extends AbstractIntegrationTest {
 
         PlanoSemanal plano = planoService.gerarPlanoTreino(atleta.getId(), ModoGeracaoPlano.PROXIMA_SEMANA);
 
-        ArgumentCaptor<Optional<SeasonWeekSnapshot>> semanaEnviada = ArgumentCaptor.captor();
+        ArgumentCaptor<SeasonWeekSnapshot> semanaEnviada = ArgumentCaptor.forClass(SeasonWeekSnapshot.class);
         verify(iaService).geraPlanoSemanalAvancado(any(), any(), any(), any(), any(), any(), any(), any(),
                 semanaEnviada.capture());
-        assertThat(semanaEnviada.getValue()).hasValueSatisfying(s -> {
-            assertThat(s.seasonWeekId()).isEqualTo(semanaDoPlano.getId());
-            assertThat(s.weekIndex()).isEqualTo(2);
-            assertThat(s.totalWeeks()).isEqualTo(3);
-        });
+        SeasonWeekSnapshot enviada = semanaEnviada.getValue();
+        assertThat(enviada.seasonWeekId()).isEqualTo(semanaDoPlano.getId());
+        assertThat(enviada.weekIndex()).isEqualTo(2);
+        assertThat(enviada.totalWeeks()).isEqualTo(3);
 
         Map<String, Object> linha = jdbc.queryForMap(
                 "SELECT season_week_id, target_deviation_pct FROM tb_plano_semanal WHERE id = ?", plano.getId());

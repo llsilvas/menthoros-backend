@@ -61,7 +61,7 @@ class PlanoTreinoPromptBuilderTemporadaTest {
             assertThat(user)
                     .contains("POSIÇÃO NO CICLO DA TEMPORADA")
                     .contains("Semana 5 de 16")
-                    .contains("Próximo marco:** Meia de Carnaval, 14/02/2026")
+                    .contains("Próximo marco:** \"Meia de Carnaval\"")
                     .doesNotContain("PERIODIZAÇÃO E FASE ATUAL");
         }
 
