@@ -1,5 +1,8 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.services.helper.SeasonPlanResponseMapper;
+import br.com.menthoros.backend.services.helper.SeasonPlanVersioning;
+
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 import br.com.menthoros.backend.entity.Assessoria;
@@ -40,6 +43,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
@@ -529,7 +535,7 @@ class SeasonPlanServiceImplTest {
             service = novo(false);
             UUID id = UUID.randomUUID();
 
-            assertThatThrownBy(() -> service.approve(atleta.getId(), id)).isInstanceOf(SeasonPlanDisabledException.class);
+            assertThatThrownBy(() -> service.approve(atleta.getId(), id, null)).isInstanceOf(SeasonPlanDisabledException.class);
             verifyNoInteractions(planoTreinoRepository, provaRepository, usuarioRepository);
         }
 
@@ -539,7 +545,7 @@ class SeasonPlanServiceImplTest {
             UUID id = UUID.randomUUID();
             when(planoTreinoRepository.findRaceIdBySeasonPlan(id, atleta.getId(), tenantId)).thenReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.approve(atleta.getId(), id)).isInstanceOf(DomainNotFoundException.class);
+            assertThatThrownBy(() -> service.approve(atleta.getId(), id, null)).isInstanceOf(DomainNotFoundException.class);
             verifyNoInteractions(provaRepository);
         }
 
@@ -552,7 +558,7 @@ class SeasonPlanServiceImplTest {
                     atleta.getId(), tenantId, List.of(SeasonPlanStatus.ACTIVE))).thenReturn(List.of());
             Usuario treinador = treinadorAutenticado();
 
-            SeasonPlanResponseDto dto = service.approve(atleta.getId(), proposta.getId());
+            SeasonPlanResponseDto dto = service.approve(atleta.getId(), proposta.getId(), null);
 
             assertThat(dto.seasonStatus()).isEqualTo(SeasonPlanStatus.ACTIVE);
             assertThat(dto.approvedAt()).isEqualTo(Instant.parse("2026-11-16T12:00:00.123456Z"));
@@ -573,7 +579,7 @@ class SeasonPlanServiceImplTest {
             ativa.setApprovedBy(aprovador);
             ativa.setApprovedAt(quando);
 
-            SeasonPlanResponseDto dto = service.approve(atleta.getId(), ativa.getId());
+            SeasonPlanResponseDto dto = service.approve(atleta.getId(), ativa.getId(), null);
 
             assertThat(dto.seasonStatus()).isEqualTo(SeasonPlanStatus.ACTIVE);
             assertThat(dto.approvedAt()).isEqualTo(quando);
@@ -587,7 +593,7 @@ class SeasonPlanServiceImplTest {
         void arquivada() {
             PlanoTreino arquivada = travadaComTemporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.ARCHIVED);
 
-            assertThatThrownBy(() -> service.approve(atleta.getId(), arquivada.getId()))
+            assertThatThrownBy(() -> service.approve(atleta.getId(), arquivada.getId(), null))
                     .isInstanceOf(DomainConflictException.class);
             verify(planoTreinoRepository, never()).saveAndFlush(any());
         }
@@ -600,7 +606,7 @@ class SeasonPlanServiceImplTest {
             when(planoTreinoRepository.findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(
                     atleta.getId(), tenantId, List.of(SeasonPlanStatus.ACTIVE))).thenReturn(List.of(outra));
 
-            assertThatThrownBy(() -> service.approve(atleta.getId(), proposta.getId()))
+            assertThatThrownBy(() -> service.approve(atleta.getId(), proposta.getId(), null))
                     .isInstanceOf(DomainConflictException.class);
             verify(planoTreinoRepository, never()).saveAndFlush(any());
         }
@@ -612,7 +618,7 @@ class SeasonPlanServiceImplTest {
             prova.setStatusProva(ProvaStatus.CANCELADA);
             PlanoTreino proposta = travadaComTemporada(prova, SeasonPlanStatus.PROPOSED);
 
-            assertThatThrownBy(() -> service.approve(atleta.getId(), proposta.getId()))
+            assertThatThrownBy(() -> service.approve(atleta.getId(), proposta.getId(), null))
                     .isInstanceOf(DomainRuleViolationException.class);
             verify(planoTreinoRepository, never()).saveAndFlush(any());
         }
@@ -624,7 +630,7 @@ class SeasonPlanServiceImplTest {
             prova.setStatusProva(ProvaStatus.CANCELADA);
             PlanoTreino arquivada = travadaComTemporada(prova, SeasonPlanStatus.ARCHIVED);
 
-            assertThatThrownBy(() -> service.approve(atleta.getId(), arquivada.getId()))
+            assertThatThrownBy(() -> service.approve(atleta.getId(), arquivada.getId(), null))
                     .isInstanceOf(DomainConflictException.class);
         }
 
@@ -635,9 +641,110 @@ class SeasonPlanServiceImplTest {
             PlanoTreino proposta = travadaComTemporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.PROPOSED);
             emCalibracao();
 
-            assertThatThrownBy(() -> service.approve(atleta.getId(), proposta.getId()))
+            assertThatThrownBy(() -> service.approve(atleta.getId(), proposta.getId(), null))
                     .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("calibração");
             assertThat(proposta.getSeasonStatus()).isEqualTo(SeasonPlanStatus.PROPOSED);
+            verify(planoTreinoRepository, never()).saveAndFlush(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("approve — ajuste v2 (add-season-plan-adjust-v2)")
+    class ApproveAjuste {
+
+        @ParameterizedTest(name = "[{index}]")
+        @NullSource
+        @ValueSource(strings = {"", "   "})
+        @DisplayName("sem motivo, ou em branco, responde 422 e nenhuma versão muda")
+        void semMotivo(String motivo) {
+            PlanoTreino rascunho = travadaComTemporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.PROPOSED);
+            rascunho.setBaseSeasonPlanId(UUID.randomUUID());
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), rascunho.getId(), motivo))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("motivo");
+            assertThat(rascunho.getSeasonStatus()).isEqualTo(SeasonPlanStatus.PROPOSED);
+            verify(planoTreinoRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("motivo com 256 caracteres responde 422")
+        void motivoLongoDemais() {
+            PlanoTreino rascunho = travadaComTemporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.PROPOSED);
+            rascunho.setBaseSeasonPlanId(UUID.randomUUID());
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), rascunho.getId(), "x".repeat(256)))
+                    .isInstanceOf(DomainRuleViolationException.class);
+            verify(planoTreinoRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("com motivo de 255: semana em andamento volta da v1, futura fica do ajuste, v1 arquiva antes da v2 ativar")
+        void aprova() {
+            Prova prova = provaAlvo(PROVA_20_SEMANAS);
+            PlanoTreino base = temporada(prova, SeasonPlanStatus.ACTIVE);
+            base.setVersion(1);
+            PlanoTreino rascunho = travadaComTemporada(prova, SeasonPlanStatus.PROPOSED);
+            rascunho.setVersion(2);
+            rascunho.setBaseSeasonPlanId(base.getId());
+            when(planoTreinoRepository.findByIdAndAssessoriaId(base.getId(), tenantId)).thenReturn(Optional.of(base));
+            SeasonWeek baseCorrente = semanaGravada(1, "40", "10", null);
+            SeasonWeek baseFutura = semanaGravada(2, "42", "11", null);
+            SeasonWeek corrente = semanaGravada(1, "99", "10", null);
+            corrente.setValueSource(WeekValueSource.COACH);
+            SeasonWeek futura = semanaGravada(2, "50", "14", null);
+            futura.setValueSource(WeekValueSource.COACH);
+            when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(base.getId(), tenantId))
+                    .thenReturn(List.of(baseCorrente, baseFutura));
+            when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(rascunho.getId(), tenantId))
+                    .thenReturn(List.of(corrente, futura));
+            Usuario treinador = treinadorAutenticado();
+            String motivo = "m".repeat(255);
+
+            SeasonPlanResponseDto dto = service.approve(atleta.getId(), rascunho.getId(), motivo);
+
+            assertThat(dto.seasonStatus()).isEqualTo(SeasonPlanStatus.ACTIVE);
+            assertThat(corrente.getTargetVolumeKm()).isEqualByComparingTo("40");
+            assertThat(corrente.getValueSource()).isEqualTo(WeekValueSource.ENGINE);
+            assertThat(futura.getTargetVolumeKm()).isEqualByComparingTo("50");
+            assertThat(rascunho.getPeakVolumeKm()).isEqualByComparingTo("50");
+            assertThat(rascunho.getVersionReason()).isEqualTo(motivo);
+            assertThat(rascunho.getApprovedBy()).isEqualTo(treinador.getId());
+            assertThat(base.getSeasonStatus()).isEqualTo(SeasonPlanStatus.ARCHIVED);
+            InOrder ordem = inOrder(planoTreinoRepository);
+            ordem.verify(planoTreinoRepository).saveAndFlush(base);
+            ordem.verify(planoTreinoRepository).saveAndFlush(rascunho);
+            verify(planoTreinoRepository, never()).findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(
+                    atleta.getId(), tenantId, List.of(SeasonPlanStatus.ACTIVE));
+        }
+
+        @Test
+        @DisplayName("a base deixou de ser a ACTIVE (outro ajuste aprovado antes) responde 409 sem trocar nada")
+        void baseTrocada() {
+            Prova prova = provaAlvo(PROVA_20_SEMANAS);
+            PlanoTreino base = temporada(prova, SeasonPlanStatus.ARCHIVED);
+            base.setVersion(1);
+            PlanoTreino rascunho = travadaComTemporada(prova, SeasonPlanStatus.PROPOSED);
+            rascunho.setVersion(2);
+            rascunho.setBaseSeasonPlanId(base.getId());
+            when(planoTreinoRepository.findByIdAndAssessoriaId(base.getId(), tenantId)).thenReturn(Optional.of(base));
+            treinadorAutenticado();
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), rascunho.getId(), "Atleta lesionou"))
+                    .isInstanceOf(DomainConflictException.class);
+            assertThat(rascunho.getSeasonStatus()).isEqualTo(SeasonPlanStatus.PROPOSED);
+            verify(planoTreinoRepository, never()).saveAndFlush(any());
+        }
+
+        @Test
+        @DisplayName("ajuste não vira ACTIVE com o atleta em calibração")
+        void calibracao() {
+            service = novo(true, true);
+            PlanoTreino rascunho = travadaComTemporada(provaAlvo(PROVA_20_SEMANAS), SeasonPlanStatus.PROPOSED);
+            rascunho.setBaseSeasonPlanId(UUID.randomUUID());
+            emCalibracao();
+
+            assertThatThrownBy(() -> service.approve(atleta.getId(), rascunho.getId(), "Atleta lesionou"))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("calibração");
             verify(planoTreinoRepository, never()).saveAndFlush(any());
         }
     }
@@ -727,7 +834,9 @@ class SeasonPlanServiceImplTest {
     private SeasonPlanServiceImpl novo(boolean enabled, boolean plannerShadow) {
         return new SeasonPlanServiceImpl(atletaRepository, provaRepository, planoTreinoRepository,
                 seasonWeekRepository, metricasDiariasRepository, baselineRepository, perfilRepository,
-                treinoRealizadoRepository, usuarioRepository, principalResolver, atletaResolver, CLOCK, enabled,
+                treinoRealizadoRepository, usuarioRepository, principalResolver, atletaResolver,
+                new SeasonPlanResponseMapper(provaRepository, seasonWeekRepository, CLOCK),
+                new SeasonPlanVersioning(planoTreinoRepository, provaRepository, seasonWeekRepository, CLOCK), CLOCK, enabled,
                 plannerShadow);
     }
 

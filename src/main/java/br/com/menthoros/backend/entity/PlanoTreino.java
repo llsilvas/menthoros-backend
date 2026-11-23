@@ -102,4 +102,8 @@ public class PlanoTreino {
 
     @Column(name = "approved_at")
     private Instant approvedAt;
+
+    /** Temporada ACTIVE da qual este rascunho de nova versão foi copiado; nulo na v1 (add-season-plan-adjust-v2). */
+    @Column(name = "base_season_plan_id")
+    private UUID baseSeasonPlanId;
 }

@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services.helper;
 
+import br.com.menthoros.backend.domain.planner.SeasonWeekLock;
 import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoTreino;
@@ -90,7 +91,7 @@ public class SeasonWeekContextResolver {
     }
 
     /**
-     * Mesmo filtro dos marcos exibidos ao coach ({@code SeasonPlanServiceImpl.marcos}): prova
+     * Mesmo filtro dos marcos exibidos ao coach ({@code SeasonPlanResponseMapper.marcos}): prova
      * cancelada ou remarcada para fora da semana gravada não conta.
      */
     private static Optional<SeasonWeekSnapshot.Milestone> proximoMarco(SeasonWeek atual, List<SeasonWeek> semanas,
@@ -107,7 +108,6 @@ public class SeasonWeekContextResolver {
     }
 
     private static boolean marcoValido(SeasonWeek semana, Prova prova) {
-        LocalDate data = prova == null ? null : prova.getDataProva();
-        return data != null && !data.isBefore(semana.getWeekStart()) && data.isBefore(semana.getWeekStart().plusWeeks(1));
+        return prova != null && SeasonWeekLock.contains(semana.getWeekStart(), prova.getDataProva());
     }
 }
