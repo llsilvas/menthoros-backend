@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.controller;
 
 import br.com.menthoros.backend.dto.input.SeasonPlanApprovalInputDto;
+import br.com.menthoros.backend.dto.input.SeasonPlanRecalculateInputDto;
 import br.com.menthoros.backend.dto.input.SeasonWeekUpdateInputDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 import br.com.menthoros.backend.security.RequireTenant;
@@ -158,6 +159,28 @@ public class SeasonPlanController {
             @Parameter(description = "Posição da semana, a partir de 1") @PathVariable int weekIndex,
             @RequestBody SeasonWeekUpdateInputDto body) {
         return ResponseEntity.ok(adjustmentService.updateWeek(atletaId, seasonPlanId, weekIndex, body));
+    }
+
+    @PostMapping("/{seasonPlanId}/recalculate")
+    @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
+    @RequireTenant(resourceParamIndex = 0)
+    @Operation(summary = "Recalcular o ajuste da temporada",
+            description = "Regenera pelo motor as semanas livres do rascunho com as semanas por fase e o volume de "
+                    + "partida pedidos; semanas travadas e as editadas pelo treinador ficam como estão")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Rascunho recalculado; devolve a temporada inteira",
+                    content = @Content(schema = @Schema(implementation = SeasonPlanResponseDto.class))),
+            @ApiResponse(responseCode = "403", description = "Acesso negado — apenas TECNICO e ADMIN da assessoria"),
+            @ApiResponse(responseCode = "404", description = "Temporada não encontrada, ou plano de temporada desabilitado (code SEASON_PLAN_DISABLED)"),
+            @ApiResponse(responseCode = "409", description = "A temporada não é um ajuste em aberto"),
+            @ApiResponse(responseCode = "422", description = "Fases ou volume inválidos, soma das fases diferente do ciclo, prova remarcada, CTL de partida ausente ou fase divergente numa semana travada")
+    })
+    // Sem @Valid pelo mesmo motivo do updateWeek: o serviço valida e responde 422 com a mensagem.
+    public ResponseEntity<SeasonPlanResponseDto> recalculate(
+            @Parameter(description = "ID do atleta") @PathVariable UUID atletaId,
+            @Parameter(description = "ID da temporada") @PathVariable UUID seasonPlanId,
+            @RequestBody SeasonPlanRecalculateInputDto body) {
+        return ResponseEntity.ok(adjustmentService.recalculate(atletaId, seasonPlanId, body));
     }
 
     @DeleteMapping("/{seasonPlanId}")

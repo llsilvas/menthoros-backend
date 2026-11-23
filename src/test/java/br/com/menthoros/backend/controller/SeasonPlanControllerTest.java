@@ -14,6 +14,7 @@ import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.SeasonPlanAdjustmentService;
 import br.com.menthoros.backend.services.SeasonPlanService;
+import br.com.menthoros.backend.dto.input.SeasonPlanRecalculateInputDto;
 import br.com.menthoros.backend.dto.input.SeasonWeekUpdateInputDto;
 import org.springframework.http.MediaType;
 import br.com.menthoros.backend.services.SeasonPlanService.Generation;
@@ -35,6 +36,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -374,6 +376,63 @@ class SeasonPlanControllerTest {
                     .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isForbidden());
             mockMvc.perform(delete(BASE + "/" + planoId).with(atletaJwt())).andExpect(status().isForbidden());
             mockMvc.perform(get(BASE + "/" + planoId).with(atletaJwt())).andExpect(status().isForbidden());
+
+            verifyNoInteractions(adjustmentService);
+        }
+    }
+
+    @Nested
+    @DisplayName("recalculate")
+    class Recalculate {
+
+        private final UUID planoId = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000002");
+        private final String url = BASE + "/" + planoId + "/recalculate";
+        private static final String CORPO =
+                "{\"phaseWeeks\":{\"BASE\":3,\"BUILD\":4,\"PEAK\":2,\"TAPER\":2},\"startVolumeKm\":40.0}";
+
+        @Test
+        @DisplayName("POST repassa fases e volume e devolve o rascunho com 200")
+        void recalcula() throws Exception {
+            atletaDoTenant();
+            when(adjustmentService.recalculate(eq(ATLETA_ID), eq(planoId), any())).thenReturn(plano());
+
+            mockMvc.perform(post(url).with(tecnicoJwt()).contentType(MediaType.APPLICATION_JSON).content(CORPO))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.provaNome").value("Maratona alvo"));
+
+            verify(adjustmentService).recalculate(ATLETA_ID, planoId, new SeasonPlanRecalculateInputDto(
+                    Map.of(TrainingPhase.BASE, 3, TrainingPhase.BUILD, 4, TrainingPhase.PEAK, 2, TrainingPhase.TAPER, 2),
+                    new BigDecimal("40.0")));
+        }
+
+        @Test
+        @DisplayName("regra do recálculo violada responde 422 com a mensagem")
+        void regraViolada() throws Exception {
+            atletaDoTenant();
+            when(adjustmentService.recalculate(eq(ATLETA_ID), eq(planoId), any()))
+                    .thenThrow(new DomainRuleViolationException("A soma das fases dá 10 semanas (com a da prova); o ciclo tem 12"));
+
+            mockMvc.perform(post(url).with(tecnicoJwt()).contentType(MediaType.APPLICATION_JSON).content(CORPO))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("o ciclo tem 12")));
+        }
+
+        @Test
+        @DisplayName("temporada que não é ajuste em aberto responde 409")
+        void naoRascunho() throws Exception {
+            atletaDoTenant();
+            when(adjustmentService.recalculate(eq(ATLETA_ID), eq(planoId), any()))
+                    .thenThrow(new DomainConflictException("Só um ajuste em aberto"));
+
+            mockMvc.perform(post(url).with(tecnicoJwt()).contentType(MediaType.APPLICATION_JSON).content(CORPO))
+                    .andExpect(status().isConflict());
+        }
+
+        @Test
+        @DisplayName("403 para ATLETA, sem chegar ao serviço")
+        void atletaProibido() throws Exception {
+            mockMvc.perform(post(url).with(atletaJwt()).contentType(MediaType.APPLICATION_JSON).content(CORPO))
+                    .andExpect(status().isForbidden());
 
             verifyNoInteractions(adjustmentService);
         }
