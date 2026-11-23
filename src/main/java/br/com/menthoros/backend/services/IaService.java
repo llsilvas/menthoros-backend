@@ -1,5 +1,6 @@
 package br.com.menthoros.backend.services;
 
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.output.AtletaOutputDto;
@@ -28,6 +29,8 @@ public interface IaService {
      *        tem plano futuro: o prompt falaria de uma semana e o plano seria salvo em outra.
      * @param skeleton estrutura prescritiva do planner (planner-engine-enforcement §3); {@code null}
      *        quando {@code planner-engine.enabled=false} — nesse caso o prompt é idêntico ao legado.
+     * @param seasonWeek semana da temporada ativa (add-season-plan-weekly-context), lida uma vez pelo
+     *        {@code PlanGenerationContextLoader}; {@code null} mantém o prompt legado.
      */
-    PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracao, @Nullable DecisaoProgressao decisaoProgressao, @Nullable RevisaoSemanal revisaoConsumida, LocalDate inicioSemana, @Nullable WeekPlanSkeleton skeleton);
+    PlanoSemanalLlmDto geraPlanoSemanalAvancado(Atleta atleta, PlanoMetaDados metaDados, Prova prova, ModoGeracaoPlano modoGeracao, @Nullable DecisaoProgressao decisaoProgressao, @Nullable RevisaoSemanal revisaoConsumida, LocalDate inicioSemana, @Nullable WeekPlanSkeleton skeleton, @Nullable SeasonWeekSnapshot seasonWeek);
 }

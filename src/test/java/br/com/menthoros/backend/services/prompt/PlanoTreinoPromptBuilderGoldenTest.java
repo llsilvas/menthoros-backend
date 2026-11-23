@@ -1,6 +1,14 @@
 package br.com.menthoros.backend.services.prompt;
 
+import br.com.menthoros.backend.domain.planner.ConstraintValidationResult;
+import br.com.menthoros.backend.domain.planner.InjuryRiskAssessment;
+import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
+import br.com.menthoros.backend.domain.planner.SessionSlot;
+import br.com.menthoros.backend.domain.planner.TrainingPhase;
+import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
+import br.com.menthoros.backend.domain.planner.WeeklyLoadTarget;
 import br.com.menthoros.backend.services.helper.TreinoHistoricoProvider;
+import org.jspecify.annotations.Nullable;
 import br.com.menthoros.backend.services.prompt.PlanoPromptArquetipos.Arquetipo;
 import br.com.menthoros.backend.ai.ledger.PromptHashCalculator;
 import org.junit.jupiter.api.AfterAll;
@@ -15,11 +23,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -79,7 +89,21 @@ class PlanoTreinoPromptBuilderGoldenTest {
         assertGoldenTodos(Map.of("system", gerado.system(), arq.nome() + ".user", gerado.user()));
     }
 
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("arquetipos")
+    @DisplayName("com skeleton (motor ligado), o user do arquétipo bate com o golden-master")
+    void promptComSkeletonCongeladoBateComGolden(Arquetipo arq) throws IOException {
+        // Baseline gravada antes de add-season-plan-weekly-context: sem temporada, o prompt com o
+        // motor ligado não pode mudar.
+        PlanoTreinoPromptBuilder.PromptGerado gerado = montarPrompt(arq, skeletonFixo(arq.inicioSemana()));
+        assertGoldenTodos(Map.of(arq.nome() + ".skeleton.user", gerado.user()));
+    }
+
     private PlanoTreinoPromptBuilder.PromptGerado montarPrompt(Arquetipo arq) {
+        return montarPrompt(arq, null);
+    }
+
+    private PlanoTreinoPromptBuilder.PromptGerado montarPrompt(Arquetipo arq, @Nullable WeekPlanSkeleton skeleton) {
         TreinoHistoricoProvider provider = mock(TreinoHistoricoProvider.class);
         when(provider.prepararContexto(any())).thenReturn(arq.contexto());
 
@@ -87,9 +111,27 @@ class PlanoTreinoPromptBuilderGoldenTest {
 
         try (MockedStatic<LocalDate> now = mockStatic(LocalDate.class, CALLS_REAL_METHODS)) {
             now.when(LocalDate::now).thenReturn(PlanoPromptArquetipos.HOJE);
+            if (skeleton == null) {
+                return builder.buildOptimizedPrompt(
+                        arq.atleta(), arq.meta(), arq.prova(), arq.inicioSemana(), arq.diasEfetivos());
+            }
             return builder.buildOptimizedPrompt(
-                    arq.atleta(), arq.meta(), arq.prova(), arq.inicioSemana(), arq.diasEfetivos());
+                    arq.atleta(), arq.meta(), arq.prova(), arq.inicioSemana(), arq.diasEfetivos(),
+                    null, null, skeleton);
         }
+    }
+
+    private static WeekPlanSkeleton skeletonFixo(LocalDate inicioSemana) {
+        return new WeekPlanSkeleton(
+                TrainingPhase.BUILD,
+                new WeeklyLoadTarget(300.0, 270.0, 330.0, "golden"),
+                List.of(
+                        new SessionSlot(DayOfWeek.TUESDAY, "INTERVALADO", 80.0, "Z4", true, 60),
+                        new SessionSlot(DayOfWeek.THURSDAY, "FACIL", 50.0, "Z2", false, 45),
+                        new SessionSlot(DayOfWeek.SATURDAY, "LONGO", 120.0, "Z2", true, 110)),
+                new InjuryRiskAssessment(InjuryRiskLevel.SAFE, false, null),
+                new ConstraintValidationResult(true, List.of()),
+                false, null, inicioSemana, null, Optional.empty());
     }
 
     /**

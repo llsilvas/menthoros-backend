@@ -20,6 +20,7 @@ import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.mapper.TreinoMapper;
 import br.com.menthoros.backend.multitenancy.TenantContext;
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.repository.AtletaRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
 import br.com.menthoros.backend.repository.TreinoRealizadoRepository;
@@ -68,6 +69,7 @@ public class PlanGenerationContextLoader {
     private final ProgressaoTreinoService progressaoTreinoService;
     private final WeeklyReviewPromptProvider weeklyReviewPromptProvider;
     private final OnboardingService onboardingService;
+    private final SeasonWeekContextResolver seasonWeekContextResolver;
 
     // athlete-onboarding-baseline: atleta legado sem snapshot só é migrado com a flag ligada — mesmo
     // kill-switch usado em PlanGenerationPersister.resolverOnboardingContext (mantido em sincronia).
@@ -146,9 +148,12 @@ public class PlanGenerationContextLoader {
         // derivava seu próprio Optional<OnboardingContext>, e o pré-prompt sempre recebia vazio.
         Optional<OnboardingContext> onboardingContext = resolverOnboardingContext(atletaId, tenantId);
 
+        // Uma leitura só: prompt, motor e persistência veem a mesma semana da temporada.
+        Optional<SeasonWeekSnapshot> seasonWeek = seasonWeekContextResolver.resolve(atleta, tenantId, semanaInicio);
+
         return new PlanGenerationContext(
                 dados, progressao.decisao(), progressao.historico(), semanaInicio, revisaoConsumida,
-                proximaProva, onboardingContext, generationRequestId);
+                proximaProva, onboardingContext, generationRequestId, seasonWeek);
     }
 
     /**

@@ -96,7 +96,7 @@ class PlanGenerationPersisterProvaTest {
         // possuiBaseline=false + migrateExistingEnabled=false (default do campo, sem Spring)
         // faz resolverOnboardingContext parar em Optional.empty() sem chamar montarContexto.
         lenient().when(onboardingService.possuiBaseline(any(), any())).thenReturn(false);
-        lenient().when(plannerShadowService.aplicarShadow(any(), any(), any(), any(), any(), any(), eq(false), any()))
+        lenient().when(plannerShadowService.aplicarShadow(any(), any(), any(), any(), any(), any(), eq(false), any(), any()))
                 .thenReturn(Optional.empty());
     }
 
@@ -303,7 +303,7 @@ class PlanGenerationPersisterProvaTest {
             // a persistencia nunca recomputa o skeleton — nem para o estagio 2, nem para guiar a
             // redistribuicao (diasAlvoDaRedistribuicao usa skeletonDaFase2 diretamente).
             org.mockito.Mockito.verify(plannerShadowService, org.mockito.Mockito.never())
-                    .computarSkeleton(any(), any(), any(), any(), any());
+                    .computarSkeleton(any(), any(), any(), any(), any(), any());
             // os dias-alvo repassados a redistribuicao vieram do slot do skeletonDaFase2 (LONGO -> DOMINGO).
             assertThat(diasAlvoCaptor.getValue()).containsEntry(TipoTreino.LONGO, DiaSemana.DOMINGO);
         }

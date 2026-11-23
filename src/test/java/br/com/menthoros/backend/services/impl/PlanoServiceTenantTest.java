@@ -85,7 +85,8 @@ class PlanoServiceTenantTest {
         var contextLoader = new br.com.menthoros.backend.services.helper.PlanGenerationContextLoader(
                 atletaRepository, planoMetadadosService, treinoRealizadoRepository, treinoMapper,
                 planoSemanalRepository, planoSemanalMapper, progressaoTreinoService, weeklyReviewPromptProvider,
-                onboardingService);
+                onboardingService,
+                new br.com.menthoros.backend.services.helper.SeasonWeekContextResolver(null, null, false));
         lenient().when(provaNoPlanoService.garantirProvasNaSemana(any(), any(), any(), any()))
                 .thenAnswer(inv -> inv.getArgument(0));
         var persister = new br.com.menthoros.backend.services.helper.PlanGenerationPersister(

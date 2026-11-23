@@ -61,8 +61,7 @@ public class PlannerEngine {
         InjuryPolicyResult injuryPolicy = injuryPolicyResolver.resolve(
                 snapshot.athlete(), snapshot.referenceDate(), snapshot.injuryRecentWindowDays());
 
-        // Passo 1 da hierarquia P0: lesao ativa/recente tem precedencia sobre a fase da periodizacao.
-        TrainingPhase fase = injuryPolicy.phaseOverride().orElse(periodizacao.phase());
+        TrainingPhase fase = resolverFase(injuryPolicy, periodizacao, snapshot);
 
         InjuryRiskAssessment risco = injuryRiskEvaluator.assess(
                 snapshot.progressaoHistorico(), snapshot.historico(), snapshot.referenceDate());
@@ -118,6 +117,36 @@ public class PlannerEngine {
                 plannerScope,
                 periodizacao.provaDeterminante(),
                 provasDaSemana);
+    }
+
+    /**
+     * Fase sem a temporada: só a periodização por prova (inclui o pós-prova). Base da métrica
+     * {@code season-plan.phase.divergence.count} (add-season-plan-weekly-context).
+     */
+    public TrainingPhase heuristicPhase(PlannerInputSnapshot snapshot) {
+        return periodizationPlanner.resolvePhase(snapshot.provas(), snapshot.referenceDate()).phase();
+    }
+
+    /**
+     * Ordem de precedência (add-season-plan-weekly-context): lesão (passo 1 da hierarquia P0) >
+     * pós-prova > fase da semana da temporada > periodização por prova.
+     */
+    private static TrainingPhase resolverFase(InjuryPolicyResult injuryPolicy, PeriodizationResult periodizacao,
+                                              PlannerInputSnapshot snapshot) {
+        return fasePrevalente(injuryPolicy, snapshot.provas(), snapshot.referenceDate())
+                .or(() -> snapshot.seasonWeek().map(SeasonWeekSnapshot::phase))
+                .orElse(periodizacao.phase());
+    }
+
+    /**
+     * Fase que prevalece sobre a da temporada: lesão e, sem ela, pós-prova (prova nos 7 dias antes de
+     * {@code referenceDate}). Regra única — o motor e o prompt ({@code PlanoTreinoPromptBuilder}) a
+     * usam, para o prompt nunca anunciar uma fase e o motor seguir outra.
+     */
+    public static Optional<TrainingPhase> fasePrevalente(InjuryPolicyResult injuryPolicy, List<ProvaSnapshot> provas,
+                                                         LocalDate referenceDate) {
+        return injuryPolicy.phaseOverride()
+                .or(() -> PeriodizationPlanner.provaRecemRealizada(provas, referenceDate).map(p -> TrainingPhase.POST_RACE));
     }
 
     /** Sessões sem a(s) pesada(s) órfã(s) + motivo acumulado (uma linha por slot removido). */
