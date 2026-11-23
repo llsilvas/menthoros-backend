@@ -10,7 +10,13 @@ import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.RevisaoSemanal;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.domain.planner.AthleteSnapshot;
+import br.com.menthoros.backend.domain.planner.InjuryPolicyResolver;
+import br.com.menthoros.backend.domain.planner.PeriodizationPlanner;
+import br.com.menthoros.backend.domain.planner.ProvaSnapshot;
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.SessionSlot;
+import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import java.time.DayOfWeek;
 import br.com.menthoros.backend.enums.DiaSemana;
@@ -44,6 +50,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.jspecify.annotations.Nullable;
 
@@ -70,6 +77,9 @@ public class PlanoTreinoPromptBuilder {
     private final ReadinessPromptFormatter readinessPromptFormatter;
     private final WeeklyReviewPromptFormatter weeklyReviewPromptFormatter;
     private final ProvaNoPlanoService provaNoPlanoService;
+    // Puro e sem dependências (como no PlannerEngine): mesma regra de lesão do motor.
+    private final InjuryPolicyResolver injuryPolicyResolver = new InjuryPolicyResolver();
+    private final int injuryRecentWindowDays;
 
     public PlanoTreinoPromptBuilder(@Value("classpath:prompts/plano-treino-prompt.txt") Resource promptResource,
                                     PromptTemplateLoader templateLoader,
@@ -90,7 +100,8 @@ public class PlanoTreinoPromptBuilder {
                                     ThresholdConstraintFormatter thresholdConstraintFormatter,
                                     ReadinessPromptFormatter readinessPromptFormatter,
                                     WeeklyReviewPromptFormatter weeklyReviewPromptFormatter,
-                                    ProvaNoPlanoService provaNoPlanoService) {
+                                    ProvaNoPlanoService provaNoPlanoService,
+                                    @Value("${planner-engine.injury.recent-window-days:30}") int injuryRecentWindowDays) {
         this.templateLoader = templateLoader;
         this.metricasAlertaService = metricasAlertaService;
         this.zonaTreinoService = zonaTreinoService;
@@ -110,6 +121,7 @@ public class PlanoTreinoPromptBuilder {
         this.readinessPromptFormatter = readinessPromptFormatter;
         this.weeklyReviewPromptFormatter = weeklyReviewPromptFormatter;
         this.provaNoPlanoService = provaNoPlanoService;
+        this.injuryRecentWindowDays = injuryRecentWindowDays;
         try {
             this.promptTemplate = new String(promptResource.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
@@ -231,6 +243,22 @@ public class PlanoTreinoPromptBuilder {
                                              @Nullable RevisaoSemanal revisaoConsumida,
                                              @Nullable WeekPlanSkeleton skeleton,
                                              boolean usaV2) {
+        return buildOptimizedPrompt(atleta, metaDados, provaAlvo, inicioSemana, diasEfetivos,
+                decisaoProgressao, revisaoConsumida, skeleton, usaV2, null);
+    }
+
+    /**
+     * {@code seasonWeek} (add-season-plan-weekly-context): semana da temporada ativa. Presente, o bloco
+     * de posição no ciclo substitui a seção "PERIODIZAÇÃO E FASE ATUAL" e o {@code targetTss} vira a
+     * base do "TSS Alvo Semanal" (com as reduções por fadiga por cima). {@code null}, o prompt é o legado.
+     */
+    public PromptGerado buildOptimizedPrompt(Atleta atleta, PlanoMetaDados metaDados, Prova provaAlvo,
+                                             LocalDate inicioSemana, List<DiaSemana> diasEfetivos,
+                                             @Nullable DecisaoProgressao decisaoProgressao,
+                                             @Nullable RevisaoSemanal revisaoConsumida,
+                                             @Nullable WeekPlanSkeleton skeleton,
+                                             boolean usaV2,
+                                             @Nullable SeasonWeekSnapshot seasonWeek) {
         var ctx = treinoHistoricoProvider.prepararContexto(atleta);
 
         // DECISÃO INTERVALADO — avaliação determinística pré-LLM (5 portões fisiológicos + readiness)
@@ -382,12 +410,20 @@ public class PlanoTreinoPromptBuilder {
         // ETAPA 8: Instruções de recuperação
         historicoCompleto.append(instrucoesRecuperacao).append("\n\n");
 
-        // ETAPA 9: Periodização estruturada
-        historicoCompleto.append("## 📅 PERIODIZAÇÃO E FASE ATUAL\n\n");
-        historicoCompleto.append(periodizacaoPromptFormatter.formatarPeriodizacaoProva(provaAlvo)).append("\n\n");
+        // ETAPA 10 (calculada antes da 9, que a exibe com temporada): base = targetTss da semana da
+        // temporada ou ctlAlvo * 7 no legado; as reduções por fadiga valem nos dois casos.
+        int tssAlvoBase = tssAlvoBaseDaTemporada(seasonWeek)
+                .orElseGet(() -> periodizacaoPromptFormatter.calcularTssAlvo(metaDados));
+        int tssAlvo = periodizacaoPromptFormatter.aplicarReducoesPorFadiga(tssAlvoBase, metaDados);
 
-        // ETAPA 10: METAS CALCULADAS PARA ESTA SEMANA (ajustadas e consistentes)
-        int tssAlvo = periodizacaoPromptFormatter.calcularTssAlvoAjustado(metaDados, atleta);
+        // ETAPA 9: Periodização estruturada — com temporada, a posição no ciclo no lugar da fase por dias
+        if (seasonWeek != null) {
+            historicoCompleto.append(periodizacaoPromptFormatter.formatarPosicaoNoCiclo(
+                    seasonWeek, tssAlvo, fasePrevalente(atleta, inicioSemana))).append("\n");
+        } else {
+            historicoCompleto.append("## 📅 PERIODIZAÇÃO E FASE ATUAL\n\n");
+            historicoCompleto.append(periodizacaoPromptFormatter.formatarPeriodizacaoProva(provaAlvo)).append("\n\n");
+        }
 
         // Determinar tipo de semana baseado nas recomendações
         String tipoSemana = periodizacaoPromptFormatter.determinarTipoSemana(metaDados, atleta, tssAlvo);
@@ -398,7 +434,6 @@ public class PlanoTreinoPromptBuilder {
 
         // Explicar se houve ajuste por regeneração
         Double tsb = metaDados != null ? metaDados.getTsbAtual() : null;
-        int tssAlvoBase = periodizacaoPromptFormatter.calcularTssAlvo(metaDados);
         if (tssAlvo < tssAlvoBase) {
             int reducaoPercentual = (int) Math.round((1.0 - (double) tssAlvo / tssAlvoBase) * 100);
             historicoCompleto.append(String.format(" (reduzido %d%% por semana regenerativa)", reducaoPercentual));
@@ -547,6 +582,31 @@ public class PlanoTreinoPromptBuilder {
      * Prova no dia anterior ao início da semana: o primeiro dia do plano é o D+1 dela. Só interessa se
      * esse dia é um dia a cobrir — senão não há o que proteger, e a consulta nem é feita.
      */
+    private static Optional<Integer> tssAlvoBaseDaTemporada(@Nullable SeasonWeekSnapshot seasonWeek) {
+        // shortcut: semana sem targetTss (nulo/zero) cai na base legada; o bloco ainda mostra a posição.
+        if (seasonWeek == null || seasonWeek.targetTss() == null || seasonWeek.targetTss() <= 0) {
+            return Optional.empty();
+        }
+        return Optional.of((int) Math.round(seasonWeek.targetTss()));
+    }
+
+    /**
+     * Fase que prevalece sobre a da temporada nesta semana, na mesma ordem do {@code PlannerEngine}:
+     * lesão ({@link InjuryPolicyResolver}) e, sem ela, pós-prova (prova nos 7 dias antes de
+     * {@code inicioSemana}, {@link PeriodizationPlanner#provaRecemRealizada}).
+     */
+    private Optional<TrainingPhase> fasePrevalente(Atleta atleta, LocalDate inicioSemana) {
+        AthleteSnapshot snapshot = new AthleteSnapshot(atleta.getId(), atleta.getNivelExperiencia(),
+                Boolean.TRUE.equals(atleta.getTemLesao()), atleta.getDescricaoLesao(), atleta.getDataUltimaLesao(),
+                atleta.getDiasDisponiveis(), null);
+        List<ProvaSnapshot> provas = atleta.getProvas() == null ? List.of() : atleta.getProvas().stream()
+                .filter(p -> p.getDataProva() != null)
+                .map(p -> new ProvaSnapshot(p.getDataProva(), null, p.isProvaAlvo(), p.getStatusProva() == ProvaStatus.CANCELADA))
+                .toList();
+        return injuryPolicyResolver.resolve(snapshot, inicioSemana, injuryRecentWindowDays).phaseOverride()
+                .or(() -> PeriodizationPlanner.provaRecemRealizada(provas, inicioSemana).map(p -> TrainingPhase.POST_RACE));
+    }
+
     private @Nullable PosProvaSemanaAnterior resolverPosProva(Atleta atleta, LocalDate inicioSemana,
                                                              @Nullable List<DiaSemana> diasACobrir) {
         DiaSemana primeiroDia = Utils.converterDayOfWeekParaDiaSemana(inicioSemana.getDayOfWeek());

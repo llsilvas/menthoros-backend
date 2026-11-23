@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.services.prompt;
 
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
+import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
@@ -17,6 +19,8 @@ import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Optional;
 
 /**
  * Formatador de periodização e provas para prompts de IA.
@@ -35,6 +39,13 @@ import java.util.List;
 public class PeriodizacaoPromptFormatter {
 
     private static final DateTimeFormatter DATA_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final Locale PT_BR = Locale.forLanguageTag("pt-BR");
+
+    private static final String DIRETRIZ_BASE = "Fase BASE: Construir volume aeróbico. 80% treinos fáceis, 20% moderados.";
+    private static final String DIRETRIZ_BUILD = "Fase BUILD: Adicionar qualidade. 70% fáceis, 20% específicos, 10% intensos.";
+    private static final String DIRETRIZ_ESPECIFICO = "Fase ESPECÍFICO: Treinos no pace de prova. 60% fáceis, 30% específicos, 10% regenerativos.";
+    private static final String DIRETRIZ_TAPER = "Fase TAPER: Reduzir volume 40-60%, manter intensidade. Foco em recuperação.";
+    private static final String DIRETRIZ_SEMANA_DA_PROVA = "SEMANA DA PROVA: Apenas treinos leves curtíssimos. TSB deve estar entre +5 e +10.";
 
     /**
      * Formata prova alvo com fase atual, foco e provas preparatórias.
@@ -97,16 +108,76 @@ public class PeriodizacaoPromptFormatter {
         int semanas = provaAlvo.diasFaltando() / 7;
 
         if (semanas > 12) {
-            return "Fase BASE: Construir volume aeróbico. 80% treinos fáceis, 20% moderados.";
+            return DIRETRIZ_BASE;
         } else if (semanas > 8) {
-            return "Fase BUILD: Adicionar qualidade. 70% fáceis, 20% específicos, 10% intensos.";
+            return DIRETRIZ_BUILD;
         } else if (semanas > 3) {
-            return "Fase ESPECÍFICO: Treinos no pace de prova. 60% fáceis, 30% específicos, 10% regenerativos.";
+            return DIRETRIZ_ESPECIFICO;
         } else if (semanas > 1) {
-            return "Fase TAPER: Reduzir volume 40-60%, manter intensidade. Foco em recuperação.";
+            return DIRETRIZ_TAPER;
         } else {
-            return "SEMANA DA PROVA: Apenas treinos leves curtíssimos. TSB deve estar entre +5 e +10.";
+            return DIRETRIZ_SEMANA_DA_PROVA;
         }
+    }
+
+    /**
+     * Bloco de posição no ciclo (add-season-plan-weekly-context, Task 0.3 do épico): substitui a seção
+     * "PERIODIZAÇÃO E FASE ATUAL" quando há semana da temporada ativa. A fase vem da temporada, não
+     * dos dias até a prova; com lesão ou pós-prova, o bloco declara que essa fase prevalece — mesma
+     * ordem que o {@code PlannerEngine} aplica.
+     *
+     * @param tssAlvo       alvo da semana já com as reduções por fadiga
+     * @param fasePrevalente RECOVERY/RETURN_TO_TRAINING (lesão) ou POST_RACE, quando prevalecem
+     */
+    public String formatarPosicaoNoCiclo(SeasonWeekSnapshot semana, int tssAlvo, Optional<TrainingPhase> fasePrevalente) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("## 📅 POSIÇÃO NO CICLO DA TEMPORADA\n\n");
+        sb.append(String.format("- **Semana %d de %d** da temporada aprovada pelo treinador\n",
+                semana.weekIndex(), semana.totalWeeks()));
+        sb.append(String.format("- **Fase da temporada:** %s — %s\n", rotuloFase(semana.phase()), diretrizFase(semana.phase())));
+        sb.append(String.format("- **Alvo de TSS da semana:** %d pontos\n", tssAlvo));
+        sb.append(String.format("- **Volume alvo:** %s\n", km(semana.targetVolumeKm())));
+        sb.append(String.format("- **Longão previsto:** %s\n", km(semana.longRunKm())));
+        sb.append(String.format("- **Semana de descarga:** %s\n", semana.deload() ? "sim" : "não"));
+        sb.append(String.format("- **Próximo marco:** %s\n", semana.nextMilestone()
+                .map(m -> PosProvaSemanaAnterior.literalDePrompt(m.name()) + ", " + m.date().format(DATA_FMT))
+                .orElse("sem marco à frente")));
+        fasePrevalente.ifPresent(fase -> sb.append(String.format(
+                "- **Atenção:** nesta semana a fase de %s prevalece sobre a fase da temporada — use a fase da "
+                        + "temporada só como contexto do ciclo.\n", rotuloPrevalente(fase))));
+        return sb.toString();
+    }
+
+    private static String rotuloFase(TrainingPhase fase) {
+        return switch (fase) {
+            case PEAK -> "ESPECÍFICO";
+            case RACE_WEEK -> "SEMANA DA PROVA";
+            default -> fase.name();
+        };
+    }
+
+    private static String diretrizFase(TrainingPhase fase) {
+        return switch (fase) {
+            case BASE -> DIRETRIZ_BASE;
+            case BUILD -> DIRETRIZ_BUILD;
+            case PEAK -> DIRETRIZ_ESPECIFICO;
+            case TAPER -> DIRETRIZ_TAPER;
+            case RACE_WEEK -> DIRETRIZ_SEMANA_DA_PROVA;
+            default -> "Desenvolvimento geral. Manter consistência.";
+        };
+    }
+
+    private static String rotuloPrevalente(TrainingPhase fase) {
+        return switch (fase) {
+            case POST_RACE -> "PÓS-PROVA (prova realizada nos 7 dias antes do início da semana)";
+            case RECOVERY -> "LESÃO ATIVA (recuperação)";
+            case RETURN_TO_TRAINING -> "RETORNO DE LESÃO RECENTE";
+            default -> fase.name();
+        };
+    }
+
+    private static String km(@Nullable BigDecimal valor) {
+        return valor == null ? "não definido" : String.format(PT_BR, "%.1f km", valor.doubleValue());
     }
 
     /**
@@ -315,8 +386,16 @@ public class PeriodizacaoPromptFormatter {
      * TSS alvo ajustado por semana regenerativa e fadiga acumulada.
      */
     public int calcularTssAlvoAjustado(PlanoMetaDados metaDados, Atleta atleta) {
-        int tssAlvoBase = calcularTssAlvo(metaDados);
+        return aplicarReducoesPorFadiga(calcularTssAlvo(metaDados), metaDados);
+    }
 
+    /**
+     * Reduções por fadiga sobre uma base de TSS: ×0,55 com progressão contínua em alerta ou TSB de
+     * sobrecarga; ×0,75 com fadiga moderada. A base é {@code ctlAlvo * 7} no legado e o
+     * {@code targetTss} da semana da temporada quando há uma (add-season-plan-weekly-context) — a
+     * temporada é teto, não piso.
+     */
+    public int aplicarReducoesPorFadiga(int tssAlvoBase, @Nullable PlanoMetaDados metaDados) {
         Integer semanasProgressao = metaDados != null ? metaDados.getSemanasProgressaoContinua() : null;
         Double tsb = metaDados != null ? metaDados.getTsbAtual() : null;
 

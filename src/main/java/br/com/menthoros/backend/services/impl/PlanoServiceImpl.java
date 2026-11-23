@@ -265,7 +265,8 @@ public class PlanoServiceImpl implements PlanoService {
             PlanoSemanalLlmDto planoDto = llmConcurrencyLimiter.executarInterativo(() ->
                     iaService.geraPlanoSemanalAvancado(
                             ctx.atleta(), ctx.metaDados(), ctx.proximaProva(), modoGeracao,
-                            ctx.decisaoProgressao(), ctx.revisaoConsumida(), ctx.semanaInicio(), skeleton));
+                            ctx.decisaoProgressao(), ctx.revisaoConsumida(), ctx.semanaInicio(), skeleton,
+                            ctx.seasonWeek()));
 
             validaPlanoGerado(planoDto);
             return planoDto;

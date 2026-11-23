@@ -1,7 +1,10 @@
 package br.com.menthoros.backend.services.prompt;
 
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
+import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.entity.Atleta;
+import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.EstadoProgressao;
@@ -10,8 +13,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -94,6 +100,116 @@ class PeriodizacaoPromptFormatterTest {
             assertThat(resultado).contains("+0%");
             assertThat(resultado).contains("+0 min");
             assertThat(resultado).contains("manter volume atual");
+        }
+    }
+
+    @Nested
+    @DisplayName("formatarPosicaoNoCiclo")
+    class FormatarPosicaoNoCiclo {
+
+        @Test
+        @DisplayName("bloco completo: N de M, fase, alvo, volume, longão, descarga e próximo marco")
+        void blocoCompleto() {
+            SeasonWeekSnapshot semana = new SeasonWeekSnapshot(UUID.randomUUID(), 5, 16, TrainingPhase.BUILD, 320.0,
+                    new BigDecimal("45.000"), new BigDecimal("16.500"), true,
+                    Optional.of(new SeasonWeekSnapshot.Milestone("Meia de Natal", LocalDate.of(2026, 12, 20))));
+
+            String bloco = formatter.formatarPosicaoNoCiclo(semana, 240, Optional.empty());
+
+            assertThat(bloco)
+                    .contains("POSIÇÃO NO CICLO DA TEMPORADA")
+                    .contains("Semana 5 de 16")
+                    .contains("Fase da temporada:** BUILD")
+                    .contains("Adicionar qualidade")
+                    .contains("Alvo de TSS da semana:** 240 pontos")
+                    .contains("Volume alvo:** 45,0 km")
+                    .contains("Longão previsto:** 16,5 km")
+                    .contains("Semana de descarga:** sim")
+                    .contains("Próximo marco:** Meia de Natal, 20/12/2026")
+                    .doesNotContain("prevalece");
+        }
+
+        @Test
+        @DisplayName("sem marco à frente e sem alvos de volume/longão")
+        void semMarco() {
+            SeasonWeekSnapshot semana = new SeasonWeekSnapshot(UUID.randomUUID(), 1, 12, TrainingPhase.PEAK, null,
+                    null, null, false, Optional.empty());
+
+            String bloco = formatter.formatarPosicaoNoCiclo(semana, 300, Optional.empty());
+
+            assertThat(bloco)
+                    .contains("Fase da temporada:** ESPECÍFICO")
+                    .contains("Volume alvo:** não definido")
+                    .contains("Longão previsto:** não definido")
+                    .contains("Semana de descarga:** não")
+                    .contains("Próximo marco:** sem marco à frente");
+        }
+
+        @Test
+        @DisplayName("pós-prova declara que a fase de pós-prova prevalece sobre a da temporada")
+        void posProvaPrevalece() {
+            String bloco = formatter.formatarPosicaoNoCiclo(semanaBuild(), 300, Optional.of(TrainingPhase.POST_RACE));
+
+            assertThat(bloco).contains("PÓS-PROVA").contains("prevalece sobre a fase da temporada");
+        }
+
+        @Test
+        @DisplayName("lesão ativa declara que a fase de lesão prevalece sobre a da temporada")
+        void lesaoPrevalece() {
+            String bloco = formatter.formatarPosicaoNoCiclo(semanaBuild(), 300, Optional.of(TrainingPhase.RECOVERY));
+
+            assertThat(bloco).contains("LESÃO ATIVA").contains("prevalece sobre a fase da temporada");
+        }
+
+        private SeasonWeekSnapshot semanaBuild() {
+            return new SeasonWeekSnapshot(UUID.randomUUID(), 3, 12, TrainingPhase.BUILD, 400.0, null, null, false,
+                    Optional.empty());
+        }
+    }
+
+    @Nested
+    @DisplayName("aplicarReducoesPorFadiga")
+    class AplicarReducoesPorFadiga {
+
+        @Test
+        @DisplayName("sem fadiga mantém a base")
+        void semFadiga() {
+            assertThat(formatter.aplicarReducoesPorFadiga(400, metaDados(-5.0, 1))).isEqualTo(400);
+        }
+
+        @Test
+        @DisplayName("fadiga moderada (TSB entre sobrecarga e moderada) aplica ×0,75")
+        void fadigaModerada() {
+            assertThat(formatter.aplicarReducoesPorFadiga(400, metaDados(-25.0, 1))).isEqualTo(300);
+        }
+
+        @Test
+        @DisplayName("sobrecarga (TSB abaixo de -30) aplica ×0,55")
+        void sobrecarga() {
+            assertThat(formatter.aplicarReducoesPorFadiga(400, metaDados(-35.0, 1))).isEqualTo(220);
+        }
+
+        @Test
+        @DisplayName("progressão contínua em alerta aplica ×0,55 mesmo com TSB moderado")
+        void progressaoContinua() {
+            assertThat(formatter.aplicarReducoesPorFadiga(400, metaDados(-25.0, 4))).isEqualTo(220);
+        }
+
+        @Test
+        @DisplayName("o ajustado legado é a mesma redução sobre ctlAlvo * 7")
+        void legadoDelega() {
+            PlanoMetaDados meta = metaDados(-25.0, 1);
+            meta.setCtlAtual(50.0);
+
+            assertThat(formatter.calcularTssAlvoAjustado(meta, null))
+                    .isEqualTo(formatter.aplicarReducoesPorFadiga(formatter.calcularTssAlvo(meta), meta));
+        }
+
+        private PlanoMetaDados metaDados(double tsb, int semanasProgressao) {
+            PlanoMetaDados meta = new PlanoMetaDados();
+            meta.setTsbAtual(tsb);
+            meta.setSemanasProgressaoContinua(semanasProgressao);
+            return meta;
         }
     }
 }
