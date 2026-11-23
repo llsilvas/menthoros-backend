@@ -305,8 +305,8 @@ class SeasonPlanIT extends AbstractIntegrationTest {
         TenantContext.clear();
 
         List<SeasonPlanResponseDto> resultados = concorrentes(
-                () -> seasonPlanService.approve(atleta.getId(), id),
-                () -> seasonPlanService.approve(atleta.getId(), id));
+                () -> seasonPlanService.approve(atleta.getId(), id, null),
+                () -> seasonPlanService.approve(atleta.getId(), id, null));
 
         assertThat(resultados).extracting(SeasonPlanResponseDto::approvedAt).doesNotContainNull().containsOnly(
                 resultados.get(0).approvedAt());
@@ -325,7 +325,7 @@ class SeasonPlanIT extends AbstractIntegrationTest {
         concorrentes(
                 () -> {
                     try {
-                        return seasonPlanService.approve(atleta.getId(), id);
+                        return seasonPlanService.approve(atleta.getId(), id, null);
                     } catch (DomainRuleViolationException | br.com.menthoros.backend.exception.DomainConflictException e) {
                         return null; // o cancelamento chegou antes: recusar é o resultado certo
                     }
