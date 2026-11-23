@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.services.helper;
 
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.ProgressaoHistoricoResumo;
 import br.com.menthoros.backend.dto.input.DadosPlanoDto;
@@ -45,6 +46,9 @@ import java.util.UUID;
  * @param generationRequestId id da Requisição de geração (add-plan-generation-ledger, D4): nasce
  *                           no loader, agrupa as Chamadas LLM em {@code tb_llm_call} e é gravado no
  *                           {@code PlanoSemanal} persistido — a ligação chamada ↔ plano é por ele
+ * @param seasonWeek         semana da temporada {@code ACTIVE} desta {@code semanaInicio}
+ *                           (add-season-plan-weekly-context) — lida por prompt, motor e persistência;
+ *                           vazia mantém o fluxo legado
  */
 public record PlanGenerationContext(DadosPlanoDto dados,
                                     @Nullable DecisaoProgressao decisaoProgressao,
@@ -53,7 +57,8 @@ public record PlanGenerationContext(DadosPlanoDto dados,
                                     @Nullable RevisaoSemanal revisaoConsumida,
                                     @Nullable Prova proximaProva,
                                     Optional<OnboardingContext> onboardingContext,
-                                    UUID generationRequestId) {
+                                    UUID generationRequestId,
+                                    Optional<SeasonWeekSnapshot> seasonWeek) {
 
     public PlanGenerationContext {
         if (dados == null) {
@@ -68,6 +73,22 @@ public record PlanGenerationContext(DadosPlanoDto dados,
         if (onboardingContext == null) {
             throw new IllegalArgumentException("onboardingContext é obrigatório (use Optional.empty())");
         }
+        if (seasonWeek == null) {
+            throw new IllegalArgumentException("seasonWeek é obrigatório (use Optional.empty())");
+        }
+    }
+
+    /** Contexto sem temporada — o fluxo legado. */
+    public PlanGenerationContext(DadosPlanoDto dados,
+                                 @Nullable DecisaoProgressao decisaoProgressao,
+                                 @Nullable ProgressaoHistoricoResumo historicoProgressao,
+                                 LocalDate semanaInicio,
+                                 @Nullable RevisaoSemanal revisaoConsumida,
+                                 @Nullable Prova proximaProva,
+                                 Optional<OnboardingContext> onboardingContext,
+                                 UUID generationRequestId) {
+        this(dados, decisaoProgressao, historicoProgressao, semanaInicio, revisaoConsumida, proximaProva,
+                onboardingContext, generationRequestId, Optional.empty());
     }
 
     public Atleta atleta() {

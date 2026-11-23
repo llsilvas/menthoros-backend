@@ -285,6 +285,97 @@ class PlannerEngineTest {
         }
     }
 
+    @Nested
+    @DisplayName("planWeek — precedência de fase com temporada (add-season-plan-weekly-context)")
+    class FaseComTemporada {
+
+        // Prova alvo a 70 dias: a heurística resolve BUILD; a temporada diz PEAK.
+        private final ProvaSnapshot alvo = new ProvaSnapshot(referencia.plusDays(70), 42.2, true, false);
+        private final ProvaSnapshot provaSabadoAnterior = new ProvaSnapshot(referencia.minusDays(2), 10.0, false, false);
+
+        @Test
+        @DisplayName("sem temporada, a fase continua vindo da heurística")
+        void semTemporadaUsaHeuristica() {
+            WeekPlanSkeleton skeleton = engine.planWeek(snapshotFase(List.of(alvo), false, Optional.empty()));
+
+            assertThat(skeleton.phase()).isEqualTo(TrainingPhase.BUILD);
+        }
+
+        @Test
+        @DisplayName("com temporada e sem lesão nem pós-prova, vale a fase da temporada")
+        void temporadaPrevaleceSobreHeuristica() {
+            WeekPlanSkeleton skeleton = engine.planWeek(snapshotFase(List.of(alvo), false, temporada(TrainingPhase.PEAK)));
+
+            assertThat(skeleton.phase()).isEqualTo(TrainingPhase.PEAK);
+        }
+
+        @Test
+        @DisplayName("prova no sábado anterior: pós-prova prevalece sobre a temporada")
+        void posProvaPrevaleceSobreTemporada() {
+            WeekPlanSkeleton skeleton = engine.planWeek(
+                    snapshotFase(List.of(alvo, provaSabadoAnterior), false, temporada(TrainingPhase.PEAK)));
+
+            assertThat(skeleton.phase()).isEqualTo(TrainingPhase.POST_RACE);
+        }
+
+        @Test
+        @DisplayName("lesão ativa prevalece sobre a temporada")
+        void lesaoPrevaleceSobreTemporada() {
+            WeekPlanSkeleton skeleton = engine.planWeek(snapshotFase(List.of(alvo), true, temporada(TrainingPhase.PEAK)));
+
+            assertThat(skeleton.phase()).isEqualTo(TrainingPhase.RECOVERY);
+        }
+
+        @Test
+        @DisplayName("lesão ativa prevalece também sobre pós-prova e temporada juntas")
+        void lesaoPrevaleceSobrePosProvaETemporada() {
+            WeekPlanSkeleton skeleton = engine.planWeek(
+                    snapshotFase(List.of(alvo, provaSabadoAnterior), true, temporada(TrainingPhase.PEAK)));
+
+            assertThat(skeleton.phase()).isEqualTo(TrainingPhase.RECOVERY);
+        }
+
+        @Test
+        @DisplayName("heuristicPhase ignora a temporada (base da métrica de divergência)")
+        void heuristicPhaseIgnoraTemporada() {
+            TrainingPhase fase = engine.heuristicPhase(snapshotFase(List.of(alvo), false, temporada(TrainingPhase.PEAK)));
+
+            assertThat(fase).isEqualTo(TrainingPhase.BUILD);
+        }
+
+        private Optional<SeasonWeekSnapshot> temporada(TrainingPhase fase) {
+            return Optional.of(new SeasonWeekSnapshot(UUID.randomUUID(), 5, 16, fase, 400.0, null, null, false,
+                    Optional.empty()));
+        }
+
+        private PlannerInputSnapshot snapshotFase(List<ProvaSnapshot> provas, boolean temLesao,
+                                                  Optional<SeasonWeekSnapshot> temporada) {
+            PlannerInputSnapshot base = snapshotBase(Optional.empty(), temLesao, null, null, -2.0, 45.0, 0);
+            return new PlannerInputSnapshot(base.athlete(), base.decisaoProgressao(), base.progressaoHistorico(),
+                    provas, base.historico(), base.onboardingContext(), base.referenceDate(),
+                    base.injuryRecentWindowDays(), temporada);
+        }
+    }
+
+    @Nested
+    @DisplayName("PeriodizationPlanner.provaRecemRealizada — janela de pós-prova")
+    class ProvaRecemRealizada {
+
+        @Test
+        @DisplayName("prova nos 7 dias antes da referência conta; no 8º dia, cancelada ou no dia, não")
+        void janelaDeSeteDias() {
+            ProvaSnapshot sabado = new ProvaSnapshot(referencia.minusDays(2), 10.0, false, false);
+            ProvaSnapshot seteDias = new ProvaSnapshot(referencia.minusDays(7), 10.0, false, false);
+            ProvaSnapshot oitoDias = new ProvaSnapshot(referencia.minusDays(8), 10.0, false, false);
+            ProvaSnapshot cancelada = new ProvaSnapshot(referencia.minusDays(1), 10.0, false, true);
+            ProvaSnapshot noDia = new ProvaSnapshot(referencia, 10.0, false, false);
+
+            assertThat(PeriodizationPlanner.provaRecemRealizada(List.of(sabado), referencia)).contains(sabado);
+            assertThat(PeriodizationPlanner.provaRecemRealizada(List.of(seteDias), referencia)).contains(seteDias);
+            assertThat(PeriodizationPlanner.provaRecemRealizada(List.of(oitoDias, cancelada, noDia), referencia)).isEmpty();
+        }
+    }
+
     private PlannerInputSnapshot snapshotComProvas(List<ProvaSnapshot> provas) {
         PlannerInputSnapshot base = snapshotBase(Optional.empty(), false, null, null, -2.0, 45.0, 0);
         return new PlannerInputSnapshot(base.athlete(), base.decisaoProgressao(), base.progressaoHistorico(),

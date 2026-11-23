@@ -13,6 +13,8 @@ import br.com.menthoros.backend.domain.planner.AthleteSnapshot;
 import br.com.menthoros.backend.domain.planner.PlannerEngine;
 import br.com.menthoros.backend.domain.planner.PlannerInputSnapshot;
 import br.com.menthoros.backend.domain.planner.ProvaSnapshot;
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
+import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.domain.planner.TreinoRealizadoSnapshot;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
@@ -104,7 +106,8 @@ public class PlannerShadowService {
                                ProgressaoHistoricoResumo historico,
                                LocalDate semanaInicio,
                                boolean batch) {
-        return aplicarShadow(plano, planoGeradoPeloLlm, dadosPlano, decisaoProgressao, historico, semanaInicio, batch, Optional.empty());
+        return aplicarShadow(plano, planoGeradoPeloLlm, dadosPlano, decisaoProgressao, historico, semanaInicio, batch,
+                Optional.empty(), Optional.empty());
     }
 
     /**
@@ -112,6 +115,9 @@ public class PlannerShadowService {
      * design.md Decisao 2) para popular {@code PlannerInputSnapshot.onboardingContext} —
      * hoje sempre {@code Optional.empty()} na sobrecarga acima. Mesmas garantias de
      * isolamento de falha (CA11).
+     *
+     * <p>{@code seasonWeek} (add-season-plan-weekly-context): semana da temporada ativa — vai ao
+     * snapshot do motor e alimenta {@code season-plan.phase.divergence.count}.
      */
     public Optional<WeekPlanSkeleton> aplicarShadow(PlanoSemanal plano,
                                PlanoSemanalLlmDto planoGeradoPeloLlm,
@@ -120,13 +126,15 @@ public class PlannerShadowService {
                                ProgressaoHistoricoResumo historico,
                                LocalDate semanaInicio,
                                boolean batch,
-                               Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext) {
+                               Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext,
+                               Optional<SeasonWeekSnapshot> seasonWeek) {
         plano.setPlannerEnabled(false); // shadow nunca habilita de fato nesta change
         if (!shadowEnabled) {
             return Optional.empty();
         }
         try {
-            return Optional.of(executar(plano, planoGeradoPeloLlm, dadosPlano, decisaoProgressao, historico, semanaInicio, batch, onboardingContext));
+            return Optional.of(executar(plano, planoGeradoPeloLlm, dadosPlano, decisaoProgressao, historico, semanaInicio,
+                    batch, onboardingContext, seasonWeek));
         } catch (Exception e) {
             Atleta atleta = dadosPlano.atleta();
             log.error("[planner-shadow] erro ao processar atleta {}: {}", atleta != null ? atleta.getId() : null, e.getMessage(), e);
@@ -142,9 +150,11 @@ public class PlannerShadowService {
                            ProgressaoHistoricoResumo historico,
                            LocalDate semanaInicio,
                            boolean batch,
-                           Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext) throws Exception {
+                           Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext,
+                           Optional<SeasonWeekSnapshot> seasonWeek) throws Exception {
         Atleta atleta = dadosPlano.atleta();
-        PlannerInputSnapshot snapshot = mapToSnapshot(atleta, dadosPlano, decisaoProgressao, historico, semanaInicio, onboardingContext);
+        PlannerInputSnapshot snapshot = mapToSnapshot(atleta, dadosPlano, decisaoProgressao, historico, semanaInicio,
+                onboardingContext, seasonWeek);
 
         WeekPlanSkeleton skeleton = plannerEngine.planWeek(snapshot);
 
@@ -171,6 +181,7 @@ public class PlannerShadowService {
         persistirAuditoria(plano, skeleton, status, todasViolacoes);
         registrarMetricas(skeleton, status, violacoesPre, violacoesPost, batch);
         registrarDivergenciaDeFase(skeleton, atleta, semanaInicio);
+        registrarDivergenciaDaTemporada(snapshot, atleta);
 
         return skeleton;
     }
@@ -187,8 +198,10 @@ public class PlannerShadowService {
                                              DecisaoProgressao decisaoProgressao,
                                              ProgressaoHistoricoResumo historico,
                                              LocalDate semanaInicio,
-                                             Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext) {
-        PlannerInputSnapshot snapshot = mapToSnapshot(dadosPlano.atleta(), dadosPlano, decisaoProgressao, historico, semanaInicio, onboardingContext);
+                                             Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext,
+                                             Optional<SeasonWeekSnapshot> seasonWeek) {
+        PlannerInputSnapshot snapshot = mapToSnapshot(dadosPlano.atleta(), dadosPlano, decisaoProgressao, historico,
+                semanaInicio, onboardingContext, seasonWeek);
         return plannerEngine.planWeek(snapshot);
     }
 
@@ -243,7 +256,8 @@ public class PlannerShadowService {
                                                 DecisaoProgressao decisaoProgressao,
                                                 ProgressaoHistoricoResumo historico,
                                                 LocalDate semanaInicio,
-                                                Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext) {
+                                                Optional<br.com.menthoros.backend.domain.planner.OnboardingContext> onboardingContext,
+                                                Optional<SeasonWeekSnapshot> seasonWeek) {
         AthleteSnapshot athleteSnapshot = new AthleteSnapshot(
                 atleta.getId(),
                 atleta.getNivelExperiencia(),
@@ -267,7 +281,7 @@ public class PlannerShadowService {
 
         return new PlannerInputSnapshot(
                 athleteSnapshot, decisaoProgressao, historico, provas, historicoDiario,
-                onboardingContext, semanaInicio, injuryRecentWindowDays);
+                onboardingContext, semanaInicio, injuryRecentWindowDays, seasonWeek);
     }
 
     private ProvaSnapshot mapProva(Prova prova) {
@@ -410,6 +424,26 @@ public class PlannerShadowService {
                             "plannerPhase", skeleton.phase().name(), "formatterPhase", faseLegadoNormalizada)
                     .increment();
         }
+    }
+
+    /**
+     * Compara a fase da semana da temporada com a da heurística por prova (add-season-plan-weekly-context)
+     * — sinal para o ticket 9 de template incoerente antes de a temporada virar teto de carga. Sem
+     * temporada, nada é registrado. A tag {@code tenant} isola o piloto na leitura: o shadow é global.
+     */
+    private void registrarDivergenciaDaTemporada(PlannerInputSnapshot snapshot, Atleta atleta) {
+        snapshot.seasonWeek().ifPresent(semana -> {
+            TrainingPhase heuristica = plannerEngine.heuristicPhase(snapshot);
+            if (semana.phase() != heuristica) {
+                String tenant = atleta.getAssessoria() != null && atleta.getAssessoria().getId() != null
+                        ? atleta.getAssessoria().getId().toString()
+                        : "desconhecido";
+                meterRegistry.counter("season-plan.phase.divergence.count",
+                                "seasonPhase", semana.phase().name(), "heuristicPhase", heuristica.name(),
+                                "tenant", tenant)
+                        .increment();
+            }
+        });
     }
 
     private String normalizarFaseLegado(String faseLegadoRaw) {

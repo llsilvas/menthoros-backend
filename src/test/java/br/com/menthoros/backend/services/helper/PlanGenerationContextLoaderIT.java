@@ -151,7 +151,7 @@ class PlanGenerationContextLoaderIT extends AbstractIntegrationTest {
 
         assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse();
         plannerShadowService.aplicarShadow(plano, planoDto, ctx.dados(), ctx.decisaoProgressao(),
-                ctx.historicoProgressao(), ctx.semanaInicio(), false, java.util.Optional.empty());
+                ctx.historicoProgressao(), ctx.semanaInicio(), false, java.util.Optional.empty(), ctx.seasonWeek());
 
         assertThat(errosDeLazyNoShadow() - antes)
                 .as("o shadow leu provas e dias disponíveis do atleta detached sem sessão aberta")

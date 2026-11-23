@@ -61,7 +61,12 @@ public class PeriodizationPlanner {
                 .toList();
     }
 
-    private Optional<ProvaSnapshot> provaRecemRealizada(List<ProvaSnapshot> provas, LocalDate referenceDate) {
+    /**
+     * Prova realizada nos 7 dias anteriores a {@code referenceDate} (a mais recente), excluindo as
+     * canceladas. Regra única de pós-prova, compartilhada com o prompt (add-season-plan-weekly-context):
+     * motor e prompt precisam concordar sobre quando o pós-prova prevalece sobre a temporada.
+     */
+    public static Optional<ProvaSnapshot> provaRecemRealizada(List<ProvaSnapshot> provas, LocalDate referenceDate) {
         return provas.stream()
                 .filter(p -> !p.cancelada())
                 .filter(p -> p.dataProva().isBefore(referenceDate))

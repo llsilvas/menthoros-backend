@@ -20,6 +20,9 @@ import java.util.Optional;
  * {@code InjuryRiskEvaluator}) e {@code semanasProgressaoContinua} (CA2, step-back). O
  * {@code historico} bruto por dia fica em {@code TreinoRealizadoSnapshot} para a janela de
  * monotonia de 7 dias.
+ *
+ * <p>{@code seasonWeek} (add-season-plan-weekly-context): semana da temporada ativa; quando presente,
+ * sua fase vale abaixo de lesao e pos-prova e acima da periodizacao.
  */
 public record PlannerInputSnapshot(
         AthleteSnapshot athlete,
@@ -29,6 +32,16 @@ public record PlannerInputSnapshot(
         List<TreinoRealizadoSnapshot> historico,
         Optional<OnboardingContext> onboardingContext,
         LocalDate referenceDate,
-        int injuryRecentWindowDays
+        int injuryRecentWindowDays,
+        Optional<SeasonWeekSnapshot> seasonWeek
 ) {
+
+    /** Snapshot sem temporada: a fase vem só de lesão, pós-prova e periodização. */
+    public PlannerInputSnapshot(AthleteSnapshot athlete, DecisaoProgressao decisaoProgressao,
+                                ProgressaoHistoricoResumo progressaoHistorico, List<ProvaSnapshot> provas,
+                                List<TreinoRealizadoSnapshot> historico, Optional<OnboardingContext> onboardingContext,
+                                LocalDate referenceDate, int injuryRecentWindowDays) {
+        this(athlete, decisaoProgressao, progressaoHistorico, provas, historico, onboardingContext,
+                referenceDate, injuryRecentWindowDays, Optional.empty());
+    }
 }

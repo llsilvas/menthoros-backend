@@ -61,8 +61,7 @@ public class PlannerEngine {
         InjuryPolicyResult injuryPolicy = injuryPolicyResolver.resolve(
                 snapshot.athlete(), snapshot.referenceDate(), snapshot.injuryRecentWindowDays());
 
-        // Passo 1 da hierarquia P0: lesao ativa/recente tem precedencia sobre a fase da periodizacao.
-        TrainingPhase fase = injuryPolicy.phaseOverride().orElse(periodizacao.phase());
+        TrainingPhase fase = resolverFase(injuryPolicy, periodizacao, snapshot);
 
         InjuryRiskAssessment risco = injuryRiskEvaluator.assess(
                 snapshot.progressaoHistorico(), snapshot.historico(), snapshot.referenceDate());
@@ -118,6 +117,27 @@ public class PlannerEngine {
                 plannerScope,
                 periodizacao.provaDeterminante(),
                 provasDaSemana);
+    }
+
+    /**
+     * Fase sem a temporada: só a periodização por prova (inclui o pós-prova). Base da métrica
+     * {@code season-plan.phase.divergence.count} (add-season-plan-weekly-context).
+     */
+    public TrainingPhase heuristicPhase(PlannerInputSnapshot snapshot) {
+        return periodizationPlanner.resolvePhase(snapshot.provas(), snapshot.referenceDate()).phase();
+    }
+
+    /**
+     * Ordem de precedência (add-season-plan-weekly-context): lesão (passo 1 da hierarquia P0) >
+     * pós-prova > fase da semana da temporada > periodização por prova.
+     */
+    private static TrainingPhase resolverFase(InjuryPolicyResult injuryPolicy, PeriodizationResult periodizacao,
+                                              PlannerInputSnapshot snapshot) {
+        boolean posProva = PeriodizationPlanner.provaRecemRealizada(snapshot.provas(), snapshot.referenceDate()).isPresent();
+        return injuryPolicy.phaseOverride()
+                .or(() -> posProva ? Optional.of(TrainingPhase.POST_RACE) : Optional.empty())
+                .or(() -> snapshot.seasonWeek().map(SeasonWeekSnapshot::phase))
+                .orElse(periodizacao.phase());
     }
 
     /** Sessões sem a(s) pesada(s) órfã(s) + motivo acumulado (uma linha por slot removido). */
