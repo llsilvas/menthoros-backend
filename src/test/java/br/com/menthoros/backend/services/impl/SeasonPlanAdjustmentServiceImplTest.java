@@ -104,6 +104,7 @@ class SeasonPlanAdjustmentServiceImplTest {
         @DisplayName("cria PROPOSED v2 com a base e a cópia de todas as semanas, depois do lock da prova")
         void cria() {
             PlanoTreino ativa = travada(temporada(SeasonPlanStatus.ACTIVE, 1));
+            ativa.setInitialVolumeKm(new BigDecimal("38.5"));
             List<SeasonWeek> semanas = List.of(semana(ativa, 1, "40"), semana(ativa, 2, "42"));
             semanas.get(1).setKeySessions("6x1km");
             when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(ativa.getId(), tenantId))
@@ -121,6 +122,7 @@ class SeasonPlanAdjustmentServiceImplTest {
             assertThat(g.plan().seasonStatus()).isEqualTo(SeasonPlanStatus.PROPOSED);
             assertThat(g.plan().version()).isEqualTo(2);
             assertThat(g.plan().baseSeasonPlanId()).isEqualTo(ativa.getId());
+            assertThat(g.plan().initialVolumeKm()).isEqualByComparingTo("38.5");
             verify(provaRepository).findByIdAndTenantIdForUpdate(ativa.getProva().getId(), tenantId);
             verify(seasonWeekRepository).saveAll(semanasCaptor.capture());
             assertThat(semanasCaptor.getValue()).extracting(SeasonWeek::getWeekIndex).containsExactly(1, 2);

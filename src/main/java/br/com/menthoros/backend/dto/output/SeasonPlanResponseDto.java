@@ -39,7 +39,9 @@ public record SeasonPlanResponseDto(
         @Schema(description = "Temporada ACTIVE da qual este ajuste foi copiado; ausente na versão 1")
         UUID baseSeasonPlanId,
         @Schema(description = "Ajuste (rascunho) aberto a partir desta temporada ACTIVE; ausente se não há")
-        UUID openDraftId
+        UUID openDraftId,
+        @Schema(description = "Volume semanal de partida do motor, em km; ausente nas temporadas antigas", example = "40.0")
+        BigDecimal initialVolumeKm
 ) {
 
     @Schema(description = "Semana da temporada")

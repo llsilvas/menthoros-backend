@@ -177,7 +177,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         SeasonPlan plano = SeasonPlanner.plan(prova.getDistancia(), prova.getDistanciaKm(),
                 prova.getDataProva(), hoje, ctl, volume, preparatorias(atletaId, tenantId, prova, hoje));
 
-        PlanoTreino temporada = planoTreinoRepository.save(novaTemporada(atleta, prova, plano, ctl, hoje));
+        PlanoTreino temporada = planoTreinoRepository.save(novaTemporada(atleta, prova, plano, ctl, volume));
         List<SeasonWeek> weeks = plano.weeks().stream().map(w -> novaSemana(temporada, tenantId, w)).toList();
         seasonWeekRepository.saveAll(weeks);
         SeasonPlanResponseDto dto = responseMapper.toDto(temporada, weeks, tenantId, null);
@@ -387,7 +387,8 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
                         "Sem base de volume: sincronize treinos ou informe o volume semanal no onboarding"));
     }
 
-    private static PlanoTreino novaTemporada(Atleta atleta, Prova prova, SeasonPlan plano, double ctl, LocalDate hoje) {
+    private static PlanoTreino novaTemporada(Atleta atleta, Prova prova, SeasonPlan plano, double ctl,
+                                             BigDecimal volume) {
         String nomeProva = prova.getNomeProva();
         PlanoTreino p = new PlanoTreino();
         p.setAtleta(atleta);
@@ -405,6 +406,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         p.setTotalWeeks(plano.weeks().size());
         p.setShortPreparation(plano.shortPreparation());
         p.setInitialCtl(ctl);
+        p.setInitialVolumeKm(volume.setScale(1, RoundingMode.HALF_UP));
         p.setPeakVolumeKm(plano.weeks().stream().map(WeekPlan::targetVolumeKm)
                 .max(Comparator.naturalOrder()).orElseThrow());
         return p;

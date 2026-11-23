@@ -257,6 +257,9 @@ class SeasonPlanServiceImplTest {
             assertThat(salvo.getShortPreparation()).isFalse();
             assertThat(salvo.getInitialCtl()).isCloseTo(40.0 * Math.exp(-10.0 / 42), within(0.01));
             assertThat(salvo.getDataInicio()).isEqualTo(HOJE);
+            // add-season-plan-version-diff: o volume de partida fica gravado para o recálculo
+            assertThat(salvo.getInitialVolumeKm()).isEqualByComparingTo("40.0");
+            assertThat(resultado.plan().initialVolumeKm()).isEqualByComparingTo("40.0");
 
             List<SeasonPlanResponseDto.Week> semanas = resultado.plan().weeks();
             assertThat(semanas).hasSize(20);

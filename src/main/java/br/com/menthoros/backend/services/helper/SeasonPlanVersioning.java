@@ -89,6 +89,7 @@ public class SeasonPlanVersioning {
         r.setTotalWeeks(ativa.getTotalWeeks());
         r.setShortPreparation(ativa.getShortPreparation());
         r.setInitialCtl(ativa.getInitialCtl());
+        r.setInitialVolumeKm(ativa.getInitialVolumeKm());
         r.setPeakVolumeKm(ativa.getPeakVolumeKm());
         r.setMaxLongRunKm(ativa.getMaxLongRunKm());
         r.setBaseSeasonPlanId(ativa.getId());

@@ -274,7 +274,7 @@ class SeasonPlanControllerTest {
             SeasonPlanResponseDto p = plano();
             return new SeasonPlanResponseDto(planoId, SeasonPlanStatus.ACTIVE, Instant.parse("2026-11-20T13:00:00Z"),
                     p.provaId(), p.provaNome(), p.provaData(), p.shortPreparation(), p.totalWeeks(), p.initialCtl(),
-                    p.peakVolumeKm(), p.weeks(), p.milestones(), p.validations(), 1, null, null);
+                    p.peakVolumeKm(), p.weeks(), p.milestones(), p.validations(), 1, null, null, null);
         }
     }
 
@@ -388,6 +388,6 @@ class SeasonPlanControllerTest {
                         LocalDate.of(2026, 12, 27), br.com.menthoros.backend.enums.DistanciaProva.KM_21)),
                 List.of(new SeasonPlanResponseDto.Validation(
                         br.com.menthoros.backend.domain.planner.SeasonPlanValidator.Rule.RAMP, "WARN", 2, 12.5, 10.0,
-                        "Volume sobe 12,5% sobre a semana anterior (teto 10%)")), 1, null, null);
+                        "Volume sobe 12,5% sobre a semana anterior (teto 10%)")), 1, null, null, null);
     }
 }
