@@ -62,7 +62,8 @@ public class SeasonPlanVersioning {
     public PlanoTreino travar(UUID atletaId, UUID seasonPlanId, UUID tenantId) {
         UUID provaId = planoTreinoRepository.findRaceIdBySeasonPlan(seasonPlanId, atletaId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
-        provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId);
+        provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId)
+                .orElseThrow(() -> new DomainNotFoundException("Prova da temporada não encontrada: " + provaId));
         return planoTreinoRepository.findByIdAndAssessoriaId(seasonPlanId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
     }
@@ -120,7 +121,7 @@ public class SeasonPlanVersioning {
                 .orElseThrow(() -> new DomainConflictException(
                         "A temporada ativa mudou depois de o ajuste começar: descarte o ajuste e comece de novo"));
 
-        LocalDate hoje = LocalDate.now(clock.withZone(SeasonPlanResponseMapper.FUSO));
+        LocalDate hoje = LocalDate.now(clock.withZone(SeasonWeekLock.FUSO));
         @Nullable LocalDate dataProva = rascunho.getProva() == null ? null : rascunho.getProva().getDataProva();
         Map<Integer, SeasonWeek> daAtiva = seasonWeekRepository
                 .findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(ativa.getId(), tenantId).stream()
@@ -149,10 +150,28 @@ public class SeasonPlanVersioning {
                 ativa.getApprovedAt() == null ? null : ChronoUnit.DAYS.between(ativa.getApprovedAt(), agora));
     }
 
-    /** Maior volume e maior longão entre as semanas; nulo se nenhuma tem o valor. */
+    /** Maior volume e maior longão entre as semanas; sem nenhum valor, mantém o que havia. */
     public static void recalcularPicos(PlanoTreino p, List<SeasonWeek> semanas) {
-        p.setPeakVolumeKm(maximo(semanas.stream().map(SeasonWeek::getTargetVolumeKm).toList()));
-        p.setMaxLongRunKm(maximo(semanas.stream().map(SeasonWeek::getLongRunKm).toList()));
+        BigDecimal pico = maximo(semanas.stream().map(SeasonWeek::getTargetVolumeKm).toList());
+        BigDecimal longao = maximo(semanas.stream().map(SeasonWeek::getLongRunKm).toList());
+        if (pico != null) {
+            p.setPeakVolumeKm(pico);
+        }
+        if (longao != null) {
+            p.setMaxLongRunKm(longao);
+        }
+    }
+
+    /** Ajuste (PROPOSED com base) aberto a partir de {@code temporada}, se ela é a ACTIVE. */
+    public static @Nullable UUID rascunhoAberto(PlanoTreino temporada, List<PlanoTreino> candidatas) {
+        if (temporada.getSeasonStatus() != SeasonPlanStatus.ACTIVE) {
+            return null;
+        }
+        return candidatas.stream()
+                .filter(p -> p.getSeasonStatus() == SeasonPlanStatus.PROPOSED && temporada.getId().equals(p.getBaseSeasonPlanId()))
+                .map(PlanoTreino::getId)
+                .findFirst()
+                .orElse(null);
     }
 
     private static @Nullable BigDecimal maximo(List<BigDecimal> valores) {

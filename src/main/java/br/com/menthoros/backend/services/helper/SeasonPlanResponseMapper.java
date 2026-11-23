@@ -16,7 +16,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -31,7 +30,6 @@ import java.util.stream.Collectors;
 @Component
 public class SeasonPlanResponseMapper {
 
-    public static final ZoneId FUSO = ZoneId.of("America/Sao_Paulo");
     private static final String SEVERITY_WARN = "WARN";
 
     private final ProvaRepository provaRepository;
@@ -61,7 +59,7 @@ public class SeasonPlanResponseMapper {
         }
         @Nullable Prova prova = p.getProva();
         @Nullable LocalDate dataProva = prova == null ? null : prova.getDataProva();
-        LocalDate hoje = LocalDate.now(clock.withZone(FUSO));
+        LocalDate hoje = LocalDate.now(clock.withZone(SeasonWeekLock.FUSO));
         List<SeasonPlanResponseDto.Validation> validations = dataProva == null
                 ? List.of()
                 : SeasonPlanValidator.validate(weeks.stream().map(SeasonPlanResponseMapper::comoSemana).toList(),
@@ -121,17 +119,13 @@ public class SeasonPlanResponseMapper {
                 .collect(Collectors.toMap(Prova::getId, pr -> pr));
         return weeks.stream()
                 .filter(w -> w.getMilestoneRaceId() != null && provas.containsKey(w.getMilestoneRaceId()))
-                .filter(w -> naSemana(provas.get(w.getMilestoneRaceId()).getDataProva(), w.getWeekStart()))
+                .filter(w -> SeasonWeekLock.contains(w.getWeekStart(), provas.get(w.getMilestoneRaceId()).getDataProva()))
                 .map(w -> {
                     Prova pr = provas.get(w.getMilestoneRaceId());
                     return new SeasonPlanResponseDto.Milestone(w.getWeekIndex(), pr.getId(), pr.getNomeProva(),
                             pr.getDataProva(), pr.getDistancia());
                 })
                 .toList();
-    }
-
-    public static boolean naSemana(@Nullable LocalDate data, LocalDate weekStart) {
-        return data != null && !data.isBefore(weekStart) && data.isBefore(weekStart.plusWeeks(1));
     }
 
     private static WeekPlan comoSemana(SeasonWeek w) {

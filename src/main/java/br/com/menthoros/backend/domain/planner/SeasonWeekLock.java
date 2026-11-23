@@ -3,6 +3,7 @@ package br.com.menthoros.backend.domain.planner;
 import org.jspecify.annotations.Nullable;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Optional;
 
 /**
@@ -19,7 +20,18 @@ public final class SeasonWeekLock {
         RACE_WEEK
     }
 
+    /** Fuso em que "hoje" e a semana da temporada são contados. */
+    public static final ZoneId FUSO = ZoneId.of("America/Sao_Paulo");
+
     private SeasonWeekLock() {
+    }
+
+    /**
+     * A data cai na semana que começa em {@code weekStart} (segunda a domingo). Regra única: trava da
+     * prova, marcos exibidos ao coach e marco do planejador semanal usam esta mesma conta.
+     */
+    public static boolean contains(LocalDate weekStart, @Nullable LocalDate date) {
+        return date != null && !date.isBefore(weekStart) && date.isBefore(weekStart.plusWeeks(1));
     }
 
     /**
@@ -35,7 +47,7 @@ public final class SeasonWeekLock {
         if (!weekStart.isAfter(today)) {
             return Optional.of(Reason.IN_PROGRESS);
         }
-        if (raceDate != null && !raceDate.isBefore(weekStart) && raceDate.isBefore(nextWeek)) {
+        if (contains(weekStart, raceDate)) {
             return Optional.of(Reason.RACE_WEEK);
         }
         return Optional.empty();

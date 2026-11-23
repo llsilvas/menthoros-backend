@@ -6,6 +6,7 @@ import br.com.menthoros.backend.domain.planner.SeasonPlanner;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.RaceMilestone;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.SeasonPlan;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.WeekPlan;
+import br.com.menthoros.backend.domain.planner.SeasonWeekLock;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.dto.output.AthleteSeasonPlanDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
@@ -52,7 +53,6 @@ import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
@@ -74,14 +74,12 @@ import java.util.stream.Collectors;
 @Service
 public class SeasonPlanServiceImpl implements SeasonPlanService {
 
-    private static final ZoneId FUSO = ZoneId.of("America/Sao_Paulo");
     private static final DateTimeFormatter DATA_BR = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     /** Constante de tempo do CTL no PMC (Banister/Coggan). */
     private static final double CTL_TIME_CONSTANT_DAYS = 42.0;
     private static final int VOLUME_WINDOW_WEEKS = 4;
     private static final int NOME_MAX = 100;
     private static final int MOTIVO_MAX = 255;
-    private static final String SEVERITY_WARN = "WARN";
     private static final List<SeasonPlanStatus> ABERTAS = List.of(SeasonPlanStatus.ACTIVE, SeasonPlanStatus.PROPOSED);
     private static final List<SeasonPlanStatus> SO_ATIVA = List.of(SeasonPlanStatus.ACTIVE);
 
@@ -147,7 +145,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         Atleta atleta = buscarAtleta(atletaId, tenantId);
         // Antes do retorno idempotente: atleta em calibração recebe 422 mesmo com proposta existente.
         exigirForaDeCalibracao(atletaId, tenantId);
-        LocalDate hoje = LocalDate.now(clock.withZone(FUSO));
+        LocalDate hoje = LocalDate.now(clock.withZone(SeasonWeekLock.FUSO));
 
         Prova prova = travarProvaAlvo(atletaId, tenantId);
         if (prova.getDataProva() == null) {
@@ -201,19 +199,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
                 .findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(atletaId, tenantId, ABERTAS);
         return abertas.stream()
                 .min(Comparator.comparing(p -> p.getSeasonStatus() == SeasonPlanStatus.ACTIVE ? 0 : 1))
-                .map(p -> responseMapper.toDto(p, tenantId, rascunhoAberto(p, abertas)));
-    }
-
-    /** Ajuste (PROPOSED com base) aberto a partir da ACTIVE; a tela mostra "Continuar ajuste" (add-season-plan-adjust-v2). */
-    private static @Nullable UUID rascunhoAberto(PlanoTreino atual, List<PlanoTreino> abertas) {
-        if (atual.getSeasonStatus() != SeasonPlanStatus.ACTIVE) {
-            return null;
-        }
-        return abertas.stream()
-                .filter(p -> p.getSeasonStatus() == SeasonPlanStatus.PROPOSED && atual.getId().equals(p.getBaseSeasonPlanId()))
-                .map(PlanoTreino::getId)
-                .findFirst()
-                .orElse(null);
+                .map(p -> responseMapper.toDto(p, tenantId, SeasonPlanVersioning.rascunhoAberto(p, abertas)));
     }
 
     @Override
@@ -222,12 +208,10 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         exigirHabilitado();
         UUID tenantId = TenantContext.getRequiredTenantId();
         log.info("Aprovando temporada: id={}, atletaId={}, tenantId={}", seasonPlanId, atletaId, tenantId);
-        // A5: trava a prova antes de carregar a temporada, como quem cancela ou troca a alvo (D13).
-        UUID provaId = planoTreinoRepository.findRaceIdBySeasonPlan(seasonPlanId, atletaId, tenantId)
-                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
-        Optional<Prova> prova = provaRepository.findByIdAndTenantIdForUpdate(provaId, tenantId);
-        PlanoTreino temporada = planoTreinoRepository.findByIdAndAssessoriaId(seasonPlanId, tenantId)
-                .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
+        // A5: trava a prova antes de carregar a temporada, como quem cancela ou troca a alvo (D13). O mesmo
+        // lock do ajuste (SeasonPlanVersioning.travar): aprovar e ajustar o mesmo atleta se serializam.
+        PlanoTreino temporada = versioning.travar(atletaId, seasonPlanId, tenantId);
+        Optional<Prova> prova = Optional.ofNullable(temporada.getProva());
 
         // O status vem antes da prova: cancelar ou trocar a alvo arquiva a temporada, e isso é 409 (A1).
         if (temporada.getSeasonStatus() == SeasonPlanStatus.ACTIVE) {
@@ -269,7 +253,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         }
         UUID tenantId = TenantContext.getRequiredTenantId();
         UUID atletaId = atletaResolver.resolverAtletaIdAtual();
-        LocalDate hoje = LocalDate.now(clock.withZone(FUSO));
+        LocalDate hoje = LocalDate.now(clock.withZone(SeasonWeekLock.FUSO));
         return planoTreinoRepository.findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(atletaId, tenantId, SO_ATIVA)
                 .stream()
                 .filter(p -> p.getProva() != null && p.getProva().getDataProva() != null
@@ -282,7 +266,7 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         Prova prova = Objects.requireNonNull(p.getProva());
         List<SeasonWeek> weeks = seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(p.getId(), tenantId);
         TrainingPhase fase = weeks.stream()
-                .filter(w -> SeasonPlanResponseMapper.naSemana(hoje, w.getWeekStart()))
+                .filter(w -> SeasonWeekLock.contains(w.getWeekStart(), hoje))
                 .map(SeasonWeek::getPhase)
                 .findFirst()
                 .orElse(null);

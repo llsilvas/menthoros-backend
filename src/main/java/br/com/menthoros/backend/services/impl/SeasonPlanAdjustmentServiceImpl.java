@@ -46,6 +46,10 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
     private static final Set<TrainingPhase> FASES_EDITAVEIS =
             EnumSet.of(TrainingPhase.BASE, TrainingPhase.BUILD, TrainingPhase.PEAK, TrainingPhase.TAPER);
     private static final int KEY_SESSIONS_MAX = 500;
+    // Tetos de domínio bem acima do real (e dentro de NUMERIC(10,3)): valor absurdo vira 422, nunca 500 do banco.
+    private static final BigDecimal VOLUME_MAX_KM = BigDecimal.valueOf(500);
+    private static final BigDecimal LONGAO_MAX_KM = BigDecimal.valueOf(200);
+    private static final double TSS_MAX = 3000;
     private static final String DESCARTADO = "rascunho descartado";
 
     private final PlanoTreinoRepository planoTreinoRepository;
@@ -105,7 +109,11 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
                 .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
         PlanoTreino temporada = planoTreinoRepository.findByIdAndAssessoriaId(seasonPlanId, tenantId)
                 .orElseThrow(() -> new DomainNotFoundException("Temporada não encontrada: " + seasonPlanId));
-        return responseMapper.toDto(temporada, tenantId, rascunhoAberto(temporada, atletaId, tenantId));
+        @Nullable UUID rascunho = temporada.getSeasonStatus() == SeasonPlanStatus.ACTIVE
+                ? SeasonPlanVersioning.rascunhoAberto(temporada, planoTreinoRepository
+                        .findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(atletaId, tenantId, List.of(SeasonPlanStatus.PROPOSED)))
+                : null;
+        return responseMapper.toDto(temporada, tenantId, rascunho);
     }
 
     @Override
@@ -126,7 +134,7 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
                 .filter(w -> w.getWeekIndex() != null && w.getWeekIndex() == weekIndex)
                 .findFirst()
                 .orElseThrow(() -> new DomainNotFoundException("Semana " + weekIndex + " não encontrada na temporada"));
-        LocalDate hoje = LocalDate.now(clock.withZone(SeasonPlanResponseMapper.FUSO));
+        LocalDate hoje = LocalDate.now(clock.withZone(SeasonWeekLock.FUSO));
         @Nullable LocalDate dataProva = temporada.getProva() == null ? null : temporada.getProva().getDataProva();
         SeasonWeekLock.of(semana.getWeekStart(), hoje, dataProva).ifPresent(motivo -> {
             throw new DomainRuleViolationException(mensagemTrava(weekIndex, motivo));
@@ -156,18 +164,6 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
         log.info("Ajuste descartado: id={}, base={}, tenantId={}", seasonPlanId, temporada.getBaseSeasonPlanId(), tenantId);
     }
 
-    private @Nullable UUID rascunhoAberto(PlanoTreino temporada, UUID atletaId, UUID tenantId) {
-        if (temporada.getSeasonStatus() != SeasonPlanStatus.ACTIVE) {
-            return null;
-        }
-        return planoTreinoRepository.findByAtletaIdAndAssessoriaIdAndSeasonStatusIn(
-                        atletaId, tenantId, List.of(SeasonPlanStatus.PROPOSED)).stream()
-                .filter(p -> temporada.getId().equals(p.getBaseSeasonPlanId()))
-                .map(PlanoTreino::getId)
-                .findFirst()
-                .orElse(null);
-    }
-
     /** Revalida no serviço o que o Bean Validation já cobre na rota, mais a fase (regra de domínio). */
     private static void validarEntrada(SeasonWeekUpdateInputDto input) {
         if (input == null) {
@@ -180,9 +176,18 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
                 || negativo(input.longRunKm())) {
             throw new DomainRuleViolationException("Os alvos da semana não podem ser negativos");
         }
+        if ((input.targetTss() != null && (input.targetTss().isNaN() || input.targetTss() > TSS_MAX))
+                || acima(input.targetVolumeKm(), VOLUME_MAX_KM) || acima(input.longRunKm(), LONGAO_MAX_KM)) {
+            throw new DomainRuleViolationException("Alvo fora do limite: volume até " + VOLUME_MAX_KM + " km, longão até "
+                    + LONGAO_MAX_KM + " km e TSS até " + (int) TSS_MAX);
+        }
         if (input.keySessions() != null && input.keySessions().length() > KEY_SESSIONS_MAX) {
             throw new DomainRuleViolationException("As sessões-chave têm no máximo " + KEY_SESSIONS_MAX + " caracteres");
         }
+    }
+
+    private static boolean acima(@Nullable BigDecimal valor, BigDecimal teto) {
+        return valor != null && valor.compareTo(teto) > 0;
     }
 
     private static boolean negativo(@Nullable BigDecimal valor) {

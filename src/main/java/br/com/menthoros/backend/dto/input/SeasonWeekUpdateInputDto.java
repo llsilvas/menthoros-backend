@@ -11,6 +11,10 @@ import java.math.BigDecimal;
 /**
  * Edição de uma semana do ajuste da temporada (add-season-plan-adjust-v2). Campo nulo não muda; em
  * {@code keySessions}, string vazia limpa.
+ *
+ * <p>As anotações de Bean Validation documentam o contrato no OpenAPI, mas a rota não usa {@code @Valid}
+ * (o 400 do problemdetails sairia sem mensagem): o {@code SeasonPlanAdjustmentServiceImpl} valida e
+ * responde 422.
  */
 @Schema(description = "Novos valores de uma semana da temporada em ajuste; campo ausente fica como está")
 public record SeasonWeekUpdateInputDto(

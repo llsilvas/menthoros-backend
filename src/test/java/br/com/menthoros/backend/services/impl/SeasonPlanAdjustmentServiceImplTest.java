@@ -300,6 +300,22 @@ class SeasonPlanAdjustmentServiceImplTest {
         }
 
         @Test
+        @DisplayName("valor acima do teto de domínio responde 422, nunca 500 do banco")
+        void acimaDoTeto() {
+            UUID id = UUID.randomUUID();
+
+            assertThatThrownBy(() -> service.updateWeek(atleta.getId(), id, 3, volume("500.001")))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("limite");
+            assertThatThrownBy(() -> service.updateWeek(atleta.getId(), id, 3,
+                    new SeasonWeekUpdateInputDto(null, null, null, new BigDecimal("1e9"), null, null)))
+                    .isInstanceOf(DomainRuleViolationException.class);
+            assertThatThrownBy(() -> service.updateWeek(atleta.getId(), id, 3,
+                    new SeasonWeekUpdateInputDto(null, 3001.0, null, null, null, null)))
+                    .isInstanceOf(DomainRuleViolationException.class);
+            verifyNoInteractions(provaRepository);
+        }
+
+        @Test
         @DisplayName("temporada ACTIVE (aprovada no meio do caminho) responde 409")
         void naoProposta() {
             PlanoTreino ativa = travada(temporada(SeasonPlanStatus.ACTIVE, 2));
