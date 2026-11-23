@@ -330,6 +330,59 @@ class SeasonPlannerTest {
         }
     }
 
+    @Nested
+    @DisplayName("planWithPhases")
+    class PlanWithPhases {
+
+        @Test
+        @DisplayName("respeita as semanas por fase pedidas, na ordem Base → Construção → Pico → Polimento → Prova")
+        void respeitaFases() {
+            SeasonPlan plano = SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
+                    40.0, VOLUME, List.of(), Map.of(BASE, 3, BUILD, 6, PEAK, 4, TAPER, 2));
+
+            assertThat(plano.weeks()).extracting(WeekPlan::phase).containsExactly(
+                    BASE, BASE, BASE, BUILD, BUILD, BUILD, BUILD, BUILD, BUILD,
+                    PEAK, PEAK, PEAK, PEAK, TAPER, TAPER, RACE_WEEK);
+            assertThat(plano.weeks().get(0).weekStart()).isEqualTo(HOJE);
+            assertThat(plano.weeks().get(15).weekStart()).isEqualTo(PROVA_16_SEMANAS.minusDays(6));
+        }
+
+        @Test
+        @DisplayName("com as fases do template gera as mesmas semanas que plan")
+        void mesmasSemanasDoTemplate() {
+            SeasonPlan template = plan(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, 40.0);
+
+            SeasonPlan explicito = SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
+                    40.0, VOLUME, List.of(), Map.of(BASE, 6, BUILD, 4, PEAK, 3, TAPER, 2));
+
+            assertThat(explicito).isEqualTo(template);
+        }
+
+        @Test
+        @DisplayName("fase com zero semanas some da sequência")
+        void faseZerada() {
+            SeasonPlan plano = SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
+                    40.0, VOLUME, List.of(), Map.of(BASE, 9, BUILD, 4, PEAK, 2, TAPER, 0));
+
+            assertThat(contagem(plano)).containsExactlyInAnyOrderEntriesOf(
+                    Map.of(BASE, 9L, BUILD, 4L, PEAK, 2L, RACE_WEEK, 1L));
+        }
+
+        @Test
+        @DisplayName("soma das fases + semana da prova diferente do total, fase negativa ou ausente: IllegalArgumentException")
+        void somaInvalida() {
+            assertThatThrownBy(() -> SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
+                    40.0, VOLUME, List.of(), Map.of(BASE, 6, BUILD, 4, PEAK, 3, TAPER, 1)))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
+                    40.0, VOLUME, List.of(), Map.of(BASE, 8, BUILD, 4, PEAK, 3, TAPER, -1)))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
+                    40.0, VOLUME, List.of(), Map.of(BASE, 8, BUILD, 4, PEAK, 3)))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
     private static SeasonPlan plan(DistanciaProva distancia, BigDecimal km, LocalDate prova, double ctl) {
         return SeasonPlanner.plan(distancia, km, prova, HOJE, ctl, VOLUME);
     }

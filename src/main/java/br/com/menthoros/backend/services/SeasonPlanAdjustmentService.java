@@ -1,9 +1,12 @@
 package br.com.menthoros.backend.services;
 
+import br.com.menthoros.backend.dto.input.SeasonPlanRecalculateInputDto;
 import br.com.menthoros.backend.dto.input.SeasonWeekUpdateInputDto;
+import br.com.menthoros.backend.dto.output.SeasonPlanDiffDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 import br.com.menthoros.backend.services.SeasonPlanService.Generation;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -52,6 +55,36 @@ public interface SeasonPlanAdjustmentService {
      *         permitida ou valor inválido
      */
     SeasonPlanResponseDto updateWeek(UUID atletaId, UUID seasonPlanId, int weekIndex, SeasonWeekUpdateInputDto input);
+
+    /**
+     * Regenera pelo motor as semanas livres do rascunho de ajuste, com as semanas por fase e o volume de
+     * partida pedidos. Semanas travadas e as editadas pelo treinador (COACH) ficam como estão; os marcos
+     * são os já gravados no rascunho.
+     *
+     * Idempotent: YES — a mesma entrada sobre o mesmo rascunho gera as mesmas semanas.
+     * Side Effects: Database update (semanas livres, volume de partida e picos do rascunho); lock pessimista na prova.
+     * Tenant-aware: YES
+     *
+     * @throws br.com.menthoros.backend.exception.SeasonPlanDisabledException flag desligada
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException temporada não é do atleta no tenant
+     * @throws br.com.menthoros.backend.exception.DomainConflictException não é um rascunho de ajuste aberto
+     * @throws br.com.menthoros.backend.exception.DomainRuleViolationException fases ou volume inválidos, soma
+     *         diferente do ciclo, prova remarcada, CTL de partida ausente ou fase divergente numa semana travada
+     */
+    SeasonPlanResponseDto recalculate(UUID atletaId, UUID seasonPlanId, SeasonPlanRecalculateInputDto input);
+
+    /**
+     * Campos alterados do rascunho de ajuste em relação à temporada ativa de que ele partiu, por semana.
+     *
+     * Idempotent: YES
+     * Side Effects: NONE
+     * Tenant-aware: YES
+     *
+     * @throws br.com.menthoros.backend.exception.SeasonPlanDisabledException flag desligada
+     * @throws br.com.menthoros.backend.exception.DomainNotFoundException temporada não é do atleta no tenant
+     * @throws br.com.menthoros.backend.exception.DomainConflictException não é um rascunho de ajuste aberto
+     */
+    List<SeasonPlanDiffDto> diff(UUID atletaId, UUID seasonPlanId);
 
     /**
      * Descarta o rascunho de ajuste: vira ARCHIVED, sem apagar linhas.

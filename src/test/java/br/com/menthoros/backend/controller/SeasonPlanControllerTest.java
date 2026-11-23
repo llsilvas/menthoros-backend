@@ -14,6 +14,8 @@ import br.com.menthoros.backend.repository.UsuarioRepository;
 import br.com.menthoros.backend.services.AtletaProgressService;
 import br.com.menthoros.backend.services.SeasonPlanAdjustmentService;
 import br.com.menthoros.backend.services.SeasonPlanService;
+import br.com.menthoros.backend.dto.input.SeasonPlanRecalculateInputDto;
+import br.com.menthoros.backend.dto.output.SeasonPlanDiffDto;
 import br.com.menthoros.backend.dto.input.SeasonWeekUpdateInputDto;
 import org.springframework.http.MediaType;
 import br.com.menthoros.backend.services.SeasonPlanService.Generation;
@@ -35,6 +37,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -274,7 +277,7 @@ class SeasonPlanControllerTest {
             SeasonPlanResponseDto p = plano();
             return new SeasonPlanResponseDto(planoId, SeasonPlanStatus.ACTIVE, Instant.parse("2026-11-20T13:00:00Z"),
                     p.provaId(), p.provaNome(), p.provaData(), p.shortPreparation(), p.totalWeeks(), p.initialCtl(),
-                    p.peakVolumeKm(), p.weeks(), p.milestones(), p.validations(), 1, null, null);
+                    p.peakVolumeKm(), p.weeks(), p.milestones(), p.validations(), 1, null, null, null);
         }
     }
 
@@ -379,6 +382,107 @@ class SeasonPlanControllerTest {
         }
     }
 
+    @Nested
+    @DisplayName("recalculate")
+    class Recalculate {
+
+        private final UUID planoId = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000002");
+        private final String url = BASE + "/" + planoId + "/recalculate";
+        private static final String CORPO =
+                "{\"phaseWeeks\":{\"BASE\":3,\"BUILD\":4,\"PEAK\":2,\"TAPER\":2},\"startVolumeKm\":40.0}";
+
+        @Test
+        @DisplayName("POST repassa fases e volume e devolve o rascunho com 200")
+        void recalcula() throws Exception {
+            atletaDoTenant();
+            when(adjustmentService.recalculate(eq(ATLETA_ID), eq(planoId), any())).thenReturn(plano());
+
+            mockMvc.perform(post(url).with(tecnicoJwt()).contentType(MediaType.APPLICATION_JSON).content(CORPO))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.provaNome").value("Maratona alvo"));
+
+            verify(adjustmentService).recalculate(ATLETA_ID, planoId, new SeasonPlanRecalculateInputDto(
+                    Map.of(TrainingPhase.BASE, 3, TrainingPhase.BUILD, 4, TrainingPhase.PEAK, 2, TrainingPhase.TAPER, 2),
+                    new BigDecimal("40.0")));
+        }
+
+        @Test
+        @DisplayName("regra do recálculo violada responde 422 com a mensagem")
+        void regraViolada() throws Exception {
+            atletaDoTenant();
+            when(adjustmentService.recalculate(eq(ATLETA_ID), eq(planoId), any()))
+                    .thenThrow(new DomainRuleViolationException("A soma das fases dá 10 semanas (com a da prova); o ciclo tem 12"));
+
+            mockMvc.perform(post(url).with(tecnicoJwt()).contentType(MediaType.APPLICATION_JSON).content(CORPO))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.message").value(org.hamcrest.Matchers.containsString("o ciclo tem 12")));
+        }
+
+        @Test
+        @DisplayName("temporada que não é ajuste em aberto responde 409")
+        void naoRascunho() throws Exception {
+            atletaDoTenant();
+            when(adjustmentService.recalculate(eq(ATLETA_ID), eq(planoId), any()))
+                    .thenThrow(new DomainConflictException("Só um ajuste em aberto"));
+
+            mockMvc.perform(post(url).with(tecnicoJwt()).contentType(MediaType.APPLICATION_JSON).content(CORPO))
+                    .andExpect(status().isConflict());
+        }
+
+        @Test
+        @DisplayName("403 para ATLETA, sem chegar ao serviço")
+        void atletaProibido() throws Exception {
+            mockMvc.perform(post(url).with(atletaJwt()).contentType(MediaType.APPLICATION_JSON).content(CORPO))
+                    .andExpect(status().isForbidden());
+
+            verifyNoInteractions(adjustmentService);
+        }
+    }
+
+    @Nested
+    @DisplayName("diff")
+    class Diff {
+
+        private final UUID planoId = UUID.fromString("bbbbbbbb-0000-0000-0000-000000000002");
+        private final String url = BASE + "/" + planoId + "/diff";
+
+        @Test
+        @DisplayName("GET devolve a lista de alterações como array, com antes nulo explícito")
+        void lista() throws Exception {
+            atletaDoTenant();
+            when(adjustmentService.diff(ATLETA_ID, planoId)).thenReturn(List.of(
+                    new SeasonPlanDiffDto(5, "longRunKm", new BigDecimal("18"), new BigDecimal("20"), WeekValueSource.COACH),
+                    new SeasonPlanDiffDto(6, "keySessions", null, "6x1km", WeekValueSource.COACH)));
+
+            mockMvc.perform(get(url).with(tecnicoJwt()))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].weekIndex").value(5))
+                    .andExpect(jsonPath("$[0].field").value("longRunKm"))
+                    .andExpect(jsonPath("$[0].before").value(18))
+                    .andExpect(jsonPath("$[0].after").value(20))
+                    .andExpect(jsonPath("$[0].source").value("COACH"))
+                    .andExpect(jsonPath("$[1].before").value(org.hamcrest.Matchers.nullValue()))
+                    .andExpect(jsonPath("$[1].after").value("6x1km"));
+        }
+
+        @Test
+        @DisplayName("temporada que não é ajuste em aberto responde 409")
+        void naoRascunho() throws Exception {
+            atletaDoTenant();
+            when(adjustmentService.diff(ATLETA_ID, planoId)).thenThrow(new DomainConflictException("Só um ajuste"));
+
+            mockMvc.perform(get(url).with(tecnicoJwt())).andExpect(status().isConflict());
+        }
+
+        @Test
+        @DisplayName("403 para ATLETA, sem chegar ao serviço")
+        void atletaProibido() throws Exception {
+            mockMvc.perform(get(url).with(atletaJwt())).andExpect(status().isForbidden());
+
+            verifyNoInteractions(adjustmentService);
+        }
+    }
+
     private static SeasonPlanResponseDto plano() {
         return new SeasonPlanResponseDto(UUID.randomUUID(), SeasonPlanStatus.PROPOSED, null, UUID.randomUUID(),
                 "Maratona alvo", LocalDate.of(2027, 4, 4), false, 20, 40.0, new BigDecimal("52.0"),
@@ -388,6 +492,6 @@ class SeasonPlanControllerTest {
                         LocalDate.of(2026, 12, 27), br.com.menthoros.backend.enums.DistanciaProva.KM_21)),
                 List.of(new SeasonPlanResponseDto.Validation(
                         br.com.menthoros.backend.domain.planner.SeasonPlanValidator.Rule.RAMP, "WARN", 2, 12.5, 10.0,
-                        "Volume sobe 12,5% sobre a semana anterior (teto 10%)")), 1, null, null);
+                        "Volume sobe 12,5% sobre a semana anterior (teto 10%)")), 1, null, null, null);
     }
 }

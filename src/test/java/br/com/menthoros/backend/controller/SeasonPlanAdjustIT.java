@@ -240,6 +240,110 @@ class SeasonPlanAdjustIT extends AbstractIntegrationTest {
                 Integer.class, atleta.getId())).isZero();
     }
 
+    @Test
+    @DisplayName("recalcular preserva travadas e a semana do treinador, o diff mostra o que mudou e a aprovação grava")
+    void recalcularDiffAprovar() throws Exception {
+        cicloDeCincoSemanas();
+        String criado = mockMvc.perform(post(base + "/" + v1.getId() + "/draft").with(tecnico()))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.initialVolumeKm").value(38.5))
+                .andReturn().getResponse().getContentAsString();
+        UUID v2 = UUID.fromString(objectMapper.readTree(criado).get("id").asText());
+        mockMvc.perform(patch(base + "/" + v2 + "/weeks/3").with(tecnico()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"longRunKm\":20}"))
+                .andExpect(status().isOk());
+        List<Map<String, Object>> travadasAntes = semanas(v2).subList(0, 2);
+
+        mockMvc.perform(post(base + "/" + v2 + "/recalculate").with(tecnico()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"phaseWeeks\":{\"BASE\":2,\"BUILD\":1,\"PEAK\":0,\"TAPER\":1},\"startVolumeKm\":40}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.initialVolumeKm").value(40.0))
+                .andExpect(jsonPath("$.weeks[2].valueSource").value("COACH"))
+                .andExpect(jsonPath("$.weeks[2].phase").value("BASE"))
+                .andExpect(jsonPath("$.weeks[3].phase").value("TAPER"))
+                .andExpect(jsonPath("$.weeks[3].valueSource").value("ENGINE"))
+                .andExpect(jsonPath("$.weeks[4].phase").value("RACE_WEEK"));
+        assertThat(semanas(v2).subList(0, 2)).isEqualTo(travadasAntes);
+
+        JsonNode diff = objectMapper.readTree(mockMvc.perform(get(base + "/" + v2 + "/diff").with(tecnico()))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString());
+        assertThat(diff.findValues("weekIndex")).extracting(JsonNode::asInt).containsOnly(3, 4);
+        JsonNode longao = entrada(diff, 3, "longRunKm");
+        assertThat(longao.get("before").isNull()).isTrue();
+        assertThat(longao.get("after").decimalValue()).isEqualByComparingTo("20");
+        assertThat(longao.get("source").asText()).isEqualTo("COACH");
+        JsonNode fase = entrada(diff, 4, "phase");
+        assertThat(fase.get("before").asText()).isEqualTo("BASE");
+        assertThat(fase.get("after").asText()).isEqualTo("TAPER");
+        assertThat(fase.get("source").asText()).isEqualTo("ENGINE");
+
+        mockMvc.perform(post(base + "/" + v2 + "/approve").with(tecnico()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Polimento mais cedo\"}"))
+                .andExpect(status().isOk());
+        assertThat(seasonStatus(v2)).isEqualTo("ACTIVE");
+        assertThat(semanas(v2).get(3)).containsEntry("phase", "TAPER");
+        assertThat(jdbc.queryForObject("select initial_volume_km from tb_plano_treino where id = ?", BigDecimal.class, v2))
+                .isEqualByComparingTo("40.0");
+    }
+
+    @Test
+    @DisplayName("recalcular e pedir o diff da ACTIVE respondem 409; de outra assessoria, 403")
+    void recalcularForaDoAjuste() throws Exception {
+        cicloDeCincoSemanas();
+        String corpo = "{\"phaseWeeks\":{\"BASE\":2,\"BUILD\":1,\"PEAK\":0,\"TAPER\":1},\"startVolumeKm\":40}";
+
+        mockMvc.perform(post(base + "/" + v1.getId() + "/recalculate").with(tecnico())
+                        .contentType(MediaType.APPLICATION_JSON).content(corpo))
+                .andExpect(status().isConflict());
+        mockMvc.perform(get(base + "/" + v1.getId() + "/diff").with(tecnico())).andExpect(status().isConflict());
+
+        TenantContext.setTenantId(tenantId);
+        UUID v2 = adjustmentService.createDraft(atleta.getId(), v1.getId()).plan().id();
+        TenantContext.clear();
+        RequestPostProcessor outra = como(subOutraAssessoria, outroTenant, "TECNICO");
+        mockMvc.perform(post(base + "/" + v2 + "/recalculate").with(outra)
+                        .contentType(MediaType.APPLICATION_JSON).content(corpo))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get(base + "/" + v2 + "/diff").with(outra)).andExpect(status().isForbidden());
+        assertThat(jdbc.queryForObject("select initial_volume_km from tb_plano_treino where id = ?", BigDecimal.class, v2))
+                .isEqualByComparingTo("38.5");
+    }
+
+    @Test
+    @DisplayName("OpenAPI publica recalculate e diff, com o diff como array")
+    void openApi() throws Exception {
+        JsonNode paths = objectMapper.readTree(mockMvc.perform(get("/api-docs"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).get("paths");
+        String prefixo = "/api/v1/atletas/{atletaId}/season-plans/{seasonPlanId}";
+
+        assertThat(paths.has(prefixo + "/recalculate")).isTrue();
+        assertThat(paths.path(prefixo + "/recalculate").path("post").path("responses").has("422")).isTrue();
+        JsonNode conteudo = paths.path(prefixo + "/diff").path("get").path("responses").path("200").path("content");
+        assertThat(conteudo.isEmpty()).isFalse();
+        assertThat(conteudo.elements().next().path("schema").path("type").asText()).isEqualTo("array");
+    }
+
+    /**
+     * Deixa a v1 recalculável: prova no domingo da semana 5 (o ciclo fecha em 5), semana 5 da prova, CTL e
+     * volume de partida gravados.
+     */
+    private void cicloDeCincoSemanas() {
+        jdbc.update("update tb_prova set data_prova = ? where id = ?",
+                v1.getDataInicio().plusWeeks(4).plusDays(6), v1.getProva().getId());
+        jdbc.update("update tb_plano_treino set initial_ctl = 40, initial_volume_km = 38.5 where id = ?", v1.getId());
+        jdbc.update("update tb_season_week set phase = 'RACE_WEEK' where season_plan_id = ? and week_index = 5", v1.getId());
+    }
+
+    private static JsonNode entrada(JsonNode diff, int semana, String campo) {
+        for (JsonNode e : diff) {
+            if (e.get("weekIndex").asInt() == semana && campo.equals(e.get("field").asText())) {
+                return e;
+            }
+        }
+        throw new AssertionError("sem alteração de " + campo + " na semana " + semana + ": " + diff);
+    }
+
     private UUID criarDraftConcorrente(CountDownLatch largada) throws Exception {
         TenantContext.setTenantId(tenantId);
         try {

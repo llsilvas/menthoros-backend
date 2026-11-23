@@ -1,7 +1,11 @@
 package br.com.menthoros.backend.services.impl;
 
+import br.com.menthoros.backend.domain.planner.SeasonPlanner;
+import br.com.menthoros.backend.domain.planner.SeasonPlanner.WeekPlan;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
+import br.com.menthoros.backend.dto.input.SeasonPlanRecalculateInputDto;
 import br.com.menthoros.backend.dto.input.SeasonWeekUpdateInputDto;
+import br.com.menthoros.backend.dto.output.SeasonPlanDiffDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
@@ -29,7 +33,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.NullSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.Mock;
@@ -40,9 +48,12 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -104,6 +115,7 @@ class SeasonPlanAdjustmentServiceImplTest {
         @DisplayName("cria PROPOSED v2 com a base e a cópia de todas as semanas, depois do lock da prova")
         void cria() {
             PlanoTreino ativa = travada(temporada(SeasonPlanStatus.ACTIVE, 1));
+            ativa.setInitialVolumeKm(new BigDecimal("38.5"));
             List<SeasonWeek> semanas = List.of(semana(ativa, 1, "40"), semana(ativa, 2, "42"));
             semanas.get(1).setKeySessions("6x1km");
             when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(ativa.getId(), tenantId))
@@ -121,6 +133,7 @@ class SeasonPlanAdjustmentServiceImplTest {
             assertThat(g.plan().seasonStatus()).isEqualTo(SeasonPlanStatus.PROPOSED);
             assertThat(g.plan().version()).isEqualTo(2);
             assertThat(g.plan().baseSeasonPlanId()).isEqualTo(ativa.getId());
+            assertThat(g.plan().initialVolumeKm()).isEqualByComparingTo("38.5");
             verify(provaRepository).findByIdAndTenantIdForUpdate(ativa.getProva().getId(), tenantId);
             verify(seasonWeekRepository).saveAll(semanasCaptor.capture());
             assertThat(semanasCaptor.getValue()).extracting(SeasonWeek::getWeekIndex).containsExactly(1, 2);
@@ -336,6 +349,269 @@ class SeasonPlanAdjustmentServiceImplTest {
     }
 
     @Nested
+    @DisplayName("recalculate")
+    class Recalculate {
+
+        private final SeasonPlanRecalculateInputDto aceite = entrada(3, 4, 2, 2, "40");
+
+        @Test
+        @DisplayName("12 semanas: travadas e COACH ficam iguais, as demais vêm do motor como ENGINE")
+        void criterioDeAceite() {
+            PlanoTreino rascunho = travada(rascunho12());
+            List<SeasonWeek> semanas = ciclo12(rascunho);
+            semanas.get(5).setValueSource(WeekValueSource.COACH);
+            semanas.get(5).setTargetVolumeKm(new BigDecimal("50"));
+            semanas.get(2).setKeySessions("6x1km");
+            List<String> antes = semanas.stream().map(SeasonPlanAdjustmentServiceImplTest::retrato).toList();
+
+            SeasonPlanResponseDto dto = service.recalculate(atleta.getId(), rascunho.getId(), aceite);
+
+            List<WeekPlan> motor = motor(rascunho, 3, 4, 2, 2, "40");
+            for (int i : List.of(0, 1, 5, 11)) {
+                assertThat(retrato(semanas.get(i))).as("semana %d", i + 1).isEqualTo(antes.get(i));
+            }
+            for (int i : List.of(2, 3, 4, 6, 7, 8, 9, 10)) {
+                SeasonWeek w = semanas.get(i);
+                WeekPlan esperado = motor.get(i);
+                assertThat(w.getPhase()).as("semana %d", i + 1).isEqualTo(esperado.phase());
+                assertThat(w.getTargetVolumeKm()).isEqualByComparingTo(esperado.targetVolumeKm());
+                assertThat(w.getTargetTss()).isEqualTo(esperado.targetTss());
+                assertThat(w.getLongRunKm()).isEqualByComparingTo(esperado.longRunKm());
+                assertThat(w.isDeload()).isEqualTo(esperado.deload());
+                assertThat(w.getValueSource()).isEqualTo(WeekValueSource.ENGINE);
+            }
+            assertThat(semanas.get(2).getKeySessions()).isEqualTo("6x1km");
+            assertThat(semanas.get(6).getPhase()).isEqualTo(TrainingPhase.BUILD);
+            assertThat(semanas.get(9).getPhase()).isEqualTo(TrainingPhase.TAPER);
+            assertThat(rascunho.getInitialVolumeKm()).isEqualTo(new BigDecimal("40.0"));
+            assertThat(rascunho.getPeakVolumeKm()).isEqualByComparingTo(semanas.stream()
+                    .map(SeasonWeek::getTargetVolumeKm).max(BigDecimal::compareTo).orElseThrow());
+            assertThat(dto.initialVolumeKm()).isEqualByComparingTo("40.0");
+            verify(seasonWeekRepository).saveAll(semanas);
+            verify(planoTreinoRepository).save(rascunho);
+        }
+
+        @Test
+        @DisplayName("marcos do rascunho são reusados: milestoneRaceId igual e a descarga continua adiada")
+        void reusaMarcos() {
+            PlanoTreino rascunho = travada(rascunho12());
+            List<SeasonWeek> semanas = ciclo12(rascunho);
+            UUID marco = UUID.randomUUID();
+            semanas.get(3).setMilestoneRaceId(marco);
+
+            service.recalculate(atleta.getId(), rascunho.getId(), aceite);
+
+            assertThat(semanas.get(3).getMilestoneRaceId()).isEqualTo(marco);
+            assertThat(semanas.get(3).isDeload()).isFalse();
+            assertThat(semanas.get(4).isDeload()).isTrue();
+            verify(provaRepository, never()).findUpcomingByAtletaIdAndTenantId(any(), any(), any());
+        }
+
+        @Test
+        @DisplayName("recalcular duas vezes com a mesma entrada dá as mesmas semanas")
+        void deterministico() {
+            PlanoTreino rascunho = travada(rascunho12());
+            List<SeasonWeek> semanas = ciclo12(rascunho);
+            semanas.get(3).setMilestoneRaceId(UUID.randomUUID());
+
+            service.recalculate(atleta.getId(), rascunho.getId(), aceite);
+            List<String> primeira = semanas.stream().map(SeasonPlanAdjustmentServiceImplTest::retrato).toList();
+            service.recalculate(atleta.getId(), rascunho.getId(), aceite);
+
+            assertThat(semanas.stream().map(SeasonPlanAdjustmentServiceImplTest::retrato).toList()).isEqualTo(primeira);
+        }
+
+        @Test
+        @DisplayName("fases que somam 10 num ciclo de 12 respondem 422 com a soma e o total, sem gravar")
+        void somaDivergente() {
+            PlanoTreino rascunho = travada(rascunho12());
+            List<SeasonWeek> semanas = ciclo12(rascunho);
+            List<String> antes = semanas.stream().map(SeasonPlanAdjustmentServiceImplTest::retrato).toList();
+
+            assertThatThrownBy(() -> service.recalculate(atleta.getId(), rascunho.getId(), entrada(3, 3, 2, 1, "40")))
+                    .isInstanceOf(DomainRuleViolationException.class)
+                    .hasMessageContaining("10").hasMessageContaining("12");
+            assertNadaGravado(rascunho, semanas, antes);
+        }
+
+        @Test
+        @DisplayName("Construção na semana 1 concluída como Base responde 422, sem gravar")
+        void fasePassadaDivergente() {
+            PlanoTreino rascunho = travada(rascunho12());
+            List<SeasonWeek> semanas = ciclo12(rascunho);
+            List<String> antes = semanas.stream().map(SeasonPlanAdjustmentServiceImplTest::retrato).toList();
+
+            assertThatThrownBy(() -> service.recalculate(atleta.getId(), rascunho.getId(), entrada(0, 7, 2, 2, "40")))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("semana 1");
+            assertNadaGravado(rascunho, semanas, antes);
+        }
+
+        @Test
+        @DisplayName("prova remarcada (número de semanas mudou) responde 422")
+        void provaRemarcada() {
+            PlanoTreino rascunho = travada(rascunho12());
+            List<SeasonWeek> semanas = ciclo12(rascunho);
+            List<String> antes = semanas.stream().map(SeasonPlanAdjustmentServiceImplTest::retrato).toList();
+            rascunho.getProva().setDataProva(rascunho.getProva().getDataProva().plusWeeks(1));
+
+            assertThatThrownBy(() -> service.recalculate(atleta.getId(), rascunho.getId(), entrada(4, 4, 2, 2, "40")))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("descarte");
+            assertNadaGravado(rascunho, semanas, antes);
+        }
+
+        @ParameterizedTest(name = "initialCtl={0}")
+        @NullSource
+        @ValueSource(doubles = {0.0, -1.0})
+        @DisplayName("CTL de partida nulo ou não positivo responde 422")
+        void ctlInvalido(Double ctl) {
+            PlanoTreino rascunho = travada(rascunho12());
+            rascunho.setInitialCtl(ctl);
+            ciclo12(rascunho);
+
+            assertThatThrownBy(() -> service.recalculate(atleta.getId(), rascunho.getId(), aceite))
+                    .isInstanceOf(DomainRuleViolationException.class).hasMessageContaining("CTL");
+            verify(seasonWeekRepository, never()).saveAll(any());
+        }
+
+        @ParameterizedTest(name = "{0}")
+        @MethodSource("br.com.menthoros.backend.services.impl.SeasonPlanAdjustmentServiceImplTest#entradasInvalidas")
+        @DisplayName("entrada inválida responde 422 antes do lock")
+        void entradaInvalida(String caso, SeasonPlanRecalculateInputDto entrada) {
+            UUID id = UUID.randomUUID();
+
+            assertThatThrownBy(() -> service.recalculate(atleta.getId(), id, entrada))
+                    .isInstanceOf(DomainRuleViolationException.class);
+            verifyNoInteractions(provaRepository, seasonWeekRepository);
+        }
+
+        @Test
+        @DisplayName("temporada ACTIVE responde 409")
+        void ativa() {
+            PlanoTreino ativa = travada(temporada(SeasonPlanStatus.ACTIVE, 2));
+
+            assertThatThrownBy(() -> service.recalculate(atleta.getId(), ativa.getId(), aceite))
+                    .isInstanceOf(DomainConflictException.class);
+            verify(seasonWeekRepository, never()).saveAll(any());
+        }
+
+        @Test
+        @DisplayName("proposta v1 (sem base) responde 409")
+        void propostaV1() {
+            PlanoTreino proposta = travada(temporada(SeasonPlanStatus.PROPOSED, 1));
+
+            assertThatThrownBy(() -> service.recalculate(atleta.getId(), proposta.getId(), aceite))
+                    .isInstanceOf(DomainConflictException.class);
+        }
+
+        @Test
+        @DisplayName("flag desligada recusa sem tocar o banco")
+        void desligada() {
+            assertThatThrownBy(() -> novo(false).recalculate(atleta.getId(), UUID.randomUUID(), aceite))
+                    .isInstanceOf(SeasonPlanDisabledException.class);
+            verifyNoInteractions(planoTreinoRepository, provaRepository, seasonWeekRepository);
+        }
+
+        private void assertNadaGravado(PlanoTreino rascunho, List<SeasonWeek> semanas, List<String> antes) {
+            assertThat(semanas.stream().map(SeasonPlanAdjustmentServiceImplTest::retrato).toList()).isEqualTo(antes);
+            assertThat(rascunho.getInitialVolumeKm()).isNull();
+            verify(seasonWeekRepository, never()).saveAll(any());
+            verify(planoTreinoRepository, never()).save(any());
+        }
+    }
+
+    @Nested
+    @DisplayName("diff")
+    class Diff {
+
+        @Test
+        @DisplayName("semana 5 com longão 18 na ativa e 20 no rascunho, editada pelo treinador, entra no diff")
+        void criterioDeAceite() {
+            PlanoTreino rascunho = temporada(SeasonPlanStatus.PROPOSED, 2);
+            PlanoTreino ativa = temporada(SeasonPlanStatus.ACTIVE, 1);
+            rascunho.setBaseSeasonPlanId(ativa.getId());
+            lida(rascunho);
+            List<SeasonWeek> daAtiva = semanas(ativa, "40", "40", "40", "40", "40");
+            daAtiva.get(4).setLongRunKm(new BigDecimal("18"));
+            List<SeasonWeek> doRascunho = semanas(rascunho, "40", "40", "40", "40", "40");
+            doRascunho.get(4).setLongRunKm(new BigDecimal("20"));
+            doRascunho.get(4).setValueSource(WeekValueSource.COACH);
+
+            List<SeasonPlanDiffDto> diff = service.diff(atleta.getId(), rascunho.getId());
+
+            assertThat(diff).containsExactly(new SeasonPlanDiffDto(5, "longRunKm", new BigDecimal("18"),
+                    new BigDecimal("20"), WeekValueSource.COACH));
+        }
+
+        @Test
+        @DisplayName("rascunho igual à ativa dá lista vazia")
+        void vazio() {
+            PlanoTreino rascunho = temporada(SeasonPlanStatus.PROPOSED, 2);
+            PlanoTreino ativa = temporada(SeasonPlanStatus.ACTIVE, 1);
+            rascunho.setBaseSeasonPlanId(ativa.getId());
+            lida(rascunho);
+            semanas(ativa, "40", "42");
+            semanas(rascunho, "40", "42");
+
+            assertThat(service.diff(atleta.getId(), rascunho.getId())).isEmpty();
+        }
+
+        @Test
+        @DisplayName("temporada ACTIVE responde 409")
+        void ativa() {
+            PlanoTreino ativa = lida(temporada(SeasonPlanStatus.ACTIVE, 1));
+
+            assertThatThrownBy(() -> service.diff(atleta.getId(), ativa.getId()))
+                    .isInstanceOf(DomainConflictException.class);
+            verifyNoInteractions(seasonWeekRepository);
+        }
+
+        @Test
+        @DisplayName("temporada de outro atleta ou tenant responde 404")
+        void naoEncontrada() {
+            UUID id = UUID.randomUUID();
+            when(planoTreinoRepository.findRaceIdBySeasonPlan(id, atleta.getId(), tenantId)).thenReturn(Optional.empty());
+
+            assertThatThrownBy(() -> service.diff(atleta.getId(), id)).isInstanceOf(DomainNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("flag desligada recusa sem tocar o banco")
+        void desligada() {
+            assertThatThrownBy(() -> novo(false).diff(atleta.getId(), UUID.randomUUID()))
+                    .isInstanceOf(SeasonPlanDisabledException.class);
+            verifyNoInteractions(planoTreinoRepository, seasonWeekRepository);
+        }
+
+        /** Leitura sem lock, como no findById. */
+        private PlanoTreino lida(PlanoTreino t) {
+            when(planoTreinoRepository.findRaceIdBySeasonPlan(t.getId(), atleta.getId(), tenantId))
+                    .thenReturn(Optional.of(t.getProva().getId()));
+            when(planoTreinoRepository.findByIdAndAssessoriaId(t.getId(), tenantId)).thenReturn(Optional.of(t));
+            return t;
+        }
+    }
+
+    static Stream<Arguments> entradasInvalidas() {
+        Map<TrainingPhase, Integer> semTaper = new EnumMap<>(Map.of(TrainingPhase.BASE, 3, TrainingPhase.BUILD, 4,
+                TrainingPhase.PEAK, 2));
+        Map<TrainingPhase, Integer> comProva = new EnumMap<>(fases(3, 4, 2, 1));
+        comProva.put(TrainingPhase.RACE_WEEK, 1);
+        return Stream.of(
+                Arguments.of("sem entrada", null),
+                Arguments.of("sem fases", new SeasonPlanRecalculateInputDto(null, new BigDecimal("40"))),
+                Arguments.of("fase ausente", new SeasonPlanRecalculateInputDto(semTaper, new BigDecimal("40"))),
+                Arguments.of("fase negativa", entrada(3, -1, 2, 2, "40")),
+                Arguments.of("fase gigante que estoura a soma", entrada(Integer.MAX_VALUE, Integer.MAX_VALUE, 11, 0, "40")),
+                Arguments.of("fase fora das quatro", new SeasonPlanRecalculateInputDto(comProva, new BigDecimal("40"))),
+                Arguments.of("sem Base, Construção nem Pico", entrada(0, 0, 0, 11, "40")),
+                Arguments.of("volume ausente", new SeasonPlanRecalculateInputDto(fases(3, 4, 2, 2), null)),
+                Arguments.of("volume zero", entrada(3, 4, 2, 2, "0")),
+                Arguments.of("volume negativo", entrada(3, 4, 2, 2, "-5")),
+                Arguments.of("volume acima de 500", entrada(3, 4, 2, 2, "500.1")),
+                Arguments.of("volume com duas casas", entrada(3, 4, 2, 2, "40.25")));
+    }
+
+    @Nested
     @DisplayName("discard")
     class Discard {
 
@@ -420,6 +696,53 @@ class SeasonPlanAdjustmentServiceImplTest {
         w.setLongRunKm(new BigDecimal("12"));
         w.setValueSource(WeekValueSource.ENGINE);
         return w;
+    }
+
+    /**
+     * Rascunho v2 de 12 semanas: a 1 (de {@code HOJE - 1 semana}) concluída, a 2 em andamento e a 12 da
+     * prova; CTL de partida 40 e sem volume de partida gravado.
+     */
+    private PlanoTreino rascunho12() {
+        PlanoTreino r = temporada(SeasonPlanStatus.PROPOSED, 2);
+        r.setBaseSeasonPlanId(UUID.randomUUID());
+        r.setInitialCtl(40.0);
+        r.setTotalWeeks(12);
+        r.getProva().setDataProva(HOJE.plusWeeks(10).plusDays(6));
+        return r;
+    }
+
+    private List<SeasonWeek> ciclo12(PlanoTreino t) {
+        List<SeasonWeek> lista = new java.util.ArrayList<>();
+        for (int i = 1; i <= 12; i++) {
+            SeasonWeek w = semana(t, i, "40");
+            w.setWeekStart(HOJE.plusWeeks(i - 2L));
+            w.setPhase(i == 12 ? TrainingPhase.RACE_WEEK : TrainingPhase.BASE);
+            lista.add(w);
+        }
+        when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(t.getId(), tenantId)).thenReturn(lista);
+        return lista;
+    }
+
+    /** Semanas que o motor daria ao rascunho de {@link #rascunho12()} — o oráculo do recálculo. */
+    private static List<WeekPlan> motor(PlanoTreino t, int base, int build, int peak, int taper, String km) {
+        return SeasonPlanner.planWithPhases(t.getProva().getDistancia(), null, t.getProva().getDataProva(),
+                HOJE.minusWeeks(1), t.getInitialCtl(), new BigDecimal(km), List.of(),
+                fases(base, build, peak, taper)).weeks();
+    }
+
+    private static String retrato(SeasonWeek w) {
+        return w.getWeekIndex() + "|" + w.getPhase() + "|" + w.getTargetVolumeKm() + "|" + w.getTargetTss() + "|"
+                + w.getLongRunKm() + "|" + w.isDeload() + "|" + w.getKeySessions() + "|" + w.getValueSource() + "|"
+                + w.getMilestoneRaceId();
+    }
+
+    private static Map<TrainingPhase, Integer> fases(int base, int build, int peak, int taper) {
+        return new EnumMap<>(Map.of(TrainingPhase.BASE, base, TrainingPhase.BUILD, build,
+                TrainingPhase.PEAK, peak, TrainingPhase.TAPER, taper));
+    }
+
+    private static SeasonPlanRecalculateInputDto entrada(int base, int build, int peak, int taper, String km) {
+        return new SeasonPlanRecalculateInputDto(fases(base, build, peak, taper), new BigDecimal(km));
     }
 
     private PlanoTreino temporada(SeasonPlanStatus status, int versao) {

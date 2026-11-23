@@ -118,7 +118,55 @@ public final class SeasonPlanner {
 
         int minimo = RacePreparationRule.minimoSemanas(distancia, distanciaKm);
         Map<TrainingPhase, Integer> semanas = ajustar(TEMPLATE.get(minimo), total, startCtl);
+        return gerar(distancia, distanciaKm, dataProva, hoje, startCtl, startVolumeKm, preparatorias, semanas,
+                total < minimo);
+    }
 
+    /**
+     * Como {@link #plan(DistanciaProva, BigDecimal, LocalDate, LocalDate, double, BigDecimal, List)}, com as
+     * semanas por fase escolhidas pelo treinador no recálculo do ajuste (add-season-plan-version-diff), em
+     * vez do template: Base, Construção, Pico e Polimento; a semana da prova é sempre uma.
+     *
+     * @param phaseWeeks semanas de BASE, BUILD, PEAK e TAPER, todas presentes e &ge; 0
+     * @throws IllegalArgumentException fase ausente ou negativa, nenhuma semana de subida, ou soma + 1
+     *                                  diferente de {@link #totalWeeks}
+     */
+    public static SeasonPlan planWithPhases(DistanciaProva distancia, @Nullable BigDecimal distanciaKm,
+                                            LocalDate dataProva, LocalDate hoje,
+                                            double startCtl, BigDecimal startVolumeKm,
+                                            List<RaceMilestone> preparatorias,
+                                            Map<TrainingPhase, Integer> phaseWeeks) {
+        int total = totalWeeks(dataProva, hoje);
+        if (startCtl <= 0 || startVolumeKm == null || startVolumeKm.signum() <= 0) {
+            throw new IllegalArgumentException("bases de partida precisam ser positivas");
+        }
+        Map<TrainingPhase, Integer> semanas = new EnumMap<>(TrainingPhase.class);
+        for (TrainingPhase fase : List.of(BASE, BUILD, PEAK, TAPER)) {
+            Integer n = phaseWeeks.get(fase);
+            if (n == null || n < 0) {
+                throw new IllegalArgumentException("semanas da fase " + fase + " ausentes ou negativas: " + n);
+            }
+            semanas.put(fase, n);
+        }
+        semanas.put(RACE_WEEK, 1);
+        int soma = semanas.values().stream().mapToInt(Integer::intValue).sum();
+        if (soma != total) {
+            throw new IllegalArgumentException("as fases somam " + soma + " semanas; o ciclo tem " + total);
+        }
+        if (semanas.get(BASE) + semanas.get(BUILD) + semanas.get(PEAK) == 0) {
+            throw new IllegalArgumentException("a temporada precisa de ao menos uma semana de Base, Construção ou Pico");
+        }
+        int minimo = RacePreparationRule.minimoSemanas(distancia, distanciaKm);
+        return gerar(distancia, distanciaKm, dataProva, hoje, startCtl, startVolumeKm, preparatorias, semanas,
+                total < minimo);
+    }
+
+    private static SeasonPlan gerar(DistanciaProva distancia, @Nullable BigDecimal distanciaKm,
+                                    LocalDate dataProva, LocalDate hoje,
+                                    double startCtl, BigDecimal startVolumeKm,
+                                    List<RaceMilestone> preparatorias,
+                                    Map<TrainingPhase, Integer> semanas, boolean curta) {
+        int total = semanas.values().stream().mapToInt(Integer::intValue).sum();
         double inicio = startCtl * 7;
         double pico = inicio * (1 + PEAK_GROWTH);
         int subida = semanas.get(BASE) + semanas.get(BUILD) + semanas.get(PEAK);
@@ -160,7 +208,7 @@ public final class SeasonPlanner {
                 weekStart = weekStart.plusWeeks(1);
             }
         }
-        return new SeasonPlan(List.copyOf(resultado), total < minimo);
+        return new SeasonPlan(List.copyOf(resultado), curta);
     }
 
     private static Map<TrainingPhase, Integer> ajustar(int[] template, int total, double startCtl) {

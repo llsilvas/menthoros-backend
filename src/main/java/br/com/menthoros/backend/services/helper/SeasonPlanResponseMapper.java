@@ -84,7 +84,8 @@ public class SeasonPlanResponseMapper {
                 validations,
                 p.getVersion(),
                 p.getBaseSeasonPlanId(),
-                openDraftId);
+                openDraftId,
+                p.getInitialVolumeKm());
     }
 
     private static SeasonPlanResponseDto.Week semana(SeasonWeek w, LocalDate hoje, @Nullable LocalDate dataProva) {
