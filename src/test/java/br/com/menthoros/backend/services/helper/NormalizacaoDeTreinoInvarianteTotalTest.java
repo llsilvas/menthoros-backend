@@ -8,6 +8,7 @@ import br.com.menthoros.backend.exception.LLMException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.math.BigDecimal;
@@ -16,6 +17,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.function.Predicate;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -103,8 +106,10 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
         List<String> violacoes = violacoes(c, saida);
         if (violacoes.isEmpty()) return;
 
-        String excecao = excecaoConhecida(c, saida);
-        if (excecao != null) abort("exceção conhecida — " + excecao + " | " + String.join("; ", violacoes));
+        Excecao excecao = excecaoDe(c);
+        if (excecao != null && toleradas(excecao, violacoes)) {
+            abort("exceção conhecida " + excecao.nome() + " — " + excecao.motivo() + " | " + String.join("; ", violacoes));
+        }
 
         assertThat(violacoes).as("invariantes violadas em %s → %s", c, resumo(saida)).isEmpty();
     }
@@ -115,7 +120,7 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
      * com o ritmo do cabeçalho divergente do da PRINCIPAL (CA2).
      */
     @ParameterizedTest(name = "ritmo do cabeçalho {0}")
-    @org.junit.jupiter.params.provider.CsvSource({"6:30-7:00/km,25:00", "8:00-8:00/km,16:00"})
+    @CsvSource({"6:30-7:00/km,25:00", "8:00-8:00/km,16:00"})
     void casoRelatadoViraBlocoUnicoComDuracaoAlinhada(String ritmoCabecalho, String duracaoLlm) {
         var meter = new SimpleMeterRegistry();
         Atleta atleta = Atleta.builder().id(ATLETA_ID).nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
@@ -201,20 +206,53 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
     // Exceções conhecidas — causas fora do escopo desta change (ver tasks.md, "Achados da matriz")
     // ======================================================================================
 
-    static String excecaoConhecida(Cenario c, TreinoPlanejadoLlmDto saida) {
-        if (c.ritmo() == Ritmo.NENHUM) {
-            return "PRINCIPAL sem pace derivável: o total da LLM fica e as etapas não encaixam "
-                    + "(follow-up: derivar o pace da zona do atleta, A9)";
-        }
-        if (c.tipo() == Tipo.TEMPO_RUN && c.estrutura() != Estrutura.COMPLETA) {
-            return "TEMPO_RUN com etapa sintetizada: bloco único seria limiar sem aquecimento "
-                    + "(follow-up: rejeitar e pedir a estrutura no turno de reparo, A6)";
-        }
-        if (c.estrutura() == Estrutura.COMPLETA) {
-            return "estrutura completa da LLM: adotarSomaDasEtapas troca o total prescrito pela soma e a duração "
-                    + "fica a da LLM quando o ritmo do cabeçalho diverge (follow-up: total = prescrito)";
-        }
-        return null;
+    static final String CARD_DIST = "card≠editor distância";
+    static final String CARD_DUR = "card≠editor duração";
+    static final String TOTAL = "total≠prescrito";
+
+    /**
+     * Causa catalogada: quais cenários ela cobre e quais violações tolera neles. Uma violação de outro tipo
+     * num cenário coberto continua sendo falha — a exceção não vira passe livre para regressão.
+     */
+    record Excecao(String nome, String motivo, Predicate<Cenario> cobre, Set<String> tolera) {}
+
+    static final List<Excecao> EXCECOES = List.of(
+            new Excecao("sem-pace", "PRINCIPAL sem pace derivável: o total da LLM fica e as etapas não encaixam "
+                    + "(follow-up: derivar o pace da zona do atleta, A9)",
+                    c -> c.ritmo() == Ritmo.NENHUM, Set.of(CARD_DIST)),
+            new Excecao("tempo-run-sintetizado", "TEMPO_RUN com etapa sintetizada: bloco único seria limiar sem "
+                    + "aquecimento (follow-up: rejeitar e pedir a estrutura no turno de reparo, A6)",
+                    c -> c.tipo() == Tipo.TEMPO_RUN && c.estrutura() != Estrutura.COMPLETA, Set.of(CARD_DIST, CARD_DUR)),
+            new Excecao("estrutura-completa", "estrutura completa da LLM: adotarSomaDasEtapas troca o total prescrito "
+                    + "pela soma e a duração fica a da LLM quando o ritmo do cabeçalho diverge (follow-up: total = prescrito)",
+                    c -> c.estrutura() == Estrutura.COMPLETA, Set.of(TOTAL, CARD_DUR)));
+
+    /**
+     * Inventário congelado: quantos cenários cada causa cobre com violação hoje. Mudar um número é decisão —
+     * cair é bom (atualize o número), subir é regressão ou causa nova a catalogar.
+     */
+    static final Map<String, Integer> INVENTARIO = Map.of(
+            "sem-pace", 504,
+            "tempo-run-sintetizado", 252,
+            "estrutura-completa", 1004);
+
+    static Excecao excecaoDe(Cenario c) {
+        return EXCECOES.stream().filter(e -> e.cobre().test(c)).findFirst().orElse(null);
+    }
+
+    static boolean toleradas(Excecao e, List<String> violacoes) {
+        return violacoes.stream().allMatch(v -> e.tolera().stream().anyMatch(v::startsWith));
+    }
+
+    @org.junit.jupiter.api.Test
+    @DisplayName("inventário das exceções conhecidas não muda sem decisão")
+    void inventarioDasExcecoes() {
+        Map<String, Integer> contagem = new java.util.TreeMap<>();
+        grade().forEach(c -> {
+            Excecao e = excecaoDe(c);
+            if (e != null && !violacoes(c, normalizar(c)).isEmpty()) contagem.merge(e.nome(), 1, Integer::sum);
+        });
+        assertThat(contagem).isEqualTo(new java.util.TreeMap<>(INVENTARIO));
     }
 
     // ======================================================================================

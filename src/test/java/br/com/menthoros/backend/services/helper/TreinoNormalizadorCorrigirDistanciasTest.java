@@ -188,6 +188,43 @@ class TreinoNormalizadorCorrigirDistanciasTest {
             assertThat(resultado.distanciaKm()).isEqualTo(5.0);
         }
 
+        @Test
+        @DisplayName("sobra ≤ 0 com outra etapa além de aquec/desaq → vazio: o bloco não apaga outro estímulo")
+        void sobraNegativaComOutraEtapaFicaVazio() {
+            var base = regenerativoSintetizado(1.43, 0.74, "6:30-7:00/km", "25:00");
+            var etapas = new java.util.ArrayList<>(base.etapas());
+            etapas.add(new EtapaTreinoLlmDto(4, "RECUPERACAO", "trote", 3, 0.4, null, 1, null));
+
+            assertThat(normalizador.encaixarPrincipalNoTotal(base.comEtapas(etapas))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("sobra ≤ 0 com PRINCIPAL repetida → vazio: o bloco não multiplica o total")
+        void sobraNegativaComPrincipalRepetidaFicaVazio() {
+            var base = regenerativoSintetizado(1.43, 0.74, "6:30-7:00/km", "25:00");
+            var etapas = base.etapas().stream()
+                    .map(e -> "PRINCIPAL".equals(e.tipoEtapa())
+                            ? new EtapaTreinoLlmDto(e.ordem(), e.tipoEtapa(), e.descricaoEtapa(), e.duracaoMin(), e.distanciaKm(), null, 2, e.ritmoAlvo())
+                            : e)
+                    .toList();
+
+            assertThat(normalizador.encaixarPrincipalNoTotal(base.comEtapas(etapas))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("encaixe com etapa sem duração não grava a duração do treino (a soma seria piso)")
+        void encaixeComEtapaSemDuracaoMantemDuracaoDoTreino() {
+            var treino = new TreinoPlanejadoLlmDto("QUARTA", "REGENERATIVO", null, null, null, null, null,
+                    "34:00", 5.0, "6:36-6:54/km", List.of(
+                    new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve em Z1-Z2 (gerado pelo sistema)", null, 1.67, null, 1, null),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "regenerativo", 34, 5.0, null, 1, null),
+                    new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve em Z1 (gerado pelo sistema)", 5, 0.83, null, 1, null)));
+
+            var resultado = normalizador.encaixarPrincipalNoTotal(treino).orElseThrow();
+
+            assertThat(resultado.duracaoMin()).isEqualTo("34:00");
+        }
+
         private TreinoPlanejadoLlmDto regenerativoSintetizado(double aquecKm, double desaqKm, String ritmoPrincipal, String duracao) {
             return new TreinoPlanejadoLlmDto("QUARTA", "REGENERATIVO", null, null, null, null, null,
                     duracao, 2.0, null, List.of(
