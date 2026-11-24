@@ -117,6 +117,83 @@ class TreinoNormalizadorCorrigirDistanciasTest {
                 assertThat(e.ordem()).isEqualTo(1);
             });
             assertThat(resultado.distanciaKm()).isEqualTo(2.0);
+            assertThat(resultado.duracaoMin()).isEqualTo("15:00");
+        }
+
+        @Test
+        @DisplayName("aquec + desaq sintetizados já passam do total → bloco único com o total, duração do treino pelo pace (CA1)")
+        void sobraNegativaViraBlocoUnico() {
+            // caso relatado: 2 km / 25 min; aquec 1,43 + desaq 0,74 = 2,17 km > 2,0 km
+            var resultado = normalizador.encaixarPrincipalNoTotal(regenerativoSintetizado(1.43, 0.74, "6:30-7:00/km", "25:00"))
+                    .orElseThrow();
+
+            assertThat(resultado.etapas()).singleElement().satisfies(e -> {
+                assertThat(e.tipoEtapa()).isEqualTo("PRINCIPAL");
+                assertThat(e.distanciaKm()).isEqualTo(2.0);
+                assertThat(e.duracaoMin()).isEqualTo(14); // 2,0 × 6,75 = 13,5
+                assertThat(e.ordem()).isEqualTo(1);
+            });
+            assertThat(resultado.distanciaKm()).isEqualTo(2.0);
+            assertThat(resultado.duracaoMin()).isEqualTo("14:00");
+        }
+
+        @Test
+        @DisplayName("sobra exatamente zero → bloco único (borda do ramo novo)")
+        void sobraZeroViraBlocoUnico() {
+            var resultado = normalizador.encaixarPrincipalNoTotal(regenerativoSintetizado(1.26, 0.74, "6:30-7:00/km", "25:00"))
+                    .orElseThrow();
+
+            assertThat(resultado.etapas()).singleElement().satisfies(e -> assertThat(e.distanciaKm()).isEqualTo(2.0));
+        }
+
+        @Test
+        @DisplayName("ritmo só no cabeçalho do treino também serve de pace para o bloco único")
+        void sobraNegativaUsaRitmoDoTreino() {
+            var treino = regenerativoSintetizado(1.43, 0.74, null, "25:00").comRitmo("6:30-7:00/km");
+
+            var resultado = normalizador.encaixarPrincipalNoTotal(treino).orElseThrow();
+
+            assertThat(resultado.etapas()).singleElement().satisfies(e -> assertThat(e.duracaoMin()).isEqualTo(14));
+        }
+
+        @Test
+        @DisplayName("sobra ≤ 0 sem pace derivável → vazio, comportamento atual (CA3)")
+        void sobraNegativaSemPaceFicaVazio() {
+            assertThat(normalizador.encaixarPrincipalNoTotal(regenerativoSintetizado(1.43, 0.74, null, "25:00"))).isEmpty();
+        }
+
+        @Test
+        @DisplayName("TEMPO_RUN com sobra ≤ 0 → vazio, não vira limiar sem aquecimento (CA7)")
+        void tempoRunSobraNegativaFicaVazio() {
+            var base = regenerativoSintetizado(1.43, 0.74, "4:50-5:10/km", "10:00");
+            var tempoRun = new TreinoPlanejadoLlmDto(base.diaSemana(), "TEMPO_RUN", null, null, null, null, null,
+                    base.duracaoMin(), base.distanciaKm(), null, base.etapas());
+
+            assertThat(normalizador.encaixarPrincipalNoTotal(tempoRun)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("encaixe com sobra positiva também grava a duração do treino = soma das etapas")
+        void encaixeNormalAlinhaDuracaoDoTreino() {
+            var treino = new TreinoPlanejadoLlmDto("QUARTA", "REGENERATIVO", null, null, null, null, null,
+                    "34:00", 5.0, "6:36-6:54/km", List.of(
+                    new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve em Z1-Z2 (gerado pelo sistema)", 10, 1.67, null, 1, null),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "regenerativo", 34, 5.0, null, 1, null),
+                    new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve em Z1 (gerado pelo sistema)", 5, 0.83, null, 1, null)));
+
+            var resultado = normalizador.encaixarPrincipalNoTotal(treino).orElseThrow();
+
+            int soma = resultado.etapas().stream().mapToInt(EtapaTreinoLlmDto::duracaoMin).sum();
+            assertThat(resultado.duracaoMin()).isEqualTo(String.format("%02d:00", soma));
+            assertThat(resultado.distanciaKm()).isEqualTo(5.0);
+        }
+
+        private TreinoPlanejadoLlmDto regenerativoSintetizado(double aquecKm, double desaqKm, String ritmoPrincipal, String duracao) {
+            return new TreinoPlanejadoLlmDto("QUARTA", "REGENERATIVO", null, null, null, null, null,
+                    duracao, 2.0, null, List.of(
+                    new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve em Z1-Z2 (gerado pelo sistema)", 10, aquecKm, null, 1, null),
+                    new EtapaTreinoLlmDto(2, "PRINCIPAL", "regenerativo", 25, 2.0, null, 1, ritmoPrincipal),
+                    new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve em Z1 (gerado pelo sistema)", 5, desaqKm, null, 1, null)));
         }
     }
 

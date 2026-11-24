@@ -65,6 +65,9 @@ public class TreinoNormalizador {
     private static final Set<String> TIPOS_CONTINUOS =
             Set.of("REGENERATIVO", "FACIL", "CONTINUO", "LONGO", "TEMPO_RUN");
 
+    /** Ritmo leve: sem sobra para a PRINCIPAL, o bloco único não perde aquecimento de um estímulo forte. */
+    private static final Set<String> TIPOS_BLOCO_UNICO_SEM_SOBRA = Set.of("REGENERATIVO", "CONTINUO", "LONGO");
+
     private record FartlekParams(int n, int duracaoAceleracao, int duracaoRecuperacao,
                                   String zonaAceleracao, String zonaRecuperacao) {}
 
@@ -341,7 +344,13 @@ public class TreinoNormalizador {
      * Encaixa a única PRINCIPAL no total prescrito: distância = total − demais etapas, duração pelo pace
      * (fix-total-treino-soma-etapas, decisão do coach: o sistema não infla o volume, e etapas e total
      * contam a mesma história). Vazio quando não dá para encaixar — mais de uma PRINCIPAL, etapa sem
-     * distância, ou sobra ≤ 0 — e o chamador mantém o comportamento anterior.
+     * distância, ou sobra ≤ 0 sem bloco único possível — e o chamador mantém o comportamento anterior.
+     *
+     * <p>Bloco único (só a PRINCIPAL, com o total e a duração pelo pace) quando o total não comporta
+     * aquecimento + desaquecimento: a PRINCIPAL encaixada ficaria mais curta que o aquecimento
+     * (fix-etapas-sintetizadas-sessao-curta) ou não sobraria distância para ela
+     * (fix-etapas-sintetizadas-encaixe-total — só nos tipos de ritmo leve; em TEMPO_RUN seria limiar sem
+     * aquecimento). A distância prescrita é a verdade (decisão de 2026-11-24).</p>
      */
     public java.util.Optional<TreinoPlanejadoLlmDto> encaixarPrincipalNoTotal(TreinoPlanejadoLlmDto treino) {
         if (treino.etapas() == null || treino.distanciaKm() == null || treino.distanciaKm() <= 0) {
@@ -353,9 +362,14 @@ public class TreinoNormalizador {
             return java.util.Optional.empty();
         }
         double sobra = arredondar2(treino.distanciaKm() - somarDistancias(demais));
-        if (sobra <= 0) return java.util.Optional.empty();
         EtapaTreinoLlmDto principal = principais.get(0);
         var pace = paceDerivavel(principal, treino.ritmoAlvo());
+        if (sobra <= 0) {
+            if (pace.isEmpty() || !TIPOS_BLOCO_UNICO_SEM_SOBRA.contains(treino.tipoTreino())) return java.util.Optional.empty();
+            log.info("RECONCILIAÇÃO [{}]: aquecimento + desaquecimento ({} km) não cabem no total de {} km → bloco único",
+                    treino.tipoTreino(), arredondar2(somarDistancias(demais)), treino.distanciaKm());
+            return java.util.Optional.of(blocoUnico(treino, principal, pace.getAsDouble()));
+        }
         EtapaTreinoLlmDto encaixada = principal.comDistancia(sobra);
         if (pace.isPresent()) {
             encaixada = encaixada.comDuracao(Math.max(1, (int) Math.round(sobra * pace.getAsDouble())));
@@ -364,18 +378,32 @@ public class TreinoNormalizador {
         Integer aquecMin = demais.stream().filter(e -> "AQUECIMENTO".equals(normalizarTipoEtapa(e.tipoEtapa())))
                 .map(EtapaTreinoLlmDto::duracaoMin).filter(java.util.Objects::nonNull).findFirst().orElse(null);
         if (pace.isPresent() && aquecMin != null && encaixada.duracaoMin() != null && encaixada.duracaoMin() < aquecMin) {
-            double total = arredondar2(treino.distanciaKm());
-            EtapaTreinoLlmDto bloco = principal.comOrdem(1).comDistancia(total)
-                    .comDuracao(Math.max(1, (int) Math.round(total * pace.getAsDouble())));
             log.info("RECONCILIAÇÃO [{}]: PRINCIPAL encaixada ({} min) menor que o aquecimento ({} min) → bloco único de {} km",
-                    treino.tipoTreino(), encaixada.duracaoMin(), aquecMin, total);
-            return java.util.Optional.of(treino.comEtapas(List.of(bloco)).comDistancia(total));
+                    treino.tipoTreino(), encaixada.duracaoMin(), aquecMin, arredondar2(treino.distanciaKm()));
+            return java.util.Optional.of(blocoUnico(treino, principal, pace.getAsDouble()));
         }
         EtapaTreinoLlmDto finalEncaixada = encaixada;
         List<EtapaTreinoLlmDto> etapas = treino.etapas().stream().map(e -> e == principal ? finalEncaixada : e).toList();
         log.info("RECONCILIAÇÃO [{}]: etapa sintetizada → PRINCIPAL encaixada no total de {} km ({} km)",
                 treino.tipoTreino(), treino.distanciaKm(), sobra);
-        return java.util.Optional.of(treino.comEtapas(etapas).comDistancia(arredondar2(somarDistancias(etapas))));
+        TreinoPlanejadoLlmDto encaixado = treino.comEtapas(etapas).comDistancia(arredondar2(somarDistancias(etapas)));
+        // mesmo motivo do bloco único: sem isso o desempate de recalcular-duracao, pelo ritmo do cabeçalho,
+        // mantém a duração da LLM e o card mostra outro tempo que o editor
+        return java.util.Optional.of(pace.isPresent()
+                ? encaixado.comDuracao(String.format("%02d:00", somarDuracoesMin(etapas)))
+                : encaixado);
+    }
+
+    /**
+     * Só a PRINCIPAL, com o total prescrito e a duração pelo pace. A duração do treino vai junto: o
+     * desempate de {@code recalcular-duracao} usa o ritmo do cabeçalho, que pode divergir do da etapa, e
+     * manteria a duração da LLM com card e editor contando histórias diferentes.
+     */
+    private TreinoPlanejadoLlmDto blocoUnico(TreinoPlanejadoLlmDto treino, EtapaTreinoLlmDto principal, double pace) {
+        double total = arredondar2(treino.distanciaKm());
+        int minutos = Math.max(1, (int) Math.round(total * pace));
+        EtapaTreinoLlmDto bloco = principal.comOrdem(1).comDistancia(total).comDuracao(minutos);
+        return treino.comEtapas(List.of(bloco)).comDistancia(total).comDuracao(String.format("%02d:00", minutos));
     }
 
     /**
