@@ -79,6 +79,24 @@ class PlanoSemanalRepositoryVigenteRealizadoIT extends AbstractIntegrationTest {
                 .isEqualTo(1);
     }
 
+    @Test
+    @DisplayName("semana com plano rejeitado e plano aprovado: vigente é o aprovado")
+    void planoVigentePreteriRejeitadoDaMesmaSemana() {
+        Atleta atleta = seedAtleta();
+        // O rejeitado é salvo depois para que a ordem física não faça o teste passar por acaso.
+        PlanoSemanal aprovado = seedPlano(atleta, PlanoReviewStatus.APROVADO);
+        seedPlano(atleta, PlanoReviewStatus.REJEITADO);
+        entityManager.flush();
+        entityManager.clear();
+
+        PlanoSemanal vigente = planoSemanalRepository
+                .findMostRecentRelevantPlano(atleta.getId(), atleta.getAssessoria().getId())
+                .orElseThrow();
+
+        assertThat(vigente.getId()).isEqualTo(aprovado.getId());
+        assertThat(vigente.getReviewStatus()).isEqualTo(PlanoReviewStatus.APROVADO);
+    }
+
     private Atleta seedAtleta() {
         Assessoria assessoria = new Assessoria();
         assessoria.setNome("Assessoria Vigente Realizado");
@@ -97,6 +115,10 @@ class PlanoSemanalRepositoryVigenteRealizadoIT extends AbstractIntegrationTest {
     }
 
     private PlanoSemanal seedPlano(Atleta atleta) {
+        return seedPlano(atleta, PlanoReviewStatus.APROVADO);
+    }
+
+    private PlanoSemanal seedPlano(Atleta atleta, PlanoReviewStatus reviewStatus) {
         PlanoMetaDados meta = new PlanoMetaDados();
         meta.setAtleta(atleta);
         meta.setAssessoria(atleta.getAssessoria());
@@ -111,7 +133,7 @@ class PlanoSemanalRepositoryVigenteRealizadoIT extends AbstractIntegrationTest {
         plano.setSemanaFim(LocalDate.now().plusDays(4));
         plano.setVolumePlanejadoKm(BigDecimal.valueOf(30));
         plano.setStatus(PlanoStatus.EM_ANDAMENTO);
-        plano.setReviewStatus(PlanoReviewStatus.APROVADO);
+        plano.setReviewStatus(reviewStatus);
         plano.setObjetivoSemanal("Semana de teste");
         return planoSemanalRepository.save(plano);
     }
