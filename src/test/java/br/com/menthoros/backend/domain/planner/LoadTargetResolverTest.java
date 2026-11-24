@@ -286,6 +286,19 @@ class LoadTargetResolverTest {
         }
 
         @Test
+        @DisplayName("taper/semana de prova: não passa da carga atual (ctl × 7), como no legado")
+        void contencaoNaSemanaDeProva() {
+            WeeklyLoadTarget taper = resolver.resolveSeason(TrainingPhase.TAPER, manter, historicoComCtl(40.0, 0),
+                    null, null, 300.0);
+            WeeklyLoadTarget build = resolver.resolveSeason(TrainingPhase.BUILD, manter, historicoComCtl(40.0, 0),
+                    null, null, 300.0);
+
+            assertThat(taper.targetTss()).isCloseTo(280.0, offset(0.01));
+            assertThat(taper.seasonCutReason()).isEqualTo(SeasonCutReason.CONTENCAO_PROVA);
+            assertThat(build.targetTss()).isEqualTo(300.0);
+        }
+
+        @Test
         @DisplayName("progressão pedindo aumento fica no valor da temporada")
         void progressaoNaoPassaDaTemporada() {
             DecisaoProgressao aumentar = new DecisaoProgressao(EstadoProgressao.PROGREDIR, 0.10, 5, true, "progredir");

@@ -350,6 +350,18 @@ class PlanoReviewServiceImplTest {
         }
 
         @Test
+        @DisplayName("reaprovação (plano reaberto) não registra o delta de novo")
+        void reaprovacaoNaoContaDuasVezes() {
+            PlanoSemanal plano = planoDaTemporada(400.0, 360);
+
+            service.aprovarTransicao(plano, tenantId, OrigemAprovacao.COACH);
+            plano.setReviewStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            service.aprovarTransicao(plano, tenantId, OrigemAprovacao.COACH);
+
+            assertThat(meterRegistry.find("season-plan.approved.deviation.abs.pct").summary().count()).isEqualTo(1);
+        }
+
+        @Test
         @DisplayName("sem semana da temporada, ou alvo nulo/zero, não registra o delta")
         void semSemanaNaoRegistra() {
             PlanoSemanal semSemana = planoAguardando();

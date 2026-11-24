@@ -169,7 +169,23 @@ class PeriodizacaoPromptFormatterTest {
 
             String bloco = formatter.formatarPosicaoNoCiclo(semana, 300, Optional.empty());
 
-            assertThat(bloco).contains("- **Sessões-chave:** 5x1km no limiar longão progressivo\n");
+            assertThat(bloco).contains("- **Sessões-chave (texto do treinador):** \"5x1km no limiar longão progressivo\"\n");
+        }
+
+        @Test
+        @DisplayName("sessões-chave longas são truncadas em 500 caracteres e aspas do treinador não fecham o bloco")
+        void sessoesChaveTruncadasEDelimitadas() {
+            String longo = "a".repeat(600);
+            SeasonWeekSnapshot semana = new SeasonWeekSnapshot(UUID.randomUUID(), 3, 12, TrainingPhase.BUILD, 400.0,
+                    null, null, false, Optional.empty(), longo);
+            SeasonWeekSnapshot comAspas = new SeasonWeekSnapshot(UUID.randomUUID(), 3, 12, TrainingPhase.BUILD, 400.0,
+                    null, null, false, Optional.empty(), "tiro \"forte\"");
+
+            assertThat(formatter.formatarPosicaoNoCiclo(semana, 300, Optional.empty()))
+                    .contains("\"" + "a".repeat(500) + "…\"\n")
+                    .doesNotContain("a".repeat(501));
+            assertThat(formatter.formatarPosicaoNoCiclo(comAspas, 300, Optional.empty()))
+                    .contains("\"tiro 'forte'\"\n");
         }
 
         @Test

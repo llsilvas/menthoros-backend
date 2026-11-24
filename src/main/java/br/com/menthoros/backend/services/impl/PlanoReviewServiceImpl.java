@@ -39,6 +39,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Slf4j
@@ -107,6 +108,8 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         if (tenantId == null) throw new IllegalArgumentException("tenantId não pode ser nulo");
         if (origem == null) throw new IllegalArgumentException("origem não pode ser nula");
 
+        // origemAprovacao nunca é limpa: preenchida aqui significa reaprovação (plano reaberto).
+        boolean primeiraAprovacao = plano.getOrigemAprovacao() == null;
         plano.setReviewStatus(PlanoReviewStatus.APROVADO);
         plano.setReviewComment(null);
         plano.setOrigemAprovacao(origem);
@@ -117,7 +120,9 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         // Desfecho da revisão consumida (D9) — depois de inicializarAssociacoes, que carrega os
         // treinos de onde vêm os sinais editadoPeloCoach/adicionadoPeloCoach.
         registrarDesfecho(salvo, outcomeResolver.naAprovacao(salvo, origem));
-        registrarDeltaDaTemporada(salvo, tenantId, origem);
+        if (primeiraAprovacao) {
+            registrarDeltaDaTemporada(salvo, tenantId, origem);
+        }
         eventPublisher.publishEvent(new PlanoAprovadoEvent(salvo.getId(), salvo.getAtleta().getId(), tenantId));
 
         return salvo;
@@ -130,7 +135,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
      * Micrometer descarta negativos); o sinal vai na tag {@code direcao} e no log. Independe da flag
      * de enforcement, para formar o baseline antes de ligá-la.
      *
-     * Idempotent: NO — registra uma amostra por chamada. Side Effects: métrica + log.
+     * Idempotent: NO — uma amostra por plano, só na primeira aprovação (reaprovação não conta de novo). Side Effects: métrica + log.
      * Tenant-aware: YES — semana buscada por id e tenant.
      */
     private void registrarDeltaDaTemporada(PlanoSemanal plano, UUID tenantId, OrigemAprovacao origem) {
@@ -145,7 +150,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
                             .mapToInt(t -> t.getTssPlanejado() == null ? 0 : t.getTssPlanejado())
                             .sum();
                     double deltaPct = (planejado - alvo) / alvo * 100;
-                    String direcao = deltaPct > 0 ? "ACIMA" : deltaPct < 0 ? "ABAIXO" : "NO_ALVO";
+                    String direcao = direcao(deltaPct);
                     DistributionSummary.builder("season-plan.approved.deviation.abs.pct")
                             .tag("origem", origem.name())
                             .tag("direcao", direcao)
@@ -153,8 +158,15 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
                             .record(Math.abs(deltaPct));
                     log.info("season-plan.week-approved planoId={} seasonWeekId={} origem={} deltaPct={} targetDeviationPct={}",
                             plano.getId(), plano.getSeasonWeekId(), origem,
-                            String.format(java.util.Locale.ROOT, "%.1f", deltaPct), plano.getTargetDeviationPct());
+                            String.format(Locale.ROOT, "%.1f", deltaPct), plano.getTargetDeviationPct());
                 });
+    }
+
+    private static String direcao(double deltaPct) {
+        if (deltaPct > 0) {
+            return "ACIMA";
+        }
+        return deltaPct < 0 ? "ABAIXO" : "NO_ALVO";
     }
 
     /**

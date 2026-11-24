@@ -2,6 +2,7 @@ package br.com.menthoros.backend.domain.compliance;
 
 import br.com.menthoros.backend.domain.planner.AthleteConstraints;
 import br.com.menthoros.backend.domain.planner.ProvaSnapshot;
+import br.com.menthoros.backend.domain.planner.SeasonCutReason;
 import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
@@ -33,6 +34,9 @@ public class SkeletonComplianceChecker {
     private static final long JANELA_PESADA_MIN_DIAS = 2;
     private static final long JANELA_PESADA_MAX_DIAS = 3;
     private static final BigDecimal CEM = BigDecimal.valueOf(100);
+    private static final java.util.Set<SeasonCutReason> CORTES_QUE_ENCURTAM_O_LONGAO = java.util.EnumSet.of(
+            SeasonCutReason.REDUCAO_FASE, SeasonCutReason.PROGRESSAO_REDUZIR, SeasonCutReason.COLD_START,
+            SeasonCutReason.CONTENCAO_PROVA);
     private static final List<String> TIPOS_INTENSOS = List.of("INTERVALADO", "TEMPO_RUN", "INTENSO");
 
     /**
@@ -121,10 +125,12 @@ public class SkeletonComplianceChecker {
 
     /**
      * Longao previsto pela temporada, so no caminho novo do alvo ({@code seasonTargetTss != null}) e
-     * com {@code longRunKm > 0}.
+     * com {@code longRunKm > 0}. Semana cortada por seguranca (lesao/pos-prova, REDUZIR, cold-start,
+     * contencao de prova) nao cobra o longao cheio nem suspende o teto de 40% do alvo cortado.
      */
     private Optional<BigDecimal> longaoDaTemporada(WeekPlanSkeleton skeleton, ComplianceContext context) {
-        if (skeleton.loadTarget().seasonTargetTss() == null) {
+        if (skeleton.loadTarget().seasonTargetTss() == null
+                || CORTES_QUE_ENCURTAM_O_LONGAO.contains(skeleton.loadTarget().seasonCutReason())) {
             return Optional.empty();
         }
         return context.seasonWeek()

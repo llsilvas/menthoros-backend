@@ -12,5 +12,7 @@ public enum SeasonCutReason {
     /** Teto de rampa de CTL ({@code 7 × (ctl + 8)}). */
     TETO_RAMPA,
     /** Regime cold-start da calibração (ADR-0012). */
-    COLD_START
+    COLD_START,
+    /** Taper ou semana de prova: não passa da carga atual ({@code ctl × 7}), como no legado. */
+    CONTENCAO_PROVA
 }

@@ -5,6 +5,7 @@ import br.com.menthoros.backend.domain.planner.ConstraintValidationResult;
 import br.com.menthoros.backend.domain.planner.InjuryRiskAssessment;
 import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
 import br.com.menthoros.backend.domain.planner.ProvaSnapshot;
+import br.com.menthoros.backend.domain.planner.SeasonCutReason;
 import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
@@ -359,6 +360,27 @@ class SkeletonComplianceCheckerTest {
         }
 
         @Test
+        @DisplayName("semana cortada por segurança: não cobra o longão cheio e o teto de 40% do alvo cortado vale")
+        void semanaCortadaPorSeguranca() {
+            for (SeasonCutReason corte : List.of(SeasonCutReason.REDUCAO_FASE, SeasonCutReason.PROGRESSAO_REDUZIR,
+                    SeasonCutReason.COLD_START, SeasonCutReason.CONTENCAO_PROVA)) {
+                WeekPlanSkeleton cortado = skeletonDaTemporada(400.0, corte);
+                assertThat(chaves(cortado, contextoComLongao("20", 15), longo(130, "12")))
+                        .as(corte.name()).doesNotContain(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+                assertThat(chaves(cortado, contextoComLongao("20", 15), longo(200, "20")))
+                        .as(corte.name()).contains(PlannerViolationKey.LONGO_ACIMA_TETO);
+            }
+        }
+
+        @Test
+        @DisplayName("corte pela rampa mantém a regra do longão")
+        void corteDeRampaMantemARegra() {
+            assertThat(chaves(skeletonDaTemporada(400.0, SeasonCutReason.TETO_RAMPA), contextoComLongao("20", 15),
+                    longo(130, "12")))
+                    .contains(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+        }
+
+        @Test
         @DisplayName("semana sem longão previsto não avalia")
         void semLongaoPrevisto() {
             assertThat(chaves(caminhoNovo, contexto(Optional.empty()), sessao(1, "FACIL", 60, "Z2")))
@@ -385,9 +407,13 @@ class SkeletonComplianceCheckerTest {
         }
 
         private WeekPlanSkeleton skeletonDaTemporada(double seasonTargetTss) {
+            return skeletonDaTemporada(seasonTargetTss, null);
+        }
+
+        private WeekPlanSkeleton skeletonDaTemporada(double seasonTargetTss, SeasonCutReason corte) {
             return new WeekPlanSkeleton(
                     TrainingPhase.BUILD,
-                    new WeeklyLoadTarget(400, 360, 440, "teste", seasonTargetTss, null),
+                    new WeeklyLoadTarget(400, 360, 440, "teste", seasonTargetTss, corte),
                     List.of(),
                     new InjuryRiskAssessment(InjuryRiskLevel.SAFE, false, null),
                     new ConstraintValidationResult(true, List.of()),

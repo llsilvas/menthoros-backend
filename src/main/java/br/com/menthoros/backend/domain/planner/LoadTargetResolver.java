@@ -96,7 +96,8 @@ public class LoadTargetResolver {
      * Caminho da temporada (add-season-plan-load-enforcement, ADR-0014): o {@code targetTss} da semana é a
      * base e o teto; a progressão reativa e o step-back não se aplicam (a temporada já tem rampa e
      * descargas). Precedência segurança > temporada > progressão, nesta ordem:
-     * redução por fase (lesão/pós-prova) → {@code REDUZIR} → teto de rampa → cold-start → teto da temporada.
+     * redução por fase (lesão/pós-prova) → {@code REDUZIR} → teto de rampa (e contenção em taper/semana de prova)
+     * → cold-start → teto da temporada.
      * Em cold-start, {@code REDUZIR} e a rampa não se aplicam (CTL de PMC não confiável na calibração).
      * Banda sobre o alvo resolvido: ±10%, ou ±25% em cold-start.
      */
@@ -119,6 +120,11 @@ public class LoadTargetResolver {
                 corte.aplicar(ctlAtual * 7 * (1 + ajuste), SeasonCutReason.PROGRESSAO_REDUZIR);
             }
             corte.aplicar(7 * (ctlAtual + MAX_CTL_RAMP_PER_WEEK), SeasonCutReason.TETO_RAMPA);
+            if (isFaseDeContencao(phase)) {
+                // Mesma contenção do legado: semana de prova/taper não passa da carga atual, mesmo que o
+                // targetTss da temporada tenha ficado acima dela.
+                corte.aplicar(ctlAtual * 7, SeasonCutReason.CONTENCAO_PROVA);
+            }
         }
 
         double alvo = corte.alvo;
