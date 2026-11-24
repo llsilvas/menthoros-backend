@@ -358,6 +358,54 @@ class PlannerEngineTest {
     }
 
     @Nested
+    @DisplayName("planWeek — carga pela temporada (add-season-plan-load-enforcement)")
+    class CargaPelaTemporada {
+
+        // Maratona a 10 dias: dentro da janela de taper; a temporada diz TAPER com 300 TSS.
+        private final ProvaSnapshot maratona = new ProvaSnapshot(referencia.plusDays(10), 42.2, true, false);
+
+        @Test
+        @DisplayName("taper da temporada: o alvo é o targetTss, sem segunda redução da TaperStrategy")
+        void taperSemDuplaReducao() {
+            WeekPlanSkeleton skeleton = engine.planWeek(snapshotCarga(taper(300.0), true));
+
+            assertThat(skeleton.loadTarget().targetTss()).isEqualTo(300.0);
+            assertThat(skeleton.loadTarget().seasonTargetTss()).isEqualTo(300.0);
+        }
+
+        @Test
+        @DisplayName("flag desligada: alvo legado (CTL + taper), sem marca da temporada")
+        void flagDesligadaLegado() {
+            WeekPlanSkeleton comTemporada = engine.planWeek(snapshotCarga(taper(300.0), false));
+            WeekPlanSkeleton semTemporada = engine.planWeek(snapshotCarga(Optional.empty(), false));
+
+            assertThat(comTemporada.loadTarget().seasonTargetTss()).isNull();
+            assertThat(comTemporada.loadTarget()).isEqualTo(semTemporada.loadTarget());
+        }
+
+        @Test
+        @DisplayName("flag ligada sem temporada, ou com targetTss nulo: caminho legado")
+        void semTemporadaElegivelLegado() {
+            WeekPlanSkeleton legado = engine.planWeek(snapshotCarga(Optional.empty(), false));
+
+            assertThat(engine.planWeek(snapshotCarga(Optional.empty(), true)).loadTarget()).isEqualTo(legado.loadTarget());
+            assertThat(engine.planWeek(snapshotCarga(taper(null), true)).loadTarget()).isEqualTo(legado.loadTarget());
+        }
+
+        private Optional<SeasonWeekSnapshot> taper(Double targetTss) {
+            return Optional.of(new SeasonWeekSnapshot(UUID.randomUUID(), 15, 16, TrainingPhase.TAPER, targetTss,
+                    null, null, false, Optional.empty()));
+        }
+
+        private PlannerInputSnapshot snapshotCarga(Optional<SeasonWeekSnapshot> temporada, boolean enforced) {
+            PlannerInputSnapshot base = snapshotBase(Optional.empty(), false, null, null, 0.0, 50.0, 0);
+            return new PlannerInputSnapshot(base.athlete(), base.decisaoProgressao(), base.progressaoHistorico(),
+                    List.of(maratona), base.historico(), base.onboardingContext(), base.referenceDate(),
+                    base.injuryRecentWindowDays(), temporada, enforced);
+        }
+    }
+
+    @Nested
     @DisplayName("PeriodizationPlanner.provaRecemRealizada — janela de pós-prova")
     class ProvaRecemRealizada {
 
