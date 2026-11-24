@@ -7,6 +7,7 @@ import br.com.menthoros.backend.domain.planner.InjuryRiskEvaluator;
 import br.com.menthoros.backend.domain.planner.LoadTargetResolver;
 import br.com.menthoros.backend.domain.planner.PeriodizationPlanner;
 import br.com.menthoros.backend.domain.planner.PlannerEngine;
+import br.com.menthoros.backend.domain.planner.PlannerInputSnapshot;
 import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.TaperStrategy;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
@@ -383,6 +384,35 @@ class PlannerShadowServiceTest {
                     .volumeAlvoKm(21.1)
                     .treinosPlanejados(List.of(prova))
                     .build();
+        }
+    }
+
+    @Nested
+    @DisplayName("mapToSnapshot — flag season-plan.enforcement.enabled")
+    class FlagDeEnforcement {
+
+        @Test
+        @DisplayName("flag ligada chega ao snapshot do motor")
+        void flagLigada() {
+            PlannerShadowService comEnforcement = new PlannerShadowService(
+                    new PlannerEngine(new PeriodizationPlanner(), new LoadTargetResolver(), new TaperStrategy(),
+                            new InjuryRiskEvaluator(), new InjuryPolicyResolver(), new ConstraintValidator()),
+                    new SkeletonComplianceChecker(), periodizacaoPromptFormatter, meterRegistry, new ObjectMapper(),
+                    true, 30, true, 15);
+
+            PlannerInputSnapshot snapshot = comEnforcement.mapToSnapshot(atletaBase(), dadosPlano(atletaBase()),
+                    decisaoNeutra(), historico(0.0, 45.0, 0), semanaInicio, Optional.empty(), Optional.empty());
+
+            assertThat(snapshot.seasonLoadEnforced()).isTrue();
+        }
+
+        @Test
+        @DisplayName("construtor sem a flag mantém o enforcement desligado")
+        void flagDesligadaPorPadrao() {
+            PlannerInputSnapshot snapshot = shadowHabilitado.mapToSnapshot(atletaBase(), dadosPlano(atletaBase()),
+                    decisaoNeutra(), historico(0.0, 45.0, 0), semanaInicio, Optional.empty(), Optional.empty());
+
+            assertThat(snapshot.seasonLoadEnforced()).isFalse();
         }
     }
 

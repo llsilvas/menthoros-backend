@@ -161,6 +161,24 @@ class PeriodizacaoPromptFormatterTest {
             assertThat(bloco).contains("LESÃO ATIVA").contains("prevalece sobre a fase da temporada");
         }
 
+        @Test
+        @DisplayName("sessões-chave do treinador entram numa linha própria, em uma linha só")
+        void sessoesChave() {
+            SeasonWeekSnapshot semana = new SeasonWeekSnapshot(UUID.randomUUID(), 3, 12, TrainingPhase.BUILD, 400.0,
+                    null, null, false, Optional.empty(), "5x1km no limiar\nlongão progressivo");
+
+            String bloco = formatter.formatarPosicaoNoCiclo(semana, 300, Optional.empty());
+
+            assertThat(bloco).contains("- **Sessões-chave:** 5x1km no limiar longão progressivo\n");
+        }
+
+        @Test
+        @DisplayName("sem sessões-chave a linha não aparece")
+        void semSessoesChave() {
+            assertThat(formatter.formatarPosicaoNoCiclo(semanaBuild(), 300, Optional.empty()))
+                    .doesNotContain("Sessões-chave");
+        }
+
         private SeasonWeekSnapshot semanaBuild() {
             return new SeasonWeekSnapshot(UUID.randomUUID(), 3, 12, TrainingPhase.BUILD, 400.0, null, null, false,
                     Optional.empty());

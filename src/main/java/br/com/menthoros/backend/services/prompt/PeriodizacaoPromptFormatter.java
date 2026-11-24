@@ -138,6 +138,10 @@ public class PeriodizacaoPromptFormatter {
         sb.append(String.format("- **Alvo de TSS da semana:** %d pontos\n", tssAlvo));
         sb.append(String.format("- **Volume alvo:** %s\n", km(semana.targetVolumeKm())));
         sb.append(String.format("- **Longão previsto:** %s\n", km(semana.longRunKm())));
+        if (semana.keySessions() != null) {
+            // Uma linha só: quebra de linha do treinador não pode abrir uma seção nova no prompt.
+            sb.append("- **Sessões-chave:** ").append(semana.keySessions().replaceAll("\\s+", " ").trim()).append("\n");
+        }
         sb.append(String.format("- **Semana de descarga:** %s\n", semana.deload() ? "sim" : "não"));
         sb.append(String.format("- **Próximo marco:** %s\n", semana.nextMilestone()
                 .map(m -> "\"" + PosProvaSemanaAnterior.literalDePrompt(m.name())

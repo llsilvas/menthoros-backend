@@ -87,7 +87,8 @@ public class SeasonWeekContextResolver {
                 semana.getTargetVolumeKm(),
                 semana.getLongRunKm(),
                 semana.isDeload(),
-                proximoMarco(semana, semanas, atleta));
+                proximoMarco(semana, semanas, atleta),
+                semana.getKeySessions() == null || semana.getKeySessions().isBlank() ? null : semana.getKeySessions().trim());
     }
 
     /**

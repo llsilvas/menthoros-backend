@@ -15,6 +15,7 @@ import java.util.UUID;
  * @param weekIndex     posição da semana na temporada, a partir de 1
  * @param totalWeeks    quantidade de semanas da temporada
  * @param nextMilestone próxima prova preparatória (nesta semana ou adiante), se houver
+ * @param keySessions   sessões-chave escritas pelo treinador (texto livre), nulo se vazio
  */
 public record SeasonWeekSnapshot(UUID seasonWeekId,
                                  int weekIndex,
@@ -24,7 +25,16 @@ public record SeasonWeekSnapshot(UUID seasonWeekId,
                                  @Nullable BigDecimal targetVolumeKm,
                                  @Nullable BigDecimal longRunKm,
                                  boolean deload,
-                                 Optional<Milestone> nextMilestone) {
+                                 Optional<Milestone> nextMilestone,
+                                 @Nullable String keySessions) {
+
+    /** Semana sem sessões-chave. */
+    public SeasonWeekSnapshot(UUID seasonWeekId, int weekIndex, int totalWeeks, TrainingPhase phase,
+                              @Nullable Double targetTss, @Nullable BigDecimal targetVolumeKm,
+                              @Nullable BigDecimal longRunKm, boolean deload, Optional<Milestone> nextMilestone) {
+        this(seasonWeekId, weekIndex, totalWeeks, phase, targetTss, targetVolumeKm, longRunKm, deload,
+                nextMilestone, null);
+    }
 
     /** Marco da temporada: prova preparatória com nome e data. */
     public record Milestone(String name, LocalDate date) {
