@@ -4,6 +4,7 @@ import br.com.menthoros.backend.dto.output.PlanoSemanalOutputDto;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.AthleteBaselineState;
 import br.com.menthoros.backend.entity.PlanoSemanal;
+import br.com.menthoros.backend.entity.SeasonWeek;
 import br.com.menthoros.backend.enums.MotivoReaberturaRevisao;
 import br.com.menthoros.backend.enums.OrigemAprovacao;
 import br.com.menthoros.backend.enums.PlanoReviewStatus;
@@ -13,6 +14,7 @@ import br.com.menthoros.backend.enums.FocusSource;
 import br.com.menthoros.backend.events.PlanoAprovadoEvent;
 import br.com.menthoros.backend.events.PlanoReabertoEvent;
 import br.com.menthoros.backend.services.helper.ConsumedReviewOutcomeResolver;
+import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import br.com.menthoros.backend.entity.TreinoPlanejado;
 import br.com.menthoros.backend.exception.DomainConflictException;
@@ -21,6 +23,7 @@ import br.com.menthoros.backend.exception.DomainRuleViolationException;
 import br.com.menthoros.backend.mapper.PlanoSemanalMapper;
 import br.com.menthoros.backend.repository.AthleteBaselineStateRepository;
 import br.com.menthoros.backend.repository.PlanoSemanalRepository;
+import br.com.menthoros.backend.repository.SeasonWeekRepository;
 import br.com.menthoros.backend.repository.TreinoPlanejadoRepository;
 import br.com.menthoros.backend.services.GarminConnectionService;
 import br.com.menthoros.backend.services.PlanoReviewService;
@@ -51,6 +54,7 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
     private final MeterRegistry meterRegistry;
     private final TreinoPlanejadoRepository treinoPlanejadoRepository;
     private final GarminConnectionService garminConnectionService;
+    private final SeasonWeekRepository seasonWeekRepository;
 
     /**
      * Lista todos os planos do tenant com reviewStatus = AGUARDANDO_REVISAO.
@@ -113,9 +117,44 @@ public class PlanoReviewServiceImpl implements PlanoReviewService {
         // Desfecho da revisão consumida (D9) — depois de inicializarAssociacoes, que carrega os
         // treinos de onde vêm os sinais editadoPeloCoach/adicionadoPeloCoach.
         registrarDesfecho(salvo, outcomeResolver.naAprovacao(salvo, origem));
+        registrarDeltaDaTemporada(salvo, tenantId, origem);
         eventPublisher.publishEvent(new PlanoAprovadoEvent(salvo.getId(), salvo.getAtleta().getId(), tenantId));
 
         return salvo;
+    }
+
+    /**
+     * Delta entre o TSS aprovado e o alvo da semana da temporada (add-season-plan-load-enforcement,
+     * épico 5.13): {@code (Σ tssPlanejado − targetTss) / targetTss × 100}, treino sem TSS contando 0 — a
+     * mesma regra do {@code target_deviation_pct}. O {@code DistributionSummary} recebe o módulo (o
+     * Micrometer descarta negativos); o sinal vai na tag {@code direcao} e no log. Independe da flag
+     * de enforcement, para formar o baseline antes de ligá-la.
+     *
+     * Idempotent: NO — registra uma amostra por chamada. Side Effects: métrica + log.
+     * Tenant-aware: YES — semana buscada por id e tenant.
+     */
+    private void registrarDeltaDaTemporada(PlanoSemanal plano, UUID tenantId, OrigemAprovacao origem) {
+        if (plano.getSeasonWeekId() == null) {
+            return;
+        }
+        seasonWeekRepository.findByIdAndTenantId(plano.getSeasonWeekId(), tenantId)
+                .map(SeasonWeek::getTargetTss)
+                .filter(alvo -> alvo > 0)
+                .ifPresent(alvo -> {
+                    int planejado = plano.getTreinosPlanejados() == null ? 0 : plano.getTreinosPlanejados().stream()
+                            .mapToInt(t -> t.getTssPlanejado() == null ? 0 : t.getTssPlanejado())
+                            .sum();
+                    double deltaPct = (planejado - alvo) / alvo * 100;
+                    String direcao = deltaPct > 0 ? "ACIMA" : deltaPct < 0 ? "ABAIXO" : "NO_ALVO";
+                    DistributionSummary.builder("season-plan.approved.deviation.abs.pct")
+                            .tag("origem", origem.name())
+                            .tag("direcao", direcao)
+                            .register(meterRegistry)
+                            .record(Math.abs(deltaPct));
+                    log.info("season-plan.week-approved planoId={} seasonWeekId={} origem={} deltaPct={} targetDeviationPct={}",
+                            plano.getId(), plano.getSeasonWeekId(), origem,
+                            String.format(java.util.Locale.ROOT, "%.1f", deltaPct), plano.getTargetDeviationPct());
+                });
     }
 
     /**

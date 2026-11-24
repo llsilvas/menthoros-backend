@@ -466,6 +466,59 @@ class PlanGenerationPersisterProvaTest {
     }
 
     @Nested
+    @DisplayName("semana da temporada antes da auto-aprovação (add-season-plan-load-enforcement 4.1)")
+    class SemanaDaTemporadaNaAutoAprovacao {
+
+        @Test
+        @DisplayName("plano auto-aprovado já chega à aprovação com season_week_id e target_deviation_pct")
+        void autoAprovadoComSemanaDaTemporada() {
+            Atleta atleta = atletaComAssessoria();
+            LocalDate semanaInicio = LocalDate.now();
+            TreinoPlanejadoLlmDto continuo = treinoDto("SEGUNDA", "CONTINUO", 8.0);
+            when(provaNoPlanoService.garantirProvasNaSemana(anyList(), any(), any(), any()))
+                    .thenReturn(List.of(continuo));
+            PlanoSemanalLlmDto planoDto = planoDtoCom(List.of(continuo), 8.0);
+            when(planoSemanalMapper.toEntity(planoDto)).thenReturn(new PlanoSemanal());
+            when(plannerShadowService.aplicarShadow(any(), any(), any(), any(), any(), any(), eq(false), any(), any()))
+                    .thenReturn(Optional.of(new br.com.menthoros.backend.domain.planner.WeekPlanSkeleton(
+                            null, null, List.of(),
+                            new br.com.menthoros.backend.domain.planner.InjuryRiskAssessment(
+                                    br.com.menthoros.backend.domain.planner.InjuryRiskLevel.SAFE, false, null),
+                            null, false, null, semanaInicio, null, Optional.empty())));
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "autoApproveEnabled", true);
+
+            var exceptionOnly = new br.com.menthoros.backend.domain.planner.OnboardingContext(
+                    new br.com.menthoros.backend.domain.planner.AthleteBaseline(null, null),
+                    1.0,
+                    new br.com.menthoros.backend.domain.planner.PlanningPolicy(
+                            br.com.menthoros.backend.domain.planner.ReviewMode.EXCEPTION_ONLY, 0.0, false),
+                    new br.com.menthoros.backend.domain.planner.AthleteConstraints(List.of(), null, null, List.of()), null);
+            UUID seasonWeekId = UUID.randomUUID();
+            var semana = new br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot(seasonWeekId, 3, 12,
+                    br.com.menthoros.backend.domain.planner.TrainingPhase.BUILD, 400.0, null, null, false, Optional.empty());
+            PlanGenerationContext ctx = new PlanGenerationContext(dadosPlanoDto(atleta, new PlanoMetaDados()), null, null,
+                    semanaInicio, null, null, Optional.of(exceptionOnly), UUID.randomUUID(), Optional.of(semana));
+
+            // Captura o estado no momento da aprovação: o delta (4.2) lê o season_week_id ali.
+            var vinculoNaAprovacao = new java.util.concurrent.atomic.AtomicReference<UUID>();
+            var desvioNaAprovacao = new java.util.concurrent.atomic.AtomicReference<BigDecimal>();
+            when(planoReviewService.aprovarTransicao(any(), eq(tenantId), eq(OrigemAprovacao.AUTO_CONFIANCA_ALTA)))
+                    .thenAnswer(inv -> {
+                        PlanoSemanal p = inv.getArgument(0);
+                        vinculoNaAprovacao.set(p.getSeasonWeekId());
+                        desvioNaAprovacao.set(p.getTargetDeviationPct());
+                        return p;
+                    });
+
+            persister.persist(planoDto, ctx, ModoGeracaoPlano.PROXIMA_SEMANA, SkeletonPrePrompt.desligado());
+
+            verify(planoReviewService).aprovarTransicao(any(), eq(tenantId), eq(OrigemAprovacao.AUTO_CONFIANCA_ALTA));
+            assertThat(vinculoNaAprovacao.get()).isEqualTo(seasonWeekId);
+            assertThat(desvioNaAprovacao.get()).isNotNull();
+        }
+    }
+
+    @Nested
     @DisplayName("persist — garantia da prova")
     class GarantiaDaProva {
 

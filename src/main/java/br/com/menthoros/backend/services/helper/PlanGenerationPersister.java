@@ -198,6 +198,11 @@ public class PlanGenerationPersister {
             aplicarEnforcementEstagio2(plano, skeletonPrePrompt.skeleton(), atleta, periodo.inicio(), ctx.seasonWeek());
         }
 
+        // Depois de todas as transformações dos treinos (redistribuição, prova garantida, estágio 2): o
+        // desvio mede o plano que o coach vai revisar, não o que o LLM devolveu. Antes da auto-aprovação
+        // (add-season-plan-load-enforcement 4.1): o delta da aprovação precisa do season_week_id.
+        registrarSemanaDaTemporada(plano, ctx.seasonWeek());
+
         // Auto-approve Cenario A (athlete-onboarding-baseline CA5, Decisao 7).
         onboardingContext.ifPresent(context -> aplicarAutoApproveSeElegivel(plano, context, weekPlanSkeleton, tenantId));
 
@@ -210,10 +215,6 @@ public class PlanGenerationPersister {
         // MESMA que alimentou o prompt. Sem revisao consumivel o plano nasce NOT_CONSUMED —
         // ausencia de dado, nao julgamento negativo do coach.
         registrarRevisaoConsumida(plano, ctx.revisaoConsumidaOpcional());
-
-        // Depois de todas as transformações dos treinos (redistribuição, prova garantida): o desvio
-        // mede o plano que o coach vai revisar, não o que o LLM devolveu.
-        registrarSemanaDaTemporada(plano, ctx.seasonWeek());
 
         PlanoSemanal salvo = salvarPlanoCompleto(plano);
         publicarRevisaoConsumida(salvo, tenantId);
