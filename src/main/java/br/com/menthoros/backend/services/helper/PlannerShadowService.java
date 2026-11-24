@@ -177,11 +177,7 @@ public class PlannerShadowService {
 
         WeekPlanSkeleton skeleton = plannerEngine.planWeek(snapshot);
 
-        ComplianceContext context = new ComplianceContext(
-                skeleton.provaDeterminante(),
-                resolverConstraints(atleta),
-                semanaInicio,
-                skeleton.provasDaSemana());
+        ComplianceContext context = contextoDeCompliance(skeleton, atleta, semanaInicio, seasonWeek);
 
         GeneratedPlanSnapshot planoGeradoSnapshot = mapPlanoGerado(planoGeradoPeloLlm, semanaInicio);
         List<PlannerViolation> violacoesPre = complianceChecker.checkPreRedistribution(planoGeradoSnapshot, skeleton, context);
@@ -258,14 +254,22 @@ public class PlannerShadowService {
     public List<PlannerViolation> checkPostRedistribution(List<TreinoPlanejado> treinosRedistribuidos,
                                                           WeekPlanSkeleton skeleton,
                                                           Atleta atleta,
-                                                          LocalDate semanaInicio) {
-        ComplianceContext context = new ComplianceContext(
+                                                          LocalDate semanaInicio,
+                                                          Optional<SeasonWeekSnapshot> seasonWeek) {
+        ComplianceContext context = contextoDeCompliance(skeleton, atleta, semanaInicio, seasonWeek);
+        GeneratedPlanSnapshot redistribuidoSnapshot = mapTreinosRedistribuidos(treinosRedistribuidos);
+        return complianceChecker.checkPostRedistribution(redistribuidoSnapshot, skeleton, context);
+    }
+
+    private ComplianceContext contextoDeCompliance(WeekPlanSkeleton skeleton, Atleta atleta, LocalDate semanaInicio,
+                                                   Optional<SeasonWeekSnapshot> seasonWeek) {
+        return new ComplianceContext(
                 skeleton.provaDeterminante(),
                 resolverConstraints(atleta),
                 semanaInicio,
-                skeleton.provasDaSemana());
-        GeneratedPlanSnapshot redistribuidoSnapshot = mapTreinosRedistribuidos(treinosRedistribuidos);
-        return complianceChecker.checkPostRedistribution(redistribuidoSnapshot, skeleton, context);
+                skeleton.provasDaSemana(),
+                seasonWeek,
+                longRunTolerancePct);
     }
 
     // --- Mapeamento entity -> record (anti-corruption layer, design.md Decisao 17) ---
@@ -335,7 +339,7 @@ public class PlannerShadowService {
         return new AthleteConstraints(diasDisponiveis, null, null, List.of());
     }
 
-    private GeneratedPlanSnapshot mapPlanoGerado(PlanoSemanalLlmDto planoDto, LocalDate semanaInicio) {
+    GeneratedPlanSnapshot mapPlanoGerado(PlanoSemanalLlmDto planoDto, LocalDate semanaInicio) {
         if (planoDto.treinosPlanejados() == null) {
             return new GeneratedPlanSnapshot(List.of());
         }
@@ -354,10 +358,11 @@ public class PlannerShadowService {
             log.warn("[planner-shadow] diaSemana invalido do LLM: '{}' — usando semanaInicio como fallback", dto.diaSemana());
             data = semanaInicio; // dia invalido/inesperado do LLM — nao trava o shadow
         }
-        return new GeneratedSessionSnapshot(data, dto.tipoTreino(), dto.tssPlanejado(), null);
+        return new GeneratedSessionSnapshot(data, dto.tipoTreino(), dto.tssPlanejado(), null,
+                dto.distanciaKm() != null ? BigDecimal.valueOf(dto.distanciaKm()) : null);
     }
 
-    private GeneratedPlanSnapshot mapTreinosRedistribuidos(List<TreinoPlanejado> treinos) {
+    GeneratedPlanSnapshot mapTreinosRedistribuidos(List<TreinoPlanejado> treinos) {
         if (treinos == null) {
             return new GeneratedPlanSnapshot(List.of());
         }
@@ -366,7 +371,8 @@ public class PlannerShadowService {
                         t.getDataTreino(),
                         t.getTipoTreino() != null ? t.getTipoTreino().name() : null,
                         t.getTssPlanejado(),
-                        t.getZonaAlvo()))
+                        t.getZonaAlvo(),
+                        t.getDistanciaKm()))
                 .toList();
         return new GeneratedPlanSnapshot(sessoes);
     }

@@ -316,7 +316,7 @@ class PlannerShadowServiceTest {
             prova.setTssPlanejado(100);
 
             var violacoes = shadowHabilitado.checkPostRedistribution(
-                    List.of(prova), skeleton, atletaSemDomingoComProvaNoDomingo(), semanaInicio);
+                    List.of(prova), skeleton, atletaSemDomingoComProvaNoDomingo(), semanaInicio, Optional.empty());
 
             assertThat(violacoes).noneMatch(v -> v.key() == br.com.menthoros.backend.domain.compliance.PlannerViolationKey.DIA_INDISPONIVEL);
         }
@@ -413,6 +413,42 @@ class PlannerShadowServiceTest {
                     decisaoNeutra(), historico(0.0, 45.0, 0), semanaInicio, Optional.empty(), Optional.empty());
 
             assertThat(snapshot.seasonLoadEnforced()).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("distanciaKm nos dois mappers (add-season-plan-load-enforcement 3.1)")
+    class MapeamentoDeDistancia {
+
+        @Test
+        @DisplayName("DTO do LLM: distância vira BigDecimal; ausente fica nula")
+        void dtoDoLlm() {
+            TreinoPlanejadoLlmDto semDistancia = new TreinoPlanejadoLlmDto(
+                    "TERCA", "FACIL", null, 40, 0.7, 4, null, "40:00", null, null, List.of());
+            PlanoSemanalLlmDto plano = PlanoSemanalLlmDto.builder()
+                    .volumePlanejadoKm(40.0).volumeAlvoKm(42.0)
+                    .treinosPlanejados(List.of(planoGerado().treinosPlanejados().get(0), semDistancia))
+                    .build();
+
+            var sessoes = shadowHabilitado.mapPlanoGerado(plano, semanaInicio).sessoes();
+
+            assertThat(sessoes.get(0).distanciaKm()).isEqualByComparingTo("8.0");
+            assertThat(sessoes.get(1).distanciaKm()).isNull();
+        }
+
+        @Test
+        @DisplayName("TreinoPlanejado: distância copiada; ausente fica nula")
+        void treinoPlanejado() {
+            TreinoPlanejado comDistancia = new TreinoPlanejado();
+            comDistancia.setDataTreino(semanaInicio.plusDays(6));
+            comDistancia.setTipoTreino(TipoTreino.LONGO);
+            comDistancia.setDistanciaKm(new java.math.BigDecimal("21.5"));
+
+            var sessoes = shadowHabilitado.mapTreinosRedistribuidos(
+                    List.of(comDistancia, planoBase().getTreinosPlanejados().get(0))).sessoes();
+
+            assertThat(sessoes.get(0).distanciaKm()).isEqualByComparingTo("21.5");
+            assertThat(sessoes.get(1).distanciaKm()).isNull();
         }
     }
 

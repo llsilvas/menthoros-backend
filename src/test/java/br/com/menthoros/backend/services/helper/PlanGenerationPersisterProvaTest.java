@@ -119,10 +119,10 @@ class PlanGenerationPersisterProvaTest {
             var m = PlanGenerationPersister.class.getDeclaredMethod("aplicarEnforcementEstagio2",
                     PlanoSemanal.class,
                     br.com.menthoros.backend.domain.planner.WeekPlanSkeleton.class,
-                    Atleta.class, LocalDate.class);
+                    Atleta.class, LocalDate.class, Optional.class);
             m.setAccessible(true);
             try {
-                m.invoke(persister, plano, skeleton(), new Atleta(), LocalDate.of(2026, 9, 7));
+                m.invoke(persister, plano, skeleton(), new Atleta(), LocalDate.of(2026, 9, 7), Optional.empty());
             } catch (java.lang.reflect.InvocationTargetException e) {
                 if (e.getCause() instanceof RuntimeException re) throw re;
                 throw e;
@@ -137,7 +137,7 @@ class PlanGenerationPersisterProvaTest {
         @Test
         @DisplayName("sem violacao: status PASSED, sem requiresCoachReview, sem metrica")
         void semViolacao() throws Exception {
-            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any(), any()))
                     .thenReturn(List.of());
             PlanoSemanal plano = new PlanoSemanal();
 
@@ -150,10 +150,46 @@ class PlanGenerationPersisterProvaTest {
         }
 
         @Test
+        @DisplayName("violacao soft + fail-open=true: conta planner.compliance.violation.count por chave, sem depender do shadow")
+        void contadorPorChave() throws Exception {
+            org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", true);
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any(), any()))
+                    .thenReturn(List.of(
+                            new br.com.menthoros.backend.domain.compliance.PlannerViolation(
+                                    br.com.menthoros.backend.domain.compliance.PlannerViolationKey.TSS_FORA_DA_FAIXA,
+                                    "TSS total gerado (700) fora da faixa [491.4, 600.6]"),
+                            new br.com.menthoros.backend.domain.compliance.PlannerViolation(
+                                    br.com.menthoros.backend.domain.compliance.PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA,
+                                    "Longo fora da tolerancia")));
+            PlanoSemanal plano = new PlanoSemanal();
+
+            invoke(plano);
+
+            assertThat(plano.getPlannerComplianceStatus())
+                    .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FAILED.name());
+            assertThat(plano.getPlannerRequiresCoachReview()).isTrue();
+            assertThat(meterRegistry.find("planner.compliance.violation.count").tag("key", "TSS_FORA_DA_FAIXA")
+                    .counter().count()).isEqualTo(1.0);
+            assertThat(meterRegistry.find("planner.compliance.violation.count")
+                    .tag("key", "LONGAO_DIVERGENTE_DA_TEMPORADA").counter().count()).isEqualTo(1.0);
+        }
+
+        @Test
+        @DisplayName("sem violacao: nenhum contador por chave")
+        void semViolacaoSemContadorPorChave() throws Exception {
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any(), any()))
+                    .thenReturn(List.of());
+
+            invoke(new PlanoSemanal());
+
+            assertThat(meterRegistry.find("planner.compliance.violation.count").counters()).isEmpty();
+        }
+
+        @Test
         @DisplayName("violacao soft + fail-open=true: FAILED + requiresCoachReview + metrica {stage=POST}")
         void violacaoFailOpen() throws Exception {
             org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", true);
-            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any(), any()))
                     .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
                             br.com.menthoros.backend.domain.compliance.PlannerViolationKey.DIA_INDISPONIVEL,
                             "treino em dia nao disponivel do atleta")));
@@ -171,7 +207,7 @@ class PlanGenerationPersisterProvaTest {
         @DisplayName("carga fora da faixa (cold-start) + fail-open=true: FAILED + review, persiste (CA6)")
         void cargaColdStartFailOpen() throws Exception {
             org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", true);
-            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any(), any()))
                     .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
                             br.com.menthoros.backend.domain.compliance.PlannerViolationKey.TSS_FORA_DA_FAIXA,
                             "carga semanal fora da banda +-25% do cold-start")));
@@ -189,7 +225,7 @@ class PlanGenerationPersisterProvaTest {
         @DisplayName("carga fora da faixa (cold-start) + fail-open=false: 422, nada persistido (CA6)")
         void cargaColdStartFailClosed() {
             org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", false);
-            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any(), any()))
                     .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
                             br.com.menthoros.backend.domain.compliance.PlannerViolationKey.TSS_FORA_DA_FAIXA,
                             "carga semanal fora da banda +-25% do cold-start")));
@@ -206,7 +242,7 @@ class PlanGenerationPersisterProvaTest {
         @DisplayName("violacao + fail-open=false: erro de dominio, nada mutado, sem metrica")
         void violacaoFailClosed() {
             org.springframework.test.util.ReflectionTestUtils.setField(persister, "plannerFailOpen", false);
-            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any()))
+            when(plannerShadowService.checkPostRedistribution(any(), any(), any(), any(), any()))
                     .thenReturn(List.of(new br.com.menthoros.backend.domain.compliance.PlannerViolation(
                             br.com.menthoros.backend.domain.compliance.PlannerViolationKey.TAPER_VIOLADO,
                             "carga alta na semana de taper")));
@@ -260,7 +296,7 @@ class PlanGenerationPersisterProvaTest {
             assertThat(salvo.getPlannerComplianceStatus())
                     .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.FALLBACK.name());
             org.mockito.Mockito.verify(plannerShadowService, org.mockito.Mockito.never())
-                    .checkPostRedistribution(any(), any(), any(), any());
+                    .checkPostRedistribution(any(), any(), any(), any(), any());
         }
 
         @Test
@@ -284,7 +320,7 @@ class PlanGenerationPersisterProvaTest {
             // same(): prova IDENTIDADE, nao so igualdade por valor — o objeto que chega ao estagio 2
             // e literalmente o mesmo que a fase 2 (pre-prompt) computou, nao um recomputado no persister
             // que por acaso teria os mesmos campos.
-            when(plannerShadowService.checkPostRedistribution(any(), org.mockito.ArgumentMatchers.same(skeletonDaFase2), any(), any()))
+            when(plannerShadowService.checkPostRedistribution(any(), org.mockito.ArgumentMatchers.same(skeletonDaFase2), any(), any(), any()))
                     .thenReturn(List.of());
             org.mockito.ArgumentCaptor<Map<TipoTreino, DiaSemana>> diasAlvoCaptor =
                     org.mockito.ArgumentCaptor.forClass(Map.class);
@@ -299,7 +335,7 @@ class PlanGenerationPersisterProvaTest {
             assertThat(salvo.getPlannerComplianceStatus())
                     .isEqualTo(br.com.menthoros.backend.domain.compliance.PlannerComplianceStatus.PASSED.name());
             org.mockito.Mockito.verify(plannerShadowService)
-                    .checkPostRedistribution(any(), org.mockito.ArgumentMatchers.same(skeletonDaFase2), any(), any());
+                    .checkPostRedistribution(any(), org.mockito.ArgumentMatchers.same(skeletonDaFase2), any(), any(), any());
             // a persistencia nunca recomputa o skeleton — nem para o estagio 2, nem para guiar a
             // redistribuicao (diasAlvoDaRedistribuicao usa skeletonDaFase2 diretamente).
             org.mockito.Mockito.verify(plannerShadowService, org.mockito.Mockito.never())
@@ -325,7 +361,7 @@ class PlanGenerationPersisterProvaTest {
 
             assertThat(salvo.getPlannerComplianceStatus()).isNull();
             org.mockito.Mockito.verify(plannerShadowService, org.mockito.Mockito.never())
-                    .checkPostRedistribution(any(), any(), any(), any());
+                    .checkPostRedistribution(any(), any(), any(), any(), any());
         }
     }
 

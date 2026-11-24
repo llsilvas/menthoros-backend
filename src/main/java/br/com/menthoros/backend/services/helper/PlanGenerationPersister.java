@@ -195,7 +195,7 @@ public class PlanGenerationPersister {
         if (skeletonPrePrompt.fallback()) {
             plano.setPlannerComplianceStatus(PlannerComplianceStatus.FALLBACK.name());
         } else if (skeletonPrePrompt.skeleton() != null) {
-            aplicarEnforcementEstagio2(plano, skeletonPrePrompt.skeleton(), atleta, periodo.inicio());
+            aplicarEnforcementEstagio2(plano, skeletonPrePrompt.skeleton(), atleta, periodo.inicio(), ctx.seasonWeek());
         }
 
         // Auto-approve Cenario A (athlete-onboarding-baseline CA5, Decisao 7).
@@ -333,13 +333,20 @@ public class PlanGenerationPersister {
      * ja resolvidos.
      */
     private void aplicarEnforcementEstagio2(PlanoSemanal plano, WeekPlanSkeleton skeleton,
-                                            Atleta atleta, LocalDate referenceDate) {
+                                            Atleta atleta, LocalDate referenceDate,
+                                            Optional<SeasonWeekSnapshot> seasonWeek) {
         List<PlannerViolation> violacoes = plannerShadowService.checkPostRedistribution(
-                plano.getTreinosPlanejados(), skeleton, atleta, referenceDate);
+                plano.getTreinosPlanejados(), skeleton, atleta, referenceDate, seasonWeek);
         if (violacoes.isEmpty()) {
             plano.setPlannerComplianceStatus(PlannerComplianceStatus.PASSED.name());
             return;
         }
+        // Taxa por regra sem depender do shadow (add-season-plan-load-enforcement): o detalhe em
+        // planner_metadata_json so existe com planner-engine.shadow=true.
+        violacoes.forEach(v -> meterRegistry.counter("planner.compliance.violation.count",
+                "key", v.key().name()).increment());
+        log.info("[planner-enforcement] estagio 2 atleta={} semana={} violacoes={}", atleta.getId(), referenceDate,
+                violacoes.stream().map(v -> v.key() + ": " + v.mensagem()).toList());
         if (!plannerFailOpen) {
             String motivos = violacoes.stream()
                     .map(v -> v.key() + ": " + v.mensagem())
