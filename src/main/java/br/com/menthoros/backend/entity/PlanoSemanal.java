@@ -169,6 +169,14 @@ public class PlanoSemanal {
     @Column(name = "planner_metadata_json", columnDefinition = "jsonb")
     private String plannerMetadataJson;
 
+    /** Semana da temporada ACTIVE usada como contexto da geração; nulo sem temporada (add-season-plan-weekly-context). */
+    @Column(name = "season_week_id")
+    private UUID seasonWeekId;
+
+    /** (TSS planejado − alvo da semana da temporada) / alvo × 100; nulo sem temporada ou sem alvo. */
+    @Column(name = "target_deviation_pct", precision = 6, scale = 1)
+    private BigDecimal targetDeviationPct;
+
     /**
      * Dias prescritos como descanso (add-descanso-explicito-por-fadiga). Fora de
      * {@code treinosPlanejados}: descanso não é treino a cumprir — ali viraria PERDIDO no

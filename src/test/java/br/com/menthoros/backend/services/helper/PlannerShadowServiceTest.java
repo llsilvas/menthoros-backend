@@ -7,12 +7,15 @@ import br.com.menthoros.backend.domain.planner.InjuryRiskEvaluator;
 import br.com.menthoros.backend.domain.planner.LoadTargetResolver;
 import br.com.menthoros.backend.domain.planner.PeriodizationPlanner;
 import br.com.menthoros.backend.domain.planner.PlannerEngine;
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.TaperStrategy;
+import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.ProgressaoHistoricoResumo;
 import br.com.menthoros.backend.dto.input.DadosPlanoDto;
 import br.com.menthoros.backend.dto.llm.PlanoSemanalLlmDto;
 import br.com.menthoros.backend.dto.llm.TreinoPlanejadoLlmDto;
+import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.Prova;
@@ -36,6 +39,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -203,6 +207,55 @@ class PlannerShadowServiceTest {
 
             assertThat(meterRegistry.find("planner.phase.divergence.count")
                     .tag("plannerPhase", "BUILD").tag("formatterPhase", "TAPER").counter()).isNotNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("aplicarShadow — divergência entre temporada e heurística (add-season-plan-weekly-context)")
+    class DivergenciaComTemporada {
+
+        private static final String METRICA = "season-plan.phase.divergence.count";
+
+        @Test
+        @DisplayName("fase da temporada diferente da heurística conta 1 com as tags de fase e tenant")
+        void divergenciaContaUm() {
+            when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("BUILD");
+            Atleta atleta = atletaBase(); // prova a 70 dias: heurística BUILD
+            UUID tenant = UUID.randomUUID();
+            atleta.setAssessoria(Assessoria.builder().id(tenant).build());
+            PlanoSemanal plano = planoBase();
+
+            shadowHabilitado.aplicarShadow(plano, planoGerado(), dadosPlano(atleta), decisaoNeutra(),
+                    historico(-2.0, 45.0, 0), semanaInicio, false, Optional.empty(), temporada(TrainingPhase.PEAK));
+
+            assertThat(meterRegistry.find(METRICA).tag("seasonPhase", "PEAK").tag("heuristicPhase", "BUILD")
+                    .tag("tenant", tenant.toString()).counter().count()).isEqualTo(1.0);
+            assertThat(plano.getPlannerPhase()).isEqualTo("PEAK"); // o motor seguiu a temporada
+        }
+
+        @Test
+        @DisplayName("temporada e heurística concordando não registram a métrica")
+        void semDivergenciaNaoRegistra() {
+            when(periodizacaoPromptFormatter.determinarFasePreparacao(anyInt())).thenReturn("BUILD");
+
+            shadowHabilitado.aplicarShadow(planoBase(), planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(),
+                    historico(-2.0, 45.0, 0), semanaInicio, false, Optional.empty(), temporada(TrainingPhase.BUILD));
+
+            assertThat(meterRegistry.find(METRICA).counter()).isNull();
+        }
+
+        @Test
+        @DisplayName("shadow desligado não registra a métrica mesmo com temporada divergente")
+        void shadowDesligadoNaoRegistra() {
+            shadowDesabilitado.aplicarShadow(planoBase(), planoGerado(), dadosPlano(atletaBase()), decisaoNeutra(),
+                    historico(-2.0, 45.0, 0), semanaInicio, false, Optional.empty(), temporada(TrainingPhase.PEAK));
+
+            assertThat(meterRegistry.find(METRICA).counter()).isNull();
+        }
+
+        private Optional<SeasonWeekSnapshot> temporada(TrainingPhase fase) {
+            return Optional.of(new SeasonWeekSnapshot(UUID.randomUUID(), 3, 12, fase, 350.0, null, null, false,
+                    Optional.empty()));
         }
     }
 

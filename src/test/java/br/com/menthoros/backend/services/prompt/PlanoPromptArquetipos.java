@@ -117,7 +117,8 @@ final class PlanoPromptArquetipos {
                 // O builder só usa construirTreinoProva (TreinoMapper) e provaNoDiaAnteriorAoInicio
                 // (ProvaRepository); os repositórios de plano e a revisão nunca são tocados aqui.
                 new br.com.menthoros.backend.services.plano.ProvaNoPlanoService(
-                        provaRepository, new br.com.menthoros.backend.mapper.TreinoMapperImpl(null, null), null, null));
+                        provaRepository, new br.com.menthoros.backend.mapper.TreinoMapperImpl(null, null), null, null),
+                30);
     }
 
     // ─────────────────────────────────────────────────────────────────────────

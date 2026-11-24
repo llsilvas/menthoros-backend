@@ -253,6 +253,11 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
      * Busca o plano mais recente do atleta cuja semana ainda não encerrou (semanaFim >= hoje),
      * independente do reviewStatus. Usado no perfil do atleta para o coach.
      *
+     * <p>Rejeitar e regenerar deixa dois planos na mesma semana; sem o desempate, o banco devolvia
+     * qualquer um e a aba Plano sumia com o aprovado. O índice {@code uk_plano_semanal_atleta_semana_ativo}
+     * garante no máximo um não-rejeitado por semana, então basta descartar o rejeitado quando ele
+     * existe. Filtro e não ORDER BY: o Postgres recusa expressão no ORDER BY de um SELECT DISTINCT.
+     *
      * <p>O filtro usa CURRENT_DATE do banco (não LocalDate.now() em Java) para evitar divergência
      * de fuso horário entre servidor e banco na virada de semana.
      *
@@ -272,6 +277,12 @@ public interface PlanoSemanalRepository extends JpaRepository<PlanoSemanal, UUID
        WHERE ps.atleta.id = :atletaId
          AND ps.assessoria.id = :assessoriaId
          AND ps.semanaFim >= CURRENT_DATE
+         AND NOT (ps.reviewStatus = br.com.menthoros.backend.enums.PlanoReviewStatus.REJEITADO
+                  AND EXISTS (SELECT 1 FROM PlanoSemanal outro
+                              WHERE outro.atleta.id = ps.atleta.id
+                                AND outro.assessoria.id = ps.assessoria.id
+                                AND outro.semanaInicio = ps.semanaInicio
+                                AND outro.reviewStatus <> br.com.menthoros.backend.enums.PlanoReviewStatus.REJEITADO))
        ORDER BY ps.semanaInicio DESC
        LIMIT 1
        """)

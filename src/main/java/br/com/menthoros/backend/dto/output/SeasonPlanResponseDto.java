@@ -1,6 +1,7 @@
 package br.com.menthoros.backend.dto.output;
 
 import br.com.menthoros.backend.domain.planner.SeasonPlanValidator.Rule;
+import br.com.menthoros.backend.domain.planner.SeasonWeekLock;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
@@ -32,7 +33,15 @@ public record SeasonPlanResponseDto(
         @Schema(description = "Provas preparatórias ancoradas como marcos, por semana; vazia se não há")
         List<Milestone> milestones,
         @Schema(description = "Alertas das validações da temporada, recalculados a cada leitura; vazia se nenhum")
-        List<Validation> validations
+        List<Validation> validations,
+        @Schema(description = "Versão da temporada: 1 na proposta original, +1 a cada ajuste aprovado", example = "2")
+        Integer version,
+        @Schema(description = "Temporada ACTIVE da qual este ajuste foi copiado; ausente na versão 1")
+        UUID baseSeasonPlanId,
+        @Schema(description = "Ajuste (rascunho) aberto a partir desta temporada ACTIVE; ausente se não há")
+        UUID openDraftId,
+        @Schema(description = "Volume semanal de partida do motor, em km; ausente nas temporadas antigas", example = "40.0")
+        BigDecimal initialVolumeKm
 ) {
 
     @Schema(description = "Semana da temporada")
@@ -45,7 +54,11 @@ public record SeasonPlanResponseDto(
             @Schema(description = "TSS-alvo", example = "285") Double targetTss,
             @Schema(description = "Semana de descarga") boolean deload,
             @Schema(description = "Longão-alvo em km") BigDecimal longRunKm,
-            @Schema(description = "Quem definiu os valores", example = "ENGINE") WeekValueSource valueSource
+            @Schema(description = "Quem definiu os valores", example = "ENGINE") WeekValueSource valueSource,
+            @Schema(description = "Sessões-chave da semana, texto do treinador") String keySessions,
+            @Schema(description = "Semana somente leitura no ajuste (concluída, em andamento ou da prova)") boolean locked,
+            @Schema(description = "Por que a semana está travada; ausente se livre", example = "IN_PROGRESS")
+            SeasonWeekLock.Reason lockReason
     ) {
     }
 

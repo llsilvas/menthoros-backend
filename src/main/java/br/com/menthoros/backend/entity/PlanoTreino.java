@@ -87,6 +87,10 @@ public class PlanoTreino {
     @Column(name = "initial_ctl")
     private Double initialCtl;
 
+    /** Volume semanal de partida do motor, em km; nulo nas temporadas anteriores à V121. */
+    @Column(name = "initial_volume_km", precision = 6, scale = 1)
+    private BigDecimal initialVolumeKm;
+
     @Column(name = "peak_volume_km", precision = 10, scale = 3)
     private BigDecimal peakVolumeKm;
 
@@ -102,4 +106,8 @@ public class PlanoTreino {
 
     @Column(name = "approved_at")
     private Instant approvedAt;
+
+    /** Temporada ACTIVE da qual este rascunho de nova versão foi copiado; nulo na v1 (add-season-plan-adjust-v2). */
+    @Column(name = "base_season_plan_id")
+    private UUID baseSeasonPlanId;
 }

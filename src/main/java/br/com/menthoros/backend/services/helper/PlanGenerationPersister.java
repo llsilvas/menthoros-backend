@@ -3,6 +3,7 @@ package br.com.menthoros.backend.services.helper;
 import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
 import br.com.menthoros.backend.domain.planner.OnboardingContext;
 import br.com.menthoros.backend.domain.planner.ReviewMode;
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import br.com.menthoros.backend.domain.planner.SessionSlot;
 import br.com.menthoros.backend.dto.DecisaoProgressao;
@@ -50,6 +51,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.TemporalAdjusters;
@@ -180,7 +182,7 @@ public class PlanGenerationPersister {
         // batch=false: este call site nao distingue interativo de lote — tag de metrica aproximada.
         Optional<WeekPlanSkeleton> weekPlanSkeleton = plannerShadowService.aplicarShadow(
                 plano, planoDto, dadosPlano, decisaoProgressao, ctx.historicoProgressao(), periodo.inicio(), false,
-                onboardingContext);
+                onboardingContext, ctx.seasonWeek());
 
         // planner-engine-enforcement §5 (Decisao 2) + 8.5.h: estagio 2 terminal — roda sobre os treinos
         // ja redistribuidos E com prova garantida (plano.getTreinosPlanejados()), como ULTIMO passo
@@ -209,9 +211,37 @@ public class PlanGenerationPersister {
         // ausencia de dado, nao julgamento negativo do coach.
         registrarRevisaoConsumida(plano, ctx.revisaoConsumidaOpcional());
 
+        // Depois de todas as transformações dos treinos (redistribuição, prova garantida): o desvio
+        // mede o plano que o coach vai revisar, não o que o LLM devolveu.
+        registrarSemanaDaTemporada(plano, ctx.seasonWeek());
+
         PlanoSemanal salvo = salvarPlanoCompleto(plano);
         publicarRevisaoConsumida(salvo, tenantId);
         return salvo;
+    }
+
+    /**
+     * Vínculo com a semana da temporada e desvio do TSS planejado contra o alvo dela
+     * (add-season-plan-weekly-context): {@code round1((Σ tssPlanejado − targetTss) / targetTss × 100)}.
+     * Treino sem {@code tssPlanejado} conta 0; alvo nulo ou ≤ 0 deixa o desvio nulo, mas a semana é
+     * gravada. Package-private e estático para o teste da fórmula.
+     *
+     * Idempotent: YES — mutação in-memory determinística. Side Effects: NONE (salvo depois).
+     * Tenant-aware: NO — a semana já veio filtrada por tenant do loader.
+     */
+    static void registrarSemanaDaTemporada(PlanoSemanal plano, Optional<SeasonWeekSnapshot> seasonWeek) {
+        seasonWeek.ifPresent(semana -> {
+            plano.setSeasonWeekId(semana.seasonWeekId());
+            Double alvo = semana.targetTss();
+            if (alvo == null || alvo <= 0) {
+                return;
+            }
+            int planejado = plano.getTreinosPlanejados() == null ? 0 : plano.getTreinosPlanejados().stream()
+                    .mapToInt(t -> t.getTssPlanejado() == null ? 0 : t.getTssPlanejado())
+                    .sum();
+            plano.setTargetDeviationPct(BigDecimal.valueOf((planejado - alvo) / alvo * 100)
+                    .setScale(1, RoundingMode.HALF_UP));
+        });
     }
 
     /**

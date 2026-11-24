@@ -235,7 +235,7 @@ public class PlanoServiceImpl implements PlanoService {
             // de calibração (o regime cold-start só auditava depois de gerado, no estágio 2).
             WeekPlanSkeleton skeleton = plannerShadowService.computarSkeleton(
                     ctx.dados(), ctx.decisaoProgressao(), ctx.historicoProgressao(), ctx.semanaInicio(),
-                    ctx.onboardingContext());
+                    ctx.onboardingContext(), ctx.seasonWeek());
             return SkeletonPrePrompt.sucesso(skeleton);
         } catch (Exception e) {
             // Planner falha ANTES do LLM (design Decisao 3, matriz fail-open):
@@ -265,7 +265,8 @@ public class PlanoServiceImpl implements PlanoService {
             PlanoSemanalLlmDto planoDto = llmConcurrencyLimiter.executarInterativo(() ->
                     iaService.geraPlanoSemanalAvancado(
                             ctx.atleta(), ctx.metaDados(), ctx.proximaProva(), modoGeracao,
-                            ctx.decisaoProgressao(), ctx.revisaoConsumida(), ctx.semanaInicio(), skeleton));
+                            ctx.decisaoProgressao(), ctx.revisaoConsumida(), ctx.semanaInicio(), skeleton,
+                            ctx.seasonWeek().orElse(null)));
 
             validaPlanoGerado(planoDto);
             return planoDto;
