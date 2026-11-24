@@ -581,10 +581,7 @@ public class PlanoTreinoPromptBuilder {
                 .toList();
     }
 
-    /**
-     * Prova no dia anterior ao início da semana: o primeiro dia do plano é o D+1 dela. Só interessa se
-     * esse dia é um dia a cobrir — senão não há o que proteger, e a consulta nem é feita.
-     */
+    /** Alvo do skeleton quando ele veio do caminho da temporada; vazio no legado ou sem skeleton. */
     private static Optional<Integer> alvoResolvidoPelaTemporada(@Nullable WeekPlanSkeleton skeleton) {
         if (skeleton == null || skeleton.loadTarget() == null || skeleton.loadTarget().seasonTargetTss() == null) {
             return Optional.empty();
