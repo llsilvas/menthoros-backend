@@ -324,20 +324,25 @@ public class TreinoNormalizador {
         if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
         if (treino.etapas().stream().anyMatch(e -> e.distanciaKm() == null || e.distanciaKm() <= 0)) return treino;
         double soma = arredondar2(somarDistancias(treino.etapas()));
-        TreinoPlanejadoLlmDto resultado = treino;
+        TreinoPlanejadoLlmDto comTotal = treino;
         if (treino.distanciaKm() == null || treino.distanciaKm() != soma) {
             log.info("RECONCILIAÇÃO [{}]: distanciaKm={} km → soma das etapas pelo pace {} km (tolerância zero)",
                     treino.tipoTreino(), treino.distanciaKm(), soma);
-            resultado = treino.comDistancia(soma);
+            comTotal = treino.comDistancia(soma);
         }
-        // fix-duracao-treino-estrutura-completa: a duração acompanha a soma, inclusive com o total já certo —
-        // o desempate de recalcular-duracao usa o ritmo do cabeçalho e manteria a duração da LLM
-        boolean todasComDuracao = treino.etapas().stream().allMatch(e -> e.duracaoMin() != null && e.duracaoMin() > 0);
-        if (todasComDuracao) {
-            String duracaoSoma = formatarDuracao(somarDuracoesMin(treino.etapas()));
-            if (!duracaoSoma.equals(treino.duracaoMin())) resultado = resultado.comDuracao(duracaoSoma);
-        }
-        return resultado;
+        // inclusive com o total já certo: a LLM pode acertar a distância e declarar a duração pelo ritmo do cabeçalho
+        return comDuracaoDaSoma(comTotal, treino.etapas());
+    }
+
+    /**
+     * Duração do treino = soma das etapas. Sem isso o desempate de {@code recalcular-duracao}, pelo ritmo do
+     * cabeçalho, mantém a duração da LLM e o card mostra outro tempo que o editor. Etapa sem duração faria
+     * a soma um piso: aí o treino fica como está e a cauda decide.
+     */
+    private TreinoPlanejadoLlmDto comDuracaoDaSoma(TreinoPlanejadoLlmDto treino, List<EtapaTreinoLlmDto> etapas) {
+        if (etapas.stream().anyMatch(e -> e.duracaoMin() == null || e.duracaoMin() <= 0)) return treino;
+        String duracao = formatarDuracao(somarDuracoesMin(etapas));
+        return duracao.equals(treino.duracaoMin()) ? treino : treino.comDuracao(duracao);
     }
 
     private boolean ehPrincipal(EtapaTreinoLlmDto e) {
@@ -407,13 +412,8 @@ public class TreinoNormalizador {
         log.info("RECONCILIAÇÃO [{}]: etapa sintetizada → PRINCIPAL encaixada no total de {} km ({} km)",
                 treino.tipoTreino(), treino.distanciaKm(), sobra);
         TreinoPlanejadoLlmDto encaixado = treino.comEtapas(etapas).comDistancia(arredondar2(somarDistancias(etapas)));
-        // mesmo motivo do bloco único: sem isso o desempate de recalcular-duracao, pelo ritmo do cabeçalho,
-        // mantém a duração da LLM e o card mostra outro tempo que o editor. Etapa sem duração faria a soma um
-        // piso; aí o recálculo da cauda decide, como antes
-        boolean todasComDuracao = etapas.stream().allMatch(e -> e.duracaoMin() != null && e.duracaoMin() > 0);
-        return java.util.Optional.of(pace.isPresent() && todasComDuracao
-                ? encaixado.comDuracao(formatarDuracao(somarDuracoesMin(etapas)))
-                : encaixado);
+        // sem pace a PRINCIPAL encaixada guarda a duração da LLM, e a soma não descreve o treino
+        return java.util.Optional.of(pace.isPresent() ? comDuracaoDaSoma(encaixado, etapas) : encaixado);
     }
 
     /**

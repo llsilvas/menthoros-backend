@@ -405,7 +405,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         }
 
         @Test
-        @DisplayName("só o total muda: etapas, duração e ritmo preservados")
+        @DisplayName("total e duração viram a soma; etapas e ritmo preservados")
         void soOTotalMuda() {
             var treino = continuo(etapa("AQUECIMENTO", 10, 1.32, null), etapa("PRINCIPAL", 30, 3.9, "7:28-7:55/km"));
 
@@ -413,6 +413,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
 
             assertThat(resultado).usingRecursiveComparison().ignoringFields("distanciaKm", "duracaoMin").isEqualTo(treino);
             assertThat(resultado.distanciaKm()).isEqualTo(5.22);
+            assertThat(resultado.duracaoMin()).isEqualTo("40:00");
         }
 
         @Test

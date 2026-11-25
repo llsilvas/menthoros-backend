@@ -24,6 +24,7 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
+import static org.assertj.core.api.Assertions.offset;
 import static org.junit.jupiter.api.Assumptions.abort;
 
 /**
@@ -170,7 +171,7 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
         var saida = normalizacao.normalizar(entrada, new ContextoNormalizacao(atleta, ATLETA_ID, null, Map.of(), Map.of(),
                 ContextoNormalizacao.zonasPaceComDado(atleta, new ZonaTreinoService())));
 
-        assertThat(saida.distanciaKm()).isCloseTo(somaKm(saida), org.assertj.core.data.Offset.offset(0.01));
+        assertThat(saida.distanciaKm()).isCloseTo(somaKm(saida), offset(0.01));
         assertThat(saida.duracaoMin()).isEqualTo("84:00");
         assertThat(minutos(saida.duracaoMin())).isEqualTo(somaMin(saida));
     }
