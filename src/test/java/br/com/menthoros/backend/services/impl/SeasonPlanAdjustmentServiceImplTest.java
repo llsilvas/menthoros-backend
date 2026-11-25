@@ -3,6 +3,8 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.WeekPlan;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
+import br.com.menthoros.backend.domain.planner.WeeklyVolume;
+import br.com.menthoros.backend.enums.StartVolumeSource;
 import br.com.menthoros.backend.dto.input.SeasonPlanRecalculateInputDto;
 import br.com.menthoros.backend.dto.input.SeasonWeekUpdateInputDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanDiffDto;
@@ -139,6 +141,30 @@ class SeasonPlanAdjustmentServiceImplTest {
             assertThat(semanasCaptor.getValue()).extracting(SeasonWeek::getWeekIndex).containsExactly(1, 2);
             assertThat(semanasCaptor.getValue().get(1).getKeySessions()).isEqualTo("6x1km");
             assertThat(semanasCaptor.getValue()).allSatisfy(w -> assertThat(w.getSeasonPlan()).isNotSameAs(ativa));
+        }
+
+        @Test
+        @DisplayName("copia da ativa o longão de partida e a evidência do volume de partida")
+        void copiaEvidenciaDaPartida() {
+            PlanoTreino ativa = travada(temporada(SeasonPlanStatus.ACTIVE, 1));
+            List<WeeklyVolume> historico = List.of(new WeeklyVolume("2026-11-09", new BigDecimal("20.0")));
+            ativa.setInitialLongRunKm(new BigDecimal("7.4"));
+            ativa.setProposedVolumeKm(new BigDecimal("20.8"));
+            ativa.setInitialVolumeSource(StartVolumeSource.MEDIAN);
+            ativa.setInitialVolumeHistory(historico);
+            when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(ativa.getId(), tenantId))
+                    .thenReturn(List.of(semana(ativa, 1, "40")));
+            propostas();
+            ArgumentCaptor<PlanoTreino> salvo = ArgumentCaptor.forClass(PlanoTreino.class);
+            when(planoTreinoRepository.saveAndFlush(salvo.capture())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.createDraft(atleta.getId(), ativa.getId());
+
+            PlanoTreino rascunho = salvo.getValue();
+            assertThat(rascunho.getInitialLongRunKm()).isEqualByComparingTo("7.4");
+            assertThat(rascunho.getProposedVolumeKm()).isEqualByComparingTo("20.8");
+            assertThat(rascunho.getInitialVolumeSource()).isEqualTo(StartVolumeSource.MEDIAN);
+            assertThat(rascunho.getInitialVolumeHistory()).isEqualTo(historico);
         }
 
         @Test

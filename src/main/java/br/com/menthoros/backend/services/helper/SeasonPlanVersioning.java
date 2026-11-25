@@ -91,6 +91,10 @@ public class SeasonPlanVersioning {
         r.setShortPreparation(ativa.getShortPreparation());
         r.setInitialCtl(ativa.getInitialCtl());
         r.setInitialVolumeKm(ativa.getInitialVolumeKm());
+        r.setInitialLongRunKm(ativa.getInitialLongRunKm());
+        r.setProposedVolumeKm(ativa.getProposedVolumeKm());
+        r.setInitialVolumeSource(ativa.getInitialVolumeSource());
+        r.setInitialVolumeHistory(ativa.getInitialVolumeHistory());
         r.setPeakVolumeKm(ativa.getPeakVolumeKm());
         r.setMaxLongRunKm(ativa.getMaxLongRunKm());
         r.setBaseSeasonPlanId(ativa.getId());
