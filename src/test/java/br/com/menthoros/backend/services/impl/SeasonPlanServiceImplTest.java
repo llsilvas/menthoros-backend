@@ -18,6 +18,9 @@ import br.com.menthoros.backend.entity.PlanoTreino;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.SeasonWeek;
 import br.com.menthoros.backend.entity.TreinoRealizado;
+import br.com.menthoros.backend.domain.planner.WeeklyVolume;
+import br.com.menthoros.backend.enums.StartVolumeSource;
+import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
 import br.com.menthoros.backend.enums.StatusSincronizacao;
@@ -84,6 +87,7 @@ class SeasonPlanServiceImplTest {
     /** 2026-11-16 (segunda) 12:00 UTC = 09:00 em São Paulo. */
     private static final Clock CLOCK = Clock.fixed(Instant.parse("2026-11-16T12:00:00.123456789Z"), ZoneOffset.UTC);
     private static final LocalDate HOJE = LocalDate.of(2026, 11, 16);
+    private static final LocalDate INICIO_JANELA = LocalDate.of(2026, 9, 21);
     private static final LocalDate PROVA_20_SEMANAS = LocalDate.of(2027, 4, 4);
 
     @Mock private AtletaRepository atletaRepository;
@@ -242,8 +246,10 @@ class SeasonPlanServiceImplTest {
             Prova prova = provaTravada(provaAlvo(PROVA_20_SEMANAS));
             abertas();
             pmc(40.0, HOJE.minusDays(10), HOJE.minusDays(100));
-            treinos(treino(HOJE.minusDays(3), "40"), treino(HOJE.minusDays(10), "40"),
-                    treino(HOJE.minusDays(17), "40"), treino(HOJE.minusDays(24), "40"));
+            // 4 × 10 km por semana: longão de partida de 10 km, abaixo do piso de 28%, sem alerta
+            String[] dez = {"10", "10", "10", "10", "10", "10", "10", "10"};
+            treinos(java.util.stream.Stream.of(semanas(dez), semanas(dez), semanas(dez), semanas(dez))
+                    .flatMap(java.util.Arrays::stream).toArray(TreinoRealizado[]::new));
             when(planoTreinoRepository.save(any(PlanoTreino.class))).thenAnswer(inv -> inv.getArgument(0));
 
             Generation resultado = service.generate(atleta.getId());
@@ -285,7 +291,7 @@ class SeasonPlanServiceImplTest {
             Prova alvo = provaTravada(provaAlvo(PROVA_20_SEMANAS));
             abertas();
             pmc(40.0, HOJE, HOJE.minusDays(100));
-            treinos(treino(HOJE.minusDays(3), "40"));
+            treinos(semanas("40", "40", "40", "40", "40", "40", "40", "40"));
             Prova meia = provaAlvo(HOJE.plusWeeks(5).plusDays(6));
             meia.setProvaAlvo(false);
             meia.setDistancia(DistanciaProva.KM_21);
@@ -312,7 +318,7 @@ class SeasonPlanServiceImplTest {
             abertas();
             pmc(70.0, HOJE.minusDays(1), HOJE.minusDays(20));
             baseline(55.0);
-            treinos(treino(HOJE.minusDays(3), "30"));
+            treinos(semanas("30", "30", "30", "30", "30", "30", "30", "30"));
             when(planoTreinoRepository.save(any(PlanoTreino.class))).thenAnswer(inv -> inv.getArgument(0));
 
             service.generate(atleta.getId());
@@ -357,6 +363,75 @@ class SeasonPlanServiceImplTest {
         }
 
         @Test
+        @DisplayName("partida é a mediana das 8 semanas, origem MEDIAN, e as 8 somas ficam gravadas")
+        void partidaPelaMediana() {
+            PlanoTreino salvo = gerarESalvar(semanas("10", "20", "30", "40", "25", "15", "35", "5"));
+
+            assertThat(salvo.getInitialVolumeKm()).isEqualByComparingTo("22.5");   // (20 + 25) / 2
+            assertThat(salvo.getProposedVolumeKm()).isEqualByComparingTo("22.5");
+            assertThat(salvo.getInitialVolumeSource()).isEqualTo(StartVolumeSource.MEDIAN);
+            assertThat(salvo.getInitialVolumeHistory()).hasSize(8);
+            assertThat(salvo.getInitialVolumeHistory().get(0)).isEqualTo(new WeeklyVolume("2026-09-21", new BigDecimal("10.0")));
+            assertThat(salvo.getInitialVolumeHistory().get(7)).isEqualTo(new WeeklyVolume("2026-11-09", new BigDecimal("5.0")));
+        }
+
+        @Test
+        @DisplayName("uma semana fora da curva não move a mediana")
+        void semanaAtipicaNaoMoveAMediana() {
+            PlanoTreino salvo = gerarESalvar(semanas("20", "20", "20", "60", "20", "20", "20", "20"));
+
+            assertThat(salvo.getInitialVolumeKm()).isEqualByComparingTo("20.0");
+        }
+
+        @Test
+        @DisplayName("treino em só 2 das 8 semanas: mediana 0, partida do onboarding com origem ONBOARDING e histórico gravado")
+        void poucasSemanasCaiNoOnboarding() {
+            onboarding(28);
+
+            PlanoTreino salvo = gerarESalvar(treino(INICIO_JANELA.plusDays(1), "30"), treino(HOJE.minusDays(3), "30"));
+
+            assertThat(salvo.getInitialVolumeKm()).isEqualByComparingTo("28");
+            assertThat(salvo.getInitialVolumeSource()).isEqualTo(StartVolumeSource.ONBOARDING);
+            assertThat(salvo.getInitialVolumeHistory()).extracting(WeeklyVolume::km)
+                    .filteredOn(km -> km.signum() > 0).hasSize(2);
+        }
+
+        @Test
+        @DisplayName("longão de partida: maior treino das 6 semanas; o de 7 semanas atrás entra no volume, não no longão")
+        void longaoDePartidaNasSeisSemanas() {
+            TreinoRealizado[] t = semanas("10", "30", "10", "10", "10", "10", "10", "10");
+
+            PlanoTreino salvo = gerarESalvar(t);
+
+            assertThat(salvo.getInitialLongRunKm()).isEqualByComparingTo("10.0");
+            assertThat(salvo.getInitialVolumeHistory().get(1).km()).isEqualByComparingTo("30.0");
+        }
+
+        @Test
+        @DisplayName("longão de partida ignora PROVA; só PROVA na janela, fica nulo")
+        void longaoDePartidaIgnoraProva() {
+            TreinoRealizado[] t = semanas("12", "12", "12", "12", "12", "12", "12", "21");
+            t[7].setTipoTreino(TipoTreino.PROVA);
+
+            PlanoTreino salvo = gerarESalvar(t);
+
+            assertThat(salvo.getInitialLongRunKm()).isEqualByComparingTo("12.0");
+        }
+
+        @Test
+        @DisplayName("só treinos PROVA na janela do longão: longão de partida nulo")
+        void soProvaDeixaLongaoNulo() {
+            TreinoRealizado[] t = semanas("20", "20", "20", "20", "20", "20", "20", "20");
+            for (int i = 2; i < t.length; i++) {
+                t[i].setTipoTreino(TipoTreino.PROVA);
+            }
+
+            PlanoTreino salvo = gerarESalvar(t);
+
+            assertThat(salvo.getInitialLongRunKm()).isNull();
+        }
+
+        @Test
         @DisplayName("volume ínfimo que arredonda para 0,0 cai no volumeSemanalMax do onboarding")
         void volumeInfimoCaiNoOnboarding() {
             atletaExiste();
@@ -383,7 +458,7 @@ class SeasonPlanServiceImplTest {
             provaTravada(prova);
             abertas();
             pmc(40.0, HOJE, HOJE.minusDays(100));
-            treinos(treino(HOJE.minusDays(3), "40"));
+            treinos(semanas("40", "40", "40", "40", "40", "40", "40", "40"));
             when(planoTreinoRepository.save(any(PlanoTreino.class))).thenAnswer(inv -> inv.getArgument(0));
 
             service.generate(atleta.getId());
@@ -942,10 +1017,38 @@ class SeasonPlanServiceImplTest {
     }
 
     private void treinos(TreinoRealizado... treinos) {
-        // janela: as 4 semanas completas antes da corrente (2026-10-19 a 2026-11-15)
+        // janela: as 8 semanas completas antes da corrente (2026-09-21 a 2026-11-15)
         when(treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
-                atleta.getId(), tenantId, LocalDate.of(2026, 10, 19), LocalDate.of(2026, 11, 15)))
+                atleta.getId(), tenantId, INICIO_JANELA, LocalDate.of(2026, 11, 15)))
                 .thenReturn(List.of(treinos));
+    }
+
+    /** Um treino na quarta-feira de cada semana da janela, da mais antiga à mais recente. */
+    private static TreinoRealizado[] semanas(String... km) {
+        TreinoRealizado[] t = new TreinoRealizado[km.length];
+        for (int i = 0; i < km.length; i++) {
+            t[i] = treino(INICIO_JANELA.plusWeeks(i).plusDays(2), km[i]);
+        }
+        return t;
+    }
+
+    private void onboarding(int volumeSemanalMax) {
+        PerfilOnboardingAtleta perfil = new PerfilOnboardingAtleta();
+        perfil.setVolumeSemanalMax(volumeSemanalMax);
+        when(perfilRepository.findByAtletaIdAndTenantId(atleta.getId(), tenantId)).thenReturn(Optional.of(perfil));
+    }
+
+    private PlanoTreino gerarESalvar(TreinoRealizado... treinos) {
+        atletaExiste();
+        provaTravada(provaAlvo(PROVA_20_SEMANAS));
+        abertas();
+        pmc(40.0, HOJE, HOJE.minusDays(100));
+        treinos(treinos);
+        when(planoTreinoRepository.save(any(PlanoTreino.class))).thenAnswer(inv -> inv.getArgument(0));
+        service.generate(atleta.getId());
+        ArgumentCaptor<PlanoTreino> plano = ArgumentCaptor.forClass(PlanoTreino.class);
+        verify(planoTreinoRepository).save(plano.capture());
+        return plano.getValue();
     }
 
     private static TreinoRealizado treino(LocalDate data, String km) {

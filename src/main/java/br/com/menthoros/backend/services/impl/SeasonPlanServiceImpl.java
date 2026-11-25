@@ -8,6 +8,7 @@ import br.com.menthoros.backend.domain.planner.SeasonPlanner.SeasonPlan;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.WeekPlan;
 import br.com.menthoros.backend.domain.planner.SeasonWeekLock;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
+import br.com.menthoros.backend.domain.planner.WeeklyVolume;
 import br.com.menthoros.backend.dto.output.AthleteSeasonPlanDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 import br.com.menthoros.backend.entity.AthleteBaselineState;
@@ -25,6 +26,8 @@ import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.ProvaStatus;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
+import br.com.menthoros.backend.enums.StartVolumeSource;
+import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.WeekValueSource;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -77,7 +80,8 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
     private static final DateTimeFormatter DATA_BR = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     /** Constante de tempo do CTL no PMC (Banister/Coggan). */
     private static final double CTL_TIME_CONSTANT_DAYS = 42.0;
-    private static final int VOLUME_WINDOW_WEEKS = 4;
+    private static final int VOLUME_WINDOW_WEEKS = 8;
+    private static final int LONG_RUN_WINDOW_WEEKS = 6;
     private static final int NOME_MAX = 100;
     private static final int MOTIVO_MAX = 255;
     private static final List<SeasonPlanStatus> ABERTAS = List.of(SeasonPlanStatus.ACTIVE, SeasonPlanStatus.PROPOSED);
@@ -173,11 +177,12 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         }
 
         double ctl = resolverCtl(atletaId, tenantId, hoje);
-        BigDecimal volume = resolverVolume(atletaId, tenantId, hoje);
+        StartVolume partida = resolverVolume(atletaId, tenantId, hoje);
         SeasonPlan plano = SeasonPlanner.plan(prova.getDistancia(), prova.getDistanciaKm(),
-                prova.getDataProva(), hoje, ctl, volume, preparatorias(atletaId, tenantId, prova, hoje));
+                prova.getDataProva(), hoje, ctl, partida.km(), partida.longRunKm(),
+                preparatorias(atletaId, tenantId, prova, hoje));
 
-        PlanoTreino temporada = planoTreinoRepository.save(novaTemporada(atleta, prova, plano, ctl, volume));
+        PlanoTreino temporada = planoTreinoRepository.save(novaTemporada(atleta, prova, plano, ctl, partida));
         List<SeasonWeek> weeks = plano.weeks().stream().map(w -> novaSemana(temporada, tenantId, w)).toList();
         seasonWeekRepository.saveAll(weeks);
         SeasonPlanResponseDto dto = responseMapper.toDto(temporada, weeks, tenantId, null);
@@ -361,34 +366,66 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
                         "Sem base de carga (CTL): sincronize treinos ou complete o onboarding"));
     }
 
+    /** Ponto de partida da temporada e a evidência dele (season-plan-start-volume, D1/D2). */
+    private record StartVolume(BigDecimal km, StartVolumeSource source, List<WeeklyVolume> history,
+                               @Nullable BigDecimal longRunKm) {
+    }
+
     /**
-     * Volume de partida (D11): média de km das 4 semanas completas antes da corrente, só treinos que
-     * contam na carga; sem treino, o {@code volumeSemanalMax} do onboarding.
+     * Volume de partida (D1): mediana dos km das 8 semanas completas antes da corrente, semana sem
+     * treino = 0, só treinos que contam na carga; mediana zero, o {@code volumeSemanalMax} do
+     * onboarding. Longão de partida (D2): maior treino que conta, fora PROVA, nas 6 semanas.
      */
-    private BigDecimal resolverVolume(UUID atletaId, UUID tenantId, LocalDate hoje) {
+    private StartVolume resolverVolume(UUID atletaId, UUID tenantId, LocalDate hoje) {
         LocalDate segunda = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-        BigDecimal soma = treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
-                        atletaId, tenantId, segunda.minusWeeks(VOLUME_WINDOW_WEEKS), segunda.minusDays(1))
+        LocalDate inicio = segunda.minusWeeks(VOLUME_WINDOW_WEEKS);
+        List<TreinoRealizado> treinos = treinoRealizadoRepository.findByAtletaIdAndTenantIdAndDataTreinoBetween(
+                        atletaId, tenantId, inicio, segunda.minusDays(1))
                 .stream()
                 .filter(TreinoRealizado::contaNaCarga)
-                .map(TreinoRealizado::getDistanciaKm)
-                .filter(Objects::nonNull)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal media = soma.divide(BigDecimal.valueOf(VOLUME_WINDOW_WEEKS), 1, RoundingMode.HALF_UP);
-        // Volume ínfimo arredonda para 0,0 e o motor rejeita base zero: cai no onboarding, como sem treino.
-        if (media.signum() > 0) {
-            return media;
+                .filter(t -> t.getDistanciaKm() != null && t.getDataTreino() != null)
+                .toList();
+
+        Map<LocalDate, BigDecimal> porSemana = new TreeMap<>();
+        for (int i = 0; i < VOLUME_WINDOW_WEEKS; i++) {
+            porSemana.put(inicio.plusWeeks(i), BigDecimal.ZERO);
         }
-        return perfilRepository.findByAtletaIdAndTenantId(atletaId, tenantId)
+        treinos.forEach(t -> porSemana.merge(
+                t.getDataTreino().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)),
+                t.getDistanciaKm(), BigDecimal::add));
+        List<WeeklyVolume> historico = porSemana.entrySet().stream()
+                .map(e -> new WeeklyVolume(e.getKey().toString(), e.getValue().setScale(1, RoundingMode.HALF_UP)))
+                .toList();
+
+        LocalDate inicioLongao = segunda.minusWeeks(LONG_RUN_WINDOW_WEEKS);
+        @Nullable BigDecimal longao = treinos.stream()
+                .filter(t -> !t.getDataTreino().isBefore(inicioLongao))
+                .filter(t -> t.getTipoTreino() != TipoTreino.PROVA)
+                .map(TreinoRealizado::getDistanciaKm)
+                .filter(km -> km.signum() > 0)
+                .max(Comparator.naturalOrder())
+                .map(km -> km.setScale(1, RoundingMode.HALF_UP))
+                .orElse(null);
+
+        List<BigDecimal> ordenados = porSemana.values().stream().sorted().toList();
+        int meio = VOLUME_WINDOW_WEEKS / 2;
+        BigDecimal mediana = ordenados.get(meio - 1).add(ordenados.get(meio))
+                .divide(BigDecimal.TWO, 1, RoundingMode.HALF_UP);
+        // Volume ínfimo arredonda para 0,0 e o motor rejeita base zero: cai no onboarding, como sem treino.
+        if (mediana.signum() > 0) {
+            return new StartVolume(mediana, StartVolumeSource.MEDIAN, historico, longao);
+        }
+        BigDecimal onboarding = perfilRepository.findByAtletaIdAndTenantId(atletaId, tenantId)
                 .map(PerfilOnboardingAtleta::getVolumeSemanalMax)
                 .filter(v -> v > 0)
                 .map(BigDecimal::valueOf)
                 .orElseThrow(() -> new DomainRuleViolationException(
                         "Sem base de volume: sincronize treinos ou informe o volume semanal no onboarding"));
+        return new StartVolume(onboarding, StartVolumeSource.ONBOARDING, historico, longao);
     }
 
     private static PlanoTreino novaTemporada(Atleta atleta, Prova prova, SeasonPlan plano, double ctl,
-                                             BigDecimal volume) {
+                                             StartVolume partida) {
         String nomeProva = prova.getNomeProva();
         PlanoTreino p = new PlanoTreino();
         p.setAtleta(atleta);
@@ -406,7 +443,12 @@ public class SeasonPlanServiceImpl implements SeasonPlanService {
         p.setTotalWeeks(plano.weeks().size());
         p.setShortPreparation(plano.shortPreparation());
         p.setInitialCtl(ctl);
-        p.setInitialVolumeKm(volume.setScale(1, RoundingMode.HALF_UP));
+        BigDecimal volume = partida.km().setScale(1, RoundingMode.HALF_UP);
+        p.setInitialVolumeKm(volume);
+        p.setProposedVolumeKm(volume);
+        p.setInitialVolumeSource(partida.source());
+        p.setInitialVolumeHistory(partida.history());
+        p.setInitialLongRunKm(partida.longRunKm());
         p.setPeakVolumeKm(plano.weeks().stream().map(WeekPlan::targetVolumeKm)
                 .max(Comparator.naturalOrder()).orElseThrow());
         return p;

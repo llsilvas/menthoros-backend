@@ -752,7 +752,7 @@ class SeasonPlanAdjustmentServiceImplTest {
     /** Semanas que o motor daria ao rascunho de {@link #rascunho12()} — o oráculo do recálculo. */
     private static List<WeekPlan> motor(PlanoTreino t, int base, int build, int peak, int taper, String km) {
         return SeasonPlanner.planWithPhases(t.getProva().getDistancia(), null, t.getProva().getDataProva(),
-                HOJE.minusWeeks(1), t.getInitialCtl(), new BigDecimal(km), List.of(),
+                HOJE.minusWeeks(1), t.getInitialCtl(), new BigDecimal(km), null, List.of(),
                 fases(base, build, peak, taper)).weeks();
     }
 

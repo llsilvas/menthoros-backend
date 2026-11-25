@@ -193,7 +193,8 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
                 .map(w -> new RaceMilestone(w.getMilestoneRaceId(), w.getWeekStart(), BigDecimal.ONE))
                 .toList();
         List<WeekPlan> motor = SeasonPlanner.planWithPhases(prova.getDistancia(), prova.getDistanciaKm(),
-                prova.getDataProva(), inicio, ctl, input.startVolumeKm(), marcos, input.phaseWeeks()).weeks();
+                prova.getDataProva(), inicio, ctl, input.startVolumeKm(), rascunho.getInitialLongRunKm(), marcos,
+                input.phaseWeeks()).weeks();
 
         LocalDate hoje = LocalDate.now(clock.withZone(SeasonWeekLock.FUSO));
         List<Integer> livres = new ArrayList<>();
