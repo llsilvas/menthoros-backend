@@ -189,6 +189,7 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(perfil.planoVigente()).isNull();
             assertThat(perfil.realizadosRecentes()).isEmpty();
             assertThat(perfil.proximaProva()).isNull();
+            assertThat(perfil.provas()).isEmpty();
             assertThat(perfil.sinaisRecentes()).isEmpty();
             assertThat(perfil.sugestoesRecentes()).isEmpty();
             assertThat(perfil.avisos()).isNull();
@@ -320,6 +321,26 @@ class CoachAthleteProfileServiceImplTest {
             assertThat(perfil.proximaProva().dataProva()).isEqualTo(hoje.plusDays(7));
             assertThat(perfil.proximaProva().provaAlvo()).isTrue();
             verify(provaRepository).findUpcomingByAtletaIdAndTenantId(eq(atletaId), eq(tenantId), any(LocalDate.class));
+        }
+
+        @Test
+        @DisplayName("provas — preparatória antes da prova-alvo: lista traz as duas e proximaProva é a preparatória")
+        void provasTrazPreparatoriaEAlvo() {
+            stubPerfilMinimo();
+            Prova preparatoria = new Prova();
+            Prova alvo = new Prova();
+            LocalDate hoje = LocalDate.now();
+            ProvaOutputDto dtoPreparatoria = provaDto("Meia preparatória", hoje.plusDays(14), false);
+            ProvaOutputDto dtoAlvo = provaDto("Maratona alvo", hoje.plusDays(60), true);
+            when(provaRepository.findUpcomingByAtletaIdAndTenantId(eq(atletaId), eq(tenantId), any(LocalDate.class)))
+                    .thenReturn(List.of(preparatoria, alvo));
+            when(provaMapper.toOutputDto(preparatoria)).thenReturn(dtoPreparatoria);
+            when(provaMapper.toOutputDto(alvo)).thenReturn(dtoAlvo);
+
+            AtletaPerfilCoachOutputDto perfil = service.buscarPerfil(atletaId);
+
+            assertThat(perfil.provas()).containsExactly(dtoPreparatoria, dtoAlvo);
+            assertThat(perfil.proximaProva()).isEqualTo(dtoPreparatoria);
         }
 
         @Test
