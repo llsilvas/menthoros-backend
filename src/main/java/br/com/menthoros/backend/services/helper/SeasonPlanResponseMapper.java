@@ -4,6 +4,7 @@ import br.com.menthoros.backend.domain.planner.SeasonPlanValidator;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.WeekPlan;
 import br.com.menthoros.backend.domain.planner.SeasonWeekLock;
+import br.com.menthoros.backend.domain.planner.WeeklyVolume;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 import br.com.menthoros.backend.entity.PlanoTreino;
 import br.com.menthoros.backend.entity.Prova;
@@ -85,7 +86,17 @@ public class SeasonPlanResponseMapper {
                 p.getVersion(),
                 p.getBaseSeasonPlanId(),
                 openDraftId,
-                p.getInitialVolumeKm());
+                p.getInitialVolumeKm(),
+                p.getInitialLongRunKm(),
+                p.getProposedVolumeKm(),
+                p.getInitialVolumeSource(),
+                historico(p.getInitialVolumeHistory()));
+    }
+
+    private static @Nullable List<SeasonPlanResponseDto.VolumeWeek> historico(@Nullable List<WeeklyVolume> semanas) {
+        return semanas == null ? null : semanas.stream()
+                .map(s -> new SeasonPlanResponseDto.VolumeWeek(LocalDate.parse(s.weekStart()), s.km()))
+                .toList();
     }
 
     private static SeasonPlanResponseDto.Week semana(SeasonWeek w, LocalDate hoje, @Nullable LocalDate dataProva,

@@ -376,6 +376,25 @@ class SeasonPlanServiceImplTest {
         }
 
         @Test
+        @DisplayName("resposta da geração traz partida, longão, origem e as 8 semanas")
+        void respostaComEvidencia() {
+            atletaExiste();
+            provaTravada(provaAlvo(PROVA_20_SEMANAS));
+            abertas();
+            pmc(40.0, HOJE, HOJE.minusDays(100));
+            treinos(semanas("10", "20", "30", "40", "25", "15", "35", "5"));
+            when(planoTreinoRepository.save(any(PlanoTreino.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            SeasonPlanResponseDto dto = service.generate(atleta.getId()).plan();
+
+            assertThat(dto.proposedVolumeKm()).isEqualByComparingTo("22.5");
+            assertThat(dto.initialLongRunKm()).isEqualByComparingTo("40.0");
+            assertThat(dto.initialVolumeSource()).isEqualTo(StartVolumeSource.MEDIAN);
+            assertThat(dto.volumeHistory()).hasSize(8).first()
+                    .isEqualTo(new SeasonPlanResponseDto.VolumeWeek(INICIO_JANELA, new BigDecimal("10.0")));
+        }
+
+        @Test
         @DisplayName("uma semana fora da curva não move a mediana")
         void semanaAtipicaNaoMoveAMediana() {
             PlanoTreino salvo = gerarESalvar(semanas("20", "20", "20", "60", "20", "20", "20", "20"));
@@ -544,6 +563,11 @@ class SeasonPlanServiceImplTest {
             Optional<SeasonPlanResponseDto> atual = service.findCurrent(atleta.getId());
 
             assertThat(atual).get().extracting(SeasonPlanResponseDto::id).isEqualTo(ativa.getId());
+            // temporada anterior à V122: a evidência da partida vem ausente
+            assertThat(atual.get().volumeHistory()).isNull();
+            assertThat(atual.get().initialVolumeSource()).isNull();
+            assertThat(atual.get().initialLongRunKm()).isNull();
+            assertThat(atual.get().proposedVolumeKm()).isNull();
         }
 
         @Test

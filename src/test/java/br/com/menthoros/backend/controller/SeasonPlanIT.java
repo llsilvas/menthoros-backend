@@ -34,6 +34,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import org.springframework.http.MediaType;
+import java.util.Map;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -106,7 +108,7 @@ class SeasonPlanIT extends AbstractIntegrationTest {
             tenantId = assessoria.getId();
             metrica(hoje.minusDays(60), 30.0);
             metrica(hoje.minusDays(1), 40.0);
-            treino(hoje.minusDays(10), "35.0");
+            fx.historicoDeVolume(atleta, hoje);
             usuario(subTecnico, assessoria, UserRole.TECNICO);
             usuario(subAtleta, assessoria, UserRole.ATLETA);
             usuario(subTecnicoOutraAssessoria, fx.assessoria(), UserRole.TECNICO);
@@ -251,6 +253,56 @@ class SeasonPlanIT extends AbstractIntegrationTest {
 
         assertThat(jdbc.queryForObject("select approved_by from tb_plano_treino where id = ?::uuid", UUID.class, id))
                 .isEqualTo(subTecnico);
+    }
+
+    @Test
+    @DisplayName("gera com a evidência da partida, recalcula a proposta v1 e aprova: origem COACH e volume proposto intactos")
+    void gerarRecalcularV1EAprovar() throws Exception {
+        String base = "/api/v1/atletas/" + atleta.getId() + "/season-plans";
+        when(principalResolver.getCurrentSubject()).thenReturn(subTecnico.toString());
+        tx.executeWithoutResult(s -> {
+            atleta = em.find(Atleta.class, atleta.getId());
+            LocalDate segunda = LocalDate.now(FUSO).with(java.time.temporal.TemporalAdjusters.previousOrSame(
+                    java.time.DayOfWeek.MONDAY));
+            treino(segunda.minusDays(2), "14.0");
+        });
+
+        String gerada = mockMvc.perform(post(base).with(como(subTecnico, tenantId, "TECNICO")))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.initialVolumeSource").value("MEDIAN"))
+                .andExpect(jsonPath("$.proposedVolumeKm").value(35.0))
+                .andExpect(jsonPath("$.initialVolumeKm").value(35.0))
+                .andExpect(jsonPath("$.initialLongRunKm").value(14.0))
+                .andExpect(jsonPath("$.volumeHistory.length()").value(8))
+                .andExpect(jsonPath("$.weeks[0].locked").value(false))
+                .andReturn().getResponse().getContentAsString();
+        String id = com.jayway.jsonpath.JsonPath.read(gerada, "$.id");
+
+        mockMvc.perform(post(base + "/" + id + "/recalculate").with(como(subTecnico, tenantId, "TECNICO"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"phaseWeeks\":{\"BASE\":10,\"BUILD\":4,\"PEAK\":3,\"TAPER\":2},"
+                                + "\"startVolumeKm\":30,\"startLongRunKm\":10}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.seasonStatus").value("PROPOSED"))
+                .andExpect(jsonPath("$.initialVolumeSource").value("COACH"))
+                .andExpect(jsonPath("$.initialVolumeKm").value(30.0))
+                .andExpect(jsonPath("$.initialLongRunKm").value(10.0))
+                .andExpect(jsonPath("$.proposedVolumeKm").value(35.0))
+                .andExpect(jsonPath("$.weeks[0].valueSource").value("ENGINE"));
+
+        mockMvc.perform(post(base + "/" + id + "/approve").with(como(subTecnico, tenantId, "TECNICO")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.seasonStatus").value("ACTIVE"))
+                .andExpect(jsonPath("$.volumeHistory.length()").value(8));
+
+        Map<String, Object> linha = jdbc.queryForMap("""
+                select initial_volume_source, proposed_volume_km, initial_long_run_km, initial_volume_km,
+                       jsonb_array_length(initial_volume_history) as semanas
+                from tb_plano_treino where id = ?::uuid""", id);
+        assertThat(linha).containsEntry("initial_volume_source", "COACH").containsEntry("semanas", 8);
+        assertThat((BigDecimal) linha.get("proposed_volume_km")).isEqualByComparingTo("35.0");
+        assertThat((BigDecimal) linha.get("initial_long_run_km")).isEqualByComparingTo("10.0");
+        assertThat((BigDecimal) linha.get("initial_volume_km")).isEqualByComparingTo("30.0");
     }
 
     @Test
