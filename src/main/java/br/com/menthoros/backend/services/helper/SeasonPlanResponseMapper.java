@@ -69,6 +69,7 @@ public class SeasonPlanResponseMapper {
                         .map(a -> new SeasonPlanResponseDto.Validation(a.rule(), SEVERITY_WARN, a.weekIndex(),
                                 a.measured(), a.limit(), a.message()))
                         .toList();
+        boolean primeiraProposta = SeasonPlanVersioning.primeiraProposta(p);
         return new SeasonPlanResponseDto(
                 p.getId(),
                 p.getSeasonStatus(),
@@ -80,7 +81,7 @@ public class SeasonPlanResponseMapper {
                 p.getTotalWeeks(),
                 p.getInitialCtl(),
                 p.getPeakVolumeKm(),
-                weeks.stream().map(w -> semana(w, hoje, dataProva, SeasonPlanVersioning.primeiraProposta(p))).toList(),
+                weeks.stream().map(w -> semana(w, hoje, dataProva, primeiraProposta)).toList(),
                 marcos(weeks, tenantId),
                 validations,
                 p.getVersion(),
@@ -90,7 +91,8 @@ public class SeasonPlanResponseMapper {
                 p.getInitialLongRunKm(),
                 p.getProposedVolumeKm(),
                 p.getInitialVolumeSource(),
-                historico(p.getInitialVolumeHistory()));
+                historico(p.getInitialVolumeHistory()),
+                primeiraProposta);
     }
 
     private static @Nullable List<SeasonPlanResponseDto.VolumeWeek> historico(@Nullable List<WeeklyVolume> semanas) {

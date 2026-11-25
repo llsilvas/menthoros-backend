@@ -168,7 +168,8 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
                 input.phaseWeeks(), input.startVolumeKm(), input.startLongRunKm(), atletaId, tenantId);
         PlanoTreino rascunho = versioning.travar(atletaId, seasonPlanId, tenantId);
         boolean primeira = SeasonPlanVersioning.primeiraProposta(rascunho);
-        if (!primeira && (rascunho.getSeasonStatus() != SeasonPlanStatus.PROPOSED || rascunho.getBaseSeasonPlanId() == null)) {
+        boolean ajusteAberto = rascunho.getSeasonStatus() == SeasonPlanStatus.PROPOSED && rascunho.getBaseSeasonPlanId() != null;
+        if (!primeira && !ajusteAberto) {
             throw new DomainConflictException("Só a proposta v1 ou um ajuste em aberto pode ser recalculado");
         }
         Prova prova = rascunho.getProva();

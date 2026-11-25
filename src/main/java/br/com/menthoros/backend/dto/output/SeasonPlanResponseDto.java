@@ -52,7 +52,10 @@ public record SeasonPlanResponseDto(
         StartVolumeSource initialVolumeSource,
         @Schema(description = "Km das 8 semanas usadas no volume de partida, da mais antiga à mais recente; ausente nas "
                 + "temporadas antigas")
-        List<VolumeWeek> volumeHistory
+        List<VolumeWeek> volumeHistory,
+        @Schema(description = "Proposta original (v1, nunca aprovada): o recálculo aceita volume e longão de partida "
+                + "e só as semanas concluídas travam", example = "true")
+        boolean firstProposal
 ) {
 
     @Schema(description = "Km de uma semana do histórico do volume de partida")

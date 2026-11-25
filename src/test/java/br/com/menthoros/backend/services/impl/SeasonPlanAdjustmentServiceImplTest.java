@@ -404,6 +404,7 @@ class SeasonPlanAdjustmentServiceImplTest {
 
             SeasonPlanResponseDto dto = service.recalculate(atleta.getId(), rascunho.getId(), aceite);
 
+            assertThat(dto.firstProposal()).isFalse();
             List<WeekPlan> motor = motor(rascunho, 3, 4, 2, 2, "40");
             for (int i : List.of(0, 1, 5, 11)) {
                 assertThat(retrato(semanas.get(i))).as("semana %d", i + 1).isEqualTo(antes.get(i));
@@ -551,6 +552,7 @@ class SeasonPlanAdjustmentServiceImplTest {
 
             SeasonPlanResponseDto dto = service.recalculate(atleta.getId(), v1.getId(), entradaV1("30", "10"));
 
+            assertThat(dto.firstProposal()).isTrue();
             List<WeekPlan> motor = motorV1(v1, "30", "10");
             for (int i = 0; i < 12; i++) {
                 SeasonWeek w = semanas.get(i);
