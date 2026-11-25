@@ -317,16 +317,27 @@ public class TreinoNormalizador {
     /**
      * Total do treino = soma das etapas, com tolerância zero e arredondado a 2 casas. Só para quem já
      * sabe que toda etapa é confiável (distância derivada do pace, nada sintetizado) — ver a receita
-     * TRES_ETAPAS. Etapa sem distância torna a soma um piso, e o treino fica como está.
+     * TRES_ETAPAS. Etapa sem distância torna a soma um piso, e o treino fica como está. A duração do treino
+     * vira a soma das etapas quando todas têm duração (sem uma delas a soma também é piso e a cauda decide).
      */
     public TreinoPlanejadoLlmDto adotarSomaDasEtapas(TreinoPlanejadoLlmDto treino) {
         if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
         if (treino.etapas().stream().anyMatch(e -> e.distanciaKm() == null || e.distanciaKm() <= 0)) return treino;
         double soma = arredondar2(somarDistancias(treino.etapas()));
-        if (treino.distanciaKm() != null && treino.distanciaKm() == soma) return treino;
-        log.info("RECONCILIAÇÃO [{}]: distanciaKm={} km → soma das etapas pelo pace {} km (tolerância zero)",
-                treino.tipoTreino(), treino.distanciaKm(), soma);
-        return treino.comDistancia(soma);
+        TreinoPlanejadoLlmDto resultado = treino;
+        if (treino.distanciaKm() == null || treino.distanciaKm() != soma) {
+            log.info("RECONCILIAÇÃO [{}]: distanciaKm={} km → soma das etapas pelo pace {} km (tolerância zero)",
+                    treino.tipoTreino(), treino.distanciaKm(), soma);
+            resultado = treino.comDistancia(soma);
+        }
+        // fix-duracao-treino-estrutura-completa: a duração acompanha a soma, inclusive com o total já certo —
+        // o desempate de recalcular-duracao usa o ritmo do cabeçalho e manteria a duração da LLM
+        boolean todasComDuracao = treino.etapas().stream().allMatch(e -> e.duracaoMin() != null && e.duracaoMin() > 0);
+        if (todasComDuracao) {
+            String duracaoSoma = formatarDuracao(somarDuracoesMin(treino.etapas()));
+            if (!duracaoSoma.equals(treino.duracaoMin())) resultado = resultado.comDuracao(duracaoSoma);
+        }
+        return resultado;
     }
 
     private boolean ehPrincipal(EtapaTreinoLlmDto e) {
