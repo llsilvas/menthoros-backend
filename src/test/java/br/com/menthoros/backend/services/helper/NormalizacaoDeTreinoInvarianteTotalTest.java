@@ -27,9 +27,14 @@ import static org.assertj.core.api.Assertions.fail;
 import static org.junit.jupiter.api.Assumptions.abort;
 
 /**
- * Invariantes "card = editor" e "total = prescrito" sobre a receita completa de
+ * Invariantes "card = editor" e "total = volume prescrito" sobre a receita completa de
  * {@link NormalizacaoDeTreino#normalizar}, numa grade de cenários dos treinos contínuos
- * (fix-etapas-sintetizadas-encaixe-total).
+ * (fix-etapas-sintetizadas-encaixe-total, fix-duracao-treino-estrutura-completa).
+ *
+ * <p><b>Volume prescrito.</b> Com etapa sintetizada pelo reparo, é o total declarado pela LLM (decisão de
+ * 22/09: o sistema não infla). Com a estrutura completa escrita pela LLM e pace derivável, é a soma das
+ * etapas: o aquecimento e o desaquecimento dela são volume prescrito (decisão de 16/11, reafirmada em
+ * 24/11) — ali "total = soma" já é a invariante card = editor.</p>
  *
  * <p><b>Por que uma grade e não casos.</b> O card da revisão mostra o total do treino e o editor soma as
  * etapas; cada divergência relatada até aqui virou um fix pontual, e a seguinte apareceu numa combinação
@@ -47,7 +52,7 @@ import static org.junit.jupiter.api.Assumptions.abort;
  * follow-up que a resolve. O cenário que cai numa delas é abortado (aparece no relatório com o motivo),
  * não aprovado: a lista é o inventário do que ainda diverge e não cresce sem decisão.</p>
  */
-@DisplayName("NormalizacaoDeTreino — invariantes card = editor e total = prescrito (grade)")
+@DisplayName("NormalizacaoDeTreino — invariantes card = editor e total = volume prescrito (grade)")
 class NormalizacaoDeTreinoInvarianteTotalTest {
 
     private static final UUID ATLETA_ID = UUID.fromString("00000000-0000-0000-0000-000000000002");
@@ -144,6 +149,32 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
         assertThat(meter.find("plano_etapas_total_divergente").counter()).isNull();
     }
 
+    /**
+     * Estrutura completa da LLM com o ritmo do cabeçalho divergente do da PRINCIPAL: o total vira a soma
+     * (volume prescrito) e a duração do treino acompanha — antes ficava nos 96 min da LLM pelo desempate de
+     * recalcular-duracao. Também com o total já declarado igual à soma (CA1 e CA1b).
+     */
+    @ParameterizedTest(name = "total declarado {0} km")
+    @CsvSource({"12.0", "14.5"})
+    void estruturaCompletaDuracaoAcompanhaASoma(double totalDeclarado) {
+        Atleta atleta = Atleta.builder().id(ATLETA_ID).nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
+                .paceLimiar(BigDecimal.valueOf(5.0)).build();
+        var normalizacao = new NormalizacaoDeTreino(new TreinoNormalizador(new PaceValidator()), new EtapaFcValidator(),
+                new PlanoEstruturaReparador(new SimpleMeterRegistry()), new PaceValidator(), new SimpleMeterRegistry());
+        var entrada = new TreinoPlanejadoLlmDto("SABADO", "LONGO", null, 90, 0.85, 6, "Base aeróbica",
+                "96:00", totalDeclarado, "8:00-8:00/km", List.of(
+                new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve", 10, 0.0, null, 1, null),
+                new EtapaTreinoLlmDto(2, "PRINCIPAL", "Longo contínuo", 69, 12.0, null, 1, "5:36-5:54/km"),
+                new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve", 5, 0.0, null, 1, null)));
+
+        var saida = normalizacao.normalizar(entrada, new ContextoNormalizacao(atleta, ATLETA_ID, null, Map.of(), Map.of(),
+                ContextoNormalizacao.zonasPaceComDado(atleta, new ZonaTreinoService())));
+
+        assertThat(saida.distanciaKm()).isCloseTo(somaKm(saida), org.assertj.core.data.Offset.offset(0.01));
+        assertThat(saida.duracaoMin()).isEqualTo("84:00");
+        assertThat(minutos(saida.duracaoMin())).isEqualTo(somaMin(saida));
+    }
+
     // ======================================================================================
     // Invariantes
     // ======================================================================================
@@ -157,7 +188,8 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
             if (!distIgual(somaKm, t.distanciaKm())) {
                 v.add(String.format(Locale.ROOT, "card≠editor distância: total %.2f, etapas %.2f", t.distanciaKm(), somaKm));
             }
-            if (!distIgual(t.distanciaKm(), c.totalKm())) {
+            boolean volumeEhASoma = c.estrutura() == Estrutura.COMPLETA && c.ritmo() != Ritmo.NENHUM;
+            if (!volumeEhASoma && !distIgual(t.distanciaKm(), c.totalKm())) {
                 v.add(String.format(Locale.ROOT, "total≠prescrito: prescrito %.2f, final %.2f", c.totalKm(), t.distanciaKm()));
             }
         }
@@ -208,7 +240,6 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
 
     static final String CARD_DIST = "card≠editor distância";
     static final String CARD_DUR = "card≠editor duração";
-    static final String TOTAL = "total≠prescrito";
 
     /**
      * Causa catalogada: quais cenários ela cobre e quais violações tolera neles. Uma violação de outro tipo
@@ -222,10 +253,7 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
                     c -> c.ritmo() == Ritmo.NENHUM, Set.of(CARD_DIST)),
             new Excecao("tempo-run-sintetizado", "TEMPO_RUN com etapa sintetizada: bloco único seria limiar sem "
                     + "aquecimento (follow-up: rejeitar e pedir a estrutura no turno de reparo, A6)",
-                    c -> c.tipo() == Tipo.TEMPO_RUN && c.estrutura() != Estrutura.COMPLETA, Set.of(CARD_DIST, CARD_DUR)),
-            new Excecao("estrutura-completa", "estrutura completa da LLM: adotarSomaDasEtapas troca o total prescrito "
-                    + "pela soma e a duração fica a da LLM quando o ritmo do cabeçalho diverge (follow-up: total = prescrito)",
-                    c -> c.estrutura() == Estrutura.COMPLETA, Set.of(TOTAL, CARD_DUR)));
+                    c -> c.tipo() == Tipo.TEMPO_RUN && c.estrutura() != Estrutura.COMPLETA, Set.of(CARD_DIST, CARD_DUR)));
 
     /**
      * Inventário congelado: quantos cenários cada causa cobre com violação hoje. Mudar um número é decisão —
@@ -233,8 +261,7 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
      */
     static final Map<String, Integer> INVENTARIO = Map.of(
             "sem-pace", 504,
-            "tempo-run-sintetizado", 252,
-            "estrutura-completa", 1004);
+            "tempo-run-sintetizado", 252);
 
     static Excecao excecaoDe(Cenario c) {
         return EXCECOES.stream().filter(e -> e.cobre().test(c)).findFirst().orElse(null);
