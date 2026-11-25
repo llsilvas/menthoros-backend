@@ -40,6 +40,8 @@ public class PeriodizacaoPromptFormatter {
 
     private static final DateTimeFormatter DATA_FMT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final Locale PT_BR = Locale.forLanguageTag("pt-BR");
+    // Mesmo limite da edição da semana (SeasonPlanAdjustmentServiceImpl); aqui vale para qualquer origem.
+    private static final int MAX_SESSOES_CHAVE = 500;
 
     private static final String DIRETRIZ_BASE = "Fase BASE: Construir volume aeróbico. 80% treinos fáceis, 20% moderados.";
     private static final String DIRETRIZ_BUILD = "Fase BUILD: Adicionar qualidade. 70% fáceis, 20% específicos, 10% intensos.";
@@ -138,6 +140,15 @@ public class PeriodizacaoPromptFormatter {
         sb.append(String.format("- **Alvo de TSS da semana:** %d pontos\n", tssAlvo));
         sb.append(String.format("- **Volume alvo:** %s\n", km(semana.targetVolumeKm())));
         sb.append(String.format("- **Longão previsto:** %s\n", km(semana.longRunKm())));
+        if (semana.keySessions() != null) {
+            // Uma linha só, truncada e entre aspas: é texto do treinador, não instrução — quebra de linha não
+            // pode abrir uma seção nova no prompt.
+            String texto = semana.keySessions().replaceAll("\\s+", " ").trim();
+            if (texto.length() > MAX_SESSOES_CHAVE) {
+                texto = texto.substring(0, MAX_SESSOES_CHAVE).trim() + "…";
+            }
+            sb.append("- **Sessões-chave (texto do treinador):** \"").append(texto.replace("\"", "'")).append("\"\n");
+        }
         sb.append(String.format("- **Semana de descarga:** %s\n", semana.deload() ? "sim" : "não"));
         sb.append(String.format("- **Próximo marco:** %s\n", semana.nextMilestone()
                 .map(m -> "\"" + PosProvaSemanaAnterior.literalDePrompt(m.name())

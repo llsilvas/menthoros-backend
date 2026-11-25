@@ -1,5 +1,7 @@
 package br.com.menthoros.backend.domain.planner;
 
+import java.util.List;
+
 import br.com.menthoros.backend.dto.DecisaoProgressao;
 import br.com.menthoros.backend.dto.ProgressaoHistoricoResumo;
 import br.com.menthoros.backend.enums.EstadoProgressao;
@@ -261,6 +263,129 @@ class LoadTargetResolverTest {
             DecisaoProgressao decisao = new DecisaoProgressao(EstadoProgressao.MANTER, 0.0, 0, false, "taper");
             WeeklyLoadTarget alvo = resolver.resolve(TrainingPhase.TAPER, decisao, historicoComCtl(40.0, 0));
             assertThat(alvo.targetTss()).isCloseTo(280.0, offset(0.01)); // min(280,280)
+        }
+    }
+
+    @Nested
+    @DisplayName("resolveSeason — temporada como base e teto (add-season-plan-load-enforcement)")
+    class CaminhoDaTemporada {
+
+        private final DecisaoProgressao manter = new DecisaoProgressao(EstadoProgressao.MANTER, 0.0, 0, false, "manter");
+
+        @Test
+        @DisplayName("620 com CTL 70: o teto de rampa corta para 546 e o motivo fica registrado")
+        void tetoDeRampaCorta() {
+            WeeklyLoadTarget alvo = resolver.resolveSeason(TrainingPhase.BUILD, manter, historicoComCtl(70.0, 0),
+                    null, null, 620.0);
+
+            assertThat(alvo.targetTss()).isCloseTo(546.0, offset(0.01));
+            assertThat(alvo.minTss()).isCloseTo(491.4, offset(0.01));
+            assertThat(alvo.maxTss()).isCloseTo(600.6, offset(0.01));
+            assertThat(alvo.seasonTargetTss()).isEqualTo(620.0);
+            assertThat(alvo.seasonCutReason()).isEqualTo(SeasonCutReason.TETO_RAMPA);
+        }
+
+        @Test
+        @DisplayName("taper/semana de prova: não passa da carga atual (ctl × 7), como no legado")
+        void contencaoNaSemanaDeProva() {
+            WeeklyLoadTarget taper = resolver.resolveSeason(TrainingPhase.TAPER, manter, historicoComCtl(40.0, 0),
+                    null, null, 300.0);
+            WeeklyLoadTarget build = resolver.resolveSeason(TrainingPhase.BUILD, manter, historicoComCtl(40.0, 0),
+                    null, null, 300.0);
+
+            assertThat(taper.targetTss()).isCloseTo(280.0, offset(0.01));
+            assertThat(taper.seasonCutReason()).isEqualTo(SeasonCutReason.CONTENCAO_PROVA);
+            assertThat(build.targetTss()).isEqualTo(300.0);
+        }
+
+        @Test
+        @DisplayName("progressão pedindo aumento fica no valor da temporada")
+        void progressaoNaoPassaDaTemporada() {
+            DecisaoProgressao aumentar = new DecisaoProgressao(EstadoProgressao.PROGREDIR, 0.10, 5, true, "progredir");
+
+            WeeklyLoadTarget alvo = resolver.resolveSeason(TrainingPhase.BUILD, aumentar, historicoComCtl(60.0, 0),
+                    null, null, 400.0);
+
+            assertThat(alvo.targetTss()).isEqualTo(400.0);
+            assertThat(alvo.seasonCutReason()).isNull();
+        }
+
+        @Test
+        @DisplayName("semana anterior perdida (CTL mais baixo, abaixo do teto) não gera compensação")
+        void semanaPerdidaSemCompensacao() {
+            WeeklyLoadTarget alvo = resolver.resolveSeason(TrainingPhase.BUILD, manter, historicoComCtl(60.0, 0),
+                    null, null, 400.0);
+
+            assertThat(alvo.targetTss()).isEqualTo(400.0);
+        }
+
+        @Test
+        @DisplayName("quarta semana de progressão não aplica step-back: a descarga já está na temporada")
+        void semStepBack() {
+            DecisaoProgressao progredir = new DecisaoProgressao(EstadoProgressao.PROGREDIR, 0.0, 0, true, "progredir");
+
+            WeeklyLoadTarget alvo = resolver.resolveSeason(TrainingPhase.BUILD, progredir, historicoComCtl(60.0, 3),
+                    null, null, 400.0);
+
+            assertThat(alvo.targetTss()).isEqualTo(400.0);
+        }
+
+        @Test
+        @DisplayName("lesão (RECOVERY) e pós-prova reduzem pela metade a base da temporada")
+        void reducaoPorFaseSobreABase() {
+            for (TrainingPhase fase : List.of(TrainingPhase.RECOVERY, TrainingPhase.POST_RACE)) {
+                WeeklyLoadTarget alvo = resolver.resolveSeason(fase, manter, historicoComCtl(60.0, 0),
+                        null, null, 400.0);
+
+                assertThat(alvo.targetTss()).isEqualTo(200.0);
+                assertThat(alvo.seasonCutReason()).isEqualTo(SeasonCutReason.REDUCAO_FASE);
+            }
+        }
+
+        @Test
+        @DisplayName("estado REDUZIR corta pelo CTL atual com o ajuste negativo")
+        void reduzirCorta() {
+            DecisaoProgressao reduzir = new DecisaoProgressao(EstadoProgressao.REDUZIR, -0.20, 0, false, "reduzir");
+
+            WeeklyLoadTarget alvo = resolver.resolveSeason(TrainingPhase.BUILD, reduzir, historicoComCtl(50.0, 0),
+                    null, null, 400.0);
+
+            assertThat(alvo.targetTss()).isCloseTo(280.0, offset(0.01));
+            assertThat(alvo.seasonCutReason()).isEqualTo(SeasonCutReason.PROGRESSAO_REDUZIR);
+        }
+
+        @Test
+        @DisplayName("cold-start: o piso de 120 não passa da temporada e a rampa de CTL 0 não se aplica")
+        void coldStartPisoNaoPassaDaTemporada() {
+            WeeklyLoadTarget alvo = resolver.resolveSeason(TrainingPhase.BUILD, manter, historicoComCtl(0.0, 0),
+                    CalibrationStage.STABILIZATION, 10.0, 100.0);
+
+            assertThat(alvo.targetTss()).isEqualTo(100.0);
+            assertThat(alvo.minTss()).isCloseTo(75.0, offset(0.01));
+            assertThat(alvo.maxTss()).isCloseTo(125.0, offset(0.01));
+            assertThat(alvo.seasonCutReason()).isNull();
+        }
+
+        @Test
+        @DisplayName("cold-start abaixo da temporada corta com o motivo COLD_START")
+        void coldStartCorta() {
+            WeeklyLoadTarget alvo = resolver.resolveSeason(TrainingPhase.BUILD, manter, historicoComCtl(0.0, 0),
+                    CalibrationStage.CALIBRATION, 30.0, 300.0);
+
+            assertThat(alvo.targetTss()).isCloseTo(157.5, offset(0.01));
+            assertThat(alvo.seasonCutReason()).isEqualTo(SeasonCutReason.COLD_START);
+        }
+
+        @Test
+        @DisplayName("o alvo resolvido nunca passa do targetTss, nem com CTL alto e progressão agressiva")
+        void nuncaAcimaDaTemporada() {
+            DecisaoProgressao agressiva = new DecisaoProgressao(EstadoProgressao.PROGREDIR, 1.0, 10, true, "agressiva");
+
+            WeeklyLoadTarget alvo = resolver.resolveSeason(TrainingPhase.PEAK, agressiva, historicoComCtl(100.0, 0),
+                    null, null, 200.0);
+
+            assertThat(alvo.targetTss()).isEqualTo(200.0);
+            assertThat(alvo.maxTss()).isCloseTo(220.0, offset(0.01));
         }
     }
 

@@ -161,6 +161,40 @@ class PeriodizacaoPromptFormatterTest {
             assertThat(bloco).contains("LESÃO ATIVA").contains("prevalece sobre a fase da temporada");
         }
 
+        @Test
+        @DisplayName("sessões-chave do treinador entram numa linha própria, em uma linha só")
+        void sessoesChave() {
+            SeasonWeekSnapshot semana = new SeasonWeekSnapshot(UUID.randomUUID(), 3, 12, TrainingPhase.BUILD, 400.0,
+                    null, null, false, Optional.empty(), "5x1km no limiar\nlongão progressivo");
+
+            String bloco = formatter.formatarPosicaoNoCiclo(semana, 300, Optional.empty());
+
+            assertThat(bloco).contains("- **Sessões-chave (texto do treinador):** \"5x1km no limiar longão progressivo\"\n");
+        }
+
+        @Test
+        @DisplayName("sessões-chave longas são truncadas em 500 caracteres e aspas do treinador não fecham o bloco")
+        void sessoesChaveTruncadasEDelimitadas() {
+            String longo = "a".repeat(600);
+            SeasonWeekSnapshot semana = new SeasonWeekSnapshot(UUID.randomUUID(), 3, 12, TrainingPhase.BUILD, 400.0,
+                    null, null, false, Optional.empty(), longo);
+            SeasonWeekSnapshot comAspas = new SeasonWeekSnapshot(UUID.randomUUID(), 3, 12, TrainingPhase.BUILD, 400.0,
+                    null, null, false, Optional.empty(), "tiro \"forte\"");
+
+            assertThat(formatter.formatarPosicaoNoCiclo(semana, 300, Optional.empty()))
+                    .contains("\"" + "a".repeat(500) + "…\"\n")
+                    .doesNotContain("a".repeat(501));
+            assertThat(formatter.formatarPosicaoNoCiclo(comAspas, 300, Optional.empty()))
+                    .contains("\"tiro 'forte'\"\n");
+        }
+
+        @Test
+        @DisplayName("sem sessões-chave a linha não aparece")
+        void semSessoesChave() {
+            assertThat(formatter.formatarPosicaoNoCiclo(semanaBuild(), 300, Optional.empty()))
+                    .doesNotContain("Sessões-chave");
+        }
+
         private SeasonWeekSnapshot semanaBuild() {
             return new SeasonWeekSnapshot(UUID.randomUUID(), 3, 12, TrainingPhase.BUILD, 400.0, null, null, false,
                     Optional.empty());

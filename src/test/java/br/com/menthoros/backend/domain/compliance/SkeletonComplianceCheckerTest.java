@@ -5,6 +5,8 @@ import br.com.menthoros.backend.domain.planner.ConstraintValidationResult;
 import br.com.menthoros.backend.domain.planner.InjuryRiskAssessment;
 import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
 import br.com.menthoros.backend.domain.planner.ProvaSnapshot;
+import br.com.menthoros.backend.domain.planner.SeasonCutReason;
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import br.com.menthoros.backend.domain.planner.WeeklyLoadTarget;
@@ -12,10 +14,12 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -272,6 +276,152 @@ class SkeletonComplianceCheckerTest {
                     redistribuido, skeleton, contexto(Optional.empty()));
 
             assertThat(violacoes).noneMatch(v -> v.key() == PlannerViolationKey.TAPER_VIOLADO);
+        }
+    }
+
+    /**
+     * add-season-plan-load-enforcement (épico 5.11): longão da semana da temporada contra o LONGO do
+     * plano, só no caminho novo do alvo ({@code seasonTargetTss != null}). Alvo 400: teto de longo 160.
+     */
+    @Nested
+    @DisplayName("longão da temporada")
+    class LongaoDaTemporada {
+
+        private final WeekPlanSkeleton caminhoNovo = skeletonDaTemporada(400.0);
+        private final WeekPlanSkeleton caminhoLegado = skeleton(TrainingPhase.BUILD, 400, 360, 440);
+
+        @Test
+        @DisplayName("24 km contra 20 previstos viola")
+        void acimaDaTolerancia() {
+            assertThat(chaves(caminhoNovo, contextoComLongao("20", 15), longo(130, "24")))
+                    .contains(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+        }
+
+        @Test
+        @DisplayName("23 km contra 20 previstos (15% exatos) passa")
+        void noLimite() {
+            assertThat(chaves(caminhoNovo, contextoComLongao("20", 15), longo(130, "23")))
+                    .doesNotContain(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+        }
+
+        @Test
+        @DisplayName("a tolerância vem do contexto: 23 km contra 20 com 10% viola")
+        void toleranciaConfiguravel() {
+            assertThat(chaves(caminhoNovo, contextoComLongao("20", 10), longo(130, "23")))
+                    .contains(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+        }
+
+        @Test
+        @DisplayName("plano sem LONGO com longão previsto viola")
+        void semLongo() {
+            assertThat(chaves(caminhoNovo, contextoComLongao("20", 15), sessao(1, "FACIL", 60, "Z2")))
+                    .contains(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+        }
+
+        @Test
+        @DisplayName("vários LONGO: avalia o de maior distância")
+        void variosLongos() {
+            var curto = new GeneratedSessionSnapshot(referencia.plusDays(2), "LONGO", 80, "Z2", new BigDecimal("12"));
+            assertThat(chaves(caminhoNovo, contextoComLongao("20", 15), curto, longo(130, "21")))
+                    .doesNotContain(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+        }
+
+        @Test
+        @DisplayName("LONGO sem distância: não avalia o longão, e o teto de 40% é avaliado")
+        void longoSemDistancia() {
+            var semDistancia = new GeneratedSessionSnapshot(referencia.plusDays(6), "LONGO", 200, "Z2");
+            assertThat(chaves(caminhoNovo, contextoComLongao("20", 15), semDistancia))
+                    .doesNotContain(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA)
+                    .contains(PlannerViolationKey.LONGO_ACIMA_TETO);
+        }
+
+        @Test
+        @DisplayName("longão previsto acima de 40% do alvo não gera LONGO_ACIMA_TETO")
+        void longaoPrevistoSuspendeOTeto() {
+            assertThat(chaves(caminhoNovo, contextoComLongao("24", 15), longo(200, "24")))
+                    .doesNotContain(PlannerViolationKey.LONGO_ACIMA_TETO, PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+        }
+
+        @Test
+        @DisplayName("30 km contra 24 previstos e acima do teto: as duas violações")
+        void foraDaToleranciaVoltaOTeto() {
+            assertThat(chaves(caminhoNovo, contextoComLongao("24", 15), longo(200, "30")))
+                    .contains(PlannerViolationKey.LONGO_ACIMA_TETO, PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+        }
+
+        @Test
+        @DisplayName("caminho legado (flag desligada): sem a chave nova e com o teto de hoje")
+        void caminhoLegado() {
+            assertThat(chaves(caminhoLegado, contextoComLongao("24", 15), longo(200, "24")))
+                    .doesNotContain(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA)
+                    .contains(PlannerViolationKey.LONGO_ACIMA_TETO);
+            assertThat(chaves(caminhoLegado, contextoComLongao("20", 15), sessao(1, "FACIL", 60, "Z2")))
+                    .doesNotContain(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+        }
+
+        @Test
+        @DisplayName("semana cortada por segurança: não cobra o longão cheio e o teto de 40% do alvo cortado vale")
+        void semanaCortadaPorSeguranca() {
+            for (SeasonCutReason corte : List.of(SeasonCutReason.REDUCAO_FASE, SeasonCutReason.PROGRESSAO_REDUZIR,
+                    SeasonCutReason.COLD_START, SeasonCutReason.CONTENCAO_PROVA)) {
+                WeekPlanSkeleton cortado = skeletonDaTemporada(400.0, corte);
+                assertThat(chaves(cortado, contextoComLongao("20", 15), longo(130, "12")))
+                        .as(corte.name()).doesNotContain(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+                assertThat(chaves(cortado, contextoComLongao("20", 15), longo(200, "20")))
+                        .as(corte.name()).contains(PlannerViolationKey.LONGO_ACIMA_TETO);
+            }
+        }
+
+        @Test
+        @DisplayName("corte pela rampa mantém a regra do longão")
+        void corteDeRampaMantemARegra() {
+            assertThat(chaves(skeletonDaTemporada(400.0, SeasonCutReason.TETO_RAMPA), contextoComLongao("20", 15),
+                    longo(130, "12")))
+                    .contains(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+        }
+
+        @Test
+        @DisplayName("semana sem longão previsto não avalia")
+        void semLongaoPrevisto() {
+            assertThat(chaves(caminhoNovo, contexto(Optional.empty()), sessao(1, "FACIL", 60, "Z2")))
+                    .doesNotContain(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA);
+        }
+
+        private List<PlannerViolationKey> chaves(WeekPlanSkeleton skeleton, ComplianceContext contexto,
+                                                 GeneratedSessionSnapshot... sessoes) {
+            return checker.checkPostRedistribution(plano(sessoes), skeleton, contexto).stream()
+                    .map(PlannerViolation::key)
+                    .toList();
+        }
+
+        private GeneratedSessionSnapshot longo(int tss, String km) {
+            return new GeneratedSessionSnapshot(referencia.plusDays(6), "LONGO", tss, "Z2", new BigDecimal(km));
+        }
+
+        private ComplianceContext contextoComLongao(String longRunKm, int toleranciaPct) {
+            var semana = new SeasonWeekSnapshot(UUID.randomUUID(), 5, 16, TrainingPhase.BUILD, 400.0, null,
+                    new BigDecimal(longRunKm), false, Optional.empty());
+            return new ComplianceContext(Optional.empty(),
+                    new AthleteConstraints(List.of(DayOfWeek.values()), null, null, List.of()),
+                    referencia, List.of(), Optional.of(semana), toleranciaPct);
+        }
+
+        private WeekPlanSkeleton skeletonDaTemporada(double seasonTargetTss) {
+            return skeletonDaTemporada(seasonTargetTss, null);
+        }
+
+        private WeekPlanSkeleton skeletonDaTemporada(double seasonTargetTss, SeasonCutReason corte) {
+            return new WeekPlanSkeleton(
+                    TrainingPhase.BUILD,
+                    new WeeklyLoadTarget(400, 360, 440, "teste", seasonTargetTss, corte),
+                    List.of(),
+                    new InjuryRiskAssessment(InjuryRiskLevel.SAFE, false, null),
+                    new ConstraintValidationResult(true, List.of()),
+                    false,
+                    null,
+                    referencia,
+                    null,
+                    Optional.empty());
         }
     }
 

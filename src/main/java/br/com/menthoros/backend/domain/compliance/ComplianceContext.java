@@ -2,6 +2,7 @@ package br.com.menthoros.backend.domain.compliance;
 
 import br.com.menthoros.backend.domain.planner.AthleteConstraints;
 import br.com.menthoros.backend.domain.planner.ProvaSnapshot;
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -12,17 +13,32 @@ import java.util.stream.Collectors;
 /**
  * Contexto adicional que o {@code SkeletonComplianceChecker} precisa alem do
  * {@code WeekPlanSkeleton} e do plano gerado — a prova que definiu a fase (para o check de
- * sessao pesada perto da prova), as constraints duras do atleta e as provas cuja data real cai na
- * semana (para isentar o dia da prova de "dia indisponivel" — fix-planner-ignora-prova-na-semana).
+ * sessao pesada perto da prova), as constraints duras do atleta, as provas cuja data real cai na
+ * semana (para isentar o dia da prova de "dia indisponivel" — fix-planner-ignora-prova-na-semana) e
+ * a semana da temporada com a tolerancia do longao (add-season-plan-load-enforcement).
  */
 public record ComplianceContext(
         Optional<ProvaSnapshot> provaDeterminante,
         AthleteConstraints constraints,
         LocalDate referenceDate,
-        List<ProvaSnapshot> provasDaSemana
+        List<ProvaSnapshot> provasDaSemana,
+        Optional<SeasonWeekSnapshot> seasonWeek,
+        int longRunTolerancePct
 ) {
+    public static final int LONG_RUN_TOLERANCE_PCT_PADRAO = 15;
+
     public ComplianceContext {
         provasDaSemana = provasDaSemana == null ? List.of() : List.copyOf(provasDaSemana);
+        seasonWeek = seasonWeek == null ? Optional.empty() : seasonWeek;
+    }
+
+    /** Sem semana da temporada. */
+    public ComplianceContext(Optional<ProvaSnapshot> provaDeterminante,
+                             AthleteConstraints constraints,
+                             LocalDate referenceDate,
+                             List<ProvaSnapshot> provasDaSemana) {
+        this(provaDeterminante, constraints, referenceDate, provasDaSemana, Optional.empty(),
+                LONG_RUN_TOLERANCE_PCT_PADRAO);
     }
 
     /** Semana sem prova. */

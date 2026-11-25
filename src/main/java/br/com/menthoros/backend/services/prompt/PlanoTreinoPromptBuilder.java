@@ -412,9 +412,12 @@ public class PlanoTreinoPromptBuilder {
 
         // ETAPA 10 (calculada antes da 9, que a exibe com temporada): base = targetTss da semana da
         // temporada ou ctlAlvo * 7 no legado; as reduções por fadiga valem nos dois casos.
-        int tssAlvoBase = tssAlvoBaseDaTemporada(seasonWeek)
+        // Com o skeleton no caminho da temporada (add-season-plan-load-enforcement), o alvo resolvido pelo
+        // motor é a autoridade: as reduções por fadiga não se somam, senão o texto diverge dos slots.
+        Optional<Integer> alvoResolvido = alvoResolvidoPelaTemporada(skeleton);
+        int tssAlvoBase = alvoResolvido.or(() -> tssAlvoBaseDaTemporada(seasonWeek))
                 .orElseGet(() -> periodizacaoPromptFormatter.calcularTssAlvo(metaDados));
-        int tssAlvo = periodizacaoPromptFormatter.aplicarReducoesPorFadiga(tssAlvoBase, metaDados);
+        int tssAlvo = alvoResolvido.orElseGet(() -> periodizacaoPromptFormatter.aplicarReducoesPorFadiga(tssAlvoBase, metaDados));
 
         // ETAPA 9: Periodização estruturada — com temporada, a posição no ciclo no lugar da fase por dias
         if (seasonWeek != null) {
@@ -578,10 +581,14 @@ public class PlanoTreinoPromptBuilder {
                 .toList();
     }
 
-    /**
-     * Prova no dia anterior ao início da semana: o primeiro dia do plano é o D+1 dela. Só interessa se
-     * esse dia é um dia a cobrir — senão não há o que proteger, e a consulta nem é feita.
-     */
+    /** Alvo do skeleton quando ele veio do caminho da temporada; vazio no legado ou sem skeleton. */
+    private static Optional<Integer> alvoResolvidoPelaTemporada(@Nullable WeekPlanSkeleton skeleton) {
+        if (skeleton == null || skeleton.loadTarget() == null || skeleton.loadTarget().seasonTargetTss() == null) {
+            return Optional.empty();
+        }
+        return Optional.of((int) Math.round(skeleton.loadTarget().targetTss()));
+    }
+
     private static Optional<Integer> tssAlvoBaseDaTemporada(@Nullable SeasonWeekSnapshot seasonWeek) {
         // shortcut: semana sem targetTss (nulo/zero) cai na base legada; o bloco ainda mostra a posição.
         if (seasonWeek == null || seasonWeek.targetTss() == null || seasonWeek.targetTss() <= 0) {
