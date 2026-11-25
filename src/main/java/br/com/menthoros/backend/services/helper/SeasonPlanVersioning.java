@@ -172,6 +172,14 @@ public class SeasonPlanVersioning {
         }
     }
 
+    /**
+     * Proposta v1 (PROPOSED, versão 1, sem base de ajuste): nunca aprovada, não alimenta a geração
+     * semanal, e por isso só a semana concluída trava (season-plan-start-volume, D4).
+     */
+    public static boolean primeiraProposta(PlanoTreino p) {
+        return p.getSeasonStatus() == SeasonPlanStatus.PROPOSED && versao(p) == 1 && p.getBaseSeasonPlanId() == null;
+    }
+
     /** Ajuste (PROPOSED com base) aberto a partir de {@code temporada}, se ela é a ACTIVE. */
     public static @Nullable UUID rascunhoAberto(PlanoTreino temporada, List<PlanoTreino> candidatas) {
         if (temporada.getSeasonStatus() != SeasonPlanStatus.ACTIVE) {

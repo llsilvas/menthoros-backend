@@ -79,7 +79,7 @@ public class SeasonPlanResponseMapper {
                 p.getTotalWeeks(),
                 p.getInitialCtl(),
                 p.getPeakVolumeKm(),
-                weeks.stream().map(w -> semana(w, hoje, dataProva)).toList(),
+                weeks.stream().map(w -> semana(w, hoje, dataProva, SeasonPlanVersioning.primeiraProposta(p))).toList(),
                 marcos(weeks, tenantId),
                 validations,
                 p.getVersion(),
@@ -88,10 +88,11 @@ public class SeasonPlanResponseMapper {
                 p.getInitialVolumeKm());
     }
 
-    private static SeasonPlanResponseDto.Week semana(SeasonWeek w, LocalDate hoje, @Nullable LocalDate dataProva) {
+    private static SeasonPlanResponseDto.Week semana(SeasonWeek w, LocalDate hoje, @Nullable LocalDate dataProva,
+                                                     boolean primeiraProposta) {
         SeasonWeekLock.@Nullable Reason trava = w.getWeekStart() == null
                 ? null
-                : SeasonWeekLock.of(w.getWeekStart(), hoje, dataProva).orElse(null);
+                : SeasonWeekLock.forPlan(primeiraProposta, w.getWeekStart(), hoje, dataProva).orElse(null);
         return new SeasonPlanResponseDto.Week(
                 w.getWeekIndex() == null ? 0 : w.getWeekIndex(),
                 w.getWeekStart(),

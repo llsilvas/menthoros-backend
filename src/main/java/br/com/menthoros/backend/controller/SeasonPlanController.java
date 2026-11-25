@@ -166,16 +166,17 @@ public class SeasonPlanController {
     @PostMapping("/{seasonPlanId}/recalculate")
     @PreAuthorize("hasAnyRole('TECNICO', 'ADMIN')")
     @RequireTenant(resourceParamIndex = 0)
-    @Operation(summary = "Recalcular o ajuste da temporada",
-            description = "Regenera pelo motor as semanas livres do rascunho com as semanas por fase e o volume de "
-                    + "partida pedidos; semanas travadas e as editadas pelo treinador ficam como estão")
+    @Operation(summary = "Recalcular a proposta v1 ou o ajuste da temporada",
+            description = "Regenera pelo motor as semanas livres da proposta v1 ou do rascunho de ajuste com as semanas "
+                    + "por fase, o volume e o longão de partida pedidos; semanas travadas e as editadas pelo treinador "
+                    + "ficam como estão. Na proposta v1 só a semana concluída trava")
     @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "Rascunho recalculado; devolve a temporada inteira",
+            @ApiResponse(responseCode = "200", description = "Proposta v1 ou rascunho recalculado; devolve a temporada inteira",
                     content = @Content(schema = @Schema(implementation = SeasonPlanResponseDto.class))),
             @ApiResponse(responseCode = "403", description = "Acesso negado — apenas TECNICO e ADMIN da assessoria"),
             @ApiResponse(responseCode = "404", description = "Temporada não encontrada, ou plano de temporada desabilitado (code SEASON_PLAN_DISABLED)"),
-            @ApiResponse(responseCode = "409", description = "A temporada não é um ajuste em aberto"),
-            @ApiResponse(responseCode = "422", description = "Fases ou volume inválidos, soma das fases diferente do ciclo, prova remarcada, CTL de partida ausente ou fase divergente numa semana travada")
+            @ApiResponse(responseCode = "409", description = "A temporada não é proposta v1 nem ajuste em aberto"),
+            @ApiResponse(responseCode = "422", description = "Fases, volume ou longão de partida inválidos, soma das fases diferente do ciclo, prova remarcada, CTL de partida ausente ou fase divergente numa semana travada")
     })
     // Sem @Valid pelo mesmo motivo do updateWeek: o serviço valida e responde 422 com a mensagem.
     public ResponseEntity<SeasonPlanResponseDto> recalculate(
