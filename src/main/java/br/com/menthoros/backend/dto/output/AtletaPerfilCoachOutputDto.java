@@ -33,8 +33,11 @@ public record AtletaPerfilCoachOutputDto(
         @Schema(description = "Objetivo declarado pelo atleta", example = "Correr maratona em menos de 4 horas")
         String objetivo,
 
-        @Schema(description = "Prova alvo do atleta; null se não configurada")
+        @Schema(description = "Prova futura mais próxima, alvo ou não; null se não há prova futura")
         ProvaOutputDto proximaProva,
+
+        @Schema(description = "Provas futuras não canceladas, em ordem de data; lista vazia se não há")
+        List<ProvaOutputDto> provas,
 
         @Schema(description = "Nível de experiência; null se não configurado", example = "INTERMEDIARIO")
         String nivelExperiencia,
