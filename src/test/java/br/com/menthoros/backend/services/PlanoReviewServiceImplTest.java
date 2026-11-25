@@ -60,6 +60,7 @@ class PlanoReviewServiceImplTest {
     @Mock private AthleteBaselineStateRepository athleteBaselineStateRepository;
     @Mock private TreinoPlanejadoRepository treinoPlanejadoRepository;
     @Mock private br.com.menthoros.backend.services.GarminConnectionService garminConnectionService;
+    @Mock private br.com.menthoros.backend.repository.SeasonWeekRepository seasonWeekRepository;
     // Reais, não mocks: o resolver é lógica pura e o registry em memória deixa a métrica
     // observável — mockar aqui esconderia o desfecho em vez de exercitá-lo.
     @Spy private ConsumedReviewOutcomeResolver outcomeResolver = new ConsumedReviewOutcomeResolver();
@@ -308,6 +309,90 @@ class PlanoReviewServiceImplTest {
             PlanoSemanal resultado = service.aprovarTransicao(planoNovo, tenantId, OrigemAprovacao.AUTO_CONFIANCA_ALTA);
 
             assertThat(resultado.getReviewStatus()).isEqualTo(PlanoReviewStatus.APROVADO);
+        }
+
+        @Test
+        @DisplayName("delta da temporada: alvo 400, aprovado 360 registra 10 com origem=COACH, direcao=ABAIXO")
+        void deltaAbaixoDoAlvo() {
+            PlanoSemanal plano = planoDaTemporada(400.0, 200, 160);
+
+            service.aprovarTransicao(plano, tenantId, OrigemAprovacao.COACH);
+
+            var resumo = meterRegistry.find("season-plan.approved.deviation.abs.pct")
+                    .tag("origem", "COACH").tag("direcao", "ABAIXO").summary();
+            assertThat(resumo).isNotNull();
+            assertThat(resumo.count()).isEqualTo(1);
+            assertThat(resumo.totalAmount()).isEqualTo(10.0);
+        }
+
+        @Test
+        @DisplayName("delta da temporada: acima do alvo e auto-aprovado registra origem=AUTO_CONFIANCA_ALTA, direcao=ACIMA")
+        void deltaAcimaAutoAprovado() {
+            PlanoSemanal plano = planoDaTemporada(400.0, 300, 140);
+
+            service.aprovarTransicao(plano, tenantId, OrigemAprovacao.AUTO_CONFIANCA_ALTA);
+
+            var resumo = meterRegistry.find("season-plan.approved.deviation.abs.pct")
+                    .tag("origem", "AUTO_CONFIANCA_ALTA").tag("direcao", "ACIMA").summary();
+            assertThat(resumo.totalAmount()).isEqualTo(10.0);
+        }
+
+        @Test
+        @DisplayName("delta da temporada: zero registra direcao=NO_ALVO; treino sem TSS conta 0")
+        void deltaNoAlvo() {
+            PlanoSemanal plano = planoDaTemporada(400.0, 400, null);
+
+            service.aprovarTransicao(plano, tenantId, OrigemAprovacao.COACH);
+
+            var resumo = meterRegistry.find("season-plan.approved.deviation.abs.pct").tag("direcao", "NO_ALVO").summary();
+            assertThat(resumo.count()).isEqualTo(1);
+            assertThat(resumo.totalAmount()).isZero();
+        }
+
+        @Test
+        @DisplayName("reaprovação (plano reaberto) não registra o delta de novo")
+        void reaprovacaoNaoContaDuasVezes() {
+            PlanoSemanal plano = planoDaTemporada(400.0, 360);
+
+            service.aprovarTransicao(plano, tenantId, OrigemAprovacao.COACH);
+            plano.setReviewStatus(PlanoReviewStatus.AGUARDANDO_REVISAO);
+            service.aprovarTransicao(plano, tenantId, OrigemAprovacao.COACH);
+
+            assertThat(meterRegistry.find("season-plan.approved.deviation.abs.pct").summary().count()).isEqualTo(1);
+        }
+
+        @Test
+        @DisplayName("sem semana da temporada, ou alvo nulo/zero, não registra o delta")
+        void semSemanaNaoRegistra() {
+            PlanoSemanal semSemana = planoAguardando();
+            semSemana.setAtleta(Atleta.builder().id(atletaId).build());
+            when(planoSemanalRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            service.aprovarTransicao(semSemana, tenantId, OrigemAprovacao.COACH);
+
+            service.aprovarTransicao(planoDaTemporada(0.0, 100), tenantId, OrigemAprovacao.COACH);
+            service.aprovarTransicao(planoDaTemporada(null, 100), tenantId, OrigemAprovacao.COACH);
+
+            assertThat(meterRegistry.find("season-plan.approved.deviation.abs.pct").summaries()).isEmpty();
+        }
+
+        private PlanoSemanal planoDaTemporada(Double targetTss, Integer... tss) {
+            UUID seasonWeekId = UUID.randomUUID();
+            br.com.menthoros.backend.entity.SeasonWeek semana = new br.com.menthoros.backend.entity.SeasonWeek();
+            semana.setTargetTss(targetTss);
+            when(seasonWeekRepository.findByIdAndTenantId(seasonWeekId, tenantId)).thenReturn(java.util.Optional.of(semana));
+
+            PlanoSemanal plano = planoAguardando();
+            plano.setAtleta(Atleta.builder().id(atletaId).build());
+            plano.setSeasonWeekId(seasonWeekId);
+            List<TreinoPlanejado> treinos = new java.util.ArrayList<>();
+            for (Integer t : tss) {
+                TreinoPlanejado treino = new TreinoPlanejado();
+                treino.setTssPlanejado(t);
+                treinos.add(treino);
+            }
+            plano.setTreinosPlanejados(treinos);
+            when(planoSemanalRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            return plano;
         }
 
         @Test

@@ -195,8 +195,13 @@ public class PlanGenerationPersister {
         if (skeletonPrePrompt.fallback()) {
             plano.setPlannerComplianceStatus(PlannerComplianceStatus.FALLBACK.name());
         } else if (skeletonPrePrompt.skeleton() != null) {
-            aplicarEnforcementEstagio2(plano, skeletonPrePrompt.skeleton(), atleta, periodo.inicio());
+            aplicarEnforcementEstagio2(plano, skeletonPrePrompt.skeleton(), atleta, periodo.inicio(), ctx.seasonWeek());
         }
+
+        // Depois de todas as transformações dos treinos (redistribuição, prova garantida, estágio 2): o
+        // desvio mede o plano que o coach vai revisar, não o que o LLM devolveu. Antes da auto-aprovação
+        // (add-season-plan-load-enforcement 4.1): o delta da aprovação precisa do season_week_id.
+        registrarSemanaDaTemporada(plano, ctx.seasonWeek());
 
         // Auto-approve Cenario A (athlete-onboarding-baseline CA5, Decisao 7).
         onboardingContext.ifPresent(context -> aplicarAutoApproveSeElegivel(plano, context, weekPlanSkeleton, tenantId));
@@ -210,10 +215,6 @@ public class PlanGenerationPersister {
         // MESMA que alimentou o prompt. Sem revisao consumivel o plano nasce NOT_CONSUMED —
         // ausencia de dado, nao julgamento negativo do coach.
         registrarRevisaoConsumida(plano, ctx.revisaoConsumidaOpcional());
-
-        // Depois de todas as transformações dos treinos (redistribuição, prova garantida): o desvio
-        // mede o plano que o coach vai revisar, não o que o LLM devolveu.
-        registrarSemanaDaTemporada(plano, ctx.seasonWeek());
 
         PlanoSemanal salvo = salvarPlanoCompleto(plano);
         publicarRevisaoConsumida(salvo, tenantId);
@@ -333,13 +334,20 @@ public class PlanGenerationPersister {
      * ja resolvidos.
      */
     private void aplicarEnforcementEstagio2(PlanoSemanal plano, WeekPlanSkeleton skeleton,
-                                            Atleta atleta, LocalDate referenceDate) {
+                                            Atleta atleta, LocalDate referenceDate,
+                                            Optional<SeasonWeekSnapshot> seasonWeek) {
         List<PlannerViolation> violacoes = plannerShadowService.checkPostRedistribution(
-                plano.getTreinosPlanejados(), skeleton, atleta, referenceDate);
+                plano.getTreinosPlanejados(), skeleton, atleta, referenceDate, seasonWeek);
         if (violacoes.isEmpty()) {
             plano.setPlannerComplianceStatus(PlannerComplianceStatus.PASSED.name());
             return;
         }
+        // Taxa por regra sem depender do shadow (add-season-plan-load-enforcement): o detalhe em
+        // planner_metadata_json so existe com planner-engine.shadow=true.
+        violacoes.forEach(v -> meterRegistry.counter("planner.compliance.violation.count",
+                "key", v.key().name()).increment());
+        log.info("[planner-enforcement] estagio 2 atleta={} semana={} violacoes={}", atleta.getId(), referenceDate,
+                violacoes.stream().map(v -> v.key() + ": " + v.mensagem()).toList());
         if (!plannerFailOpen) {
             String motivos = violacoes.stream()
                     .map(v -> v.key() + ": " + v.mensagem())

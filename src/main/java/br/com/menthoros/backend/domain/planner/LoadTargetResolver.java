@@ -92,6 +92,66 @@ public class LoadTargetResolver {
         return new WeeklyLoadTarget(targetWeeklyTss, min, max, rationale);
     }
 
+    /**
+     * Caminho da temporada (add-season-plan-load-enforcement, ADR-0014): o {@code targetTss} da semana é a
+     * base e o teto; a progressão reativa e o step-back não se aplicam (a temporada já tem rampa e
+     * descargas). Precedência segurança > temporada > progressão, nesta ordem:
+     * redução por fase (lesão/pós-prova) → {@code REDUZIR} → teto de rampa (e contenção em taper/semana de prova)
+     * → cold-start → teto da temporada.
+     * Em cold-start, {@code REDUZIR} e a rampa não se aplicam (CTL de PMC não confiável na calibração).
+     * Banda sobre o alvo resolvido: ±10%, ou ±25% em cold-start.
+     */
+    public WeeklyLoadTarget resolveSeason(TrainingPhase phase, DecisaoProgressao decisao,
+            ProgressaoHistoricoResumo historico, CalibrationStage calibrationStage, Double ctlBaseline,
+            double seasonTargetTss) {
+        Corte corte = new Corte(seasonTargetTss);
+        if (isFaseDeReducao(phase)) {
+            corte.aplicar(seasonTargetTss * FATOR_REDUCAO, SeasonCutReason.REDUCAO_FASE);
+        }
+        double banda = FAIXA_TOLERANCIA;
+        if (calibrationStage != null) {
+            corte.aplicar(resolveColdStart(phase, calibrationStage, ctlBaseline, decisao).targetTss(),
+                    SeasonCutReason.COLD_START);
+            banda = BANDA_COLD_START;
+        } else {
+            double ctlAtual = historico.ctlAtual() != null ? historico.ctlAtual() : 0.0;
+            if (decisao.estado() == EstadoProgressao.REDUZIR) {
+                double ajuste = Math.min(decisao.ajusteVolumePercentual(), 0);
+                corte.aplicar(ctlAtual * 7 * (1 + ajuste), SeasonCutReason.PROGRESSAO_REDUZIR);
+            }
+            corte.aplicar(7 * (ctlAtual + MAX_CTL_RAMP_PER_WEEK), SeasonCutReason.TETO_RAMPA);
+            if (isFaseDeContencao(phase)) {
+                // Mesma contenção do legado: semana de prova/taper não passa da carga atual, mesmo que o
+                // targetTss da temporada tenha ficado acima dela.
+                corte.aplicar(ctlAtual * 7, SeasonCutReason.CONTENCAO_PROVA);
+            }
+        }
+
+        double alvo = corte.alvo;
+        String rationale = String.format("Alvo da temporada %.0f TSS%s; %s", seasonTargetTss,
+                corte.motivo == null ? "" : ", cortado para " + Math.round(alvo) + " (" + corte.motivo + ")",
+                decisao.motivo());
+        return new WeeklyLoadTarget(alvo, alvo * (1 - banda), alvo * (1 + banda), rationale,
+                seasonTargetTss, corte.motivo);
+    }
+
+    /** Alvo que só desce; o motivo é o da última proteção que o baixou (a mais restritiva). */
+    private static final class Corte {
+        private double alvo;
+        private SeasonCutReason motivo;
+
+        private Corte(double base) {
+            this.alvo = base;
+        }
+
+        private void aplicar(double candidato, SeasonCutReason razao) {
+            if (candidato < alvo) {
+                alvo = candidato;
+                motivo = razao;
+            }
+        }
+    }
+
     private WeeklyLoadTarget resolveColdStart(TrainingPhase phase, CalibrationStage stage,
             Double ctlBaseline, DecisaoProgressao decisao) {
         double ctlUsado = Math.min(ctlBaseline != null ? ctlBaseline : 0.0, TETO_CTL_COLD_START);

@@ -405,14 +405,54 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         }
 
         @Test
-        @DisplayName("só o total muda: etapas, duração e ritmo preservados")
+        @DisplayName("total e duração viram a soma; etapas e ritmo preservados")
         void soOTotalMuda() {
             var treino = continuo(etapa("AQUECIMENTO", 10, 1.32, null), etapa("PRINCIPAL", 30, 3.9, "7:28-7:55/km"));
 
             var resultado = normalizador.adotarSomaDasEtapas(treino);
 
-            assertThat(resultado).usingRecursiveComparison().ignoringFields("distanciaKm").isEqualTo(treino);
+            assertThat(resultado).usingRecursiveComparison().ignoringFields("distanciaKm", "duracaoMin").isEqualTo(treino);
             assertThat(resultado.distanciaKm()).isEqualTo(5.22);
+            assertThat(resultado.duracaoMin()).isEqualTo("40:00");
+        }
+
+        @Test
+        @DisplayName("total vira a soma e a duração do treino também: 96 min da LLM → 84 das etapas (CA1)")
+        void duracaoAcompanhaASoma() {
+            var treino = new TreinoPlanejadoLlmDto("SABADO", "LONGO", null, null, null, null, null,
+                    "96:00", 12.0, "8:00-8:00/km", List.of(
+                    etapa("AQUECIMENTO", 10, 1.67, null), etapa("PRINCIPAL", 69, 12.0, "5:36-5:54/km"),
+                    etapa("DESAQUECIMENTO", 5, 0.83, null)));
+
+            var resultado = normalizador.adotarSomaDasEtapas(treino);
+
+            assertThat(resultado.distanciaKm()).isEqualTo(14.5);
+            assertThat(resultado.duracaoMin()).isEqualTo("84:00");
+        }
+
+        @Test
+        @DisplayName("total já igual à soma com duração divergente → só a duração muda (CA1b)")
+        void totalIgualDuracaoDivergente() {
+            var treino = new TreinoPlanejadoLlmDto("SABADO", "LONGO", null, null, null, null, null,
+                    "116:00", 14.5, "8:00-8:00/km", List.of(
+                    etapa("AQUECIMENTO", 10, 1.67, null), etapa("PRINCIPAL", 69, 12.0, "5:36-5:54/km"),
+                    etapa("DESAQUECIMENTO", 5, 0.83, null)));
+
+            var resultado = normalizador.adotarSomaDasEtapas(treino);
+
+            assertThat(resultado.distanciaKm()).isEqualTo(14.5);
+            assertThat(resultado.duracaoMin()).isEqualTo("84:00");
+        }
+
+        @Test
+        @DisplayName("aquecimento com distância e sem duração → só o total muda, a duração fica para a cauda (CA2)")
+        void etapaSemDuracaoNaoGravaDuracao() {
+            var treino = continuo(etapa("AQUECIMENTO", null, 1.32, null), etapa("PRINCIPAL", 30, 3.9, "7:28-7:55/km"));
+
+            var resultado = normalizador.adotarSomaDasEtapas(treino);
+
+            assertThat(resultado.distanciaKm()).isEqualTo(5.22);
+            assertThat(resultado.duracaoMin()).isEqualTo("45:00");
         }
     }
 
