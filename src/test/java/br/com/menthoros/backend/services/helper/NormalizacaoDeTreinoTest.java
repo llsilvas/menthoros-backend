@@ -679,8 +679,11 @@ class NormalizacaoDeTreinoTest {
         @Test
         @DisplayName("telemetria: etapa sintetizada com soma > 10% do total mantido → contador motivo=etapa-sintetizada")
         void telemetriaEtapaSintetizada() {
-            // total de 2 km menor que aquec + desaq sintetizados (1,67 + 0,83): a PRINCIPAL não cabe, a divergência fica
-            var treino = continuo("2.0", "30:00", "6:30-7:00/km", etapa("PRINCIPAL", 30, 2.0, "6:30-7:00/km"));
+            // total de 2 km menor que aquec + desaq sintetizados (1,67 + 0,83) e PRINCIPAL sem ritmo: sem pace
+            // não há bloco único, a divergência fica. Com ritmo o caso vira bloco único
+            // (fix-etapas-sintetizadas-encaixe-total) e não conta — sem pace com etapa sintetizada conta
+            // como etapa-sintetizada, não como principal-sem-ritmo (a ordem do teste em reconciliarContinuo)
+            var treino = continuo("2.0", "30:00", null, etapa("PRINCIPAL", 30, 2.0, null));
 
             normalizacao.normalizar(treino, ctx);
 
@@ -859,16 +862,18 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
-        @DisplayName("CA4b: etapas já fechavam 45 e o reparo acrescenta 10 de aquec → 55 (19,5%) perde para 45 (2%)")
+        @DisplayName("CA4b: etapas já fechavam 45 e o reparo acrescenta 10 de aquec → nem os 55 esticados nem os 45 da LLM: a soma encaixada (42)")
         void reparoQueEsticaEtapasNaoVenceDuracaoDaLlm() {
             // caso real de 21/09 22:41: 6km a 7:28-7:55 esperam ~46min; a soma 55 ficava dentro dos
-            // 20% e vencia com o desempate por tolerância — por isso o desempate é "mais perto vence"
+            // 20% e vencia com o desempate por tolerância — por isso o desempate é "mais perto vence".
+            // fix-etapas-sintetizadas-encaixe-total: a PRINCIPAL encaixada nos 6 km deixa as etapas em 42 e o
+            // treino passa a dizer 42 (antes 45, com o editor somando 42 — card e editor divergentes)
             var treino = continuo("REGENERATIVO", "45:00", 6.0, "7:28-7:55/km",
                     etapaMin("PRINCIPAL", 40), etapaMin("DESAQUECIMENTO", 5));
 
             var resultado = normalizacao.normalizar(treino, ctx);
 
-            assertThat(resultado.duracaoMin()).isEqualTo("45:00");
+            assertThat(resultado.duracaoMin()).isEqualTo("42:00");
         }
 
         @Test
