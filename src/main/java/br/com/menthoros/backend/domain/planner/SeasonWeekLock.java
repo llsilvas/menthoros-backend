@@ -52,4 +52,16 @@ public final class SeasonWeekLock {
         }
         return Optional.empty();
     }
+
+    /**
+     * Trava da semana conforme a temporada (season-plan-start-volume, D4): na proposta v1, que nunca foi
+     * aprovada nem alimentou a geração semanal, só a semana concluída trava; nas demais, {@link #of}.
+     *
+     * @param firstProposal temporada PROPOSED v1, sem base de ajuste
+     */
+    public static Optional<Reason> forPlan(boolean firstProposal, LocalDate weekStart, LocalDate today,
+                                           @Nullable LocalDate raceDate) {
+        Optional<Reason> trava = of(weekStart, today, raceDate);
+        return firstProposal ? trava.filter(r -> r == Reason.COMPLETED) : trava;
+    }
 }

@@ -86,15 +86,7 @@ class SeasonPlanCalibrationGateIT extends AbstractIntegrationTest {
             tenantId = assessoria.getId();
             metrica(hoje.minusDays(60), 30.0);
             metrica(hoje.minusDays(1), 40.0);
-            TreinoRealizado t = new TreinoRealizado();
-            t.setAtleta(atleta);
-            t.setDataTreino(hoje.minusDays(10));
-            t.setDiaSemana(DiaSemana.SEGUNDA);
-            t.setTipoTreino(TipoTreino.FACIL);
-            t.setDuracaoMin(Duration.ofMinutes(60));
-            t.setDistanciaKm(new BigDecimal("35.0"));
-            t.setTenantId(tenantId);
-            em.persist(t);
+            fx.historicoDeVolume(atleta, hoje);
             em.persist(Usuario.builder()
                     .id(subTecnico)
                     .keycloakId(subTecnico.toString())

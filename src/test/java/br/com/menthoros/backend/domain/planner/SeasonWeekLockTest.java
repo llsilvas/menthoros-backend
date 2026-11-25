@@ -56,4 +56,31 @@ class SeasonWeekLockTest {
             assertThat(SeasonWeekLock.of(SEGUNDA, SEGUNDA.minusDays(1), null)).isEmpty();
         }
     }
+
+    @Nested
+    @DisplayName("forPlan")
+    class ForPlan {
+
+        @Test
+        @DisplayName("proposta v1: semana em andamento e semana da prova ficam livres; concluída trava")
+        void primeiraProposta() {
+            assertThat(SeasonWeekLock.forPlan(true, SEGUNDA, SEGUNDA.plusDays(2), PROVA_LONGE)).isEmpty();
+            assertThat(SeasonWeekLock.forPlan(true, SEGUNDA, SEGUNDA.minusWeeks(3), SEGUNDA.plusDays(6))).isEmpty();
+            assertThat(SeasonWeekLock.forPlan(true, SEGUNDA, SEGUNDA.plusWeeks(1), PROVA_LONGE)).contains(Reason.COMPLETED);
+        }
+
+        @ParameterizedTest(name = "hoje {0} → {1}")
+        @CsvSource({"2026-11-15, ", "2026-11-18, IN_PROGRESS", "2026-11-23, COMPLETED"})
+        @DisplayName("fora da proposta v1, a mesma regra de of")
+        void demaisTemporadas(LocalDate hoje, Reason esperado) {
+            assertThat(SeasonWeekLock.forPlan(false, SEGUNDA, hoje, PROVA_LONGE).orElse(null)).isEqualTo(esperado);
+        }
+
+        @Test
+        @DisplayName("fora da proposta v1, semana da prova continua travada")
+        void semanaDaProvaFora() {
+            assertThat(SeasonWeekLock.forPlan(false, SEGUNDA, SEGUNDA.minusWeeks(3), SEGUNDA.plusDays(6)))
+                    .contains(Reason.RACE_WEEK);
+        }
+    }
 }

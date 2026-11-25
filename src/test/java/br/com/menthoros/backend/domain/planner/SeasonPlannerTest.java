@@ -197,6 +197,49 @@ class SeasonPlannerTest {
             assertThat(s.get(15).longRunKm()).isNull();
         }
 
+        @Test
+        @DisplayName("com longão de partida, o longão segue a proporção do volume e cai 25% na descarga")
+        void longaoProporcionalAoDePartida() {
+            List<WeekPlan> s = comLongao(DistanciaProva.KM_42, "14").weeks();
+
+            assertThat(s.get(0).longRunKm()).isEqualByComparingTo("14.3");   // 14 × 40,9 / 40
+            assertThat(s.get(3).longRunKm()).isEqualByComparingTo("9.2");    // 14 × 35,0 / 40 × 0,75
+            assertThat(s.get(4).longRunKm()).isEqualByComparingTo("15.6");   // 14 × 44,6 / 40
+            assertThat(s.get(15).longRunKm()).isNull();
+        }
+
+        @Test
+        @DisplayName("longão de partida curto não derruba o piso de 28% do volume")
+        void longaoDePartidaAbaixoDoPiso() {
+            List<WeekPlan> s = comLongao(DistanciaProva.KM_42, "5").weeks();
+
+            assertThat(s.get(0).longRunKm()).isEqualByComparingTo("11.5");   // 40,9 × 0,28
+        }
+
+        @Test
+        @DisplayName("longão de partida longo fica limitado a 50% do volume da semana")
+        void longaoDePartidaAcimaDaMetade() {
+            List<WeekPlan> s = comLongao(DistanciaProva.KM_42, "25").weeks();
+
+            assertThat(s.get(0).longRunKm()).isEqualByComparingTo("20.5");   // 40,9 × 0,50
+        }
+
+        @Test
+        @DisplayName("longão de partida ainda respeita o teto da distância")
+        void longaoDePartidaNoTetoDaDistancia() {
+            List<WeekPlan> s = comLongao(DistanciaProva.KM_10, "20").weeks();
+
+            assertThat(s.get(0).longRunKm()).isEqualByComparingTo("16");
+        }
+
+        @Test
+        @DisplayName("sem longão de partida, mesmas semanas do cálculo de 28%")
+        void semLongaoDePartida() {
+            assertThat(SeasonPlanner.plan(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE, 40.0, VOLUME, null,
+                    List.of()).weeks())
+                    .isEqualTo(plan(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, 40.0).weeks());
+        }
+
         @ParameterizedTest(name = "{0} {1} km → teto {2} km")
         @CsvSource({
                 "KM_5, , 12", "KM_10, , 16", "KM_21, , 21", "KM_42, , 32",
@@ -338,7 +381,7 @@ class SeasonPlannerTest {
         @DisplayName("respeita as semanas por fase pedidas, na ordem Base → Construção → Pico → Polimento → Prova")
         void respeitaFases() {
             SeasonPlan plano = SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
-                    40.0, VOLUME, List.of(), Map.of(BASE, 3, BUILD, 6, PEAK, 4, TAPER, 2));
+                    40.0, VOLUME, null, List.of(), Map.of(BASE, 3, BUILD, 6, PEAK, 4, TAPER, 2));
 
             assertThat(plano.weeks()).extracting(WeekPlan::phase).containsExactly(
                     BASE, BASE, BASE, BUILD, BUILD, BUILD, BUILD, BUILD, BUILD,
@@ -353,7 +396,7 @@ class SeasonPlannerTest {
             SeasonPlan template = plan(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, 40.0);
 
             SeasonPlan explicito = SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
-                    40.0, VOLUME, List.of(), Map.of(BASE, 6, BUILD, 4, PEAK, 3, TAPER, 2));
+                    40.0, VOLUME, null, List.of(), Map.of(BASE, 6, BUILD, 4, PEAK, 3, TAPER, 2));
 
             assertThat(explicito).isEqualTo(template);
         }
@@ -362,7 +405,7 @@ class SeasonPlannerTest {
         @DisplayName("fase com zero semanas some da sequência")
         void faseZerada() {
             SeasonPlan plano = SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
-                    40.0, VOLUME, List.of(), Map.of(BASE, 9, BUILD, 4, PEAK, 2, TAPER, 0));
+                    40.0, VOLUME, null, List.of(), Map.of(BASE, 9, BUILD, 4, PEAK, 2, TAPER, 0));
 
             assertThat(contagem(plano)).containsExactlyInAnyOrderEntriesOf(
                     Map.of(BASE, 9L, BUILD, 4L, PEAK, 2L, RACE_WEEK, 1L));
@@ -372,13 +415,13 @@ class SeasonPlannerTest {
         @DisplayName("soma das fases + semana da prova diferente do total, fase negativa ou ausente: IllegalArgumentException")
         void somaInvalida() {
             assertThatThrownBy(() -> SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
-                    40.0, VOLUME, List.of(), Map.of(BASE, 6, BUILD, 4, PEAK, 3, TAPER, 1)))
+                    40.0, VOLUME, null, List.of(), Map.of(BASE, 6, BUILD, 4, PEAK, 3, TAPER, 1)))
                     .isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
-                    40.0, VOLUME, List.of(), Map.of(BASE, 8, BUILD, 4, PEAK, 3, TAPER, -1)))
+                    40.0, VOLUME, null, List.of(), Map.of(BASE, 8, BUILD, 4, PEAK, 3, TAPER, -1)))
                     .isInstanceOf(IllegalArgumentException.class);
             assertThatThrownBy(() -> SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
-                    40.0, VOLUME, List.of(), Map.of(BASE, 8, BUILD, 4, PEAK, 3)))
+                    40.0, VOLUME, null, List.of(), Map.of(BASE, 8, BUILD, 4, PEAK, 3)))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }
@@ -388,7 +431,12 @@ class SeasonPlannerTest {
     }
 
     private static SeasonPlan plan(DistanciaProva distancia, LocalDate prova, List<RaceMilestone> candidatas) {
-        return SeasonPlanner.plan(distancia, null, prova, HOJE, 40.0, VOLUME, candidatas);
+        return SeasonPlanner.plan(distancia, null, prova, HOJE, 40.0, VOLUME, null, candidatas);
+    }
+
+    private static SeasonPlan comLongao(DistanciaProva distancia, String longaoKm) {
+        return SeasonPlanner.plan(distancia, null, PROVA_16_SEMANAS, HOJE, 40.0, VOLUME, new BigDecimal(longaoKm),
+                List.of());
     }
 
     private static Map<TrainingPhase, Long> contagem(SeasonPlan plano) {

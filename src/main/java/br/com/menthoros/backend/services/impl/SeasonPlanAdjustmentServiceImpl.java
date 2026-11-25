@@ -13,6 +13,7 @@ import br.com.menthoros.backend.entity.PlanoTreino;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.SeasonWeek;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
+import br.com.menthoros.backend.enums.StartVolumeSource;
 import br.com.menthoros.backend.enums.WeekValueSource;
 import br.com.menthoros.backend.exception.DomainConflictException;
 import br.com.menthoros.backend.exception.DomainNotFoundException;
@@ -59,6 +60,7 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
     private static final BigDecimal VOLUME_MAX_KM = BigDecimal.valueOf(500);
     private static final int MAX_SEMANAS_FASE = 104;
     private static final BigDecimal LONGAO_MAX_KM = BigDecimal.valueOf(200);
+    private static final BigDecimal LONGAO_PARTIDA_MAX_KM = new BigDecimal("42.2");
     private static final double TSS_MAX = 3000;
     private static final String DESCARTADO = "rascunho descartado";
 
@@ -142,9 +144,10 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
                 .orElseThrow(() -> new DomainNotFoundException("Semana " + weekIndex + " não encontrada na temporada"));
         LocalDate hoje = LocalDate.now(clock.withZone(SeasonWeekLock.FUSO));
         @Nullable LocalDate dataProva = temporada.getProva() == null ? null : temporada.getProva().getDataProva();
-        SeasonWeekLock.of(semana.getWeekStart(), hoje, dataProva).ifPresent(motivo -> {
-            throw new DomainRuleViolationException(mensagemTrava(weekIndex, motivo));
-        });
+        SeasonWeekLock.forPlan(SeasonPlanVersioning.primeiraProposta(temporada), semana.getWeekStart(), hoje, dataProva)
+                .ifPresent(motivo -> {
+                    throw new DomainRuleViolationException(mensagemTrava(weekIndex, motivo));
+                });
 
         aplicar(semana, input);
         semana.setValueSource(WeekValueSource.COACH);
@@ -161,11 +164,13 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
         exigirHabilitado();
         validarRecalculo(input);
         UUID tenantId = TenantContext.getRequiredTenantId();
-        log.info("Recalculando ajuste {}: fases={}, volume={}, atletaId={}, tenantId={}", seasonPlanId,
-                input.phaseWeeks(), input.startVolumeKm(), atletaId, tenantId);
+        log.info("Recalculando temporada {}: fases={}, volume={}, longão={}, atletaId={}, tenantId={}", seasonPlanId,
+                input.phaseWeeks(), input.startVolumeKm(), input.startLongRunKm(), atletaId, tenantId);
         PlanoTreino rascunho = versioning.travar(atletaId, seasonPlanId, tenantId);
-        if (rascunho.getSeasonStatus() != SeasonPlanStatus.PROPOSED || rascunho.getBaseSeasonPlanId() == null) {
-            throw new DomainConflictException("Só um ajuste em aberto pode ser recalculado");
+        boolean primeira = SeasonPlanVersioning.primeiraProposta(rascunho);
+        boolean ajusteAberto = rascunho.getSeasonStatus() == SeasonPlanStatus.PROPOSED && rascunho.getBaseSeasonPlanId() != null;
+        if (!primeira && !ajusteAberto) {
+            throw new DomainConflictException("Só a proposta v1 ou um ajuste em aberto pode ser recalculado");
         }
         Prova prova = rascunho.getProva();
         List<SeasonWeek> semanas = seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(
@@ -192,14 +197,17 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
                 .filter(w -> w.getMilestoneRaceId() != null)
                 .map(w -> new RaceMilestone(w.getMilestoneRaceId(), w.getWeekStart(), BigDecimal.ONE))
                 .toList();
+        @Nullable BigDecimal longao = input.startLongRunKm() != null
+                ? input.startLongRunKm().setScale(1, RoundingMode.HALF_UP)
+                : rascunho.getInitialLongRunKm();
         List<WeekPlan> motor = SeasonPlanner.planWithPhases(prova.getDistancia(), prova.getDistanciaKm(),
-                prova.getDataProva(), inicio, ctl, input.startVolumeKm(), marcos, input.phaseWeeks()).weeks();
+                prova.getDataProva(), inicio, ctl, input.startVolumeKm(), longao, marcos, input.phaseWeeks()).weeks();
 
         LocalDate hoje = LocalDate.now(clock.withZone(SeasonWeekLock.FUSO));
         List<Integer> livres = new ArrayList<>();
         for (int i = 0; i < semanas.size(); i++) {
             SeasonWeek semana = semanas.get(i);
-            if (SeasonWeekLock.of(semana.getWeekStart(), hoje, prova.getDataProva()).isPresent()) {
+            if (SeasonWeekLock.forPlan(primeira, semana.getWeekStart(), hoje, prova.getDataProva()).isPresent()) {
                 if (semana.getPhase() != motor.get(i).phase()) {
                     throw new DomainRuleViolationException("O recálculo mudaria a fase da semana " + semana.getWeekIndex()
                             + " (" + semana.getPhase() + " para " + motor.get(i).phase()
@@ -212,10 +220,13 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
         // Só depois de checar todas as travadas: um 422 no meio não deixa semana meio aplicada.
         livres.forEach(i -> aplicarMotor(semanas.get(i), motor.get(i)));
         rascunho.setInitialVolumeKm(input.startVolumeKm().setScale(1, RoundingMode.HALF_UP));
+        rascunho.setInitialLongRunKm(longao);
+        // proposedVolumeKm e o histórico ficam: são a evidência do que o motor propôs na geração.
+        rascunho.setInitialVolumeSource(StartVolumeSource.COACH);
         SeasonPlanVersioning.recalcularPicos(rascunho, semanas);
         seasonWeekRepository.saveAll(semanas);
         planoTreinoRepository.save(rascunho);
-        log.info("Ajuste {} recalculado: {} semanas regeneradas pelo motor", seasonPlanId, livres.size());
+        log.info("Temporada {} recalculada: {} semanas regeneradas pelo motor, v1={}", seasonPlanId, livres.size(), primeira);
         return responseMapper.toDto(rascunho, semanas, tenantId, null);
     }
 
@@ -308,6 +319,14 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
         }
         if (volume.stripTrailingZeros().scale() > 1) {
             throw new DomainRuleViolationException("O volume de partida tem no máximo uma casa decimal");
+        }
+        BigDecimal longao = input.startLongRunKm();
+        if (longao != null && (longao.signum() <= 0 || acima(longao, LONGAO_PARTIDA_MAX_KM))) {
+            throw new DomainRuleViolationException("O longão de partida precisa ser maior que 0 e no máximo "
+                    + LONGAO_PARTIDA_MAX_KM + " km");
+        }
+        if (longao != null && longao.stripTrailingZeros().scale() > 1) {
+            throw new DomainRuleViolationException("O longão de partida tem no máximo uma casa decimal");
         }
     }
 

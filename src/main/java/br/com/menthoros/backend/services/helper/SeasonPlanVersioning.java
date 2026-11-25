@@ -91,6 +91,10 @@ public class SeasonPlanVersioning {
         r.setShortPreparation(ativa.getShortPreparation());
         r.setInitialCtl(ativa.getInitialCtl());
         r.setInitialVolumeKm(ativa.getInitialVolumeKm());
+        r.setInitialLongRunKm(ativa.getInitialLongRunKm());
+        r.setProposedVolumeKm(ativa.getProposedVolumeKm());
+        r.setInitialVolumeSource(ativa.getInitialVolumeSource());
+        r.setInitialVolumeHistory(ativa.getInitialVolumeHistory());
         r.setPeakVolumeKm(ativa.getPeakVolumeKm());
         r.setMaxLongRunKm(ativa.getMaxLongRunKm());
         r.setBaseSeasonPlanId(ativa.getId());
@@ -166,6 +170,14 @@ public class SeasonPlanVersioning {
         if (longao != null) {
             p.setMaxLongRunKm(longao);
         }
+    }
+
+    /**
+     * Proposta v1 (PROPOSED, versão 1, sem base de ajuste): nunca aprovada, não alimenta a geração
+     * semanal, e por isso só a semana concluída trava (season-plan-start-volume, D4).
+     */
+    public static boolean primeiraProposta(PlanoTreino p) {
+        return p.getSeasonStatus() == SeasonPlanStatus.PROPOSED && versao(p) == 1 && p.getBaseSeasonPlanId() == null;
     }
 
     /** Ajuste (PROPOSED com base) aberto a partir de {@code temporada}, se ela é a ACTIVE. */
