@@ -35,6 +35,7 @@ import br.com.menthoros.backend.util.Utils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -69,6 +70,8 @@ public class PlannerShadowService {
     private final ObjectMapper objectMapper;
     private final boolean shadowEnabled;
     private final int injuryRecentWindowDays;
+    private final boolean seasonLoadEnforced;
+    private final int longRunTolerancePct;
 
     public PlannerShadowService(PlannerEngine plannerEngine,
                                  SkeletonComplianceChecker complianceChecker,
@@ -77,6 +80,20 @@ public class PlannerShadowService {
                                  ObjectMapper objectMapper,
                                  @Value("${planner-engine.shadow:false}") boolean shadowEnabled,
                                  @Value("${planner-engine.injury.recent-window-days:30}") int injuryRecentWindowDays) {
+        this(plannerEngine, complianceChecker, periodizacaoPromptFormatter, meterRegistry, objectMapper,
+                shadowEnabled, injuryRecentWindowDays, false, 15);
+    }
+
+    @Autowired
+    public PlannerShadowService(PlannerEngine plannerEngine,
+                                 SkeletonComplianceChecker complianceChecker,
+                                 PeriodizacaoPromptFormatter periodizacaoPromptFormatter,
+                                 MeterRegistry meterRegistry,
+                                 ObjectMapper objectMapper,
+                                 @Value("${planner-engine.shadow:false}") boolean shadowEnabled,
+                                 @Value("${planner-engine.injury.recent-window-days:30}") int injuryRecentWindowDays,
+                                 @Value("${season-plan.enforcement.enabled:false}") boolean seasonLoadEnforced,
+                                 @Value("${season-plan.enforcement.long-run-tolerance-pct:15}") int longRunTolerancePct) {
         this.plannerEngine = plannerEngine;
         this.complianceChecker = complianceChecker;
         this.periodizacaoPromptFormatter = periodizacaoPromptFormatter;
@@ -84,6 +101,8 @@ public class PlannerShadowService {
         this.objectMapper = objectMapper;
         this.shadowEnabled = shadowEnabled;
         this.injuryRecentWindowDays = injuryRecentWindowDays;
+        this.seasonLoadEnforced = seasonLoadEnforced;
+        this.longRunTolerancePct = longRunTolerancePct;
     }
 
     /**
@@ -158,11 +177,7 @@ public class PlannerShadowService {
 
         WeekPlanSkeleton skeleton = plannerEngine.planWeek(snapshot);
 
-        ComplianceContext context = new ComplianceContext(
-                skeleton.provaDeterminante(),
-                resolverConstraints(atleta),
-                semanaInicio,
-                skeleton.provasDaSemana());
+        ComplianceContext context = contextoDeCompliance(skeleton, atleta, semanaInicio, seasonWeek);
 
         GeneratedPlanSnapshot planoGeradoSnapshot = mapPlanoGerado(planoGeradoPeloLlm, semanaInicio);
         List<PlannerViolation> violacoesPre = complianceChecker.checkPreRedistribution(planoGeradoSnapshot, skeleton, context);
@@ -239,19 +254,27 @@ public class PlannerShadowService {
     public List<PlannerViolation> checkPostRedistribution(List<TreinoPlanejado> treinosRedistribuidos,
                                                           WeekPlanSkeleton skeleton,
                                                           Atleta atleta,
-                                                          LocalDate semanaInicio) {
-        ComplianceContext context = new ComplianceContext(
-                skeleton.provaDeterminante(),
-                resolverConstraints(atleta),
-                semanaInicio,
-                skeleton.provasDaSemana());
+                                                          LocalDate semanaInicio,
+                                                          Optional<SeasonWeekSnapshot> seasonWeek) {
+        ComplianceContext context = contextoDeCompliance(skeleton, atleta, semanaInicio, seasonWeek);
         GeneratedPlanSnapshot redistribuidoSnapshot = mapTreinosRedistribuidos(treinosRedistribuidos);
         return complianceChecker.checkPostRedistribution(redistribuidoSnapshot, skeleton, context);
     }
 
+    private ComplianceContext contextoDeCompliance(WeekPlanSkeleton skeleton, Atleta atleta, LocalDate semanaInicio,
+                                                   Optional<SeasonWeekSnapshot> seasonWeek) {
+        return new ComplianceContext(
+                skeleton.provaDeterminante(),
+                resolverConstraints(atleta),
+                semanaInicio,
+                skeleton.provasDaSemana(),
+                seasonWeek,
+                longRunTolerancePct);
+    }
+
     // --- Mapeamento entity -> record (anti-corruption layer, design.md Decisao 17) ---
 
-    private PlannerInputSnapshot mapToSnapshot(Atleta atleta,
+    PlannerInputSnapshot mapToSnapshot(Atleta atleta,
                                                 DadosPlanoDto dadosPlano,
                                                 DecisaoProgressao decisaoProgressao,
                                                 ProgressaoHistoricoResumo historico,
@@ -281,7 +304,7 @@ public class PlannerShadowService {
 
         return new PlannerInputSnapshot(
                 athleteSnapshot, decisaoProgressao, historico, provas, historicoDiario,
-                onboardingContext, semanaInicio, injuryRecentWindowDays, seasonWeek);
+                onboardingContext, semanaInicio, injuryRecentWindowDays, seasonWeek, seasonLoadEnforced);
     }
 
     private ProvaSnapshot mapProva(Prova prova) {
@@ -316,7 +339,7 @@ public class PlannerShadowService {
         return new AthleteConstraints(diasDisponiveis, null, null, List.of());
     }
 
-    private GeneratedPlanSnapshot mapPlanoGerado(PlanoSemanalLlmDto planoDto, LocalDate semanaInicio) {
+    GeneratedPlanSnapshot mapPlanoGerado(PlanoSemanalLlmDto planoDto, LocalDate semanaInicio) {
         if (planoDto.treinosPlanejados() == null) {
             return new GeneratedPlanSnapshot(List.of());
         }
@@ -335,10 +358,11 @@ public class PlannerShadowService {
             log.warn("[planner-shadow] diaSemana invalido do LLM: '{}' — usando semanaInicio como fallback", dto.diaSemana());
             data = semanaInicio; // dia invalido/inesperado do LLM — nao trava o shadow
         }
-        return new GeneratedSessionSnapshot(data, dto.tipoTreino(), dto.tssPlanejado(), null);
+        return new GeneratedSessionSnapshot(data, dto.tipoTreino(), dto.tssPlanejado(), null,
+                dto.distanciaKm() != null ? BigDecimal.valueOf(dto.distanciaKm()) : null);
     }
 
-    private GeneratedPlanSnapshot mapTreinosRedistribuidos(List<TreinoPlanejado> treinos) {
+    GeneratedPlanSnapshot mapTreinosRedistribuidos(List<TreinoPlanejado> treinos) {
         if (treinos == null) {
             return new GeneratedPlanSnapshot(List.of());
         }
@@ -347,7 +371,8 @@ public class PlannerShadowService {
                         t.getDataTreino(),
                         t.getTipoTreino() != null ? t.getTipoTreino().name() : null,
                         t.getTssPlanejado(),
-                        t.getZonaAlvo()))
+                        t.getZonaAlvo(),
+                        t.getDistanciaKm()))
                 .toList();
         return new GeneratedPlanSnapshot(sessoes);
     }

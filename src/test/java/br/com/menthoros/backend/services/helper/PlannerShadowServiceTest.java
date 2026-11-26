@@ -7,6 +7,7 @@ import br.com.menthoros.backend.domain.planner.InjuryRiskEvaluator;
 import br.com.menthoros.backend.domain.planner.LoadTargetResolver;
 import br.com.menthoros.backend.domain.planner.PeriodizationPlanner;
 import br.com.menthoros.backend.domain.planner.PlannerEngine;
+import br.com.menthoros.backend.domain.planner.PlannerInputSnapshot;
 import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.TaperStrategy;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
@@ -315,7 +316,7 @@ class PlannerShadowServiceTest {
             prova.setTssPlanejado(100);
 
             var violacoes = shadowHabilitado.checkPostRedistribution(
-                    List.of(prova), skeleton, atletaSemDomingoComProvaNoDomingo(), semanaInicio);
+                    List.of(prova), skeleton, atletaSemDomingoComProvaNoDomingo(), semanaInicio, Optional.empty());
 
             assertThat(violacoes).noneMatch(v -> v.key() == br.com.menthoros.backend.domain.compliance.PlannerViolationKey.DIA_INDISPONIVEL);
         }
@@ -383,6 +384,71 @@ class PlannerShadowServiceTest {
                     .volumeAlvoKm(21.1)
                     .treinosPlanejados(List.of(prova))
                     .build();
+        }
+    }
+
+    @Nested
+    @DisplayName("mapToSnapshot — flag season-plan.enforcement.enabled")
+    class FlagDeEnforcement {
+
+        @Test
+        @DisplayName("flag ligada chega ao snapshot do motor")
+        void flagLigada() {
+            PlannerShadowService comEnforcement = new PlannerShadowService(
+                    new PlannerEngine(new PeriodizationPlanner(), new LoadTargetResolver(), new TaperStrategy(),
+                            new InjuryRiskEvaluator(), new InjuryPolicyResolver(), new ConstraintValidator()),
+                    new SkeletonComplianceChecker(), periodizacaoPromptFormatter, meterRegistry, new ObjectMapper(),
+                    true, 30, true, 15);
+
+            PlannerInputSnapshot snapshot = comEnforcement.mapToSnapshot(atletaBase(), dadosPlano(atletaBase()),
+                    decisaoNeutra(), historico(0.0, 45.0, 0), semanaInicio, Optional.empty(), Optional.empty());
+
+            assertThat(snapshot.seasonLoadEnforced()).isTrue();
+        }
+
+        @Test
+        @DisplayName("construtor sem a flag mantém o enforcement desligado")
+        void flagDesligadaPorPadrao() {
+            PlannerInputSnapshot snapshot = shadowHabilitado.mapToSnapshot(atletaBase(), dadosPlano(atletaBase()),
+                    decisaoNeutra(), historico(0.0, 45.0, 0), semanaInicio, Optional.empty(), Optional.empty());
+
+            assertThat(snapshot.seasonLoadEnforced()).isFalse();
+        }
+    }
+
+    @Nested
+    @DisplayName("distanciaKm nos dois mappers (add-season-plan-load-enforcement 3.1)")
+    class MapeamentoDeDistancia {
+
+        @Test
+        @DisplayName("DTO do LLM: distância vira BigDecimal; ausente fica nula")
+        void dtoDoLlm() {
+            TreinoPlanejadoLlmDto semDistancia = new TreinoPlanejadoLlmDto(
+                    "TERCA", "FACIL", null, 40, 0.7, 4, null, "40:00", null, null, List.of());
+            PlanoSemanalLlmDto plano = PlanoSemanalLlmDto.builder()
+                    .volumePlanejadoKm(40.0).volumeAlvoKm(42.0)
+                    .treinosPlanejados(List.of(planoGerado().treinosPlanejados().get(0), semDistancia))
+                    .build();
+
+            var sessoes = shadowHabilitado.mapPlanoGerado(plano, semanaInicio).sessoes();
+
+            assertThat(sessoes.get(0).distanciaKm()).isEqualByComparingTo("8.0");
+            assertThat(sessoes.get(1).distanciaKm()).isNull();
+        }
+
+        @Test
+        @DisplayName("TreinoPlanejado: distância copiada; ausente fica nula")
+        void treinoPlanejado() {
+            TreinoPlanejado comDistancia = new TreinoPlanejado();
+            comDistancia.setDataTreino(semanaInicio.plusDays(6));
+            comDistancia.setTipoTreino(TipoTreino.LONGO);
+            comDistancia.setDistanciaKm(new java.math.BigDecimal("21.5"));
+
+            var sessoes = shadowHabilitado.mapTreinosRedistribuidos(
+                    List.of(comDistancia, planoBase().getTreinosPlanejados().get(0))).sessoes();
+
+            assertThat(sessoes.get(0).distanciaKm()).isEqualByComparingTo("21.5");
+            assertThat(sessoes.get(1).distanciaKm()).isNull();
         }
     }
 

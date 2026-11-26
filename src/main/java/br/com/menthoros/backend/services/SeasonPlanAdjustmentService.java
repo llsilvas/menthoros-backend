@@ -57,18 +57,20 @@ public interface SeasonPlanAdjustmentService {
     SeasonPlanResponseDto updateWeek(UUID atletaId, UUID seasonPlanId, int weekIndex, SeasonWeekUpdateInputDto input);
 
     /**
-     * Regenera pelo motor as semanas livres do rascunho de ajuste, com as semanas por fase e o volume de
-     * partida pedidos. Semanas travadas e as editadas pelo treinador (COACH) ficam como estão; os marcos
-     * são os já gravados no rascunho.
+     * Regenera pelo motor as semanas livres da proposta v1 ou do rascunho de ajuste, com as semanas por fase,
+     * o volume de partida e, opcionalmente, o longão de partida pedidos ({@code startLongRunKm} nulo mantém o
+     * gravado). Semanas travadas ({@code SeasonWeekLock.forPlan}: na v1 só as concluídas) e as editadas pelo
+     * treinador (COACH) ficam como estão; os marcos são os já gravados.
      *
-     * Idempotent: YES — a mesma entrada sobre o mesmo rascunho gera as mesmas semanas.
-     * Side Effects: Database update (semanas livres, volume de partida e picos do rascunho); lock pessimista na prova.
+     * Idempotent: YES — a mesma entrada sobre a mesma temporada gera as mesmas semanas.
+     * Side Effects: Database update (semanas livres, volume e longão de partida, origem COACH e picos); lock
+     * pessimista na prova. O volume proposto pelo motor e o histórico das 8 semanas não mudam.
      * Tenant-aware: YES
      *
      * @throws br.com.menthoros.backend.exception.SeasonPlanDisabledException flag desligada
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException temporada não é do atleta no tenant
-     * @throws br.com.menthoros.backend.exception.DomainConflictException não é um rascunho de ajuste aberto
-     * @throws br.com.menthoros.backend.exception.DomainRuleViolationException fases ou volume inválidos, soma
+     * @throws br.com.menthoros.backend.exception.DomainConflictException não é a proposta v1 nem um rascunho de ajuste aberto
+     * @throws br.com.menthoros.backend.exception.DomainRuleViolationException fases, volume ou longão inválidos, soma
      *         diferente do ciclo, prova remarcada, CTL de partida ausente ou fase divergente numa semana travada
      */
     SeasonPlanResponseDto recalculate(UUID atletaId, UUID seasonPlanId, SeasonPlanRecalculateInputDto input);

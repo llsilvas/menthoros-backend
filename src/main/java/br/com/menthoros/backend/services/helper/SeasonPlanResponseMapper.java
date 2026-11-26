@@ -4,6 +4,7 @@ import br.com.menthoros.backend.domain.planner.SeasonPlanValidator;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.WeekPlan;
 import br.com.menthoros.backend.domain.planner.SeasonWeekLock;
+import br.com.menthoros.backend.domain.planner.WeeklyVolume;
 import br.com.menthoros.backend.dto.output.SeasonPlanResponseDto;
 import br.com.menthoros.backend.entity.PlanoTreino;
 import br.com.menthoros.backend.entity.Prova;
@@ -68,6 +69,7 @@ public class SeasonPlanResponseMapper {
                         .map(a -> new SeasonPlanResponseDto.Validation(a.rule(), SEVERITY_WARN, a.weekIndex(),
                                 a.measured(), a.limit(), a.message()))
                         .toList();
+        boolean primeiraProposta = SeasonPlanVersioning.primeiraProposta(p);
         return new SeasonPlanResponseDto(
                 p.getId(),
                 p.getSeasonStatus(),
@@ -79,19 +81,31 @@ public class SeasonPlanResponseMapper {
                 p.getTotalWeeks(),
                 p.getInitialCtl(),
                 p.getPeakVolumeKm(),
-                weeks.stream().map(w -> semana(w, hoje, dataProva)).toList(),
+                weeks.stream().map(w -> semana(w, hoje, dataProva, primeiraProposta)).toList(),
                 marcos(weeks, tenantId),
                 validations,
                 p.getVersion(),
                 p.getBaseSeasonPlanId(),
                 openDraftId,
-                p.getInitialVolumeKm());
+                p.getInitialVolumeKm(),
+                p.getInitialLongRunKm(),
+                p.getProposedVolumeKm(),
+                p.getInitialVolumeSource(),
+                historico(p.getInitialVolumeHistory()),
+                primeiraProposta);
     }
 
-    private static SeasonPlanResponseDto.Week semana(SeasonWeek w, LocalDate hoje, @Nullable LocalDate dataProva) {
+    private static @Nullable List<SeasonPlanResponseDto.VolumeWeek> historico(@Nullable List<WeeklyVolume> semanas) {
+        return semanas == null ? null : semanas.stream()
+                .map(s -> new SeasonPlanResponseDto.VolumeWeek(LocalDate.parse(s.weekStart()), s.km()))
+                .toList();
+    }
+
+    private static SeasonPlanResponseDto.Week semana(SeasonWeek w, LocalDate hoje, @Nullable LocalDate dataProva,
+                                                     boolean primeiraProposta) {
         SeasonWeekLock.@Nullable Reason trava = w.getWeekStart() == null
                 ? null
-                : SeasonWeekLock.of(w.getWeekStart(), hoje, dataProva).orElse(null);
+                : SeasonWeekLock.forPlan(primeiraProposta, w.getWeekStart(), hoje, dataProva).orElse(null);
         return new SeasonPlanResponseDto.Week(
                 w.getWeekIndex() == null ? 0 : w.getWeekIndex(),
                 w.getWeekStart(),

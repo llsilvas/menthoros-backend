@@ -3,6 +3,8 @@ package br.com.menthoros.backend.services.impl;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner;
 import br.com.menthoros.backend.domain.planner.SeasonPlanner.WeekPlan;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
+import br.com.menthoros.backend.domain.planner.WeeklyVolume;
+import br.com.menthoros.backend.enums.StartVolumeSource;
 import br.com.menthoros.backend.dto.input.SeasonPlanRecalculateInputDto;
 import br.com.menthoros.backend.dto.input.SeasonWeekUpdateInputDto;
 import br.com.menthoros.backend.dto.output.SeasonPlanDiffDto;
@@ -142,6 +144,30 @@ class SeasonPlanAdjustmentServiceImplTest {
         }
 
         @Test
+        @DisplayName("copia da ativa o longão de partida e a evidência do volume de partida")
+        void copiaEvidenciaDaPartida() {
+            PlanoTreino ativa = travada(temporada(SeasonPlanStatus.ACTIVE, 1));
+            List<WeeklyVolume> historico = List.of(new WeeklyVolume("2026-11-09", new BigDecimal("20.0")));
+            ativa.setInitialLongRunKm(new BigDecimal("7.4"));
+            ativa.setProposedVolumeKm(new BigDecimal("20.8"));
+            ativa.setInitialVolumeSource(StartVolumeSource.MEDIAN);
+            ativa.setInitialVolumeHistory(historico);
+            when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(ativa.getId(), tenantId))
+                    .thenReturn(List.of(semana(ativa, 1, "40")));
+            propostas();
+            ArgumentCaptor<PlanoTreino> salvo = ArgumentCaptor.forClass(PlanoTreino.class);
+            when(planoTreinoRepository.saveAndFlush(salvo.capture())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.createDraft(atleta.getId(), ativa.getId());
+
+            PlanoTreino rascunho = salvo.getValue();
+            assertThat(rascunho.getInitialLongRunKm()).isEqualByComparingTo("7.4");
+            assertThat(rascunho.getProposedVolumeKm()).isEqualByComparingTo("20.8");
+            assertThat(rascunho.getInitialVolumeSource()).isEqualTo(StartVolumeSource.MEDIAN);
+            assertThat(rascunho.getInitialVolumeHistory()).isEqualTo(historico);
+        }
+
+        @Test
         @DisplayName("com ajuste da mesma base já aberto devolve o mesmo (created=false), sem criar")
         void idempotente() {
             PlanoTreino ativa = travada(temporada(SeasonPlanStatus.ACTIVE, 1));
@@ -275,6 +301,18 @@ class SeasonPlanAdjustmentServiceImplTest {
         }
 
         @Test
+        @DisplayName("proposta v1: semana em andamento pode ser editada e vira COACH")
+        void propostaV1EditaSemanaCorrente() {
+            PlanoTreino v1 = travada(temporada(SeasonPlanStatus.PROPOSED, 1));
+            List<SeasonWeek> lista = semanas(v1, "40", "42");
+
+            service.updateWeek(atleta.getId(), v1.getId(), 1, volume("45"));
+
+            assertThat(lista.get(0).getTargetVolumeKm()).isEqualByComparingTo("45");
+            assertThat(lista.get(0).getValueSource()).isEqualTo(WeekValueSource.COACH);
+        }
+
+        @Test
         @DisplayName("semana da prova-alvo responde 422")
         void semanaDaProva() {
             PlanoTreino rascunho = travada(temporada(SeasonPlanStatus.PROPOSED, 2));
@@ -366,6 +404,7 @@ class SeasonPlanAdjustmentServiceImplTest {
 
             SeasonPlanResponseDto dto = service.recalculate(atleta.getId(), rascunho.getId(), aceite);
 
+            assertThat(dto.firstProposal()).isFalse();
             List<WeekPlan> motor = motor(rascunho, 3, 4, 2, 2, "40");
             for (int i : List.of(0, 1, 5, 11)) {
                 assertThat(retrato(semanas.get(i))).as("semana %d", i + 1).isEqualTo(antes.get(i));
@@ -387,6 +426,7 @@ class SeasonPlanAdjustmentServiceImplTest {
             assertThat(rascunho.getPeakVolumeKm()).isEqualByComparingTo(semanas.stream()
                     .map(SeasonWeek::getTargetVolumeKm).max(BigDecimal::compareTo).orElseThrow());
             assertThat(dto.initialVolumeKm()).isEqualByComparingTo("40.0");
+            assertThat(rascunho.getInitialVolumeSource()).isEqualTo(StartVolumeSource.COACH);
             verify(seasonWeekRepository).saveAll(semanas);
             verify(planoTreinoRepository).save(rascunho);
         }
@@ -495,12 +535,65 @@ class SeasonPlanAdjustmentServiceImplTest {
         }
 
         @Test
-        @DisplayName("proposta v1 (sem base) responde 409")
-        void propostaV1() {
-            PlanoTreino proposta = travada(temporada(SeasonPlanStatus.PROPOSED, 1));
+        @DisplayName("PROPOSED sem base que não é v1 responde 409")
+        void propostaSemBaseNaoV1() {
+            PlanoTreino proposta = travada(temporada(SeasonPlanStatus.PROPOSED, 2));
 
             assertThatThrownBy(() -> service.recalculate(atleta.getId(), proposta.getId(), aceite))
                     .isInstanceOf(DomainConflictException.class);
+            verify(seasonWeekRepository, never()).saveAll(any());
+        }
+
+        @Test
+        @DisplayName("proposta v1 gerada hoje: todas as semanas não COACH vêm do motor, inclusive a 1 e a da prova; origem COACH")
+        void recalculaPropostaV1() {
+            PlanoTreino v1 = travada(propostaV1());
+            List<SeasonWeek> semanas = cicloV1(v1);
+
+            SeasonPlanResponseDto dto = service.recalculate(atleta.getId(), v1.getId(), entradaV1("30", "10"));
+
+            assertThat(dto.firstProposal()).isTrue();
+            List<WeekPlan> motor = motorV1(v1, "30", "10");
+            for (int i = 0; i < 12; i++) {
+                SeasonWeek w = semanas.get(i);
+                assertThat(w.getPhase()).as("semana %d", i + 1).isEqualTo(motor.get(i).phase());
+                assertThat(w.getTargetVolumeKm()).as("semana %d", i + 1).isEqualByComparingTo(motor.get(i).targetVolumeKm());
+                assertThat(w.getLongRunKm()).as("semana %d", i + 1).isEqualTo(motor.get(i).longRunKm());
+                assertThat(w.getValueSource()).isEqualTo(WeekValueSource.ENGINE);
+            }
+            assertThat(v1.getSeasonStatus()).isEqualTo(SeasonPlanStatus.PROPOSED);
+            assertThat(v1.getInitialVolumeKm()).isEqualByComparingTo("30.0");
+            assertThat(v1.getInitialLongRunKm()).isEqualByComparingTo("10.0");
+            assertThat(v1.getInitialVolumeSource()).isEqualTo(StartVolumeSource.COACH);
+            assertThat(v1.getProposedVolumeKm()).isEqualByComparingTo("25.0");
+            assertThat(dto.weeks().get(0).locked()).isFalse();
+            assertThat(dto.weeks().get(11).locked()).isFalse();
+        }
+
+        @Test
+        @DisplayName("proposta v1 sem longão de partida na entrada usa o gravado")
+        void propostaV1UsaLongaoGravado() {
+            PlanoTreino v1 = travada(propostaV1());
+            List<SeasonWeek> semanas = cicloV1(v1);
+
+            service.recalculate(atleta.getId(), v1.getId(), entradaV1("30", null));
+
+            assertThat(semanas.get(1).getLongRunKm()).isEqualTo(motorV1(v1, "30", "8").get(1).longRunKm());
+            assertThat(v1.getInitialLongRunKm()).isEqualByComparingTo("8.0");
+        }
+
+        @Test
+        @DisplayName("semana COACH da proposta v1 não muda volume, TSS nem longão")
+        void propostaV1PreservaCoach() {
+            PlanoTreino v1 = travada(propostaV1());
+            List<SeasonWeek> semanas = cicloV1(v1);
+            semanas.get(2).setValueSource(WeekValueSource.COACH);
+            semanas.get(2).setTargetVolumeKm(new BigDecimal("33"));
+            String antes = retrato(semanas.get(2));
+
+            service.recalculate(atleta.getId(), v1.getId(), entradaV1("30", "10"));
+
+            assertThat(retrato(semanas.get(2))).isEqualTo(antes);
         }
 
         @Test
@@ -522,6 +615,18 @@ class SeasonPlanAdjustmentServiceImplTest {
     @Nested
     @DisplayName("diff")
     class Diff {
+
+        @Test
+        @DisplayName("proposta v1 (sem base) responde 409")
+        void propostaV1() {
+            PlanoTreino v1 = temporada(SeasonPlanStatus.PROPOSED, 1);
+            when(planoTreinoRepository.findRaceIdBySeasonPlan(v1.getId(), atleta.getId(), tenantId))
+                    .thenReturn(Optional.of(v1.getProva().getId()));
+            when(planoTreinoRepository.findByIdAndAssessoriaId(v1.getId(), tenantId)).thenReturn(Optional.of(v1));
+
+            assertThatThrownBy(() -> service.diff(atleta.getId(), v1.getId()))
+                    .isInstanceOf(DomainConflictException.class);
+        }
 
         @Test
         @DisplayName("semana 5 com longão 18 na ativa e 20 no rascunho, editada pelo treinador, entra no diff")
@@ -608,7 +713,11 @@ class SeasonPlanAdjustmentServiceImplTest {
                 Arguments.of("volume zero", entrada(3, 4, 2, 2, "0")),
                 Arguments.of("volume negativo", entrada(3, 4, 2, 2, "-5")),
                 Arguments.of("volume acima de 500", entrada(3, 4, 2, 2, "500.1")),
-                Arguments.of("volume com duas casas", entrada(3, 4, 2, 2, "40.25")));
+                Arguments.of("volume com duas casas", entrada(3, 4, 2, 2, "40.25")),
+                Arguments.of("longão zero", comLongao("0")),
+                Arguments.of("longão negativo", comLongao("-1")),
+                Arguments.of("longão acima de 42,2", comLongao("42.3")),
+                Arguments.of("longão com duas casas", comLongao("10.25")));
     }
 
     @Nested
@@ -726,7 +835,7 @@ class SeasonPlanAdjustmentServiceImplTest {
     /** Semanas que o motor daria ao rascunho de {@link #rascunho12()} — o oráculo do recálculo. */
     private static List<WeekPlan> motor(PlanoTreino t, int base, int build, int peak, int taper, String km) {
         return SeasonPlanner.planWithPhases(t.getProva().getDistancia(), null, t.getProva().getDataProva(),
-                HOJE.minusWeeks(1), t.getInitialCtl(), new BigDecimal(km), List.of(),
+                HOJE.minusWeeks(1), t.getInitialCtl(), new BigDecimal(km), null, List.of(),
                 fases(base, build, peak, taper)).weeks();
     }
 
@@ -743,6 +852,44 @@ class SeasonPlanAdjustmentServiceImplTest {
 
     private static SeasonPlanRecalculateInputDto entrada(int base, int build, int peak, int taper, String km) {
         return new SeasonPlanRecalculateInputDto(fases(base, build, peak, taper), new BigDecimal(km));
+    }
+
+    private static SeasonPlanRecalculateInputDto comLongao(String longao) {
+        return new SeasonPlanRecalculateInputDto(fases(3, 4, 2, 2), new BigDecimal("40"), new BigDecimal(longao));
+    }
+
+    private static SeasonPlanRecalculateInputDto entradaV1(String km, String longao) {
+        return new SeasonPlanRecalculateInputDto(fases(4, 4, 2, 1), new BigDecimal(km),
+                longao == null ? null : new BigDecimal(longao));
+    }
+
+    /** Proposta v1 gerada hoje, 12 semanas de {@code HOJE}; partida de 25 km pela mediana e longão de 8 km. */
+    private PlanoTreino propostaV1() {
+        PlanoTreino p = temporada(SeasonPlanStatus.PROPOSED, 1);
+        p.setInitialCtl(40.0);
+        p.setTotalWeeks(12);
+        p.setInitialVolumeKm(new BigDecimal("25.0"));
+        p.setProposedVolumeKm(new BigDecimal("25.0"));
+        p.setInitialLongRunKm(new BigDecimal("8.0"));
+        p.setInitialVolumeSource(StartVolumeSource.MEDIAN);
+        p.getProva().setDataProva(HOJE.plusWeeks(11).plusDays(6));
+        return p;
+    }
+
+    private List<SeasonWeek> cicloV1(PlanoTreino t) {
+        List<SeasonWeek> lista = new java.util.ArrayList<>();
+        for (int i = 1; i <= 12; i++) {
+            SeasonWeek w = semana(t, i, "25");
+            w.setPhase(i == 12 ? TrainingPhase.RACE_WEEK : TrainingPhase.BASE);
+            lista.add(w);
+        }
+        when(seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(t.getId(), tenantId)).thenReturn(lista);
+        return lista;
+    }
+
+    private static List<WeekPlan> motorV1(PlanoTreino t, String km, String longao) {
+        return SeasonPlanner.planWithPhases(t.getProva().getDistancia(), null, t.getProva().getDataProva(), HOJE,
+                t.getInitialCtl(), new BigDecimal(km), new BigDecimal(longao), List.of(), fases(4, 4, 2, 1)).weeks();
     }
 
     private PlanoTreino temporada(SeasonPlanStatus status, int versao) {

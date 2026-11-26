@@ -1,6 +1,8 @@
 package br.com.menthoros.backend.repository;
 
 import br.com.menthoros.backend.AbstractIntegrationTest;
+import br.com.menthoros.backend.domain.planner.WeeklyVolume;
+import br.com.menthoros.backend.enums.StartVolumeSource;
 import br.com.menthoros.backend.entity.Assessoria;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoSemanal;
@@ -16,6 +18,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -70,6 +75,31 @@ class PlanoTreinoRepositoryTest extends AbstractIntegrationTest {
     @Nested
     @DisplayName("findByIdAndAssessoriaId")
     class FindByIdAndAssessoriaId {
+
+        @Test
+        @DisplayName("grava e relê a evidência do ponto de partida (V122), com o histórico em JSONB")
+        void evidenciaDaPartida() {
+            PlanoTreino plano = fx.planoTreino(atleta, prova, SeasonPlanStatus.PROPOSED);
+            List<WeeklyVolume> historico = List.of(
+                    new WeeklyVolume("2026-09-28", new BigDecimal("29.2")),
+                    new WeeklyVolume("2026-10-05", new BigDecimal("30.0")));
+            plano.setInitialLongRunKm(new BigDecimal("7.4"));
+            plano.setProposedVolumeKm(new BigDecimal("20.8"));
+            plano.setInitialVolumeSource(StartVolumeSource.MEDIAN);
+            plano.setInitialVolumeHistory(historico);
+            em.flush();
+            em.clear();
+
+            PlanoTreino lido = planoTreinoRepository.findByIdAndAssessoriaId(
+                    plano.getId(), atleta.getAssessoria().getId()).orElseThrow();
+
+            assertThat(lido.getInitialLongRunKm()).isEqualByComparingTo("7.4");
+            assertThat(lido.getProposedVolumeKm()).isEqualByComparingTo("20.8");
+            assertThat(lido.getInitialVolumeSource()).isEqualTo(StartVolumeSource.MEDIAN);
+            assertThat(lido.getInitialVolumeHistory()).extracting(WeeklyVolume::weekStart)
+                    .containsExactly("2026-09-28", "2026-10-05");
+            assertThat(lido.getInitialVolumeHistory().get(0).km()).isEqualByComparingTo("29.2");
+        }
 
         @Test
         @DisplayName("lê PlanoTreino legado com seasonStatus nulo")

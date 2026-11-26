@@ -5,6 +5,7 @@ import br.com.menthoros.backend.domain.planner.SeasonWeekLock;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.enums.DistanciaProva;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
+import br.com.menthoros.backend.enums.StartVolumeSource;
 import br.com.menthoros.backend.enums.WeekValueSource;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -41,8 +42,28 @@ public record SeasonPlanResponseDto(
         @Schema(description = "Ajuste (rascunho) aberto a partir desta temporada ACTIVE; ausente se não há")
         UUID openDraftId,
         @Schema(description = "Volume semanal de partida do motor, em km; ausente nas temporadas antigas", example = "40.0")
-        BigDecimal initialVolumeKm
+        BigDecimal initialVolumeKm,
+        @Schema(description = "Longão de partida, em km: maior treino recente ou o informado no recálculo; ausente sem "
+                + "treino recente ou nas temporadas antigas", example = "7.4")
+        BigDecimal initialLongRunKm,
+        @Schema(description = "Volume de partida que o motor propôs na geração, em km; não muda no recálculo", example = "20.8")
+        BigDecimal proposedVolumeKm,
+        @Schema(description = "Origem do volume de partida; ausente nas temporadas antigas", example = "MEDIAN")
+        StartVolumeSource initialVolumeSource,
+        @Schema(description = "Km das 8 semanas usadas no volume de partida, da mais antiga à mais recente; ausente nas "
+                + "temporadas antigas")
+        List<VolumeWeek> volumeHistory,
+        @Schema(description = "Proposta original (v1, nunca aprovada): o recálculo aceita volume e longão de partida "
+                + "e só as semanas concluídas travam", example = "true")
+        boolean firstProposal
 ) {
+
+    @Schema(description = "Km de uma semana do histórico do volume de partida")
+    public record VolumeWeek(
+            @Schema(description = "Segunda-feira da semana", example = "2026-09-28") LocalDate weekStart,
+            @Schema(description = "Km da semana, só treinos que contam na carga", example = "29.2") BigDecimal km
+    ) {
+    }
 
     @Schema(description = "Semana da temporada")
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -56,7 +77,8 @@ public record SeasonPlanResponseDto(
             @Schema(description = "Longão-alvo em km") BigDecimal longRunKm,
             @Schema(description = "Quem definiu os valores", example = "ENGINE") WeekValueSource valueSource,
             @Schema(description = "Sessões-chave da semana, texto do treinador") String keySessions,
-            @Schema(description = "Semana somente leitura no ajuste (concluída, em andamento ou da prova)") boolean locked,
+            @Schema(description = "Semana somente leitura: no ajuste, concluída, em andamento ou da prova; na proposta v1, "
+                    + "só a concluída") boolean locked,
             @Schema(description = "Por que a semana está travada; ausente se livre", example = "IN_PROGRESS")
             SeasonWeekLock.Reason lockReason
     ) {

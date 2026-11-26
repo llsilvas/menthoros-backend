@@ -72,9 +72,18 @@ public class PlannerEngine {
         Double ctlBaseline = snapshot.onboardingContext()
                 .map(oc -> oc.baseline() != null ? oc.baseline().ctlEstimado() : null)
                 .orElse(null);
-        WeeklyLoadTarget loadTarget = loadTargetResolver.resolve(
-                fase, snapshot.decisaoProgressao(), snapshot.progressaoHistorico(), calibrationStage, ctlBaseline);
-        loadTarget = aplicarTaperSeAplicavel(loadTarget, fase, periodizacao, snapshot.referenceDate());
+        Optional<Double> alvoDaTemporada = alvoDaTemporadaSeEnforcado(snapshot);
+        WeeklyLoadTarget loadTarget;
+        if (alvoDaTemporada.isPresent()) {
+            // Temporada como base e teto (add-season-plan-load-enforcement): o taper já está no targetTss
+            // da semana, então a TaperStrategy não reduz de novo.
+            loadTarget = loadTargetResolver.resolveSeason(fase, snapshot.decisaoProgressao(),
+                    snapshot.progressaoHistorico(), calibrationStage, ctlBaseline, alvoDaTemporada.get());
+        } else {
+            loadTarget = loadTargetResolver.resolve(
+                    fase, snapshot.decisaoProgressao(), snapshot.progressaoHistorico(), calibrationStage, ctlBaseline);
+            loadTarget = aplicarTaperSeAplicavel(loadTarget, fase, periodizacao, snapshot.referenceDate());
+        }
 
         AthleteConstraints constraints = resolverConstraints(snapshot);
 
@@ -261,6 +270,15 @@ public class PlannerEngine {
         if (distanciaKm <= 21) return 5.5;
         if (distanciaKm <= 42) return 6.0;
         return 6.5;
+    }
+
+    private static Optional<Double> alvoDaTemporadaSeEnforcado(PlannerInputSnapshot snapshot) {
+        if (!snapshot.seasonLoadEnforced()) {
+            return Optional.empty();
+        }
+        return snapshot.seasonWeek()
+                .map(SeasonWeekSnapshot::targetTss)
+                .filter(tss -> tss > 0);
     }
 
     private WeeklyLoadTarget aplicarTaperSeAplicavel(WeeklyLoadTarget loadTarget,

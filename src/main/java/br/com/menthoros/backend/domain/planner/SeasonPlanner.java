@@ -56,6 +56,7 @@ public final class SeasonPlanner {
     private static final int DELOAD_EVERY = 4;
     private static final double DELOAD_FACTOR = 0.80;
     private static final BigDecimal LONG_RUN_SHARE = new BigDecimal("0.28");
+    private static final BigDecimal MAX_LONG_RUN_SHARE = new BigDecimal("0.50");
     private static final BigDecimal LONG_RUN_DELOAD_FACTOR = new BigDecimal("0.75");
     private static final BigDecimal MAX_LONG_RUN_KM = BigDecimal.valueOf(32);
 
@@ -95,7 +96,7 @@ public final class SeasonPlanner {
     public static SeasonPlan plan(DistanciaProva distancia, @Nullable BigDecimal distanciaKm,
                                   LocalDate dataProva, LocalDate hoje,
                                   double startCtl, BigDecimal startVolumeKm) {
-        return plan(distancia, distanciaKm, dataProva, hoje, startCtl, startVolumeKm, List.of());
+        return plan(distancia, distanciaKm, dataProva, hoje, startCtl, startVolumeKm, null, List.of());
     }
 
     /**
@@ -103,10 +104,12 @@ public final class SeasonPlanner {
      * as provas preparatórias como marcos (T6): uma por semana, a mais longa (empate: a mais cedo), e só
      * as que caem ao menos 7 dias antes da prova-alvo. A descarga que cai num marco passa para a semana
      * seguinte de Base/Construção, ou é pulada.
+     *
+     * @param startLongRunKm longão de partida (season-plan-start-volume, D2); nulo, o longão é 28% do volume
      */
     public static SeasonPlan plan(DistanciaProva distancia, @Nullable BigDecimal distanciaKm,
                                   LocalDate dataProva, LocalDate hoje,
-                                  double startCtl, BigDecimal startVolumeKm,
+                                  double startCtl, BigDecimal startVolumeKm, @Nullable BigDecimal startLongRunKm,
                                   List<RaceMilestone> preparatorias) {
         int total = totalWeeks(dataProva, hoje);
         if (total < MIN_WEEKS) {
@@ -118,12 +121,12 @@ public final class SeasonPlanner {
 
         int minimo = RacePreparationRule.minimoSemanas(distancia, distanciaKm);
         Map<TrainingPhase, Integer> semanas = ajustar(TEMPLATE.get(minimo), total, startCtl);
-        return gerar(distancia, distanciaKm, dataProva, hoje, startCtl, startVolumeKm, preparatorias, semanas,
-                total < minimo);
+        return gerar(distancia, distanciaKm, dataProva, hoje, startCtl, startVolumeKm, startLongRunKm, preparatorias,
+                semanas, total < minimo);
     }
 
     /**
-     * Como {@link #plan(DistanciaProva, BigDecimal, LocalDate, LocalDate, double, BigDecimal, List)}, com as
+     * Como {@link #plan(DistanciaProva, BigDecimal, LocalDate, LocalDate, double, BigDecimal, BigDecimal, List)}, com as
      * semanas por fase escolhidas pelo treinador no recálculo do ajuste (add-season-plan-version-diff), em
      * vez do template: Base, Construção, Pico e Polimento; a semana da prova é sempre uma.
      *
@@ -134,6 +137,7 @@ public final class SeasonPlanner {
     public static SeasonPlan planWithPhases(DistanciaProva distancia, @Nullable BigDecimal distanciaKm,
                                             LocalDate dataProva, LocalDate hoje,
                                             double startCtl, BigDecimal startVolumeKm,
+                                            @Nullable BigDecimal startLongRunKm,
                                             List<RaceMilestone> preparatorias,
                                             Map<TrainingPhase, Integer> phaseWeeks) {
         int total = totalWeeks(dataProva, hoje);
@@ -157,13 +161,13 @@ public final class SeasonPlanner {
             throw new IllegalArgumentException("a temporada precisa de ao menos uma semana de Base, Construção ou Pico");
         }
         int minimo = RacePreparationRule.minimoSemanas(distancia, distanciaKm);
-        return gerar(distancia, distanciaKm, dataProva, hoje, startCtl, startVolumeKm, preparatorias, semanas,
-                total < minimo);
+        return gerar(distancia, distanciaKm, dataProva, hoje, startCtl, startVolumeKm, startLongRunKm, preparatorias,
+                semanas, total < minimo);
     }
 
     private static SeasonPlan gerar(DistanciaProva distancia, @Nullable BigDecimal distanciaKm,
                                     LocalDate dataProva, LocalDate hoje,
-                                    double startCtl, BigDecimal startVolumeKm,
+                                    double startCtl, BigDecimal startVolumeKm, @Nullable BigDecimal startLongRunKm,
                                     List<RaceMilestone> preparatorias,
                                     Map<TrainingPhase, Integer> semanas, boolean curta) {
         int total = semanas.values().stream().mapToInt(Integer::intValue).sum();
@@ -204,7 +208,7 @@ public final class SeasonPlanner {
                 BigDecimal volume = startVolumeKm.multiply(BigDecimal.valueOf(tssArredondado))
                         .divide(BigDecimal.valueOf(inicio), 1, RoundingMode.HALF_UP);
                 resultado.add(new WeekPlan(indice, weekStart, fase, volume, tssArredondado, deload,
-                        longao(fase, volume, deload, tetoLongao), marco));
+                        longao(fase, volume, deload, tetoLongao, startVolumeKm, startLongRunKm), marco));
                 weekStart = weekStart.plusWeeks(1);
             }
         }
@@ -245,12 +249,22 @@ public final class SeasonPlanner {
                 .orElse(null);
     }
 
+    /**
+     * Longão da semana (season-plan-start-volume, D2): o de partida escalado pelo volume da semana, para
+     * seguir rampa, descargas e polimento; nunca abaixo de 28% nem acima de 50% do volume ou do teto da
+     * distância.
+     */
     private static @Nullable BigDecimal longao(TrainingPhase fase, BigDecimal volume, boolean deload,
-                                               BigDecimal teto) {
+                                               BigDecimal teto, BigDecimal startVolumeKm,
+                                               @Nullable BigDecimal startLongRunKm) {
         if (fase == RACE_WEEK) {
             return null;
         }
-        BigDecimal longao = volume.multiply(LONG_RUN_SHARE).min(teto);
+        BigDecimal longao = volume.multiply(LONG_RUN_SHARE);
+        if (startLongRunKm != null) {
+            longao = longao.max(startLongRunKm.multiply(volume).divide(startVolumeKm, 4, RoundingMode.HALF_UP));
+        }
+        longao = longao.min(volume.multiply(MAX_LONG_RUN_SHARE)).min(teto);
         if (deload) {
             longao = longao.multiply(LONG_RUN_DELOAD_FACTOR);
         }

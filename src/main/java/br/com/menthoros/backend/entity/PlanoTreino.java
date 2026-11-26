@@ -1,12 +1,16 @@
 package br.com.menthoros.backend.entity;
 
 import br.com.menthoros.backend.enums.PlanoStatus;
+import br.com.menthoros.backend.domain.planner.WeeklyVolume;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
+import br.com.menthoros.backend.enums.StartVolumeSource;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -90,6 +94,23 @@ public class PlanoTreino {
     /** Volume semanal de partida do motor, em km; nulo nas temporadas anteriores à V121. */
     @Column(name = "initial_volume_km", precision = 6, scale = 1)
     private BigDecimal initialVolumeKm;
+
+    /** Longão de partida, em km: maior treino recente ou o informado no recálculo; nulo antes da V122. */
+    @Column(name = "initial_long_run_km", precision = 4, scale = 1)
+    private BigDecimal initialLongRunKm;
+
+    /** Volume de partida que o motor propôs na geração; não muda no recálculo. Nulo antes da V122. */
+    @Column(name = "proposed_volume_km", precision = 6, scale = 1)
+    private BigDecimal proposedVolumeKm;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "initial_volume_source", length = 16)
+    private StartVolumeSource initialVolumeSource;
+
+    /** Km das 8 semanas usadas no volume de partida, como na geração; nulo antes da V122. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "initial_volume_history", columnDefinition = "jsonb")
+    private List<WeeklyVolume> initialVolumeHistory;
 
     @Column(name = "peak_volume_km", precision = 10, scale = 3)
     private BigDecimal peakVolumeKm;

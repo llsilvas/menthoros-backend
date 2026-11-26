@@ -7,6 +7,7 @@ import br.com.menthoros.backend.entity.PlanoSemanal;
 import br.com.menthoros.backend.entity.PlanoTreino;
 import br.com.menthoros.backend.entity.Prova;
 import br.com.menthoros.backend.entity.SeasonWeek;
+import br.com.menthoros.backend.entity.TreinoRealizado;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.enums.AtletaStatus;
 import br.com.menthoros.backend.enums.DiaSemana;
@@ -17,11 +18,15 @@ import br.com.menthoros.backend.enums.PlanoReviewStatus;
 import br.com.menthoros.backend.enums.PlanoStatus;
 import br.com.menthoros.backend.enums.SeasonPlanStatus;
 import br.com.menthoros.backend.enums.TipoProva;
+import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.enums.WeekValueSource;
 import jakarta.persistence.EntityManager;
 
 import java.math.BigDecimal;
+import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.temporal.TemporalAdjusters;
 import java.util.UUID;
 
 /**
@@ -120,5 +125,27 @@ public final class SeasonPlanFixtures {
         semanal.setObjetivoSemanal("Semana da temporada");
         em.persist(semanal);
         return semanal;
+    }
+
+    /**
+     * Histórico de volume para a geração (season-plan-start-volume): nas 8 semanas completas antes da de
+     * {@code hoje}, quatro treinos FACIL de 9 + 9 + 9 + 8 km — mediana de 35 km e longão de partida de 9 km.
+     */
+    public void historicoDeVolume(Atleta atleta, LocalDate hoje) {
+        LocalDate segunda = hoje.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        String[] kms = {"9", "9", "9", "8"};
+        for (int semana = 1; semana <= 8; semana++) {
+            for (int dia = 0; dia < kms.length; dia++) {
+                TreinoRealizado t = new TreinoRealizado();
+                t.setAtleta(atleta);
+                t.setDataTreino(segunda.minusWeeks(semana).plusDays(dia));
+                t.setDiaSemana(DiaSemana.SEGUNDA);
+                t.setTipoTreino(TipoTreino.FACIL);
+                t.setDuracaoMin(Duration.ofMinutes(50));
+                t.setDistanciaKm(new BigDecimal(kms[dia]));
+                t.setTenantId(atleta.getAssessoria().getId());
+                em.persist(t);
+            }
+        }
     }
 }

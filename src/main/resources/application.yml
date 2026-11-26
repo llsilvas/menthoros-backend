@@ -440,6 +440,12 @@ app:
 # 404 SEASON_PLAN_DISABLED e o front esconde a aba Temporada.
 season-plan:
   enabled: ${SEASON_PLAN_ENABLED:false}
+  # add-season-plan-load-enforcement: o targetTss da semana da temporada vira a base (e o teto) do alvo
+  # de carga e o compliance mede o longão contra o previsto. Só tem efeito com planner-engine.enabled
+  # (ou auditado pelo shadow). Desligado: comportamento de add-season-plan-weekly-context.
+  enforcement:
+    enabled: ${SEASON_PLAN_ENFORCEMENT_ENABLED:false}
+    long-run-tolerance-pct: ${SEASON_PLAN_ENFORCEMENT_LONG_RUN_TOLERANCE_PCT:15}
 
 planner-engine:
   shadow: ${PLANNER_ENGINE_SHADOW:false}

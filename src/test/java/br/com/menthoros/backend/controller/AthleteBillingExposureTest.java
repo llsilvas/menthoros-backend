@@ -119,7 +119,7 @@ class AthleteBillingExposureTest {
     @DisplayName("GET /coach/atletas/{id}/perfil como TECNICO: status e vencimento sem valor")
     void perfil() throws Exception {
         when(coachAthleteProfileService.buscarPerfil(atletaId)).thenReturn(new AtletaPerfilCoachOutputDto(
-                atletaId, "Ana Silva", "Correr maratona", null, "INTERMEDIARIO", null,
+                atletaId, "Ana Silva", "Correr maratona", null, List.of(), "INTERMEDIARIO", null,
                 List.of(), List.of(), null, null, List.of(), List.of(), List.of(),
                 Instant.now(), null, null, AthleteBillingStatus.DUE_SOON, vencimento, List.of(), List.of(), false, null, null, null));
 
