@@ -93,6 +93,7 @@ class SeasonWeekContextResolverTest {
             atual.setTargetVolumeKm(new BigDecimal("45.000"));
             atual.setLongRunKm(new BigDecimal("16.000"));
             atual.setDeload(true);
+            atual.setKeySessions("5x1km no limiar");
             temporadaAtivaCom(semana(1, SEMANA.minusWeeks(1), null), atual,
                     semana(3, SEMANA.plusWeeks(1), preparatoria.getId()), semana(4, SEMANA.plusWeeks(2), null));
 
@@ -106,6 +107,7 @@ class SeasonWeekContextResolverTest {
             assertThat(snapshot.targetVolumeKm()).isEqualByComparingTo("45");
             assertThat(snapshot.longRunKm()).isEqualByComparingTo("16");
             assertThat(snapshot.deload()).isTrue();
+            assertThat(snapshot.keySessions()).isEqualTo("5x1km no limiar");
             assertThat(snapshot.nextMilestone()).contains(
                     new SeasonWeekSnapshot.Milestone("Meia de Natal", SEMANA.plusWeeks(1).plusDays(6)));
         }
@@ -128,6 +130,16 @@ class SeasonWeekContextResolverTest {
 
     private SeasonWeekContextResolver resolver(boolean enabled) {
         return new SeasonWeekContextResolver(planoTreinoRepository, seasonWeekRepository, enabled);
+    }
+
+    @Test
+    @DisplayName("sessões-chave em branco viram nulo no snapshot")
+    void sessoesChaveEmBranco() {
+        SeasonWeek atual = semana(1, SEMANA, null);
+        atual.setKeySessions("   ");
+        temporadaAtivaCom(atual);
+
+        assertThat(resolver(true).resolve(atleta, tenantId, SEMANA).orElseThrow().keySessions()).isNull();
     }
 
     private void temporadaAtivaCom(SeasonWeek... semanas) {

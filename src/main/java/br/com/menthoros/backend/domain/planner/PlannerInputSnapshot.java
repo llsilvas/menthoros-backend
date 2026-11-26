@@ -23,6 +23,9 @@ import java.util.Optional;
  *
  * <p>{@code seasonWeek} (add-season-plan-weekly-context): semana da temporada ativa; quando presente,
  * sua fase vale abaixo de lesao e pos-prova e acima da periodizacao.
+ *
+ * <p>{@code seasonLoadEnforced} (add-season-plan-load-enforcement): {@code season-plan.enforcement.enabled};
+ * ligado, o {@code targetTss} da semana da temporada vira a base do alvo de carga.
  */
 public record PlannerInputSnapshot(
         AthleteSnapshot athlete,
@@ -33,8 +36,19 @@ public record PlannerInputSnapshot(
         Optional<OnboardingContext> onboardingContext,
         LocalDate referenceDate,
         int injuryRecentWindowDays,
-        Optional<SeasonWeekSnapshot> seasonWeek
+        Optional<SeasonWeekSnapshot> seasonWeek,
+        boolean seasonLoadEnforced
 ) {
+
+    /** Snapshot com temporada e enforcement de carga desligado (comportamento do ticket 8). */
+    public PlannerInputSnapshot(AthleteSnapshot athlete, DecisaoProgressao decisaoProgressao,
+                                ProgressaoHistoricoResumo progressaoHistorico, List<ProvaSnapshot> provas,
+                                List<TreinoRealizadoSnapshot> historico, Optional<OnboardingContext> onboardingContext,
+                                LocalDate referenceDate, int injuryRecentWindowDays,
+                                Optional<SeasonWeekSnapshot> seasonWeek) {
+        this(athlete, decisaoProgressao, progressaoHistorico, provas, historico, onboardingContext,
+                referenceDate, injuryRecentWindowDays, seasonWeek, false);
+    }
 
     /** Snapshot sem temporada: a fase vem só de lesão, pós-prova e periodização. */
     public PlannerInputSnapshot(AthleteSnapshot athlete, DecisaoProgressao decisaoProgressao,

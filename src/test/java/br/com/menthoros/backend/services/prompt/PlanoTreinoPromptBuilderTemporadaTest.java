@@ -2,6 +2,12 @@ package br.com.menthoros.backend.services.prompt;
 
 import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
+import br.com.menthoros.backend.domain.planner.ConstraintValidationResult;
+import br.com.menthoros.backend.domain.planner.InjuryRiskLevel;
+import br.com.menthoros.backend.domain.planner.InjuryRiskAssessment;
+import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
+import br.com.menthoros.backend.domain.planner.SeasonCutReason;
+import br.com.menthoros.backend.domain.planner.WeeklyLoadTarget;
 import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.entity.PlanoMetaDados;
 import br.com.menthoros.backend.entity.Prova;
@@ -79,6 +85,27 @@ class PlanoTreinoPromptBuilderTemporadaTest {
         }
 
         @Test
+        @DisplayName("com skeleton no caminho da temporada, o TSS Alvo é o alvo resolvido, sem fadiga por cima")
+        void alvoResolvidoDoSkeleton() {
+            WeeklyLoadTarget cortado = new WeeklyLoadTarget(546.0, 491.4, 600.6, "rampa", 620.0, SeasonCutReason.TETO_RAMPA);
+
+            String user = montar(atletaBase(), meta(-25.0, 0), temporada(), skeleton(cortado));
+
+            assertThat(user).contains("**TSS Alvo Semanal:** 546 pontos\n")
+                    .contains("Alvo de TSS da semana:** 546 pontos");
+        }
+
+        @Test
+        @DisplayName("skeleton fora do caminho da temporada mantém a conta do ticket 8")
+        void skeletonLegadoMantemConta() {
+            WeeklyLoadTarget legado = new WeeklyLoadTarget(350.0, 315.0, 385.0, "legado");
+
+            String user = montar(atletaBase(), meta(-25.0, 0), temporada(), skeleton(legado));
+
+            assertThat(user).contains("**TSS Alvo Semanal:** 300 pontos (reduzido 25% por semana regenerativa)");
+        }
+
+        @Test
         @DisplayName("fadiga moderada aplica ×0,75 sobre o alvo da temporada")
         void fadigaModerada() {
             String user = montar(atletaBase(), meta(-25.0, 0), temporada());
@@ -135,6 +162,18 @@ class PlanoTreinoPromptBuilderTemporadaTest {
     }
 
     private static String montar(Atleta atleta, PlanoMetaDados meta, SeasonWeekSnapshot temporada) {
+        return montar(atleta, meta, temporada, null);
+    }
+
+    private static WeekPlanSkeleton skeleton(WeeklyLoadTarget alvo) {
+        return new WeekPlanSkeleton(TrainingPhase.BUILD, alvo, List.of(),
+                new InjuryRiskAssessment(InjuryRiskLevel.SAFE, false, null),
+                new ConstraintValidationResult(true, List.of()), false, null, PlanoPromptArquetipos.INICIO_SEMANA,
+                "RUNNING", Optional.empty());
+    }
+
+    private static String montar(Atleta atleta, PlanoMetaDados meta, SeasonWeekSnapshot temporada,
+                                 WeekPlanSkeleton skeleton) {
         var arquetipo = PlanoPromptArquetipos.todos().getFirst();
         TreinoHistoricoProvider provider = mock(TreinoHistoricoProvider.class);
         when(provider.prepararContexto(any())).thenReturn(arquetipo.contexto());
@@ -143,7 +182,7 @@ class PlanoTreinoPromptBuilderTemporadaTest {
         try (MockedStatic<LocalDate> now = mockStatic(LocalDate.class, CALLS_REAL_METHODS)) {
             now.when(LocalDate::now).thenReturn(PlanoPromptArquetipos.HOJE);
             return builder.buildOptimizedPrompt(atleta, meta, null, PlanoPromptArquetipos.INICIO_SEMANA,
-                    arquetipo.diasEfetivos(), null, null, null, false, temporada).user();
+                    arquetipo.diasEfetivos(), null, null, skeleton, false, temporada).user();
         }
     }
 

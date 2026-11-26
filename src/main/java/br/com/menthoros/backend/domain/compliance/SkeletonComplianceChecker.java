@@ -2,14 +2,19 @@ package br.com.menthoros.backend.domain.compliance;
 
 import br.com.menthoros.backend.domain.planner.AthleteConstraints;
 import br.com.menthoros.backend.domain.planner.ProvaSnapshot;
+import br.com.menthoros.backend.domain.planner.SeasonCutReason;
+import br.com.menthoros.backend.domain.planner.SeasonWeekSnapshot;
 import br.com.menthoros.backend.domain.planner.TrainingPhase;
 import br.com.menthoros.backend.domain.planner.WeekPlanSkeleton;
 import org.springframework.stereotype.Component;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Compliance hipotetico do {@link WeekPlanSkeleton} contra o plano efetivamente gerado pelo
@@ -28,6 +33,10 @@ public class SkeletonComplianceChecker {
     private static final double TETO_INTERVALADO_PISO = 60.0;
     private static final long JANELA_PESADA_MIN_DIAS = 2;
     private static final long JANELA_PESADA_MAX_DIAS = 3;
+    private static final BigDecimal CEM = BigDecimal.valueOf(100);
+    private static final java.util.Set<SeasonCutReason> CORTES_QUE_ENCURTAM_O_LONGAO = java.util.EnumSet.of(
+            SeasonCutReason.REDUCAO_FASE, SeasonCutReason.PROGRESSAO_REDUZIR, SeasonCutReason.COLD_START,
+            SeasonCutReason.CONTENCAO_PROVA);
     private static final List<String> TIPOS_INTENSOS = List.of("INTERVALADO", "TEMPO_RUN", "INTENSO");
 
     /**
@@ -63,7 +72,9 @@ public class SkeletonComplianceChecker {
         // Carga/distribuicao — soft, estagio 2 (ver checkPre): divergencia contra estimativa do skeleton
         // vira FAILED + requiresCoachReview, nunca 422.
         checarTssNaFaixa(treinosRedistribuidos, skeleton, violacoes);
-        checarTetoDeLongo(treinosRedistribuidos, skeleton, violacoes);
+        Optional<BigDecimal> longaoDaTemporada = longaoDaTemporada(skeleton, context);
+        checarTetoDeLongo(treinosRedistribuidos, skeleton, longaoDaTemporada, context.longRunTolerancePct(), violacoes);
+        checarLongaoDaTemporada(treinosRedistribuidos, longaoDaTemporada, context.longRunTolerancePct(), violacoes);
         checarExcessoDeIntensidade(treinosRedistribuidos, skeleton, violacoes);
         checarSessaoPesadaPertoDaProva(treinosRedistribuidos, context, violacoes);
         checarTaperPreservado(treinosRedistribuidos, skeleton, violacoes);
@@ -97,14 +108,70 @@ public class SkeletonComplianceChecker {
         }
     }
 
-    private void checarTetoDeLongo(GeneratedPlanSnapshot plano, WeekPlanSkeleton skeleton, List<PlannerViolation> violacoes) {
+    private void checarTetoDeLongo(GeneratedPlanSnapshot plano, WeekPlanSkeleton skeleton,
+                                   Optional<BigDecimal> longaoDaTemporada, int toleranciaPct,
+                                   List<PlannerViolation> violacoes) {
         double teto = skeleton.loadTarget().targetTss() * TETO_LONGO_FRACAO;
         plano.sessoes().stream()
                 .filter(s -> "LONGO".equalsIgnoreCase(s.tipoTreino()))
+                // Longao que segue o previsto pela temporada ja passou pelo LONG_RUN_SHARE na aprovacao
+                // dela; o teto de 40% so volta fora da tolerancia ou sem distancia.
+                .filter(s -> !segueOLongaoDaTemporada(s, longaoDaTemporada, toleranciaPct))
                 .filter(s -> s.tssPlanejado() != null && s.tssPlanejado() > teto)
                 .forEach(s -> violacoes.add(new PlannerViolation(PlannerViolationKey.LONGO_ACIMA_TETO,
                         "Longo em " + s.data() + " (" + s.tssPlanejado() + " TSS) acima do teto de "
                                 + Math.round(teto) + " TSS")));
+    }
+
+    /**
+     * Longao previsto pela temporada, so no caminho novo do alvo ({@code seasonTargetTss != null}) e
+     * com {@code longRunKm > 0}. Semana cortada por seguranca (lesao/pos-prova, REDUZIR, cold-start,
+     * contencao de prova) nao cobra o longao cheio nem suspende o teto de 40% do alvo cortado.
+     */
+    private Optional<BigDecimal> longaoDaTemporada(WeekPlanSkeleton skeleton, ComplianceContext context) {
+        if (skeleton.loadTarget().seasonTargetTss() == null
+                || CORTES_QUE_ENCURTAM_O_LONGAO.contains(skeleton.loadTarget().seasonCutReason())) {
+            return Optional.empty();
+        }
+        return context.seasonWeek()
+                .map(SeasonWeekSnapshot::longRunKm)
+                .filter(km -> km.signum() > 0);
+    }
+
+    private void checarLongaoDaTemporada(GeneratedPlanSnapshot plano, Optional<BigDecimal> longaoDaTemporada,
+                                         int toleranciaPct, List<PlannerViolation> violacoes) {
+        if (longaoDaTemporada.isEmpty()) {
+            return;
+        }
+        BigDecimal previsto = longaoDaTemporada.get();
+        List<GeneratedSessionSnapshot> longos = plano.sessoes().stream()
+                .filter(s -> "LONGO".equalsIgnoreCase(s.tipoTreino()))
+                .toList();
+        if (longos.isEmpty()) {
+            violacoes.add(new PlannerViolation(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA,
+                    "Plano sem sessao LONGO; a temporada preve longao de " + previsto.toPlainString() + " km"));
+            return;
+        }
+        longos.stream()
+                .filter(s -> s.distanciaKm() != null)
+                .max(Comparator.comparing(GeneratedSessionSnapshot::distanciaKm))
+                .filter(s -> !dentroDaTolerancia(s.distanciaKm(), previsto, toleranciaPct))
+                .ifPresent(s -> violacoes.add(new PlannerViolation(PlannerViolationKey.LONGAO_DIVERGENTE_DA_TEMPORADA,
+                        "Longo em " + s.data() + " (" + s.distanciaKm().toPlainString() + " km) fora da tolerancia de "
+                                + toleranciaPct + "% do longao da temporada (" + previsto.toPlainString() + " km)")));
+    }
+
+    private boolean segueOLongaoDaTemporada(GeneratedSessionSnapshot sessao, Optional<BigDecimal> longaoDaTemporada,
+                                            int toleranciaPct) {
+        return sessao.distanciaKm() != null
+                && longaoDaTemporada.filter(previsto -> dentroDaTolerancia(sessao.distanciaKm(), previsto, toleranciaPct))
+                .isPresent();
+    }
+
+    // |d - L| x 100 <= tol x L: sem divisao, para o limite (15% exatos passa) nao depender de ponto flutuante.
+    private static boolean dentroDaTolerancia(BigDecimal distancia, BigDecimal previsto, int toleranciaPct) {
+        return distancia.subtract(previsto).abs().multiply(CEM)
+                .compareTo(previsto.multiply(BigDecimal.valueOf(toleranciaPct))) <= 0;
     }
 
     private void checarExcessoDeIntensidade(GeneratedPlanSnapshot plano, WeekPlanSkeleton skeleton, List<PlannerViolation> violacoes) {
