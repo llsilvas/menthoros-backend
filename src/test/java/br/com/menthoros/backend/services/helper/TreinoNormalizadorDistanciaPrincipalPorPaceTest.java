@@ -116,9 +116,12 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
                 "CONTINUO,     NULL, 1.43",
                 "LONGO,        NULL, 1.43",
                 "REGENERATIVO, 5.0,  1.67",
-                "LONGO,        4.0,  2.08"
+                "LONGO,        4.0,  2.08",
+                // limiar inválido: sem fallback, distância da LLM — nunca infinita ou negativa
+                "REGENERATIVO, 0,    0.8",
+                "REGENERATIVO, -5.0, 0.8"
         }, nullValues = "NULL")
-        @DisplayName("PRINCIPAL sem ritmo: 10 min ÷ pace Z2 (limiar × 1,20, ou 7:00 sem limiar)")
+        @DisplayName("PRINCIPAL sem ritmo: 10 min ÷ pace Z2 (limiar × 1,20, ou 7:00 sem limiar); limiar ≤ 0 → intacta")
         void semRitmoUsaPaceZ2(String tipo, java.math.BigDecimal limiar, double esperada) {
             var treino = new TreinoPlanejadoLlmDto("SEGUNDA", tipo, null, null, null, null, null,
                     "25:00", 1.0, null, List.of(etapa("PRINCIPAL", 10, 0.8, null)));
@@ -354,6 +357,15 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
             assertThat(normalizador.principaisComDistanciaPorPace(continuo(
                     etapa("PRINCIPAL", 40, 8.0, "6:45-7:06/km"), etapa("PRINCIPAL", 10, 2.0, null)), null))
                     .isTrue();
+        }
+
+        @Test
+        @DisplayName("tipoTreino null com PRINCIPAL sem ritmo → false, sem NPE")
+        void tipoNuloSemFallback() {
+            var treino = new TreinoPlanejadoLlmDto("SEGUNDA", null, null, null, null, null, null,
+                    "45:00", 6.0, null, List.of(etapa("PRINCIPAL", 30, 5.5, null)));
+
+            assertThat(normalizador.principaisComDistanciaPorPace(treino, null)).isFalse();
         }
 
         @Test

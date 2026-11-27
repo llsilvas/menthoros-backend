@@ -66,11 +66,12 @@ public class TreinoNormalizador {
             Set.of("REGENERATIVO", "FACIL", "CONTINUO", "LONGO", "TEMPO_RUN");
 
     /**
-     * Ritmo leve: sem sobra para a PRINCIPAL, o bloco único não perde aquecimento de um estímulo forte.
+     * Ritmo leve: sem sobra para a PRINCIPAL, o bloco único não perde aquecimento de um estímulo forte; sem
+     * ritmo nenhum, a PRINCIPAL usa o pace Z2 (fix-distancia-treino-soma-etapas). As duas regras andam juntas.
      * FACIL fica de fora porque não passa pelo reparo de 3 etapas (só REGENERATIVO, CONTINUO, TEMPO_RUN e
      * LONGO), então nunca chega aqui com etapa sintetizada.
      */
-    private static final Set<String> TIPOS_BLOCO_UNICO_SEM_SOBRA = Set.of("REGENERATIVO", "CONTINUO", "LONGO");
+    private static final Set<String> TIPOS_RITMO_LEVE = Set.of("REGENERATIVO", "CONTINUO", "LONGO");
 
     private record FartlekParams(int n, int duracaoAceleracao, int duracaoRecuperacao,
                                   String zonaAceleracao, String zonaRecuperacao) {}
@@ -359,8 +360,10 @@ public class TreinoNormalizador {
         var pace = paceValidator.calcularPaceMedia(e.ritmoAlvo());
         if (pace.isEmpty()) pace = paceValidator.calcularPaceMedia(treino.ritmoAlvo());
         if (pace.isPresent() && pace.getAsDouble() > 0) return pace;
-        return TIPOS_BLOCO_UNICO_SEM_SOBRA.contains(treino.tipoTreino())
-                ? java.util.OptionalDouble.of(paceZ2(paceLimiar)) : java.util.OptionalDouble.empty();
+        if (treino.tipoTreino() == null || !TIPOS_RITMO_LEVE.contains(treino.tipoTreino())) return java.util.OptionalDouble.empty();
+        // limiar ≤ 0 é dado inválido: viraria distância infinita ou negativa; fica como a LLM mandou, como no aquecimento
+        double z2 = paceZ2(paceLimiar);
+        return z2 > 0 ? java.util.OptionalDouble.of(z2) : java.util.OptionalDouble.empty();
     }
 
     private double paceZ2(BigDecimal paceLimiar) {
@@ -397,7 +400,7 @@ public class TreinoNormalizador {
                 && demais.stream().map(e -> normalizarTipoEtapa(e.tipoEtapa()))
                         .allMatch(t -> "AQUECIMENTO".equals(t) || "DESAQUECIMENTO".equals(t));
         if (sobra <= 0) {
-            if (!blocoUnicoPossivel || !TIPOS_BLOCO_UNICO_SEM_SOBRA.contains(treino.tipoTreino())) return java.util.Optional.empty();
+            if (!blocoUnicoPossivel || !TIPOS_RITMO_LEVE.contains(treino.tipoTreino())) return java.util.Optional.empty();
             log.info("RECONCILIAÇÃO [{}]: aquecimento + desaquecimento ({} km) não cabem no total de {} km → bloco único",
                     treino.tipoTreino(), arredondar2(somarDistancias(demais)), treino.distanciaKm());
             return java.util.Optional.of(blocoUnico(treino, principal, pace.getAsDouble()));
