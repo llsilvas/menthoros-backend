@@ -42,17 +42,21 @@ public interface SeasonPlanAdjustmentService {
     SeasonPlanResponseDto findById(UUID atletaId, UUID seasonPlanId);
 
     /**
-     * Edita uma semana de uma temporada PROPOSED; a semana passa a origem COACH.
+     * Edita uma semana de uma temporada PROPOSED; a semana passa a origem COACH. Com
+     * {@code followingPeakVolumeKm}, ela vira âncora: as semanas seguintes livres (nem travadas nem COACH)
+     * recebem a rampa até esse pico e o Polimento, e passam a origem ENGINE, na mesma transação.
      *
-     * Idempotent: YES — reaplicar os mesmos valores deixa a semana igual.
-     * Side Effects: Database update (semana e pico da temporada); lock pessimista na prova.
+     * Idempotent: YES — reaplicar os mesmos valores deixa as semanas iguais (a rampa é pura sobre a âncora).
+     * Side Effects: Database update (semana, seguintes no recálculo ancorado, pico da temporada); lock
+     *               pessimista na prova.
      * Tenant-aware: YES
      *
      * @throws br.com.menthoros.backend.exception.SeasonPlanDisabledException flag desligada
      * @throws br.com.menthoros.backend.exception.DomainNotFoundException temporada ou semana inexistente
      * @throws br.com.menthoros.backend.exception.DomainConflictException a temporada não é PROPOSED
      * @throws br.com.menthoros.backend.exception.DomainRuleViolationException semana travada, fase não
-     *         permitida ou valor inválido
+     *         permitida, valor inválido ou recálculo ancorado recusado (âncora fora da subida, em descarga
+     *         ou zerada; pico fora da faixa; semana calculada acima do limite; prova remarcada)
      */
     SeasonPlanResponseDto updateWeek(UUID atletaId, UUID seasonPlanId, int weekIndex, SeasonWeekUpdateInputDto input);
 

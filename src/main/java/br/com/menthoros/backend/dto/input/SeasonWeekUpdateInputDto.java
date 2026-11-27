@@ -38,6 +38,11 @@ public record SeasonWeekUpdateInputDto(
 
         @Schema(description = "Sessões-chave da semana; vazio limpa", example = "Intervalado 6x1km; longão progressivo")
         @Size(max = 500, message = "As sessões-chave têm no máximo 500 caracteres")
-        String keySessions
+        String keySessions,
+
+        @Schema(description = "Volume de pico em km para recalcular as semanas seguintes até a prova a partir desta; "
+                + "ausente, só esta semana muda. Arredondado para uma casa", example = "30.0")
+        @DecimalMin(value = "0", message = "O volume de pico não pode ser negativo")
+        BigDecimal followingPeakVolumeKm
 ) {
 }
