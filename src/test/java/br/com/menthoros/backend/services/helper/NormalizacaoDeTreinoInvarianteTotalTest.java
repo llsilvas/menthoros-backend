@@ -30,12 +30,15 @@ import static org.junit.jupiter.api.Assumptions.abort;
 /**
  * Invariantes "card = editor" e "total = volume prescrito" sobre a receita completa de
  * {@link NormalizacaoDeTreino#normalizar}, numa grade de cenários dos treinos contínuos
- * (fix-etapas-sintetizadas-encaixe-total, fix-duracao-treino-estrutura-completa).
+ * (fix-etapas-sintetizadas-encaixe-total, fix-duracao-treino-estrutura-completa,
+ * fix-distancia-treino-soma-etapas).
  *
  * <p><b>Volume prescrito.</b> Com etapa sintetizada pelo reparo, é o total declarado pela LLM (decisão de
  * 22/09: o sistema não infla). Com a estrutura completa escrita pela LLM e pace derivável, é a soma das
  * etapas: o aquecimento e o desaquecimento dela são volume prescrito (decisão de 16/11, reafirmada em
- * 24/11) — ali "total = soma" já é a invariante card = editor.</p>
+ * 24/11) — ali "total = soma" já é a invariante card = editor. Sem ritmo nenhum, os tipos leves derivam a
+ * PRINCIPAL pelo pace Z2 (como o aquecimento) e seguem a mesma regra; TEMPO_RUN sem ritmo segue na exceção.
+ * A grade inclui atleta sem limiar (pace Z2 default de 7:00/km).</p>
  *
  * <p><b>Por que uma grade e não casos.</b> O card da revisão mostra o total do treino e o editor soma as
  * etapas; cada divergência relatada até aqui virou um fix pontual, e a seguinte apareceu numa combinação
@@ -60,6 +63,8 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
     private static final double TOL_DIST_REL = 0.02;
     private static final double TOL_DIST_ABS_KM = 0.05;
     private static final double TOL_DUR_MIN = 1.0;
+    // atleta sem limiar: a LLM ainda escreve durações; o modelo da entrada supõe que ela mirou 5:00/km de limiar
+    private static final double LIMIAR_DA_LLM_SEM_LIMIAR = 5.0;
 
     enum Tipo {
         // fator sobre o pace de limiar: ritmo típico da PRINCIPAL de cada tipo
@@ -74,11 +79,11 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
 
     enum Cabecalho { IGUAL, DIVERGENTE }
 
-    record Cenario(Tipo tipo, double totalKm, Estrutura estrutura, Ritmo ritmo, double limiar,
+    record Cenario(Tipo tipo, double totalKm, Estrutura estrutura, Ritmo ritmo, Double limiar,
                    double fatorDuracao, Cabecalho cabecalho) {
         @Override
         public String toString() {
-            return String.format(Locale.ROOT, "%s %.1fkm %s ritmo=%s limiar=%.1f dur×%.1f cab=%s",
+            return String.format(Locale.ROOT, "%s %.1fkm %s ritmo=%s limiar=%s dur×%.1f cab=%s",
                     tipo, totalKm, estrutura, ritmo, limiar, fatorDuracao, cabecalho);
         }
     }
@@ -89,7 +94,7 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
             for (double total : new double[]{1.5, 2, 3, 5, 8, 12, 21})
                 for (Estrutura estrutura : Estrutura.values())
                     for (Ritmo ritmo : Ritmo.values())
-                        for (double limiar : new double[]{4.0, 5.0, 6.0})
+                        for (Double limiar : new Double[]{4.0, 5.0, 6.0, null})
                             for (double fatorDuracao : new double[]{1.0, 0.5, 1.5})
                                 for (Cabecalho cab : Cabecalho.values()) {
                                     // cabeçalho divergente só existe quando há ritmo no cabeçalho
@@ -176,6 +181,56 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
         assertThat(minutos(saida.duracaoMin())).isEqualTo(somaMin(saida));
     }
 
+    /**
+     * Caso real do homelab (Carla, sem limiar, 27/11/2026): REGENERATIVO de 1,00 km com etapas somando 2,94 km.
+     * A PRINCIPAL sem ritmo passa a usar o pace Z2 default (7:00/km), como o aquecimento, e o total vira a soma
+     * (fix-distancia-treino-soma-etapas, CA1).
+     */
+    @org.junit.jupiter.api.Test
+    @DisplayName("CA1: atleta sem limiar, estrutura completa sem ritmo → total = soma das etapas pelo pace Z2 (3,57 km / 25:00)")
+    void semLimiarEstruturaCompletaAdotaASoma() {
+        var entrada = new TreinoPlanejadoLlmDto("SEGUNDA", "REGENERATIVO", null, 25, 0.5, 2, "Regenerativo",
+                "25:00", 1.0, null, List.of(
+                new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento leve", 10, 0.0, null, 1, null),
+                new EtapaTreinoLlmDto(2, "PRINCIPAL", "Regenerativo", 10, 0.8, null, 1, null),
+                new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento leve", 5, 0.0, null, 1, null)));
+
+        var saida = normalizarSemLimiar(entrada);
+
+        assertThat(saida.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsExactly(1.43, 1.43, 0.71);
+        assertThat(saida.etapas().get(1).ritmoAlvo()).isNull();
+        assertThat(saida.distanciaKm()).isEqualTo(3.57);
+        assertThat(saida.duracaoMin()).isEqualTo("25:00");
+    }
+
+    /**
+     * Etapas sintetizadas pelo reparo (10 + 5 min → 1,43 + 0,71 km a 7:00/km): o total da LLM fica e a PRINCIPAL
+     * encaixa com a duração pelo pace Z2 (CA7); encaixada mais curta que o aquecimento ou sem sobra → bloco
+     * único (CA7b, CA8).
+     */
+    @ParameterizedTest(name = "CONTINUO {0} km → {1} etapa(s), {2}")
+    @CsvSource({"4.0, 3, 28:00", "3.0, 1, 21:00", "1.0, 1, 07:00"})
+    void semLimiarEtapaSintetizadaEncaixaNoTotal(double total, int etapas, String duracao) {
+        var entrada = new TreinoPlanejadoLlmDto("QUARTA", "CONTINUO", null, 30, 0.6, 3, "Contínuo",
+                "20:00", total, null, List.of(
+                new EtapaTreinoLlmDto(1, "PRINCIPAL", "Contínuo", 20, total, null, 1, null)));
+
+        var saida = normalizarSemLimiar(entrada);
+
+        assertThat(saida.etapas()).hasSize(etapas);
+        assertThat(saida.distanciaKm()).isEqualTo(total);
+        assertThat(somaKm(saida)).isCloseTo(total, offset(0.01));
+        assertThat(saida.duracaoMin()).isEqualTo(duracao);
+    }
+
+    private static TreinoPlanejadoLlmDto normalizarSemLimiar(TreinoPlanejadoLlmDto entrada) {
+        Atleta atleta = Atleta.builder().id(ATLETA_ID).nivelExperiencia(NivelExperiencia.INTERMEDIARIO).build();
+        var normalizacao = new NormalizacaoDeTreino(new TreinoNormalizador(new PaceValidator()), new EtapaFcValidator(),
+                new PlanoEstruturaReparador(new SimpleMeterRegistry()), new PaceValidator(), new SimpleMeterRegistry());
+        return normalizacao.normalizar(entrada, new ContextoNormalizacao(atleta, ATLETA_ID, null, Map.of(), Map.of(),
+                ContextoNormalizacao.zonasPaceComDado(atleta, new ZonaTreinoService())));
+    }
+
     // ======================================================================================
     // Invariantes
     // ======================================================================================
@@ -189,7 +244,8 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
             if (!distIgual(somaKm, t.distanciaKm())) {
                 v.add(String.format(Locale.ROOT, "card≠editor distância: total %.2f, etapas %.2f", t.distanciaKm(), somaKm));
             }
-            boolean volumeEhASoma = c.estrutura() == Estrutura.COMPLETA && c.ritmo() != Ritmo.NENHUM;
+            boolean volumeEhASoma = c.estrutura() == Estrutura.COMPLETA
+                    && (c.ritmo() != Ritmo.NENHUM || c.tipo() != Tipo.TEMPO_RUN);
             if (!volumeEhASoma && !distIgual(t.distanciaKm(), c.totalKm())) {
                 v.add(String.format(Locale.ROOT, "total≠prescrito: prescrito %.2f, final %.2f", c.totalKm(), t.distanciaKm()));
             }
@@ -249,9 +305,9 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
     record Excecao(String nome, String motivo, Predicate<Cenario> cobre, Set<String> tolera) {}
 
     static final List<Excecao> EXCECOES = List.of(
-            new Excecao("sem-pace", "PRINCIPAL sem pace derivável: o total da LLM fica e as etapas não encaixam "
-                    + "(follow-up: derivar o pace da zona do atleta, A9)",
-                    c -> c.ritmo() == Ritmo.NENHUM, Set.of(CARD_DIST)),
+            new Excecao("sem-pace", "TEMPO_RUN sem pace derivável: o total da LLM fica e as etapas não encaixam "
+                    + "(o pace Z2 de fallback dos tipos leves seria o estímulo errado; fix-distancia-treino-soma-etapas)",
+                    c -> c.ritmo() == Ritmo.NENHUM && c.tipo() == Tipo.TEMPO_RUN, Set.of(CARD_DIST)),
             new Excecao("tempo-run-sintetizado", "TEMPO_RUN com etapa sintetizada: bloco único seria limiar sem "
                     + "aquecimento (follow-up: rejeitar e pedir a estrutura no turno de reparo, A6)",
                     c -> c.tipo() == Tipo.TEMPO_RUN && c.estrutura() != Estrutura.COMPLETA, Set.of(CARD_DIST, CARD_DUR)));
@@ -261,8 +317,8 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
      * cair é bom (atualize o número), subir é regressão ou causa nova a catalogar.
      */
     static final Map<String, Integer> INVENTARIO = Map.of(
-            "sem-pace", 504,
-            "tempo-run-sintetizado", 252);
+            "sem-pace", 165,
+            "tempo-run-sintetizado", 324);
 
     static Excecao excecaoDe(Cenario c) {
         return EXCECOES.stream().filter(e -> e.cobre().test(c)).findFirst().orElse(null);
@@ -291,7 +347,7 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
         Atleta atleta = Atleta.builder()
                 .id(ATLETA_ID)
                 .nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
-                .paceLimiar(BigDecimal.valueOf(c.limiar()))
+                .paceLimiar(c.limiar() == null ? null : BigDecimal.valueOf(c.limiar()))
                 .build();
         var contexto = new ContextoNormalizacao(atleta, ATLETA_ID, null, Map.of(), Map.of(),
                 ContextoNormalizacao.zonasPaceComDado(atleta, new ZonaTreinoService()));
@@ -305,7 +361,7 @@ class NormalizacaoDeTreinoInvarianteTotalTest {
     }
 
     static TreinoPlanejadoLlmDto entrada(Cenario c) {
-        double pace = c.limiar() * c.tipo().fator;
+        double pace = Objects.requireNonNullElse(c.limiar(), LIMIAR_DA_LLM_SEM_LIMIAR) * c.tipo().fator;
         String ritmoEtapa = faixa(pace);
         int principalMin = Math.max(1, (int) Math.round(c.totalKm() * pace));
 

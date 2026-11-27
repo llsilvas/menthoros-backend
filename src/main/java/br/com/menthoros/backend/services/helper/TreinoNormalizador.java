@@ -253,9 +253,7 @@ public class TreinoNormalizador {
     public List<EtapaTreinoLlmDto> corrigirDistanciasEtapasTemporais(
             List<EtapaTreinoLlmDto> etapas, BigDecimal paceLimiar) {
         if (etapas == null || etapas.isEmpty()) return etapas;
-        double paceZ2 = paceLimiar != null
-                ? paceLimiar.doubleValue() * FATOR_PACE_Z2
-                : PACE_Z2_DEFAULT_MIN_KM;
+        double paceZ2 = paceZ2(paceLimiar);
         double paceZ1 = paceLimiar != null
                 ? paceLimiar.doubleValue() * FATOR_PACE_Z1
                 : PACE_Z1_DEFAULT_MIN_KM;
@@ -289,13 +287,13 @@ public class TreinoNormalizador {
      * Deriva a distância de cada etapa PRINCIPAL pelo pace: {@code duracaoMin ÷ pace médio do
      * ritmoAlvo} da própria etapa. A LLM concentra ali a distância do treino inteiro — caso real
      * 22/09: REGENERATIVO com PRINCIPAL de 5,5 km em 30min a 7:28-7:55/km (fix-etapas-continuos-pace).
-     * Sem duração ou sem {@code ritmoAlvo} interpretável, a etapa fica como a LLM mandou.
+     * Sem duração, ou sem pace derivável (TEMPO_RUN sem {@code ritmoAlvo} interpretável), a etapa fica como a LLM mandou.
      */
-    public TreinoPlanejadoLlmDto distanciaPrincipalPorPace(TreinoPlanejadoLlmDto treino) {
+    public TreinoPlanejadoLlmDto distanciaPrincipalPorPace(TreinoPlanejadoLlmDto treino, BigDecimal paceLimiar) {
         if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
         List<EtapaTreinoLlmDto> etapas = treino.etapas().stream().map(e -> {
             if (!ehPrincipal(e)) return e;
-            var pace = paceDerivavel(e, treino.ritmoAlvo());
+            var pace = paceDerivavel(e, treino, paceLimiar);
             if (pace.isEmpty()) return e;
             return e.comDistancia(arredondar2(e.duracaoMin() / pace.getAsDouble()));
         }).toList();
@@ -307,11 +305,11 @@ public class TreinoNormalizador {
      * Sem isso a soma das etapas carrega a distância que a LLM concentrou na PRINCIPAL e não serve para
      * reconciliar o total. Treino sem PRINCIPAL devolve {@code false}: não há o que derivar.
      */
-    public boolean principaisComDistanciaPorPace(TreinoPlanejadoLlmDto treino) {
+    public boolean principaisComDistanciaPorPace(TreinoPlanejadoLlmDto treino, BigDecimal paceLimiar) {
         if (treino.etapas() == null) return false;
         List<EtapaTreinoLlmDto> principais = treino.etapas().stream().filter(this::ehPrincipal).toList();
         return !principais.isEmpty()
-                && principais.stream().allMatch(e -> paceDerivavel(e, treino.ritmoAlvo()).isPresent());
+                && principais.stream().allMatch(e -> paceDerivavel(e, treino, paceLimiar).isPresent());
     }
 
     /**
@@ -352,12 +350,21 @@ public class TreinoNormalizador {
     /**
      * Pace médio do ritmoAlvo da etapa — ou do treino, quando a etapa não declara o seu
      * (fix-total-treino-soma-etapas: o gpt-4o põe o ritmo só no treino) —, se a etapa tem duração.
+     * Sem ritmo legível em lugar nenhum, os tipos de ritmo leve usam o pace Z2, o mesmo do aquecimento
+     * (fix-distancia-treino-soma-etapas): sem isso, atleta sem limiar fica com total ≠ soma das etapas.
+     * TEMPO_RUN fica sem: Z2 seria o estímulo errado.
      */
-    private java.util.OptionalDouble paceDerivavel(EtapaTreinoLlmDto e, String ritmoDoTreino) {
+    private java.util.OptionalDouble paceDerivavel(EtapaTreinoLlmDto e, TreinoPlanejadoLlmDto treino, BigDecimal paceLimiar) {
         if (e.duracaoMin() == null || e.duracaoMin() <= 0) return java.util.OptionalDouble.empty();
         var pace = paceValidator.calcularPaceMedia(e.ritmoAlvo());
-        if (pace.isEmpty()) pace = paceValidator.calcularPaceMedia(ritmoDoTreino);
-        return pace.isPresent() && pace.getAsDouble() > 0 ? pace : java.util.OptionalDouble.empty();
+        if (pace.isEmpty()) pace = paceValidator.calcularPaceMedia(treino.ritmoAlvo());
+        if (pace.isPresent() && pace.getAsDouble() > 0) return pace;
+        return TIPOS_BLOCO_UNICO_SEM_SOBRA.contains(treino.tipoTreino())
+                ? java.util.OptionalDouble.of(paceZ2(paceLimiar)) : java.util.OptionalDouble.empty();
+    }
+
+    private double paceZ2(BigDecimal paceLimiar) {
+        return paceLimiar != null ? paceLimiar.doubleValue() * FATOR_PACE_Z2 : PACE_Z2_DEFAULT_MIN_KM;
     }
 
     /**
@@ -373,7 +380,7 @@ public class TreinoNormalizador {
      * aquecimento). A distância prescrita é a verdade. Só com as demais etapas sendo aquecimento e
      * desaquecimento e a PRINCIPAL sem repetição — o bloco não pode apagar outro estímulo nem multiplicar o total.</p>
      */
-    public java.util.Optional<TreinoPlanejadoLlmDto> encaixarPrincipalNoTotal(TreinoPlanejadoLlmDto treino) {
+    public java.util.Optional<TreinoPlanejadoLlmDto> encaixarPrincipalNoTotal(TreinoPlanejadoLlmDto treino, BigDecimal paceLimiar) {
         if (treino.etapas() == null || treino.distanciaKm() == null || treino.distanciaKm() <= 0) {
             return java.util.Optional.empty();
         }
@@ -384,7 +391,7 @@ public class TreinoNormalizador {
         }
         double sobra = arredondar2(treino.distanciaKm() - somarDistancias(demais));
         EtapaTreinoLlmDto principal = principais.get(0);
-        var pace = paceDerivavel(principal, treino.ritmoAlvo());
+        var pace = paceDerivavel(principal, treino, paceLimiar);
         boolean blocoUnicoPossivel = pace.isPresent()
                 && (principal.repeticoes() == null || principal.repeticoes() <= 1)
                 && demais.stream().map(e -> normalizarTipoEtapa(e.tipoEtapa()))

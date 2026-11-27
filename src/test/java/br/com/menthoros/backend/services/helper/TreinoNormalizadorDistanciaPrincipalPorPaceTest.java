@@ -40,7 +40,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         void principalComRitmoRecebeDistanciaDoPace() {
             var treino = continuo(etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km"));
 
-            var resultado = normalizador.distanciaPrincipalPorPace(treino);
+            var resultado = normalizador.distanciaPrincipalPorPace(treino, null);
 
             // pace médio de 7:28-7:55 = 7,69 min/km → 30 / 7,69 = 3,90 km
             assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(3.9);
@@ -65,7 +65,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         })
         @DisplayName("distância = round2(duração ÷ pace médio)")
         void distanciaPelaFormula(int duracaoMin, String ritmo, double esperada) {
-            var resultado = normalizador.distanciaPrincipalPorPace(continuo(etapa("PRINCIPAL", duracaoMin, 99.0, ritmo)));
+            var resultado = normalizador.distanciaPrincipalPorPace(continuo(etapa("PRINCIPAL", duracaoMin, 99.0, ritmo)), null);
 
             assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(esperada);
         }
@@ -73,7 +73,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         @Test
         @DisplayName("PRINCIPAL sem distância da LLM (null) também recebe a distância pelo pace")
         void principalSemDistanciaRecebe() {
-            var resultado = normalizador.distanciaPrincipalPorPace(continuo(etapa("PRINCIPAL", 30, null, "7:28-7:55/km")));
+            var resultado = normalizador.distanciaPrincipalPorPace(continuo(etapa("PRINCIPAL", 30, null, "7:28-7:55/km")), null);
 
             assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(3.9);
         }
@@ -81,7 +81,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         @Test
         @DisplayName("PRINCIPAL com distância 0.0 (desconhecida) recebe a distância pelo pace")
         void principalComZeroRecebe() {
-            var resultado = normalizador.distanciaPrincipalPorPace(continuo(etapa("PRINCIPAL", 30, 0.0, "7:28-7:55/km")));
+            var resultado = normalizador.distanciaPrincipalPorPace(continuo(etapa("PRINCIPAL", 30, 0.0, "7:28-7:55/km")), null);
 
             assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(3.9);
         }
@@ -90,11 +90,51 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         @NullAndEmptySource
         @ValueSource(strings = {"   ", "rápido", "7:28/km", "7:28-7:55", "7-8/km", "7:28 - 7:55/km",
                 "7:55-7:28/km", "Z2", "7:28-7:55/mi", "abc-def/km"})
-        @DisplayName("CA3: ritmoAlvo ausente, vazio, malformado ou invertido → distância da LLM preservada")
+        @DisplayName("CA3: TEMPO_RUN com ritmoAlvo ausente, vazio, malformado ou invertido → distância da LLM preservada")
         void ritmoNaoInterpretavelPreserva(String ritmo) {
             var original = etapa("PRINCIPAL", 30, 5.5, ritmo);
 
-            var resultado = normalizador.distanciaPrincipalPorPace(continuo(original));
+            var resultado = normalizador.distanciaPrincipalPorPace(tempoRun(original), null);
+
+            assertThat(resultado.etapas().getFirst()).isEqualTo(original);
+        }
+
+        @ParameterizedTest(name = "ritmo=\"{0}\"")
+        @NullAndEmptySource
+        @ValueSource(strings = {"   ", "rápido", "7:55-7:28/km", "Z2"})
+        @DisplayName("ritmo ausente ou ilegível em tipo de ritmo leve → pace Z2 default: 30 ÷ 7,0 = 4,29 km, ritmo intacto")
+        void ritmoNaoInterpretavelUsaZ2(String ritmo) {
+            var resultado = normalizador.distanciaPrincipalPorPace(continuo(etapa("PRINCIPAL", 30, 5.5, ritmo)), null);
+
+            assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(4.29);
+            assertThat(resultado.etapas().getFirst().ritmoAlvo()).isEqualTo(ritmo);
+        }
+
+        @ParameterizedTest(name = "{0}, limiar={1} → {2} km")
+        @CsvSource(value = {
+                "REGENERATIVO, NULL, 1.43",
+                "CONTINUO,     NULL, 1.43",
+                "LONGO,        NULL, 1.43",
+                "REGENERATIVO, 5.0,  1.67",
+                "LONGO,        4.0,  2.08"
+        }, nullValues = "NULL")
+        @DisplayName("PRINCIPAL sem ritmo: 10 min ÷ pace Z2 (limiar × 1,20, ou 7:00 sem limiar)")
+        void semRitmoUsaPaceZ2(String tipo, java.math.BigDecimal limiar, double esperada) {
+            var treino = new TreinoPlanejadoLlmDto("SEGUNDA", tipo, null, null, null, null, null,
+                    "25:00", 1.0, null, List.of(etapa("PRINCIPAL", 10, 0.8, null)));
+
+            var resultado = normalizador.distanciaPrincipalPorPace(treino, limiar);
+
+            assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(esperada);
+        }
+
+        @ParameterizedTest(name = "duração={0}")
+        @CsvSource(value = {"NULL", "0"}, nullValues = "NULL")
+        @DisplayName("PRINCIPAL sem ritmo e sem duração positiva → distância da LLM preservada (guarda antes do fallback)")
+        void semRitmoSemDuracaoPreserva(Integer duracaoMin) {
+            var original = etapa("PRINCIPAL", duracaoMin, 0.8, null);
+
+            var resultado = normalizador.distanciaPrincipalPorPace(continuo(original), null);
 
             assertThat(resultado.etapas().getFirst()).isEqualTo(original);
         }
@@ -105,7 +145,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         void semDuracaoPositivaPreserva(Integer duracaoMin) {
             var original = etapa("PRINCIPAL", duracaoMin, 5.5, "7:28-7:55/km");
 
-            var resultado = normalizador.distanciaPrincipalPorPace(continuo(original));
+            var resultado = normalizador.distanciaPrincipalPorPace(continuo(original), null);
 
             assertThat(resultado.etapas().getFirst()).isEqualTo(original);
         }
@@ -114,7 +154,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         @ValueSource(strings = {"principal", "Principal", " PRINCIPAL ", "PRINCIPAL"})
         @DisplayName("tipoEtapa é normalizado (caixa e espaços) antes de decidir")
         void tipoEtapaNormalizado(String tipoEtapa) {
-            var resultado = normalizador.distanciaPrincipalPorPace(continuo(etapa(tipoEtapa, 30, 5.5, "7:28-7:55/km")));
+            var resultado = normalizador.distanciaPrincipalPorPace(continuo(etapa(tipoEtapa, 30, 5.5, "7:28-7:55/km")), null);
 
             assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(3.9);
         }
@@ -125,7 +165,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         void naoPrincipalIntocada(String tipoEtapa) {
             var original = etapa(tipoEtapa, 10, 0.5, "7:28-7:55/km");
 
-            var resultado = normalizador.distanciaPrincipalPorPace(continuo(original));
+            var resultado = normalizador.distanciaPrincipalPorPace(continuo(original), null);
 
             assertThat(resultado.etapas().getFirst()).isEqualTo(original);
         }
@@ -135,7 +175,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         void tipoEtapaNull() {
             var original = new EtapaTreinoLlmDto(1, null, "x", 30, 5.5, null, 1, "7:28-7:55/km");
 
-            var resultado = normalizador.distanciaPrincipalPorPace(continuo(original));
+            var resultado = normalizador.distanciaPrincipalPorPace(continuo(original), null);
 
             assertThat(resultado.etapas().getFirst()).isEqualTo(original);
         }
@@ -147,22 +187,20 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
                     etapa("PRINCIPAL", 40, 8.0, "6:45-7:06/km"),
                     etapa("PRINCIPAL", 10, 2.0, "6:00-6:10/km"));
 
-            var resultado = normalizador.distanciaPrincipalPorPace(treino);
+            var resultado = normalizador.distanciaPrincipalPorPace(treino, null);
 
             // 40 / 6,925 = 5,78; 10 / 6,083 = 1,64
             assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsExactly(5.78, 1.64);
         }
 
         @Test
-        @DisplayName("duas PRINCIPAL, uma sem ritmo: só a que tem ritmo muda")
+        @DisplayName("duas PRINCIPAL, uma sem ritmo: a com ritmo usa o dela, a sem ritmo o Z2 default")
         void principaisMistas() {
-            var semRitmo = etapa("PRINCIPAL", 10, 2.0, null);
-            var treino = continuo(etapa("PRINCIPAL", 40, 8.0, "6:45-7:06/km"), semRitmo);
+            var treino = continuo(etapa("PRINCIPAL", 40, 8.0, "6:45-7:06/km"), etapa("PRINCIPAL", 10, 2.0, null));
 
-            var resultado = normalizador.distanciaPrincipalPorPace(treino);
+            var resultado = normalizador.distanciaPrincipalPorPace(treino, null);
 
-            assertThat(resultado.etapas().get(0).distanciaKm()).isEqualTo(5.78);
-            assertThat(resultado.etapas().get(1)).isEqualTo(semRitmo);
+            assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::distanciaKm).containsExactly(5.78, 1.43);
         }
 
         @Test
@@ -170,7 +208,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         void semRitmoUsaRitmoDoTreino() {
             var treino = continuoComRitmo("6:00-6:30/km", etapa("PRINCIPAL", 30, 5.5, null));
 
-            var resultado = normalizador.distanciaPrincipalPorPace(treino);
+            var resultado = normalizador.distanciaPrincipalPorPace(treino, null);
 
             assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(4.8);
         }
@@ -180,7 +218,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         void ritmoDaEtapaPrevalece() {
             var treino = continuoComRitmo("6:00-6:30/km", etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km"));
 
-            var resultado = normalizador.distanciaPrincipalPorPace(treino);
+            var resultado = normalizador.distanciaPrincipalPorPace(treino, null);
 
             assertThat(resultado.etapas().getFirst().distanciaKm()).isEqualTo(3.9);
         }
@@ -191,7 +229,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
             var original = new EtapaTreinoLlmDto(2, "PRINCIPAL", "Corrida regenerativa Z1", 30, 5.5,
                     "115-130 bpm", 1, "7:28-7:55/km");
 
-            var resultado = normalizador.distanciaPrincipalPorPace(continuo(original)).etapas().getFirst();
+            var resultado = normalizador.distanciaPrincipalPorPace(continuo(original), null).etapas().getFirst();
 
             assertThat(resultado).usingRecursiveComparison().ignoringFields("distanciaKm").isEqualTo(original);
             assertThat(resultado.distanciaKm()).isEqualTo(3.9);
@@ -202,7 +240,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         void camposDoTreinoIntocados() {
             var treino = continuo(etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km"));
 
-            var resultado = normalizador.distanciaPrincipalPorPace(treino);
+            var resultado = normalizador.distanciaPrincipalPorPace(treino, null);
 
             assertThat(resultado).usingRecursiveComparison().ignoringFields("etapas").isEqualTo(treino);
         }
@@ -214,7 +252,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
             var desaq = etapa("DESAQUECIMENTO", 5, 0.5, null);
             var treino = continuo(aquec, etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km"), desaq);
 
-            var resultado = normalizador.distanciaPrincipalPorPace(treino);
+            var resultado = normalizador.distanciaPrincipalPorPace(treino, null);
 
             assertThat(resultado.etapas()).extracting(EtapaTreinoLlmDto::tipoEtapa)
                     .containsExactly("AQUECIMENTO", "PRINCIPAL", "DESAQUECIMENTO");
@@ -227,8 +265,8 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         void idempotente() {
             var treino = continuo(etapa("AQUECIMENTO", 10, 0.0, null), etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km"));
 
-            var uma = normalizador.distanciaPrincipalPorPace(treino);
-            var duas = normalizador.distanciaPrincipalPorPace(uma);
+            var uma = normalizador.distanciaPrincipalPorPace(treino, null);
+            var duas = normalizador.distanciaPrincipalPorPace(uma, null);
 
             assertThat(duas).isEqualTo(uma);
         }
@@ -239,7 +277,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
             var treino = new TreinoPlanejadoLlmDto("SEGUNDA", "REGENERATIVO", null, null, null, null, null,
                     "45:00", 6.0, "7:28-7:55/km", null);
 
-            assertThat(normalizador.distanciaPrincipalPorPace(treino)).isSameAs(treino);
+            assertThat(normalizador.distanciaPrincipalPorPace(treino, null)).isSameAs(treino);
         }
 
         @Test
@@ -247,7 +285,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         void etapasVazias() {
             var treino = continuo();
 
-            assertThat(normalizador.distanciaPrincipalPorPace(treino)).isSameAs(treino);
+            assertThat(normalizador.distanciaPrincipalPorPace(treino, null)).isSameAs(treino);
         }
 
         @Test
@@ -261,7 +299,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
                 }
             }
 
-            var resultado = normalizador.distanciaPrincipalPorPace(continuo(etapas.toArray(EtapaTreinoLlmDto[]::new)));
+            var resultado = normalizador.distanciaPrincipalPorPace(continuo(etapas.toArray(EtapaTreinoLlmDto[]::new)), null);
 
             assertThat(resultado.etapas()).allSatisfy(e -> {
                 double[] faixa = limites(e.ritmoAlvo());
@@ -281,7 +319,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         @DisplayName("PRINCIPAL única com duração e ritmo → true")
         void principalComPace() {
             assertThat(normalizador.principaisComDistanciaPorPace(
-                    continuo(etapa("AQUECIMENTO", 10, 0.0, null), etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km"))))
+                    continuo(etapa("AQUECIMENTO", 10, 0.0, null), etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km")), null))
                     .isTrue();
         }
 
@@ -289,24 +327,39 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         @DisplayName("duas PRINCIPAL com ritmo → true")
         void duasComPace() {
             assertThat(normalizador.principaisComDistanciaPorPace(continuo(
-                    etapa("PRINCIPAL", 40, 8.0, "6:45-7:06/km"), etapa("PRINCIPAL", 10, 2.0, "6:00-6:10/km"))))
+                    etapa("PRINCIPAL", 40, 8.0, "6:45-7:06/km"), etapa("PRINCIPAL", 10, 2.0, "6:00-6:10/km")), null))
                     .isTrue();
         }
 
         @Test
-        @DisplayName("uma das PRINCIPAL sem ritmo → false")
+        @DisplayName("TEMPO_RUN com uma das PRINCIPAL sem ritmo → false (sem fallback)")
         void umaSemRitmo() {
-            assertThat(normalizador.principaisComDistanciaPorPace(continuo(
-                    etapa("PRINCIPAL", 40, 8.0, "6:45-7:06/km"), etapa("PRINCIPAL", 10, 2.0, null))))
+            assertThat(normalizador.principaisComDistanciaPorPace(tempoRun(
+                    etapa("PRINCIPAL", 40, 8.0, "6:45-7:06/km"), etapa("PRINCIPAL", 10, 2.0, null)), null))
                     .isFalse();
         }
 
         @ParameterizedTest(name = "ritmo=\"{0}\"")
         @NullAndEmptySource
         @ValueSource(strings = {"  ", "rápido", "7:55-7:28/km"})
-        @DisplayName("PRINCIPAL com ritmo não interpretável → false")
+        @DisplayName("TEMPO_RUN com PRINCIPAL de ritmo não interpretável → false")
         void ritmoNaoInterpretavel(String ritmo) {
-            assertThat(normalizador.principaisComDistanciaPorPace(continuo(etapa("PRINCIPAL", 30, 5.5, ritmo))))
+            assertThat(normalizador.principaisComDistanciaPorPace(tempoRun(etapa("PRINCIPAL", 30, 5.5, ritmo)), null))
+                    .isFalse();
+        }
+
+        @Test
+        @DisplayName("tipo de ritmo leve com PRINCIPAL sem ritmo → true (pace Z2 de fallback)")
+        void semRitmoComFallback() {
+            assertThat(normalizador.principaisComDistanciaPorPace(continuo(
+                    etapa("PRINCIPAL", 40, 8.0, "6:45-7:06/km"), etapa("PRINCIPAL", 10, 2.0, null)), null))
+                    .isTrue();
+        }
+
+        @Test
+        @DisplayName("PRINCIPAL sem ritmo e sem duração → false mesmo com fallback")
+        void semRitmoSemDuracao() {
+            assertThat(normalizador.principaisComDistanciaPorPace(continuo(etapa("PRINCIPAL", null, 2.0, null)), null))
                     .isFalse();
         }
 
@@ -314,7 +367,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         @CsvSource(value = {"NULL", "0", "-1"}, nullValues = "NULL")
         @DisplayName("PRINCIPAL sem duração positiva → false")
         void semDuracao(Integer duracao) {
-            assertThat(normalizador.principaisComDistanciaPorPace(continuo(etapa("PRINCIPAL", duracao, 5.5, "7:28-7:55/km"))))
+            assertThat(normalizador.principaisComDistanciaPorPace(continuo(etapa("PRINCIPAL", duracao, 5.5, "7:28-7:55/km")), null))
                     .isFalse();
         }
 
@@ -322,7 +375,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
         @DisplayName("sem nenhuma PRINCIPAL → false (não há o que derivar)")
         void semPrincipal() {
             assertThat(normalizador.principaisComDistanciaPorPace(
-                    continuo(etapa("AQUECIMENTO", 10, 1.0, "7:28-7:55/km"), etapa("DESAQUECIMENTO", 5, 0.5, null))))
+                    continuo(etapa("AQUECIMENTO", 10, 1.0, "7:28-7:55/km"), etapa("DESAQUECIMENTO", 5, 0.5, null)), null))
                     .isFalse();
         }
 
@@ -332,8 +385,8 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
             var semLista = new TreinoPlanejadoLlmDto("SEGUNDA", "REGENERATIVO", null, null, null, null, null,
                     "45:00", 6.0, null, null);
 
-            assertThat(normalizador.principaisComDistanciaPorPace(semLista)).isFalse();
-            assertThat(normalizador.principaisComDistanciaPorPace(continuo())).isFalse();
+            assertThat(normalizador.principaisComDistanciaPorPace(semLista, null)).isFalse();
+            assertThat(normalizador.principaisComDistanciaPorPace(continuo(), null)).isFalse();
         }
 
         @Test
@@ -342,7 +395,7 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
             assertThat(normalizador.principaisComDistanciaPorPace(continuo(
                     etapa("AQUECIMENTO", 10, 0.0, null),
                     etapa("PRINCIPAL", 30, 5.5, "7:28-7:55/km"),
-                    etapa("DESAQUECIMENTO", 5, 0.5, null))))
+                    etapa("DESAQUECIMENTO", 5, 0.5, null)), null))
                     .isTrue();
         }
     }
@@ -475,6 +528,11 @@ class TreinoNormalizadorDistanciaPrincipalPorPaceTest {
     // para o ritmo do treino (fix-total-treino-soma-etapas) tem testes próprios, com continuoComRitmo.
     private static TreinoPlanejadoLlmDto continuo(EtapaTreinoLlmDto... etapas) {
         return continuoComRitmo(null, etapas);
+    }
+
+    private static TreinoPlanejadoLlmDto tempoRun(EtapaTreinoLlmDto... etapas) {
+        return new TreinoPlanejadoLlmDto("SEGUNDA", "TEMPO_RUN", null, null, null, null, null,
+                "45:00", 6.0, null, List.of(etapas));
     }
 
     private static TreinoPlanejadoLlmDto continuoComRitmo(String ritmoTreino, EtapaTreinoLlmDto... etapas) {
