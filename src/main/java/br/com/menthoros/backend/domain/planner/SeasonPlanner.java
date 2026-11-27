@@ -12,8 +12,10 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static br.com.menthoros.backend.domain.planner.TrainingPhase.BASE;
@@ -38,6 +40,7 @@ import static br.com.menthoros.backend.domain.planner.TrainingPhase.TAPER;
 public final class SeasonPlanner {
 
     private static final List<TrainingPhase> ORDEM = List.of(BASE, BUILD, PEAK, TAPER, RACE_WEEK);
+    private static final Set<TrainingPhase> SUBIDA = EnumSet.of(BASE, BUILD, PEAK);
 
     /** Semanas por fase (Base, Construção, Pico, Polimento, Semana da prova), por semanas mínimas. */
     private static final Map<Integer, int[]> TEMPLATE = Map.of(
@@ -213,6 +216,72 @@ public final class SeasonPlanner {
             }
         }
         return new SeasonPlan(List.copyOf(resultado), curta);
+    }
+
+    /**
+     * Rampa ancorada (add-season-recalculate-from-week, D2): refaz TSS, volume e longão das semanas livres
+     * depois da âncora, partindo do volume e do TSS dela até {@code peakVolumeKm} na última semana de
+     * subida. Fase, descarga, data e marco ficam como estão; as semanas fora de {@code freeWeekIndexes}
+     * contam na posição da rampa, mas não mudam.
+     *
+     * @param weeks           as semanas do rascunho, em ordem de índice
+     * @param freeWeekIndexes índices que podem ser regravados; trava e origem são decididas por quem chama
+     * @return as mesmas semanas, com as livres depois da âncora recalculadas
+     * @throws IllegalArgumentException âncora ausente ou com volume ou TSS não positivo
+     */
+    public static List<WeekPlan> reanchor(List<WeekPlan> weeks, int anchorWeekIndex, BigDecimal peakVolumeKm,
+                                          Set<Integer> freeWeekIndexes, LocalDate raceDate,
+                                          DistanciaProva distancia, @Nullable BigDecimal distanciaKm) {
+        WeekPlan ancora = weeks.stream()
+                .filter(w -> w.weekIndex() == anchorWeekIndex)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("semana âncora ausente: " + anchorWeekIndex));
+        double ancoraTss = ancora.targetTss();
+        BigDecimal ancoraVolume = ancora.targetVolumeKm();
+        if (ancoraTss <= 0 || ancoraVolume == null || ancoraVolume.signum() <= 0) {
+            throw new IllegalArgumentException("a âncora precisa de volume e TSS positivos");
+        }
+        double picoTss = ancoraTss * peakVolumeKm.doubleValue() / ancoraVolume.doubleValue();
+        long subida = weeks.stream()
+                .filter(w -> w.weekIndex() > anchorWeekIndex && SUBIDA.contains(w.phase()))
+                .count();
+        BigDecimal tetoLongao = tetoLongao(distancia, distanciaKm);
+
+        List<WeekPlan> resultado = new ArrayList<>(weeks.size());
+        double referencia = ancoraTss;
+        int j = 0;
+        for (WeekPlan semana : weeks) {
+            if (semana.weekIndex() <= anchorWeekIndex) {
+                resultado.add(semana);
+                continue;
+            }
+            boolean livre = freeWeekIndexes.contains(semana.weekIndex());
+            double tss;
+            if (SUBIDA.contains(semana.phase())) {
+                j++;
+                tss = ancoraTss + Math.min((picoTss - ancoraTss) * j / subida, MAX_TSS_RAMP_PER_WEEK * j);
+                if (j == subida) {
+                    referencia = livre ? tss : semana.targetTss();
+                }
+            } else {
+                tss = referencia * (1 - TAPER_STRATEGY.resolverReducaoPercentual(
+                        ChronoUnit.DAYS.between(semana.weekStart(), raceDate)));
+            }
+            if (!livre) {
+                resultado.add(semana);
+                continue;
+            }
+            if (semana.deload()) {
+                tss *= DELOAD_FACTOR;
+            }
+            long tssArredondado = Math.round(tss);
+            BigDecimal volume = ancoraVolume.multiply(BigDecimal.valueOf(tssArredondado))
+                    .divide(BigDecimal.valueOf(ancoraTss), 1, RoundingMode.HALF_UP);
+            resultado.add(new WeekPlan(semana.weekIndex(), semana.weekStart(), semana.phase(), volume, tssArredondado,
+                    semana.deload(), longao(semana.phase(), volume, semana.deload(), tetoLongao, ancoraVolume,
+                    ancora.longRunKm()), semana.milestoneRaceId()));
+        }
+        return List.copyOf(resultado);
     }
 
     private static Map<TrainingPhase, Integer> ajustar(int[] template, int total, double startCtl) {
