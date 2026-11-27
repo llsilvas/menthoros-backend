@@ -662,18 +662,20 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
-        @DisplayName("telemetria: PRINCIPAL sem ritmo com soma > 10% do total mantido → WARN + contador motivo=principal-sem-ritmo")
+        @DisplayName("telemetria: TEMPO_RUN com PRINCIPAL sem ritmo e soma > 10% do total mantido → WARN + contador motivo=principal-sem-ritmo (CA3)")
         void telemetriaPrincipalSemRitmo() {
-            // sem ritmo em lugar nenhum: nem na PRINCIPAL nem no treino (o do treino viraria fallback)
-            var treino = continuo("6.0", "45:00", null,
+            // sem ritmo em lugar nenhum: nem na PRINCIPAL nem no treino (o do treino viraria fallback). Só TEMPO_RUN:
+            // os tipos leves derivam a PRINCIPAL pelo pace Z2 (fix-distancia-treino-soma-etapas)
+            var treino = tempoRun("6.0", "45:00",
                     etapa("AQUECIMENTO", 10, 0.0, null),
                     etapa("PRINCIPAL", 30, 5.5, null),
                     etapa("DESAQUECIMENTO", 5, 0.5, null));
 
-            normalizacao.normalizar(treino, ctxLeandro);
+            var resultado = normalizacao.normalizar(treino, ctxLeandro);
 
-            assertThat(contadorDivergencia("REGENERATIVO", "principal-sem-ritmo")).isEqualTo(1.0);
-            assertThat(contadorDivergencia("REGENERATIVO", "etapa-sintetizada")).isZero();
+            assertThat(resultado.distanciaKm()).isEqualTo(6.0);
+            assertThat(contadorDivergencia("TEMPO_RUN", "principal-sem-ritmo")).isEqualTo(1.0);
+            assertThat(contadorDivergencia("TEMPO_RUN", "etapa-sintetizada")).isZero();
         }
 
         @Test
@@ -682,13 +684,14 @@ class NormalizacaoDeTreinoTest {
             // total de 2 km menor que aquec + desaq sintetizados (1,67 + 0,83) e PRINCIPAL sem ritmo: sem pace
             // não há bloco único, a divergência fica. Com ritmo o caso vira bloco único
             // (fix-etapas-sintetizadas-encaixe-total) e não conta — sem pace com etapa sintetizada conta
-            // como etapa-sintetizada, não como principal-sem-ritmo (a ordem do teste em reconciliarContinuo)
-            var treino = continuo("2.0", "30:00", null, etapa("PRINCIPAL", 30, 2.0, null));
+            // como etapa-sintetizada, não como principal-sem-ritmo (a ordem do teste em reconciliarContinuo).
+            // TEMPO_RUN: nos tipos leves o pace Z2 de fallback faz o bloco único (fix-distancia-treino-soma-etapas)
+            var treino = tempoRun("2.0", "30:00", etapa("PRINCIPAL", 30, 2.0, null));
 
             normalizacao.normalizar(treino, ctx);
 
-            assertThat(contadorDivergencia("REGENERATIVO", "etapa-sintetizada")).isEqualTo(1.0);
-            assertThat(contadorDivergencia("REGENERATIVO", "principal-sem-ritmo")).isZero();
+            assertThat(contadorDivergencia("TEMPO_RUN", "etapa-sintetizada")).isEqualTo(1.0);
+            assertThat(contadorDivergencia("TEMPO_RUN", "principal-sem-ritmo")).isZero();
         }
 
         @Test
@@ -746,6 +749,11 @@ class NormalizacaoDeTreinoTest {
                                                EtapaTreinoLlmDto... etapas) {
             return new TreinoPlanejadoLlmDto("SEGUNDA", "REGENERATIVO", null, null, null, null, null,
                     duracaoMin, distanciaKm != null ? Double.valueOf(distanciaKm) : null, ritmoAlvo, List.of(etapas));
+        }
+
+        private TreinoPlanejadoLlmDto tempoRun(String distanciaKm, String duracaoMin, EtapaTreinoLlmDto... etapas) {
+            return new TreinoPlanejadoLlmDto("SEGUNDA", "TEMPO_RUN", null, null, null, null, null,
+                    duracaoMin, Double.valueOf(distanciaKm), null, List.of(etapas));
         }
     }
 
@@ -877,9 +885,10 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
-        @DisplayName("CA6: sem ritmoAlvo não há desempate → soma das etapas (regra vigente)")
+        @DisplayName("CA6: TEMPO_RUN sem ritmoAlvo não há desempate → soma das etapas (regra vigente)")
         void semRitmoAlvoMantemRegraAtual() {
-            var treino = continuo("REGENERATIVO", "45:00", 7.0, null,
+            // TEMPO_RUN: nos tipos leves o pace Z2 de fallback encaixa a PRINCIPAL (fix-distancia-treino-soma-etapas)
+            var treino = continuo("TEMPO_RUN", "45:00", 7.0, null,
                     etapaMin("PRINCIPAL", 10), etapaMin("DESAQUECIMENTO", 5));
 
             var resultado = normalizacao.normalizar(treino, ctx);

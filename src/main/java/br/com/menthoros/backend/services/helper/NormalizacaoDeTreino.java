@@ -216,7 +216,7 @@ public class NormalizacaoDeTreino {
                 // treino na PRINCIPAL e deixa aquec/desaq com 0 — o total fica certo, as etapas não
                 corrigirTemporais,
                 new Passo("distancia-principal-por-pace",
-                        (t, c) -> treinoNormalizador.distanciaPrincipalPorPace(t)),
+                        (t, c) -> treinoNormalizador.distanciaPrincipalPorPace(t, c.atleta().getPaceLimiar())),
                 new Passo("reconciliar-distancia", this::reconciliarContinuo)
         ), caudaComum));
 
@@ -328,12 +328,12 @@ public class NormalizacaoDeTreino {
     private TreinoPlanejadoLlmDto reconciliarContinuo(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
         if (treino.distanciaKm() == null || treino.distanciaKm() <= 0) return treino;
         if (treino.etapas().stream().anyMatch(PlanoEstruturaReparador::foiSintetizada)) {
-            var encaixado = treinoNormalizador.encaixarPrincipalNoTotal(treino);
+            var encaixado = treinoNormalizador.encaixarPrincipalNoTotal(treino, ctx.atleta().getPaceLimiar());
             if (encaixado.isPresent()) return encaixado.get();
             registrarDivergenciaMantida(treino, "etapa-sintetizada", ctx);
             return treino;
         }
-        if (!treinoNormalizador.principaisComDistanciaPorPace(treino)) {
+        if (!treinoNormalizador.principaisComDistanciaPorPace(treino, ctx.atleta().getPaceLimiar())) {
             registrarDivergenciaMantida(treino, "principal-sem-ritmo", ctx);
             return treino;
         }
