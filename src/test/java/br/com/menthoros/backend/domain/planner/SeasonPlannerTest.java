@@ -11,6 +11,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -500,6 +501,23 @@ class SeasonPlannerTest {
 
             assertThat(s.get(12).targetTss()).isEqualTo(188.0);
             assertThat(s.get(13).targetTss()).isEqualTo(polimento(188, s.get(13).weekStart()));
+        }
+
+        @Test
+        @DisplayName("última semana de subida preservada com outra razão TSS/km: volume do Polimento segue a dela")
+        void polimentoNaRazaoDaSemanaPreservada() {
+            List<WeekPlan> antes = new ArrayList<>(semanas("8.0"));
+            antes.set(12, semana(13, PEAK, "30.0", 564, false, null));
+            Set<Integer> livres = new HashSet<>(SEGUINTES);
+            livres.remove(13);
+
+            List<WeekPlan> s = reancorar(antes, 2, "30", livres);
+
+            double tss = polimento(564, s.get(13).weekStart());
+            assertThat(s.get(13).targetTss()).isEqualTo(tss);
+            assertThat(s.get(13).targetVolumeKm())
+                    .isEqualByComparingTo(BigDecimal.valueOf(30 * tss / 564).setScale(1, RoundingMode.HALF_UP))
+                    .isLessThan(new BigDecimal("30.0"));
         }
 
         @Test

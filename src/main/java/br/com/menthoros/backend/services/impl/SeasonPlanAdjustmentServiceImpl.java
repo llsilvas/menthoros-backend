@@ -41,6 +41,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -56,8 +57,6 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
     /** RACE_WEEK é só da semana da prova, que é travada; as demais fases do motor semanal nunca entram na temporada. */
     private static final Set<TrainingPhase> FASES_EDITAVEIS =
             EnumSet.of(TrainingPhase.BASE, TrainingPhase.BUILD, TrainingPhase.PEAK, TrainingPhase.TAPER);
-    private static final Set<TrainingPhase> FASES_DE_SUBIDA =
-            EnumSet.of(TrainingPhase.BASE, TrainingPhase.BUILD, TrainingPhase.PEAK);
     private static final int KEY_SESSIONS_MAX = 500;
     // Tetos de domínio bem acima do real (e dentro de NUMERIC(10,3)): valor absurdo vira 422, nunca 500 do banco.
     private static final BigDecimal VOLUME_MAX_KM = BigDecimal.valueOf(500);
@@ -177,7 +176,7 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
      */
     private void reancorar(PlanoTreino temporada, List<SeasonWeek> semanas, SeasonWeek ancora,
                            BigDecimal picoInformado, LocalDate hoje, UUID tenantId) {
-        if (!FASES_DE_SUBIDA.contains(ancora.getPhase())) {
+        if (!SeasonPlanner.RAMP_PHASES.contains(ancora.getPhase())) {
             throw new DomainRuleViolationException(
                     "Só uma semana de Base, Construção ou Pico pode ser a partida do recálculo das seguintes");
         }
@@ -237,9 +236,9 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
     private static @Nullable BigDecimal picoDeSubida(List<SeasonWeek> semanas, int indiceAncora) {
         return semanas.stream()
                 .filter(w -> w.getWeekIndex() == indiceAncora
-                        || (w.getWeekIndex() > indiceAncora && FASES_DE_SUBIDA.contains(w.getPhase())))
+                        || (w.getWeekIndex() > indiceAncora && SeasonPlanner.RAMP_PHASES.contains(w.getPhase())))
                 .map(SeasonWeek::getTargetVolumeKm)
-                .filter(java.util.Objects::nonNull)
+                .filter(Objects::nonNull)
                 .max(BigDecimal::compareTo)
                 .orElse(null);
     }

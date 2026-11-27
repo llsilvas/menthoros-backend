@@ -46,7 +46,8 @@ public interface SeasonPlanAdjustmentService {
      * {@code followingPeakVolumeKm}, ela vira âncora: as semanas seguintes livres (nem travadas nem COACH)
      * recebem a rampa até esse pico e o Polimento, e passam a origem ENGINE, na mesma transação.
      *
-     * Idempotent: YES — reaplicar os mesmos valores deixa as semanas iguais (a rampa é pura sobre a âncora).
+     * Idempotent: YES — reaplicar os mesmos valores deixa as semanas iguais (a rampa é pura sobre a âncora),
+     *   desde que o rascunho e as travas por data não tenham mudado entre as chamadas.
      * Side Effects: Database update (semana, seguintes no recálculo ancorado, pico da temporada); lock
      *               pessimista na prova.
      * Tenant-aware: YES

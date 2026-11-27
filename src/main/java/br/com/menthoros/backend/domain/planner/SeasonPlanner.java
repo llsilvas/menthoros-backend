@@ -12,7 +12,6 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -40,7 +39,8 @@ import static br.com.menthoros.backend.domain.planner.TrainingPhase.TAPER;
 public final class SeasonPlanner {
 
     private static final List<TrainingPhase> ORDEM = List.of(BASE, BUILD, PEAK, TAPER, RACE_WEEK);
-    private static final Set<TrainingPhase> SUBIDA = EnumSet.of(BASE, BUILD, PEAK);
+    /** Fases da rampa até o pico; as demais (Polimento, semana da prova) descem a partir dele. */
+    public static final Set<TrainingPhase> RAMP_PHASES = Set.of(BASE, BUILD, PEAK);
 
     /** Semanas por fase (Base, Construção, Pico, Polimento, Semana da prova), por semanas mínimas. */
     private static final Map<Integer, int[]> TEMPLATE = Map.of(
@@ -243,12 +243,15 @@ public final class SeasonPlanner {
         }
         double picoTss = ancoraTss * peakVolumeKm.doubleValue() / ancoraVolume.doubleValue();
         long subida = weeks.stream()
-                .filter(w -> w.weekIndex() > anchorWeekIndex && SUBIDA.contains(w.phase()))
+                .filter(w -> w.weekIndex() > anchorWeekIndex && RAMP_PHASES.contains(w.phase()))
                 .count();
         BigDecimal tetoLongao = tetoLongao(distancia, distanciaKm);
 
         List<WeekPlan> resultado = new ArrayList<>(weeks.size());
         double referencia = ancoraTss;
+        // Volume por TSS do Polimento: o da âncora, ou o da última de subida quando ela é preservada.
+        BigDecimal razaoVolume = ancoraVolume;
+        double razaoTss = ancoraTss;
         int j = 0;
         for (WeekPlan semana : weeks) {
             if (semana.weekIndex() <= anchorWeekIndex) {
@@ -257,11 +260,16 @@ public final class SeasonPlanner {
             }
             boolean livre = freeWeekIndexes.contains(semana.weekIndex());
             double tss;
-            if (SUBIDA.contains(semana.phase())) {
+            if (RAMP_PHASES.contains(semana.phase())) {
                 j++;
                 tss = ancoraTss + Math.min((picoTss - ancoraTss) * j / subida, MAX_TSS_RAMP_PER_WEEK * j);
                 if (j == subida) {
                     referencia = livre ? tss : semana.targetTss();
+                    if (!livre && semana.targetTss() > 0 && semana.targetVolumeKm() != null
+                            && semana.targetVolumeKm().signum() > 0) {
+                        razaoVolume = semana.targetVolumeKm();
+                        razaoTss = semana.targetTss();
+                    }
                 }
             } else {
                 tss = referencia * (1 - TAPER_STRATEGY.resolverReducaoPercentual(
@@ -275,8 +283,9 @@ public final class SeasonPlanner {
                 tss *= DELOAD_FACTOR;
             }
             long tssArredondado = Math.round(tss);
-            BigDecimal volume = ancoraVolume.multiply(BigDecimal.valueOf(tssArredondado))
-                    .divide(BigDecimal.valueOf(ancoraTss), 1, RoundingMode.HALF_UP);
+            boolean subindo = RAMP_PHASES.contains(semana.phase());
+            BigDecimal volume = (subindo ? ancoraVolume : razaoVolume).multiply(BigDecimal.valueOf(tssArredondado))
+                    .divide(BigDecimal.valueOf(subindo ? ancoraTss : razaoTss), 1, RoundingMode.HALF_UP);
             resultado.add(new WeekPlan(semana.weekIndex(), semana.weekStart(), semana.phase(), volume, tssArredondado,
                     semana.deload(), longao(semana.phase(), volume, semana.deload(), tetoLongao, ancoraVolume,
                     ancora.longRunKm()), semana.milestoneRaceId()));
