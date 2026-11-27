@@ -345,7 +345,7 @@ class SeasonPlanControllerTest {
                     .andExpect(status().isOk());
 
             verify(adjustmentService).updateWeek(ATLETA_ID, planoId, 3,
-                    new SeasonWeekUpdateInputDto(null, null, new java.math.BigDecimal("45.0"), null, null, "6x1km"));
+                    new SeasonWeekUpdateInputDto(null, null, new java.math.BigDecimal("45.0"), null, null, "6x1km", null));
         }
 
         @Test

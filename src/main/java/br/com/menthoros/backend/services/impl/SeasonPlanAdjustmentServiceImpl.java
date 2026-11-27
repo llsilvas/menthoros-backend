@@ -39,7 +39,9 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -151,11 +153,114 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
 
         aplicar(semana, input);
         semana.setValueSource(WeekValueSource.COACH);
+        boolean reancorar = input.followingPeakVolumeKm() != null;
+        if (reancorar) {
+            reancorar(temporada, semanas, semana, input.followingPeakVolumeKm(), hoje, tenantId);
+        }
         SeasonPlanVersioning.recalcularPicos(temporada, semanas);
-        seasonWeekRepository.save(semana);
+        if (reancorar) {
+            seasonWeekRepository.saveAll(semanas);
+        } else {
+            seasonWeekRepository.save(semana);
+        }
         planoTreinoRepository.save(temporada);
-        log.info("Semana {} da temporada {} editada pelo treinador", weekIndex, seasonPlanId);
+        log.info("season-plan.week-updated seasonPlanId={} week={} reanchored={} tenantId={}", seasonPlanId, weekIndex,
+                reancorar, tenantId);
         return responseMapper.toDto(temporada, semanas, tenantId, null);
+    }
+
+    /**
+     * Recálculo ancorado (add-season-recalculate-from-week): regrava as semanas livres depois da âncora
+     * com a rampa do {@link SeasonPlanner#reanchor}. Valida tudo antes de mexer em qualquer seguinte; a
+     * âncora já editada volta pelo rollback se der 422.
+     */
+    private void reancorar(PlanoTreino temporada, List<SeasonWeek> semanas, SeasonWeek ancora,
+                           BigDecimal picoInformado, LocalDate hoje, UUID tenantId) {
+        if (!SeasonPlanner.RAMP_PHASES.contains(ancora.getPhase())) {
+            throw new DomainRuleViolationException(
+                    "Só uma semana de Base, Construção ou Pico pode ser a partida do recálculo das seguintes");
+        }
+        if (ancora.isDeload()) {
+            throw new DomainRuleViolationException(
+                    "Uma semana de descarga não serve de partida: o volume dela está reduzido");
+        }
+        BigDecimal volumeAncora = ancora.getTargetVolumeKm();
+        if (volumeAncora == null || volumeAncora.signum() <= 0 || ancora.getTargetTss() == null
+                || ancora.getTargetTss() <= 0) {
+            throw new DomainRuleViolationException(
+                    "A semana precisa de volume e TSS maiores que zero para recalcular as seguintes");
+        }
+        BigDecimal pico = picoInformado.setScale(1, RoundingMode.HALF_UP);
+        if (pico.compareTo(volumeAncora) < 0 || acima(pico, VOLUME_MAX_KM)) {
+            throw new DomainRuleViolationException("O volume de pico precisa estar entre o volume da semana ("
+                    + volumeAncora.stripTrailingZeros().toPlainString() + " km) e " + VOLUME_MAX_KM + " km");
+        }
+        Prova prova = exigirHorizonte(temporada, semanas);
+        boolean primeira = SeasonPlanVersioning.primeiraProposta(temporada);
+        int indiceAncora = ancora.getWeekIndex();
+        Set<Integer> livres = new HashSet<>();
+        for (SeasonWeek w : semanas) {
+            if (w.getWeekIndex() > indiceAncora && w.getValueSource() != WeekValueSource.COACH
+                    && SeasonWeekLock.forPlan(primeira, w.getWeekStart(), hoje, prova.getDataProva()).isEmpty()) {
+                livres.add(w.getWeekIndex());
+            }
+        }
+        List<WeekPlan> plano = SeasonPlanner.reanchor(semanas.stream().map(SeasonPlanAdjustmentServiceImpl::paraMotor).toList(),
+                indiceAncora, pico, livres, prova.getDataProva(), prova.getDistancia(), prova.getDistanciaKm());
+        for (WeekPlan w : plano) {
+            if (livres.contains(w.weekIndex()) && (acima(w.targetVolumeKm(), VOLUME_MAX_KM) || w.targetTss() > TSS_MAX
+                    || acima(w.longRunKm(), LONGAO_MAX_KM))) {
+                throw new DomainRuleViolationException("O recálculo levaria a semana " + w.weekIndex()
+                        + " acima do limite (volume até " + VOLUME_MAX_KM + " km, TSS até " + (int) TSS_MAX
+                        + "): escolha um pico menor");
+            }
+        }
+
+        @Nullable BigDecimal picoAnterior = picoDeSubida(semanas, indiceAncora);
+        for (int i = 0; i < semanas.size(); i++) {
+            SeasonWeek semana = semanas.get(i);
+            if (livres.contains(semana.getWeekIndex())) {
+                WeekPlan w = plano.get(i);
+                semana.setTargetTss(w.targetTss());
+                semana.setTargetVolumeKm(w.targetVolumeKm());
+                semana.setLongRunKm(w.longRunKm());
+                semana.setValueSource(WeekValueSource.ENGINE);
+            }
+        }
+        log.info("season-plan.week-reanchored tenantId={} seasonPlanId={} anchorWeek={} previousPeakKm={} "
+                        + "requestedPeakKm={} reachedPeakKm={} regeneratedWeeks={}", tenantId, temporada.getId(),
+                indiceAncora, picoAnterior, pico, picoDeSubida(semanas, indiceAncora), livres.size());
+    }
+
+    /** Maior volume entre a âncora e as semanas de subida depois dela: o "pico" do log e do aviso da tela. */
+    private static @Nullable BigDecimal picoDeSubida(List<SeasonWeek> semanas, int indiceAncora) {
+        return semanas.stream()
+                .filter(w -> w.getWeekIndex() == indiceAncora
+                        || (w.getWeekIndex() > indiceAncora && SeasonPlanner.RAMP_PHASES.contains(w.getPhase())))
+                .map(SeasonWeek::getTargetVolumeKm)
+                .filter(Objects::nonNull)
+                .max(BigDecimal::compareTo)
+                .orElse(null);
+    }
+
+    /** O motor lê alvo nulo como zero, como o {@code SeasonPlanResponseMapper}; só as preservadas são lidas. */
+    private static WeekPlan paraMotor(SeasonWeek w) {
+        return new WeekPlan(w.getWeekIndex(), w.getWeekStart(), w.getPhase(),
+                w.getTargetVolumeKm() == null ? BigDecimal.ZERO : w.getTargetVolumeKm(),
+                w.getTargetTss() == null ? 0 : w.getTargetTss(), w.isDeload(), w.getLongRunKm(), w.getMilestoneRaceId());
+    }
+
+    /** Prova com data e o mesmo número de semanas do rascunho; remarcada, o calendário não bate mais. */
+    private static Prova exigirHorizonte(PlanoTreino temporada, List<SeasonWeek> semanas) {
+        Prova prova = temporada.getProva();
+        if (prova == null || prova.getDataProva() == null || semanas.isEmpty()) {
+            throw new DomainRuleViolationException("A temporada não tem prova com data ou semanas para recalcular");
+        }
+        if (SeasonPlanner.totalWeeks(prova.getDataProva(), semanas.get(0).getWeekStart()) != semanas.size()) {
+            throw new DomainRuleViolationException(
+                    "A prova mudou de data e o número de semanas não bate mais: descarte o ajuste e comece de novo");
+        }
+        return prova;
     }
 
     @Override
@@ -172,17 +277,10 @@ public class SeasonPlanAdjustmentServiceImpl implements SeasonPlanAdjustmentServ
         if (!primeira && !ajusteAberto) {
             throw new DomainConflictException("Só a proposta v1 ou um ajuste em aberto pode ser recalculado");
         }
-        Prova prova = rascunho.getProva();
         List<SeasonWeek> semanas = seasonWeekRepository.findBySeasonPlanIdAndTenantIdOrderByWeekIndexAsc(
                 rascunho.getId(), tenantId);
-        if (prova == null || prova.getDataProva() == null || semanas.isEmpty()) {
-            throw new DomainRuleViolationException("A temporada não tem prova com data ou semanas para recalcular");
-        }
+        Prova prova = exigirHorizonte(rascunho, semanas);
         LocalDate inicio = semanas.get(0).getWeekStart();
-        if (SeasonPlanner.totalWeeks(prova.getDataProva(), inicio) != semanas.size()) {
-            throw new DomainRuleViolationException(
-                    "A prova mudou de data e o número de semanas não bate mais: descarte o ajuste e comece de novo");
-        }
         int soma = input.phaseWeeks().values().stream().mapToInt(Integer::intValue).sum() + 1;
         if (soma != semanas.size()) {
             throw new DomainRuleViolationException("A soma das fases dá " + soma + " semanas (com a da prova); o ciclo tem "

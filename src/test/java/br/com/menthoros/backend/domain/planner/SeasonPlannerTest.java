@@ -11,11 +11,17 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static br.com.menthoros.backend.domain.planner.TrainingPhase.BASE;
 import static br.com.menthoros.backend.domain.planner.TrainingPhase.BUILD;
@@ -423,6 +429,182 @@ class SeasonPlannerTest {
             assertThatThrownBy(() -> SeasonPlanner.planWithPhases(DistanciaProva.KM_42, null, PROVA_16_SEMANAS, HOJE,
                     40.0, VOLUME, null, List.of(), Map.of(BASE, 8, BUILD, 4, PEAK, 3)))
                     .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @DisplayName("reanchor")
+    class Reanchor {
+
+        /** Caso real do proposal: 15 semanas, subida até a 13, descargas na 4 e na 8, Polimento na 14. */
+        private static final LocalDate PROVA = HOJE.plusWeeks(14).plusDays(6);
+        private static final Set<Integer> SEGUINTES = IntStream.rangeClosed(3, 15).boxed().collect(Collectors.toSet());
+
+        @Test
+        @DisplayName("a rampa parte da âncora e chega ao pico na última semana de subida")
+        void rampaDaAncoraAtePico() {
+            List<WeekPlan> s = reancorar(semanas("8.0"), 2, "30", SEGUINTES);
+
+            assertThat(s.get(2).targetTss()).isEqualTo(197.0);
+            assertThat(s.get(2).targetVolumeKm()).isEqualByComparingTo("21.0");
+            assertThat(s.get(3).targetTss()).isEqualTo(164.0);
+            assertThat(s.get(3).targetVolumeKm()).isEqualByComparingTo("17.4");
+            assertThat(s.get(12).targetTss()).isEqualTo(282.0);
+            assertThat(s.get(12).targetVolumeKm()).isEqualByComparingTo("30.0");
+        }
+
+        @Test
+        @DisplayName("semanas anteriores, a âncora e as fora da lista de livres não mudam")
+        void preservaNaoLivres() {
+            List<WeekPlan> antes = semanas("8.0");
+            Set<Integer> livres = new HashSet<>(SEGUINTES);
+            livres.remove(6);
+
+            List<WeekPlan> s = reancorar(antes, 2, "30", livres);
+
+            assertThat(s).hasSize(15);
+            assertThat(s.get(0)).isEqualTo(antes.get(0));
+            assertThat(s.get(1)).isEqualTo(antes.get(1));
+            assertThat(s.get(5)).isEqualTo(antes.get(5));
+        }
+
+        @Test
+        @DisplayName("fase, descarga, data e marco das seguintes ficam como estavam")
+        void preservaEstrutura() {
+            List<WeekPlan> antes = semanas("8.0");
+
+            List<WeekPlan> s = reancorar(antes, 2, "30", SEGUINTES);
+
+            assertThat(s).extracting(WeekPlan::phase).containsExactlyElementsOf(antes.stream().map(WeekPlan::phase).toList());
+            assertThat(s).extracting(WeekPlan::deload).containsExactlyElementsOf(antes.stream().map(WeekPlan::deload).toList());
+            assertThat(s).extracting(WeekPlan::weekStart).containsExactlyElementsOf(antes.stream().map(WeekPlan::weekStart).toList());
+        }
+
+        @Test
+        @DisplayName("Polimento e semana da prova partem do TSS calculado da última semana de subida")
+        void polimentoSobreOPico() {
+            List<WeekPlan> s = reancorar(semanas("8.0"), 2, "30", SEGUINTES);
+
+            assertThat(s.get(13).targetTss()).isEqualTo(polimento(282, s.get(13).weekStart()));
+            assertThat(s.get(14).targetTss()).isEqualTo(polimento(282, s.get(14).weekStart()));
+        }
+
+        @Test
+        @DisplayName("última semana de subida preservada: Polimento parte do TSS gravado nela")
+        void polimentoSobreSemanaPreservada() {
+            List<WeekPlan> antes = new ArrayList<>(semanas("8.0"));
+            antes.set(12, semana(13, PEAK, "20.0", 188, false, null));
+            Set<Integer> livres = new HashSet<>(SEGUINTES);
+            livres.remove(13);
+
+            List<WeekPlan> s = reancorar(antes, 2, "30", livres);
+
+            assertThat(s.get(12).targetTss()).isEqualTo(188.0);
+            assertThat(s.get(13).targetTss()).isEqualTo(polimento(188, s.get(13).weekStart()));
+        }
+
+        @Test
+        @DisplayName("última semana de subida preservada com outra razão TSS/km: volume do Polimento segue a dela")
+        void polimentoNaRazaoDaSemanaPreservada() {
+            List<WeekPlan> antes = new ArrayList<>(semanas("8.0"));
+            antes.set(12, semana(13, PEAK, "30.0", 564, false, null));
+            Set<Integer> livres = new HashSet<>(SEGUINTES);
+            livres.remove(13);
+
+            List<WeekPlan> s = reancorar(antes, 2, "30", livres);
+
+            double tss = polimento(564, s.get(13).weekStart());
+            assertThat(s.get(13).targetTss()).isEqualTo(tss);
+            assertThat(s.get(13).targetVolumeKm())
+                    .isEqualByComparingTo(BigDecimal.valueOf(30 * tss / 564).setScale(1, RoundingMode.HALF_UP))
+                    .isLessThan(new BigDecimal("30.0"));
+        }
+
+        @Test
+        @DisplayName("última semana de subida livre e em descarga: Polimento parte do TSS antes do fator")
+        void polimentoAntesDaDescarga() {
+            List<WeekPlan> antes = new ArrayList<>(semanas("8.0"));
+            antes.set(12, semana(13, PEAK, "13.0", 122, true, null));
+
+            List<WeekPlan> s = reancorar(antes, 2, "30", SEGUINTES);
+
+            assertThat(s.get(12).targetTss()).isEqualTo(226.0);
+            assertThat(s.get(13).targetTss()).isEqualTo(polimento(282, s.get(13).weekStart()));
+        }
+
+        @Test
+        @DisplayName("longão segue a proporção da âncora: 8,0 em 20 km dá 12,0 em 30 km")
+        void longaoPelaAncora() {
+            List<WeekPlan> s = reancorar(semanas("8.0"), 2, "30", SEGUINTES);
+
+            assertThat(s.get(12).longRunKm()).isEqualByComparingTo("12.0");
+            assertThat(s.get(14).longRunKm()).isNull();
+        }
+
+        @Test
+        @DisplayName("âncora sem longão: longão de 28% do volume")
+        void longaoSemAncora() {
+            List<WeekPlan> s = reancorar(semanas(null), 2, "30", SEGUINTES);
+
+            assertThat(s.get(12).longRunKm()).isEqualByComparingTo("8.4");
+        }
+
+        @Test
+        @DisplayName("pico acima do teto de rampa: a curva para no teto")
+        void picoAcimaDoTeto() {
+            List<WeekPlan> s = reancorar(semanas("8.0"), 2, "100", SEGUINTES);
+
+            // 188 + 56 × 11 = 804, abaixo dos 940 pedidos
+            assertThat(s.get(12).targetTss()).isEqualTo(804.0);
+            assertThat(s.get(12).targetVolumeKm()).isEqualByComparingTo("85.5");
+        }
+
+        @Test
+        @DisplayName("âncora na última semana de subida: só o Polimento muda, a partir do TSS da âncora")
+        void semSubidaDepoisDaAncora() {
+            List<WeekPlan> antes = new ArrayList<>(semanas("8.0"));
+            antes.set(12, semana(13, PEAK, "20.0", 188, false, "8.0"));
+
+            List<WeekPlan> s = reancorar(antes, 13, "30", Set.of(14, 15));
+
+            assertThat(s.get(12)).isEqualTo(antes.get(12));
+            assertThat(s.get(13).targetTss()).isEqualTo(polimento(188, s.get(13).weekStart()));
+        }
+
+        @Test
+        @DisplayName("âncora com TSS zero é recusada")
+        void ancoraZerada() {
+            List<WeekPlan> antes = new ArrayList<>(semanas("8.0"));
+            antes.set(1, semana(2, BASE, "20.0", 0, false, null));
+
+            assertThatThrownBy(() -> reancorar(antes, 2, "30", SEGUINTES))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        private static List<WeekPlan> reancorar(List<WeekPlan> semanas, int ancora, String pico, Set<Integer> livres) {
+            return SeasonPlanner.reanchor(semanas, ancora, new BigDecimal(pico), livres, PROVA, DistanciaProva.KM_21, null);
+        }
+
+        private static List<WeekPlan> semanas(String longaoAncora) {
+            List<WeekPlan> s = new ArrayList<>();
+            for (int i = 1; i <= 15; i++) {
+                TrainingPhase fase = i <= 7 ? BASE : i <= 10 ? BUILD : i <= 13 ? PEAK : i == 14 ? TAPER : RACE_WEEK;
+                s.add(i == 2
+                        ? semana(i, fase, "20.0", 188, false, longaoAncora)
+                        : semana(i, fase, "13.0", 122, i == 4 || i == 8, "3.6"));
+            }
+            return s;
+        }
+
+        private static WeekPlan semana(int indice, TrainingPhase fase, String volume, double tss, boolean descarga,
+                                       String longao) {
+            return new WeekPlan(indice, HOJE.plusWeeks(indice - 1L), fase, new BigDecimal(volume), tss, descarga,
+                    longao == null ? null : new BigDecimal(longao), null);
+        }
+
+        private static double polimento(double referencia, LocalDate weekStart) {
+            return Math.round(referencia * (1 - new TaperStrategy().resolverReducaoPercentual(
+                    ChronoUnit.DAYS.between(weekStart, PROVA))));
         }
     }
 
