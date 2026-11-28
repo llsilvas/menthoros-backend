@@ -274,5 +274,102 @@ class PaceValidatorTest {
             assertThat(validator.validarZonaEtapa(prova, "CONTINUO", zonas, null)).isSameAs(prova);
             assertThat(validator.validarZonaEtapa(faixa, "CONTINUO", null, null)).isSameAs(faixa);
         }
+
+        @Test
+        @DisplayName("CA2: sem zonas, etapa mais rápida que o teto é deslocada até ele com a mesma amplitude")
+        void semZonasAplicaTeto() {
+            var r = validator.validarZonaEtapa(etapa("PRINCIPAL", "4:20-4:40/km"), "CONTINUO", null, new BigDecimal("4.9"));
+
+            assertThat(r.ritmoAlvo()).isEqualTo("4:54-5:14/km");
+        }
+
+        @Test
+        @DisplayName("zonas incompletas ou tipo de etapa fora da tabela: só o teto, sem correção por zona")
+        void semZonaUtilAplicaTeto() {
+            var incompleta = validator.validarZonaEtapa(etapa("PRINCIPAL", "4:20-4:40/km"), "CONTINUO", List.of(), new BigDecimal("4.9"));
+            var foraDaTabela = validator.validarZonaEtapa(etapa("EDUCATIVO", "4:20-4:40/km"), "CONTINUO", zonas, new BigDecimal("4.9"));
+
+            assertThat(incompleta.ritmoAlvo()).isEqualTo("4:54-5:14/km");
+            assertThat(foraDaTabela.ritmoAlvo()).isEqualTo("4:54-5:14/km");
+        }
+
+        @Test
+        @DisplayName("CA6: ritmo único mais rápido que o teto vira o teto, ainda como ritmo único")
+        void unicoRecebeTeto() {
+            var r = validator.validarZonaEtapa(etapa("PRINCIPAL", "3:50/km"), "CONTINUO", zonas, new BigDecimal("4.5"));
+
+            assertThat(r.ritmoAlvo()).isEqualTo("4:30/km");
+        }
+
+        @Test
+        @DisplayName("CA10: ritmo único fora da zona e mais lento que o teto fica intacto — sem correção por zona")
+        void unicoSemZona() {
+            var e = etapa("PRINCIPAL", "6:30/km");
+
+            assertThat(validator.validarZonaEtapa(e, "CONTINUO", zonas, new BigDecimal("4.5"))).isSameAs(e);
+        }
+
+        @Test
+        @DisplayName("CA11: faixa leniente fora da zona é corrigida e sai no formato canônico")
+        void faixaLeniente() {
+            var r = validator.validarZonaEtapa(etapa("PRINCIPAL", "4:20 - 4:40"), "CONTINUO", zonas, new BigDecimal("4.5"));
+
+            assertThat(r.ritmoAlvo()).isEqualTo("4:30-4:40/km");
+        }
+    }
+
+    // ======================== teto contra o piso e formatos (fix-pace-teto-invariante) ========================
+
+    @org.junit.jupiter.api.Nested
+    @DisplayName("validar — teto, piso e formatos")
+    class ValidarTetoPiso {
+
+        @org.junit.jupiter.params.ParameterizedTest(name = "{0} teto={1} piso={2} → {3}")
+        @org.junit.jupiter.params.provider.CsvSource(value = {
+                // CA5/D1: o piso deslocaria para 4:15-6:15; a borda rápida para no teto
+                "5:00-7:00/km, 4.9, 6.25, 4:54-6:15/km",
+                // teto igual ao piso: a faixa vira ponto
+                "4:00-6:00/km, 5.0, 5.0, 5:00-5:00/km",
+                // teto mais lento que o piso: o teto vence e o piso é ignorado
+                "6:00-6:30/km, 6.5, 6.25, 6:30-7:00/km",
+                // só teto
+                "4:00-4:30/km, 5.0, NULL, 5:00-5:30/km",
+                // só piso: comportamento de antes preservado
+                "5:00-7:00/km, NULL, 6.25, 4:15-6:15/km"
+        }, nullValues = "NULL")
+        @DisplayName("teto vence o piso (D1)")
+        void tetoVencePiso(String ritmo, BigDecimal teto, BigDecimal piso, String esperado) {
+            assertThat(validator.validar(ritmo, teto, piso)).isEqualTo(esperado);
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest(name = "{0} → {1}")
+        @org.junit.jupiter.params.provider.CsvSource({
+                // CA6/D2: ritmo único mais rápido que o teto vira o teto
+                "4:00/km, 5:00/km",
+                "4:00, 5:00/km",
+                // CA10: ritmo único mais lento que o teto fica, e o piso não o puxa
+                "8:00/km, 8:00/km",
+                // CA11/D5: faixa leniente é lida e sai canônica quando corrigida
+                "4:00 - 4:30/km, 5:00-5:30/km",
+                "4:00-4:30, 5:00-5:30/km",
+                // faixa leniente que não precisa de correção fica como veio
+                "5:10 - 5:30/km, 5:10 - 5:30/km",
+                // texto livre fica intacto (CA8)
+                "forte perto de 4:00, forte perto de 4:00"
+        })
+        @DisplayName("formatos no caminho do teto (D2, D5), com teto 5:00 e piso 6:15")
+        void formatos(String ritmo, String esperado) {
+            assertThat(validator.validar(ritmo, new BigDecimal("5.0"), new BigDecimal("6.25"))).isEqualTo(esperado);
+        }
+
+        @org.junit.jupiter.params.ParameterizedTest(name = "{0} → {1}")
+        @org.junit.jupiter.params.provider.CsvSource(value = {
+                "2:29/km, NULL", "2:30/km, 2:30/km", "12:00/km, 12:00/km", "12:01/km, NULL",
+                "2:00/km, NULL", "13:00, NULL"
+        }, nullValues = "NULL")
+        @DisplayName("CA7/D3: sanear descarta ritmo único fora de 2:30–12:00/km")
+        void sanearUnico(String ritmo, String esperado) {
+            assertThat(validator.sanear(ritmo)).isEqualTo(esperado);
+        }
     }
 }

@@ -6,6 +6,7 @@ import br.com.menthoros.backend.entity.Atleta;
 import br.com.menthoros.backend.enums.TipoTreino;
 import br.com.menthoros.backend.exception.LLMException;
 import br.com.menthoros.backend.services.helper.ZonaTreinoService.ZonaFC;
+import org.jspecify.annotations.Nullable;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
@@ -662,14 +663,14 @@ public class NormalizacaoDeTreino {
                 .collect(Collectors.toList()));
     }
 
-    /** Ritmo de cada etapa contra a zona de pace esperada; teto do histórico do tipo do treino vence a zona. */
+    /**
+     * Ritmo de cada etapa contra a zona de pace esperada; teto do histórico do tipo do treino vence a zona. Sem
+     * zonas de pace a etapa ainda recebe o teto (fix-pace-teto-invariante).
+     */
     private TreinoPlanejadoLlmDto corrigirPaceZona(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
-        if (ctx.zonasPace() == null || treino.etapas() == null || treino.etapas().isEmpty()) return treino;
-        BigDecimal teto = null;
-        try {
-            teto = ctx.tetoPorTipo().get(TipoTreino.valueOf(treino.tipoTreino()));
-        } catch (IllegalArgumentException | NullPointerException ignored) {}
-        final BigDecimal tetoTipo = teto;
+        if (treino.etapas() == null || treino.etapas().isEmpty()) return treino;
+        TipoTreino tipo = tipoDoTeto(treino.tipoTreino());
+        final BigDecimal tetoTipo = tipo == null ? null : ctx.tetoPorTipo().get(tipo);
         List<EtapaTreinoLlmDto> validadas = treino.etapas().stream()
                 .map(e -> paceValidator.validarZonaEtapa(e, treino.tipoTreino(), ctx.zonasPace(), tetoTipo))
                 .toList();
@@ -699,15 +700,21 @@ public class NormalizacaoDeTreino {
 
     /** ritmoAlvo contra teto e piso de pace do histórico; só reconstrói se mudou. */
     private TreinoPlanejadoLlmDto corrigirPaceTetoPiso(TreinoPlanejadoLlmDto treino, ContextoNormalizacao ctx) {
-        BigDecimal teto = null;
-        BigDecimal piso = null;
-        try {
-            TipoTreino tipoEnum = TipoTreino.valueOf(treino.tipoTreino());
-            teto = ctx.tetoPorTipo().get(tipoEnum);
-            piso = ctx.pisoPorTipo().get(tipoEnum);
-        } catch (IllegalArgumentException ignored) {}
+        TipoTreino tipo = tipoDoTeto(treino.tipoTreino());
+        BigDecimal teto = tipo == null ? null : ctx.tetoPorTipo().get(tipo);
+        BigDecimal piso = tipo == null ? null : ctx.pisoPorTipo().get(tipo);
         String ritmoValidado = paceValidator.validar(treino.ritmoAlvo(), teto, piso);
         return Objects.equals(ritmoValidado, treino.ritmoAlvo()) ? treino : treino.comRitmo(ritmoValidado);
+    }
+
+    /** Mesma leitura do PlanQualityChecker: "facil" ou " FACIL " não escapam do teto que o checker cobra (D6). */
+    private static @Nullable TipoTreino tipoDoTeto(@Nullable String tipoTreino) {
+        if (tipoTreino == null) return null;
+        try {
+            return TipoTreino.valueOf(tipoTreino.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /**

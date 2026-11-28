@@ -24,12 +24,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
-import static org.junit.jupiter.api.Assumptions.abort;
 
 /**
  * Invariante "normalizado não viola PACE_TETO" (fix-pace-teto-invariante): para todo treino que
@@ -38,7 +36,12 @@ import static org.junit.jupiter.api.Assumptions.abort;
  * é a rede que pega a divergência.
  *
  * <p>Teto e piso saem de {@link PaceHistoricoFormatter} sobre histórico sintético, como em produção.
- * PROVA fica fora: a prova real é inserida depois da normalização e tem teste próprio no checker.</p>
+ * PROVA fica fora: a prova real é inserida depois da normalização e tem teste próprio no checker. Texto livre
+ * com m:ss também: não há como reescrevê-lo, e o checker continua acusando (CA8).</p>
+ *
+ * <p>Em develop (9ba2f61) a grade inteira era aceita e 578 cenários violavam, em quatro causas: etapa sem
+ * zonas de pace, tipo fora da caixa canônica, piso desfazendo o teto e formato não canônico. Sem exceções
+ * hoje; rejeição nova é falha, porque faria o invariante passar vazio.</p>
  */
 @DisplayName("NormalizacaoDeTreino — invariante normalizado não viola PACE_TETO (grade)")
 class NormalizacaoDeTreinoInvarianteTetoTest {
@@ -123,29 +126,9 @@ class NormalizacaoDeTreinoInvarianteTetoTest {
         List<String> violacoes = new PlanQualityChecker(new SimpleMeterRegistry())
                 .check(plano(saida), List.of(Constraint.paceTeto("Teto.", teto))).stream()
                 .map(ViolacaoQualidade::mensagem).toList();
-        if (violacoes.isEmpty()) return;
-
-        EXCECOES_CONHECIDAS.stream().filter(e -> e.aplica().test(c)).findFirst().ifPresent(e ->
-                abort("exceção conhecida " + e.nome() + " — " + e.motivo() + " | " + String.join("; ", violacoes)));
 
         assertThat(violacoes).as("PACE_TETO depois de normalizar em %s → %s", c, resumo(saida)).isEmpty();
     }
-
-    record Excecao(String nome, String motivo, Predicate<Cenario> aplica) {}
-
-    /**
-     * Desacordos medidos em develop (task 0.2), cada um com a task que o fecha. A lista só encolhe: cada fix
-     * tira a sua entrada, e no fim sobram só as exceções declaradas no proposal.
-     */
-    static final List<Excecao> EXCECOES_CONHECIDAS = List.of(
-            new Excecao("SEM_ZONAS", "etapa não é corrigida contra o teto sem zonas de pace (task 1.1)",
-                    c -> !c.comZonas() && c.posicao() == Posicao.MAIS_RAPIDO),
-            new Excecao("TIPO_NAO_CANONICO", "corretor lê o tipo com valueOf literal (task 1.2, D6)",
-                    c -> c.tipo() == Tipo.FACIL_MINUSCULO && c.posicao() == Posicao.MAIS_RAPIDO),
-            new Excecao("PISO_DESFAZ_TETO", "piso desloca a faixa larga para antes do teto (task 1.4, D1)",
-                    c -> c.amplitude() == Amplitude.LARGA && c.historico().dispersaoSeg < 60),
-            new Excecao("FORMATO", "corretor só lê faixa canônica (task 1.5, D2, D5)",
-                    c -> c.formato() != Formato.CANONICO && c.posicao() == Posicao.MAIS_RAPIDO));
 
     private static TreinoPlanejadoLlmDto normalizar(Cenario c, Map<TipoTreino, BigDecimal> teto,
                                                     Map<TipoTreino, BigDecimal> piso) {

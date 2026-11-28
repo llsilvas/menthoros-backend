@@ -39,9 +39,12 @@ public class PaceValidator {
      *   <li>Se paceMin &lt; teto (mais rápido que o permitido): desloca o intervalo para cima (mais lento)</li>
      *   <li>Se paceMax &gt; piso (mais lento que o permitido): desloca o intervalo para baixo (mais rápido)</li>
      * </ul>
-     * Ambas as correções preservam a amplitude original. As checagens são independentes e aplicadas em sequência.
+     * Ambas as correções preservam a amplitude original e são aplicadas em sequência, mas o teto vence o piso (D1
+     * de fix-pace-teto-invariante): a borda rápida nunca fica antes do teto, e piso mais rápido que o teto é
+     * ignorado. Ritmo único ("4:00/km") recebe só o teto, nunca o piso. Faixa com espaço ou sem "/km" é lida e,
+     * se corrigida, sai no formato canônico.
      *
-     * @param ritmoAlvo formato "5:00-5:30/km"
+     * @param ritmoAlvo formato "5:00-5:30/km", faixa leniente ou ritmo único
      * @param teto      pace mais rápido permitido em decimal minutos; null = sem validação de teto
      * @param piso      pace mais lento permitido em decimal minutos; null = sem validação de piso
      * @return ritmoAlvo original ou corrigido
@@ -51,20 +54,17 @@ public class PaceValidator {
             return ritmoAlvo;
         }
 
-        PaceRange range = parsear(ritmoAlvo);
+        PaceRange range = lerFaixa(ritmoAlvo);
         if (range == null) {
-            log.warn("ritmoAlvo em formato não reconhecido, mantendo original: '{}'", ritmoAlvo);
-            return ritmoAlvo;
+            return limitarUnicoAoTeto(ritmoAlvo, teto);
         }
 
         BigDecimal curMin = range.paceMin();
         BigDecimal curMax = range.paceMax();
+        BigDecimal tetoSegundo = teto == null ? null : aoSegundoDeCima(teto);
 
         // 1) Teto: paceMin não pode ser mais rápido que o teto
         if (teto != null && curMin.compareTo(teto) < 0) {
-            // teto arredondado para o segundo de cima: 5:23,4 formatado como 5:23 ficaria mais rápido que ele
-            BigDecimal tetoSegundo = teto.multiply(BigDecimal.valueOf(60)).setScale(1, RoundingMode.HALF_UP).setScale(0, RoundingMode.CEILING)
-                    .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
             BigDecimal diferenca = tetoSegundo.subtract(curMin);
             curMin = tetoSegundo;
             curMax = curMax.add(diferenca).setScale(4, RoundingMode.HALF_UP);
@@ -72,13 +72,17 @@ public class PaceValidator {
                     ritmoAlvo, formatar(curMin, curMax), formatarDecimalMinutos(teto));
         }
 
-        // 2) Piso: paceMax não pode ser mais lento que o piso
-        if (piso != null && curMax.compareTo(piso) > 0) {
+        // 2) Piso: paceMax não pode ser mais lento que o piso — se o piso é mais rápido que o teto, o teto vence
+        if (piso != null && curMax.compareTo(piso) > 0 && (tetoSegundo == null || piso.compareTo(tetoSegundo) >= 0)) {
             BigDecimal amplitude = curMax.subtract(curMin);
             BigDecimal novoMax = piso;
             BigDecimal novoMin = piso.subtract(amplitude).setScale(4, RoundingMode.HALF_UP);
             if (novoMin.compareTo(BigDecimal.ZERO) <= 0) {
                 novoMin = BigDecimal.valueOf(0.5); // piso absoluto de 0:30/km
+            }
+            // D1: o deslocamento do piso não leva a borda rápida para antes do teto — a faixa encolhe
+            if (tetoSegundo != null && novoMin.compareTo(tetoSegundo) < 0) {
+                novoMin = tetoSegundo;
             }
             String original = ritmoAlvo;
             String corrigido = formatar(novoMin, novoMax);
@@ -90,6 +94,20 @@ public class PaceValidator {
 
         String resultado = formatar(curMin, curMax);
         return resultado.equals(formatar(range.paceMin(), range.paceMax())) ? ritmoAlvo : resultado;
+    }
+
+    /** Ritmo único mais rápido que o teto vira o teto, ainda como ritmo único (D2); o resto passa intacto. */
+    private String limitarUnicoAoTeto(String ritmoAlvo, @Nullable BigDecimal teto) {
+        BigDecimal pace = lerUnico(ritmoAlvo);
+        if (pace == null) {
+            log.warn("ritmoAlvo em formato não reconhecido, mantendo original: '{}'", ritmoAlvo);
+            return ritmoAlvo;
+        }
+        if (teto == null || pace.compareTo(teto) >= 0) return ritmoAlvo;
+        String corrigido = formatarDecimalMinutos(aoSegundoDeCima(teto)) + "/km";
+        log.warn("ritmoAlvo corrigido (teto): '{}' → '{}' (ritmo único mais rápido que teto {})",
+                ritmoAlvo, corrigido, formatarDecimalMinutos(teto));
+        return corrigido;
     }
 
     /**
@@ -112,12 +130,20 @@ public class PaceValidator {
     /**
      * Sanidade da faixa de ritmo (validar-ritmo-etapa-contra-zona): faixa invertida é desinvertida; faixa
      * zerada ou fora de 2:30–12:00/km vira {@code null}, para os passos seguintes usarem o ritmo do treino ou
-     * a zona. Ritmo único e texto livre passam intactos. Não cruza com a zona do atleta.
+     * a zona. Ritmo único fora de 2:30–12:00/km também vira {@code null} (D3 de fix-pace-teto-invariante); texto
+     * livre passa intacto. Não cruza com a zona do atleta.
      */
     public String sanear(String ritmoAlvo) {
         if (ritmoAlvo == null) return null;
         Matcher m = FAIXA_LENIENTE.matcher(ritmoAlvo);
-        if (!m.matches()) return ritmoAlvo;
+        if (!m.matches()) {
+            BigDecimal unico = lerUnico(ritmoAlvo);
+            if (unico != null && (unico.compareTo(PACE_MAIS_RAPIDO_PLAUSIVEL) < 0 || unico.compareTo(PACE_MAIS_LENTO_PLAUSIVEL) > 0)) {
+                log.warn("ritmoAlvo descartado (ritmo único fora de 2:30–12:00/km): '{}'", ritmoAlvo);
+                return null;
+            }
+            return ritmoAlvo;
+        }
         BigDecimal a = minutosSegundosParaDecimal(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)));
         BigDecimal b = minutosSegundosParaDecimal(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)));
         BigDecimal min = a.min(b);
@@ -139,35 +165,28 @@ public class PaceValidator {
      * validar-ritmo-etapa-contra-zona, mesma régua do {@code EtapaFcValidator}: sobreposição &lt; 50% vai para o
      * miolo da zona; sobreposição suficiente que sai da zona é recortada. O histórico real vence a zona: a borda
      * rápida nunca fica mais rápida que {@code teto}, e se o teto é mais lento que a zona inteira não corrige.
-     * Sem zonas, treino PROVA ou ritmo que não é faixa: devolve a etapa intacta.
+     * Treino PROVA ou etapa sem ritmo: devolve a etapa intacta. Sem zonas úteis (ausentes, incompletas, tipo de
+     * etapa fora da tabela) ou com ritmo único, a etapa recebe só o teto (fix-pace-teto-invariante).
      *
-     * @param zonas zonas de pace do atleta (Z1 primeiro, a mais lenta); null = sem validação
+     * @param zonas zonas de pace do atleta (Z1 primeiro, a mais lenta); null = só o teto
      * @param teto  pace mais rápido demonstrado para o tipo do treino; null = sem limite do histórico
      */
     public EtapaTreinoLlmDto validarZonaEtapa(EtapaTreinoLlmDto etapa, String tipoTreino,
                                               @Nullable List<ZonaTreinoService.ZonaPace> zonas, @Nullable BigDecimal teto) {
-        if (zonas == null || zonas.size() < 6 || "PROVA".equalsIgnoreCase(tipoTreino)) return etapa;
+        if ("PROVA".equalsIgnoreCase(tipoTreino) || etapa.ritmoAlvo() == null) return etapa;
         int[] faixa = zonasEsperadas(etapa.tipoEtapa(), tipoTreino);
-        PaceRange prescrito = etapa.ritmoAlvo() == null ? null : parsear(etapa.ritmoAlvo());
-        if (faixa == null || prescrito == null) return etapa;
+        PaceRange prescrito = lerFaixa(etapa.ritmoAlvo());
+        if (zonas == null || zonas.size() < 6 || faixa == null || prescrito == null) return limitarEtapaAoTeto(etapa, tipoTreino, teto);
 
         BigDecimal rapido = zonas.get(faixa[1] - 1).paceMin();
         BigDecimal lento = zonas.get(faixa[0] - 1).paceMax();
         if (teto != null) {
-            if (teto.compareTo(lento) >= 0) {
-                // Histórico mais lento que a zona inteira: ele vence — só desloca a etapa que está mais rápida que o teto
-                if (prescrito.paceMin().compareTo(teto) >= 0) return etapa;
-                String deslocado = validar(etapa.ritmoAlvo(), teto);
-                log.warn("ritmo da etapa mais rápido que o teto do histórico: tipo='{}' treino='{}' prescrito='{}' → '{}'",
-                        etapa.tipoEtapa(), tipoTreino, etapa.ritmoAlvo(), deslocado);
-                return etapa.comRitmo(deslocado);
-            }
+            // Histórico mais lento que a zona inteira: ele vence — só desloca a etapa que está mais rápida que o teto
+            if (teto.compareTo(lento) >= 0) return limitarEtapaAoTeto(etapa, tipoTreino, teto);
             rapido = rapido.max(teto);
         }
-        // Borda rápida arredondada para o segundo de cima: formatar arredonda ao segundo, e 5:23,4 virando
-        // 5:23 ficaria mais rápido que o teto do histórico.
-        rapido = rapido.multiply(BigDecimal.valueOf(60)).setScale(1, RoundingMode.HALF_UP).setScale(0, RoundingMode.CEILING)
-                .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
+        // formatar arredonda ao segundo, e 5:23,4 virando 5:23 ficaria mais rápido que o teto do histórico
+        rapido = aoSegundoDeCima(rapido);
 
         // Principal mais lenta que a zona é cautela da prescrição: acelerar uma rodagem é o erro perigoso.
         // Aquecimento/desaquecimento/recuperação corrigem nos dois sentidos (CA1: aquecimento lento demais).
@@ -190,6 +209,15 @@ public class PaceValidator {
         log.warn("ritmo da etapa fora da zona esperada: tipo='{}' treino='{}' prescrito='{}' zona='{}' → '{}'",
                 etapa.tipoEtapa(), tipoTreino, etapa.ritmoAlvo(), formatar(rapido, lento), corrigido);
         return etapa.comRitmo(corrigido);
+    }
+
+    private EtapaTreinoLlmDto limitarEtapaAoTeto(EtapaTreinoLlmDto etapa, String tipoTreino, @Nullable BigDecimal teto) {
+        if (teto == null) return etapa;
+        String deslocado = validar(etapa.ritmoAlvo(), teto);
+        if (deslocado.equals(etapa.ritmoAlvo())) return etapa;
+        log.warn("ritmo da etapa mais rápido que o teto do histórico: tipo='{}' treino='{}' prescrito='{}' → '{}'",
+                etapa.tipoEtapa(), tipoTreino, etapa.ritmoAlvo(), deslocado);
+        return etapa.comRitmo(deslocado);
     }
 
     /** {zona mais lenta, zona mais rápida} esperadas — a tabela do EtapaFcValidator, com Z6 no tiro. */
@@ -249,6 +277,33 @@ public class PaceValidator {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    /**
+     * Faixa canônica ou na gramática da sanidade (espaço, sem "/km") — só no caminho do teto e da zona (D5).
+     * {@link #parsear} continua estrito porque alimenta a distância derivada.
+     */
+    private @Nullable PaceRange lerFaixa(String ritmoAlvo) {
+        PaceRange canonica = parsear(ritmoAlvo);
+        if (canonica != null) return canonica;
+        Matcher m = FAIXA_LENIENTE.matcher(ritmoAlvo);
+        if (!m.matches()) return null;
+        BigDecimal min = minutosSegundosParaDecimal(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)));
+        BigDecimal max = minutosSegundosParaDecimal(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)));
+        return min.compareTo(max) > 0 ? null : new PaceRange(min, max);
+    }
+
+    private static final Pattern RITMO_UNICO = Pattern.compile("^\\s*(\\d{1,2}):(\\d{2})\\s*(/km)?\\s*$");
+
+    private @Nullable BigDecimal lerUnico(String ritmoAlvo) {
+        Matcher m = RITMO_UNICO.matcher(ritmoAlvo);
+        return m.matches() ? minutosSegundosParaDecimal(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2))) : null;
+    }
+
+    /** Arredonda o pace para o segundo de cima: 5:23,4 formatado como 5:23 ficaria mais rápido que ele. */
+    private static BigDecimal aoSegundoDeCima(BigDecimal pace) {
+        return pace.multiply(BigDecimal.valueOf(60)).setScale(1, RoundingMode.HALF_UP).setScale(0, RoundingMode.CEILING)
+                .divide(BigDecimal.valueOf(60), 4, RoundingMode.HALF_UP);
     }
 
     private String formatar(BigDecimal paceMin, BigDecimal paceMax) {

@@ -1136,6 +1136,82 @@ class NormalizacaoDeTreinoTest {
                 "50:00", distanciaKm, "5:00-5:15/km", List.of(etapas));
     }
 
+    @Nested
+    @DisplayName("teto de pace (fix-pace-teto-invariante)")
+    class TetoDePace {
+
+        private static final BigDecimal TETO = new BigDecimal("4.9");   // 4:54/km
+        private static final BigDecimal PISO = new BigDecimal("6.25");  // 6:15/km
+
+        private TreinoPlanejadoLlmDto continuo(String tipo, String ritmoCabecalho, String ritmoPrincipal) {
+            return new TreinoPlanejadoLlmDto("QUARTA", tipo, null, 50, 0.7, 5, "Contínuo", "55:00", 8.0, ritmoCabecalho,
+                    List.of(new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento", 10, 0.0, null, 1, null),
+                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Bloco", 40, 8.0, null, 1, ritmoPrincipal),
+                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento", 5, 0.0, null, 1, null)));
+        }
+
+        /** Atleta sem limiar nem zonas manuais: zonasPace null, como em produção. */
+        private ContextoNormalizacao semZonas() {
+            Atleta atleta = Atleta.builder().id(UUID.randomUUID()).nivelExperiencia(NivelExperiencia.INTERMEDIARIO).build();
+            return new ContextoNormalizacao(atleta, atleta.getId(), null,
+                    Map.of(br.com.menthoros.backend.enums.TipoTreino.CONTINUO, TETO, br.com.menthoros.backend.enums.TipoTreino.FACIL, TETO),
+                    Map.of(br.com.menthoros.backend.enums.TipoTreino.CONTINUO, PISO));
+        }
+
+        private static String principal(TreinoPlanejadoLlmDto t) {
+            return t.etapas().stream().filter(e -> "PRINCIPAL".equals(e.tipoEtapa())).findFirst().orElseThrow().ritmoAlvo();
+        }
+
+        @Test
+        @DisplayName("CA2: sem zonas de pace, a PRINCIPAL mais rápida que o teto vai para o teto com a mesma amplitude")
+        void semZonasPrincipalNoTeto() {
+            var saida = normalizacao.normalizar(continuo("CONTINUO", "5:00-5:20/km", "4:20-4:40/km"), semZonas());
+
+            assertThat(principal(saida)).isEqualTo("4:54-5:14/km");
+        }
+
+        @ParameterizedTest(name = "tipo \"{0}\"")
+        @ValueSource(strings = {"facil", " FACIL "})
+        @DisplayName("CA12: tipo do treino em minúscula ou com espaço ainda recebe o teto no cabeçalho")
+        void tipoNaoCanonico(String tipo) {
+            var saida = normalizacao.normalizar(continuo(tipo, "4:20-4:40/km", "5:00-5:20/km"), semZonas());
+
+            assertThat(saida.ritmoAlvo()).isEqualTo("4:54-5:14/km");
+        }
+
+        @Test
+        @DisplayName("CA10: ritmo único mais lento que o teto fica intacto no cabeçalho — o piso não o puxa")
+        void unicoLentoIntacto() {
+            var saida = normalizacao.normalizar(continuo("CONTINUO", "8:00/km", "5:00-5:20/km"), semZonas());
+
+            assertThat(saida.ritmoAlvo()).isEqualTo("8:00/km");
+        }
+
+        @Test
+        @DisplayName("CA6: ritmo único mais rápido que o teto na PRINCIPAL vira o teto")
+        void unicoRapidoNoTeto() {
+            var saida = normalizacao.normalizar(continuo("CONTINUO", "5:00-5:20/km", "4:00/km"), semZonas());
+
+            assertThat(principal(saida)).isEqualTo("4:54/km");
+        }
+
+        @Test
+        @DisplayName("CA7: ritmo único implausível no cabeçalho é descartado")
+        void unicoImplausivel() {
+            var saida = normalizacao.normalizar(continuo("CONTINUO", "2:00/km", "5:00-5:20/km"), semZonas());
+
+            assertThat(saida.ritmoAlvo()).isNull();
+        }
+
+        @Test
+        @DisplayName("CA8: texto livre com m:ss mais rápido que o teto não é reescrito")
+        void textoLivreIntacto() {
+            var saida = normalizacao.normalizar(continuo("CONTINUO", "5:00-5:20/km", "forte perto de 4:00"), semZonas());
+
+            assertThat(principal(saida)).isEqualTo("forte perto de 4:00");
+        }
+    }
+
     // mínimo pra família TRES_ETAPAS: só o tipo das etapas importa ao reparo e ao gate
     private static EtapaTreinoLlmDto etapa3(String tipoEtapa) {
         return new EtapaTreinoLlmDto(1, tipoEtapa, "x", 10, 1.0, null, 1, null);
