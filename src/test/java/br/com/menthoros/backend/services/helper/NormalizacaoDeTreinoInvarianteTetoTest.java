@@ -123,11 +123,20 @@ class NormalizacaoDeTreinoInvarianteTetoTest {
             return;
         }
 
-        List<String> violacoes = new PlanQualityChecker(new SimpleMeterRegistry())
-                .check(plano(saida), List.of(Constraint.paceTeto("Teto.", teto))).stream()
-                .map(ViolacaoQualidade::mensagem).toList();
+        // controle positivo: sem teto, ou com a entrada rápida não acusada, a grade passaria vazia
+        assertThat(teto).containsKey(c.tipo().enumDoTeto());
+        if (c.posicao() == Posicao.MAIS_RAPIDO) {
+            assertThat(violacoes(entrada(c), teto)).as("entrada mais rápida que o teto é acusada antes de normalizar").isNotEmpty();
+        }
 
-        assertThat(violacoes).as("PACE_TETO depois de normalizar em %s → %s", c, resumo(saida)).isEmpty();
+        assertThat(saida.ritmoAlvo()).as("ritmo do cabeçalho não pode sumir em %s", c).isNotNull();
+        assertThat(violacoes(saida, teto)).as("PACE_TETO depois de normalizar em %s → %s", c, resumo(saida)).isEmpty();
+    }
+
+    private static List<String> violacoes(TreinoPlanejadoLlmDto treino, Map<TipoTreino, BigDecimal> teto) {
+        return new PlanQualityChecker(new SimpleMeterRegistry())
+                .check(plano(treino), List.of(Constraint.paceTeto("Teto.", teto))).stream()
+                .map(ViolacaoQualidade::mensagem).toList();
     }
 
     private static TreinoPlanejadoLlmDto normalizar(Cenario c, Map<TipoTreino, BigDecimal> teto,

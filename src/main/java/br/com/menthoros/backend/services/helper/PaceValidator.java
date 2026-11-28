@@ -124,6 +124,8 @@ public class PaceValidator {
     /** Faixa do ritmo com ou sem "/km", tolerante a espaços — só para a sanidade. */
     private static final Pattern FAIXA_LENIENTE =
             Pattern.compile("^\\s*(\\d{1,2}):(\\d{2})\\s*-\\s*(\\d{1,2}):(\\d{2})\\s*(/km)?\\s*$");
+    /** Ritmo único com ou sem "/km": "4:00/km", "4:00". */
+    private static final Pattern RITMO_UNICO = Pattern.compile("^\\s*(\\d{1,2}):(\\d{2})\\s*(/km)?\\s*$");
     private static final BigDecimal PACE_MAIS_RAPIDO_PLAUSIVEL = new BigDecimal("2.5");  // 2:30/km
     private static final BigDecimal PACE_MAIS_LENTO_PLAUSIVEL = new BigDecimal("12");    // 12:00/km
 
@@ -283,7 +285,8 @@ public class PaceValidator {
      * Faixa canônica ou na gramática da sanidade (espaço, sem "/km") — só no caminho do teto e da zona (D5).
      * {@link #parsear} continua estrito porque alimenta a distância derivada.
      */
-    private @Nullable PaceRange lerFaixa(String ritmoAlvo) {
+    @Nullable PaceRange lerFaixa(@Nullable String ritmoAlvo) {
+        if (ritmoAlvo == null) return null;
         PaceRange canonica = parsear(ritmoAlvo);
         if (canonica != null) return canonica;
         Matcher m = FAIXA_LENIENTE.matcher(ritmoAlvo);
@@ -292,8 +295,6 @@ public class PaceValidator {
         BigDecimal max = minutosSegundosParaDecimal(Integer.parseInt(m.group(3)), Integer.parseInt(m.group(4)));
         return min.compareTo(max) > 0 ? null : new PaceRange(min, max);
     }
-
-    private static final Pattern RITMO_UNICO = Pattern.compile("^\\s*(\\d{1,2}):(\\d{2})\\s*(/km)?\\s*$");
 
     private @Nullable BigDecimal lerUnico(String ritmoAlvo) {
         Matcher m = RITMO_UNICO.matcher(ritmoAlvo);

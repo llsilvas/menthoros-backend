@@ -678,7 +678,7 @@ public class NormalizacaoDeTreino {
         // fix-etapas-sintetizadas-sessao-curta): quando a principal ficou lenta por cautela, a etapa leve fica como veio.
         PaceValidator.PaceRange principal = validadas.stream()
                 .filter(e -> "PRINCIPAL".equalsIgnoreCase(e.tipoEtapa()) && e.ritmoAlvo() != null)
-                .map(e -> paceValidator.parsear(e.ritmoAlvo()))
+                .map(e -> paceValidator.lerFaixa(e.ritmoAlvo()))
                 .filter(Objects::nonNull)
                 .findFirst().orElse(null);
         List<EtapaTreinoLlmDto> etapas = new ArrayList<>(validadas);
@@ -687,8 +687,9 @@ public class NormalizacaoDeTreino {
             EtapaTreinoLlmDto original = treino.etapas().get(i);
             boolean leve = "AQUECIMENTO".equalsIgnoreCase(nova.tipoEtapa()) || "DESAQUECIMENTO".equalsIgnoreCase(nova.tipoEtapa());
             if (!leve || principal == null || nova == original || nova.ritmoAlvo() == null) continue;
-            PaceValidator.PaceRange r = paceValidator.parsear(nova.ritmoAlvo());
-            PaceValidator.PaceRange antes = original.ritmoAlvo() == null ? null : paceValidator.parsear(original.ritmoAlvo());
+            // mesma leitura da correção por zona: faixa leniente corrigida também é protegida
+            PaceValidator.PaceRange r = paceValidator.lerFaixa(nova.ritmoAlvo());
+            PaceValidator.PaceRange antes = original.ritmoAlvo() == null ? null : paceValidator.lerFaixa(original.ritmoAlvo());
             // Só desfaz correção que ACELEROU a etapa; desacelerar (teto do histórico, zona) é sempre seguro.
             boolean acelerou = antes != null && r != null && r.paceMin().compareTo(antes.paceMin()) < 0;
             if (acelerou && r.paceMin().compareTo(principal.paceMax()) < 0) {
@@ -711,7 +712,7 @@ public class NormalizacaoDeTreino {
     private static @Nullable TipoTreino tipoDoTeto(@Nullable String tipoTreino) {
         if (tipoTreino == null) return null;
         try {
-            return TipoTreino.valueOf(tipoTreino.trim().toUpperCase());
+            return TipoTreino.valueOf(tipoTreino.trim().toUpperCase(java.util.Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return null;
         }

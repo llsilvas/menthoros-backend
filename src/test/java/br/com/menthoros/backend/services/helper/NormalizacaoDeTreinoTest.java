@@ -1204,6 +1204,24 @@ class NormalizacaoDeTreinoTest {
         }
 
         @Test
+        @DisplayName("aquecimento em faixa leniente não fica mais rápido que a PRINCIPAL lenta (proteção da etapa leve)")
+        void aquecimentoLenienteNaoAcelera() {
+            Atleta atleta = Atleta.builder().id(UUID.randomUUID()).nivelExperiencia(NivelExperiencia.INTERMEDIARIO)
+                    .paceLimiar(BigDecimal.valueOf(5.0)).build();
+            var comZonas = new ContextoNormalizacao(atleta, atleta.getId(), null,
+                    Map.of(br.com.menthoros.backend.enums.TipoTreino.CONTINUO, TETO), Map.of(),
+                    ContextoNormalizacao.zonasPaceComDado(atleta, new ZonaTreinoService()));
+            var entrada = new TreinoPlanejadoLlmDto("QUARTA", "CONTINUO", null, 50, 0.7, 5, "Contínuo", "70:00", 8.0, null,
+                    List.of(new EtapaTreinoLlmDto(1, "AQUECIMENTO", "Aquecimento", 10, 0.0, null, 1, "9:00 - 9:30/km"),
+                            new EtapaTreinoLlmDto(2, "PRINCIPAL", "Bloco", 55, 6.5, null, 1, "8:00-8:30/km"),
+                            new EtapaTreinoLlmDto(3, "DESAQUECIMENTO", "Desaquecimento", 5, 0.0, null, 1, null)));
+
+            var saida = normalizacao.normalizar(entrada, comZonas);
+
+            assertThat(saida.etapas().get(0).ritmoAlvo()).isEqualTo("9:00 - 9:30/km");
+        }
+
+        @Test
         @DisplayName("CA8: texto livre com m:ss mais rápido que o teto não é reescrito")
         void textoLivreIntacto() {
             var saida = normalizacao.normalizar(continuo("CONTINUO", "5:00-5:20/km", "forte perto de 4:00"), semZonas());

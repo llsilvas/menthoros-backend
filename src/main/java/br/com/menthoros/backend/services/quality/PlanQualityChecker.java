@@ -152,7 +152,7 @@ public class PlanQualityChecker {
     private static TipoTreino parseTipo(String tipo) {
         if (tipo == null) return null;
         try {
-            return TipoTreino.valueOf(tipo.trim().toUpperCase());
+            return TipoTreino.valueOf(tipo.trim().toUpperCase(java.util.Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return null;
         }
