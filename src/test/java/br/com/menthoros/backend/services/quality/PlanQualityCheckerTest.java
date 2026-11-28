@@ -147,6 +147,30 @@ class PlanQualityCheckerTest {
         }
     }
 
+    @Nested
+    @DisplayName("PACE_TETO (fix-pace-teto-invariante)")
+    class PaceTeto {
+
+        @Test
+        @DisplayName("CA4: PROVA mais rápida que o teto de PROVA não viola — a prova real não passa pelo corretor")
+        void provaIsenta() {
+            PlanoSemanalLlmDto plano = plano(treino("DOMINGO", "PROVA", "4:00/km"));
+            var regras = List.of(Constraint.paceTeto("Teto.", java.util.Map.of(TipoTreino.PROVA, new BigDecimal("5.0"))));
+
+            assertThat(checker.check(plano, regras)).isEmpty();
+        }
+
+        @Test
+        @DisplayName("CA8: ritmo em texto livre com m:ss mais rápido que o teto continua acusado")
+        void textoLivreAcusado() {
+            PlanoSemanalLlmDto plano = plano(treino("SEGUNDA", "CONTINUO", "forte, perto de 4:00 por km"));
+            var regras = List.of(Constraint.paceTeto("Teto.", java.util.Map.of(TipoTreino.CONTINUO, new BigDecimal("5.0"))));
+
+            assertThat(checker.check(plano, regras)).extracting(ViolacaoQualidade::key)
+                    .containsExactly(ConstraintKey.PACE_TETO);
+        }
+    }
+
     // ===== helpers =====
 
     private static PlanoSemanalLlmDto plano(TreinoPlanejadoLlmDto... treinos) {

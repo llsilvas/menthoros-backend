@@ -87,7 +87,8 @@ public class PlanQualityChecker {
         var teto = c.tetoPorTipo();
         for (TreinoPlanejadoLlmDto t : treinos) {
             TipoTreino tipo = parseTipo(t.tipoTreino());
-            if (tipo == null) continue;
+            // PROVA real entra depois da normalização e o prompt nunca lista teto de PROVA (D4)
+            if (tipo == null || tipo == TipoTreino.PROVA) continue;
             BigDecimal limite = teto.get(tipo);
             if (limite == null) continue;
 
@@ -151,7 +152,7 @@ public class PlanQualityChecker {
     private static TipoTreino parseTipo(String tipo) {
         if (tipo == null) return null;
         try {
-            return TipoTreino.valueOf(tipo.trim().toUpperCase());
+            return TipoTreino.valueOf(tipo.trim().toUpperCase(java.util.Locale.ROOT));
         } catch (IllegalArgumentException e) {
             return null;
         }
